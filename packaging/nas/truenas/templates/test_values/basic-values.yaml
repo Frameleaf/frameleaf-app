@@ -11,6 +11,7 @@ frameleaf:
   hugging_face_endpoint: ""
   db_password: immich
   additional_envs: []
+  ml_additional_envs: []
 
 network:
   web_port:

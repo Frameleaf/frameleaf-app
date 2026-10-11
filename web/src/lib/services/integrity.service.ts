@@ -7,20 +7,50 @@ import { getFormatter } from '$lib/utils/i18n';
 
 /**
  * Acting on a finding is destructive: an untracked file is deleted from disk, and an item whose file
- * is missing or no longer matches its checksum is moved to the trash (`IntegrityService`). The
- * Frameleaf confirmation (FL-81 CC-22/23, the prototype's "Delete this report?") says so in full.
+ * is missing or no longer matches its checksum is moved to the trash (`IntegrityService`). Nothing
+ * here only clears a list, so every button, title and confirmation names what is removed.
  */
-const consequenceKey = (reportType: IntegrityReport) =>
-  reportType === IntegrityReport.UntrackedFile
-    ? 'admin.frameleaf_maintenance_report_delete_untracked'
-    : 'admin.frameleaf_maintenance_report_delete_trash';
+const untracked = (reportType: IntegrityReport) => reportType === IntegrityReport.UntrackedFile;
 
-export const handleRemoveAllIntegrityReportItems = async (reportType: IntegrityReport) => {
+/** The label of the action on every finding of a check. */
+export const integrityActionKey = (reportType: IntegrityReport) =>
+  untracked(reportType)
+    ? ('admin.frameleaf_maintenance_report_act_untracked' as const)
+    : ('admin.frameleaf_maintenance_report_act_trash' as const);
+
+/** The same action's accessible name beside a check's title. */
+export const integrityActionLabelKey = (reportType: IntegrityReport) =>
+  untracked(reportType)
+    ? ('admin.frameleaf_maintenance_report_act_untracked_label' as const)
+    : ('admin.frameleaf_maintenance_report_act_trash_label' as const);
+
+/** The label of the action on one finding. */
+export const integrityFindingActionKey = (reportType: IntegrityReport) =>
+  untracked(reportType)
+    ? ('admin.frameleaf_maintenance_finding_act_untracked' as const)
+    : ('admin.frameleaf_maintenance_finding_act_trash' as const);
+
+const consequenceKey = (reportType: IntegrityReport) => {
+  if (untracked(reportType)) {
+    return 'admin.frameleaf_maintenance_report_delete_untracked' as const;
+  }
+  return reportType === IntegrityReport.MissingFile
+    ? ('admin.frameleaf_maintenance_report_act_missing' as const)
+    : ('admin.frameleaf_maintenance_report_act_checksum' as const);
+};
+
+/** `count` is how many findings the check has; leave it out when only part of the list is loaded. */
+export const handleRemoveAllIntegrityReportItems = async (reportType: IntegrityReport, count = 0) => {
   const $t = await getFormatter();
   const confirm = await confirmFrameleaf({
-    title: $t('admin.frameleaf_maintenance_report_delete_title'),
+    title: $t(
+      untracked(reportType)
+        ? 'admin.frameleaf_maintenance_report_act_untracked_title'
+        : 'admin.frameleaf_maintenance_report_act_trash_title',
+      { values: { count } },
+    ),
     prompt: $t(consequenceKey(reportType)),
-    confirmText: $t('admin.frameleaf_maintenance_report_delete_action'),
+    confirmText: $t(integrityActionKey(reportType)),
     danger: true,
   });
 
@@ -69,13 +99,17 @@ export const handleRemoveAllIntegrityReportItems = async (reportType: IntegrityR
 export const handleRemoveIntegrityReportItem = async (reportId: string, reportType: IntegrityReport) => {
   const $t = await getFormatter();
   const confirm = await confirmFrameleaf({
-    title: $t('admin.frameleaf_maintenance_finding_delete_title'),
+    title: $t(
+      untracked(reportType)
+        ? 'admin.frameleaf_maintenance_finding_act_untracked_title'
+        : 'admin.frameleaf_maintenance_finding_act_trash_title',
+    ),
     prompt: $t(
-      reportType === IntegrityReport.UntrackedFile
+      untracked(reportType)
         ? 'admin.frameleaf_maintenance_finding_delete_untracked'
         : 'admin.frameleaf_maintenance_finding_delete_trash',
     ),
-    confirmText: $t('delete'),
+    confirmText: $t(integrityFindingActionKey(reportType)),
     danger: true,
   });
 

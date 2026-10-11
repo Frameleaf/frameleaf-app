@@ -11,6 +11,9 @@ export const adminConfigDefaults = {
       cronExpression: '0 02 * * *',
       keepLastAmount: 14,
     },
+    schedule: {
+      cronExpression: '',
+    },
   },
   ffmpeg: {
     crf: 23,
@@ -370,6 +373,7 @@ export const adminConfigDefaults = {
       from: '',
       replyTo: '',
       transport: {
+        type: 'smtp',
         ignoreCert: false,
         host: '',
         port: 587,

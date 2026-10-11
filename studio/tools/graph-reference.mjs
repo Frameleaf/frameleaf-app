@@ -1196,7 +1196,7 @@ const commands = {
     const clip = namedClip(state, payload);
     if (clip.type !== 'video' && clip.type !== 'audio') invalid('clip.setAudio applies to video and audio clips');
     for (const key of Object.keys(payload)) {
-      if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq'].includes(key))
+      if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq', 'ducking'].includes(key))
         invalid(`clip.setAudio: unknown field "${key}"`);
     }
     const updates = {};
@@ -1224,9 +1224,35 @@ const commands = {
       if (typeof payload.muted !== 'boolean') invalid('muted must be a boolean');
       updates.muted = payload.muted;
     }
-    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq or muted');
+    // 13.9: sidechain ducking, written whole or removed.
+    let ducking;
+    if (payload.ducking !== undefined && payload.ducking !== null) {
+      const given = payload.ducking;
+      if (!plainRecord(given)) invalid('ducking must be an object or null');
+      for (const key of Object.keys(given)) if (!['duckOthersDb', 'attackSec', 'releaseSec', 'targetTrackIds'].includes(key)) invalid(`ducking: unknown field "${key}"`);
+      if (!finite(given.duckOthersDb, -60, 0)) invalid('ducking.duckOthersDb must be in -60..0 dB');
+      ducking = { duckOthersDb: given.duckOthersDb };
+      for (const key of ['attackSec', 'releaseSec']) {
+        if (given[key] === undefined) continue;
+        if (!finite(given[key], 0, 5)) invalid(`ducking.${key} must be in 0..5 seconds`);
+        ducking[key] = given[key];
+      }
+      if (given.targetTrackIds !== undefined) {
+        const ids = given.targetTrackIds;
+        if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string' || id.length === 0)) invalid('ducking.targetTrackIds must be a list of track ids');
+        if (new Set(ids).size !== ids.length) invalid('ducking.targetTrackIds repeats a track');
+        for (const id of ids) {
+          const track = state.tracks.find((candidate) => candidate.id === id) ?? invalid(`ducking.targetTrackIds: track "${id}" does not exist`);
+          if (track.isGroup) invalid(`ducking.targetTrackIds: track "${id}" is a group`);
+        }
+        ducking.targetTrackIds = [...ids];
+      }
+    }
+    const changesDucking = payload.ducking !== undefined;
+    if (Object.keys(updates).length === 0 && !changesDucking) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq, ducking or muted');
     refuseLocked(state, [clip.id], 'clip.setAudio');
-    replace(state, { ...clip, ...updates });
+    const next = { ...clip, ...updates };
+    replace(state, !changesDucking ? next : ducking ? { ...next, audioDucking: ducking } : without(next, 'audioDucking'));
   },
 
   /* 12.6.2 */
@@ -1747,7 +1773,7 @@ function fitted(state, clip) {
 
 function setTransform(state, clip, intent) {
   for (const key of Object.keys(intent))
-    if (!['x', 'y', 'scale', 'rotation', 'opacity'].includes(key)) invalid(`transform: unknown field "${key}"`);
+    if (!['x', 'y', 'scale', 'rotation', 'opacity', 'flipHorizontal', 'flipVertical'].includes(key)) invalid(`transform: unknown field "${key}"`);
   const next = {};
   for (const key of ['x', 'y', 'rotation', 'opacity']) {
     if (intent[key] === undefined) continue;
@@ -1761,6 +1787,11 @@ function setTransform(state, clip, intent) {
     const size = fitted(state, clip);
     next.width = size.width * intent.scale;
     next.height = size.height * intent.scale;
+  }
+  for (const key of ['flipHorizontal', 'flipVertical']) {
+    if (intent[key] === undefined) continue;
+    if (typeof intent[key] !== 'boolean') invalid(`transform.${key} must be a boolean`);
+    next[key] = intent[key];
   }
   if (Object.keys(next).length === 0) invalid('transform must change something');
   replace(state, { ...clipOf(state, clip.id), transform: { ...clipOf(state, clip.id).transform, ...next } });
@@ -3409,6 +3440,53 @@ Object.assign(commands, {
   },
 
   /* 14.3.1 */
+  /* 17.6 */
+  'clip.setCrop'(state, payload) {
+    const command = 'clip.setCrop';
+    for (const key of Object.keys(payload)) if (!['clipId', 'crop', 'cornerPin'].includes(key)) invalid(`${command}: unknown field`);
+    const clipId = text(payload, 'clipId');
+    const clip = state.items.find((entry) => entry.id === clipId) ?? invalid(`clipId: clip "${clipId}" does not exist`);
+    const { crop, cornerPin } = payload;
+    if (crop === undefined && cornerPin === undefined) invalid(`${command} needs crop or cornerPin`);
+    if (crop !== undefined && clip.type !== 'video' && clip.type !== 'image') invalid(`${command}: crop applies to video and image clips`);
+    if (cornerPin !== undefined && !['video', 'image', 'composition', 'text'].includes(clip.type)) invalid(`${command}: cornerPin applies to video, image, composition and text clips`);
+    let next = { ...clip };
+    if (crop === null) {
+      next = without(next, 'crop');
+    } else if (crop !== undefined) {
+      if (!plainRecord(crop)) invalid(`${command}: crop must be an object or null`);
+      for (const key of Object.keys(crop)) if (!['left', 'right', 'top', 'bottom', 'softness'].includes(key)) invalid(`${command}: unknown crop field`);
+      const sides = {};
+      for (const name of ['left', 'right', 'top', 'bottom']) {
+        if (crop[name] !== undefined && !finite(crop[name], 0, 1)) invalid(`${command}: crop.${name} must be a number from 0 to 1`);
+        sides[name] = crop[name] ?? 0;
+      }
+      if (crop.softness !== undefined && !finite(crop.softness, -1, 1)) invalid(`${command}: crop.softness must be a number from -1 to 1`);
+      if (sides.left + sides.right > 0.999 || sides.top + sides.bottom > 0.999) invalid(`${command}: opposite crop sides must leave part of the picture`);
+      next = Object.values(sides).every((side) => side === 0) ? without(next, 'crop') : { ...next, crop: { ...sides, softness: crop.softness ?? 0 } };
+    }
+    if (cornerPin === null) {
+      next = without(next, 'cornerPin');
+    } else if (cornerPin !== undefined) {
+      if (!plainRecord(cornerPin)) invalid(`${command}: cornerPin must be an object or null`);
+      const corners = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'];
+      for (const key of Object.keys(cornerPin)) if (![...corners, 'referenceWidth', 'referenceHeight'].includes(key)) invalid(`${command}: unknown cornerPin field`);
+      const pin = {};
+      for (const corner of corners) {
+        const value = cornerPin[corner];
+        if (!Array.isArray(value) || value.length !== 2 || !value.every((n) => typeof n === 'number' && Number.isFinite(n))) invalid(`${command}: cornerPin.${corner} must be [x, y]`);
+        pin[corner] = [value[0], value[1]];
+      }
+      for (const key of ['referenceWidth', 'referenceHeight']) {
+        if (!finite(cornerPin[key]) || cornerPin[key] <= 0) invalid(`${command}: cornerPin.${key} must be a positive number`);
+        pin[key] = cornerPin[key];
+      }
+      next = { ...next, cornerPin: pin };
+    }
+    refuseLocked(state, [clip.id], command);
+    replace(state, next);
+  },
+
   /* 17.4 */
   'shape.add'(state, payload, draw) {
     const command = 'shape.add';

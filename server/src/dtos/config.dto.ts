@@ -28,6 +28,8 @@ import {
   LogLevelSchema,
   MachineLearningHardwareAcceleration,
   MachineLearningHardwareAccelerationSchema,
+  MailTransportType,
+  MailTransportTypeSchema,
   OAuthTokenEndpointAuthMethod,
   OAuthTokenEndpointAuthMethodSchema,
   ReleaseChannel,
@@ -831,6 +833,10 @@ const AdminConfigSmtpSchema = z
     replyTo: z.string().describe('Email address for replies'),
     transport: z
       .object({
+        // FL-379: optional on the way in, so a client that predates it keeps saving a mail server
+        // entered by hand. Gmail and Microsoft need the account connected through
+        // /admin/notifications/mail-connection first; the other transport fields are then unused.
+        type: MailTransportTypeSchema.default(MailTransportType.Smtp),
         ignoreCert: configBool.describe('Whether to ignore SSL certificate errors'),
         host: z.string().describe('SMTP server hostname'),
         port: z.int().min(0).max(65_535).describe('SMTP server port'),
@@ -860,6 +866,15 @@ const AdminConfigSchemaWithVisibility = z
             keepLastAmount: z.int().min(1).describe('Keep last amount'),
           })
           .meta({ id: 'AdminConfigDatabaseBackupDto' }),
+        schedule: z
+          .object({
+            cronExpression: cronExpressionSchema
+              .or(z.literal(''))
+              .describe(
+                'When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used',
+              ),
+          })
+          .meta({ id: 'AdminConfigBackupScheduleDto' }),
       })
       .meta({ id: 'AdminConfigBackupsDto' }),
     ffmpeg: AdminConfigFFmpegSchema,
@@ -1119,7 +1134,12 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigTrashDto' }),
     theme: z
-      .object({ customCss: z.string().describe('Custom CSS for theming').meta({ visibility: Public }) })
+      .object({
+        customCss: z.string().describe('Custom CSS for theming').meta({ visibility: Public }),
+        // FL-368: styling can be turned off without deleting the text. Defaulted, so a stored
+        // configuration, a config file or an older client that does not name it keeps it on.
+        customCssEnabled: z.boolean().default(true).describe('Serve the custom CSS to the web app'),
+      })
       .meta({ id: 'AdminConfigThemeDto' }),
     library: z
       .object({
@@ -1414,6 +1434,9 @@ export const defaults = Object.freeze<SystemConfig>({
       cronExpression: CronExpression.EVERY_DAY_AT_2AM,
       keepLastAmount: 14,
     },
+    schedule: {
+      cronExpression: '',
+    },
   },
   ffmpeg: {
     crf: 23,
@@ -1631,6 +1654,7 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   theme: {
     customCss: '',
+    customCssEnabled: true,
   },
   library: {
     scan: {
@@ -1654,6 +1678,7 @@ export const defaults = Object.freeze<SystemConfig>({
       from: '',
       replyTo: '',
       transport: {
+        type: MailTransportType.Smtp,
         ignoreCert: false,
         host: '',
         port: 587,

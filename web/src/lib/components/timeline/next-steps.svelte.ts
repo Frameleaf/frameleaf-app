@@ -35,9 +35,11 @@ const write = (userId: string, value: Stored) => {
 /** Who the card is on offer to in this tab, so the page reacts when the layout makes the offer. */
 const session = $state({ offeredTo: null as string | null, dismissedBy: null as string | null });
 
-/** True when a navigation came from first-run setup. */
-export const arrivedFromSetup = (from: { url: URL } | null | undefined): boolean =>
-  !!from && (from.url.pathname === SETUP_PATH || from.url.pathname.startsWith(`${SETUP_PATH}/`));
+/** True when a navigation came from first-run setup. A page opened from outside the app has no address to come from. */
+export const arrivedFromSetup = (from: { url: URL | null } | null | undefined): boolean => {
+  const path = from?.url?.pathname;
+  return path === SETUP_PATH || !!path?.startsWith(`${SETUP_PATH}/`);
+};
 
 /** Offer the card to this account. An account that already dismissed it is not asked again. */
 export const offerNextSteps = (userId: string) => {

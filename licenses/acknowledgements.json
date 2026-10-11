@@ -652,11 +652,11 @@
     },
     {
       "status": "looked-up",
-      "notice": null,
+      "notice": "The four built-in Florence-2 description variants use immutable native Transformers checkpoints from florence-community, served unchanged by the configured model source. Their model cards and Microsoft MIT notice are retained; repository Python and pickle weights are not loaded.",
       "id": "florence-phi",
       "group": "library-models",
       "name": "Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)",
-      "author": "Microsoft; OpenVINO conversions by OpenVINO",
+      "author": "Microsoft; native Florence conversions by florence-community; OpenVINO Phi conversions by OpenVINO",
       "licence": "MIT",
       "link": "https://huggingface.co/microsoft/Florence-2-base",
       "shipped": "downloaded",
@@ -664,9 +664,10 @@
         "licenses/texts/microsoft-mit.txt"
       ],
       "covers": [
-        "ml:description:microsoft/*"
+        "ml:description:microsoft/*",
+        "ml:description:florence-community/*"
       ],
-      "source": "Hugging Face cards microsoft/Florence-2-*, microsoft/Phi-3*-vision-* (license: mit)"
+      "source": "Hugging Face cards microsoft/Florence-2-*, microsoft/Phi-3*-vision-* (license: mit); native Florence checkpoints and SHA-256 artifact pins: machine-learning/immich_ml/models/florence-models.json"
     },
     {
       "status": "looked-up",

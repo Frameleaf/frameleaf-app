@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins/0199d3a0-5b7e-4c1d-9f20-000000f1c160/claim",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins/0199d3a0-5b7e-4c1d-9f20-000000f1c160/claim, ath, nonce>"
+    },
+    "note": "The person hasn't finished at the provider, or hasn't continued on Frameleaf Cloud's page yet. Ask again in a few seconds.",
+    "body": null
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "pending"
+  }
+}

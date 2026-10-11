@@ -191,7 +191,7 @@
     onclick={toggle}
   >
     {#key authManager.user}
-      <UserAvatar user={authManager.user} size="md" noTitle interactive />
+      <UserAvatar user={authManager.user} size="md" noTitle />
     {/key}
     <span class="fl-account-name">{authManager.user.name}</span>
     <Icon icon={mdiChevronDown} size="1em" aria-hidden={true} />
@@ -428,7 +428,7 @@
     color: var(--fl-muted);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-pill);
-    padding: 0 7px;
+    padding: 0 var(--fl-space-2);
     line-height: 16px;
   }
   .supporter-badge {
@@ -530,6 +530,23 @@
   @media (min-width: 1281px) {
     .fl-account-name {
       display: inline;
+    }
+  }
+  /* Phones: a 44px target like the rest of the top bar's row, which counts on this width (TopBar.svelte). */
+  @media (max-width: 47.99rem) {
+    .fl-account-button {
+      min-width: 44px;
+      min-height: 44px;
+      padding: var(--fl-space-half) var(--fl-space-1);
+    }
+  }
+  /* Under 352px the row has no room for the chevron: the avatar alone, 44px wide, opens the menu. */
+  @media (max-width: 351px) {
+    .fl-account-button {
+      padding-inline: var(--fl-space-half);
+    }
+    .fl-account-button > :global(svg) {
+      display: none;
     }
   }
 </style>

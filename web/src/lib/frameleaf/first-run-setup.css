@@ -469,7 +469,7 @@
 .frs-choice-head {
   display: flex;
   align-items: center;
-  gap: 6px 10px;
+  gap: var(--fl-space-2) 10px;
   flex-wrap: wrap;
   min-height: 38px;
   padding-inline-end: 34px;
@@ -1633,6 +1633,34 @@
 .frs-link-card .frs-link-action {
   grid-column: 2 / -1;
   min-width: 0;
+}
+@media (max-width: 860px) {
+  /* One column: the action stays in it. Kept in a second column it squeezed the copy under the mark. */
+  .frs-link-card .frs-link-action {
+    grid-column: 1;
+  }
+  .frs-link-art {
+    width: auto;
+    height: auto;
+    justify-self: start;
+  }
+}
+@media (max-width: 560px) {
+  /* The mark and the progress ring share the first line; the title and its lead get the full width
+     under them instead of a column three words wide. */
+  .frs-tool-head {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--fl-space-3) var(--fl-space-4);
+  }
+  .frs-tool-head > img {
+    align-self: center;
+    margin-top: 0;
+  }
+  .frs-tool-head > div:nth-child(2) {
+    flex: 1 1 100%;
+    order: 3;
+  }
 }
 
 /* FL-176: Sign in with Frameleaf isn't available on this server yet. */

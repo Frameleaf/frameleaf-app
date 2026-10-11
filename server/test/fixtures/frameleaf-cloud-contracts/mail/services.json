@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/services",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm GET, htu https://api.frameleaf.cloud/v1/instance/mail/services, ath, nonce>"
+    },
+    "note": "Always one row per provider. Offer only the available ones on the settings page.",
+    "body": null
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "services": [
+      {
+        "service": "google",
+        "available": true
+      },
+      {
+        "service": "microsoft",
+        "available": false
+      }
+    ]
+  }
+}

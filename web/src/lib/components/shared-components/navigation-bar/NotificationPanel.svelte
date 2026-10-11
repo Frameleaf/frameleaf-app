@@ -270,7 +270,7 @@
     display: grid;
     gap: 2px;
     margin: 0;
-    padding: 0.375rem;
+    padding: var(--fl-space-2);
     list-style: none;
   }
   /* Per-notification dismiss: bottom-right of the row, revealed on hover or focus (system.css). */

@@ -337,7 +337,13 @@ test("all nine protected checks execute on Frameleaf default and implementation 
         );
       }
     }
-    assert.deepEqual(j.permissions, { contents: "read" });
+    // FL-380: the medium runner build reads (never writes) the registry build cache.
+    assert.deepEqual(
+      j.permissions,
+      id === "server-medium-tests"
+        ? { contents: "read", packages: "read" }
+        : { contents: "read" },
+    );
     assert.match(j.steps.map((s) => s.run ?? s.uses ?? "").join("\n"), command);
     assert.equal(
       j.steps.some((s) => s["continue-on-error"]),
@@ -606,6 +612,7 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
     "e2e/docker-diagnostics-after-maintenance-tests.txt",
     "e2e/docker-upload-transport-logs.txt",
     "e2e/docker-buddy-diagnostics.txt",
+    "e2e/docker-buddy-logs.txt",
     "e2e/buddy-evidence.json",
     "e2e/docker-cloud-accounting-logs.txt",
   ]);
@@ -732,10 +739,13 @@ test("Buddy cleanup is always admitted on x64 and refuses an unowned directory",
   const capture = steps.find(
     (step) => step.name === "Capture redacted Buddy diagnostics",
   );
+  const logs = steps.find((step) => step.name === "Capture Buddy app logs");
   const cleanup = steps.find(
     (step) => step.name === "Remove the owned Buddy fixture",
   );
-  for (const step of [capture, cleanup]) {
+  // The app logs are read before the fixture that produced them is removed.
+  assert.ok(steps.indexOf(logs) < steps.indexOf(cleanup));
+  for (const step of [capture, logs, cleanup]) {
     assert.ok(step);
     assert.equal(step["continue-on-error"], undefined);
     for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
@@ -769,7 +779,7 @@ test("Buddy cleanup is always admitted on x64 and refuses an unowned directory",
   }
 });
 
-test("Buddy artifacts retain sanitized state and evidence rather than raw logs or credentials", () => {
+test("Buddy artifacts retain sanitized state, evidence and the two app logs, never the environment", () => {
   const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
   const capture = steps.find(
     (step) => step.name === "Capture redacted Buddy diagnostics",
@@ -824,7 +834,22 @@ test("Buddy artifacts retain sanitized state and evidence rather than raw logs o
     .split("\n");
   assert.deepEqual(
     paths.filter((entry) => entry.includes("buddy")),
-    ["e2e/docker-buddy-diagnostics.txt", "e2e/buddy-evidence.json"],
+    [
+      "e2e/docker-buddy-diagnostics.txt",
+      "e2e/docker-buddy-logs.txt",
+      "e2e/buddy-evidence.json",
+    ],
+  );
+  // The whole of both app logs, so a lock contender can be named; nothing else is read from the fixture.
+  const logs = steps.find((step) => step.name === "Capture Buddy app logs").run;
+  assert.match(
+    logs,
+    /docker compose -f docker-compose\.buddy\.yml logs --no-color --timestamps buddy-a buddy-b > docker-buddy-logs\.txt 2>&1 \|\| true/,
+  );
+  assert.match(logs, /-f "\$BUDDY_ROOT\/\.fl310-buddy-fixture"/);
+  assert.doesNotMatch(
+    logs,
+    /inspect|\.Config\.(?:Env|Cmd)|printenv|\benv\b|cat |tar /,
   );
 });
 

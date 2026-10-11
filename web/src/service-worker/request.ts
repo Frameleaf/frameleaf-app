@@ -112,6 +112,10 @@ export const handleCancel = (url: URL) => {
     pendingRequest.staleCancels--;
     return;
   }
+  // another caller still wants this load: only the last cancel may stop it
+  if (--pendingRequest.callers > 0) {
+    return;
+  }
   pendingRequest.controller.abort(CANCELATION_MESSAGE);
   if (pendingRequest.cleanupTimeout) {
     clearTimeout(pendingRequest.cleanupTimeout);

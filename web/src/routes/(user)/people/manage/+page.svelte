@@ -439,7 +439,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: var(--fl-space-3);
   }
   .pm-toolbar input {
     min-width: 0;
@@ -453,7 +453,7 @@
   .pm-batches {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--fl-space-3) var(--fl-space-2);
   }
   .pm-summary {
     margin: 18px 0 0;

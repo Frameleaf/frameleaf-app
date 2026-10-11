@@ -101,6 +101,8 @@ type RestoreJob = {
   albums?: BuddyAlbumPlan;
 };
 const LEASE_MS = 300_000;
+/** Claims a restore may spend on PostgreSQL lock contention (55P03) before it is reported as failed. */
+const LOCK_CONTENTION_ATTEMPTS = 6;
 class RestoreStopped extends Error {}
 
 @Injectable()
@@ -1596,6 +1598,20 @@ export class BuddyBackupRestoreService {
         (error instanceof FrameleafCloudError && [401, 403, 429, 507].includes(error.status ?? 0))
       )
         await this.operations.requeue(operation.id, token, { delayMs: 60_000, returnAttempt: true });
+      else if (
+        // A NOWAIT authority lock lost to a concurrent writer rolled its transaction back. The claim is
+        // handed back like a pause or shutdown: the next one resumes from the file journal and rechecks
+        // every fence. `fail` cannot do this, its automatic retry is for local replay kinds only.
+        // Each handback keeps its attempt, so contention that never clears still ends as a failure.
+        operation.attempt < LOCK_CONTENTION_ATTEMPTS &&
+        [error, error instanceof Error ? error.cause : undefined].some(
+          (value) => value && typeof value === 'object' && 'code' in value && value.code === '55P03',
+        ) &&
+        (await this.operations.requeue(operation.id, token, { delayMs: 2000 * operation.attempt }))
+      )
+        this.logger.warn(
+          `BUDDY_RESTORE_DIAGNOSTIC ${JSON.stringify({ category: 'coded_error', code: '55P03', status: null })}`,
+        );
       else {
         // Only fixed categories enter retained CI diagnostics; error text can contain keys, paths or identities.
         const invariants: Record<string, string> = {

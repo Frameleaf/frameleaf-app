@@ -1,4 +1,5 @@
 import { gunzipSync } from 'node:zlib';
+import { clientBackupContext } from 'src/utils/cloud-backup-crypto.js';
 import {
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -8,6 +9,7 @@ import {
   cloudBackupAlbumSchema,
   cloudBackupPersonSchema,
   isSha256Hex,
+  manifestFileObjectKey,
   readManifestAsset,
   readManifestSection,
 } from 'src/utils/cloud-backup.js';
@@ -44,7 +46,9 @@ const WEEK_MS = 7 * DAY_MS;
 
 /** When a run made its manifest, read from the name `m/20260926T030000Z.json.gz`; null for any other name. */
 export const manifestTime = (key: string): Date | null => {
-  const match = /^m\/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.json\.gz$/.exec(key);
+  const match = /^m\/(?:v1\/[\da-f-]{36}\/[1-9]\d{0,8}\/)?(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.json\.gz$/.exec(
+    key,
+  );
   if (!match) {
     return null;
   }
@@ -117,6 +121,7 @@ export const unreferencedObjects = <T extends { key: string }>(
       return false;
     }
     const sha256 = key.slice(CLOUD_BACKUP_OBJECT_PREFIX.length);
+    if (key.startsWith('o/v1/')) return !!clientBackupContext('validation', key) && !referenced.has(key);
     return isSha256Hex(sha256) && !referenced.has(sha256);
   });
 };
@@ -187,7 +192,7 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
     !manifest ||
     typeof manifest !== 'object' ||
     manifest.format !== CLOUD_BACKUP_MANIFEST_FORMAT ||
-    (manifest.version !== 1 && manifest.version !== 2) ||
+    (manifest.version !== 1 && manifest.version !== 2 && manifest.version !== 3) ||
     typeof manifest.instanceId !== 'string' ||
     !manifest.assets ||
     typeof manifest.assets !== 'object'
@@ -207,10 +212,27 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
   if (database && (typeof database.key !== 'string' || !isSha256Hex(database.sha256))) {
     throw new Error('This backup manifest names a database dump without a valid checksum.');
   }
-  const v2 = manifest.version === 2;
+  if (manifest.version === 3) {
+    for (const file of [
+      ...Object.values(manifest.assets).flatMap((asset) => asset.files),
+      ...Object.values(profiles),
+    ]) {
+      if (!file.objectKey || clientBackupContext('validation', file.objectKey, manifest.instanceId)?.kind !== 'object')
+        throw new Error('Invalid encrypted backup manifest reference');
+    }
+    if (database && clientBackupContext('validation', database.key, manifest.instanceId)?.kind !== 'database')
+      throw new Error('Invalid encrypted backup database reference');
+  } else if (
+    [...Object.values(manifest.assets).flatMap((asset) => asset.files), ...Object.values(profiles)].some(
+      (file) => file.objectKey !== undefined,
+    )
+  ) {
+    throw new Error('Legacy manifest contains client-format references');
+  }
+  const v2 = manifest.version !== 1;
   return {
     format: CLOUD_BACKUP_MANIFEST_FORMAT,
-    version: v2 ? 2 : 1,
+    version: manifest.version,
     instanceId: manifest.instanceId,
     createdAt: typeof manifest.createdAt === 'string' ? manifest.createdAt : '',
     database,
@@ -228,13 +250,20 @@ export const readManifest = (body: Buffer): CloudBackupManifest => {
 /** Every object a manifest names (by SHA-256) with its size, and the database dump it names. */
 export const manifestReferences = (manifest: CloudBackupManifest) => {
   const objects = new Map<string, number>();
+  const storageKeys = new Map<string, Set<string>>();
   for (const asset of Object.values(manifest.assets)) {
     for (const file of asset.files) {
       objects.set(file.sha256, file.size);
+      const keys = storageKeys.get(file.sha256) ?? new Set<string>();
+      keys.add(manifestFileObjectKey(file));
+      storageKeys.set(file.sha256, keys);
     }
   }
   for (const file of Object.values(manifest.profiles)) {
     objects.set(file.sha256, file.size);
+    const keys = storageKeys.get(file.sha256) ?? new Set<string>();
+    keys.add(manifestFileObjectKey(file));
+    storageKeys.set(file.sha256, keys);
   }
-  return { objects, database: manifest.database?.key ?? null };
+  return { objects, storageKeys, database: manifest.database?.key ?? null };
 };

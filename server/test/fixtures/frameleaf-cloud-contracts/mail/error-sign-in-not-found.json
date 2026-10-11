@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins/0199d3a0-5b7e-4c1d-9f20-000000f1c160/claim",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins/0199d3a0-5b7e-4c1d-9f20-000000f1c160/claim, ath, nonce>"
+    },
+    "note": "Unknown, expired (ten minutes), already claimed, or started by another server: the four are not told apart. Start again.",
+    "body": null
+  },
+  "status": 404,
+  "headers": {},
+  "body": {
+    "code": "mail-sign-in-not-found",
+    "message": "This sign-in has expired or was already used. Start again from your server's email settings.",
+    "retryable": false,
+    "requestId": "req_01J8ZK3M4N5P6Q91"
+  }
+}

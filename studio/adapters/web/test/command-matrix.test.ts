@@ -317,6 +317,7 @@ const ENGINE_CASES: Record<
   'clip.setLink': (f) => ({ payload: { clipIds: [f.left], linked: false } }),
   'clip.setMask': (f) => ({ payload: { clipId: f.mask, mask: { type: 'alpha', feather: 20 } }, graph: async () => f.maskGraph }),
   'clip.relink': (f) => ({ payload: { clipId: f.left, assetId: OTHER } }),
+  'clip.setCrop': (f) => ({ payload: { clipId: f.left, crop: { left: 0.1, right: 0.2, softness: 0.25 } } }),
   'shape.add': () => ({ payload: { shapeType: 'star', at: seconds(5), duration: seconds(2) } }),
   'shape.setStyle': (f) => ({ payload: { clipId: f.mask, style: { fillColor: '#ff0000', strokeEnabled: true, strokeWidth: 6 } }, graph: async () => f.maskGraph }),
   'title.setStyle': (f) => ({ payload: { clipId: f.title, style: { fontSize: 96, fontFamily: 'Anton' } } }),

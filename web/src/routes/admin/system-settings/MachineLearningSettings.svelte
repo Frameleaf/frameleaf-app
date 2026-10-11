@@ -78,9 +78,9 @@
   const isMachineLearningConfigEdited = $derived(!isEqual(configToEdit.machineLearning, config.machineLearning));
 </script>
 
-<div class="mt-2">
+<div>
   <div in:reveal>
-    <form autocomplete="off" class="mx-4 mt-4" onsubmit={(event) => event.preventDefault()}>
+    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <MlUrlsSection
         bind:workingConfig={configToEdit.machineLearning}
         savedConfig={config.machineLearning}

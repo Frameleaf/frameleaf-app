@@ -14,7 +14,7 @@
   import CloudBanner from '$lib/components/frameleaf/cloud/CloudBanner.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import LicenseKeyField from '$lib/components/frameleaf/cloud/LicenseKeyField.svelte';
-  import { discountPercent, type ProductKeyCheck } from '$lib/frameleaf/cloud';
+  import { discountOffer, type ProductKeyCheck } from '$lib/frameleaf/cloud';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
@@ -52,9 +52,10 @@
   // Licensed as in the prototype (frameleaf-cloud-data.mjs:579-592)
   const personal = $derived(authManager.user.license ?? null);
   const licensed = $derived(serverLicensed || !!personal);
-  // the plan discount Frameleaf Cloud published (license/products); none shown until it is known
+  // the plan discounts Frameleaf Cloud published for a Server and an Individual licence
+  // (license/products); none shown until they are known
   const offered = $derived(cloudManager.products?.licensedDiscount ?? 0);
-  const pct = $derived(discountPercent(offered));
+  const offer = $derived(discountOffer(cloudManager.products));
 
   let keyValue = $state('');
   let keyCheck = $state<ProductKeyCheck | null>(null);
@@ -198,8 +199,8 @@
           <li>
             <Icon icon={mdiTagOutline} size="18" />
             <span>
-              <strong>{$t('frameleaf_license_benefit_discount_title', { values: { pct } })}</strong>
-              {$t('frameleaf_license_benefit_discount_body')}
+              <strong>{$t('frameleaf_license_benefit_discount_title', { values: { pct: offer.server } })}</strong>
+              {$t('frameleaf_license_benefit_discount_body', { values: { individual: offer.individual } })}
             </span>
           </li>
         {/if}

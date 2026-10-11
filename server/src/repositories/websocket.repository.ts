@@ -38,6 +38,7 @@ export const serverEvents = [
   'LibraryWatchUpdate',
   'CloudBackupKeyShare',
   'CloudBackupKeyRequest',
+  'CloudBackupKeyUpdate',
 ] as const;
 export type ServerEvents = (typeof serverEvents)[number];
 

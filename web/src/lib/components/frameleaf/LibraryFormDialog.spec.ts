@@ -9,6 +9,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryFormDialog from '$lib/components/frameleaf/LibraryFormDialog.svelte';
+import { DEFAULT_EXCLUSION_PATTERNS } from '$lib/frameleaf/libraries';
 import en from '../../../../../i18n/en.json';
 
 const owners = [
@@ -126,7 +127,7 @@ describe('LibraryFormDialog (FL-78)', () => {
     expect(sdkMock.createLibrary).not.toHaveBeenCalled();
   });
 
-  it('creates a library for the chosen owner with the template’s default exclusion', async () => {
+  it('creates a library for the chosen owner that skips macOS and NAS clutter', async () => {
     sdkMock.createLibrary.mockResolvedValue(library());
     render(LibraryFormDialog, { owners, ownerId: 'owner-2', onSaved: vi.fn(), onClose: vi.fn() });
 
@@ -140,8 +141,19 @@ describe('LibraryFormDialog (FL-78)', () => {
         ownerId: 'owner-2',
         name: 'Trail cam',
         importPaths: ['/mnt/photos/jamie'],
-        exclusionPatterns: ['**/.DS_Store'],
+        exclusionPatterns: [...DEFAULT_EXCLUSION_PATTERNS],
       },
     });
+    // the server's own NAS defaults apply only to a request without a list, so the form carries them
+    for (const pattern of [
+      '**/@eaDir/**',
+      '**/._*',
+      '**/#recycle/**',
+      '**/#snapshot/**',
+      '**/.stversions/**',
+      '**/.stfolder/**',
+    ]) {
+      expect(DEFAULT_EXCLUSION_PATTERNS).toContain(pattern);
+    }
   });
 });

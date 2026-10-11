@@ -13,7 +13,6 @@ export function focusTrap(container: HTMLElement, options?: Options) {
 
   // Create sentinel nodes
   const startSentinel = document.createElement('div');
-  startSentinel.setAttribute('tabindex', '0');
   startSentinel.dataset.focusTrap = 'start';
 
   const backupSentinel = document.createElement('div');
@@ -21,19 +20,35 @@ export function focusTrap(container: HTMLElement, options?: Options) {
   backupSentinel.dataset.focusTrap = 'backup';
 
   const endSentinel = document.createElement('div');
-  endSentinel.setAttribute('tabindex', '0');
   endSentinel.dataset.focusTrap = 'end';
-
-  // Insert sentinel nodes into the container
-  container.insertBefore(startSentinel, container.firstChild);
-  container.insertBefore(backupSentinel, startSentinel.nextSibling);
-  container.append(endSentinel);
 
   const withDefaults = (options?: Options) => {
     return {
       active: options?.active ?? true,
     };
   };
+
+  /**
+   * The start and end sentinels catch focus on its way out of an active trap and hand it back in at
+   * once, so nobody rests on one and they draw no focus ring. While the trap is inactive they are
+   * neither tab stops nor exposed to assistive technology: left tabbable, they were two invisible
+   * stops in whatever the trap wraps (the library rail on desktop). An active sentinel is not
+   * hidden from assistive technology, because a tabbable node must not be `aria-hidden`.
+   */
+  const setCatching = (active: boolean) => {
+    for (const sentinel of [startSentinel, endSentinel]) {
+      sentinel.setAttribute('tabindex', active ? '0' : '-1');
+      sentinel.setAttribute('aria-hidden', String(!active));
+    }
+  };
+  startSentinel.style.outline = 'none';
+  endSentinel.style.outline = 'none';
+  setCatching(withDefaults(options).active);
+
+  // Insert sentinel nodes into the container
+  container.insertBefore(startSentinel, container.firstChild);
+  container.insertBefore(backupSentinel, startSentinel.nextSibling);
+  container.append(endSentinel);
 
   const setInitialFocus = async () => {
     // Use tick() to ensure focus trap works correctly inside <Portal />
@@ -117,6 +132,7 @@ export function focusTrap(container: HTMLElement, options?: Options) {
   return {
     update(newOptions?: Options) {
       options = newOptions;
+      setCatching(withDefaults(options).active);
       if (withDefaults(options).active) {
         void setInitialFocus();
       }

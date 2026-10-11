@@ -84,7 +84,8 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 - **Qwen2.5-VL Instruct 3B and 7B (photo descriptions)** — Qwen team, Alibaba Cloud; OpenVINO conversions by llmware. Licence: Qwen Research License (3B, the default); Apache-2.0 (7B) (to confirm). https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct
   The 3B model’s Qwen Research License does not permit commercial use; whether it may stay the default, and on Frameleaf Cloud, needs an owner decision.
   Licence texts: licenses/texts/qwen-research-license.txt, licenses/texts/apache-2.0.txt.
-- **Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)** — Microsoft; OpenVINO conversions by OpenVINO. Licence: MIT. https://huggingface.co/microsoft/Florence-2-base
+- **Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)** — Microsoft; native Florence conversions by florence-community; OpenVINO Phi conversions by OpenVINO. Licence: MIT. https://huggingface.co/microsoft/Florence-2-base
+  The four built-in Florence-2 description variants use immutable native Transformers checkpoints from florence-community, served unchanged by the configured model source. Their model cards and Microsoft MIT notice are retained; repository Python and pickle weights are not loaded.
   Licence texts: licenses/texts/microsoft-mit.txt.
 - **NSFW image detection (ONNX)** — Falconsai; ONNX conversion by onnx-community. Licence: Apache-2.0. https://huggingface.co/Falconsai/nsfw_image_detection
   Licence texts: licenses/texts/apache-2.0.txt.

@@ -9,8 +9,15 @@ import { SharedLinkFactory } from 'test/factories/shared-link.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
 import { getForSharedLink } from 'test/mappers.js';
-import { factory } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+/** A link as the list of links loads it: its count and cover, not its contents. */
+const listed = (link: Parameters<typeof getForSharedLink>[0]) => ({
+  ...getForSharedLink(link),
+  assetCount: 0,
+  coverAssets: [],
+});
 
 describe(SharedLinkService.name, () => {
   let sut: SharedLinkService;
@@ -27,14 +34,36 @@ describe(SharedLinkService.name, () => {
 
   describe('getAll', () => {
     it('should return all shared links for a user', async () => {
-      const [sharedLink1, sharedLink2] = [SharedLinkFactory.create(), SharedLinkFactory.create()];
-      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(sharedLink1), getForSharedLink(sharedLink2)]);
+      const links = [SharedLinkFactory.create(), SharedLinkFactory.create()].map((link) => listed(link));
+      mocks.sharedLink.getAll.mockResolvedValue(links);
       await expect(sut.getAll(authStub.user1, {})).resolves.toEqual(
-        [getForSharedLink(sharedLink1), getForSharedLink(sharedLink2)].map((link) =>
-          mapSharedLink(link, { stripAssetMetadata: false }),
-        ),
+        links.map((link) => mapSharedLink(link, { stripAssetMetadata: false })),
       );
       expect(mocks.sharedLink.getAll).toHaveBeenCalledWith({ userId: authStub.user1.user.id });
+    });
+
+    it("should answer a saved album link with the list's album, count and cover", async () => {
+      const link = SharedLinkFactory.from({ type: SharedLinkType.Album }).album().build();
+      const saved = { ...getForSharedLink(link), album: undefined };
+      const coverAssets = [{ id: newUuid() }];
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(link));
+      mocks.sharedLink.update.mockResolvedValue(saved);
+      mocks.sharedLink.getAll.mockResolvedValue([{ ...getForSharedLink(link), assetCount: 3, coverAssets }]);
+
+      const response = await sut.update(authStub.user1, link.id, { description: 'Renamed' });
+
+      expect(mocks.sharedLink.getAll).toHaveBeenCalledWith({ userId: authStub.user1.user.id, id: link.id });
+      expect(response).toMatchObject({ assetCount: 3, coverAssetIds: [coverAssets[0].id] });
+      expect(response.album?.assetCount).toBe(3);
+    });
+
+    it("should carry an album link's listed count and cover, which the list loads without the album's assets", async () => {
+      const link = SharedLinkFactory.from({ type: SharedLinkType.Album }).album().build();
+      const coverAssets = [{ id: newUuid() }, { id: newUuid() }];
+      mocks.sharedLink.getAll.mockResolvedValue([{ ...getForSharedLink(link), assetCount: 7, coverAssets }]);
+      const [response] = await sut.getAll(authStub.user1, {});
+      expect(response).toMatchObject({ assetCount: 7, coverAssetIds: coverAssets.map(({ id }) => id) });
+      expect(response.album?.assetCount).toBe(7);
     });
   });
 
@@ -43,7 +72,7 @@ describe(SharedLinkService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.example.com/' } });
       const byKey = SharedLinkFactory.create();
       const bySlug = SharedLinkFactory.create({ slug: 'summer trip/2026' });
-      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(byKey), getForSharedLink(bySlug)]);
+      mocks.sharedLink.getAll.mockResolvedValue([listed(byKey), listed(bySlug)]);
       const [first, second] = await sut.getAll(authStub.user1, {});
       expect(first.url).toBe(`https://photos.example.com/share/${first.key}`);
       expect(second.url).toBe('https://photos.example.com/s/summer%20trip%2F2026');
@@ -51,7 +80,7 @@ describe(SharedLinkService.name, () => {
 
     it('has no address without an external domain', async () => {
       const link = SharedLinkFactory.create();
-      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(link)]);
+      mocks.sharedLink.getAll.mockResolvedValue([listed(link)]);
       const [response] = await sut.getAll(authStub.user1, {});
       expect(response.url).toBeNull();
     });

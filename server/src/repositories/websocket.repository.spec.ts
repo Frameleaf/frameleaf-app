@@ -11,6 +11,36 @@ vi.mock('src/middleware/websocket.adapter.js', () => ({
   withSocketConfigUpdate: vi.fn(),
 }));
 
+it('routes private backup key version notices only through the server event bus and logs event names', async () => {
+  const onEvent = vi.fn().mockResolvedValue(undefined);
+  const logger = { setContext: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  const repo = new WebsocketRepository(
+    { onEvent } as unknown as EventRepository,
+    logger as unknown as LoggingRepository,
+  );
+  const server = { on: vi.fn(), serverSideEmit: vi.fn() };
+  Reflect.set(repo, 'server', server);
+  repo.afterInit(server as unknown as Server);
+  const update = {
+    version: 1 as const,
+    instanceId: 'instance',
+    bucketRef: 'bucket',
+    keyFingerprint: 'AAAA-BBBB',
+    updateId: 'notice',
+    workerId: 'sender',
+    issuedAt: Date.now(),
+    keyVersion: 2,
+    signature: 'public-signature-sentinel',
+  };
+  const receive = server.on.mock.calls.find(([name]) => name === 'CloudBackupKeyUpdate')?.[1];
+  expect(receive).toBeTypeOf('function');
+  receive(update);
+  expect(onEvent).toHaveBeenCalledWith({ name: 'CloudBackupKeyUpdate', args: [update], server: true });
+  repo.serverSend('CloudBackupKeyUpdate', update);
+  await vi.waitFor(() => expect(server.serverSideEmit).toHaveBeenCalledWith('CloudBackupKeyUpdate', update));
+  expect(JSON.stringify([logger.log.mock.calls, logger.debug.mock.calls])).not.toContain(update.signature);
+});
+
 describe('configuration reconciliation acknowledgements', () => {
   const update = { oldConfig: defaults, newConfig: defaults };
   const publication = {

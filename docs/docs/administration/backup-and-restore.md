@@ -2,6 +2,10 @@
 
 Frameleaf keeps media files on your storage and their identity, ownership, albums, access controls, settings and job state in one PostgreSQL 19 database. A recoverable installation needs both the database and the matching media files. Back up deployment configuration and connector encryption keys as well: restoring encrypted sessions without their original key cannot recover them.
 
+Keep identity keys and recovery material on [private backup storage](./private-backup-storage.md). That guide covers server-only mounts, NAS ACL verification and migration that preserves existing keys.
+
+For versioned Cloud Backup keys, trusted snapshot selection and a complete export that can be restored without a cloud account, see [Cloud Backup recovery](./cloud-backup-recovery.md). Client-encrypted writes remain opt-in while restore and provider qualification are completed; existing SSE-C backups remain readable.
+
 ## What to preserve
 
 - The complete Frameleaf database, including `public.frameleaf_migrations`, import journals, configuration and feature tables.
@@ -10,6 +14,19 @@ Frameleaf keeps media files on your storage and their identity, ownership, album
 - Deployment configuration and file-backed secrets, especially encryption keys. Keep secret material out of support bundles.
 
 Database backups do not contain your media. A filesystem copy taken while uploads, moves or deletions continue can disagree with the database snapshot. Stop writers or use a storage snapshot procedure that gives you a consistent recovery point. Keep a second copy outside the server being backed up.
+
+For cloud backups, also preserve the separate [backup key and recovery kit](./cloud-backup-keys.md). That guide covers keys held only in memory, application worker access and restart recovery.
+
+## Backup secrets and diagnostic logs
+
+Request diagnostics mask passphrases, recovery codes, keys, keyrings and wrapping secrets, including nested fields and separator/case variants. Cloud backup setup, bucket checks, key and escrow routes, Buddy recovery key routes, and credential replacement routes exclude their entire request body, including failed requests. Method, path, status, duration and client address remain available at debug level. Unexpected route errors record a fixed failure category rather than the request, error text or stack. **Download diagnostics** excludes credential values and recovery material from settings; it does not collect request logs or recovery kits.
+
+For installations that previously enabled verbose request logging, assess historical records before sharing diagnostics:
+
+1. Establish the installed version, logging levels and time window when backup setup, escrow, key import or verification was used. Verbose logs may contain request bodies; debug logs may contain query parameters. Check locally retained logs, rotated copies, log collectors and support attachments under restricted access. Do not paste secret values into shell arguments, online searches or support tickets.
+2. Review the relevant route names and field names, including `passphrase`, `recoveryCode`, `keys`, `keyring` and generic credential `value` fields. Record times, routes and affected credential types without copying their contents. Logging being enabled alone does not establish that a secret was exposed.
+3. If exposure is confirmed, restrict access to every affected log copy and stop verbose logging while investigating. Preserve restricted incident evidence according to your retention process; share only a reviewed, sanitized extract. Updating Frameleaf protects future request diagnostics and does not sanitize historical logs or attachments.
+4. Replace affected access credentials and rewrap affected escrow packages using your incident recovery procedure. A changed passphrase does not revoke an older escrow copy. An exposed backup key can still decrypt older backups encrypted with that key; rotating a current key alone does not protect those copies. Verify recovery with protected historical keys before retiring any key, log or backup. Keep an independent recovery kit available throughout this work.
 
 ## Database backups
 
@@ -44,6 +61,14 @@ This tests archive restoration into an isolated database. Keep API, job and uplo
 During Frameleaf recovery, transient rate counters, upload leases, Socket.IO attachments and worker membership are cleared. Active jobs and pending/waiting jobs whose remote effects cannot be retried safely become `needs_attention`; only jobs on the audited safe retry list remain pending. This avoids automatically repeating a remote effect after restoring an older recovery point. Review these jobs before manually retrying them. Media and permissions remain database-backed and are not reconstructed from transient worker state.
 
 Start the matching Frameleaf release, check database health and migrations, sign in as representative users, and verify original media bytes, albums, locked/hidden access and sharing behavior. An imported destination remains inactive until its importer verification succeeds; restoring a partial journal does not activate it.
+
+## Managed cloud transfers
+
+Managed backups request temporary storage sessions for upload, restore or cleanup. Verification and cleanup previews use restore access. Sessions renew during long operations; credentials stay in memory, while the operation records multipart receipts and verified download offsets so the same operation can resume after a worker restart. Keep the server's backup state and temporary transfer files until it finishes.
+
+When Cloud temporarily cannot renew a session, the operation waits and retains its progress. A refused or revoked operation stops. Read-only storage cannot gain upload or cleanup permission through renewal; retained restores still require Cloud to authorize restore access. Previously issued sessions can remain valid until provider expiry, bounded to 15 minutes; an already accepted request may finish afterward. Native provider qualification is required before enabling these sessions in a managed rollout.
+
+User-provided S3 credentials and independent offline recovery continue to use their existing configuration and recovery keys.
 
 ## Immich sources
 

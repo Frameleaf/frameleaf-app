@@ -1,12 +1,16 @@
 <script lang="ts">
   import AssetCollage from './AssetCollage.svelte';
   import QrCode from './QrCode.svelte';
+  import Toggle from './Toggle.svelte';
   import { sharedLinkBadges, relativeTime, type SharedLinkBadgeId } from '$lib/frameleaf/shared-link-badges';
+  import { loadAlbumLinkCoverIds, sharedLinkCover, type SharedLinkCover } from '$lib/frameleaf/shared-link-cover';
   import { asUrl, handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
+    mdiAlertCircleOutline,
+    mdiAlertOutline,
     mdiCheck,
     mdiClockOutline,
     mdiContentCopy,
@@ -41,6 +45,9 @@
    * "Show metadata" comes before "Allow downloads", which depends on it and is dimmed until it is
    * on. The "Link ready" step fades in, the new address is highlighted for a moment, and Copy
    * shows a tick once the address is on the clipboard.
+   *
+   * The layout is the design's (sharing.css:303-527): the fields beside a preview card that stays
+   * in view, one column under 1000px, the three options as one bordered group of switch rows.
    */
   const MINUTE = 60_000;
   const HOUR = 60 * MINUTE;
@@ -96,25 +103,49 @@
   const editing = $derived(!!link);
   const type = $derived(link?.type ?? target?.type ?? SharedLinkType.Individual);
   const albumId = $derived(link?.album?.id ?? target?.albumId);
-  const assetCount = $derived(editing ? (link?.assets.length ?? 0) : (target?.assetIds?.length ?? 0));
-  /** What the link shows, for the preview collage (`linkAssets`, SharedLinkForm.jsx:172). */
-  const previewIds = $derived.by(() => {
-    if (link) {
-      if (link.type === SharedLinkType.Album) {
-        return link.album?.albumThumbnailAssetId ? [link.album.albumThumbnailAssetId] : [];
+  /**
+   * A new album link's cover items, read once as the form opens so the preview is the collage its
+   * card will have. Until they arrive, and if they cannot be read, the album's own cover stands in.
+   */
+  let albumCoverIds = $state<string[] | undefined>();
+  // Not $state: only tells a late answer from the one the open form is waiting for.
+  let albumCoverRequest = 0;
+  const readAlbumCover = async () => {
+    const request = ++albumCoverRequest;
+    albumCoverIds = undefined;
+    // Only a new album link, and only where its collage shows: an existing link carries its own
+    // cover, a selection is known outright, and the share sheet draws no collage here.
+    if (link || compact || target?.type !== SharedLinkType.Album || !target.albumId) {
+      return;
+    }
+    try {
+      const coverIds = await loadAlbumLinkCoverIds(target.albumId, target.previewAssetIds?.[0]);
+      if (request === albumCoverRequest && coverIds.length > 0) {
+        albumCoverIds = coverIds;
       }
-      return link.assets.map((asset) => asset.id);
+    } catch {
+      // The album's own cover stays.
     }
-    return target?.type === SharedLinkType.Album ? (target.previewAssetIds ?? []) : (target?.assetIds ?? []);
-  });
-  const itemCount = $derived.by(() => {
+  };
+
+  /**
+   * What the link shows, for the preview (`linkAssets`, SharedLinkForm.jsx:172): its first items and
+   * how many there are. An existing link says both itself; an album about to be shared is shown by
+   * the cover and count its caller passes, then by the cover items read above; a selection is known
+   * outright.
+   */
+  const shared = $derived.by((): SharedLinkCover => {
     if (link) {
-      return link.type === SharedLinkType.Album ? (link.album?.assetCount ?? previewIds.length) : link.assets.length;
+      return sharedLinkCover(link);
     }
-    return target?.type === SharedLinkType.Album
-      ? (target.count ?? previewIds.length)
-      : (target?.assetIds?.length ?? 0);
+    if (target?.type === SharedLinkType.Album) {
+      const coverIds = albumCoverIds ?? target.previewAssetIds ?? [];
+      return { ids: coverIds, count: target.count ?? coverIds.length };
+    }
+    return { ids: target?.assetIds ?? [], count: target?.assetIds?.length ?? 0 };
   });
+  const previewIds = $derived(shared.ids);
+  const itemCount = $derived(shared.count);
   const name = $derived(target?.name ?? (link?.album ? link.album.albumName : ''));
   const ids = $props.id();
 
@@ -227,6 +258,7 @@
     refusedSlug = '';
     ownLinks = undefined;
     void loadOwnLinks();
+    void readAlbumCover();
   };
 
   let wasActive = false;
@@ -478,7 +510,7 @@
           copyLabel={$t('copy_link')}
           downloadLabel={$t('download')}
           errorLabel={$t('frameleaf_sharing.qr_error')}
-          fileName={created.slug || created.id}
+          fileName={created.slug || undefined}
           showActions={false}
         />
       </div>
@@ -490,7 +522,7 @@
     <p class="slf-target">
       {type === SharedLinkType.Album
         ? $t('album_with_link_access')
-        : $t('frameleaf_sharing.items_selected', { values: { count: assetCount } })}
+        : $t('frameleaf_sharing.items_selected', { values: { count: itemCount } })}
       {#if name}<strong>{name}</strong>{/if}
     </p>
   {/if}
@@ -566,20 +598,35 @@
           {slugMessage}
         </small>
         {#if editing && link && (slug.trim() || null) !== (link.slug || null)}
-          <p class="slf-warning" role="status">{$t('frameleaf_sharing.slug_change_warning')}</p>
+          <p class="slf-warning" role="status">
+            <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
+            {$t('frameleaf_sharing.slug_change_warning')}
+          </p>
         {/if}
       </div>
 
+      <!--
+        One bordered group of rows, each with the app's own switch (Toggle), which also says its
+        state in words. Metadata first: downloads depend on it, so the switch that unlocks them
+        comes before them.
+      -->
       <div class="slf-toggles">
-        <!-- Metadata first: downloads depend on it, so the switch that unlocks them comes before them. -->
-        <label class="slf-toggle">
+        <div class="slf-toggle">
           <span>
             <strong>{$t('show_metadata')}</strong>
-            <small>{$t('frameleaf_sharing.show_metadata_description')}</small>
+            <small id="{ids}-metadata-hint">{$t('frameleaf_sharing.show_metadata_description')}</small>
           </span>
-          <input type="checkbox" role="switch" class="slf-switch" bind:checked={showMetadata} />
-        </label>
-        <label class="slf-toggle slf-dependent" class:is-off={!showMetadata}>
+          <span class="slf-toggle-control">
+            <Toggle
+              label={$t('show_metadata')}
+              bind:checked={showMetadata}
+              onLabel={$t('enabled')}
+              offLabel={$t('disabled')}
+              describedBy="{ids}-metadata-hint"
+            />
+          </span>
+        </div>
+        <div class="slf-toggle slf-dependent" class:is-off={!showMetadata}>
           <span>
             <strong>{$t('frameleaf_sharing.allow_download')}</strong>
             <small id="{ids}-download-hint">
@@ -588,22 +635,32 @@
                 : $t('frameleaf_sharing.download_needs_metadata')}
             </small>
           </span>
-          <input
-            type="checkbox"
-            role="switch"
-            class="slf-switch"
-            bind:checked={allowDownload}
-            disabled={!showMetadata}
-            aria-describedby="{ids}-download-hint"
-          />
-        </label>
-        <label class="slf-toggle">
+          <span class="slf-toggle-control">
+            <Toggle
+              label={$t('frameleaf_sharing.allow_download')}
+              bind:checked={allowDownload}
+              onLabel={$t('enabled')}
+              offLabel={$t('disabled')}
+              disabled={!showMetadata}
+              describedBy="{ids}-download-hint"
+            />
+          </span>
+        </div>
+        <div class="slf-toggle">
           <span>
             <strong>{$t('frameleaf_sharing.allow_upload')}</strong>
-            <small>{$t('frameleaf_sharing.allow_upload_description')}</small>
+            <small id="{ids}-upload-hint">{$t('frameleaf_sharing.allow_upload_description')}</small>
           </span>
-          <input type="checkbox" role="switch" class="slf-switch" bind:checked={allowUpload} />
-        </label>
+          <span class="slf-toggle-control">
+            <Toggle
+              label={$t('frameleaf_sharing.allow_upload')}
+              bind:checked={allowUpload}
+              onLabel={$t('enabled')}
+              offLabel={$t('disabled')}
+              describedBy="{ids}-upload-hint"
+            />
+          </span>
+        </div>
       </div>
 
       <div class="slf-expiry">
@@ -626,7 +683,10 @@
       <small>{expiryHint}</small>
 
       {#if error}
-        <p class="slf-error" role="alert">{error}</p>
+        <p class="slf-error" role="alert">
+          <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
+          {error}
+        </p>
       {/if}
 
       {#if editing && link}
@@ -637,7 +697,7 @@
             copyLabel={$t('copy_link')}
             downloadLabel={$t('download')}
             errorLabel={$t('frameleaf_sharing.qr_error')}
-            fileName={link.slug || link.id}
+            fileName={link.slug || undefined}
             showActions={true}
           />
         </div>
@@ -646,7 +706,8 @@
 
     <aside class="slf-preview" aria-label={$t('frameleaf_sharing.link_preview')}>
       {#if !compact}
-        <AssetCollage ids={previewIds} count={itemCount} />
+        <!-- The same cover a card on the Shared links page has. -->
+        <AssetCollage ids={previewIds} count={itemCount} large />
       {/if}
       <div class="slf-preview-body">
         <strong>{description.trim() || name}</strong>
@@ -680,45 +741,73 @@
 {/if}
 
 <style>
+  /* The form beside its preview (sharing.css:303-308); one column under 1000px (sharing.css:1275-1281). */
   .slf-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
-    gap: 1.25rem;
+    grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+    gap: 24px;
     align-items: start;
   }
   .slf-grid.is-compact {
     grid-template-columns: minmax(0, 1fr);
   }
-  @media (max-width: 720px) {
+  @media (max-width: 1000px) {
     .slf-grid {
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  /* The preview card stays in view while a long form scrolls beside it (sharing.css:478-490). */
   .slf-preview {
+    position: sticky;
+    top: 0;
     display: flex;
     flex-direction: column;
     background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-card);
     overflow: hidden;
+    --fl-collage-aspect: 16 / 9;
+    --fl-collage-gap: var(--fl-panel);
+  }
+  :global(.frameleaf[data-theme='light']) .slf-preview {
+    border: 1px solid var(--fl-border);
+  }
+  .slf-grid.is-compact .slf-preview {
+    position: static;
+  }
+  @media (max-width: 1000px) {
+    .slf-preview {
+      position: static;
+    }
   }
   .slf-preview-body {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.75rem;
+    gap: 8px;
+    padding: 14px 16px 16px;
     min-width: 0;
   }
-  .slf-preview-body strong {
+  .slf-preview-body > strong {
+    font-size: 15px;
+    font-weight: 580;
     overflow-wrap: anywhere;
+  }
+  .slf-preview-body > small {
+    margin-top: -4px;
+    font-size: var(--fl-font-small);
   }
   .slf-url {
     display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    margin: 0;
-    font-size: var(--fl-font-micro);
+    align-items: flex-start;
+    gap: 6px;
+    margin: 2px 0;
+    font-size: var(--fl-font-small);
     overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+  .slf-url :global(svg) {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--fl-muted);
   }
   .slf-muted {
     color: var(--fl-muted);
@@ -729,7 +818,7 @@
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--fl-space-2);
   }
   .slf-badge {
     display: inline-flex;
@@ -753,7 +842,8 @@
   .slf-summary {
     margin: 0;
     color: var(--fl-muted);
-    font-size: 0.8125rem;
+    font-size: var(--fl-font-small);
+    line-height: 1.55;
   }
   .slf-slug-status[data-status='available'] {
     color: var(--fl-teal);
@@ -766,6 +856,12 @@
     color: var(--fl-muted);
     font-size: 0.875rem;
   }
+  /* Beside the form the preview card already names what is shared, as in the design. */
+  @media (min-width: 1001px) {
+    .slf-target {
+      display: none;
+    }
+  }
   .slf-fields {
     display: flex;
     flex-direction: column;
@@ -774,7 +870,7 @@
   label {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: 0.875rem;
   }
   input,
@@ -783,12 +879,13 @@
     color: var(--fl-text);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
-    padding: 0.5rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
   }
+  /* A label, its field and the note under it (sharing.css:319-324). */
   .slf-field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
     font-size: 0.875rem;
   }
   .slf-password {
@@ -812,20 +909,55 @@
   small {
     color: var(--fl-muted);
   }
-  .slf-warning {
-    color: var(--fl-accent);
-    font-size: 0.8125rem;
+  /* A caution and a refusal, each a tinted note with its icon (sharing.css:372-396). */
+  .slf-warning,
+  .slf-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 4px 0 0;
+    padding: 10px 12px;
+    border-radius: var(--fl-radius-control);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
   }
+  .slf-warning {
+    color: var(--fl-warning);
+    background: color-mix(in srgb, var(--fl-warning), transparent 88%);
+  }
+  .slf-error {
+    color: var(--fl-danger);
+    background: color-mix(in srgb, var(--fl-danger), transparent 88%);
+  }
+  .slf-warning :global(svg),
+  .slf-error :global(svg) {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  /* The options as one bordered group of rows (sharing.css:397-433). */
   .slf-toggles {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    overflow: hidden;
   }
   .slf-toggle {
-    flex-direction: row;
+    display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 16px;
+    padding: 11px 14px;
+  }
+  .slf-toggle + .slf-toggle {
+    border-top: 1px solid var(--fl-border);
+  }
+  .slf-toggle strong {
+    font-size: var(--fl-font-size);
+    font-weight: 540;
+  }
+  .slf-toggle small {
+    font-size: var(--fl-font-small);
   }
   /* Downloads follow "Show metadata": dimmed while that is off, so the dependency is visible. */
   .slf-dependent {
@@ -834,32 +966,43 @@
   .slf-dependent.is-off {
     opacity: 0.5;
   }
+  /* "Expires" beside its date and time where both fit, one under the other where they do not. */
   .slf-expiry {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-  }
-  .slf-error {
-    color: var(--fl-accent);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
   }
   .slf-qr {
     display: flex;
     justify-content: center;
     padding: 0.5rem 0;
   }
-  .slf-toggle > span {
+  .slf-toggle > span:first-child {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--fl-space-1);
+    min-width: 0;
+  }
+  /* The switch keeps its width, state word included; the text beside it wraps. */
+  .slf-toggle-control {
+    flex: none;
   }
   .slf-slug {
     display: flex;
-    align-items: center;
-    gap: 0.25rem;
+    align-items: stretch;
+    gap: var(--fl-space-2);
   }
+  /* The fixed start of the address, boxed like the field it leads into (sharing.css:339-349). */
   .slf-slug span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-canvas) 40%);
     color: var(--fl-muted);
     font-family: var(--fl-family-mono);
+    font-size: var(--fl-font-small);
   }
   .slf-slug input {
     flex: 1;

@@ -107,7 +107,8 @@ export class CloudBackupAdminController {
   @Endpoint({
     operationId: 'turnOffCloudBackup',
     summary: 'Turn cloud backup off',
-    description: 'Stops backing up. The bucket, its backups and the key are kept.',
+    description:
+      'Stops backing up. The bucket, its backups and stored keys are kept; keys held only in memory are cleared.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   turnOff(@Auth() auth: AuthDto): Promise<CloudBackupStatusResponseDto> {

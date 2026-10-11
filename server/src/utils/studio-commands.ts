@@ -428,6 +428,72 @@ const shapeAddProblem = (payload: Record<string, unknown>): string | undefined =
   );
 };
 
+const CROP_FIELDS: Record<string, FieldCheck> = {
+  left: within(0, 1),
+  right: within(0, 1),
+  top: within(0, 1),
+  bottom: within(0, 1),
+  softness: within(-1, 1),
+};
+const CORNERS = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'];
+const isPositive: FieldCheck = (value) => typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/** Section 17.6: the closed `crop` and `cornerPin` of a `clip.setCrop`. */
+const cropProblem = (payload: Record<string, unknown>): string | undefined => {
+  const { crop, cornerPin } = payload;
+  if (payload.clipId === '') {
+    return 'clipId must not be empty';
+  }
+  if (crop === undefined && cornerPin === undefined) {
+    return 'needs crop or cornerPin';
+  }
+  if (crop !== undefined && crop !== null) {
+    const problem = closedObjectProblem('crop', crop, CROP_FIELDS);
+    if (problem) {
+      return problem;
+    }
+    const sides = crop as Record<string, number | undefined>;
+    if ((sides.left ?? 0) + (sides.right ?? 0) > 0.999 || (sides.top ?? 0) + (sides.bottom ?? 0) > 0.999) {
+      return 'opposite crop sides must leave part of the picture';
+    }
+  }
+  if (cornerPin !== undefined && cornerPin !== null) {
+    const pin = cornerPin as Record<string, unknown>;
+    if (
+      Object.keys(pin).some(
+        (name) => !CORNERS.includes(name) && name !== 'referenceWidth' && name !== 'referenceHeight',
+      )
+    ) {
+      return 'unknown cornerPin field';
+    }
+    if (CORNERS.some((corner) => !isPoint(pin[corner]))) {
+      return 'a cornerPin corner must be [x, y]';
+    }
+    if (!isPositive(pin.referenceWidth) || !isPositive(pin.referenceHeight)) {
+      return 'cornerPin needs a positive referenceWidth and referenceHeight';
+    }
+  }
+  return undefined;
+};
+
+/** Section 13.9: the closed `ducking` of a `clip.setAudio`. */
+const duckingProblem = (ducking: unknown): string | undefined => {
+  const problem = closedObjectProblem('ducking', ducking, {
+    duckOthersDb: (value) => value === undefined || within(-60, 0)(value),
+    attackSec: within(0, 5),
+    releaseSec: within(0, 5),
+    targetTrackIds: (value) =>
+      Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((id) => typeof id === 'string' && id.length > 0) &&
+      new Set(value).size === value.length,
+  });
+  return (
+    problem ??
+    ((ducking as Record<string, unknown>).duckOthersDb === undefined ? 'ducking needs duckOthersDb' : undefined)
+  );
+};
+
 /** Checks the catalogue's field kinds cannot express, for the commands whose payload is closed. */
 const refinedPayloadProblem = (id: StudioCommandId, payload: Record<string, unknown>): string | undefined => {
   switch (id) {
@@ -439,6 +505,12 @@ const refinedPayloadProblem = (id: StudioCommandId, payload: Record<string, unkn
     }
     case 'clip.relink': {
       return payload.clipId === '' || payload.assetId === '' ? 'clipId and assetId must not be empty' : undefined;
+    }
+    case 'clip.setCrop': {
+      return cropProblem(payload);
+    }
+    case 'clip.setAudio': {
+      return payload.ducking === undefined || payload.ducking === null ? undefined : duckingProblem(payload.ducking);
     }
     case 'shape.add': {
       return shapeAddProblem(payload);

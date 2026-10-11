@@ -32,9 +32,10 @@
   const options = { visibility: AssetVisibility.Archive };
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={false}>
+<UserPageLayout scrollbar={false}>
   <LibraryView
     bind:timelineManager
+    title={data.meta.title}
     {options}
     destination={{ kind: 'archive' }}
     downloadFileName={brandedArchiveName($t('frameleaf_archive_name_archive'))}

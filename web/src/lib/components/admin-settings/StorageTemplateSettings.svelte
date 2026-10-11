@@ -118,9 +118,10 @@
   );
 </script>
 
-<section class="mt-2 dark:text-immich-dark-fg">
-  <div in:motionFade={{ duration }} class="mx-4 flex flex-col gap-4 py-4">
-    {#if templateDocs && implicationsDocs}
+<section class="dark:text-immich-dark-fg">
+  <!-- Drawn only with its text: empty, its padding left a blank band above the first setting. -->
+  {#if templateDocs && implicationsDocs}
+    <div in:motionFade={{ duration }} class="flex flex-col gap-4 py-4">
       <p class="text-sm dark:text-immich-dark-fg">
         <FormatMessage key="admin.storage_template_more_details">
           {#snippet children({ tag, message })}
@@ -132,8 +133,8 @@
           {/snippet}
         </FormatMessage>
       </p>
-    {/if}
-  </div>
+    </div>
+  {/if}
   {#await getTemplateOptions() then}
     <div id="directory-path-builder" class="flex flex-col gap-4">
       <SettingToggle

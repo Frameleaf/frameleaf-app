@@ -67,15 +67,6 @@ describe('MaintenanceSection integrity polling (FL-81)', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('says the backups could not be loaded in the backups section', async () => {
-    sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
-    sdkMock.listDatabaseBackups.mockRejectedValue(new Error('500'));
-
-    render(MaintenanceSection, { section: 'backups' });
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_cc_load_failed);
-  });
-
   it('re-reads the summary after a check started before the first poll finishes', async () => {
     sdkMock.getQueuesLegacy.mockResolvedValue(queue(false));
     sdkMock.createJob.mockResolvedValue(undefined as never);

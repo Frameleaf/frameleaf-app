@@ -1,17 +1,15 @@
 <script lang="ts">
   /**
-   * Maintenance (FL-71, FL-81): the template's `Maintenance.jsx` sections — maintenance mode,
-   * database backups and integrity checks — in the Command Center; the old `/admin/maintenance`
+   * Maintenance (FL-71, FL-81): the template's `Maintenance.jsx` sections — maintenance mode and
+   * integrity checks — in the Command Center (the saved backups are on Backup › On this server, FL-362); the old `/admin/maintenance`
    * page only redirects here. An integrity report (`?report=<type>`) opens inside its section.
    */
   import { page } from '$app/state';
   import IntegrityReportSection from './IntegrityReportSection.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import MaintenanceBackupsPanel from '$lib/components/frameleaf/MaintenanceBackupsPanel.svelte';
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
-  import MaintenanceRestoreTest from '$lib/components/frameleaf/MaintenanceRestoreTest.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { Route } from '$lib/route';
   import { handleCreateJob } from '$lib/services/job.service';
@@ -19,9 +17,6 @@
     getIntegrityCheckRuns,
     getIntegrityReportSummary,
     getQueuesLegacy,
-    getServerVersion,
-    listDatabaseBackups,
-    type DatabaseBackupDto,
     IntegrityReport,
     ManualJobName,
     type IntegrityCheckRunsResponseDto,
@@ -34,7 +29,7 @@
   import { SvelteSet } from 'svelte/reactivity';
 
   type Props = {
-    section: 'mode' | 'backups' | 'integrity';
+    section: 'mode' | 'integrity';
   };
 
   const { section }: Props = $props();
@@ -50,33 +45,17 @@
       .catch(() => {
         // "Last run" stays out; the findings still show.
       });
-  let backups: DatabaseBackupDto[] | undefined = $state();
-  let expectedVersion = $state('');
   let integrityFailed = $state(false);
-  let backupsFailed = $state(false);
-  const failed = $derived(section === 'integrity' ? integrityFailed : section === 'backups' && backupsFailed);
+  const failed = $derived(section === 'integrity' && integrityFailed);
 
-  // What the old page loaded with it: the integrity summary, the server version and the backups. Each
-  // section waits only for its own data, so backups that cannot be listed do not hide the integrity
-  // checks (FL-81).
   const loadIntegrity = () => {
     integrityFailed = false;
     void getIntegrityReportSummary()
       .then((summary) => (integrityReport = summary))
       .catch(() => (integrityFailed = true));
   };
-  const loadBackups = () => {
-    backupsFailed = false;
-    void Promise.all([getServerVersion(), listDatabaseBackups()])
-      .then(([{ major, minor, patch }, result]) => {
-        expectedVersion = `${major}.${minor}.${patch}`;
-        backups = result.backups;
-      })
-      .catch(() => (backupsFailed = true));
-  };
   onMount(() => {
     loadIntegrity();
-    loadBackups();
     void loadRuns();
   });
 
@@ -173,10 +152,7 @@
     integrityHref={Route.systemMaintenance({ section: 'integrity' })}
   />
 {:else if failed}
-  <InlineError
-    message={$t('frameleaf_cc_section_load_failed')}
-    onRetry={section === 'integrity' ? loadIntegrity : loadBackups}
-  />
+  <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={loadIntegrity} />
 {:else if section === 'integrity' && report}
   <IntegrityReportSection type={report} />
 {:else if section === 'integrity' && integrityReport}
@@ -195,9 +171,6 @@
       }
     }}
   />
-{:else if section === 'backups' && backups}
-  <MaintenanceBackupsPanel {backups} {expectedVersion} />
-  <MaintenanceRestoreTest />
 {:else}
   <div class="maintenance-loading" role="status" aria-busy="true">
     <span class="sr-only">{$t('loading')}</span>

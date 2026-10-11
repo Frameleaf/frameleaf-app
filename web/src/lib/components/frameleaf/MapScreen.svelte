@@ -22,7 +22,13 @@
     type LandmarkPin,
   } from '$lib/frameleaf/landmark-pins';
   import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
-  import { applyClusterLabelLayout, clusterRadius, MAP_CLUSTER_DISTANCE } from '$lib/frameleaf/map-clusters';
+  import {
+    applyClusterLabelLayout,
+    BUBBLE_NAME_LAYER,
+    clusterRadius,
+    MAP_CLUSTER_DISTANCE,
+    updateBubbleNames,
+  } from '$lib/frameleaf/map-clusters';
   import {
     markerCardLine,
     markerDetail,
@@ -431,7 +437,11 @@
             sources[key] = value;
           }
         }
-        return { ...next, sources };
+        // …and the invisible layers svelte-maplibre reads the bubbles through, as the stock map does
+        // (shared-components/map/Map.svelte): a markers source left with no layer drops its tiles, and
+        // the bubbles are gone until the obstacle layer has brought the tiles back.
+        const markerLayers = previous.layers.filter((layer) => layer.type === 'fill' && layer.source === 'geojson');
+        return { ...next, sources, layers: [...next.layers, ...markerLayers] };
       },
     });
   });
@@ -539,7 +549,8 @@
         // map's first "load" (offline at startup, or the tile server unreachable) still shows the
         // offline state instead of leaving the map blank. onload only fires once the style has
         // loaded, so an error handler registered there would never see a startup failure.
-        if ((event as { sourceId?: string }).sourceId !== 'geojson') {
+        const failed = (event as { sourceId?: string }).sourceId;
+        if (failed !== 'geojson' && failed !== BUBBLE_NAME_LAYER) {
           tilesFailed = true;
         }
       }}
@@ -553,7 +564,11 @@
       }}
       onload={(instance: Map) => {
         // MapView.jsx:230-240: place names start past their dot and clear of the bubbles, on every style.
-        const layoutLabels = () => applyClusterLabelLayout(instance, 'geojson');
+        // MapLibre fires both events from inside a frame, after it has evaluated the layers and before
+        // it draws them, and a layer added there is drawn with no layout: the renderer throws. A theme
+        // change does just that (it drops the obstacle layer from a source that keeps its tiles), so
+        // the style is only changed once the frame is over.
+        const layoutLabels = () => queueMicrotask(() => applyClusterLabelLayout(instance, 'geojson'));
         instance.on('styledata', layoutLabels);
         instance.on('sourcedata', (event: { sourceId?: string }) => {
           if (event.sourceId !== 'geojson') {
@@ -563,6 +578,14 @@
         });
         // The bubbles have settled for this view: the pins keep clear of where they are now.
         instance.on('idle', layoutPins);
+        // The markers source goes on at "style.load", so on a first load both events are over before
+        // "load" attaches the listeners above, and nothing would lay the labels out until the view
+        // crossed a zoom level. "load" itself is fired after the frame has been drawn.
+        layoutLabels();
+        // …and a place hidden under a bubble is named at the bubble's edge, once the map is at rest.
+        // While it moves, a name goes as soon as its bubble regroups.
+        instance.on('idle', () => updateBubbleNames(instance, 'geojson'));
+        instance.on('move', () => queueMicrotask(() => updateBubbleNames(instance, 'geojson', false)));
       }}
       bind:map
     >
@@ -980,11 +1003,20 @@
     right: 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 6px;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-2);
     background: var(--fl-panel);
     border-radius: var(--fl-radius-card);
     box-shadow: var(--fl-shadow-1);
+  }
+  /*
+   * The map's own credit line. Its round "i" keeps the size the map library draws it at: grown to a
+   * control's height it repeats its icon under the pill and reaches over whatever sits below.
+   */
+  .stage :global(.maplibregl-ctrl-attrib-button) {
+    min-width: 0;
+    min-height: 0;
+    background-repeat: no-repeat;
   }
   .gear {
     display: contents;
@@ -1024,6 +1056,12 @@
   .legend-counts {
     padding-inline-start: 12px;
     border-inline-start: 1px solid var(--fl-border);
+  }
+  /* A phone's map is too narrow for the legend and the credit line side by side: the legend sits above it. */
+  @media (max-width: 640px) {
+    .legend {
+      bottom: calc(var(--fl-space-3) + var(--fl-space-8));
+    }
   }
   .video-dot {
     position: absolute;
@@ -1225,7 +1263,7 @@
     font-weight: 560;
   }
   .card small {
-    margin-top: 3px;
+    margin-top: var(--fl-space-1);
     font-size: var(--fl-font-micro);
     font-weight: 400;
     color: var(--fl-muted);
@@ -1235,10 +1273,11 @@
   .settings {
     position: absolute;
     top: 12px;
-    right: 76px;
+    /* Clear of the tool column (12px + its 60px) by 8px. */
+    right: 80px;
     z-index: 4;
     width: 300px;
-    max-width: calc(100% - 88px);
+    max-width: calc(100% - 92px);
     max-height: calc(100% - 24px);
     overflow: auto;
     padding: 14px 16px 16px;
@@ -1256,7 +1295,7 @@
     font-weight: 600;
   }
   .settings fieldset {
-    margin: 0 0 6px;
+    margin: 0 0 var(--fl-space-2);
     padding: 10px 0 0;
     border: 0;
     border-top: 1px solid var(--fl-border);
@@ -1271,7 +1310,7 @@
   .presets {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: var(--fl-space-2);
   }
   .presets button {
     min-height: 34px;
@@ -1297,7 +1336,7 @@
   .dates label {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
   }
@@ -1370,7 +1409,7 @@
     color: var(--fl-muted);
   }
   .counts dd {
-    margin: 2px 0 0;
+    margin: var(--fl-space-1) 0 0;
     font-size: 15px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -1455,7 +1494,7 @@
     font-weight: 540;
   }
   .row small {
-    margin-top: 3px;
+    margin-top: var(--fl-space-1);
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
     font-variant-numeric: tabular-nums;

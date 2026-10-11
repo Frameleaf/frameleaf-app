@@ -161,7 +161,10 @@ export class StorageService extends BaseService {
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
   async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
-    const { files, removedAssetId, original } = job;
+    const { files, removedAssetId, removedAssetOwnerId, original } = job;
+    if (removedAssetId && removedAssetOwnerId && !(await this.assetRepository.getById(removedAssetId))) {
+      await this.eventRepository.emit('AssetDelete', { assetId: removedAssetId, userId: removedAssetOwnerId });
+    }
     const move = (from: string, to: string) => moveFileWithin(this.storageRepository, from, to);
 
     // TODO: one job per file

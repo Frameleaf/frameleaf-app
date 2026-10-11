@@ -34,8 +34,20 @@ export const LIBRARY_NAME_MAX_LENGTH = 160;
 export const LIBRARY_PATH_MAX_LENGTH = 1024;
 export const LIBRARY_PATHS_MAX = 128;
 export const LIBRARY_QUERY_MAX_LENGTH = 200;
-/** A new library's exclusions, as the template seeds them. */
-export const DEFAULT_EXCLUSION_PATTERNS: readonly string[] = ['**/.DS_Store'];
+/**
+ * What a new library skips: macOS and NAS clutter that is never a photo. The server keeps the NAS
+ * entries as its own default (`LibraryService.create`) but applies it only to a request that sends
+ * no list, and this form always sends one, so the list has to be complete here.
+ */
+export const DEFAULT_EXCLUSION_PATTERNS: readonly string[] = [
+  '**/.DS_Store',
+  '**/._*',
+  '**/@eaDir/**',
+  '**/#recycle/**',
+  '**/#snapshot/**',
+  '**/.stversions/**',
+  '**/.stfolder/**',
+];
 /** How often the list reads scan progress back while a scan is running. */
 export const LIBRARY_SCAN_POLL_MS = 2000;
 
