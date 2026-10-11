@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/token",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/token, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Exchange with the PKCE verifier. Google returns an ID token, so the signed-in address is included.",
+    "body": {
+      "grant": "authorization_code",
+      "service": "google",
+      "code": "4/0FIXTURE-ONLY-not-a-real-google-code",
+      "codeVerifier": "fixture-only-verifier-000000000000000000000000"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "accessToken": "ya29.FIXTURE-ONLY-not-a-real-google-access-token",
+    "expiresInSec": 3599,
+    "refreshToken": "1//0FIXTURE-ONLY-not-a-real-google-refresh-token",
+    "scope": "openid https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email",
+    "email": "fixture.only@example.com"
+  }
+}

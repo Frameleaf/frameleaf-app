@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "More than 10 sign-ins started in ten minutes from one server. The wait is the `Retry-After` header (seconds).",
+    "body": {
+      "service": "google",
+      "state": "fixture-state-0000000000000000",
+      "codeChallenge": "FIXTUREONLYFIXTUREONLYFIXTUREONLYFIXTUREONL"
+    }
+  },
+  "status": 429,
+  "headers": {
+    "Retry-After": "600"
+  },
+  "body": {
+    "code": "rate-limited",
+    "message": "Too many sign-ins were started from this server. Wait a few minutes, then try again.",
+    "retryable": true,
+    "requestId": "req_01J8ZK3M4N5P6Q94"
+  }
+}

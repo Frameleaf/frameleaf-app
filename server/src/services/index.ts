@@ -66,6 +66,7 @@ import { LanDiscoveryService } from 'src/services/lan-discovery.service.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { MailConnectionService } from 'src/services/mail-connection.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthOperationService } from 'src/services/media-health-operation.service.js';
@@ -240,6 +241,7 @@ export const services = [
   MetadataService,
   NotificationService,
   NotificationAdminService,
+  MailConnectionService,
   OcrService,
   ClusterGroupService,
   PartnerLockService,

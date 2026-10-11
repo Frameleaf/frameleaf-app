@@ -1115,6 +1115,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'transport.secure',
   },
   {
+    // FL-379: set by signing in or disconnecting (the server writes it), and by choosing a mail server
+    pattern: 'notifications.smtp.transport.type',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'transport.type',
+  },
+  {
     pattern: 'notifications.smtp.transport.username',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NotificationSettings.svelte',

@@ -28,6 +28,8 @@ import {
   LogLevelSchema,
   MachineLearningHardwareAcceleration,
   MachineLearningHardwareAccelerationSchema,
+  MailTransportType,
+  MailTransportTypeSchema,
   OAuthTokenEndpointAuthMethod,
   OAuthTokenEndpointAuthMethodSchema,
   ReleaseChannel,
@@ -831,6 +833,10 @@ const AdminConfigSmtpSchema = z
     replyTo: z.string().describe('Email address for replies'),
     transport: z
       .object({
+        // FL-379: optional on the way in, so a client that predates it keeps saving a mail server
+        // entered by hand. Gmail and Microsoft need the account connected through
+        // /admin/notifications/mail-connection first; the other transport fields are then unused.
+        type: MailTransportTypeSchema.default(MailTransportType.Smtp),
         ignoreCert: configBool.describe('Whether to ignore SSL certificate errors'),
         host: z.string().describe('SMTP server hostname'),
         port: z.int().min(0).max(65_535).describe('SMTP server port'),
@@ -1672,6 +1678,7 @@ export const defaults = Object.freeze<SystemConfig>({
       from: '',
       replyTo: '',
       transport: {
+        type: MailTransportType.Smtp,
         ignoreCert: false,
         host: '',
         port: 587,
