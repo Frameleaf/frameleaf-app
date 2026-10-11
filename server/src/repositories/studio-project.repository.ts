@@ -302,6 +302,9 @@ export class StudioProjectRepository {
     }
     try {
       const project = await this.db.transaction().execute(async (trx) => {
+        // A duplicate's FK admission locks its existing source project. Take that
+        // project before quota so the INSERT cannot wait project-after-owner.
+        if (seed.duplicatedFromId) await lockStudioImportProject(trx, seed.duplicatedFromId);
         await assertStudioStorageAdmission(trx, seed.ownerId, seed.revision?.graphBytes ?? 0);
         const row = await trx
           .insertInto('studio_project')
@@ -1090,11 +1093,9 @@ export class StudioProjectRepository {
   async appendRevision(append: StudioRevisionAppend): Promise<StudioRevisionAppendResult> {
     try {
       return await this.db.transaction().execute(async (trx) => {
-        const owner = await trx
-          .selectFrom('studio_project')
-          .select('ownerId')
-          .where('id', '=', append.projectId)
-          .executeTakeFirst();
+        // Match publication/purge order before quota admission; retain the CAS/lease
+        // predicates on the head update below as the save's final acceptance guard.
+        const owner = await lockStudioImportProject(trx, append.projectId);
         if (!owner) return { status: 'rejected' as const };
         await assertStudioStorageAdmission(trx, owner.ownerId, append.graphBytes);
         const {
