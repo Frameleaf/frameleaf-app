@@ -4,15 +4,19 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from filelock import FileLock, Timeout
+from huggingface_hub import set_client_factory
+from huggingface_hub.errors import LocalEntryNotFoundError
 
 from immich_ml.config import settings
 from immich_ml.main import load
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.florence_manifest import FLORENCE_MODELS
 from immich_ml.models.image_description import ImageDescriptionModel
+from immich_ml.privacy import _download_client
 from immich_ml.schemas import ModelTask, ModelType
 from immich_ml.staging import RECEIPT, cache_hashes, stage_model, verify_staged
 
@@ -111,6 +115,32 @@ def test_legacy_adoption_acquires_and_preserves_unverified_bytes(model: Syntheti
     assert (legacy / "visual/model.onnx").read_bytes() == b"unverified legacy weights"
 
 
+@pytest.mark.parametrize("status", [401, 404, 503])
+def test_hub_source_failure_cannot_certify_legacy_files(
+    model: SyntheticModel, monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    model.model_path.parent.mkdir(parents=True)
+    model.model_path.write_bytes(b"unverified legacy weights")
+    monkeypatch.setattr(settings, "model_source_url", "https://unavailable-source.example")
+    monkeypatch.setattr(model, "_download", lambda: InferenceModel._download(model))
+    requests = []
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(status, json={"error": "repository unavailable"})
+
+    set_client_factory(lambda: httpx.Client(transport=httpx.MockTransport(unavailable)))
+    try:
+        with pytest.raises((ModelUnavailableError, LocalEntryNotFoundError)):
+            stage_model(model)
+    finally:
+        set_client_factory(_download_client)
+    assert len(requests) == 1
+    assert requests[0].url.host == "unavailable-source.example"
+    assert model.model_path.read_bytes() == b"unverified legacy weights"
+    assert not (model.cache_dir / RECEIPT).exists()
+
+
 def test_empty_cache_can_be_staged(model: SyntheticModel) -> None:
     model.cache_dir.mkdir()
     stage_model(model)
@@ -138,14 +168,18 @@ def test_failed_refresh_preserves_previous_warm_cache(model: SyntheticModel) -> 
     assert not list(model.cache_dir.parent.glob("*.staging-*/"))
 
 
-def test_refresh_rollback_and_shared_cache_files_survive(model: SyntheticModel) -> None:
-    model.cache_dir.mkdir()
-    (model.cache_dir / "LICENSE").write_text("keep attribution")
+def test_refresh_rollback_and_shared_cache_files_survive(
+    model: SyntheticModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
     stage_model(model)
+    other = SyntheticModel("synthetic", cache_dir=model.cache_dir)
+    monkeypatch.setattr(other, "identity", (ModelType.TEXTUAL, ModelTask.IMAGE_DESCRIPTION))
+    other.content = b"shared textual weights"
+    stage_model(other)
     model.content = b"synthetic v2"
     stage_model(model, refresh=True)
     assert model.model_path.read_bytes() == model.content
-    assert (model.cache_dir / "LICENSE").read_text() == "keep attribution"
+    assert other.model_path.read_bytes() == other.content
     stage_model(model, rollback=True)
     assert model.model_path.read_bytes() == b"synthetic model v1"
     verify_staged(model.cache_dir)

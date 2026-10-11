@@ -83,17 +83,26 @@ def stage_model(model: InferenceModel, *, refresh: bool = False, rollback: bool 
             return
         with TemporaryDirectory(prefix=f".{active.name}.staging-", dir=active.parent) as temporary:
             candidate = Path(temporary) / "candidate"
+            candidate.mkdir()
             if active.exists():
-                cache_hashes(active)  # Reject links before copying a legacy cache.
-                shutil.copytree(active, candidate)
-            else:
-                candidate.mkdir()
+                cache_hashes(active)  # Reject links before preserving a legacy cache.
             model.cache_dir = candidate
             try:
-                # Acquire even when adopting a legacy cache; its existence is not origin verification.
+                # An empty destination prevents Hub's offline fallback from accepting legacy files.
                 model._download()
                 if not model.cached:
                     raise ModelUnavailableError("Model staging did not produce a complete model")
+                if active.exists():
+                    try:
+                        verify_staged(active)
+                    except ModelUnavailableError:
+                        pass
+                    else:
+                        for relative in cache_hashes(active):
+                            destination = candidate / relative
+                            if not destination.exists():
+                                destination.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(active / relative, destination)
                 (candidate / RECEIPT).write_text(json.dumps(cache_hashes(candidate), sort_keys=True) + "\n")
                 verify_staged(candidate)
             finally:

@@ -1,3 +1,5 @@
+import runpy
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -149,3 +151,32 @@ def test_production_factory_preserves_hub_offline_hook() -> None:
         assert client.event_hooks["request"] == [_bind_download_credentials, hf_request_event_hook]
     with default_client_factory() as client:
         assert hf_request_event_hook in client.event_hooks["request"]
+
+
+@pytest.mark.parametrize("source_kind", ["public", "explicit", "hf-endpoint"])
+def test_semantic_provisioning_uses_selected_source_without_implicit_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source_kind: str
+) -> None:
+    from immich_ml.models.semantic_mask import MANIFEST, MODEL_NAME
+
+    private = source_kind != "public"
+    endpoint = "https://private-models.example" if private else "https://huggingface.co"
+    monkeypatch.setattr(settings, "model_source_url", endpoint if source_kind == "explicit" else None)
+    monkeypatch.setattr(settings, "model_source_token", SecretStr("fake-private-model-token") if private else None)
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    if source_kind == "hf-endpoint":
+        monkeypatch.setenv("HF_ENDPOINT", endpoint)
+    monkeypatch.setenv("HF_TOKEN", "fake-saved-token-must-not-leave")
+    monkeypatch.setattr(sys, "argv", ["provision", "--download", "--cache-root", str(tmp_path)])
+    (tmp_path / "semantic-mask" / MODEL_NAME / "hub").mkdir(parents=True)
+    with patch("huggingface_hub.snapshot_download", return_value=str(tmp_path)) as download:
+        with patch("immich_ml.models.semantic_mask_manifest.verify_snapshot") as verify:
+            runpy.run_path(str(Path(__file__).parent / "scripts/provision-semantic-models.py"), run_name="__main__")
+    assert download.call_count == verify.call_count == len(MANIFEST)
+    for call, model in zip(download.call_args_list, MANIFEST, strict=True):
+        assert call.args == (model["repository"],)
+        assert call.kwargs["revision"] == model["revision"]
+        assert call.kwargs["allow_patterns"] == list(model["files"])
+        assert call.kwargs["local_files_only"] is False
+        assert call.kwargs["endpoint"] == endpoint
+        assert call.kwargs["token"] == ("fake-private-model-token" if private else False)
