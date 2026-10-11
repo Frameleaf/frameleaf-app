@@ -90,8 +90,11 @@ test.describe('Frameleaf Cloud backup setup', () => {
     expect(backup.requests.some(({ path }) => path === 'admin/cloud/backup/key')).toBe(false);
 
     await dialog.getByRole('button', { name: 'Finish setup' }).click();
-    await expect(page.getByText('Your own bucket')).toBeVisible();
-    await expect(page.getByText('Your own key, never saved')).toBeVisible();
+    const glance = page.getByRole('region', { name: 'At a glance', exact: true });
+    await expect(glance.getByText('Your own bucket', { exact: true })).toBeVisible();
+    const safety = page.getByRole('region', { name: 'Safety', exact: true });
+    await safety.getByText('Technical details', { exact: true }).click();
+    await expect(safety.getByText('Your own key, never saved', { exact: true })).toBeVisible();
   });
 
   test('a generated key shows the recovery kit once and needs it saved before claiming', async ({ page }) => {

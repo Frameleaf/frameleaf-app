@@ -159,8 +159,8 @@ test.describe('Job manager', () => {
     await expect(status.getByRole('heading', { name: '3 things failed' })).toBeVisible();
     await expect(status.getByText(/Finding faces: 3 failed\./)).toBeVisible();
     const now = page.getByRole('region', { name: 'Now' });
-    await expect(now.getByText('Making thumbnails')).toBeVisible();
-    await expect(now.getByText('7 left')).toBeVisible();
+    await expect(now.getByText('Making thumbnails', { exact: true }).filter({ visible: true })).toBeVisible();
+    await expect(now.getByText('7 left', { exact: true }).filter({ visible: true })).toBeVisible();
     // Work with nothing to do is behind "Show all kinds of work".
     await expect(now.getByText('Housekeeping')).toBeHidden();
     await now.getByText('Show all 3 kinds of work').click();
