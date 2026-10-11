@@ -27,13 +27,16 @@ export const cloudMailProvider = (provider: MailSignInProvider): CloudMailProvid
 
 const cloudProviderSchema = z.enum(['google', 'microsoft']);
 
-/** `GET /v1/instance/mail/providers`: always a row per provider; unknown future providers are ignored. */
-export const mailProvidersResponseSchema = z.object({
-  providers: z.array(z.object({ provider: z.string().max(50), available: z.boolean() })).max(20),
+/**
+ * `GET /v1/instance/mail/services`: always a row per provider; unknown future ones are ignored. On
+ * the wire the cloud calls a provider a `service` (contract v1.2).
+ */
+export const mailServicesResponseSchema = z.object({
+  services: z.array(z.object({ service: z.string().max(50), available: z.boolean() })).max(20),
 });
 
 export const mailSignInStartRequestSchema = z.strictObject({
-  provider: cloudProviderSchema,
+  service: cloudProviderSchema,
   state: z.string().regex(/^[\w-]{16,128}$/),
   codeChallenge: z.string().regex(/^[\w-]{43}$/),
 });
@@ -55,13 +58,13 @@ export type MailSignInClaim = z.infer<typeof mailSignInClaimResponseSchema>;
 export const mailTokenRequestSchema = z.discriminatedUnion('grant', [
   z.strictObject({
     grant: z.literal('authorization_code'),
-    provider: cloudProviderSchema,
+    service: cloudProviderSchema,
     code: z.string().min(1).max(4096),
     codeVerifier: z.string().regex(/^[\w.~-]{43,128}$/),
   }),
   z.strictObject({
     grant: z.literal('refresh_token'),
-    provider: cloudProviderSchema,
+    service: cloudProviderSchema,
     refreshToken: z.string().min(1).max(8192),
   }),
 ]);
@@ -77,7 +80,7 @@ export const mailTokenResponseSchema = z.object({
 export type MailTokenResponse = z.infer<typeof mailTokenResponseSchema>;
 
 export const mailRevokeRequestSchema = z.strictObject({
-  provider: cloudProviderSchema,
+  service: cloudProviderSchema,
   refreshToken: z.string().min(1).max(8192),
 });
 
@@ -100,6 +103,9 @@ const hasCode = (error: unknown, status: number, code: MailCloudErrorCode) =>
 
 /** The provider refused the grant for good: a dead code, a wrong verifier, or a revoked refresh token. */
 export const isMailGrantInvalid = (error: unknown) => hasCode(error, 400, MailCloudErrorCode.GrantInvalid);
+/** The person signed in but did not allow sending (`detail: send-scope-missing` on `mail-grant-invalid`). */
+export const isMailSendNotAllowed = (error: unknown) =>
+  isMailGrantInvalid(error) && (error as FrameleafCloudError).envelope?.detail === 'send-scope-missing';
 /** The sign-in is gone (too late, used, or not this server's): start again. */
 export const isMailSignInNotFound = (error: unknown) => hasCode(error, 404, MailCloudErrorCode.SignInNotFound);
 /** Frameleaf Cloud does not offer this provider (yet). */
@@ -115,12 +121,12 @@ const brokerUrl = (target: MailBrokerTarget, path: string) =>
 
 /** Which providers Frameleaf Cloud has configured. */
 export const readMailProviders = async (cloud: Cloud, target: MailBrokerTarget): Promise<MailSignInProvider[]> => {
-  const { providers } = await cloud.requestJson(mailProvidersResponseSchema, {
-    url: brokerUrl(target, 'providers'),
+  const { services } = await cloud.requestJson(mailServicesResponseSchema, {
+    url: brokerUrl(target, 'services'),
     dpop: target.token,
   });
   return Object.values(MailSignInProvider).filter((provider) =>
-    providers.some((row) => row.provider === cloudMailProvider(provider) && row.available),
+    services.some((row) => row.service === cloudMailProvider(provider) && row.available),
   );
 };
 

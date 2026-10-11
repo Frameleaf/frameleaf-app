@@ -79793,6 +79793,10 @@
             "$ref": "#/components/schemas/MailSignInState",
             "description": "`pending` while a sign-in this server started is waiting, else `none`"
           },
+          "signInProvider": {
+            "$ref": "#/components/schemas/MailSignInProvider",
+            "description": "The provider of the sign-in that is waiting"
+          },
           "unavailableReason": {
             "$ref": "#/components/schemas/MailSignInUnavailableReason"
           }

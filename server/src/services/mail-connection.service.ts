@@ -27,6 +27,7 @@ import {
   claimMailSignIn,
   cloudMailProvider,
   isMailGrantInvalid,
+  isMailSendNotAllowed,
   isMailSignInNotFound,
   isMailSignInUnavailable,
   newMailState,
@@ -86,6 +87,7 @@ export class MailConnectionService extends BaseService {
     const base = {
       connection: connection ? mapConnection(connection) : null,
       signIn: pending ? MailSignInState.Pending : MailSignInState.None,
+      ...(pending && { signInProvider: pending.provider }),
     };
     try {
       const target = await mailBrokerTarget(this.mailDeps);
@@ -115,7 +117,7 @@ export class MailConnectionService extends BaseService {
     let started;
     try {
       started = await startMailSignIn(this.frameleafCloudRepository, target, {
-        provider: cloudMailProvider(dto.provider),
+        service: cloudMailProvider(dto.provider),
         state: sealed.state,
         codeChallenge: pkceChallenge(sealed.verifier),
       });
@@ -225,11 +227,17 @@ export class MailConnectionService extends BaseService {
     try {
       tokens = await requestMailToken(this.frameleafCloudRepository, target, {
         grant: 'authorization_code',
-        provider: cloudMailProvider(pending.provider),
+        service: cloudMailProvider(pending.provider),
         code: claim.code,
         codeVerifier: secret.verifier,
       });
     } catch (error) {
+      if (isMailSendNotAllowed(error)) {
+        // the person signed in but left "send email" unticked (Google lets them)
+        throw new BadRequestException(
+          `${MAIL_PROVIDER_NAMES[pending.provider]} signed you in, but Frameleaf was not allowed to send email. Start again and allow Frameleaf to send email.`,
+        );
+      }
       if (isMailGrantInvalid(error)) {
         return { state: MailSignInState.Expired, connection: null };
       }
@@ -285,7 +293,7 @@ export class MailConnectionService extends BaseService {
       }
       const target = known?.target ?? (await mailBrokerTarget(this.mailDeps));
       const { status } = await revokeMailToken(this.frameleafCloudRepository, target, {
-        provider: cloudMailProvider(connection.provider),
+        service: cloudMailProvider(connection.provider),
         refreshToken,
       });
       return status === 'revoked';

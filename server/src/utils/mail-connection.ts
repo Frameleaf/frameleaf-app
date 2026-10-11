@@ -231,7 +231,7 @@ export const mailAccessToken = async (
     try {
       answer = await requestMailToken(deps.frameleafCloudRepository, target, {
         grant: 'refresh_token',
-        provider: cloudMailProvider(provider),
+        service: cloudMailProvider(provider),
         refreshToken,
       });
     } catch (error) {

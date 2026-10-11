@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/token",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/token, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "The provider refused the refresh token for good (access removed, password changed, token expired). The only answer that means: mark the connection as needing sign-in again.",
+    "body": {
+      "grant": "refresh_token",
+      "service": "google",
+      "refreshToken": "1//0FIXTURE-ONLY-not-a-real-google-refresh-token"
+    }
+  },
+  "status": 400,
+  "headers": {},
+  "body": {
+    "code": "mail-grant-invalid",
+    "message": "The mail provider no longer accepts this sign-in. Sign in again.",
+    "retryable": false,
+    "requestId": "req_01J8ZK3M4N5P6Q92"
+  }
+}

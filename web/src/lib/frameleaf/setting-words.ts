@@ -78,6 +78,15 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'notifications.smtp.enabled': { label: 'frameleaf_notify_delivery_send' },
   'notifications.smtp.from': { label: 'frameleaf_notify_delivery_sender' },
   'notifications.smtp.replyTo': { label: 'frameleaf_notify_delivery_reply' },
+  // FL-379: "How email is sent: Through a mail server → By signing in with Google"
+  'notifications.smtp.transport.type': {
+    label: 'frameleaf_notify_delivery_type',
+    values: {
+      smtp: 'frameleaf_notify_delivery_type_smtp',
+      gmail: 'frameleaf_notify_delivery_type_gmail',
+      microsoft: 'frameleaf_notify_delivery_type_microsoft',
+    },
+  },
   'notifications.smtp.transport.host': { label: 'frameleaf_notify_delivery_host' },
   'notifications.smtp.transport.port': { label: 'frameleaf_notify_delivery_port' },
   'notifications.smtp.transport.username': { label: 'frameleaf_notify_delivery_account' },

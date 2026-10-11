@@ -89,7 +89,7 @@ describe(MailConnectionService.name, () => {
       },
     }));
     const answer = await sut.start(authStub.admin, { provider });
-    return { answer, sent: calls('sign-ins')[0].json() as { provider: string; state: string; codeChallenge: string } };
+    return { answer, sent: calls('sign-ins')[0].json() as { service: string; state: string; codeChallenge: string } };
   };
   const mailDeps = (): MailConnectionDeps => (sut as unknown as { mailDeps: MailConnectionDeps }).mailDeps;
 
@@ -148,21 +148,21 @@ describe(MailConnectionService.name, () => {
     });
 
     it('offers only the providers Frameleaf Cloud has configured', async () => {
-      cloud.on('GET /api/v1/instance/mail/providers', () => ({
+      cloud.on('GET /api/v1/instance/mail/services', () => ({
         status: 200,
         body: {
-          providers: [
-            { provider: 'google', available: true },
-            { provider: 'microsoft', available: false },
+          services: [
+            { service: 'google', available: true },
+            { service: 'microsoft', available: false },
           ],
         },
       }));
       await expect(sut.getState()).resolves.toMatchObject({ available: true, providers: [MailSignInProvider.Gmail] });
-      expect(calls('providers')[0].dpop).not.toBeNull();
+      expect(calls('services')[0].dpop).not.toBeNull();
     });
 
     it('returns the connected address and never the token', async () => {
-      cloud.on('GET /api/v1/instance/mail/providers', () => envelope(502, 'bad-gateway'));
+      cloud.on('GET /api/v1/instance/mail/services', () => envelope(502, 'bad-gateway'));
       connect({ status: MailConnectionStatus.NeedsSignIn, needsSignInSince: '2026-10-11T11:00:00.000Z' });
       const state = await sut.getState();
       expect(state).toMatchObject({
@@ -185,10 +185,10 @@ describe(MailConnectionService.name, () => {
       const { answer, sent } = await start();
 
       expect(answer.authorizationUrl).toBe('https://accounts.example.com/authorize?state=cloud-own-state');
-      expect(sent.provider).toBe('google');
+      expect(sent.service).toBe('google');
       expect(sent.state).toMatch(/^[\w-]{43}$/);
       expect(sent.codeChallenge).toMatch(/^[\w-]{43}$/);
-      expect(Object.keys(sent).sort()).toEqual(['codeChallenge', 'provider', 'state']);
+      expect(Object.keys(sent).sort()).toEqual(['codeChallenge', 'service', 'state']);
 
       const stored = JSON.stringify(pending());
       expect(stored).not.toContain(sent.state);
@@ -255,7 +255,7 @@ describe(MailConnectionService.name, () => {
         },
       });
       const exchange = calls('token')[0].json();
-      expect(exchange).toMatchObject({ grant: 'authorization_code', provider: 'google', code: 'one-time-code' });
+      expect(exchange).toMatchObject({ grant: 'authorization_code', service: 'google', code: 'one-time-code' });
       expect(createHash('sha256').update(exchange.codeVerifier).digest('base64url')).toBe(sent.codeChallenge);
 
       // the refresh token is stored sealed, and no answer or stored record carries it in the clear
@@ -276,7 +276,7 @@ describe(MailConnectionService.name, () => {
 
     it('reads the address of a Microsoft account from Microsoft, which sends none with the tokens', async () => {
       const { sent } = await start(MailSignInProvider.Microsoft);
-      expect(sent.provider).toBe('microsoft');
+      expect(sent.service).toBe('microsoft');
       claim({ status: 'ready', state: sent.state, code: 'one-time-code' });
       token({ accessToken: ACCESS, expiresInSec: 3600, refreshToken: REFRESH });
       mocks.email.readMicrosoftAddress.mockResolvedValue('rivera@outlook.com');
@@ -322,6 +322,18 @@ describe(MailConnectionService.name, () => {
       expect(pending()).toBeUndefined();
     });
 
+    it('says so when the person signed in without allowing Frameleaf to send', async () => {
+      const { sent } = await start();
+      claim({ status: 'ready', state: sent.state, code: 'one-time-code' });
+      cloud.on('POST /api/v1/instance/mail/token', () => ({
+        status: 400,
+        body: { code: 'mail-grant-invalid', message: 'x', retryable: false, detail: 'send-scope-missing' },
+      }));
+      await expect(sut.complete(authStub.admin)).rejects.toThrow('was not allowed to send email');
+      expect(connection()).toBeUndefined();
+      expect(pending()).toBeUndefined();
+    });
+
     it('answers expired when the provider refuses the code', async () => {
       const { sent } = await start();
       claim({ status: 'ready', state: sent.state, code: 'one-time-code' });
@@ -350,7 +362,7 @@ describe(MailConnectionService.name, () => {
 
       await sut.complete(authStub.admin);
 
-      expect(calls('revoke')[0].json()).toEqual({ provider: 'google', refreshToken: 'old-refresh' });
+      expect(calls('revoke')[0].json()).toEqual({ service: 'google', refreshToken: 'old-refresh' });
       expect(connection().email).toBe('new@example.com');
     });
   });
@@ -365,7 +377,7 @@ describe(MailConnectionService.name, () => {
         revoked: true,
       });
 
-      expect(calls('revoke')[0].json()).toEqual({ provider: 'google', refreshToken: REFRESH });
+      expect(calls('revoke')[0].json()).toEqual({ service: 'google', refreshToken: REFRESH });
       expect(connection()).toBeUndefined();
       const changed = structuredClone(defaults);
       changed.notifications.smtp.enabled = true;
@@ -419,7 +431,7 @@ describe(MailConnectionService.name, () => {
       await expect(mailAccessToken(mailDeps(), MailSignInProvider.Gmail)).resolves.toBe(ACCESS);
 
       expect(calls('token')).toHaveLength(1);
-      expect(calls('token')[0].json()).toEqual({ grant: 'refresh_token', provider: 'google', refreshToken: REFRESH });
+      expect(calls('token')[0].json()).toEqual({ grant: 'refresh_token', service: 'google', refreshToken: REFRESH });
       expect(calls('token')[0].dpop).not.toBeNull();
     });
 

@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/token",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/token, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "The provider couldn't be reached or answered an error that isn't about the grant. Keep the connection and try again later.",
+    "body": {
+      "grant": "refresh_token",
+      "service": "microsoft",
+      "refreshToken": "M.FIXTURE_ONLY.not-a-real-microsoft-refresh-token"
+    }
+  },
+  "status": 502,
+  "headers": {},
+  "body": {
+    "code": "mail-provider-unavailable",
+    "message": "The mail provider couldn't be reached. Try again in a few minutes.",
+    "retryable": true,
+    "requestId": "req_01J8ZK3M4N5P6Q93"
+  }
+}
