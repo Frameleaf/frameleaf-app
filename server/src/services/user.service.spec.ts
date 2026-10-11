@@ -496,6 +496,16 @@ describe(UserService.name, () => {
       expect(mocks.user.delete).not.toHaveBeenCalled();
     });
 
+    it('defers account deletion before files or assets when import cleanup still owns paths', async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      mocks.user.hasPendingImportCleanup.mockResolvedValue(true);
+      await sut.handleUserDelete({ id: user.id });
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
+      expect(mocks.user.delete).not.toHaveBeenCalled();
+    });
+
     it('should delete the user and associated assets', async () => {
       const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
       const options = { force: true, recursive: true };
@@ -505,7 +515,7 @@ describe(UserService.name, () => {
       await sut.handleUserDelete({ id: user.id });
 
       // FL-44: media folders are emptied file by file through the reference guard, never recursively
-      for (const folder of ['library', 'upload', 'thumbs', 'encoded-video']) {
+      for (const folder of ['library', 'upload', 'thumbs', 'encoded-video', 'exports']) {
         expect(mocks.storage.walkFiles).toHaveBeenCalledWith(expect.stringContaining(`/data/${folder}/deleted-user`));
         expect(mocks.storage.removeEmptyDirs).toHaveBeenCalledWith(
           expect.stringContaining(`/data/${folder}/deleted-user`),
@@ -520,9 +530,9 @@ describe(UserService.name, () => {
         expect.stringContaining('/data/profile/deleted-user'),
         options,
       );
-      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
+      expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(
         expect.stringContaining('/data/exports/deleted-user'),
-        options,
+        expect.anything(),
       );
       expect(mocks.album.deleteAll).toHaveBeenCalledWith(user.id);
       // FL-55: the account's recipient groups go, and it leaves everyone else's.

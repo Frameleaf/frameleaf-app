@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
@@ -627,20 +627,53 @@ export class UserRepository {
       await write(this.db);
     }
   }
-  delete(
-    user: {
-      id: string;
-    },
-    hard?: boolean,
-  ) {
-    return this.db
-      .transaction()
-      .execute(async (db) =>
-        hard
-          ? await db.deleteFrom('user').where('id', '=', user.id).execute()
-          : await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute(),
+  delete(user: { id: string }, hard?: boolean) {
+    return this.db.transaction().execute(async (db) => {
+      if (!hard) return db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute();
+      // Journal writers lock project before owner. Match that order rather than taking the
+      // account row first and deadlocking a publication that is waiting for quota admission.
+      const projects = await db
+        .selectFrom('studio_project')
+        .select('id')
+        .where('ownerId', '=', user.id)
+        .orderBy('id')
+        .execute();
+      for (const project of projects) {
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`buddy-studio:${project.id}`},0))`.execute(db);
+        await db.selectFrom('studio_project').select('id').where('id', '=', project.id).forUpdate().execute();
+      }
+      await db.selectFrom('user').select('id').where('id', '=', user.id).forUpdate().execute();
+      const current = await db
+        .selectFrom('studio_project')
+        .select('id')
+        .where('ownerId', '=', user.id)
+        .orderBy('id')
+        .execute();
+      if (current.map((row) => row.id).join(',') !== projects.map((row) => row.id).join(','))
+        throw new ConflictException('Studio projects changed; retry account deletion');
+      // The current project locks and owner lock fence new intents. Orphan handles are
+      // independent of account/project cascades and also require acknowledged cleanup.
+      const { rows: pending } = await sql`SELECT id FROM public.studio_import_publication
+        WHERE "ownerId"=${user.id}::uuid AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL) LIMIT 1`.execute(
+        db,
       );
+      if (pending.length)
+        throw new ConflictException('Studio import cleanup is pending; retry account deletion after cleanup');
+      const result = await db.deleteFrom('user').where('id', '=', user.id).execute();
+      await sql`DELETE FROM public.studio_import_publication WHERE "ownerId"=${user.id}::uuid
+        AND "stagedPath" IS NULL AND "targetPath" IS NULL`.execute(db);
+      return result;
+    });
   }
+
+  async hasPendingImportCleanup(ownerId: string): Promise<boolean> {
+    const { rows } = await sql`SELECT id FROM public.studio_import_publication
+      WHERE "ownerId"=${ownerId}::uuid AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL)
+      UNION ALL SELECT id FROM public.studio_bundle_upload WHERE "ownerId"=${ownerId}::uuid AND digest=''
+      LIMIT 1`.execute(this.db);
+    return rows.length > 0;
+  }
+
   @GenerateSql()
   getUserStats() {
     return this.db

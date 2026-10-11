@@ -26,7 +26,11 @@ import {
 } from '@/infrastructure/storage'
 import { mediaDir, projectMediaLinksPath } from '@/infrastructure/storage/workspace-fs/paths'
 import { registerHdrSourceUrl } from '@/features/export/utils/hdr-video-sources'
-import type { StudioAssetRef, StudioProjectImportRef } from '@frameleaf/host/host-contract'
+import type {
+  StudioAssetRef,
+  StudioProjectImportRef,
+  RetainedProcessingProvenance,
+} from '@frameleaf/host/host-contract'
 import type { VirtualWorkspace } from './virtual-workspace'
 
 /**
@@ -79,11 +83,7 @@ export const initialMediaRecord = (asset: StudioAssetRef, now: number): MediaMet
   duration: durationSeconds(asset),
   width: asset.width ?? 0,
   height: asset.height ?? 0,
-  fps: asset.frameRate
-    ? asset.frameRate.num / asset.frameRate.den
-    : asset.kind === 'video'
-      ? 30
-      : 0,
+  fps: asset.frameRate ? asset.frameRate.num / asset.frameRate.den : asset.kind === 'video' ? 30 : 0,
   codec: 'unknown',
   bitrate: 0,
   // FL-97: the server knows the original's transfer; the playback stream cannot tell.
@@ -126,9 +126,7 @@ export async function probeVideo(url: string, signal: AbortSignal): Promise<Prob
       fps: snapFrameRate(stats.averagePacketRate),
       duration: await input.computeDuration(),
       codec: (await video.getCodecParameterString()) ?? video.codec ?? 'unknown',
-      audioCodec: audio
-        ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined)
-        : undefined,
+      audioCodec: audio ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined) : undefined,
     }
   } catch {
     return null
@@ -161,8 +159,7 @@ export async function probeProjectImport(
         op?: unknown
       }
       const fps = typeof lottie.fr === 'number' && lottie.fr > 0 ? lottie.fr : 0
-      const frames =
-        typeof lottie.op === 'number' && typeof lottie.ip === 'number' ? lottie.op - lottie.ip : 0
+      const frames = typeof lottie.op === 'number' && typeof lottie.ip === 'number' ? lottie.op - lottie.ip : 0
       return {
         width: typeof lottie.w === 'number' ? lottie.w : 0,
         height: typeof lottie.h === 'number' ? lottie.h : 0,
@@ -181,9 +178,7 @@ export async function probeProjectImport(
   try {
     const duration = await input.computeDuration()
     const audio = await input.getPrimaryAudioTrack()
-    const audioCodec = audio
-      ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined)
-      : undefined
+    const audioCodec = audio ? ((await audio.getCodecParameterString()) ?? audio.codec ?? undefined) : undefined
     const video = item.kind === 'video' ? await input.getPrimaryVideoTrack() : null
     if (!video) {
       return { duration, codec: audioCodec ?? 'unknown', audioCodec, audioCodecSupported: !!audio }
@@ -206,12 +201,14 @@ export async function probeProjectImport(
 }
 
 /** The bin record of a file kept with the project, before anything is probed. */
-export const projectImportRecord = (item: StudioProjectImportRef, now: number): MediaMetadata => ({
+type RetainedMediaMetadata = MediaMetadata & { processingProvenance?: RetainedProcessingProvenance }
+export const projectImportRecord = (item: StudioProjectImportRef, now: number): RetainedMediaMetadata => ({
   id: item.id,
   storageType: 'workspace',
   fileName: item.name.replace(/[\\/:*?"<>|]/g, '_').trim() || item.id,
   fileSize: item.sizeBytes,
   contentHash: item.checksum,
+  ...(item.processingProvenance ? { processingProvenance: item.processingProvenance } : {}),
   mimeType: item.mimeType,
   duration: 0,
   width: 0,
@@ -226,10 +223,7 @@ export const projectImportRecord = (item: StudioProjectImportRef, now: number): 
   updatedAt: now,
 })
 
-async function probeImage(
-  url: string,
-  signal: AbortSignal,
-): Promise<{ width: number; height: number } | null> {
+async function probeImage(url: string, signal: AbortSignal): Promise<{ width: number; height: number } | null> {
   try {
     const response = await fetch(url, { signal, credentials: 'same-origin' })
     if (!response.ok) return null
@@ -409,6 +403,19 @@ export function createLibraryMediaSeeder(options: {
     },
     async seedImports(imports) {
       if (controller.signal.aborted) return
+      // A canonical reload wins over stale workspace metadata, including records already seeded.
+      for (const item of imports) {
+        if (removed.has(item.id) || !item.processingProvenance) continue
+        if (await getMedia(item.id)) {
+          const canonical: Partial<RetainedMediaMetadata> = {
+            processingProvenance: item.processingProvenance,
+            contentHash: item.checksum,
+            updatedAt: Date.now(),
+          }
+          await updateMedia(item.id, canonical)
+          onChange()
+        }
+      }
       const fresh = imports.filter((item) => !seeded.has(item.id) && !removed.has(item.id))
       const added: StudioProjectImportRef[] = []
       const now = Date.now()
@@ -466,11 +473,7 @@ export function createLibraryMediaSeeder(options: {
 export const RETIRED_MOUNTS_FOLLOWED = 3
 
 /** Record a replaced mount's project id, keeping only the most recent `RETIRED_MOUNTS_FOLLOWED`. */
-export function retireProject(
-  retired: Set<string>,
-  projectId: string,
-  keep = RETIRED_MOUNTS_FOLLOWED,
-): void {
+export function retireProject(retired: Set<string>, projectId: string, keep = RETIRED_MOUNTS_FOLLOWED): void {
   retired.delete(projectId)
   retired.add(projectId)
   for (const oldest of retired) {

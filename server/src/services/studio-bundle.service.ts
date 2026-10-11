@@ -85,6 +85,7 @@ import {
   studioChecksumSha256,
   studioSequenceSubsetProblem,
 } from 'src/utils/studio-bundle.js';
+import { ProcessingProvenanceInput, validateBundleImportProvenance } from 'src/utils/studio-import-provenance.js';
 import {
   STUDIO_LIFECYCLE_SWEEP_MS,
   StudioProjectEnvelope,
@@ -451,13 +452,16 @@ export class StudioBundleService {
   /* ------------------------------------------------------------------ */
 
   /** Reserve before the HTTP body is written; an interrupted upload stays charged until cleanup. */
-  async reserveUpload(auth: AuthDto, bytes: number): Promise<StudioBundleUpload> {
+  async reserveUpload(auth: AuthDto, bytes: number, kind?: 'import'): Promise<StudioBundleUpload> {
     this.requireInteractive(auth);
     if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > STUDIO_BUNDLE_MAX_BYTES)
       throw new PayloadTooLargeException('Invalid Studio bundle upload size');
     return this.projects.createUpload({
       ownerId: auth.user.id,
-      path: join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
+      path:
+        kind === 'import'
+          ? join(studioImportIncomingFolder(auth.user.id), `${randomUUID()}.upload`)
+          : join(studioBundleUploadFolder(auth.user.id), `${randomUUID()}.zip`),
       sizeBytes: bytes,
       digest: '',
       originalFileName: '',
@@ -466,10 +470,10 @@ export class StudioBundleService {
     });
   }
 
-  async abortUpload(auth: AuthDto, id: string): Promise<void> {
+  async abortUpload(auth: AuthDto, id: string, removeFile = true): Promise<void> {
     const upload = await this.projects.getUpload(id, auth.user.id);
     if (!upload) return;
-    await this.storage.unlink(upload.path);
+    if (removeFile) await this.storage.unlink(upload.path);
     await this.projects.deleteUpload(id, auth.user.id);
   }
 
@@ -732,6 +736,14 @@ export class StudioBundleService {
     }
 
     for (const upload of await this.projects.listExpiredUploads(now)) {
+      if (upload.path.startsWith(`${studioImportIncomingFolder(upload.ownerId)}/`)) {
+        try {
+          await this.imports.releaseIncoming(upload.ownerId, upload.path, now);
+        } catch (error) {
+          this.logger.warn(`Deferred expired Studio import upload: ${errorMessage(error)}`);
+        }
+        continue;
+      }
       await this.storage.unlink(upload.path);
       await this.projects.deleteUpload(upload.id, upload.ownerId);
     }
@@ -882,7 +894,13 @@ export class StudioBundleService {
     // with its digest so the import can say what is missing. The entry is named by the import id
     // and the extension the upload gave it, never by the name the file was uploaded with.
     for (const item of keptFiles) {
+      // Only selected ready imports carry these historical labels. Never resolve their source IDs.
+      const processingProvenance =
+        item.processingProvenance == null
+          ? undefined
+          : validateBundleImportProvenance(item.processingProvenance, item.checksum);
       const source = {
+        ...(processingProvenance ? { processingProvenance } : {}),
         key: studioReferenceKey({ kind: StudioResourceKind.ProjectImport, id: item.id }),
         kind: StudioResourceKind.ProjectImport,
         id: item.id,
@@ -1361,27 +1379,54 @@ export class StudioBundleService {
           manifest: {},
           expiresAt: hoursFrom(new Date(), STUDIO_BUNDLE_UPLOAD_TTL_HOURS),
         });
+        let handedToImport = false;
+        let created = false;
+        let lineage: ProcessingProvenanceInput | undefined;
         try {
-          const output: Writable = this.storage.createWriteStream(staged);
+          const output: Writable = this.storage.createWriteStream(staged, { flags: 'wx', mode: 0o600 });
+          output.once('open', () => {
+            created = true;
+          });
+          const finished = streamFinished(output);
+          // Observe rejection before extraction can await I/O or write to a failed exclusive open.
+          void finished.catch(() => undefined);
           try {
-            const actual = await digestZipEntry(source, entry, {
+            const extraction = digestZipEntry(source, entry, {
               onData: (chunk) =>
                 new Promise<void>((resolve, reject) =>
                   output.write(chunk, (error) => (error ? reject(error) : resolve())),
                 ),
             });
+            const actual = await Promise.race([
+              extraction,
+              finished.then(() => {
+                throw new BundleJobError('bundle_write_failed', 'The carried import stream ended before extraction');
+              }),
+            ]);
             output.end();
-            await streamFinished(output);
+            await finished;
             if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
               throw new BundleJobError('bundle_digest_mismatch', `${name.slice(0, 80)} does not match its digest`);
             }
+            if (item.processingProvenance !== undefined) {
+              // Validate actual staged bytes before removing the carried hash. Upload binds it again.
+              const { outputSha256: _historicalHash, ...input } = validateBundleImportProvenance(
+                item.processingProvenance,
+                (await this.crypto.hashFile(staged, 'sha256')).toString('hex'),
+              );
+              lineage = input;
+            }
           } catch (error) {
             output.destroy();
-            await this.storage.unlink(staged);
+            await finished.catch(() => undefined);
             throw error;
           }
+          // Registration owns no bytes. A definite failure here still permits request scratch cleanup.
+          const publicationId = lineage ? randomUUID() : undefined;
+          if (publicationId) await this.imports.register(owner, projectId, { importId: item.id, publicationId });
           try {
-            // The upload path removes the staged file itself when it refuses it.
+            // Only the import service can distinguish request cleanup from uncertain journal ownership.
+            handedToImport = true;
             await this.imports.upload(
               owner,
               projectId,
@@ -1393,6 +1438,7 @@ export class StudioBundleService {
                 originalname: item.fileName ?? '',
               } as Express.Multer.File,
               reservation.id,
+              lineage ? { publicationId, processingProvenance: JSON.stringify(lineage) } : undefined,
             );
           } catch (error) {
             if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
@@ -1402,8 +1448,10 @@ export class StudioBundleService {
             refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
           }
         } finally {
-          await this.storage.unlink(staged);
-          await this.projects.deleteUpload(reservation.id, owner.user.id);
+          if (!handedToImport) {
+            if (created) await this.storage.unlink(staged);
+            await this.projects.deleteUpload(reservation.id, owner.user.id);
+          }
         }
       }
     });

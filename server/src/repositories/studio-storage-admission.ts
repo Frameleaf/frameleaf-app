@@ -19,6 +19,7 @@ export async function assertStudioStorageAdmission(
   ownerId: string,
   bytes: number,
   kind?: 'upload' | 'export',
+  options: { excludePublicationId?: string; excludeUploadId?: string; checkExisting?: boolean } = {},
 ): Promise<void> {
   if (!db.isTransaction) throw new Error('studio_storage_transaction_required');
   if (!Number.isSafeInteger(bytes) || bytes < 0) throw new PayloadTooLargeException('Invalid Studio storage size');
@@ -30,22 +31,29 @@ export async function assertStudioStorageAdmission(
     .forUpdate()
     .executeTakeFirst();
   if (!owner) throw new NotFoundException('Studio owner not found');
-  if (bytes === 0 && !kind) return;
+  if (bytes === 0 && !kind && !options.excludePublicationId && !options.excludeUploadId && !options.checkExisting)
+    return;
   const {
     rows: [used],
   } = await sql<{ uploads: number; exports: number; bundles: number; imports: number; revisions: number }>`
     WITH uploads AS (SELECT count(*)::int AS count, coalesce(sum("sizeBytes"),0)::float8 AS bytes
-      FROM studio_bundle_upload WHERE "ownerId"=${ownerId}::uuid),
+      FROM studio_bundle_upload WHERE "ownerId"=${ownerId}::uuid
+        AND id IS DISTINCT FROM ${options.excludeUploadId ?? null}::uuid),
     exports AS (SELECT count(*)::int AS count,
       coalesce(sum(CASE WHEN status='completed' AND result->>'sizeBytes' ~ '^[0-9]+$' THEN (result->>'sizeBytes')::bigint
         ELSE coalesce((settings->>'storageReservationBytes')::bigint, ${STUDIO_BUNDLE_EXPORT_RESERVATION}) END),0)::float8 AS bytes
       FROM media_operation WHERE "ownerId"=${ownerId}::uuid AND kind=${MediaOperationKind.StudioBundleExport}
         AND result->>'storageReleased' IS DISTINCT FROM 'true' AND result->>'expiredAt' IS NULL),
     imports AS (SELECT coalesce(sum("sizeBytes"),0)::float8 AS bytes FROM studio_project_import WHERE "ownerId"=${ownerId}::uuid),
+    preparing AS (SELECT coalesce(sum((declaration->>'sizeBytes')::bigint),0)::float8 AS bytes
+      FROM public.studio_import_publication WHERE "ownerId"=${ownerId}::uuid AND state='preparing'
+        AND id IS DISTINCT FROM ${options.excludePublicationId ?? null}::uuid),
     revisions AS (SELECT coalesce(sum(r."graphBytes"),0)::float8 AS bytes FROM studio_project_revision r
       JOIN studio_project p ON p.id=r."projectId" WHERE p."ownerId"=${ownerId}::uuid)
     SELECT uploads.count AS uploads, exports.count AS exports, uploads.bytes+exports.bytes AS bundles,
-      imports.bytes AS imports, revisions.bytes AS revisions FROM uploads,exports,imports,revisions`.execute(db);
+      imports.bytes+preparing.bytes AS imports, revisions.bytes AS revisions FROM uploads,exports,imports,revisions,preparing`.execute(
+    db,
+  );
   if (
     (kind === 'upload' && used.uploads >= STUDIO_BUNDLE_MAX_UPLOADS) ||
     (kind === 'export' && used.exports >= STUDIO_BUNDLE_MAX_EXPORTS) ||
