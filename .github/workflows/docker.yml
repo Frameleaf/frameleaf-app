@@ -15,7 +15,7 @@ permissions: {}
 jobs:
   changes:
     if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     outputs:
@@ -91,7 +91,7 @@ jobs:
     name: Re-Tag Server
     needs: [changes, integration, certification]
     if: needs.changes.outputs.server != 'true'
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       packages: write
     steps:
@@ -162,7 +162,7 @@ jobs:
     name: Re-Tag ML
     needs: [changes, integration, certification]
     if: needs.changes.outputs['machine-learning'] != 'true'
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       packages: write
     strategy:
@@ -188,7 +188,7 @@ jobs:
     name: Docker Build & Push Server Success
     needs: [integration, certification, server, retag-server]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     steps:
       - name: Require certified server publication
         env:
@@ -199,7 +199,7 @@ jobs:
     name: Docker Build & Push ML Success
     needs: [integration, certification, machine-learning, retag-machine-learning]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     steps:
       - name: Require every certified ML variant
         env:

@@ -35,7 +35,7 @@ jobs:
   build:
     name: CLI container build
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name != 'release' }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 30
     permissions:
       contents: read
@@ -60,7 +60,7 @@ jobs:
       ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' && (github.event_name
       == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main'))
       }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 45
     permissions:
       contents: read

@@ -30,7 +30,7 @@ jobs:
     if:
       ${{ github.repository == 'Frameleaf/frameleaf-app' && !contains(github.event.pull_request.labels.*.name, 'api-breaking-approved')
       }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 15
     permissions:
       contents: read

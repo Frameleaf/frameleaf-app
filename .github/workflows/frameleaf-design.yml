@@ -20,7 +20,7 @@ jobs:
   design:
     name: Frameleaf Design Template
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 15
     defaults:
       run:
