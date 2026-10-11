@@ -31,7 +31,7 @@
   import type { AccountPreferencesSection } from '$lib/frameleaf/account-preferences';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
-  import { createDateFormatter, findLocale } from '$lib/utils';
+  import { findLocale } from '$lib/utils';
   import {
     getUserHistoryAdmin,
     type AssetStatsResponseDto,
@@ -45,6 +45,7 @@
   } from '@frameleaf/sdk';
   import { getByteUnitString } from '@frameleaf/ui';
   import { goto } from '$app/navigation';
+  import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
   type Tab = 'overview' | 'features' | 'preferences' | 'notifications' | 'libraries' | 'security' | 'activity';
@@ -144,7 +145,11 @@
   const hasQuota = $derived(availableBytes !== null && availableBytes !== undefined && availableBytes >= 0);
 
   const editedLocale = $derived(findLocale($locale).code);
-  const createdAt = $derived(createDateFormatter(editedLocale).formatDateTime(new Date(user.createdAt)));
+  // To the minute, as the Security tab stamps its devices. `createDateFormatter` is the settings
+  // page's clock sample and counts seconds.
+  const createdAt = $derived(
+    DateTime.fromISO(user.createdAt, { locale: editedLocale }).toLocaleString(DateTime.DATETIME_MED),
+  );
 
   const ownedLibraries = $derived(libraries.filter((library) => library.ownerId === user.id));
   const libraryItems = (library: LibraryResponseDto) => {
@@ -282,9 +287,15 @@
       {#each history as event (event.id)}
         <li>
           <strong>{describeAdminEvent(event, $t, formatBytes)}</strong>
+          <!-- Joined in script: a space typed before the dot inside the if block was trimmed away ("2026· by"). -->
           <span>
-            {event.subject} · {formatHistoryDate(event.createdAt, editedLocale)}{#if event.actorName}
-              · {$t('frameleaf_account_history_by', { values: { actor: event.actorName } })}{/if}
+            {[
+              event.subject,
+              formatHistoryDate(event.createdAt, editedLocale),
+              event.actorName && $t('frameleaf_account_history_by', { values: { actor: event.actorName } }),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         </li>
       {/each}

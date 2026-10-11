@@ -1233,13 +1233,13 @@
   }
   label {
     display: grid;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
   }
   input:not([type='checkbox'], [type='file']),
   select {
     min-width: 0;
-    padding: 0.4375rem 0.625rem;
+    padding: 0.4375rem var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);

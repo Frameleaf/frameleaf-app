@@ -72,11 +72,11 @@
 </div>
 
 <style>
+  /* As tall as its tabs (the control height), so the underline is the foot of what is pressed. */
   .fl-layouts {
     position: relative;
     display: flex;
     flex-shrink: 0;
-    height: 38px;
     gap: 8px;
   }
   /* One underline that slides to the current tab; Reduce Motion makes it jump. */

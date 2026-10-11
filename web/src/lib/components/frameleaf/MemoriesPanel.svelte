@@ -575,8 +575,9 @@
     font-size: var(--fl-font-size);
   }
   @media (max-width: 640px) {
+    /* With the page's own 8px, the 16px phone gutter. */
     .fm {
-      padding: var(--fl-space-4) var(--fl-space-3) var(--fl-space-6);
+      padding: var(--fl-space-4) var(--fl-space-2) var(--fl-space-6);
     }
   }
   /* discovery.css:56-75 */

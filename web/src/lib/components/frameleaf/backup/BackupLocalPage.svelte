@@ -1,0 +1,217 @@
+<script lang="ts">
+  /**
+   * Backup › On this server (FL-362): the copy of the library data (albums, people, edits and
+   * settings) this server keeps of itself. It replaces the "Database backups" form and the
+   * Maintenance backups manager: whether a snapshot is taken, how many are kept, taking one now, and
+   * the saved snapshots with their download, restore and delete.
+   *
+   * "Take a snapshot now" queues the server's own `backup-database` job, then re-reads the list
+   * until the new snapshot appears; it stops and offers to try again when the job fails, when the
+   * queue goes idle without a new file, or after `timeoutMs`.
+   */
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import MaintenanceBackupList from '$lib/components/frameleaf/MaintenanceBackupList.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import Toggle from '$lib/components/frameleaf/Toggle.svelte';
+  import BackupPlaceHeader from '$lib/components/frameleaf/backup/BackupPlaceHeader.svelte';
+  import { BACKUP_PLACE_COPY } from '$lib/components/frameleaf/backup/backup-places';
+  import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { localPlaceState } from '$lib/frameleaf/backup-overview';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { handleCreateJob } from '$lib/services/job.service';
+  import {
+    getQueuesLegacy,
+    getServerVersion,
+    listDatabaseBackups,
+    ManualJobName,
+    type DatabaseBackupDto,
+  } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiPlayOutline } from '@mdi/js';
+  import { onDestroy, onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
+
+  type Props = {
+    /** How often the list is re-read while a new snapshot is being written. */
+    pollMs?: number;
+    /** Stop waiting for the new snapshot after this long; the list is still re-read on the next visit. */
+    timeoutMs?: number;
+  };
+  const { pollMs = 3000, timeoutMs = 120_000 }: Props = $props();
+
+  let backups = $state<DatabaseBackupDto[]>();
+  let expectedVersion = $state('');
+  let loadFailed = $state(false);
+  let creating = $state(false);
+  let failed = $state(false);
+  let alive = true;
+  onDestroy(() => (alive = false));
+
+  const load = () => {
+    loadFailed = false;
+    void Promise.all([getServerVersion(), listDatabaseBackups()])
+      .then(([{ major, minor, patch }, result]) => {
+        expectedVersion = `${major}.${minor}.${patch}`;
+        backups = result.backups;
+      })
+      .catch(() => (loadFailed = true));
+  };
+  onMount(load);
+
+  // Whether a snapshot is taken and how many are kept are ordinary settings, saved with the settings bar.
+  const settingsDraft = getSystemConfigDraft();
+  const database = $derived(settingsDraft?.draft.backup.database);
+  const configDisabled = $derived(featureFlagsManager.value.configFile);
+  const placeState = $derived(
+    localPlaceState(backups ?? null, settingsDraft?.baseline.backup.database.enabled ?? true, new Date()),
+  );
+
+  /** The backup queue, or undefined when it cannot be read. */
+  const readQueue = async () => {
+    try {
+      return (await getQueuesLegacy()).backupDatabase;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const takeSnapshot = async () => {
+    failed = false;
+    const before = new Set((backups ?? []).map(({ filename }) => filename));
+    const failedBefore = (await readQueue())?.jobCounts.failed ?? 0;
+    if (!(await handleCreateJob({ name: ManualJobName.BackupDatabase }))) {
+      return;
+    }
+    creating = true;
+    const startedAt = Date.now();
+    let polls = 0;
+    const stop = (didFail: boolean) => {
+      creating = false;
+      failed = didFail;
+    };
+    const poll = async () => {
+      if (!alive) {
+        return;
+      }
+      polls++;
+      try {
+        const result = await listDatabaseBackups();
+        backups = result.backups;
+        if (result.backups.some(({ filename }) => !before.has(filename))) {
+          stop(false);
+          return;
+        }
+      } catch {
+        // Keep waiting; a transient failure must not end the running row early.
+      }
+      const queue = await readQueue();
+      if (queue) {
+        const { failed: failedNow, active, waiting, delayed } = queue.jobCounts;
+        const idle = !queue.queueStatus.isActive && active + waiting + delayed === 0;
+        // The first poll may run before the queue picks the job up, so idle only counts after it.
+        if (failedNow > failedBefore || (idle && polls > 1)) {
+          stop(true);
+          return;
+        }
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        stop(true);
+        return;
+      }
+      setTimeout(() => void poll(), pollMs);
+    };
+    setTimeout(() => void poll(), pollMs);
+  };
+</script>
+
+<BackupPlaceHeader
+  icon={BACKUP_PLACE_COPY.local.icon}
+  name={$t('frameleaf_backup_place_local')}
+  where={$t('frameleaf_backup_place_local_where')}
+  tone={creating ? 'good' : placeState.tone}
+  status={creating
+    ? $t('frameleaf_backup_local_running')
+    : backups
+      ? $t(placeState.status.key, { values: placeState.status.values })
+      : undefined}
+>
+  <Button variant="primary" disabled={creating} onclick={() => void takeSnapshot()}>
+    <Icon icon={mdiPlayOutline} size="18" aria-hidden />
+    {$t('frameleaf_backup_local_take')}
+  </Button>
+</BackupPlaceHeader>
+
+{#if creating}
+  <p class="running" role="status">
+    <progress aria-label={$t('frameleaf_backup_local_running')}></progress>
+  </p>
+{:else if failed}
+  <InlineError compact message={$t('frameleaf_backup_local_failed')} onRetry={takeSnapshot} />
+{/if}
+
+<Notice title={$t('frameleaf_backup_local_not_photos')}>{$t('frameleaf_backup_local_not_photos_body')}</Notice>
+
+{#if database}
+  <Section title={$t('frameleaf_backup_local_settings')}>
+    <Row label={$t('frameleaf_backup_local_enabled')} help={$t('frameleaf_backup_local_enabled_help')}>
+      <Toggle
+        label={$t('frameleaf_backup_local_enabled')}
+        checked={database.enabled}
+        disabled={configDisabled}
+        onLabel={$t('frameleaf_kit_on')}
+        offLabel={$t('frameleaf_kit_off')}
+        onChange={(value) => (database.enabled = value)}
+      />
+    </Row>
+    <Row label={$t('frameleaf_backup_local_keep')} help={$t('frameleaf_backup_local_keep_help')}>
+      <Amount
+        label={$t('frameleaf_backup_local_keep_label')}
+        unit={$t('frameleaf_backup_local_keep_unit', { values: { count: database.keepLastAmount } })}
+        min={1}
+        max={365}
+        value={database.keepLastAmount}
+        disabled={configDisabled || !database.enabled}
+        onChange={(value) => (database.keepLastAmount = value)}
+      />
+    </Row>
+  </Section>
+{/if}
+
+<Section
+  id="snapshots"
+  title={$t('frameleaf_backup_local_saved')}
+  description={$t('frameleaf_backup_local_saved_description')}
+>
+  {#if loadFailed}
+    <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={load} />
+  {:else if backups}
+    <div class="saved">
+      <MaintenanceBackupList {backups} {expectedVersion} />
+    </div>
+  {:else}
+    <div class="saved" role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="block" height="5rem" />
+    </div>
+  {/if}
+</Section>
+
+<style>
+  .running {
+    margin: 0;
+  }
+  progress {
+    width: 100%;
+    height: 6px;
+    accent-color: var(--fl-accent);
+  }
+  .saved {
+    padding: var(--fl-space-4) 0 var(--fl-space-5);
+    border-top: 1px solid var(--fl-border);
+  }
+</style>

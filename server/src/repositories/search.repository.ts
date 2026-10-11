@@ -327,7 +327,14 @@ export type SearchFacetRow = {
   coverAssetId: string | null;
 };
 export type SearchFacetResult = { total: number; rows: SearchFacetRow[] };
-export type TagStatisticsRow = { tagId: string; count: number; total: number };
+export type TagStatisticsRow = {
+  tagId: string;
+  count: number;
+  total: number;
+  coverAssetIds: string[];
+  startDate: Date;
+  endDate: Date;
+};
 export type SearchHistogramRow = { date: string; count: number };
 
 const facetExample: SearchFacetOptions = {
@@ -343,6 +350,9 @@ const legacySearchExample = { takenAfter: DummyValue.DATE, userIds: [DummyValue.
 const v3ScopeExample: AssetSearchScope = { userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
 
 type MatchedAssets = SelectQueryBuilder<DB, 'asset', any>;
+
+/** How many items a tag's cover shows. */
+const TAG_COVER_ASSETS = 4;
 
 const asUuidLiteral = (id: string) => sql`${id}::uuid`;
 
@@ -849,26 +859,60 @@ export class SearchRepository {
    * tag (`count`) and how many carry it or any tag under it (`total`, the tag filter's own closure
    * semantics). Unlike the tags facet there is no limit, since the Tags browser counts every row of
    * its tree. A suppressed tag, and every tag under one, is left out.
+   *
+   * Each tag also gets what its card shows of the `total` items: the newest few by capture time for a
+   * cover, and the first and last capture day, read as an album's start and end dates are.
    */
   async searchTagStatistics(
     options: AssetSearchOptions,
     { viewerId, suppressedTagIds }: { viewerId: string; suppressedTagIds: string[] },
   ): Promise<TagStatisticsRow[]> {
     const matched = searchAssetBuilderLegacy(this.db, options);
-    const { rows } = await sql<{ tagId: string; count: string; total: string }>`
-      with matched as materialized (${matched.select('asset.id')})
-      select t.id::text as "tagId",
-        count(distinct m.id) filter (where ta."tagId" = t.id) as count,
-        count(distinct m.id) as total
-      from matched m
-      inner join tag_asset ta on ta."assetId" = m.id
-      inner join tag_closure tc on tc.id_descendant = ta."tagId"
-      inner join tag t on t.id = tc.id_ancestor and t."userId" = ${asUuidLiteral(viewerId)}
-      where ${suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), suppressedTagIds)}` : sql`true`}
-      group by t.id
-      order by t.id
+    // An item reaches a tag once for each of the tag's subtags it carries (and once directly, the
+    // `direct` row). Those rows are peers in the tag's newest-first order, so one sort ranks the
+    // items (`rank`) and marks one row of each (`first`: `rank()` is the row number a group of peers
+    // starts at) for the total and the cover. The dates are the album's `min(day)` and `max(day)`,
+    // taken as the day of the earliest and latest capture so the day is worked out once per tag.
+    const { rows } = await sql<{
+      tagId: string;
+      count: string;
+      total: string;
+      coverAssetIds: string[] | null;
+      startDate: Date;
+      endDate: Date;
+    }>`
+      with matched as materialized (${matched.select(['asset.id', 'asset.localDateTime'])}),
+      ranked as (
+        select t.id as "tagId", m.id as "assetId", m."localDateTime", (ta."tagId" = t.id) as direct,
+          dense_rank() over newest as rank,
+          (row_number() over newest = rank() over newest) as first
+        from matched m
+        inner join tag_asset ta on ta."assetId" = m.id
+        inner join tag_closure tc on tc.id_descendant = ta."tagId"
+        inner join tag t on t.id = tc.id_ancestor and t."userId" = ${asUuidLiteral(viewerId)}
+        where ${suppressedTagIds.length > 0 ? sql`not ${tagIsSuppressed(sql.ref('t.id'), suppressedTagIds)}` : sql`true`}
+        window newest as (partition by t.id order by m."localDateTime" desc, m.id asc)
+      )
+      select r."tagId"::text as "tagId",
+        count(*) filter (where r.direct) as count,
+        count(*) filter (where r.first) as total,
+        array_agg(r."assetId"::text order by r.rank) filter (
+          where r.first and r.rank <= ${sql.lit(TAG_COVER_ASSETS)}
+        ) as "coverAssetIds",
+        (min(r."localDateTime") at time zone 'UTC')::date as "startDate",
+        (max(r."localDateTime") at time zone 'UTC')::date as "endDate"
+      from ranked r
+      group by r."tagId"
+      order by r."tagId"
     `.execute(this.db);
-    return rows.map((row) => ({ tagId: row.tagId, count: Number(row.count), total: Number(row.total) }));
+    return rows.map((row) => ({
+      tagId: row.tagId,
+      count: Number(row.count),
+      total: Number(row.total),
+      coverAssetIds: row.coverAssetIds ?? [],
+      startDate: row.startDate,
+      endDate: row.endDate,
+    }));
   }
 
   /** FL-49: matches per local capture day, month or year for a legacy (flat) search body */

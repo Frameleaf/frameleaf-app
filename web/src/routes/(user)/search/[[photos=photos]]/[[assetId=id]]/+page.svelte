@@ -753,7 +753,7 @@
   </div>
 {/if}
 
-<section class="m-4 mb-12 max-h-screen bg-(--fl-canvas)">
+<section class="m-4 mb-12 max-h-screen bg-(--fl-canvas) md:mx-6">
   <section id="search-content">
     {#if searchLocation.kind === 'rejected'}
       <!-- FL-48: a damaged or newer search link fails safely and says why, instead of erroring. -->
@@ -925,7 +925,7 @@
     flex: 1;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--fl-space-2);
     min-width: 0;
     background: transparent;
   }
@@ -944,6 +944,12 @@
     display: flex;
     gap: var(--fl-space-2);
     margin-inline-start: auto;
+  }
+  /* The page gutter from tablet width up; the back arrow in the bar above sits on the same line. */
+  @media (min-width: 768px) {
+    .search-toolbar {
+      padding-inline: var(--fl-space-6);
+    }
   }
   /* On a phone the count and the actions share the first row and the chips take their own below. */
   @media (max-width: 640px) {

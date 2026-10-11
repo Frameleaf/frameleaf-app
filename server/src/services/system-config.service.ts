@@ -727,7 +727,8 @@ export class SystemConfigService extends BaseService {
 
   async getCustomCss(): Promise<string> {
     const { theme } = await this.getConfig({ withCache: false });
-    return theme.customCss;
+    // FL-368: switched off, the text is kept in the settings and an empty style sheet is served.
+    return theme.customCssEnabled ? theme.customCss : '';
   }
 
   async estimateDescriptionRequeue(): Promise<ImageDescriptionRequeueEstimateDto> {

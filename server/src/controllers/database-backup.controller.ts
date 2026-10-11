@@ -21,6 +21,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   BackupRestoreVerificationRecordDto,
   BackupRestoreVerificationResponseDto,
+  BackupScheduleResponseDto,
   DatabaseBackupDeleteDto,
   DatabaseBackupListResponseDto,
   DatabaseBackupUploadDto,
@@ -30,6 +31,7 @@ import { ApiTag, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, GetLoginDetails, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { sendFile } from 'src/utils/file.js';
@@ -42,6 +44,7 @@ export class DatabaseBackupController {
   constructor(
     private logger: LoggingRepository,
     private service: DatabaseBackupService,
+    private sequenceService: BackupSequenceService,
     private maintenanceService: MaintenanceService,
   ) {}
 
@@ -54,6 +57,18 @@ export class DatabaseBackupController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   listDatabaseBackups(): Promise<DatabaseBackupListResponseDto> {
     return this.service.listBackups();
+  }
+
+  // FL-362: the one schedule every backup runs from. Before `:filename`.
+  @Get('schedule')
+  @Endpoint({
+    summary: 'Get the backup schedule',
+    description: 'The schedule backups start on, the places a run visits one after another, and the run in progress',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  getBackupSchedule(): Promise<BackupScheduleResponseDto> {
+    return this.sequenceService.getSchedule();
   }
 
   // FL-71 (CC-9): "Prove your backup can restore" (CommandCenter.jsx:1752-1800). Before `:filename`.

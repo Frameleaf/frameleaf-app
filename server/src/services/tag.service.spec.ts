@@ -1,7 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetVisibility, JobStatus } from 'src/enum.js';
-import { TagService } from 'src/services/tag.service.js';
+import { AssetVisibility, JobStatus, Permission, UserMetadataKey } from 'src/enum.js';
+import { TagService, followMergedTags } from 'src/services/tag.service.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { tagResponseStub, tagStub } from 'test/fixtures/tag.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -47,13 +48,42 @@ describe(TagService.name, () => {
   describe('getStatistics (FL-46)', () => {
     it("should count the owner's Timeline items per tag, with and without subtags", async () => {
       mocks.search.searchTagStatistics.mockResolvedValue([
-        { tagId: 'tag-1', count: 1, total: 3 },
-        { tagId: 'tag-2', count: 2, total: 2 },
+        {
+          tagId: 'tag-1',
+          count: 1,
+          total: 3,
+          coverAssetIds: ['asset-3', 'asset-2', 'asset-1'],
+          startDate: new Date('2024-06-01'),
+          endDate: new Date('2026-03-09'),
+        },
+        {
+          tagId: 'tag-2',
+          count: 2,
+          total: 2,
+          coverAssetIds: ['asset-2', 'asset-1'],
+          startDate: new Date('2024-06-01'),
+          endDate: new Date('2024-06-01'),
+        },
       ]);
 
+      // the cover keeps the order the query gave it, and the dates read like an album's
       await expect(sut.getStatistics(authStub.admin)).resolves.toEqual([
-        { id: 'tag-1', count: 1, total: 3 },
-        { id: 'tag-2', count: 2, total: 2 },
+        {
+          id: 'tag-1',
+          count: 1,
+          total: 3,
+          coverAssetIds: ['asset-3', 'asset-2', 'asset-1'],
+          startDate: '2024-06-01T00:00:00.000Z',
+          endDate: '2026-03-09T00:00:00.000Z',
+        },
+        {
+          id: 'tag-2',
+          count: 2,
+          total: 2,
+          coverAssetIds: ['asset-2', 'asset-1'],
+          startDate: '2024-06-01T00:00:00.000Z',
+          endDate: '2024-06-01T00:00:00.000Z',
+        },
       ]);
       expect(mocks.search.searchTagStatistics).toHaveBeenCalledWith(
         {
@@ -283,6 +313,200 @@ describe(TagService.name, () => {
 
       await sut.remove(authStub.admin, 'tag-1');
       expect(mocks.tag.delete).toHaveBeenCalledWith('tag-1');
+    });
+  });
+
+  describe('merge', () => {
+    const merged = { ...tagStub.tag, id: 'tag-2', value: 'Tag2' };
+    const preferences = (value: object) => [{ key: UserMetadataKey.Preferences as const, value }];
+
+    beforeEach(() => {
+      // each tag is checked on its own, and the check answers exactly the ids it allows
+      mocks.access.tag.checkOwnerAccess.mockImplementation((_, ids) => Promise.resolve(new Set(ids)));
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'Tag2' }] });
+      mocks.tag.merge.mockResolvedValue({
+        tag: merged,
+        merged: [{ id: 'tag-1', targetId: 'tag-2' }],
+        taggedAssetIds: ['asset-1'],
+        assetIds: ['asset-1', 'asset-2'],
+      });
+    });
+
+    it('should answer 404 for a tag the caller may not delete, or a target they may not change', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' })).rejects.toBeInstanceOf(NotFoundException);
+
+      mocks.access.tag.checkOwnerAccess.mockImplementation((_, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === 'tag-1'))),
+      );
+      await expect(sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' })).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mocks.database.withUserPreferencesLock).not.toHaveBeenCalled();
+      expect(mocks.tag.merge).not.toHaveBeenCalled();
+    });
+
+    it('should ask an API key for the permission to update tags as well', async () => {
+      const key = (permissions: Permission[]) => ({ ...authStub.admin, apiKey: { id: 'key-1', permissions } });
+
+      await expect(sut.merge(key([Permission.TagDelete]), 'tag-1', { targetId: 'tag-2' })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.tag.merge).not.toHaveBeenCalled();
+
+      await expect(
+        sut.merge(key([Permission.TagDelete, Permission.TagUpdate]), 'tag-1', { targetId: 'tag-2' }),
+      ).resolves.toEqual(expect.objectContaining({ id: 'tag-2' }));
+      await expect(sut.merge(key([Permission.All]), 'tag-1', { targetId: 'tag-2' })).resolves.toBeDefined();
+    });
+
+    it('should merge under the preferences lock and answer the tag that stays', async () => {
+      await expect(sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' })).resolves.toEqual({
+        ...tagResponseStub.tag1,
+        id: 'tag-2',
+        name: 'Tag2',
+        value: 'Tag2',
+      });
+
+      expect(mocks.database.withUserPreferencesLock).toHaveBeenCalledWith(authStub.admin.user.id, expect.any(Function));
+      // the transaction the lock hands out (none in this test) goes to the repository
+      expect(mocks.tag.merge).toHaveBeenCalledWith(undefined, 'tag-1', 'tag-2');
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.session.requestSyncResetForUser).not.toHaveBeenCalled();
+    });
+
+    it('should pass on a refusal from the repository and touch nothing else', async () => {
+      mocks.tag.merge.mockRejectedValue(new BadRequestException('A tag cannot be merged into itself'));
+
+      await expect(sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-1' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('should bring every item involved up to date as tagging and untagging do', async () => {
+      await sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' });
+
+      for (const assetId of ['asset-1', 'asset-2']) {
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+          exif: { assetId, lockedProperties: ['tags'], tags: ['Tag2'] },
+          lockedPropertiesBehavior: 'append',
+        });
+      }
+      // gained the tag: "tagged"; only lost one, or carries one under a new path: its sidecar alone
+      expect(mocks.event.emit.mock.calls).toEqual([
+        ['AssetTag', { assetId: 'asset-1', userId: authStub.admin.user.id }],
+        ['AssetUntag', { assetId: 'asset-2' }],
+      ]);
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+        'asset',
+        ['asset-1', 'asset-2'],
+        ['tags'],
+        authStub.admin.user.id,
+      );
+    });
+
+    it('should move a Locked rule in the same transaction and have every session sync again', async () => {
+      mocks.user.getMetadata.mockResolvedValue(
+        preferences({ privacy: { suppression: { tagIds: ['tag-1', 'tag-9'] } }, memories: { enabled: false } }),
+      );
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+
+      await sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' });
+
+      expect(mocks.user.getMetadata).toHaveBeenCalledWith(authStub.admin.user.id, undefined);
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: ['tag-2', 'tag-9'] } }, memories: { enabled: false } },
+        },
+        undefined,
+      );
+      expect(mocks.session.requestSyncResetForUser).toHaveBeenCalledWith(authStub.admin.user.id);
+    });
+
+    it('should follow a saved search without a sync reset: the Locked rules did not change', async () => {
+      mocks.user.getMetadata.mockResolvedValue(
+        preferences({ savedSearches: [{ name: 'Old', query: { tagIds: ['tag-1'] } }] }),
+      );
+
+      await sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' });
+
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: { savedSearches: [{ name: 'Old', query: { tagIds: ['tag-2'] } }] },
+        },
+        undefined,
+      );
+      expect(mocks.session.requestSyncResetForUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('followMergedTags', () => {
+    const merged = [
+      { id: 'aaaaaaaa-0000-4000-8000-000000000001', targetId: 'bbbbbbbb-0000-4000-8000-000000000001' },
+      { id: 'aaaaaaaa-0000-4000-8000-000000000002', targetId: 'bbbbbbbb-0000-4000-8000-000000000002' },
+    ];
+    const [first, second] = merged;
+    const other = 'cccccccc-0000-4000-8000-000000000001';
+    const withPreferences = (value: object) => getPreferences([{ key: UserMetadataKey.Preferences, value }]);
+
+    it('should answer nothing when no rule or search names a merged tag', () => {
+      const preferences = withPreferences({
+        privacy: { suppression: { tagIds: [other, first.targetId] } },
+        savedSearches: [{ name: 'Other', query: { tagIds: [other], note: `not ${first.id} itself` } }],
+      });
+      expect(followMergedTags(preferences, merged)).toBeUndefined();
+      expect(followMergedTags(withPreferences({}), merged)).toBeUndefined();
+    });
+
+    it('should replace each merged tag once in the Locked rules, keeping people, pets and scope', () => {
+      const preferences = withPreferences({
+        privacy: {
+          suppression: {
+            tagIds: [first.id, other, first.targetId, second.id],
+            personIds: [first.id],
+            petIds: ['pet-1'],
+            scope: 'visible',
+          },
+        },
+      });
+      expect(followMergedTags(preferences, merged)?.privacy.suppression).toEqual({
+        tagIds: [first.targetId, other, second.targetId],
+        // only tags are followed where tags are listed; an id elsewhere is never a tag
+        personIds: [first.id],
+        petIds: ['pet-1'],
+        scope: 'visible',
+      });
+    });
+
+    it('should replace a merged tag anywhere in a saved search, whatever the case of the id', () => {
+      const preferences = withPreferences({
+        savedSearches: [
+          { name: 'Flat', query: { tagIds: [first.id.toUpperCase(), first.targetId], city: 'Banff', rating: 5 } },
+          {
+            name: 'Nested',
+            query: { any: [{ tagIds: [second.id] }, { not: { tagId: first.id } }], withStacked: true },
+          },
+          { name: 'Kept', query: { tagIds: [other, other] } },
+        ],
+      });
+      const followed = followMergedTags(preferences, merged);
+      expect(followed?.savedSearches).toEqual([
+        { name: 'Flat', query: { tagIds: [first.targetId], city: 'Banff', rating: 5 } },
+        {
+          name: 'Nested',
+          query: { any: [{ tagIds: [second.targetId] }, { not: { tagId: first.targetId } }], withStacked: true },
+        },
+        // a list that names no merged tag is left exactly as the client saved it
+        { name: 'Kept', query: { tagIds: [other, other] } },
+      ]);
+      expect(followed?.privacy).toEqual(preferences.privacy);
     });
   });
 

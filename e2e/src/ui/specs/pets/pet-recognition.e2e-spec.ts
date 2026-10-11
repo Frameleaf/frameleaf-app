@@ -152,7 +152,7 @@ test.describe('pet recognition', () => {
     await page.goto('/pets');
 
     const status = recognitionSection(page).getByTestId('pet-recognition-unavailable');
-    await expect(status).toContainText('its processing destination is not allowed to run pet recognition.');
+    await expect(status).toContainText('the computer chosen to run it isn’t allowed to do pet recognition.');
     await expect(recognitionSection(page).getByText(/Recognition runs on/)).toHaveCount(0);
     await expect(recognitionSection(page).getByTestId('pet-recognition-never-cloud')).toContainText(
       'Pet recognition never runs on Frameleaf Cloud.',
@@ -171,8 +171,8 @@ test.describe('pet recognition', () => {
   });
 
   for (const [reason, sentence] of [
-    ['workload-not-served', 'its worker does not offer pet recognition.'],
-    ['insufficient-memory', 'its worker does not have enough memory for it.'],
+    ['workload-not-served', 'the computer that runs it can’t do pet recognition.'],
+    ['insufficient-memory', 'the computer that runs it doesn’t have enough memory.'],
   ] as const) {
     test(`explains an unavailable worker (${reason}) and offers no start`, async ({ context, page }) => {
       await setup(context, {
@@ -186,7 +186,7 @@ test.describe('pet recognition', () => {
       await page.goto('/pets');
 
       const status = recognitionSection(page).getByTestId('pet-recognition-unavailable');
-      await expect(status).toContainText('Recognition is unavailable:');
+      await expect(status).toContainText('Pet recognition is off:');
       await expect(status).toContainText(sentence);
       // the base fixture signs in an administrator, who is sent to the destination settings
       await expect(status.getByRole('link', { name: 'Open processing settings' })).toBeVisible();

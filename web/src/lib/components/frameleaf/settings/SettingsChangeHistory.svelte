@@ -1,21 +1,27 @@
 <script lang="ts">
-  import { locale } from '$lib/stores/preferences.store';
   /**
-   * The Change history area (FL-66, FL-71 CC-10), the design template's `ChangeHistory` in
-   * `CommandCenter.jsx:2542-2583`: one timeline, newest first, each entry with its title, time,
-   * "View changes" (every change before and after) and who saved it.
+   * Change history in plain words (FL-368, after the approved prototype
+   * `settings-v2/server/history.jsx`; the record itself is FL-66 and FL-71 CC-10). Every change is
+   * written in the words on the page it came from (`setting-words.ts`): one or two changes are the
+   * entry's title, more are counted and open in place. Each entry says when, who, the device only
+   * when it is known, whether it was for the whole server or just this account, and the page it
+   * lives on with a way to open it.
    *
-   * - For an administrator: the server's settings history, where settings saves read "n settings
-   *   changed", credential entries name the credential ("Updated OAuth client secret", never a value) and
-   *   reviews read "Reviewed: …". Entries from before titles were recorded fall back to the count.
-   * - For everyone: the account's own preference history, with the device that saved each change.
-   *   Locked-content rules appear only as changed.
+   * - For an administrator: the server's settings history. Credential entries name the credential
+   *   and never a value; a change from the server command line or Frameleaf Cloud says so.
+   * - For everyone: the account's own preference history. Locked-content rules appear only as changed.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import { historyValue, type HistoryValue } from '$lib/frameleaf/settings-history';
-  import { configPathLabel } from '$lib/frameleaf/system-config-draft';
+  import { describeChange, settingLabel, type SettingKind, type SettingPage } from '$lib/frameleaf/setting-words';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { locale } from '$lib/stores/preferences.store';
   import {
     SystemConfigHistoryCredentialChange,
     SystemConfigHistorySource,
@@ -24,7 +30,8 @@
     type UserPreferenceHistoryEntryDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiHistory } from '@mdi/js';
+  import { mdiAccountCircleOutline, mdiArrowRight, mdiHistory, mdiServerOutline } from '@mdi/js';
+  import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -38,21 +45,72 @@
     onRetry: () => void;
     onConfigure: () => void;
     configureLabel: string;
+    /** The name of a settings page as the navigation says it: "Server & updates › Updates". */
+    pageTitle?: (page: SettingPage) => string | undefined;
+    /** The moment "today" is measured from (for tests). */
+    now?: Date;
   };
 
-  let { entries, preferences, ownName, error = false, onRetry, onConfigure, configureLabel }: Props = $props();
+  let {
+    entries,
+    preferences,
+    ownName,
+    error = false,
+    onRetry,
+    onConfigure,
+    configureLabel,
+    pageTitle,
+    now = new Date(),
+  }: Props = $props();
 
-  type Change = { path: string; before: string | null; after: string | null; protected?: boolean } & Partial<
+  type RawChange = { path: string; before: string | null; after: string | null; protected?: boolean } & Partial<
     Pick<SystemConfigHistoryChangeDto, 'credential'>
   >;
+  type Change = { key: string; label: string; before: string; after: string; said: string; page?: SettingPage };
   type Item = {
     id: string;
     createdAt: string;
     title: string;
     changes: Change[];
-    omittedChanges: number;
+    omitted: number;
     by: string;
-    preference: boolean;
+    kind: SettingKind;
+    pages: { page: SettingPage; title: string }[];
+  };
+
+  const decode = (text: string | null): unknown => {
+    if (text === null) {
+      return null;
+    }
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      // A value the server shortened is no longer valid JSON; show it as text.
+      return text;
+    }
+  };
+
+  const words = (kind: SettingKind, change: RawChange): Change => {
+    const label = settingLabel($t, kind, change.path);
+    if (change.credential) {
+      const after =
+        change.credential === SystemConfigHistoryCredentialChange.Cleared
+          ? $t('frameleaf_words_secret_removed')
+          : $t('frameleaf_words_secret_saved');
+      return { key: change.path, label, before: '', after, said: `${label}: ${after}` };
+    }
+    if (change.protected) {
+      const after = $t('frameleaf_settings_history_protected');
+      return { key: change.path, label, before: '', after, said: `${label}: ${after}` };
+    }
+    return {
+      key: change.path,
+      ...describeChange($t, kind, {
+        path: change.path,
+        before: decode(change.before),
+        after: decode(change.after),
+      }),
+    };
   };
 
   /**
@@ -72,234 +130,308 @@
     return entry.actorName ?? $t('frameleaf_settings_history_unknown_actor');
   };
 
-  const settingsTitle = (entry: SystemConfigHistoryEntryDto) =>
-    entry.title ||
-    $t('frameleaf_settings_history_title', { values: { count: entry.changes.length + entry.omittedChanges } });
+  const item = (
+    kind: SettingKind,
+    entry: { id: string; createdAt: string; changes: RawChange[]; omittedChanges: number },
+    by: string,
+    recorded?: string | null,
+  ): Item => {
+    const changes = entry.changes.map((change) => words(kind, change));
+    const total = changes.length + entry.omittedChanges;
+    const pages: Item['pages'] = [];
+    for (const change of changes) {
+      const title = change.page && pageTitle?.(change.page);
+      if (change.page && title && pages.every((known) => known.title !== title)) {
+        pages.push({ page: change.page, title });
+      }
+    }
+    return {
+      id: `${kind}:${entry.id}`,
+      createdAt: entry.createdAt,
+      // One or two changes are the title; more are counted. A title the server recorded for an
+      // action (a review, a credential) is kept.
+      title:
+        recorded ||
+        (total <= 2 && changes.length === total && total > 0
+          ? changes.map((change) => change.said).join(' · ')
+          : $t('frameleaf_words_history_count', { values: { count: total } })),
+      changes,
+      omitted: entry.omittedChanges,
+      by,
+      kind,
+      pages,
+    };
+  };
 
   const items = $derived.by((): Item[] | null => {
     if (preferences === null || entries === null) {
       return null;
     }
-    const settings = (entries ?? []).map((entry) => ({
-      id: `settings:${entry.id}`,
-      createdAt: entry.createdAt,
-      title: settingsTitle(entry),
-      changes: entry.changes,
-      omittedChanges: entry.omittedChanges,
-      by: settingsBy(entry),
-      preference: false,
-    }));
-    const own = preferences.map((entry) => ({
-      id: `preferences:${entry.id}`,
-      createdAt: entry.createdAt,
-      title: $t('frameleaf_settings_history_preferences_title', {
-        values: { count: entry.changes.length + entry.omittedChanges },
-      }),
-      changes: entry.changes,
-      omittedChanges: entry.omittedChanges,
-      by: `${ownName} · ${entry.deviceLabel ?? $t('frameleaf_settings_history_unknown_device')}`,
-      preference: true,
-    }));
+    const settings = (entries ?? []).map((entry) => item('server', entry, settingsBy(entry), entry.title));
+    const own = preferences.map((entry) =>
+      // The device is named when it is known and left out when it is not.
+      item('preference', entry, entry.deviceLabel ? `${ownName} · ${entry.deviceLabel}` : ownName),
+    );
     return [...settings, ...own].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   });
 
-  const describe = (value: HistoryValue) => {
-    switch (value.kind) {
-      case 'secret': {
-        return $t('frameleaf_settings_draft_value_secret');
-      }
-      case 'credential': {
-        return value.change === SystemConfigHistoryCredentialChange.Cleared
-          ? $t('frameleaf_settings_history_credential_cleared')
-          : $t('frameleaf_settings_history_credential_replaced');
-      }
-      case 'empty': {
-        return $t('frameleaf_settings_draft_value_empty');
-      }
-      case 'on': {
-        return $t('frameleaf_settings_draft_value_on');
-      }
-      case 'off': {
-        return $t('frameleaf_settings_draft_value_off');
-      }
-      case 'text': {
-        return value.text;
-      }
+  const DAYS = ['today', 'yesterday', 'week', 'earlier'] as const;
+  type Day = (typeof DAYS)[number];
+  const dayOf = (value: string): Day => {
+    const days = DateTime.fromJSDate(now).startOf('day').diff(DateTime.fromISO(value).startOf('day'), 'days').days;
+    return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days < 7 ? 'week' : 'earlier';
+  };
+  const groups = $derived(
+    DAYS.map((day) => ({ day, items: (items ?? []).filter((entry) => dayOf(entry.createdAt) === day) })).filter(
+      (group) => group.items.length > 0,
+    ),
+  );
+
+  /** "Yesterday at 11:50 PM", "Tuesday at 8:02 PM", "28 September at 4:20 PM". */
+  const whenOf = (value: string) => {
+    const date = DateTime.fromISO(value).setLocale($locale ?? 'en');
+    if (!date.isValid) {
+      return value;
     }
+    const time = date.toLocaleString(DateTime.TIME_SIMPLE);
+    const day = dayOf(value);
+    const dayWords =
+      day === 'today'
+        ? $t('frameleaf_words_history_today')
+        : day === 'yesterday'
+          ? $t('frameleaf_words_history_yesterday')
+          : day === 'week'
+            ? date.toFormat('cccc')
+            : date.toLocaleString(
+                date.year === now.getFullYear() ? { day: 'numeric', month: 'long' } : DateTime.DATE_FULL,
+              );
+    return $t('frameleaf_words_history_when', { values: { day: dayWords, time } });
   };
 
-  /** A preference path reads from its first segment (the section), a setting path without it. */
-  const label = (item: Item, change: Change) =>
-    item.preference ? configPathLabel(`preferences.${change.path}`) : configPathLabel(change.path);
-
-  const formatTime = (value: string) => {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString($locale);
-  };
+  const few = (entry: Item) => entry.changes.length <= 2 && entry.omitted === 0;
+  /** Whether the entry's title already says its changes, so there is nothing more to open. */
+  const titled = (entry: Item) => entry.title === entry.changes.map((change) => change.said).join(' · ');
 </script>
 
-{#if error}
-  <InlineError message={$t('frameleaf_settings_history_load_failed')} {onRetry} />
-{:else if items && items.length === 0}
-  <div class="empty">
-    <Icon icon={mdiHistory} size="2.25rem" aria-hidden={true} />
-    <h3>{$t('frameleaf_settings_history_empty_title')}</h3>
-    <p>
-      {entries === undefined
-        ? $t('frameleaf_settings_history_empty_preferences')
-        : $t('frameleaf_settings_history_empty')}
-    </p>
-    <Button onclick={onConfigure}>{configureLabel}</Button>
-  </div>
-{:else if items}
-  <div class="history">
-    {#each items as item (item.id)}
-      <article>
-        <div class="line">
-          <Icon icon={mdiHistory} size="1.125rem" aria-hidden={true} />
-          <strong>{item.title}</strong>
-          <time datetime={item.createdAt}>{formatTime(item.createdAt)}</time>
-        </div>
-        {#if item.changes.length > 0}
-          <details>
-            <summary>{$t('frameleaf_settings_history_view')}</summary>
-            <ul>
-              {#each item.changes as change (change.path)}
-                <li>
-                  <strong>{label(item, change)}</strong>
-                  {#if change.protected}
-                    <span>{$t('frameleaf_settings_history_protected')}</span>
-                  {:else}
-                    <span>
-                      <del>{describe(historyValue(change as SystemConfigHistoryChangeDto, 'before'))}</del>
-                      <span aria-hidden="true">→</span>
-                      <ins>{describe(historyValue(change as SystemConfigHistoryChangeDto, 'after'))}</ins>
-                    </span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-            {#if item.omittedChanges > 0}
-              <p class="omitted">
-                {$t('frameleaf_settings_history_omitted', { values: { count: item.omittedChanges } })}
-              </p>
-            {/if}
-          </details>
-        {/if}
-        <small>{item.by}</small>
-      </article>
+<KitPage>
+  {#if error}
+    <InlineError message={$t('frameleaf_settings_history_load_failed')} {onRetry} />
+  {:else if items && items.length === 0}
+    <Hero
+      tone="quiet"
+      icon={mdiHistory}
+      title={$t('frameleaf_words_history_empty')}
+      body={entries === undefined ? $t('frameleaf_words_history_empty_own') : $t('frameleaf_words_history_empty_body')}
+      label={$t('frameleaf_settings_area_history')}
+    >
+      {#snippet actions()}
+        <Button onclick={onConfigure}>{configureLabel}</Button>
+      {/snippet}
+    </Hero>
+  {:else if items}
+    {#each groups as group (group.day)}
+      <Section title={$t(`frameleaf_words_history_group_${group.day}`)}>
+        <ul class="log">
+          {#each group.items as entry (entry.id)}
+            <li>
+              <span class="tile" aria-hidden="true">
+                <Icon icon={entry.kind === 'server' ? mdiServerOutline : mdiAccountCircleOutline} size="22" />
+              </span>
+              <div class="main">
+                <strong>{entry.title}</strong>
+                <span><time datetime={entry.createdAt}>{whenOf(entry.createdAt)}</time> · {entry.by}</span>
+                {#if entry.pages.length > 0 && few(entry)}
+                  <span>{entry.pages.map((page) => page.title).join(' · ')}</span>
+                {/if}
+                {#if entry.changes.length > 0 && (!few(entry) || !titled(entry))}
+                  <details>
+                    <summary>
+                      {$t('frameleaf_words_history_show', {
+                        values: { count: entry.changes.length + entry.omitted },
+                      })}
+                    </summary>
+                    <ul class="changes">
+                      {#each entry.changes as change (change.key)}
+                        <li>
+                          <strong>{change.label}</strong>
+                          <span>
+                            {#if change.before}
+                              {change.before}
+                              <Icon icon={mdiArrowRight} size="14" aria-label={$t('frameleaf_words_history_to')} />
+                            {/if}
+                            <b>{change.after}</b>
+                          </span>
+                        </li>
+                      {/each}
+                    </ul>
+                    {#if entry.omitted > 0}
+                      <p class="omitted">
+                        {$t('frameleaf_settings_history_omitted', { values: { count: entry.omitted } })}
+                      </p>
+                    {/if}
+                  </details>
+                {/if}
+                {#if entry.pages.length > 1}
+                  <span class="links">
+                    {#each entry.pages as page (page.title)}
+                      <TextLink href={commandCenterUrl(page.page.area, page.page.section)}>
+                        {$t('frameleaf_words_history_open_page', { values: { page: page.title } })}
+                      </TextLink>
+                    {/each}
+                  </span>
+                {/if}
+              </div>
+              <Pill tone="off">
+                {entry.kind === 'server' ? $t('frameleaf_words_history_server') : $t('frameleaf_words_history_you')}
+              </Pill>
+              <span class="open">
+                {#if entry.pages.length === 1}
+                  <TextLink href={commandCenterUrl(entry.pages[0].page.area, entry.pages[0].page.section)}>
+                    {$t('frameleaf_words_history_open')}
+                  </TextLink>
+                {/if}
+              </span>
+            </li>
+          {/each}
+        </ul>
+      </Section>
     {/each}
-  </div>
-{:else}
-  <div class="loading" role="status" aria-busy="true">
-    <span class="sr-only">{$t('loading')}</span>
-    <Skeleton variant="block" height="4.5rem" />
-    <Skeleton variant="block" height="4.5rem" />
-    <Skeleton variant="block" height="4.5rem" />
-  </div>
-{/if}
+  {:else}
+    <div class="loading" role="status" aria-busy="true">
+      <span class="sr-only">{$t('loading')}</span>
+      <Skeleton variant="block" height="4.5rem" />
+      <Skeleton variant="block" height="4.5rem" />
+      <Skeleton variant="block" height="4.5rem" />
+    </div>
+  {/if}
+</KitPage>
 
 <style>
-  .loading {
-    display: grid;
-    gap: var(--fl-space-3);
-    max-width: 820px;
-  }
-  .empty {
-    padding: 4.375rem 1.25rem;
-    text-align: center;
-    color: var(--fl-text);
-  }
-  .empty :global(svg) {
-    display: block;
-    margin: 0 auto 1.125rem;
-    color: var(--fl-muted);
-  }
-  .empty h3 {
+  .log,
+  .changes {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 550;
-  }
-  .empty p {
-    max-width: 32.5rem;
-    margin: 0.75rem auto 1.25rem;
-    color: var(--fl-muted);
-    line-height: 1.7;
-  }
-  .history article {
-    padding: 1.25rem 0;
-    border-bottom: 1px solid var(--fl-border);
-  }
-  .line {
-    display: flex;
-    gap: 0.625rem;
-    align-items: center;
-  }
-  .line :global(svg) {
-    flex-shrink: 0;
-    color: var(--fl-muted);
-  }
-  .history strong {
-    font-size: var(--fl-font-small);
-    font-weight: 500;
-  }
-  time {
-    margin-inline-start: auto;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-  }
-  small {
-    display: block;
-    margin-top: 0.625rem;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-  }
-  details {
-    margin-top: 0.9375rem;
-  }
-  summary {
-    cursor: pointer;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
-  }
-  ul {
-    margin: 0.5rem 0 0;
     padding: 0;
     list-style: none;
   }
-  li {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1.25rem;
-    padding: 0.25rem 0;
-    font-size: var(--fl-font-micro);
+  .log {
+    padding-bottom: var(--fl-space-2);
   }
-  li > span {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
+  .log > li {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto minmax(120px, auto);
+    align-items: center;
+    gap: var(--fl-space-4);
+    padding: var(--fl-space-4) 0;
+    border-top: 1px solid var(--fl-border);
+  }
+  .tile {
+    display: grid;
+    align-self: start;
+    place-items: center;
+    width: 44px;
+    height: 44px;
     color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-card);
+  }
+  .main > strong {
+    display: block;
+    font-size: var(--fl-font-size);
+    font-weight: 600;
+    line-height: 1.4;
     overflow-wrap: anywhere;
   }
-  del {
-    text-decoration: line-through;
+  .main > span {
+    display: block;
+    margin-top: var(--fl-space-1);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.45;
   }
-  ins {
+  .main > .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2) var(--fl-space-4);
+    margin-top: var(--fl-space-2);
+  }
+  details {
+    margin-top: var(--fl-space-2);
+  }
+  summary {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  summary:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+    border-radius: var(--fl-radius-sm);
+  }
+  details[open] summary {
+    margin-bottom: var(--fl-space-2);
+  }
+  .changes li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-4);
+    padding: var(--fl-space-3) 0;
+    font-size: var(--fl-font-callout);
+    border-top: 1px solid var(--fl-border);
+  }
+  .changes strong {
+    font-weight: 600;
+  }
+  .changes li > span {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
+    max-width: 420px;
+    color: var(--fl-muted);
+    text-align: end;
+    overflow-wrap: anywhere;
+  }
+  .changes b {
     color: var(--fl-text);
-    text-decoration: none;
+    font-weight: 600;
   }
   .omitted {
-    margin: 0.5rem 0 0;
+    margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-micro);
+    font-size: var(--fl-font-small);
   }
-  @media (max-width: 56rem) {
-    .line {
-      flex-wrap: wrap;
+  .open {
+    font-size: var(--fl-font-callout);
+    text-align: end;
+  }
+  .loading {
+    display: grid;
+    gap: var(--fl-space-3);
+  }
+  @container kit (max-width: 620px) {
+    .log > li {
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: var(--fl-space-3) var(--fl-space-4);
     }
-    time {
-      width: 100%;
-      margin-inline-start: 1.75rem;
+    .log > li > :global(.kit-pill),
+    .open {
+      grid-column: 2;
+      justify-self: start;
+      text-align: start;
+    }
+    .open:empty {
+      display: none;
+    }
+    .changes li {
+      grid-template-columns: 1fr;
+      gap: var(--fl-space-2);
+    }
+    .changes li > span {
+      justify-content: flex-start;
+      text-align: start;
     }
   }
 </style>
