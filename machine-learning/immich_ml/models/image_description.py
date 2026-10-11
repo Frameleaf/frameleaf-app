@@ -268,7 +268,7 @@ class ImageDescriptionModel(InferenceModel):
                 cache_dir=self.cache_dir,
                 local_dir=self.model_path,
                 endpoint=endpoint,
-                token=False,
+                token=model_source_token(endpoint),
             )
             verify_florence_snapshot(self.model_path, manifest)
             return

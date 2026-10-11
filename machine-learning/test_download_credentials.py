@@ -11,6 +11,7 @@ from huggingface_hub.utils._http import default_client_factory
 from pydantic import SecretStr
 
 from immich_ml.config import model_source_token, settings
+from immich_ml.models.florence_manifest import FLORENCE_MODELS
 from immich_ml.models.image_description import ImageDescriptionModel
 from immich_ml.models.nsfw_detection import NsfwDetectionModel
 from immich_ml.privacy import _bind_download_credentials, _download_client
@@ -142,6 +143,30 @@ def test_implicit_login_headers_are_disabled(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setenv("HF_TOKEN", "fake-saved-token-must-not-leave")
     assert "authorization" not in build_hf_headers()
+
+
+@pytest.mark.parametrize("endpoint", [None, "https://huggingface.co", "https://private-models.example"])
+def test_pinned_florence_source_credentials_preserve_manifest_contract(
+    monkeypatch: pytest.MonkeyPatch, endpoint: str | None
+) -> None:
+    monkeypatch.setattr(settings, "model_source_url", endpoint)
+    monkeypatch.setattr(settings, "model_source_token", SecretStr("fake-private-model-token"))
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+    monkeypatch.setenv("HF_TOKEN", "fake-saved-token-must-not-leave")
+    name = "microsoft/Florence-2-base-ft"
+    manifest = FLORENCE_MODELS[name]
+    with patch("immich_ml.models.image_description.snapshot_download") as download:
+        with patch("immich_ml.models.image_description.verify_florence_snapshot") as verify:
+            model = ImageDescriptionModel(name, acceleration="cuda", device="cpu")
+            model._download()
+    mirror = endpoint == "https://private-models.example"
+    assert download.call_args.args == (manifest["mirrorRepository"] if mirror else manifest["repository"],)
+    kwargs = download.call_args.kwargs
+    assert kwargs["endpoint"] == (endpoint or "https://huggingface.co")
+    assert kwargs["token"] == ("fake-private-model-token" if endpoint else False)
+    assert kwargs["revision"] == manifest["revision"]
+    assert kwargs["allow_patterns"] == list(manifest["files"])
+    verify.assert_called_once_with(model.model_path, manifest)
 
 
 def test_production_factory_preserves_hub_offline_hook() -> None:
