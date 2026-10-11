@@ -52,6 +52,8 @@ class ImageDescriptionRuntimeSettings(BaseModel):
     # not re-parsed on every request — see ml.md Medium "Per-request env-var read
     # in OpenVINO image resize".
     openvino_max_image_edge: int = 512
+    # Worker-admin consent only: API model selection must not authorize executable repository code.
+    trusted_custom_models: list[str] = []
 
 
 class PreloadModelData(BaseModel):
