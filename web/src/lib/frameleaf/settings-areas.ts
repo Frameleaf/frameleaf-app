@@ -130,11 +130,19 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
   },
   // The account's own email notifications sit with the server's email delivery, as in the template.
-  { id: 'notifications', group: 'server', sections: ['notifications'], personal: ['email-preferences'] },
+  // FL-368: "Emails you receive" comes first, because every account has it.
+  {
+    id: 'notifications',
+    group: 'server',
+    sections: ['notifications'],
+    personal: ['email-preferences'],
+    order: ['email-preferences', 'notifications'],
+  },
+  // FL-368: the three household pages first, then the ones behind "Advanced" (`ADVANCED_SECTIONS`).
   {
     id: 'server',
     group: 'server',
-    sections: ['server', 'version-check', 'logging', 'location', 'theme', 'configuration'],
+    sections: ['version-check', 'server', 'location', 'logging', 'theme', 'configuration'],
   },
   // FL-71: the old /admin/maintenance page (Maintenance.jsx): mode, database backups, integrity.
   { id: 'maintenance', group: 'server', sections: ['mode', 'backups', 'integrity'] },
@@ -145,12 +153,13 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     sections: [],
     // Profile, appearance, downloads and library features, as in the template. Usage and supporter
     // status have no other home in the template yet.
+    // FL-368: everyday pages first, then the account's own.
     personal: [
       'account',
-      'frameleaf-account',
       'app-settings',
-      'download-settings',
       'feature',
+      'download-settings',
+      'frameleaf-account',
       'user-usage-info',
       'user-purchase-settings',
     ],
@@ -225,9 +234,29 @@ export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze([
 export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.freeze({
   users: 'accounts',
   trash: 'contents',
+  // FL-368: People & sharing opens straight on its one page.
+  sharing: 'sharing',
 });
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
+
+/**
+ * The plain-words settings pages (FL-361). An area listed here opens on a landing page of its own
+ * that answers a question first and then lists its pages, each saying its current state, so the
+ * navigation does not repeat them. Its pages bring their own cards (the settings kit).
+ */
+export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
+  'notifications',
+  'server',
+  'preferences',
+  'sharing',
+]);
+export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
+
+/** Pages a landing page keeps behind "Advanced": kept, and closed until asked for. */
+export const ADVANCED_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
+  server: ['logging', 'theme', 'configuration'],
+});
 
 /**
  * The one Backup area's pages (FL-362, after design review finding 66). Backup is one screen with

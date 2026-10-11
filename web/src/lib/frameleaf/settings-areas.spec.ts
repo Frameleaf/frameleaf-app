@@ -309,9 +309,10 @@ describe('Frameleaf settings areas', () => {
         { key: 'email-preferences', title: 'Your email notifications' },
         { key: 'notifications', title: 'Email delivery', admin: true },
       ];
+      // FL-368: the account's own page is listed first, because every account has it.
       expect(sectionsForArea(both, 'notifications').map((s) => s.title)).toEqual([
-        'Email delivery',
         'Your email notifications',
+        'Email delivery',
       ]);
       expect(sectionsForArea(both, 'preferences')).toEqual([]);
     });
