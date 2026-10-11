@@ -3,9 +3,9 @@ import isoCountries from 'i18n-iso-countries';
 import { type Expression, type Insertable, type Kysely, type NotNull, type SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, readFileSync, statSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createReadStream, createWriteStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import readLine from 'node:readline';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -97,7 +97,7 @@ export class MapRepository {
    */
   private installedLandmarkIcons(): string | undefined {
     try {
-      return join(StorageCore.getBaseFolder(StorageFolder.Thumbnails), '.landmark-icons');
+      return join(StorageCore.getBaseFolder(StorageFolder.Thumbnails), '.landmark-icons', 'current');
     } catch {
       // no media location yet
       return undefined;
@@ -108,7 +108,7 @@ export class MapRepository {
   private landmarkIconFolder(): string {
     const installed = this.installedLandmarkIcons();
     return installed && existsSync(join(installed, 'icons.json'))
-      ? installed
+      ? realpathSync(installed)
       : this.configRepository.getEnv().resourcePaths.geodata.landmarkIcons;
   }
 
@@ -133,7 +133,9 @@ export class MapRepository {
 
   /** Where a landmark's brand icon is on disk, if it has one. `id` must already be a checked landmark id. */
   getLandmarkIconPath(id: string): string | undefined {
-    return this.getLandmarkIcons().has(id) ? join(this.landmarkIconFolder(), `${id}.png`) : undefined;
+    const icons = this.getLandmarkIcons();
+    const file = this.landmarkIcons?.file;
+    return icons.has(id) && file ? join(dirname(file), `${id}.png`) : undefined;
   }
 
   /**
@@ -148,10 +150,14 @@ export class MapRepository {
       return false;
     }
 
-    // Per process, so two workers starting together do not write into each other's copy.
-    const staging = `${folder}.${process.pid}.tmp`;
-    await rm(staging, { recursive: true, force: true });
-    await mkdir(staging, { recursive: true });
+    if (!/^[a-f0-9]{64}$/.test(pack.sha256)) {
+      throw new Error('The icon pack checksum is malformed');
+    }
+    const root = dirname(folder);
+    await mkdir(root, { recursive: true });
+    const staging = await mkdtemp(join(root, '.tmp-'));
+    const version = join(root, pack.sha256);
+    const pointer = `${staging}.link`;
     try {
       const download = join(staging, 'pack.ndjson.gz');
       const response = await fetch(pack.url, { signal: AbortSignal.timeout(LANDMARK_ICON_DOWNLOAD_TIMEOUT_MS) });
@@ -202,10 +208,23 @@ export class MapRepository {
       await rm(download);
       await writeFile(join(staging, 'icons.json'), JSON.stringify(index));
       await writeFile(join(staging, 'pack.sha256'), pack.sha256);
-      await rm(folder, { recursive: true, force: true });
-      await rename(staging, folder);
+      try {
+        await rename(staging, version);
+      } catch (error) {
+        // Another worker may have published this exact pack while we downloaded it.
+        if (
+          !['EEXIST', 'ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code ?? '') ||
+          (await readFile(join(version, 'pack.sha256'), 'utf8').catch(() => '')) !== pack.sha256
+        ) {
+          throw error;
+        }
+      }
+      // shortcut: retain old versions for active readers; add cache pruning when pack updates need it.
+      await symlink(basename(version), pointer);
+      await rename(pointer, folder);
       return true;
     } finally {
+      await rm(pointer, { force: true });
       await rm(staging, { recursive: true, force: true });
     }
   }

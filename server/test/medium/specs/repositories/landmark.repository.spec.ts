@@ -245,7 +245,7 @@ describe('landmark matching', () => {
 
     it('is fetched once, unpacked, and read in place of a bundled pack', async () => {
       const { sut } = setup('/nonexistent/landmarks.ndjson.gz');
-      const folder = join(media, 'thumbs', '.landmark-icons');
+      const folder = join(media, 'thumbs', '.landmark-icons', sha256(good));
 
       await expect(sut.installLandmarkIcons({ url, sha256: sha256(good) })).resolves.toBe(true);
 
