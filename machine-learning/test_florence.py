@@ -239,3 +239,43 @@ def test_custom_consent_is_worker_setting(monkeypatch):
     name = "example/Florence-2-custom"
     monkeypatch.setenv("MACHINE_LEARNING_IMAGE_DESCRIPTION__TRUSTED_CUSTOM_MODELS", json.dumps([name]))
     assert Settings().image_description.trusted_custom_models == [name]
+
+
+def test_custom_consent_never_loads_another_repositorys_cached_python(tmp_path, monkeypatch):
+    import transformers
+    from huggingface_hub.utils import validate_repo_id
+
+    trusted = "reviewed/Florence-2-custom"
+    attacker = "attacker/Florence.-2-custom"
+    for name in [trusted, attacker]:
+        validate_repo_id(name)
+    monkeypatch.setattr(settings, "cache_folder", tmp_path)
+    monkeypatch.setattr(settings.image_description, "trusted_custom_models", [trusted])
+    legacy = tmp_path / "image-description-tagging/Florence-2-custom/cuda"
+    legacy.mkdir(parents=True)
+    (legacy / "config.json").write_text(json.dumps({"repository": attacker}))
+    untrusted_model = ImageDescriptionModel(attacker, acceleration="cuda", device="cpu")
+    trusted_model = ImageDescriptionModel(trusted, acceleration="cuda", device="cpu")
+    other_owner = ImageDescriptionModel("another/Florence-2-custom", acceleration="cuda", device="cpu")
+    assert len({untrusted_model.cache_dir, trusted_model.cache_dir, other_owner.cache_dir, legacy}) == 4
+    assert not untrusted_model.cached
+    assert not trusted_model.cached
+    acquired = []
+
+    def acquire(repo, **kwargs):
+        acquired.append(repo)
+        destination = kwargs["local_dir"]
+        destination.mkdir(parents=True)
+        (destination / "config.json").write_text(json.dumps({"repository": repo}))
+
+    processor, causal_model = Mock(), Mock()
+    monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", acquire)
+    monkeypatch.setattr(transformers.AutoProcessor, "from_pretrained", processor)
+    monkeypatch.setattr(transformers.AutoModelForCausalLM, "from_pretrained", causal_model)
+    untrusted_model.download()
+    assert not trusted_model.cached
+    trusted_model.load()
+    assert acquired == [attacker, trusted]
+    processor.assert_called_once_with(str(trusted_model.model_path), trust_remote_code=True, local_files_only=True)
+    assert causal_model.call_args.args == (str(trusted_model.model_path),)
+    assert json.loads((trusted_model.model_path / "config.json").read_text())["repository"] == trusted

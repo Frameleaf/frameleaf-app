@@ -5,6 +5,7 @@ import re
 import threading
 import unicodedata
 from collections.abc import Callable
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -212,26 +213,19 @@ class ImageDescriptionModel(InferenceModel):
 
     @property
     def _cache_dir_default(self) -> Path:
-        # Scope cache directory by acceleration backend so CUDA (full-precision
-        # PyTorch weights) and OpenVINO (int4 IR) snapshots do not collide on
-        # the same path. Without this scoping, switching acceleration with a
-        # persistent /cache volume (remote GPU deployments) silently loads
-        # the wrong weights and the loader crashes opaquely. See ml.md Critical #2.
-        base = settings.cache_folder / self.model_task.value / self.model_name
+        # Keep exact repository identity: clean_name drops owners and dots, allowing cache poisoning.
+        root = settings.cache_folder / self.model_task.value
+        base = root / "repositories" / sha256(self.hf_model_name.encode()).hexdigest()
         scoped = base / str(self.acceleration)
-        # If a legacy (unscoped) cache exists alongside, log ONCE per base
-        # path so operators can reclaim the disk space manually. We do not
-        # auto-delete. Without the dedupe guard this fired on every
-        # ``model_cache.get`` cache miss; see ml.md verify-ml.md
-        # "log once" gap.
-        if base.exists() and any(p for p in base.iterdir() if p.is_file()):
+        legacy = root / self.model_name
+        if legacy.exists():
             with _legacy_cache_warned_lock:
-                already_warned = base in _legacy_cache_warned
+                already_warned = legacy in _legacy_cache_warned
                 if not already_warned:
-                    _legacy_cache_warned.add(base)
+                    _legacy_cache_warned.add(legacy)
             if not already_warned:
                 log.warning(
-                    f"Legacy image-description cache detected at {base}. "
+                    f"Legacy image-description cache detected at {legacy}. "
                     f"New runs will populate {scoped}. The old directory can be removed manually."
                 )
         return scoped
