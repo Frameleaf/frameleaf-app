@@ -5,7 +5,7 @@
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
-    "src/schema/frameleaf-feature-schema.ts": "d42494c5726707f5dc7e3fe79e0e306ab75cb8222229503460121747df18653a",
+    "src/schema/frameleaf-feature-schema.ts": "0e366df2bd76346beb3d8a90f52dcf030046a9906f61b83ea50a2924430b7c86",
     "src/schema/functions.ts": "af2278831932f313f85c307c9e2b50255536ad33e420830b0e378e00ea5ec9ad",
     "src/schema/index.ts": "4af02dede162c4f4e6d5abd92f9482f8f3fbd4da260c782c686a3e54cb45bf9c",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
