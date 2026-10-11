@@ -17,12 +17,14 @@ test.describe('performance report (FL-139)', () => {
   let admin: LoginResponseDto;
 
   test.beforeAll(async () => {
+    test.setTimeout(120_000);
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     for (let index = 0; index < LIBRARY_ITEMS; index++) {
       await utils.createAsset(admin.accessToken);
     }
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
     await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
   });
 
