@@ -58,6 +58,11 @@ import { restoredVersionState } from 'src/utils/restoration.js';
 import { studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { STUDIO_IMPORT_VECTOR_MAX_BYTES, studioImportKind } from 'src/utils/studio-imports.js';
 import {
+  parseStudioLottieSource,
+  readStudioVectorBindings,
+  validateStudioVectorClosure,
+} from 'src/utils/studio-lottie-source.js';
+import {
   STUDIO_MAX_GRAPH_BYTES,
   STUDIO_MAX_REFERENCES,
   StudioAudioSource,
@@ -84,11 +89,6 @@ import {
   studioRightsId,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
-import {
-  parseStudioLottieDependencies,
-  readStudioVectorBindings,
-  validateStudioVectorClosure,
-} from 'src/utils/studio-vector-dependencies.js';
 
 /* ------------------------------------------------------------------ */
 /* Inputs                                                               */
@@ -354,6 +354,7 @@ const vectorContentTypes = new Set([
   'image/svg+xml',
   'application/json',
   'application/zip',
+  'application/zip+dotlottie',
   'application/x-lottie+json',
 ]);
 
@@ -621,7 +622,9 @@ export class StudioResourceService extends BaseService {
       }
       // Stored zero-declaration Lottie imports predate strict upload admission; verify their exact bytes too.
       if (
-        ['application/json', 'application/x-lottie+json'].includes(item.contentType) &&
+        ['application/json', 'application/x-lottie+json', 'application/zip', 'application/zip+dotlottie'].includes(
+          item.contentType,
+        ) &&
         !vectorParents.has(studioReferenceKey(reference))
       ) {
         let bytes: Uint8Array | undefined;
@@ -633,9 +636,15 @@ export class StudioResourceService extends BaseService {
             bytes = await file.read(0, file.size);
             if (bytes.length !== file.size || createHash('sha256').update(bytes).digest('hex') !== item.checksum)
               throw new Error('Vector input changed');
-            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-            if (parseStudioLottieDependencies(text).dependencies.length > 0)
-              throw new Error('Undeclared vector dependencies');
+            const parsed = await parseStudioLottieSource(
+              bytes,
+              item.contentType === 'application/zip' ? 'application/zip+dotlottie' : item.contentType,
+            );
+            try {
+              if (parsed.dependencies.length > 0) throw new Error('Undeclared vector dependencies');
+            } finally {
+              for (const file of Object.values(parsed.archive?.files ?? {})) file.fill(0);
+            }
           } finally {
             await file.close();
           }
