@@ -28,7 +28,7 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen, cloudPlaceState } from '$lib/frameleaf/backup-overview';
-  import { BACKUP_SCHEDULES, RETENTION_FIELDS, endpointHost, readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
+  import { RETENTION_FIELDS, endpointHost, readBackupKeyFile } from '$lib/frameleaf/cloud-backup';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -528,21 +528,6 @@
 
   {#if backupDraft}
     <Section title={$t('frameleaf_backup_versions_title')} description={$t('frameleaf_backup_versions_description')}>
-      <Row label={$t('frameleaf_cloud_backup_schedule_run')} help={$t('frameleaf_cloud_backup_schedule_help')}>
-        <select
-          aria-label={$t('frameleaf_backup_when_label', { values: { place: $t('frameleaf_buddy_cloud_backup') } })}
-          value={backupDraft.schedule.cronExpression}
-          disabled={configDisabled}
-          onchange={(event) => (backupDraft.schedule.cronExpression = event.currentTarget.value)}
-        >
-          {#each BACKUP_SCHEDULES as schedule (schedule.cron)}
-            <option value={schedule.cron}>{$t(schedule.labelKey)}</option>
-          {/each}
-          {#if BACKUP_SCHEDULES.every((schedule) => schedule.cron !== backupDraft.schedule.cronExpression)}
-            <option value={backupDraft.schedule.cronExpression}>{$t('frameleaf_backup_schedule_custom')}</option>
-          {/if}
-        </select>
-      </Row>
       {#each RETENTION_FIELDS as { field, labelKey, unitKey, min, max } (field)}
         <Row label={$t(labelKey)}>
           <Amount
@@ -718,13 +703,5 @@
     width: 100%;
     height: 6px;
     accent-color: var(--fl-accent);
-  }
-  select {
-    min-height: var(--fl-control-height);
-    padding: 0 var(--fl-space-3);
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
   }
 </style>

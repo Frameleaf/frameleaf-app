@@ -115,15 +115,15 @@ describe('Frameleaf settings areas', () => {
   });
 
   it('shows every backup page under the one Backup area without moving its address (FL-362, design review finding 66)', () => {
-    expect([...BACKUP_TABS]).toEqual(['overview', 'restore']);
+    expect([...BACKUP_TABS]).toEqual(['overview', 'schedule', 'restore']);
     expect([...BACKUP_PLACE_PAGES]).toEqual(['cloud', 'buddy', 'local']);
-    // The library data settings, the backups manager and Cloud backup are shown in Backup…
+    // The schedule, the backups manager and Cloud backup are shown in Backup…
     expect(presentedArea('backup', 'backup')).toBe('backups');
     expect(presentedArea('maintenance', 'backups')).toBe('backups');
     expect(presentedArea('cloud', 'cloud-backup')).toBe('backups');
     expect(presentedAreaForSection('backup')).toBe('backups');
     // …each on the page that took its place.
-    expect(backupPageFor('backup', 'backup')).toBe('local');
+    expect(backupPageFor('backup', 'backup')).toBe('schedule');
     expect(backupPageFor('maintenance', 'backups')).toBe('local');
     expect(backupPageFor('cloud', 'cloud-backup')).toBe('cloud');
     // Inside Backup the page is the address's own section, or the view an older link names.

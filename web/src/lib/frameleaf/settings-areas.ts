@@ -240,7 +240,7 @@ export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area
  * Those addresses still open, on the Backup page that took their place, so older links, the old
  * administration redirects and the command palette keep working.
  */
-export const BACKUP_TABS = Object.freeze(['overview', 'restore'] as const);
+export const BACKUP_TABS = Object.freeze(['overview', 'schedule', 'restore'] as const);
 export const BACKUP_PLACE_PAGES = Object.freeze(['cloud', 'buddy', 'local'] as const);
 export type BackupPageId = (typeof BACKUP_TABS)[number] | (typeof BACKUP_PLACE_PAGES)[number];
 
@@ -249,8 +249,8 @@ const isBackupPageId = (value: string | null | undefined): value is BackupPageId
 
 /** Addresses in other areas that are shown as part of Backup, as `<area>:<section>`. */
 const BACKUP_ADDRESSES: Readonly<Record<string, BackupPageId>> = Object.freeze({
-  // The library data copy: its settings, and the saved snapshots with their restore.
-  'backup:backup': 'local',
+  // The old schedule form, and the saved snapshots with their restore.
+  'backup:backup': 'schedule',
   'maintenance:backups': 'local',
   'cloud:cloud-backup': 'cloud',
 });

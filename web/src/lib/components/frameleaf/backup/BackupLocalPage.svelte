@@ -71,13 +71,6 @@
     localPlaceState(backups ?? null, settingsDraft?.baseline.backup.database.enabled ?? true, new Date()),
   );
 
-  const SCHEDULES = $derived([
-    { cron: '0 0 * * *', label: $t('interval.night_at_midnight') },
-    { cron: '0 02 * * *', label: $t('interval.night_at_twoam') },
-    { cron: '0 13 * * *', label: $t('interval.day_at_onepm') },
-    { cron: '0 */6 * * *', label: $t('interval.hours', { values: { hours: 6 } }) },
-  ]);
-
   /** The backup queue, or undefined when it cannot be read. */
   const readQueue = async () => {
     try {
@@ -175,21 +168,6 @@
         onChange={(value) => (database.enabled = value)}
       />
     </Row>
-    <Row label={$t('frameleaf_cloud_backup_schedule_run')} help={$t('frameleaf_cloud_backup_schedule_help')}>
-      <select
-        aria-label={$t('frameleaf_backup_when_label', { values: { place: $t('frameleaf_backup_place_local') } })}
-        value={database.cronExpression}
-        disabled={configDisabled || !database.enabled}
-        onchange={(event) => (database.cronExpression = event.currentTarget.value)}
-      >
-        {#each SCHEDULES as schedule (schedule.cron)}
-          <option value={schedule.cron}>{schedule.label}</option>
-        {/each}
-        {#if SCHEDULES.every((schedule) => schedule.cron !== database.cronExpression)}
-          <option value={database.cronExpression}>{$t('frameleaf_backup_schedule_custom')}</option>
-        {/if}
-      </select>
-    </Row>
     <Row label={$t('frameleaf_backup_local_keep')} help={$t('frameleaf_backup_local_keep_help')}>
       <Amount
         label={$t('frameleaf_backup_local_keep_label')}
@@ -231,14 +209,6 @@
     width: 100%;
     height: 6px;
     accent-color: var(--fl-accent);
-  }
-  select {
-    min-height: var(--fl-control-height);
-    padding: 0 var(--fl-space-3);
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
   }
   .saved {
     padding: var(--fl-space-4) 0 var(--fl-space-5);

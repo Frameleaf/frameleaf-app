@@ -454,6 +454,7 @@ describe('the Command Center (FL-71)', () => {
     });
 
     it.each([
+      ['schedule', 'schedule'],
       ['restore', 'restore'],
       ['cloud', 'cloud'],
       ['buddy', 'buddy'],
@@ -466,7 +467,7 @@ describe('the Command Center (FL-71)', () => {
     });
 
     it.each([
-      ['/user-settings?area=backup&section=backup', 'local', 'Import & protection'],
+      ['/user-settings?area=backup&section=backup', 'schedule', 'Import & protection'],
       ['/user-settings?area=maintenance&section=backups', 'local', 'Maintenance'],
       ['/user-settings?area=cloud&section=cloud-backup', 'cloud', 'Frameleaf Cloud'],
     ])('shows %s under Backup, at the address it always had', (address, shown, formerArea) => {
