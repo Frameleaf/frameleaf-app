@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { StorageCore } from 'src/cores/storage.core.js';
 import type { LinuxDurabilityQualification } from 'src/repositories/studio-import-file.repository.js';
 import { LinuxDurabilityAdapter, StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { assertSameOwnedInode } from 'src/utils/studio-import-durability.js';
@@ -182,6 +183,38 @@ beforeEach(() => {
 });
 
 describe('unqualified deployment refusal', () => {
+  it('defers default storage resolution until use and retains its unqualified adapter', async () => {
+    const baseFolder = vi.spyOn(StorageCore, 'getBaseFolder').mockImplementation(() => {
+      throw new Error('Media location is not set.');
+    });
+    try {
+      const repository = new StudioImportFileRepository();
+      baseFolder.mockReturnValue(root);
+      await expect(repository.prepare(KEY, stage, declaration)).rejects.toThrow('UNQUALIFIED');
+      const resolutions = baseFolder.mock.calls.length;
+      baseFolder.mockReturnValue('/different-exports');
+      await expect(repository.prepare(KEY, stage, declaration)).rejects.toThrow('UNQUALIFIED');
+      expect(baseFolder).toHaveBeenCalledTimes(resolutions);
+      expect(native.open).not.toHaveBeenCalled();
+      expect(native.link).not.toHaveBeenCalled();
+    } finally {
+      baseFolder.mockRestore();
+    }
+  });
+  it('retains the injected adapter without resolving default storage', async () => {
+    const baseFolder = vi.spyOn(StorageCore, 'getBaseFolder').mockImplementation(() => {
+      throw new Error('Media location is not set.');
+    });
+    try {
+      const fake = syntheticLinux();
+      fake.qualification.mockRejectedValue(new Error('injected_adapter_refusal'));
+      await expect(fake.repository.prepare(KEY, stage, declaration)).rejects.toThrow('injected_adapter_refusal');
+      expect(baseFolder).not.toHaveBeenCalled();
+      expect(native.open).not.toHaveBeenCalled();
+    } finally {
+      baseFolder.mockRestore();
+    }
+  });
   it('has no default deployment qualification', async () => {
     await expect(new LinuxDurabilityAdapter().requireQualified(root)).rejects.toThrow('UNQUALIFIED');
     expect(native.open).not.toHaveBeenCalled();

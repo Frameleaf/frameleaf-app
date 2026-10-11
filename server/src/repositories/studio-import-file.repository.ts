@@ -55,17 +55,19 @@ export const STUDIO_IMPORT_DURABILITY_ADAPTER = Symbol('StudioImportDurabilityAd
 /** Internal port only. Journal locks, authority and reference gates belong to its caller. */
 @Injectable()
 export class StudioImportFileRepository implements FilePort {
-  private readonly adapter: DurabilityAdapter;
+  private durabilityAdapter?: DurabilityAdapter;
   constructor(@Optional() @Inject(STUDIO_IMPORT_DURABILITY_ADAPTER) adapter?: DurabilityAdapter) {
-    this.adapter =
-      adapter ??
-      new LinuxDurabilityAdapter({
-        root: StorageCore.getBaseFolder(StorageFolder.Exports),
-        anchor: StorageCore.getBaseFolder(StorageFolder.Exports),
-        qualification: async () => {
-          throw new Error('UNQUALIFIED');
-        },
-      });
+    this.durabilityAdapter = adapter;
+  }
+
+  private get adapter(): DurabilityAdapter {
+    return (this.durabilityAdapter ??= new LinuxDurabilityAdapter({
+      root: StorageCore.getBaseFolder(StorageFolder.Exports),
+      anchor: StorageCore.getBaseFolder(StorageFolder.Exports),
+      qualification: async () => {
+        throw new Error('UNQUALIFIED');
+      },
+    }));
   }
 
   async prepare(key: PublicationKey, incoming: string, declaration: ImportDeclaration): Promise<PreparedImport> {
