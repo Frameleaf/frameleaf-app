@@ -1128,7 +1128,12 @@ const AdminConfigSchemaWithVisibility = z
       })
       .meta({ id: 'AdminConfigTrashDto' }),
     theme: z
-      .object({ customCss: z.string().describe('Custom CSS for theming').meta({ visibility: Public }) })
+      .object({
+        customCss: z.string().describe('Custom CSS for theming').meta({ visibility: Public }),
+        // FL-368: styling can be turned off without deleting the text. Defaulted, so a stored
+        // configuration, a config file or an older client that does not name it keeps it on.
+        customCssEnabled: z.boolean().default(true).describe('Serve the custom CSS to the web app'),
+      })
       .meta({ id: 'AdminConfigThemeDto' }),
     library: z
       .object({
@@ -1643,6 +1648,7 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   theme: {
     customCss: '',
+    customCssEnabled: true,
   },
   library: {
     scan: {

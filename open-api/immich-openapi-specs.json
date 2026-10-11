@@ -54671,6 +54671,11 @@
           "customCss": {
             "description": "Custom CSS for theming",
             "type": "string"
+          },
+          "customCssEnabled": {
+            "default": true,
+            "description": "Serve the custom CSS to the web app",
+            "type": "boolean"
           }
         },
         "required": [
