@@ -1,4 +1,4 @@
-// Read-only contract checks for hosted CI and the canonical container publisher.
+// Read-only contract checks for CI runner routing and the canonical container publisher.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -18,9 +18,9 @@ const workflows = Object.fromEntries(
       load(fs.readFileSync(path.join(directory, file), "utf8")),
     ]),
 );
-const hosted = new Set([
-  "ubuntu-24.04",
-  "ubuntu-24.04-arm",
+const supported = new Set([
+  "nscloud-ubuntu-24.04-amd64-8x16",
+  "nscloud-ubuntu-24.04-arm64-8x16",
   "windows-latest",
   "macos-26",
 ]);
@@ -68,14 +68,14 @@ for (const [file, workflow] of Object.entries(workflows)) {
         assert(
           Array.isArray(runners) &&
             runners.length &&
-            runners.every((runner) => hosted.has(runner)),
+            runners.every((runner) => supported.has(runner)),
           `${label}: uncontrolled runner matrix`,
         );
       }
     } else
       assert(
-        hosted.has(job["runs-on"]),
-        `${label}: not a supported hosted runner`,
+        supported.has(job["runs-on"]),
+        `${label}: not a supported CI runner`,
       );
     count++;
   }
@@ -89,7 +89,7 @@ assert(
 for (const name of ["server", "machine-learning"])
   assert.deepEqual(
     docker.jobs[name].needs,
-    ["integration", "certification"],
+    ["changes", "integration", "certification"],
     "Both quality gates must precede publishing",
   );
 assert.equal(
@@ -165,7 +165,7 @@ for (const spec of VARIANTS) {
     matrix.map((row) => row.platform),
     spec.platforms,
   );
-  assert(matrix.every((row) => hosted.has(row.runner)));
+  assert(matrix.every((row) => supported.has(row.runner)));
   for (const change of [
     { PLATFORMS: "linux/ppc64le" },
     { PLATFORMS: "linux/amd64,linux/amd64" },
@@ -191,5 +191,5 @@ assert(
   "Zizmor must execute the real pinned scanner",
 );
 console.log(
-  `Hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
+  `Runner routing, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
 );

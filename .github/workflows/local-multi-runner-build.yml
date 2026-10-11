@@ -1,6 +1,6 @@
 name: Local multi-runner container image build
 
-# Adapted from the pinned immich-app/devtools native builder. Keep hosted
+# Adapted from the pinned immich-app/devtools native builder. Keep native
 # architecture routing, digest assembly and BuildKit token-secret transport.
 on:
   workflow_call:
@@ -33,7 +33,7 @@ on:
 jobs:
   matrix:
     if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     outputs:
@@ -138,7 +138,7 @@ jobs:
 
   merge:
     needs: [matrix, build]
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
       actions: read
