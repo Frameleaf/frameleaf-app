@@ -667,6 +667,7 @@ export class CloudBackupService {
   }
 
   private async setupLocked(auth: AuthDto, dto: CloudBackupSetupDto): Promise<void> {
+    const keyRevision = this.keyChannel.revision;
     if (await this.activeBucketOperation()) {
       throw new ConflictException('Wait for the running backup to finish, or cancel it, before changing the setup.');
     }
@@ -799,9 +800,18 @@ export class CloudBackupService {
     });
 
     // Own-memory: held here. Only authenticated workers receive recipient-encrypted replies.
-    this.keyChannel.clear();
     if (dto.keyMode === 'own-memory') {
-      this.keyChannel.setKey({ instanceId: identity.instanceId, bucketRef: ref, keyFingerprint: fingerprint }, key);
+      if (
+        !this.keyChannel.setKey(
+          { instanceId: identity.instanceId, bucketRef: ref, keyFingerprint: fingerprint },
+          key,
+          keyRevision,
+        )
+      ) {
+        throw new ConflictException('The backup key was changed or locked during setup. Load the key again if needed.');
+      }
+    } else {
+      this.keyChannel.clear();
     }
     // Frameleaf Cloud keeps escrow for the server key mode only, and warns when a schedule stops running
     await this.reportAgentSettings(dto.keyMode, true);
@@ -956,6 +966,7 @@ export class CloudBackupService {
 
   /** Own-memory mode: load locally; peers request an authenticated, recipient-encrypted copy. */
   async unlock(dto: CloudBackupUnlockDto): Promise<CloudBackupStatusResponseDto> {
+    const keyRevision = this.keyChannel.revision;
     const metadata = await this.requireClaim();
     if (metadata.keyMode !== 'own-memory') {
       throw new BadRequestException('This server keeps its backup key, so there is nothing to unlock.');
@@ -965,15 +976,19 @@ export class CloudBackupService {
       key.fill(0);
       throw new BadRequestException('This key is for a different bucket.');
     }
+    let loaded: boolean;
     try {
       await loadBackupWorkerIdentity(join(identityDirectory(this.configRepository), INSTANCE_KEY_FILE));
-      this.keyChannel.setKey(metadata, key);
+      loaded = this.keyChannel.setKey(metadata, key, keyRevision);
     } catch {
       throw new ConflictException(
         'The backup worker identity is unavailable. Check the private FRAMELEAF_IDENTITY_DIR mount on every application worker, then load the key again.',
       );
     } finally {
       key.fill(0);
+    }
+    if (!loaded) {
+      throw new ConflictException('The backup key was changed or locked during unlock. Load it again if needed.');
     }
     this.logger.log(`Cloud backup key ${metadata.keyFingerprint} loaded into memory`);
     return this.getStatus();
@@ -3745,7 +3760,6 @@ export class CloudBackupService {
       }
       return key;
     }
-    this.keyChannel.clear();
     const content = await this.keys.read(identityDirectory(this.configRepository), metadata.keyFingerprint);
     if (!content) {
       return null;
