@@ -5,7 +5,7 @@ import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
 import { AlbumKind } from 'src/enum.js';
-import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
   STUDIO_REVISION_MAX_BYTES,
   STUDIO_REVISION_MAX_COUNT,
@@ -18,6 +18,11 @@ import {
   StudioProjectRevisionTable,
   StudioProjectTable,
 } from 'src/schema/tables/studio-project.table.js';
+import {
+  type RetainedProcessingProvenance,
+  RetainedProcessingProvenanceSchema,
+  assertReadyRetry,
+} from 'src/utils/studio-import-provenance.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
 
@@ -39,11 +44,76 @@ export type StudioProjectImport = {
   fileName: string;
   externalReferences: number | null;
   createdAt: Date;
+  /** Absent only on older in-process callers; database reads always return null or retained lineage. */
+  processingProvenance?: RetainedProcessingProvenance | null;
 };
 export type StudioProjectImportCreate = Omit<StudioProjectImport, 'createdAt'> & { reservationId?: string };
 const studioImportColumns =
   sql.raw(`item."projectId", item.id, item."ownerId", item."contentType", item.checksum, item."sizeBytes"::float8 AS "sizeBytes",
-   item.path, item."fileName", item."externalReferences", item."createdAt"`);
+   item.path, item."fileName", item."externalReferences", item."createdAt", item."processingProvenance"`);
+/** One common ordering for journal, import, restore and purge transactions. No nested transaction. */
+export async function lockStudioImportProject(tx: Kysely<DB>, projectId: string) {
+  if (!tx.isTransaction) throw new Error('studio_import_transaction_required');
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`buddy-studio:${projectId}`},0))`.execute(tx);
+  const { rows } = await sql<{
+    id: string;
+    ownerId: string;
+    deletedAt: Date | null;
+    archivedAt: Date | null;
+    purgeAfter: Date | null;
+    ownerDeletedAt: Date | null;
+  }>`SELECT project.id,project."ownerId",project."deletedAt",project."archivedAt",project."purgeAfter",owner."deletedAt" AS "ownerDeletedAt"
+    FROM public.studio_project project JOIN public."user" owner ON owner.id=project."ownerId"
+    WHERE project.id=${projectId}::uuid FOR UPDATE OF project`.execute(tx);
+  return rows[0];
+}
+/** The exact ready row, including orphans for retained cleanup. Optional lock stays in the caller transaction. */
+export async function readStudioImport(
+  tx: Kysely<DB>,
+  projectId: string,
+  id: string,
+  lock = false,
+): Promise<StudioProjectImport | undefined> {
+  const { rows } = await sql<StudioProjectImport>`SELECT ${studioImportColumns} FROM public.studio_project_import item
+    WHERE item."projectId"=${projectId}::uuid AND item.id=${id}::uuid ${lock ? sql`FOR UPDATE` : sql``}`.execute(tx);
+  return rows[0];
+}
+/** Caller owns project/import/path/quota locks. Never replaces immutable ready identity. */
+export async function insertStudioImport(
+  tx: Transaction<DB>,
+  item: StudioProjectImportCreate,
+  publicationId?: string,
+): Promise<StudioProjectImport> {
+  const previous = await readStudioImport(tx, item.projectId, item.id, true);
+  if (!previous) {
+    const { rows } = await sql<{ count: number }>`SELECT ((SELECT count(*) FROM public.studio_project_import
+      WHERE "projectId"=${item.projectId}::uuid)+(SELECT count(*) FROM public.studio_import_publication journal
+      WHERE journal."projectId"=${item.projectId}::uuid AND journal.state='preparing'
+        AND journal.id IS DISTINCT FROM ${publicationId ?? null}::uuid
+        AND NOT EXISTS (SELECT 1 FROM public.studio_project_import imported WHERE imported."projectId"=journal."projectId" AND imported.id=journal."importId")))::int AS count`.execute(
+      tx,
+    );
+    if (rows[0].count >= STUDIO_IMPORT_MAX_PER_PROJECT)
+      throw new BadRequestException('The project has too many imports');
+    await sql`INSERT INTO public.studio_project_import
+      ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences","processingProvenance")
+      VALUES (${item.projectId}::uuid,${item.id}::uuid,${item.ownerId}::uuid,${item.contentType},${item.checksum},
+        ${item.sizeBytes}::bigint,${item.path},${item.fileName},${item.externalReferences}::int,
+        ${item.processingProvenance === null || item.processingProvenance === undefined ? sql`NULL` : sql`${JSON.stringify(item.processingProvenance)}::text::jsonb`})
+      ON CONFLICT ("projectId",id) DO NOTHING`.execute(tx);
+  }
+  const stored = previous ?? (await readStudioImport(tx, item.projectId, item.id, true));
+  if (
+    !stored ||
+    stored.ownerId !== item.ownerId ||
+    stored.checksum !== item.checksum ||
+    stored.sizeBytes !== item.sizeBytes ||
+    stored.contentType !== item.contentType
+  )
+    throw new ConflictException('Project import ids cannot be rebound to another file');
+  assertReadyRetry(stored.processingProvenance ?? null, item.processingProvenance ?? undefined);
+  return stored;
+}
 export type StudioProject = Selectable<StudioProjectTable>;
 export type StudioProjectRevision = Selectable<StudioProjectRevisionTable>;
 /** A history row: everything about a revision except the document itself. */
@@ -232,6 +302,9 @@ export class StudioProjectRepository {
     }
     try {
       const project = await this.db.transaction().execute(async (trx) => {
+        // A duplicate's FK admission locks its existing source project. Take that
+        // project before quota so the INSERT cannot wait project-after-owner.
+        if (seed.duplicatedFromId) await lockStudioImportProject(trx, seed.duplicatedFromId);
         await assertStudioStorageAdmission(trx, seed.ownerId, seed.revision?.graphBytes ?? 0);
         const row = await trx
           .insertInto('studio_project')
@@ -417,7 +490,9 @@ export class StudioProjectRepository {
    * string for lineage, and no asset row is touched: a project references media, it never owns it.
    */
   async delete(id: string): Promise<void> {
-    await this.write((db) => db.deleteFrom('studio_project').where('id', '=', id).execute());
+    const removed = await this.purgeImportProject(id, () => true);
+    if (!removed && (await this.db.selectFrom('studio_project').select('id').where('id', '=', id).executeTakeFirst()))
+      throw new ConflictException('Studio import cleanup is pending');
   }
   /* ------------------------------------------------------------------ */
   /* Lifecycle (FL-91)                                                   */
@@ -456,15 +531,41 @@ export class StudioProjectRepository {
   }
   /** Every trashed project of one owner, gone for good. Returns how many. */
   async emptyTrash(ownerId: string): Promise<number> {
-    const result = await this.write((db) =>
-      db
-        .deleteFrom('studio_project')
-        .where('ownerId', '=', ownerId)
-        .where('deletedAt', 'is not', null)
-        .executeTakeFirst(),
-    );
-    return Number(result.numDeletedRows);
+    const rows = await this.db
+      .selectFrom('studio_project')
+      .select('id')
+      .where('ownerId', '=', ownerId)
+      .where('deletedAt', 'is not', null)
+      .orderBy('id')
+      .execute();
+    let removed = 0;
+    for (const row of rows)
+      if (await this.purgeImportProject(row.id, (project) => project.ownerId === ownerId && project.deletedAt !== null))
+        removed++;
+    return removed;
   }
+  private async purgeImportProject(
+    id: string,
+    eligible: (project: NonNullable<Awaited<ReturnType<typeof lockStudioImportProject>>>) => boolean,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const project = await lockStudioImportProject(tx, id);
+      if (!project || !eligible(project)) return false;
+      const { rows: receipts } = await sql<{
+        stagedPath: string | null;
+        targetPath: string | null;
+      }>`SELECT "stagedPath","targetPath"
+        FROM public.studio_import_publication WHERE "projectId"=${id}::uuid ORDER BY id FOR UPDATE`.execute(tx);
+      if (receipts.some((row) => row.stagedPath !== null || row.targetPath !== null)) return false;
+      await tx.selectFrom('user').select('id').where('id', '=', project.ownerId).forUpdate().execute();
+      await tx.deleteFrom('studio_project').where('id', '=', id).execute();
+      // Only compact receipts may disappear, after permanent deletion; pending handles never cascade.
+      await sql`DELETE FROM public.studio_import_publication WHERE "projectId"=${id}::uuid
+        AND "stagedPath" IS NULL AND "targetPath" IS NULL`.execute(tx);
+      return true;
+    });
+  }
+
   /**
    * FL-90: the projects whose current revision names any of these assets. The graph is opaque
    * jsonb, so the id is matched as text; only well-formed UUIDs are searched, so a match is the
@@ -683,7 +784,28 @@ export class StudioProjectRepository {
     ) {
       throw new BadRequestException('Invalid project import declaration');
     }
+    if (item.processingProvenance !== null && item.processingProvenance !== undefined) {
+      RetainedProcessingProvenanceSchema.parse(item.processingProvenance);
+      if (item.processingProvenance.outputSha256 !== item.checksum)
+        throw new BadRequestException('Invalid import provenance');
+    }
     return this.db.transaction().execute(async (tx) => {
+      const project = await lockStudioImportProject(tx, item.projectId);
+      if (
+        !project ||
+        project.ownerId !== item.ownerId ||
+        project.deletedAt ||
+        project.archivedAt ||
+        project.ownerDeletedAt
+      )
+        throw new ConflictException('The project is unavailable for imports');
+      const previous = await readStudioImport(tx, item.projectId, item.id, true);
+      const { rows: pending } = await sql`SELECT id FROM public.studio_import_publication
+        WHERE "projectId"=${item.projectId}::uuid AND "importId"=${item.id}::uuid
+          AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL) FOR UPDATE`.execute(tx);
+      if (pending.length > 0) throw new ConflictException('publication_busy');
+      for (const path of [...new Set([item.path, ...(previous ? [previous.path] : [])])].sort())
+        await lockFilePath(tx, path);
       await assertStudioStorageAdmission(tx, item.ownerId, 0);
       if (item.reservationId) {
         const reserved = await tx
@@ -696,51 +818,11 @@ export class StudioProjectRepository {
           .executeTakeFirst();
         if (!reserved) throw new ConflictException('Studio import reservation unavailable');
       }
-      await assertStudioStorageAdmission(
-        tx,
-        item.ownerId,
-        (await this.readImport(tx, item.projectId, item.id)) ? 0 : item.sizeBytes,
-      );
-      const project = await tx
-        .selectFrom('studio_project')
-        .select('id')
-        .where('id', '=', item.projectId)
-        .where('ownerId', '=', item.ownerId)
-        .where('deletedAt', 'is', null)
-        .where('archivedAt', 'is', null)
-        .forUpdate()
-        .executeTakeFirst();
-      if (!project) {
-        throw new ConflictException('The project is unavailable for imports');
-      }
-      const { rows: counted } = await sql<{
-        count: number;
-      }>`
-        SELECT count(*)::int AS count FROM public.studio_project_import WHERE "projectId" = ${item.projectId}::uuid
-      `.execute(tx);
-      await sql`
-        INSERT INTO public.studio_project_import
-          ("projectId", id, "ownerId", "contentType", checksum, "sizeBytes", path, "fileName", "externalReferences")
-        SELECT ${item.projectId}::uuid, ${item.id}::uuid, ${item.ownerId}::uuid, ${item.contentType}, ${item.checksum},
-          ${item.sizeBytes}::bigint, ${item.path}, ${item.fileName}, ${item.externalReferences}::int
-        WHERE ${counted[0].count}::int < ${STUDIO_IMPORT_MAX_PER_PROJECT}::int
-        ON CONFLICT ("projectId", id) DO NOTHING
-      `.execute(tx);
-      const stored = await this.readImport(tx, item.projectId, item.id);
-      if (!stored) {
-        throw new BadRequestException('The project has too many imports');
-      }
-      if (
-        stored.ownerId !== item.ownerId ||
-        stored.checksum !== item.checksum ||
-        stored.sizeBytes !== item.sizeBytes ||
-        stored.contentType !== item.contentType
-      ) {
-        throw new ConflictException('Project import ids cannot be rebound to another file');
-      }
-      return stored;
+      await assertStudioStorageAdmission(tx, item.ownerId, previous ? 0 : item.sizeBytes);
+      return insertStudioImport(tx, item);
     });
   }
+
   /** The imports of a live project, as the FL-90 resolver declares them. */
   async listImports(projectId: string): Promise<StudioProjectImport[]> {
     const { rows } = await sql<StudioProjectImport>`
@@ -888,25 +970,27 @@ export class StudioProjectRepository {
   }
   /** The retention sweep: trashed projects whose deadline has passed. Returns the ids removed. */
   async deletePurgeable(now: Date, limit = 500): Promise<string[]> {
-    const rows = await this.write((db) =>
-      db
-        .deleteFrom('studio_project')
-        .where('id', 'in', (eb) =>
-          eb
-            .selectFrom('studio_project')
-            .select('id')
-            .where('deletedAt', 'is not', null)
-            .where('purgeAfter', 'is not', null)
-            .where('purgeAfter', '<', now)
-            .limit(limit),
+    const rows = await this.db
+      .selectFrom('studio_project')
+      .select('id')
+      .where('deletedAt', 'is not', null)
+      .where('purgeAfter', 'is not', null)
+      .where('purgeAfter', '<', now)
+      .orderBy('id')
+      .limit(limit)
+      .execute();
+    const removed: string[] = [];
+    for (const row of rows)
+      if (
+        await this.purgeImportProject(
+          row.id,
+          (project) => project.deletedAt !== null && project.purgeAfter !== null && project.purgeAfter < now,
         )
-        .where('deletedAt', 'is not', null)
-        .where('purgeAfter', '<', now)
-        .returning('id')
-        .execute(),
-    );
-    return rows.map((row) => row.id);
+      )
+        removed.push(row.id);
+    return removed;
   }
+
   /** Drop whoever holds the lease. Used when a project is archived or trashed under an editor. */
   async clearLease(id: string): Promise<void> {
     await this.write((db) =>
@@ -1009,11 +1093,9 @@ export class StudioProjectRepository {
   async appendRevision(append: StudioRevisionAppend): Promise<StudioRevisionAppendResult> {
     try {
       return await this.db.transaction().execute(async (trx) => {
-        const owner = await trx
-          .selectFrom('studio_project')
-          .select('ownerId')
-          .where('id', '=', append.projectId)
-          .executeTakeFirst();
+        // Match publication/purge order before quota admission; retain the CAS/lease
+        // predicates on the head update below as the save's final acceptance guard.
+        const owner = await lockStudioImportProject(trx, append.projectId);
         if (!owner) return { status: 'rejected' as const };
         await assertStudioStorageAdmission(trx, owner.ownerId, append.graphBytes);
         const {
@@ -1157,6 +1239,7 @@ export class StudioProjectRepository {
   /* ------------------------------------------------------------------ */
   async createUpload(upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
     return this.write(async (db) => {
+      await lockFilePath(db, upload.path);
       await assertStudioStorageAdmission(db, upload.ownerId, upload.sizeBytes, 'upload');
       return db
         .insertInto('studio_bundle_upload')

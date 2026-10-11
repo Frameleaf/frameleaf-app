@@ -22,6 +22,8 @@ import { registerStudioEngine, StudioEngineNotBuiltError } from './engine-loader
 import {
   isStudioFrameHello,
   isStudioProjectImportUpload,
+  isStudioEditorScope,
+  isStudioPublicationId,
   STUDIO_FRAME_PROTOCOL_VERSION,
   type StudioCommandApplyOutcome,
   type StudioCommandApplyRequest,
@@ -228,6 +230,15 @@ const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
       userId: origin.userId,
       graphVersion: origin.graphVersion,
     });
+  },
+  cancelProjectImportPublication: (services, [importId, publicationId, scope]) => {
+    if (!services.cancelProjectImportPublication) {
+      return Promise.reject(new Error('Publication cancellation unavailable'));
+    }
+    if (!isStudioPublicationId(importId) || !isStudioPublicationId(publicationId) || !isStudioEditorScope(scope)) {
+      return Promise.reject(new Error('Invalid publication cancellation'));
+    }
+    return services.cancelProjectImportPublication(importId, publicationId, scope);
   },
   reloadProject: (services) => services.reloadProject(),
   saveWorkspace: (services, [layout]) =>

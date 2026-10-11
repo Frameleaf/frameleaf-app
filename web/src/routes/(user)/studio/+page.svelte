@@ -48,11 +48,23 @@
     type StudioCommandEngine,
     type StudioDraftResult,
     type StudioHostServices,
+    type StudioEditorScope,
+    type StudioPublicationReceipt,
+    type StudioReceiptPage,
     type StudioProjectHandle,
     type StudioProjectImportRef,
     type StudioWorkspaceView,
   } from '$lib/frameleaf/studio/host-contract';
-  import { loadStudioProjectImports, uploadStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
+  import {
+    createStudioRetentionApi,
+    loadStudioProjectImports,
+    uploadStudioProjectImport,
+  } from '$lib/frameleaf/studio/project-imports';
+  import {
+    onStudioImportSessionRetired,
+    reconcileRetainedImports,
+    submitRetainedImport,
+  } from '$lib/frameleaf/studio/import-retention';
   import type { Rational } from '$lib/frameleaf/studio/rational-time';
   import {
     createStudioPreviewClient,
@@ -147,24 +159,152 @@
    * the owner reads them, and only a stored project has any.
    */
   let projectImports = $state<StudioProjectImportRef[]>([]);
+  let receiptPage = $state<StudioReceiptPage | null>(null);
+  let receiptsOpen = $state(false);
+  let receiptsUnavailable = $state(false);
+  let receiptsBusy = $state(false);
+  let receiptOperation = $state<string | null>(null);
+  let receiptRequest = 0;
+  let importOrigin: { scope: StudioEditorScope; controller: AbortController } | undefined;
+  const pendingPublications = new Map<string, AbortController>();
+  const cancelledPublications = new Set<string>();
+  const isImportScopeCurrent = (scope: StudioEditorScope) =>
+    !accessLost &&
+    !forbidden &&
+    authManager.authenticated &&
+    authManager.user.id === scope.userId &&
+    sessionState?.access === 'owner' &&
+    project.id === scope.projectId &&
+    (project.graphVersion ?? 0) === scope.graphVersion;
+  const detachImports = () => {
+    importOrigin?.controller.abort();
+    importOrigin = undefined;
+    for (const controller of pendingPublications.values()) {
+      controller.abort();
+    }
+    pendingPublications.clear();
+    cancelledPublications.clear();
+    receiptRequest++;
+    receiptsBusy = false;
+    projectImports = [];
+    receiptPage = null;
+    receiptsOpen = false;
+    receiptsUnavailable = false;
+    receiptOperation = null;
+  };
+  const readReceipts = async (cursor?: string) => {
+    const origin = importOrigin;
+    if (!origin || !isImportScopeCurrent(origin.scope)) {
+      return;
+    }
+    const request = ++receiptRequest;
+    const current = () => !origin.controller.signal.aborted && isImportScopeCurrent(origin.scope);
+    receiptsBusy = true;
+    receiptOperation = null;
+    try {
+      const page = await reconcileRetainedImports(
+        createStudioRetentionApi(origin.controller.signal),
+        origin.scope,
+        current,
+        cursor,
+      );
+      if (current() && request === receiptRequest) {
+        receiptPage = page;
+        receiptsUnavailable = false;
+        const imports = new Map(projectImports.map((item) => [item.id, item]));
+        for (const receipt of page.items) {
+          if (receipt.state === 'published' && receipt.imported) {
+            imports.set(receipt.importId, receipt.imported);
+          }
+        }
+        projectImports = [...imports.values()];
+      }
+    } catch {
+      if (current() && request === receiptRequest) {
+        receiptsUnavailable = true;
+        // A failed page says nothing about absence or an older page's next cursor.
+      }
+    } finally {
+      if (current() && request === receiptRequest) {
+        receiptsBusy = false;
+      }
+    }
+  };
+  const cancelPublication = async (importId: string, publicationId: string, scope: StudioEditorScope) => {
+    const origin = importOrigin;
+    if (!origin || origin.controller.signal.aborted || !isImportScopeCurrent(scope)) {
+      throw new Error('origin_retired');
+    }
+    cancelledPublications.add(publicationId);
+    pendingPublications.get(publicationId)?.abort();
+    const result = await createStudioRetentionApi(origin.controller.signal).cancel(
+      scope.projectId,
+      importId,
+      publicationId,
+    );
+    if (origin.controller.signal.aborted || !isImportScopeCurrent(scope)) {
+      throw new Error('origin_retired');
+    }
+    if (result.status === 'already-published' && result.receipt.imported) {
+      const kept = result.receipt.imported;
+      projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
+    }
+    if (receiptPage) {
+      receiptPage = {
+        ...receiptPage,
+        items: receiptPage.items.map((item) => (item.publicationId === publicationId ? result.receipt : item)),
+      };
+    }
+    return result;
+  };
+  const onCancelPublication = async (receipt: StudioPublicationReceipt) => {
+    const origin = importOrigin;
+    if (!origin) {
+      return;
+    }
+    try {
+      const result = await cancelPublication(receipt.importId, receipt.publicationId, origin.scope);
+      receiptOperation =
+        result.status === 'already-published'
+          ? 'Already published in this project; cancellation did not erase the retained file.'
+          : result.receipt.cleanupPending
+            ? 'Cancelled; private file cleanup is pending.'
+            : 'Cancelled.';
+    } catch {
+      if (!origin.controller.signal.aborted && isImportScopeCurrent(origin.scope)) {
+        receiptOperation =
+          'Cancellation unavailable; the publication outcome is unknown. Refresh receipts to reconcile.';
+      }
+    }
+  };
   $effect(() => {
-    const projectId = project.id;
+    const scope = { projectId: project.id, userId: auth.userId, graphVersion: project.graphVersion ?? 0 };
     const owner = sessionState?.access === 'owner';
+    const retired = accessLost || forbidden;
     untrack(() => {
-      if (projectId === STUDIO_DRAFT_PROJECT_ID || !owner) {
-        projectImports = [];
+      detachImports();
+      if (scope.projectId === STUDIO_DRAFT_PROJECT_ID || !owner || retired) {
         return;
       }
-      void loadStudioProjectImports(projectId)
+      const controller = new AbortController();
+      importOrigin = { scope, controller };
+      // Canonical imports reload independently of receipt pagination or discovery availability.
+      void loadStudioProjectImports(scope.projectId, controller.signal)
         .then((loaded) => {
-          if (project.id === projectId) {
-            projectImports = loaded;
+          if (controller.signal.aborted || !isImportScopeCurrent(scope)) {
+            return;
           }
+
+          const loadedIds = new Set(loaded.map((item) => item.id));
+          // Keep an acknowledged publication that raced this canonical list snapshot.
+          projectImports = [...loaded, ...projectImports.filter((item) => !loadedIds.has(item.id))];
         })
         .catch(() => {
-          // The editor still opens; clips of a file that could not be listed show as missing media.
+          // Missing canonical media stays visibly unresolved in the editor.
         });
+      void readReceipts();
     });
+    return () => untrack(detachImports);
   });
 
   /** The library selection only: what a Save as copy link carries in `?assets=`. */
@@ -724,30 +864,62 @@
     saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
     // FL-103 / FL-105: a recording or a file imported in the editor is kept with the stored project.
     uploadProjectImport: async (upload) => {
-      const projectId = project.id;
-      if (projectId === STUDIO_DRAFT_PROJECT_ID || sessionState?.access !== 'owner') {
-        throw new Error($t('frameleaf_studio_import_needs_saved_project'));
+      const origin = importOrigin;
+      if (!origin || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
       }
-      const userId = authManager.user.id;
-      const version = project.graphVersion ?? 0;
-      const scope = upload.scope;
+      const { scope } = origin;
+      if (
+        upload.scope &&
+        (upload.scope.projectId !== scope.projectId ||
+          upload.scope.userId !== scope.userId ||
+          upload.scope.graphVersion !== scope.graphVersion)
+      ) {
+        throw new Error('origin_retired');
+      }
+      if (upload.processingProvenance && (!upload.publicationId || !upload.scope)) {
+        throw new Error('publication_registration_required');
+      }
+      const publicationId = upload.publicationId;
+      if (publicationId && (pendingPublications.has(publicationId) || cancelledPublications.has(publicationId))) {
+        throw new Error('publication_already_submitted');
+      }
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      origin.controller.signal.addEventListener('abort', abort, { once: true });
+      if (origin.controller.signal.aborted) {
+        controller.abort();
+      }
+      if (publicationId) {
+        pendingPublications.set(publicationId, controller);
+      }
       const current = () =>
-        authManager.authenticated &&
-        authManager.user.id === userId &&
-        project.id === projectId &&
-        (project.graphVersion ?? 0) === version;
-      if (scope && (scope.projectId !== projectId || scope.userId !== userId || scope.graphVersion !== version)) {
-        throw new Error('The editor origin changed before upload');
+        !controller.signal.aborted &&
+        isImportScopeCurrent(scope) &&
+        (!publicationId || !cancelledPublications.has(publicationId));
+      try {
+        const kept = publicationId
+          ? await submitRetainedImport(createStudioRetentionApi(controller.signal), scope, current, {
+              ...upload,
+              publicationId,
+            })
+          : await uploadStudioProjectImport(scope.projectId, upload, controller.signal);
+        // A committed late response belongs to its original project; never trigger rollback/delete.
+        if (current()) {
+          projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
+        }
+        return kept;
+      } finally {
+        origin.controller.signal.removeEventListener('abort', abort);
+        if (publicationId && pendingPublications.get(publicationId) === controller) {
+          pendingPublications.delete(publicationId);
+        }
+        if (!origin.controller.signal.aborted && isImportScopeCurrent(scope) && publicationId) {
+          void readReceipts();
+        }
       }
-      const kept = await uploadStudioProjectImport(projectId, upload);
-      if (scope && !current()) {
-        throw new Error('The editor origin changed during upload');
-      }
-      if (current()) {
-        projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
-      }
-      return kept;
     },
+    cancelProjectImportPublication: cancelPublication,
     // The editor's own Export control opens the same dialog as the header's (FL-106).
     requestExport: () => {
       if (canExportVideo) {
@@ -984,6 +1156,7 @@
     const lost = () => {
       capabilityRefresh.dispose();
       accessLost = true;
+      detachImports();
       dirty = false;
       // Nothing may be exported for a session that no longer has the project.
       exportDialogOpen = false;
@@ -1003,24 +1176,30 @@
       SessionDelete: lost,
       SessionLocked: lost,
     });
+    const detachRetirement = onStudioImportSessionRetired(lost);
 
     // A reload or tab close never reaches onDestroy, so give the lease back as the document goes:
     // otherwise the reloaded page (a new client) opens read-only behind its own old lease. A page
     // kept in the back/forward cache may come back alive, so it keeps its session.
     const leave = (event: PageTransitionEvent) => {
-      if (!event.persisted) {
-        void session.dispose({ keepalive: true });
+      if (event.persisted) {
+        return;
       }
+
+      detachImports();
+      void session.dispose({ keepalive: true });
     };
     addEventListener('pagehide', leave);
 
     return () => {
       unsubscribe();
+      detachRetirement();
       removeEventListener('pagehide', leave);
     };
   });
 
   onDestroy(() => {
+    detachImports();
     clearTimeout(exportTimer);
     capabilityRefresh.dispose();
     settleExportChoice(null);
@@ -1117,6 +1296,15 @@
   draftHeld={studioDraftHeld(sessionState?.status, sessionState?.hasDraft === true)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}
+  onImportRetention={sessionState?.access === 'owner' &&
+  !accessLost &&
+  !forbidden &&
+  project.id !== STUDIO_DRAFT_PROJECT_ID
+    ? () => {
+        receiptsOpen = true;
+        void readReceipts();
+      }
+    : undefined}
   onExport={canExportVideo ? () => (videoExportOpen = true) : undefined}
   onRename={canRename ? onRename : undefined}
   {workspace}
@@ -1161,10 +1349,53 @@
   onExport={(choice) => void onExportVideo(choice)}
 />
 
+{#if sessionState?.access === 'owner' && !accessLost && !forbidden && project.id !== STUDIO_DRAFT_PROJECT_ID}
+  <Dialog bind:open={receiptsOpen} title="Import receipts" closeLabel={$t('close')}>
+    <section aria-label="Generated import retention" class="fl-import-receipts">
+      <p>
+        Retained generated imports may carry historical processing and source labels into exported bundles. These labels
+        grant no access to the original source.
+      </p>
+      <Button disabled={receiptsBusy} onclick={() => void readReceipts()}>Refresh receipts</Button>
+      {#if receiptsUnavailable}<p role="status">
+          Receipts unavailable; publication outcomes are unknown. No files were resent.
+        </p>{/if}
+      {#if receiptOperation}<p role="status">{receiptOperation}</p>{/if}
+      {#if receiptPage}
+        {#each receiptPage.items as receipt (receipt.publicationId)}
+          <p>
+            <code>{receipt.importId}</code>:
+            {#if receipt.state === 'registered'}Incomplete: registered before upload; vanished local bytes cannot be
+              recovered.
+            {:else if receipt.state === 'preparing'}Pending or unknown; refresh receipts to reconcile.
+            {:else if receipt.state === 'published'}Published in this project.
+            {:else}Cancelled.{/if}
+            {#if receipt.cleanupPending}Private file cleanup pending.{/if}
+            {#if receipt.state === 'registered' || receipt.state === 'preparing'}
+              <Button disabled={receiptsBusy} onclick={() => void onCancelPublication(receipt)}
+                >Cancel publication</Button
+              >
+            {/if}
+          </p>
+        {/each}
+        {#if receiptPage.items.length === 0}<p>
+            No publication receipts on this page. Retained files load separately.
+          </p>{/if}
+        {#if receiptPage.nextCursor}
+          <Button disabled={receiptsBusy} onclick={() => void readReceipts(receiptPage?.nextCursor ?? undefined)}
+            >Older receipts</Button
+          >
+        {/if}
+      {/if}
+    </section>
+  </Dialog>
+{/if}
+
 <!-- The host-side export dialog: the header's Export bundle and the editor's own export both ask here. -->
 <StudioBundleExportDialog
   bind:open={exportDialogOpen}
   projectName={project.name}
+  historicalLabels
   onConfirm={(includeMedia) => void onConfirmExport(includeMedia)}
 />
 
@@ -1184,6 +1415,15 @@
 </Dialog>
 
 <style>
+  .fl-import-receipts {
+    display: grid;
+    gap: var(--fl-space-3);
+    max-width: 36rem;
+    overflow-wrap: anywhere;
+  }
+  .fl-import-receipts p {
+    margin: 0;
+  }
   .fl-studio-leave {
     margin: var(--fl-space-3) 0 0;
     max-width: 28rem;

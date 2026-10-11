@@ -174,6 +174,20 @@ export interface StudioProjectHandle {
   graphVersion?: number;
 }
 
+/** Historical client-reported processing evidence; source labels grant no access. */
+export type ProcessingProvenanceInput = {
+  version: 1;
+  family: 'anime4k';
+  evidence: 'client-reported';
+  variant: 'animation' | 'liveAction' | 'threeD';
+  source: { namespace: 'freecut-media'; id: string; projectId: string };
+  input: { width: number; height: number };
+  output: { width: number; height: number; fps: number; frameCount: number; codec: string };
+  modelBinding?: { resourceId: string; sha256: string };
+};
+
+export type RetainedProcessingProvenance = ProcessingProvenanceInput & { outputSha256: string };
+
 /** A file kept with the project (FL-103 / FL-105), as the editor reads it. */
 export interface StudioProjectImportRef {
   /** The media id the editor gave the file; clips place it by this id. */
@@ -186,6 +200,7 @@ export interface StudioProjectImportRef {
   sizeBytes: number;
   /** SHA-256 verified by the server; older hosts may omit it. */
   checksum?: string;
+  processingProvenance?: RetainedProcessingProvenance;
   /**
    * Same-origin path of the bytes. It carries no credential: the owner's session cookie authorizes
    * it, exactly as for the page itself.
@@ -207,7 +222,22 @@ export interface StudioProjectImportUpload {
   fileName: string;
   file: Blob;
   scope?: StudioEditorScope;
+  publicationId?: string;
+  processingProvenance?: ProcessingProvenanceInput;
 }
+
+export interface StudioPublicationReceipt {
+  publicationId: string;
+  importId: string;
+  state: 'registered' | 'preparing' | 'published' | 'aborted';
+  createdAt: string;
+  expiresAt: string;
+  cleanupPending: boolean;
+  imported?: StudioProjectImportRef;
+}
+
+export type StudioReceiptPage = { items: StudioPublicationReceipt[]; nextCursor: string | null };
+export type StudioCancelResult = { status: 'cancelled' | 'already-published'; receipt: StudioPublicationReceipt };
 
 export interface StudioHostContext {
   project: StudioProjectHandle;
@@ -424,6 +454,12 @@ export interface StudioHostServices {
    * lasts only as long as the editor document.
    */
   uploadProjectImport?(upload: StudioProjectImportUpload): Promise<StudioProjectImportRef>;
+  /** A committed publication is reconciled in its original project, never erased by cancellation. */
+  cancelProjectImportPublication?(
+    importId: string,
+    publicationId: string,
+    scope: StudioEditorScope,
+  ): Promise<StudioCancelResult>;
   /**
    * Report where the playhead is, as an exact rational instant (FL-93), so review comments the
    * person adds from the host's Review panel are pinned there (`Studio.jsx:1759`) rather than at

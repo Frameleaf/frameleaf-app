@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import * as sdk from "../build/index.js";
 
 const response = (value) =>
@@ -127,9 +129,15 @@ test("Takeout chunks preserve raw bytes and resumable offsets through Fetch", as
             `/api/takeout/import-id/archives/archive-id/chunks?offset=${offset}`,
           );
           assert.equal(options.signal, signal);
-          const request = new Request(`https://photos.example.com${url}`, options);
+          const request = new Request(
+            `https://photos.example.com${url}`,
+            options,
+          );
           assert.equal(request.method, "PUT");
-          assert.equal(request.headers.get("content-type"), "application/octet-stream");
+          assert.equal(
+            request.headers.get("content-type"),
+            "application/octet-stream",
+          );
           assert.equal(request.headers.get("x-upload-test"), "retained");
           assert.deepEqual(new Uint8Array(await request.arrayBuffer()), bytes);
           return response(source);
@@ -154,14 +162,24 @@ test("Takeout content-type defaults retain global and per-request header precede
       new Headers({ "content-type": "application/octet-stream; request=1" }),
     ]) {
       await sdk.uploadTakeoutArchiveChunk(
-        { id: "import-id", archiveId: "archive-id", offset: 0, body: new Blob(["part"]) },
+        {
+          id: "import-id",
+          archiveId: "archive-id",
+          offset: 0,
+          body: new Blob(["part"]),
+        },
         {
           headers,
           fetch: async (url, options) => {
-            const request = new Request(`https://photos.example.com${url}`, options);
+            const request = new Request(
+              `https://photos.example.com${url}`,
+              options,
+            );
             assert.equal(
               request.headers.get("content-type"),
-              headers ? "application/octet-stream; request=1" : "application/octet-stream; global=1",
+              headers
+                ? "application/octet-stream; request=1"
+                : "application/octet-stream; global=1",
             );
             assert.equal(request.headers.get("x-global"), "retained");
             return response({ id: "archive-id", uploadedBytes: 4 });
@@ -182,13 +200,19 @@ test("Takeout offset conflicts retain the server response for resume recovery", 
   const conflict = { message: "The archive upload offset has changed" };
   await assert.rejects(
     sdk.uploadTakeoutArchiveChunk(
-      { id: "import-id", archiveId: "archive-id", offset: 5, body: new Blob(["part"]) },
+      {
+        id: "import-id",
+        archiveId: "archive-id",
+        offset: 5,
+        body: new Blob(["part"]),
+      },
       {
         headers: { "Content-Type": "application/octet-stream" },
-        fetch: async () => new Response(JSON.stringify(conflict), {
-          status: 409,
-          headers: { "content-type": "application/json" },
-        }),
+        fetch: async () =>
+          new Response(JSON.stringify(conflict), {
+            status: 409,
+            headers: { "content-type": "application/json" },
+          }),
       },
     ),
     (error) => {
@@ -197,4 +221,58 @@ test("Takeout offset conflicts retain the server response for resume recovery", 
       return true;
     },
   );
+});
+
+test("new publication enums preserve existing public enum exports", () => {
+  assert.deepEqual(
+    { ...sdk.Evidence },
+    {
+      RegisteredCurrentOriginals: "registered-current-originals",
+    },
+  );
+  assert.deepEqual(
+    { ...sdk.Status12 },
+    {
+      Active: "active",
+      Trashed: "trashed",
+      Deleted: "deleted",
+    },
+  );
+  assert.equal(sdk.ProcessingProvenanceVersion.$1, 1);
+  assert.deepEqual(Object.values(sdk.ProcessingProvenanceFamily), ["anime4k"]);
+  assert.deepEqual(Object.values(sdk.ProcessingProvenanceEvidence), [
+    "client-reported",
+  ]);
+  assert.deepEqual(Object.values(sdk.ProcessingProvenanceSourceNamespace), [
+    "freecut-media",
+  ]);
+  assert.deepEqual(Object.values(sdk.StudioImportPublicationCancelStatus), [
+    "cancelled",
+    "already-published",
+  ]);
+});
+
+test("existing DTO fields still accept their original public enum members", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(
+        new URL("bin/tsc", import.meta.resolve("typescript/package.json")),
+      ),
+      "--ignoreConfig",
+      "--noEmit",
+      "--strict",
+      "--skipLibCheck",
+      "--target",
+      "esnext",
+      "--module",
+      "node16",
+      "--moduleResolution",
+      "node16",
+      fileURLToPath(new URL("./contracts.types.ts", import.meta.url)),
+    ],
+    { encoding: "utf8" },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });

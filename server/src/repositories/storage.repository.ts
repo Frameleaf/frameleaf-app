@@ -91,8 +91,8 @@ export class StorageRepository {
     return fs.writeFile(filepath, buffer, { flag: 'wx' });
   }
 
-  createWriteStream(filepath: string): Writable {
-    return createWriteStream(filepath, { flags: 'w', flush: true });
+  createWriteStream(filepath: string, options: { flags?: 'w' | 'wx'; mode?: number } = {}): Writable {
+    return createWriteStream(filepath, { flags: 'w', flush: true, ...options });
   }
 
   createOrOverwriteFile(filepath: string, buffer: Buffer) {

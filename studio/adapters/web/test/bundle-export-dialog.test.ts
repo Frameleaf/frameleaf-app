@@ -47,7 +47,11 @@ describe('host-backed project bundle save barrier', () => {
   it('retains export without an optional pre-save callback', async () => {
     await show(true)
     expect(call).toHaveBeenCalledOnce()
-    expect(post).not.toHaveBeenCalled()
+    expect(post).toHaveBeenCalledExactlyOnceWith({
+      type: 'notify',
+      tone: 'info',
+      message: 'Included generated imports carry historical processing and source labels.',
+    })
   })
 
   it.each([new Error('Project save failed'), 'Project save failed'])(
@@ -126,6 +130,11 @@ describe('host-backed project bundle save barrier', () => {
         },
       },
     ])
-    expect(post).toHaveBeenCalledOnce()
+    expect(post).toHaveBeenCalledTimes(2)
+    expect(post).toHaveBeenLastCalledWith({
+      type: 'notify',
+      tone: 'info',
+      message: 'Included generated imports carry historical processing and source labels.',
+    })
   })
 })

@@ -41,6 +41,8 @@ import { createProject, getProject } from '@/infrastructure/storage'
 import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 import { watchLocalImports, type LocalImportWatch } from './project-imports'
+import { createCompletionRetention } from './import-retention'
+import { upscaleService } from '@/features/media-library/services/upscale-service'
 import { hydrateGeneratedMedia, storeGeneratedMedia } from '@frameleaf/host/generated-media'
 import {
   buildTimelineFromStores,
@@ -449,7 +451,80 @@ function watchLocalImportsFor(state: Session) {
     },
   })
   state.localImports = watch
-  state.unsubscribe.push(() => watch.stop())
+  const completions = new Set<ReturnType<typeof createCompletionRetention>>()
+  upscaleService.setCompletionRetentionCapture((projectId, sourceId) => {
+    const mount = state.mount
+    if (projectId !== mount.projectId || !acceptsWrite(state, mount)) throw new Error('origin_retired')
+    const scope = {
+      userId: state.context.auth.userId,
+      projectId: state.context.project.id,
+      graphVersion: mount.graphVersion,
+    }
+    const current = () =>
+      acceptsWrite(state, mount) &&
+      state.context.auth.userId === scope.userId &&
+      state.context.project.id === scope.projectId &&
+      graphVersionOf(state.context) === scope.graphVersion
+    const publicationId = crypto.randomUUID()
+    const retention = createCompletionRetention({
+      workspace: state.workspace,
+      watch,
+      current,
+      upload: (upload) => call('uploadProjectImport', { ...upload, scope }),
+      cancel: (id) => call('cancelProjectImportPublication', id, publicationId, scope),
+      cancelUnknown: () => {
+        if (current()) post({
+          type: 'notify',
+          message: 'Cancellation unavailable; reconcile publication receipts in the original project.',
+          tone: 'error',
+        })
+      },
+      kept: (id) => state.media.kept(id),
+    })
+    completions.add(retention)
+    const root = state.workspace.handle()
+    return {
+      root,
+      isCurrent: current,
+      hold: (id) => retention.hold(id),
+      cancel: (id) => retention.cancel(id),
+      async complete(file, media, result) {
+        try {
+          await retention.complete({
+            id: media.id,
+            fileName: file.name,
+            file,
+            publicationId,
+            scope,
+            processingProvenance: {
+              version: 1,
+              family: 'anime4k',
+              evidence: 'client-reported',
+              variant: result.variant,
+              source: { namespace: 'freecut-media', id: sourceId, projectId: scope.projectId },
+              input: { width: result.sourceWidth, height: result.sourceHeight },
+              output: {
+                width: result.width,
+                height: result.height,
+                fps: result.fps,
+                frameCount: result.frameCount,
+                codec: result.codec,
+              },
+            },
+          })
+        } finally {
+          retention.dispose()
+          completions.delete(retention)
+        }
+      },
+    }
+  })
+  state.unsubscribe.push(() => {
+    upscaleService.setCompletionRetentionCapture(null)
+    for (const retention of completions) retention.dispose()
+    completions.clear()
+    watch.stop()
+  })
 }
 
 /** The two engine file controls share the host-backed, checksum-bound relink transaction. */
