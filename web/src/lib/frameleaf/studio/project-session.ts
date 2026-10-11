@@ -362,6 +362,9 @@ const draftHandle = (name: string): StudioProjectHandle => ({
   id: STUDIO_DRAFT_PROJECT_ID,
   name,
   revision: 0,
+  graphDigest: null,
+  leaseEpoch: 0,
+  leaseExpiresAt: null,
   graph: null,
   hasLease: true,
 });
@@ -434,7 +437,16 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   let inflight: AbortController | null = null;
 
   const emit = (patch: Partial<StudioProjectSessionState>) => {
+    const previous = state.project;
     state = { ...state, ...patch, hasDraft: draft !== null };
+    if ((patch.project && patch.project.graph !== previous.graph && !Object.hasOwn(patch.project, 'graphDigest')) ||
+        (patch.status && ['dirty', 'saving', 'conflict', 'lease-lost', 'forbidden', 'error', 'offline'].includes(patch.status)) ||
+        (patch.project && !patch.project.hasLease)) {
+      state = { ...state, project: { ...state.project, graphDigest: null } };
+    }
+    if (previous.hasLease && !state.project.hasLease) {
+      state = { ...state, project: { ...state.project, leaseEpoch: previous.leaseEpoch + 1, leaseExpiresAt: null } };
+    }
     if (state.project.graphVersion !== graphVersion) {
       state = { ...state, project: { ...state.project, graphVersion } };
     }
@@ -461,9 +473,14 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     return draft ? 'dirty' : 'saved';
   };
 
-  const applyLease = (lease: StudioProjectLeaseDto) => {
+  const applyLease = (lease: StudioProjectLeaseDto, acquired = false) => {
     autosaveMs = lease.autosaveDebounceMs || autosaveMs;
     renewMs = lease.renewMs || renewMs;
+    emit({ project: { ...state.project,
+      hasLease: lease.heldByYou,
+      leaseEpoch: state.project.leaseEpoch + (acquired || lease.heldByYou !== state.project.hasLease ? 1 : 0),
+      leaseExpiresAt: lease.heldByYou ? lease.expiresAt : null,
+    } });
   };
 
   const scheduleRenewal = (gen: number) => {
@@ -484,6 +501,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         return;
       }
       applyLease(lease);
+      if (!lease.heldByYou) {
+        loseLease({ reason: 'lease-lost', currentRevision: state.project.revision, lease });
+        return;
+      }
       scheduleRenewal(gen);
     } catch (error) {
       if (gen !== generation) {
@@ -552,6 +573,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         id: detail.id,
         name: detail.name,
         revision: detail.revision,
+        graphDigest: detail.access === 'owner' && !detail.withheld && detail.envelope && visible.held.length === 0 ? detail.digest ?? null : null,
+        leaseEpoch: state.project.leaseEpoch,
+        leaseExpiresAt: leaseHeld ? state.project.leaseExpiresAt : null,
         graph: visible.graph ?? null,
         hasLease: leaseHeld,
       },
@@ -613,7 +637,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       if (gen !== generation) {
         return;
       }
-      applyLease(lease);
+      applyLease(lease, true);
       applyDetail(detail, gen, lease.heldByYou, replaced);
       scheduleRenewal(gen);
       emit({ status: keepDraft && draft ? 'dirty' : 'saved', conflict: null });
@@ -699,11 +723,12 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     const current = !projectId && creating ? creating.draft : draft;
     current.requestKey ??= newKey();
     inflightDraft = current;
+    const sourceLeaseEpoch = state.project.leaseEpoch;
     emit({ status: 'saving', error: null });
 
     saving = (async () => {
       try {
-        let result: { revision: number; lease: StudioProjectLeaseDto | null };
+        let result: { revision: number; digest: string | null; lease: StudioProjectLeaseDto | null };
         let createdDetail: StudioProjectDetailDto | null = null;
         if (projectId) {
           const saved = await api.save(projectId, {
@@ -730,7 +755,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           if (saved.resources) {
             emit({ resources: saved.resources });
           }
-          result = { revision: saved.revision, lease: saved.lease };
+          result = { revision: saved.revision, digest: saved.digest ?? null, lease: saved.lease };
         } else {
           creating ??= {
             generation: gen,
@@ -756,11 +781,13 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           });
           createdDetail = created;
           // Replay returns the current head, but this request only acknowledged the initial document.
-          result = { revision: initialRevision, lease: created.lease };
+          result = { revision: initialRevision, digest: created.revision === initialRevision ? created.digest ?? null : null, lease: created.lease };
         }
 
+        const sourceCurrent = state.project.leaseEpoch === sourceLeaseEpoch && isOnline() &&
+          !['lease-lost', 'conflict', 'forbidden', 'review'].includes(state.status);
         if (result.lease) {
-          applyLease(result.lease);
+          applyLease(result.lease, !!createdDetail);
         }
         retryMs = STUDIO_SAVE_RETRY_MS;
         if (current.fromEditor) {
@@ -778,7 +805,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         const shelved = !!state.conflict && isShelvedConflict(state.conflict);
         emit({
           // The graph shown stays the newest edit; a newer draft is not rolled back to this save.
-          project: { ...state.project, revision: result.revision, graph: (draft ?? current).graph },
+          project: { ...state.project, revision: result.revision, graphDigest: sourceCurrent && !draft && !shelved && held.length === 0 ? result.digest : null, graph: (draft ?? current).graph },
           lastSavedAt: now(),
           conflict: shelved ? state.conflict : null,
           error: null,
@@ -887,7 +914,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       if (gen !== generation) {
         return false;
       }
-      applyLease(lease);
+      applyLease(lease, true);
       if (!lease.heldByYou) {
         return false;
       }
@@ -1060,18 +1087,22 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       }
       const gen = generation;
       const id = projectId;
-      const previous = state.project;
       const previousDraft = draft;
       const expectedRevision = draft?.baseRevision ?? state.project.revision;
       const envelope = envelopeFor(graph);
+      const leaseEpoch = state.project.leaseEpoch;
+      const leaseExpiresAt = state.project.leaseExpiresAt;
       const live = () =>
-        !disposed && gen === generation && projectId === id && graphVersion === editorGraphVersion && isCurrent();
+        !disposed && gen === generation && projectId === id && graphVersion === editorGraphVersion && isCurrent() &&
+        isOnline() && state.project.hasLease && state.project.leaseEpoch === leaseEpoch &&
+        state.project.leaseExpiresAt === leaseExpiresAt && !!leaseExpiresAt && Date.parse(leaseExpiresAt) > now();
       committing = true;
+      emit({ project: { ...state.project, graphDigest: null } });
       cancel(debounce);
       debounce = null;
       cancel(retry);
       retry = null;
-      let accepted: { revision: number; lease: StudioProjectLeaseDto | null } | null = null;
+      let accepted: { revision: number; digest: string | null; lease: StudioProjectLeaseDto | null } | null = null;
       let uncertainty = false;
       let failure = 'The replacement could not be saved';
       let saveConflict: StudioConflict | null = null;
@@ -1109,7 +1140,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
               jsonContent(head.envelope.graph) === jsonContent(envelope.graph) &&
               head.revision >= expectedRevision
             ) {
-              accepted = { revision: head.revision, lease: head.lease };
+              accepted = { revision: head.revision, digest: head.digest ?? null, lease: head.lease };
             } else {
               uncertainty = head.id !== id || head.access !== 'owner' || head.revision !== expectedRevision;
             }
@@ -1147,12 +1178,12 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         draft = null;
         editorSaves.set(baseRevision, accepted.revision);
         emit({
-          project: { ...previous, graph, revision: accepted.revision, hasLease: state.project.hasLease },
+          project: { ...state.project, graph, revision: accepted.revision, graphDigest: held.length === 0 ? accepted.digest ?? null : null },
           lastSavedAt: now(),
           status: state.project.hasLease ? 'saved' : 'review',
           error: null,
         });
-        return { status: 'saved', revision: accepted.revision };
+        return { status: 'saved', revision: accepted.revision, graphDigest: state.project.graphDigest };
       } finally {
         committing = false;
         if (live() && draft === previousDraft && previousDraft && !uncertainty) {
@@ -1217,6 +1248,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       generation += 1;
       const gen = generation;
       stopTimers();
+      emit({ status: 'saving', project: { ...state.project, graphDigest: null } });
       try {
         const created = await api.create({
           name,
@@ -1228,7 +1260,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
           return created.id;
         }
         draft = null;
-        applyLease(created.lease);
+        applyLease(created.lease, true);
         applyDetail(created, gen, created.lease.heldByYou);
         emit({ status: 'saved', conflict: null, lastSavedAt: now() });
         scheduleRenewal(gen);
@@ -1255,6 +1287,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         return false;
       }
       const gen = generation;
+      const leaseEpoch = state.project.leaseEpoch;
+      const current = () => gen === generation && state.project.hasLease &&
+        state.project.leaseEpoch === leaseEpoch && isOnline() && state.status === 'saving';
+      emit({ status: 'saving', project: { ...state.project, graphDigest: null } });
       try {
         const result = await api.restore(id, {
           clientId,
@@ -1265,12 +1301,15 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         if (gen !== generation) {
           return false;
         }
+        if (!current()) return false;
         applyLease(result.lease);
-        const detail = await api.get(id);
-        if (gen !== generation) {
+        if (!result.lease.heldByYou) {
+          loseLease({ reason: 'lease-lost', currentRevision: result.revision, lease: result.lease });
           return false;
         }
-        applyDetail(detail, gen, true, true);
+        const detail = await api.get(id);
+        if (!current()) return false;
+        applyDetail(detail, gen, state.project.hasLease, true);
         emit({ status: 'saved', conflict: null, lastSavedAt: now() });
         scheduleRenewal(gen);
         return true;
@@ -1347,6 +1386,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       stopTimers();
       inflight?.abort();
       const heldId = state.project.hasLease && projectId ? projectId : null;
+      emit({ project: { ...state.project, hasLease: false, graphDigest: null,
+        leaseEpoch: state.project.leaseEpoch + 1, leaseExpiresAt: null } });
       draft = null;
       if (heldId) {
         try {

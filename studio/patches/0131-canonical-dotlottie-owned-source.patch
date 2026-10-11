@@ -1,0 +1,2512 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
+--- a/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
+@@ -1,4 +1,4 @@
+-import { useCallback, useEffect, useMemo, useState } from 'react'
++import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import {
+   ChevronDown,
+@@ -35,6 +35,11 @@
+   type LottieAnimationEntry,
+   type LottieMarker,
+ } from '@/infrastructure/lottie/lottie-metadata'
++import {
++  peekScopedMedia,
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++} from '@/features/media-library/utils/scoped-media-resolution'
+ import { resolveMediaUrl } from '@/features/editor/deps/media-library'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ import { PropertySection, PropertyRow, NumberInput, ColorPicker } from '../components'
+@@ -134,12 +139,18 @@
+   const [colorLayers, setColorLayers] = useState<LottieColorLayer[]>([])
+   const [valueSlots, setValueSlots] = useState<LottieValueSlot[]>([])
+   const [markers, setMarkers] = useState<LottieMarker[]>([])
++  const [defaultAnimationId, setDefaultAnimationId] = useState<string>()
+   const [animations, setAnimations] = useState<LottieAnimationEntry[]>([])
+   const [themes, setThemes] = useState<string[]>([])
+   const singleId = single?.id
+   const singleSrc = single?.src
+   const singleMediaId = single?.mediaId
+   const singleAnimationId = single?.animationId
++  const resolutionEpoch = useSyncExternalStore(
++    subscribeScopedMedia,
++    scopedMediaEpoch,
++    scopedMediaEpoch,
++  )
+ 
+   // `item.src` can be a dead blob URL after a page reload; resolve a fresh URL
+   // by mediaId first (fall back to the item's own src, e.g. items with no
+@@ -148,7 +159,7 @@
+     let url = singleSrc ?? ''
+     if (singleMediaId) {
+       const resolved = await resolveMediaUrl(singleMediaId).catch(() => '')
+-      if (resolved) url = resolved
++      if (resolved || peekScopedMedia(singleMediaId).handled) url = resolved
+     }
+     return url
+   }, [singleSrc, singleMediaId])
+@@ -160,6 +171,7 @@
+       setValueSlots([])
+       setMarkers([])
+       setAnimations([])
++      setDefaultAnimationId(undefined)
+       setThemes([])
+     }
+     if (!singleSrc && !singleMediaId) {
+@@ -186,12 +198,13 @@
+       setValueSlots(animation ? extractLottieValueSlots(animation) : [])
+       setMarkers(animation ? readLottieMarkers(animation) : [])
+       setAnimations(manifest?.animations ?? [])
++      setDefaultAnimationId(manifest?.defaultAnimationId)
+       setThemes(manifest?.themes ?? [])
+     })()
+     return () => {
+       cancelled = true
+     }
+-  }, [singleId, singleSrc, singleMediaId, singleAnimationId, resolveSingleUrl])
++  }, [singleId, singleSrc, singleMediaId, singleAnimationId, resolveSingleUrl, resolutionEpoch])
+ 
+   const handleSpeedChange = useCallback(
+     (value: number) => patchAll({ speed: Math.max(MIN_SPEED, Math.min(MAX_SPEED, value)) }),
+@@ -218,9 +231,9 @@
+     [single, updateItem],
+   )
+ 
+-  // The animation that plays by default is the manifest's first; a stored
++  // The animation that plays by default follows the manifest's initial selection; a stored
+   // `animationId` overrides it.
+-  const effectiveAnimationId = single?.animationId ?? animations[0]?.id
++  const effectiveAnimationId = single?.animationId ?? defaultAnimationId ?? animations[0]?.id
+ 
+   const handleAnimationChange = useCallback(
+     (animationId: string) => {
+@@ -229,6 +242,7 @@
+         const url = await resolveSingleUrl()
+         const animation = url ? await fetchLottieAnimation(url, false, animationId) : null
+         const meta = animation ? parseLottieMetadata(animation) : null
++        if (!meta) return
+         updateItem(single.id, {
+           animationId,
+           // A different animation has its own frames/slots — drop frame-indexed
+@@ -237,6 +251,8 @@
+           segmentEnd: undefined,
+           textOverrides: undefined,
+           colorOverrides: undefined,
++          slotOverrides: undefined,
++          themeId: undefined,
+           ...(meta
+             ? {
+                 frameRate: meta.frameRate,
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -27,6 +27,7 @@
+   isRenderableLottieSrc,
+ } from '@/infrastructure/lottie/lottie-frame-provider'
+ import { resolveLottieRenderSpec } from '@/infrastructure/lottie/lottie-text'
++import { resolveScopedMedia, scopedMediaEpoch, subscribeScopedMedia, peekScopedMedia } from '@/features/media-library/utils/scoped-media-resolution'
+ import type { ItemKeyframes } from '@/types/keyframe'
+ import type { ItemEffect } from '@/types/effects'
+ import type { ResolvedTransform } from '@/types/transform'
+@@ -407,6 +408,14 @@
+   signal?: AbortSignal,
+ ): Promise<string | null> {
+   throwIfAborted(signal)
++  if (item.type === 'lottie' && item.mediaId) {
++    const scoped = await resolveScopedMedia(item.mediaId, true)
++    throwIfAborted(signal)
++    if (scoped.handled) {
++      if (!scoped.url) throw new Error('LOTTIE_SOURCE_REFUSED')
++      return scoped.url
++    }
++  }
+   if (useProxyMedia && item.type === 'video' && item.mediaId) {
+     const proxyUrl = resolveProxyUrl(item.mediaId)
+     if (proxyUrl) return proxyUrl
+@@ -1094,7 +1103,20 @@
+ 
+   // Lottie animations: rendered on demand via dotlottie-web (no frame pre-extraction).
+   const lottieItems: LottieItem[] = []
++  const lottieLoadByKey = new Map<string, Promise<void>>()
+   const lottieProvider = new LottieExportProvider(options.strictLottie, options.signal)
++  let lottieProviderRevision = lottieProvider.sourceRevision()
++  const checkLottieSource = (epoch: number): void => {
++    options.signal?.throwIfAborted()
++    if (isDisposed || epoch !== scopedMediaEpoch()) throw new Error('LOTTIE_SOURCE_SUPERSEDED')
++  }
++  const unsubscribeLottieScope = subscribeScopedMedia(() => {
++    lottieLoadByKey.clear()
++    frameSceneRevision++
++    frameSceneCache.invalidate()
++    scrubbingCache?.invalidate()
++    ctx.clearRect(0, 0, canvas.width, canvas.height)
++  })
+ 
+   // Preview only: a persistent renderer outlives edits, so when a top-level
+   // Lottie's text/color overrides change we must rebuild its dotlottie renderer
+@@ -1105,15 +1127,25 @@
+     const live = getLiveItemSnapshot?.(baseItem.id)
+     return live && live.type === 'lottie' ? live : baseItem
+   }
+-  const lottieLoadByKey = new Map<string, Promise<void>>()
+ 
+   const ensureLottieItemReady = async (baseItem: LottieItem, signal?: AbortSignal) => {
+-    if (lottieProvider.get(baseItem.id)) return
++    const sourceEpoch = scopedMediaEpoch()
++    checkLottieSource(sourceEpoch)
+     const item = liveLottieItem(baseItem)
++    const signature = lottieOverrideSignature(item)
++    const checkCurrent = (src?: string) => {
++      checkLottieSource(sourceEpoch)
++      if (item.mediaId) {
++        const scoped = peekScopedMedia(item.mediaId, true)
++        if (scoped.handled && (!scoped.url || (src && scoped.url !== src)))
++          throw new Error('LOTTIE_SOURCE_REFUSED')
++      }
++    }
++    if (lottieProvider.get(baseItem.id) && lottieProvider.getSignature(baseItem.id) === signature) return
+     const src = await resolveRendererMediaSource(item, false, signal)
++    checkCurrent(src)
+     if (!src || !isRenderableLottieSrc(src)) return
+-    const signature = lottieOverrideSignature(item)
+-    const key = `${item.id}\u0000${src}\u0000${signature}`
++    const key = `${sourceEpoch}\u0000${item.id}\u0000${src}\u0000${signature}`
+     const existing = lottieLoadByKey.get(key)
+     if (existing) return existing
+ 
+@@ -1123,6 +1155,7 @@
+         strict: strictLottie,
+         signal: options.signal,
+       })
++      checkCurrent(src)
+       const w = strictLottie
+         ? spec.dimensions!.width
+         : item.sourceWidth && item.sourceWidth > 0
+@@ -1135,7 +1168,7 @@
+           : 512
+       throwIfAborted(signal)
+       if (isDisposed) return
+-      await lottieProvider.preload(
++      await lottieProvider.rebuild(
+         item.id,
+         src,
+         w,
+@@ -1144,10 +1177,13 @@
+         signature,
+         spec.themeData ?? undefined,
+         spec.slots ?? undefined,
++        () => checkCurrent(src),
++        spec.strict === true,
+       )
+       throwIfAborted(signal)
++      checkCurrent(src)
+     })().finally(() => {
+-      lottieLoadByKey.delete(key)
++      if (lottieLoadByKey.get(key) === promise) lottieLoadByKey.delete(key)
+     })
+     lottieLoadByKey.set(key, promise)
+     return promise
+@@ -1260,38 +1296,7 @@
+         lottieOverrideSignature(liveLottieItem(baseItem)),
+     )
+   const ensureLottieOverridesFresh = async (): Promise<void> => {
+-    await Promise.all(
+-      lottieItems.map(async (baseItem) => {
+-        const item = liveLottieItem(baseItem)
+-        if (!isRenderableLottieSrc(item.src)) return
+-        const signature = lottieOverrideSignature(item)
+-        if (lottieProvider.getSignature(baseItem.id) === signature) return
+-        const spec = await resolveLottieRenderSpec(item.src, item, {
+-          strict: strictLottie,
+-          signal: options.signal,
+-        })
+-        const w = strictLottie
+-          ? spec.dimensions!.width
+-          : item.sourceWidth && item.sourceWidth > 0
+-            ? item.sourceWidth
+-            : 512
+-        const h = strictLottie
+-          ? spec.dimensions!.height
+-          : item.sourceHeight && item.sourceHeight > 0
+-            ? item.sourceHeight
+-            : 512
+-        await lottieProvider.rebuild(
+-          baseItem.id,
+-          item.src,
+-          w,
+-          h,
+-          spec.data ?? undefined,
+-          signature,
+-          spec.themeData ?? undefined,
+-          spec.slots ?? undefined,
+-        )
+-      }),
+-    )
++    await Promise.all(lottieItems.map((item) => ensureLottieItemReady(item, options.signal)))
+   }
+ 
+   for (const track of tracks) {
+@@ -1883,38 +1888,10 @@
+         await Promise.all(
+           lottieItems.map(async (lottieItem) => {
+             try {
+-              // Resolve animation/theme + text/color edits before warming so
+-              // exports reflect them.
+-              const spec = await resolveLottieRenderSpec(lottieItem.src, lottieItem, {
+-                strict: strictLottie,
+-                signal: options.signal,
+-              })
+-              const w = strictLottie
+-                ? spec.dimensions!.width
+-                : lottieItem.sourceWidth && lottieItem.sourceWidth > 0
+-                  ? lottieItem.sourceWidth
+-                  : 512
+-              const h = strictLottie
+-                ? spec.dimensions!.height
+-                : lottieItem.sourceHeight && lottieItem.sourceHeight > 0
+-                  ? lottieItem.sourceHeight
+-                  : 512
+-              if (isDisposed) return
+-              await lottieProvider.preload(
+-                lottieItem.id,
+-                lottieItem.src,
+-                w,
+-                h,
+-                spec.data ?? undefined,
+-                lottieOverrideSignature(lottieItem),
+-                spec.themeData ?? undefined,
+-                spec.slots ?? undefined,
+-              )
+-              // Bail if the engine was disposed mid-load so we don't register a
+-              // renderer into a torn-down provider (dispose() → destroy()).
+-              if (isDisposed) return
++              await ensureLottieItemReady(lottieItem, signal)
+             } catch (err) {
+-              if (strictLottie) throw new Error('LOTTIE_LOAD_OR_EDIT_FAILED')
++              if (strictLottie || (lottieItem.mediaId && peekScopedMedia(lottieItem.mediaId, true).handled))
++                throw new Error('LOTTIE_LOAD_OR_EDIT_FAILED')
+               getLog().error('Failed to preload Lottie', { itemId: lottieItem.id, error: err })
+             }
+           }),
+@@ -2160,6 +2137,14 @@
+     },
+ 
+     async renderFrame(frame: number) {
++      const lottieEpoch = scopedMediaEpoch()
++      const sourceRevision = lottieProvider.sourceRevision()
++      if (sourceRevision !== lottieProviderRevision) {
++        lottieProviderRevision = sourceRevision
++        frameSceneRevision++
++        frameSceneCache.invalidate()
++        scrubbingCache?.invalidate()
++      }
+       const scrubPerfStartMs = scrubPerfStart()
+       lastRenderAborted = false
+       activePreviewFramePending = false
+@@ -2819,6 +2804,11 @@
+ 
+         // A signal capture (FL-98) only reads the float composite: it leaves the display canvas and
+         // the frame cache as the last display render left them.
++        checkLottieSource(lottieEpoch)
++        if (lottieProvider.sourceRevision() !== sourceRevision) {
++          ctx.clearRect(0, 0, canvas.width, canvas.height)
++          throw new Error('LOTTIE_SOURCE_SUPERSEDED')
++        }
+         if (!floatCapture) ctx.drawImage(finalCompositeSource, 0, 0)
+ 
+         if (!floatCapture) cacheRenderedFrame(frame)
+@@ -3133,6 +3123,7 @@
+ 
+     dispose() {
+       isDisposed = true
++      unsubscribeLottieScope()
+       inFlightInitByItem.clear()
+       signalTargets?.output.destroy()
+       signalTargets?.buffer.destroy()
+diff --git a/src/features/media-library/services/media-library-service.ts b/src/features/media-library/services/media-library-service.ts
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -86,7 +86,11 @@
+   persistGeneratedMediaAsset,
+ } from './media-asset-helpers'
+ import { validateMediaFileContent, getMimeType, isLottieMime } from '../utils/validation'
+-import { parseLottieFileBytes } from '@/infrastructure/lottie/lottie-metadata'
++import {
++  parseLottieFileBytes,
++  extractLottieAnimation,
++} from '@/infrastructure/lottie/lottie-metadata'
++import { assertClosedLottieAnimation } from '@/infrastructure/lottie/lottie-archive'
+ import { getSharedProxyKey } from '../utils/proxy-key'
+ import { mediaProcessorService } from './media-processor-service'
+ import { generateThumbnail } from '../utils/thumbnail-generator'
+@@ -381,7 +385,12 @@
+   ): Promise<{ blob: Blob; width: number; height: number } | undefined> {
+     try {
+       const dims = getThumbnailDimensions(Math.max(1, width), Math.max(1, height), 320)
+-      const url = URL.createObjectURL(file)
++      const animation = extractLottieAnimation(new Uint8Array(await file.arrayBuffer()), true)
++      if (!animation) return undefined
++      assertClosedLottieAnimation(animation)
++      const url = URL.createObjectURL(
++        new Blob([JSON.stringify(animation)], { type: 'application/json' }),
++      )
+       try {
+         const { renderLottieThumbnail } =
+           await import('@/infrastructure/lottie/lottie-frame-provider')
+diff --git a/src/features/media-library/utils/media-resolver.ts b/src/features/media-library/utils/media-resolver.ts
+--- a/src/features/media-library/utils/media-resolver.ts
++++ b/src/features/media-library/utils/media-resolver.ts
+@@ -5,6 +5,7 @@
+ import { registerKeyframeIndex } from '@/shared/utils/keyframe-index-registry'
+ import type { TimelineTrack } from '@/types/timeline'
+ import { createLogger } from '@/shared/logging/logger'
++import { peekScopedMedia, resolveScopedMedia, scopedMediaEpoch } from './scoped-media-resolution'
+ 
+ const logger = createLogger('MediaResolver')
+ 
+@@ -21,6 +22,9 @@
+  * @returns Blob URL for the media, or empty string if not found
+  */
+ export async function resolveMediaUrl(mediaId: string): Promise<string> {
++  const scoped = await resolveScopedMedia(mediaId)
++  if (scoped.handled) return scoped.url
++  const epoch = scopedMediaEpoch()
+   // Check centralized manager first - URLs persist until explicit release
+   const cached = blobUrlManager.get(mediaId)
+   if (cached) {
+@@ -33,77 +37,85 @@
+   }
+ 
+   // Create the request promise
+-  const requestPromise = (async () => {
+-    const { mediaLibraryService, FileAccessError } =
+-      await import('@/features/media-library/services/media-library-service')
+-
+-    try {
+-      // Get media metadata from library
+-      const media = await mediaLibraryService.getMedia(mediaId)
+-
+-      if (!media) {
+-        logger.warn(`Media not found: ${mediaId}`)
+-        return '' // Fallback: empty string (Composition will skip)
++  const requestPromise: Promise<string> = Promise.resolve()
++    .then(async () => {
++      const { mediaLibraryService, FileAccessError } =
++        await import('@/features/media-library/services/media-library-service')
++
++      try {
++        // Get media metadata from library
++        const media = await mediaLibraryService.getMedia(mediaId)
++
++        if (!media) {
++          logger.warn(`Media not found: ${mediaId}`)
++          return '' // Fallback: empty string (Composition will skip)
++        }
++
++        // Get the source blob without an extra validation pass; getMediaFile
++        // surfaces permission/missing-file errors with the same relink UI.
++        const blob = await mediaLibraryService.getMediaFile(media)
++
++        // Installing a host scope while an original read is pending must not publish that original.
++        if (scopedMediaEpoch() !== epoch || peekScopedMedia(mediaId).handled) {
++          const current = await resolveScopedMedia(mediaId)
++          return current.handled ? current.url : ''
++        }
++
++        if (!blob) {
++          // The media record exists but its bytes can't be resolved (no valid
++          // storage path — e.g. opened on an origin whose OPFS lacks it and the
++          // workspace folder has no copy). getMediaFile returns null WITHOUT a
++          // FileAccessError, so surface it into the broken-media system here so
++          // the clip shows a relink state and the missing-media dialog lights up.
++          logger.warn(`Media blob not found: ${mediaId}`)
++          useMediaLibraryStore.getState().markMediaBroken(mediaId, {
++            mediaId,
++            fileName: media.fileName ?? 'Unknown file',
++            errorType: 'file_missing',
++          })
++          return ''
++        }
++
++        // Acquire blob URL through centralized manager (handles caching + ref counting)
++        const blobUrl = blobUrlManager.acquire(mediaId, blob, {
++          mediaId,
++          storageType: media.storageType,
++          fileHandle: media.storageType === 'handle' ? media.fileHandle : undefined,
++          opfsPath: media.storageType === 'opfs' ? media.opfsPath : undefined,
++          fileSize: media.fileSize,
++        })
++
++        // Register keyframe index for adaptive seek backtracking
++        if (media.keyframeTimestamps && media.keyframeTimestamps.length > 0) {
++          registerKeyframeIndex(blobUrl, media.keyframeTimestamps)
++        }
++
++        // Resolved successfully — clear any stale broken flag (e.g. the repair
++        // sweep just restored the workspace copy) so the clip stops showing the
++        // offline state without needing a reload.
++        useMediaLibraryStore.getState().markMediaHealthy(mediaId)
++
++        return blobUrl
++      } catch (error) {
++        logger.error(`Failed to resolve media ${mediaId}:`, error)
++
++        // Mark media as broken if it's a file access error
++        if (error instanceof FileAccessError) {
++          const media = await mediaLibraryService.getMedia(mediaId)
++          useMediaLibraryStore.getState().markMediaBroken(mediaId, {
++            mediaId,
++            fileName: media?.fileName ?? 'Unknown file',
++            errorType: error.type === 'permission_denied' ? 'permission_denied' : 'file_missing',
++          })
++        }
++
++        return '' // Fallback: empty string
+       }
+-
+-      // Get the source blob without an extra validation pass; getMediaFile
+-      // surfaces permission/missing-file errors with the same relink UI.
+-      const blob = await mediaLibraryService.getMediaFile(media)
+-
+-      if (!blob) {
+-        // The media record exists but its bytes can't be resolved (no valid
+-        // storage path — e.g. opened on an origin whose OPFS lacks it and the
+-        // workspace folder has no copy). getMediaFile returns null WITHOUT a
+-        // FileAccessError, so surface it into the broken-media system here so
+-        // the clip shows a relink state and the missing-media dialog lights up.
+-        logger.warn(`Media blob not found: ${mediaId}`)
+-        useMediaLibraryStore.getState().markMediaBroken(mediaId, {
+-          mediaId,
+-          fileName: media.fileName ?? 'Unknown file',
+-          errorType: 'file_missing',
+-        })
+-        return ''
+-      }
+-
+-      // Acquire blob URL through centralized manager (handles caching + ref counting)
+-      const blobUrl = blobUrlManager.acquire(mediaId, blob, {
+-        mediaId,
+-        storageType: media.storageType,
+-        fileHandle: media.storageType === 'handle' ? media.fileHandle : undefined,
+-        opfsPath: media.storageType === 'opfs' ? media.opfsPath : undefined,
+-        fileSize: media.fileSize,
+-      })
+-
+-      // Register keyframe index for adaptive seek backtracking
+-      if (media.keyframeTimestamps && media.keyframeTimestamps.length > 0) {
+-        registerKeyframeIndex(blobUrl, media.keyframeTimestamps)
+-      }
+-
+-      // Resolved successfully — clear any stale broken flag (e.g. the repair
+-      // sweep just restored the workspace copy) so the clip stops showing the
+-      // offline state without needing a reload.
+-      useMediaLibraryStore.getState().markMediaHealthy(mediaId)
+-
+-      return blobUrl
+-    } catch (error) {
+-      logger.error(`Failed to resolve media ${mediaId}:`, error)
+-
+-      // Mark media as broken if it's a file access error
+-      if (error instanceof FileAccessError) {
+-        const media = await mediaLibraryService.getMedia(mediaId)
+-        useMediaLibraryStore.getState().markMediaBroken(mediaId, {
+-          mediaId,
+-          fileName: media?.fileName ?? 'Unknown file',
+-          errorType: error.type === 'permission_denied' ? 'permission_denied' : 'file_missing',
+-        })
+-      }
+-
+-      return '' // Fallback: empty string
+-    } finally {
+-      // Clean up pending request
+-      pendingRequests.delete(mediaId)
+-    }
+-  })()
++    })
++    .finally(() => {
++      // Only this allocation owns its pending entry, including an import failure.
++      if (pendingRequests.get(mediaId) === requestPromise) pendingRequests.delete(mediaId)
++    })
+ 
+   // Store the pending request
+   pendingRequests.set(mediaId, requestPromise)
+diff --git a/src/features/media-library/utils/scoped-media-resolution.ts b/src/features/media-library/utils/scoped-media-resolution.ts
+--- /dev/null
++++ b/src/features/media-library/utils/scoped-media-resolution.ts
+@@ -0,0 +1,41 @@
++/** An installed host scope is authoritative even when it refuses a source. */
++export type ScopedMediaResolution = { handled: false } | { handled: true; url: string }
++export interface ScopedMediaResolver {
++  peek(mediaId: string, vector?: boolean): ScopedMediaResolution
++  resolve(mediaId: string, vector?: boolean): Promise<ScopedMediaResolution>
++}
++
++let current: ScopedMediaResolver | undefined
++let epoch = 0
++const listeners = new Set<() => void>()
++export const scopedMediaEpoch = (): number => epoch
++export const subscribeScopedMedia = (listener: () => void): (() => void) => {
++  listeners.add(listener)
++  return () => listeners.delete(listener)
++}
++export function notifyScopedMedia(): void {
++  epoch++
++  for (const listener of listeners) listener()
++}
++export function installScopedMediaResolver(resolver: ScopedMediaResolver): () => void {
++  current = resolver
++  notifyScopedMedia()
++  return () => {
++    if (current !== resolver) return
++    current = undefined
++    notifyScopedMedia()
++  }
++}
++export function peekScopedMedia(mediaId: string, vector?: boolean): ScopedMediaResolution {
++  return current?.peek(mediaId, vector) ?? { handled: false }
++}
++export async function resolveScopedMedia(
++  mediaId: string,
++  vector?: boolean,
++): Promise<ScopedMediaResolution> {
++  const owner = current
++  if (!owner) return { handled: false }
++  const result = await owner.resolve(mediaId, vector)
++  if (current !== owner) return { handled: true, url: '' }
++  return result
++}
+diff --git a/src/features/preview/hooks/use-preview-media-resolution.ts b/src/features/preview/hooks/use-preview-media-resolution.ts
+--- a/src/features/preview/hooks/use-preview-media-resolution.ts
++++ b/src/features/preview/hooks/use-preview-media-resolution.ts
+@@ -1,4 +1,16 @@
+-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
++import {
++  useCallback,
++  useEffect,
++  useRef,
++  useState,
++  useSyncExternalStore,
++  type MutableRefObject,
++} from 'react'
++import {
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++  peekScopedMedia,
++} from '@/features/media-library/utils/scoped-media-resolution'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useMediaDependencyStore } from '@/features/preview/deps/timeline-store'
+ import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+@@ -51,6 +63,7 @@
+   previewPerfRef,
+   isGizmoInteractingRef,
+ }: UsePreviewMediaResolutionParams) {
++  const scopeEpoch = useSyncExternalStore(subscribeScopedMedia, scopedMediaEpoch)
+   const [resolvedUrls, setResolvedUrls] = useState<Map<string, string>>(new Map())
+   const [isResolving, setIsResolving] = useState(false)
+   const [urlRefreshVersion, setUrlRefreshVersion] = useState(0)
+@@ -234,24 +247,27 @@
+ 
+   const resolveMediaUrlDeduped = useCallback((mediaId: string): Promise<string | null> => {
+     const pendingMap = pendingResolvePromisesRef.current
+-    const existingPromise = pendingMap.get(mediaId)
++    const epoch = scopedMediaEpoch()
++    const key = `${epoch}:${mediaId}`
++    const existingPromise = pendingMap.get(key)
+     if (existingPromise) {
+       return existingPromise
+     }
+ 
+     const promise = resolveMediaUrl(mediaId)
+-      .then((url) => url ?? null)
++      .then((url) => (epoch === scopedMediaEpoch() ? url || null : null))
+       .catch(() => null)
+       .finally(() => {
+-        pendingMap.delete(mediaId)
++        if (pendingMap.get(key) === promise) pendingMap.delete(key)
+       })
+ 
+-    pendingMap.set(mediaId, promise)
++    pendingMap.set(key, promise)
+     return promise
+   }, [])
+ 
+   const resolveMediaBatch = useCallback(
+     async (mediaIds: string[]): Promise<ResolveMediaBatchResult> => {
++      const epoch = scopedMediaEpoch()
+       if (mediaIds.length === 0) {
+         return { resolvedEntries: [], failedIds: [] }
+       }
+@@ -278,7 +294,9 @@
+         }),
+       )
+ 
+-      return { resolvedEntries, failedIds }
++      return epoch === scopedMediaEpoch()
++        ? { resolvedEntries, failedIds }
++        : { resolvedEntries: [], failedIds: mediaIds }
+     },
+     [resolveMediaUrlDeduped],
+   )
+@@ -319,7 +337,8 @@
+ 
+     for (const [mediaId, resolvedUrl] of resolvedUrls.entries()) {
+       if (!activeMediaIdSet.has(mediaId)) continue
+-      const latestBlobUrl = blobUrlManager.get(mediaId)
++      const scoped = peekScopedMedia(mediaId)
++      const latestBlobUrl = scoped.handled ? scoped.url : blobUrlManager.get(mediaId)
+       if (latestBlobUrl !== resolvedUrl) {
+         staleMediaIds.push(mediaId)
+       }
+@@ -342,7 +361,14 @@
+       return changed ? nextUrls : prevUrls
+     })
+     kickResolvePass()
+-  }, [addUnresolvedMediaIds, blobUrlVersion, clearResolveRetryState, kickResolvePass, resolvedUrls])
++  }, [
++    addUnresolvedMediaIds,
++    blobUrlVersion,
++    scopeEpoch,
++    clearResolveRetryState,
++    kickResolvePass,
++    resolvedUrls,
++  ])
+ 
+   useEffect(() => {
+     let isCancelled = false
+diff --git a/src/infrastructure/lottie/lottie-archive-selection.test.ts b/src/infrastructure/lottie/lottie-archive-selection.test.ts
+--- /dev/null
++++ b/src/infrastructure/lottie/lottie-archive-selection.test.ts
+@@ -0,0 +1,360 @@
++// @vitest-environment node
++import { describe, expect, it, vi } from 'vite-plus/test'
++import { zipSync, strToU8 } from 'fflate'
++import { readLottieArchive } from './lottie-archive'
++import { installScopedMediaResolver } from '@/features/media-library/utils/scoped-media-resolution'
++import { resolveLottieRenderSpec } from './lottie-text'
++import {
++  parseLottieFileBytes,
++  extractLottieAnimation,
++  extractLottieThemeData,
++} from './lottie-metadata'
++const fixtures = {
++  '1': 'UEsDBBQAAAAAAMuISV3QczpFSQAAAEkAAAAVAAAAYW5pbWF0aW9ucy9maXJzdC5qc29ueyJ2IjogIjUuNyIsICJ3IjogNjQsICJoIjogMzIsICJmciI6IDI0LCAiaXAiOiAwLCAib3AiOiA0OCwgImxheWVycyI6IFtdfVBLAwQUAAAAAADLiEld4oJxGGsAAABrAAAADQAAAG1hbmlmZXN0Lmpzb257InZlcnNpb24iOiAiMSIsICJhbmltYXRpb25zIjogW3siaWQiOiAiZmlyc3QifSwgeyJpZCI6ICJzZWxlY3RlZCJ9XSwgImluaXRpYWwiOiB7ImFuaW1hdGlvbiI6ICJzZWxlY3RlZCJ9fVBLAwQUAAAAAADLiEld6kylskkAAABJAAAAGAAAAGFuaW1hdGlvbnMvc2VsZWN0ZWQuanNvbnsidiI6ICI1LjciLCAidyI6IDMyLCAiaCI6IDY0LCAiZnIiOiAzMCwgImlwIjogMCwgIm9wIjogOTAsICJsYXllcnMiOiBbXX1QSwECFAMUAAAAAADLiEld0HM6RUkAAABJAAAAFQAAAAAAAAAAAAAAgAEAAAAAYW5pbWF0aW9ucy9maXJzdC5qc29uUEsBAhQDFAAAAAAAy4hJXeKCcRhrAAAAawAAAA0AAAAAAAAAAAAAAIABfAAAAG1hbmlmZXN0Lmpzb25QSwECFAMUAAAAAADLiEld6kylskkAAABJAAAAGAAAAAAAAAAAAAAAgAESAQAAYW5pbWF0aW9ucy9zZWxlY3RlZC5qc29uUEsFBgAAAAADAAMAxAAAAJEBAAAAAA==',
++  '2': 'UEsDBBQAAAAAAMuISV3QczpFSQAAAEkAAAAMAAAAYS9maXJzdC5qc29ueyJ2IjogIjUuNyIsICJ3IjogNjQsICJoIjogMzIsICJmciI6IDI0LCAiaXAiOiAwLCAib3AiOiA0OCwgImxheWVycyI6IFtdfVBLAwQUAAAAAADLiEldjCk/tGsAAABrAAAADQAAAG1hbmlmZXN0Lmpzb257InZlcnNpb24iOiAiMiIsICJhbmltYXRpb25zIjogW3siaWQiOiAiZmlyc3QifSwgeyJpZCI6ICJzZWxlY3RlZCJ9XSwgImluaXRpYWwiOiB7ImFuaW1hdGlvbiI6ICJzZWxlY3RlZCJ9fVBLAwQUAAAAAADLiEld6kylskkAAABJAAAADwAAAGEvc2VsZWN0ZWQuanNvbnsidiI6ICI1LjciLCAidyI6IDMyLCAiaCI6IDY0LCAiZnIiOiAzMCwgImlwIjogMCwgIm9wIjogOTAsICJsYXllcnMiOiBbXX1QSwECFAMUAAAAAADLiEld0HM6RUkAAABJAAAADAAAAAAAAAAAAAAAgAEAAAAAYS9maXJzdC5qc29uUEsBAhQDFAAAAAAAy4hJXYwpP7RrAAAAawAAAA0AAAAAAAAAAAAAAIABcwAAAG1hbmlmZXN0Lmpzb25QSwECFAMUAAAAAADLiEld6kylskkAAABJAAAADwAAAAAAAAAAAAAAgAEJAQAAYS9zZWxlY3RlZC5qc29uUEsFBgAAAAADAAMAsgAAAH8BAAAAAA==',
++}
++const bytes = (version: '1' | '2') =>
++  Uint8Array.from(atob(fixtures[version]), (c) => c.charCodeAt(0))
++describe('strict archive selection parity', () => {
++  for (const version of ['1', '2'] as const) {
++    it(`v${version} uses initial animation instead of manifest-first or ZIP order`, () => {
++      expect(parseLottieFileBytes(bytes(version))).toEqual({
++        width: 32,
++        height: 64,
++        frameRate: 30,
++        totalFrames: 90,
++        durationSeconds: 3,
++      })
++      expect(extractLottieAnimation(bytes(version))?.w).toBe(32)
++    })
++    it(`v${version} refuses unknown explicit selection without fallback`, () => {
++      expect(parseLottieFileBytes(bytes(version), 'missing')).toBeNull()
++      expect(extractLottieAnimation(bytes(version), false, 'missing')).toBeNull()
++    })
++    it(`v${version} explicit selection overrides initial`, () => {
++      expect(parseLottieFileBytes(bytes(version), 'first')?.width).toBe(64)
++    })
++  }
++})
++
++const themeFixture = Uint8Array.from(
++  atob(
++    'UEsDBBQAAAAAAOuNSV2YCrAbogAAAKIAAAANAAAAbWFuaWZlc3QuanNvbnsidmVyc2lvbiI6IjIiLCJhbmltYXRpb25zIjpbeyJpZCI6ImZpcnN0IiwidGhlbWVzIjpbIm93bmVkIl19LHsiaWQiOiJzZWxlY3RlZCIsInRoZW1lcyI6WyJvd25lZCJdfV0sImluaXRpYWwiOnsiYW5pbWF0aW9uIjoic2VsZWN0ZWQifSwidGhlbWVzIjpbeyJpZCI6Im93bmVkIn1dfVBLAwQUAAAAAADrjUldjiCI0zwAAAA8AAAADAAAAGEvZmlyc3QuanNvbnsidiI6IjUuNyIsInciOjY0LCJoIjozMiwiZnIiOjI0LCJpcCI6MCwib3AiOjQ4LCJsYXllcnMiOltdfVBLAwQUAAAAAADrjUld96GGqTwAAAA8AAAADwAAAGEvc2VsZWN0ZWQuanNvbnsidiI6IjUuNyIsInciOjMyLCJoIjo2NCwiZnIiOjMwLCJpcCI6MCwib3AiOjkwLCJsYXllcnMiOltdfVBLAwQUAAAAAADrjUld4Hr/LMQAAADEAAAADAAAAHQvb3duZWQuanNvbnsicnVsZXMiOlt7ImlkIjoib3BhY2l0eSIsInR5cGUiOiJTY2FsYXIiLCJhbmltYXRpb25zIjpbImZpcnN0Il0sInZhbHVlIjo1fSx7ImlkIjoic2NhbGUiLCJ0eXBlIjoiVmVjdG9yIiwiYW5pbWF0aW9ucyI6WyJzZWxlY3RlZCJdLCJ2YWx1ZSI6WzUwLDc1XX0seyJpZCI6ImNvbG9yIiwidHlwZSI6IkNvbG9yIiwidmFsdWUiOlsxLDAsMF19XX1QSwECFAMUAAAAAADrjUldmAqwG6IAAACiAAAADQAAAAAAAAAAAAAAgAEAAAAAbWFuaWZlc3QuanNvblBLAQIUAxQAAAAAAOuNSV2OIIjTPAAAADwAAAAMAAAAAAAAAAAAAACAAc0AAABhL2ZpcnN0Lmpzb25QSwECFAMUAAAAAADrjUld96GGqTwAAAA8AAAADwAAAAAAAAAAAAAAgAEzAQAAYS9zZWxlY3RlZC5qc29uUEsBAhQDFAAAAAAA641JXeB6/yzEAAAAxAAAAAwAAAAAAAAAAAAAAIABnAEAAHQvb3duZWQuanNvblBLBQYAAAAABAAEAOwAAACKAgAAAAA=',
++  ),
++  (c) => c.charCodeAt(0),
++)
++it('projects static theme rules for the exact selected animation before extracted-JSON rendering', () => {
++  expect(JSON.parse(extractLottieThemeData(themeFixture, 'owned')!)).toEqual({
++    rules: [
++      { id: 'scale', type: 'Vector', value: [50, 75] },
++      { id: 'color', type: 'Color', value: [1, 0, 0] },
++    ],
++  })
++  expect(JSON.parse(extractLottieThemeData(themeFixture, 'owned', 'first')!)).toEqual({
++    rules: [
++      { id: 'opacity', type: 'Scalar', value: 5 },
++      { id: 'color', type: 'Color', value: [1, 0, 0] },
++    ],
++  })
++  expect(extractLottieThemeData(themeFixture, 'owned', 'missing')).toBeNull()
++  expect(extractLottieThemeData(themeFixture, 'missing', 'first')).toBeNull()
++})
++
++// Native scope is strict even when the caller did not pass the export-only strict option.
++for (const version of ['1', '2'] as const) {
++  it(`v${version} scoped native refuses unknown selection instead of loading the archive default`, async () => {
++    const url = `https://owned.invalid/closed-native-${version}`
++    const uninstall = installScopedMediaResolver({
++      peek: () => ({ handled: true, url }),
++      resolve: async () => ({ handled: true, url }),
++    })
++    const fetch = vi.fn(async (requested: string) => {
++      expect(requested).toBe(url)
++      return new Response(new Uint8Array(bytes(version)))
++    })
++    vi.stubGlobal('fetch', fetch)
++    try {
++      const input = { mediaId: 'owned-vector', sourceWidth: 32, sourceHeight: 64 }
++      await expect(
++        resolveLottieRenderSpec('/uncontrolled-original', { ...input, animationId: 'unknown' }),
++      ).rejects.toThrow('LOTTIE_ANIMATION_UNAVAILABLE')
++      const selected = await resolveLottieRenderSpec('/uncontrolled-original', {
++        ...input,
++        animationId: 'selected',
++      })
++      expect(selected.strict).toBe(true)
++      expect(JSON.parse(selected.data!)).toMatchObject({ w: 32, h: 64, fr: 30, op: 90 })
++    } finally {
++      uninstall()
++      vi.unstubAllGlobals()
++    }
++  })
++}
++
++// Owned source data: no renderer output is used to choose these expected rules.
++const initialThemeArchive = (
++  version: '1' | '2',
++  selected: Record<string, unknown> = {},
++  authoredRule: Record<string, unknown> = {
++    id: 'opacity',
++    type: 'Scalar',
++    value: 25,
++    animations: ['selected'],
++  },
++) => {
++  const animation = (w: number, h: number, fr: number, op: number) => ({
++    v: '5.7',
++    w,
++    h,
++    fr,
++    ip: 0,
++    op,
++    layers: [],
++  })
++  const prefix = version === '2' ? 'a' : 'animations'
++  return zipSync({
++    [`${prefix}/first.json`]: strToU8(JSON.stringify(animation(64, 32, 24, 48))),
++    'manifest.json': strToU8(
++      JSON.stringify({
++        version,
++        initial: { animation: 'selected' },
++        animations: [
++          { id: 'first', themes: ['alternate'], initialTheme: 'alternate' },
++          {
++            id: 'selected',
++            themes: ['authored', 'alternate'],
++            initialTheme: 'authored',
++            ...selected,
++          },
++        ],
++        themes: [{ id: 'authored' }, { id: 'alternate' }],
++      }),
++    ),
++    [`${prefix}/selected.json`]: strToU8(JSON.stringify(animation(32, 64, 30, 90))),
++    't/authored.json': strToU8(
++      JSON.stringify({
++        rules: [
++          { id: 'other', type: 'Scalar', value: 90, animations: ['first'] },
++          authoredRule,
++          { id: 'color', type: 'Color', value: [1, 0, 0] },
++        ],
++      }),
++    ),
++    't/alternate.json': strToU8(
++      JSON.stringify({ rules: [{ id: 'scale', type: 'Vector', value: [25, 75] }] }),
++    ),
++  })
++}
++for (const version of ['1', '2'] as const) {
++  for (const mode of ['strict', 'scoped-native'] as const) {
++    it(`v${version} ${mode} preserves authored initialTheme and explicit precedence`, async () => {
++      const archive = initialThemeArchive(version)
++      const original = new Uint8Array(archive)
++      const url = `https://owned.invalid/initial-theme-${version}-${mode}`
++      const uninstall =
++        mode === 'scoped-native'
++          ? installScopedMediaResolver({
++              peek: () => ({ handled: true, url }),
++              resolve: async () => ({ handled: true, url }),
++            })
++          : () => {}
++      vi.stubGlobal(
++        'fetch',
++        vi.fn(async (requested: string) => {
++          expect(requested).toBe(url)
++          return new Response(new Uint8Array(archive))
++        }),
++      )
++      const input = {
++        sourceWidth: 32,
++        sourceHeight: 64,
++        ...(mode === 'scoped-native' && { mediaId: 'owned-vector' }),
++      }
++      const before = JSON.stringify(input)
++      const options = mode === 'strict' ? { strict: true } : {}
++      try {
++        const defaultSpec = await resolveLottieRenderSpec(url, input, options)
++        expect(JSON.parse(defaultSpec.data!)).toMatchObject({ w: 32, h: 64, fr: 30, op: 90 })
++        expect(JSON.parse(defaultSpec.themeData!)).toEqual({
++          rules: [
++            { id: 'opacity', type: 'Scalar', value: 25 },
++            { id: 'color', type: 'Color', value: [1, 0, 0] },
++          ],
++        })
++        const explicit = await resolveLottieRenderSpec(
++          url,
++          { ...input, themeId: 'alternate' },
++          options,
++        )
++        expect(JSON.parse(explicit.themeData!)).toEqual({
++          rules: [{ id: 'scale', type: 'Vector', value: [25, 75] }],
++        })
++        const first = await resolveLottieRenderSpec(
++          url,
++          { ...input, animationId: 'first', sourceWidth: 64, sourceHeight: 32 },
++          options,
++        )
++        expect(JSON.parse(first.data!)).toMatchObject({ w: 64, h: 32, fr: 24, op: 48 })
++        expect(JSON.parse(first.themeData!)).toEqual({
++          rules: [{ id: 'scale', type: 'Vector', value: [25, 75] }],
++        })
++        expect(JSON.stringify(input)).toBe(before)
++        expect(archive).toEqual(original)
++      } finally {
++        uninstall()
++        vi.unstubAllGlobals()
++      }
++    })
++  }
++  it(`v${version} refuses missing, incompatible, malformed or unsupported authored themes`, () => {
++    expect(() =>
++      readLottieArchive(initialThemeArchive(version, { initialTheme: 'missing' })),
++    ).toThrow('LOTTIE_ARCHIVE_REFUSED')
++    expect(() =>
++      readLottieArchive(initialThemeArchive(version, { themes: ['alternate'] })),
++    ).toThrow('LOTTIE_ARCHIVE_REFUSED')
++    expect(() => readLottieArchive(initialThemeArchive(version, { initialTheme: 1 }))).toThrow(
++      'LOTTIE_ARCHIVE_REFUSED',
++    )
++    expect(() =>
++      readLottieArchive(
++        initialThemeArchive(
++          version,
++          {},
++          { id: 'image', type: 'Image', value: 'https://uncontrolled.invalid/image.png' },
++        ),
++      ),
++    ).toThrow('LOTTIE_ARCHIVE_REFUSED')
++  })
++}
++it('strict raw JSON has no archive default theme', async () => {
++  const raw = { v: '5.7', w: 32, h: 64, fr: 30, ip: 0, op: 90, layers: [] }
++  vi.stubGlobal(
++    'fetch',
++    vi.fn(async () => new Response(JSON.stringify(raw))),
++  )
++  try {
++    const spec = await resolveLottieRenderSpec(
++      '/owned-raw.json',
++      { sourceWidth: 32, sourceHeight: 64 },
++      { strict: true },
++    )
++    expect(JSON.parse(spec.data!)).toEqual(raw)
++    expect(spec.themeData).toBeNull()
++  } finally {
++    vi.unstubAllGlobals()
++  }
++})
++
++for (const version of ['1', '2'] as const) {
++  it(`v${version} scoped native refuses when authored theme read fails after animation succeeds`, async () => {
++    const url = `https://owned.invalid/theme-read-failure-${version}`
++    const archive = initialThemeArchive(version)
++    const originalBytes = new Uint8Array(archive)
++    const input = { mediaId: 'owned-vector', sourceWidth: 32, sourceHeight: 64 }
++    const originalInput = structuredClone(input)
++    const uninstall = installScopedMediaResolver({
++      peek: () => ({ handled: true, url }),
++      resolve: async () => ({ handled: true, url }),
++    })
++    const fetch = vi
++      .fn()
++      .mockResolvedValueOnce(new Response(new Uint8Array(archive)))
++      .mockRejectedValueOnce(new Error('OWNED_THEME_READ_FAILED'))
++    vi.stubGlobal('fetch', fetch)
++    try {
++      const result = resolveLottieRenderSpec('/uncontrolled-original', input)
++      await expect(result).rejects.toThrow('OWNED_THEME_READ_FAILED')
++      expect(fetch).toHaveBeenCalledTimes(2)
++      expect(fetch.mock.calls.map(([requested]) => requested)).toEqual([url, url])
++      expect(input).toEqual(originalInput)
++      expect(archive).toEqual(originalBytes)
++    } finally {
++      uninstall()
++      vi.unstubAllGlobals()
++    }
++  })
++}
++
++for (const version of ['1', '2'] as const) {
++  it(`v${version} closes actual archive raster and font references without changing source bytes`, () => {
++    const prefix = version === '2' ? 'a' : 'animations'
++    const imageRoot = version === '2' ? 'i' : 'images'
++    const files = {
++      'manifest.json': strToU8(JSON.stringify({ version, animations: [{ id: 'selected' }] })),
++      [`${prefix}/selected.json`]: strToU8(JSON.stringify({ v: '5.7', w: 32, h: 64, layers: [],
++        assets: [{ id: 'image', u: `${imageRoot}/`, p: 'image.png' }],
++        fonts: { list: [{ fName: 'Owned', fPath: 'f/font.ttf' }] } })),
++      [`${imageRoot}/image.png`]: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
++      'f/font.ttf': new Uint8Array([0, 1, 0, 0]),
++    }
++    const archive = zipSync(files), before = new Uint8Array(archive)
++    const document = extractLottieAnimation(archive, true)!
++    expect(document.assets).toEqual([{ id: 'image', u: '', p: 'data:image/png;base64,iVBORw0KGgo=', e: 1 }])
++    expect(document.fonts).toEqual({ list: [{ fName: 'Owned', fPath: 'data:font/ttf;base64,AAEAAA==' }] })
++    expect(archive).toEqual(before)
++    for (const missing of [`${imageRoot}/image.png`, 'f/font.ttf']) {
++      const incomplete = { ...files }; delete incomplete[missing]
++      expect(extractLottieAnimation(zipSync(incomplete), true)).toBeNull()
++    }
++  })
++  for (const bad of ['zip', 'manifest', 'theme', 'removed-default'] as const) {
++    it(`v${version} rejects a successful malformed ${bad} independent second theme response`, async () => {
++      const url = 'https://owned.invalid/strict-second-read'
++      const archive = initialThemeArchive(version)
++      let invalid: Uint8Array
++      if (bad === 'zip') invalid = new Uint8Array([80, 75, 3, 4, 0])
++      else if (bad === 'removed-default') invalid = bytes(version)
++      else invalid = zipSync({ 'manifest.json': strToU8(bad === 'manifest' ? '{' : JSON.stringify({ version,
++        animations: [{ id: 'selected', initialTheme: 'authored' }], themes: [{ id: 'authored' }] })),
++        [`${version === '2' ? 'a' : 'animations'}/selected.json`]: strToU8('{"v":"5.7","w":32,"h":64,"layers":[]}'),
++        't/authored.json': strToU8('{"rules":[{"id":"bad","type":"Image","value":"external.png"}]}') })
++      const fetch = vi.fn().mockResolvedValueOnce(new Response(new Uint8Array(archive))).mockResolvedValueOnce(new Response(new Uint8Array(invalid)))
++      const uninstall = installScopedMediaResolver({ peek: () => ({ handled: true, url }), resolve: async () => ({ handled: true, url }) })
++      vi.stubGlobal('fetch', fetch)
++      try {
++        await expect(resolveLottieRenderSpec('/original', { mediaId: 'owned', sourceWidth: 32, sourceHeight: 64 })).rejects.toThrow()
++        expect(fetch).toHaveBeenCalledTimes(2)
++        expect(fetch.mock.calls.map(([, options]) => options.redirect)).toEqual(['error', 'error'])
++      } finally { uninstall(); vi.unstubAllGlobals() }
++    })
++  }
++  it(`v${version} refuses an invalid first native scoped response using strict streaming`, async () => {
++    const url = 'https://owned.invalid/refused-first-read'
++    const fetch = vi.fn(async (_input: RequestInfo | URL, _options?: RequestInit) => new Response(new Uint8Array(initialThemeArchive(version)), { status: 302 }))
++    const uninstall = installScopedMediaResolver({ peek: () => ({ handled: true, url }), resolve: async () => ({ handled: true, url }) })
++    vi.stubGlobal('fetch', fetch)
++    try {
++      await expect(resolveLottieRenderSpec('/original', { mediaId: 'owned', sourceWidth: 32, sourceHeight: 64 })).rejects.toThrow('LOTTIE_LOAD_FAILED')
++      expect(fetch).toHaveBeenCalledTimes(1)
++      expect(fetch.mock.calls[0]![1]).toMatchObject({ redirect: 'error' })
++    } finally { uninstall(); vi.unstubAllGlobals() }
++  })
++  for (const read of [1, 2]) {
++    it(`v${version} denies publication after source revocation during started body read ${read}`, async () => {
++      const url = 'https://owned.invalid/deferred-body', archive = initialThemeArchive(version)
++      let finish!: () => void, started!: () => void
++      const waiting = new Promise<void>((resolve) => { started = resolve })
++      let count = 0
++      const fetch = vi.fn(async () => {
++        if (++count !== read) return new Response(new Uint8Array(archive))
++        let cancelled = false
++        return new Response(new ReadableStream({ start(controller) {
++          finish = () => { if (!cancelled) { controller.enqueue(new Uint8Array(archive)); controller.close() } }; started()
++        }, cancel() { cancelled = true } }))
++      })
++      const uninstall = installScopedMediaResolver({ peek: () => ({ handled: true, url }), resolve: async () => ({ handled: true, url }) })
++      vi.stubGlobal('fetch', fetch)
++      try {
++        let published = 0
++        const pending = resolveLottieRenderSpec('/original', { mediaId: 'owned', sourceWidth: 32, sourceHeight: 64 }).then(() => { published++ })
++        const refusal = expect(pending).rejects.toThrow('LOTTIE_SOURCE_SUPERSEDED')
++        await waiting
++        uninstall(); finish()
++        await refusal
++        expect(published).toBe(0)
++        expect(fetch).toHaveBeenCalledTimes(read)
++      } finally { uninstall(); vi.unstubAllGlobals() }
++    })
++  }
++}
+diff --git a/src/infrastructure/lottie/lottie-archive.ts b/src/infrastructure/lottie/lottie-archive.ts
+--- /dev/null
++++ b/src/infrastructure/lottie/lottie-archive.ts
+@@ -0,0 +1,439 @@
++import { unzipSync } from 'fflate'
++
++const MAX_BYTES = 16 * 1024 * 1024
++const fail = (): never => {
++  throw new Error('LOTTIE_ARCHIVE_REFUSED')
++}
++const record = (value: unknown): Record<string, unknown> => {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail()
++  return value as Record<string, unknown>
++}
++const id = (value: unknown): string => {
++  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) return fail()
++  return value
++}
++/** Duplicate-key rejection precedes JSON.parse, which would otherwise discard evidence. */
++export function parseArchiveJson(text: string): Record<string, unknown> {
++  if (new TextEncoder().encode(text).length > MAX_BYTES) return fail()
++  const tokens =
++    text.match(/"(?:[^"\\]|\\.)*"|[{}[\]:,]|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g) ??
++    []
++  let cursor = 0
++  const value = (depth: number): void => {
++    if (depth > 64) return fail()
++    const token = tokens[cursor++]
++    if (token === '{') {
++      const keys = new Set<string>()
++      if (tokens[cursor] === '}') {
++        cursor++
++        return
++      }
++      do {
++        const key: unknown = JSON.parse(tokens[cursor++] ?? '')
++        if (typeof key !== 'string' || keys.has(key) || tokens[cursor++] !== ':') return fail()
++        keys.add(key)
++        value(depth + 1)
++        if (tokens[cursor] === '}') {
++          cursor++
++          return
++        }
++      } while (tokens[cursor++] === ',')
++      return fail()
++    }
++    if (token === '[') {
++      if (tokens[cursor] === ']') {
++        cursor++
++        return
++      }
++      do {
++        value(depth + 1)
++        if (tokens[cursor] === ']') {
++          cursor++
++          return
++        }
++      } while (tokens[cursor++] === ',')
++      return fail()
++    }
++    if (token === undefined || ['}', ']', ':', ','].includes(token)) return fail()
++  }
++  value(0)
++  if (cursor !== tokens.length) return fail()
++  return record(JSON.parse(text))
++}
++const crc32 = (bytes: Uint8Array): number => {
++  let crc = 0xffffffff
++  for (const byte of bytes) {
++    crc ^= byte
++    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
++  }
++  return (crc ^ 0xffffffff) >>> 0
++}
++export type LottieArchive = {
++  files: Record<string, Uint8Array>
++  animations: Array<{
++    id: string
++    entry: string
++    document: Record<string, unknown>
++    themes?: string[]
++    initialTheme?: string
++  }>
++  themes: Map<string, string>
++  defaultAnimationId: string
++}
++
++/** Expressions have no established closed-resource execution contract in this flow. */
++export function assertArchiveExpressionsAbsent(value: unknown): void {
++  if (!value || typeof value !== 'object') return
++  if (Array.isArray(value)) {
++    for (const item of value) assertArchiveExpressionsAbsent(item)
++    return
++  }
++  for (const [key, child] of Object.entries(value)) {
++    if (key === 'x' && typeof child === 'string' && child.length) return fail()
++    assertArchiveExpressionsAbsent(child)
++  }
++}
++/** Validate central/local agreement and all declared allocation bounds before fflate inflates. */
++export function readLottieArchive(bytes: Uint8Array): LottieArchive {
++  if (bytes.length > MAX_BYTES || bytes.length < 22) return fail()
++  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
++  const u16 = (offset: number) => view.getUint16(offset, true)
++  const u32 = (offset: number) => view.getUint32(offset, true)
++  let end = -1
++  for (let p = bytes.length - 22; p >= Math.max(0, bytes.length - 65557); p--) {
++    if (u32(p) === 0x06054b50 && p + 22 + u16(p + 20) === bytes.length) {
++      end = p
++      break
++    }
++  }
++  if (end < 0 || u16(end + 4) || u16(end + 6) || u16(end + 8) !== u16(end + 10)) return fail()
++  const count = u16(end + 10),
++    directorySize = u32(end + 12),
++    directoryOffset = u32(end + 16)
++  if (
++    !count ||
++    count > 256 ||
++    directorySize > 1024 * 1024 ||
++    directoryOffset + directorySize !== end
++  )
++    return fail()
++  const entries = new Map<
++    string,
++    { size: number; compressed: number; crc: number; start: number; end: number }
++  >()
++  const aliases = new Set<string>()
++  let cursor = directoryOffset,
++    total = 0
++  const decoder = new TextDecoder('utf-8', { fatal: true })
++  for (let n = 0; n < count; n++) {
++    if (cursor + 46 > end || u32(cursor) !== 0x02014b50) return fail()
++    const flags = u16(cursor + 8),
++      method = u16(cursor + 10),
++      compressed = u32(cursor + 20),
++      size = u32(cursor + 24)
++    const length = u16(cursor + 28),
++      extra = u16(cursor + 30),
++      comment = u16(cursor + 32),
++      local = u32(cursor + 42)
++    if (
++      flags & ~0x800 ||
++      ![0, 8].includes(method) ||
++      u16(cursor + 34) ||
++      cursor + 46 + length + extra + comment > end
++    )
++      return fail()
++    const nameBytes = bytes.subarray(cursor + 46, cursor + 46 + length),
++      name = decoder.decode(nameBytes)
++    if (
++      !name ||
++      name.length > 512 ||
++      name.includes('\\') ||
++      name.includes('\0') ||
++      name.startsWith('/') ||
++      /^[A-Za-z]:/.test(name) ||
++      name.split('/').some((p) => !p || p === '.' || p === '..') ||
++      aliases.has(name.toLowerCase())
++    )
++      return fail()
++    if (
++      size === 0xffffffff ||
++      compressed === 0xffffffff ||
++      local === 0xffffffff ||
++      size > MAX_BYTES ||
++      compressed > MAX_BYTES ||
++      (size > 65536 && size > compressed * 200)
++    )
++      return fail()
++    total += size
++    if (
++      total > MAX_BYTES ||
++      local + 30 > directoryOffset ||
++      u32(local) !== 0x04034b50 ||
++      u16(local + 6) !== flags ||
++      u16(local + 8) !== method ||
++      u32(local + 14) !== u32(cursor + 16) ||
++      u32(local + 18) !== compressed ||
++      u32(local + 22) !== size ||
++      u16(local + 26) !== length
++    )
++      return fail()
++    const localExtra = u16(local + 28),
++      start = local + 30 + length + localExtra
++    if (
++      start + compressed > directoryOffset ||
++      decoder.decode(bytes.subarray(local + 30, local + 30 + length)) !== name
++    )
++      return fail()
++    for (const [begin, limit] of [
++      [cursor + 46 + length, cursor + 46 + length + extra],
++      [local + 30 + length, start],
++    ]) {
++      for (let p = begin!; p < limit!; ) {
++        if (p + 4 > limit! || u16(p) === 1 || p + 4 + u16(p + 2) > limit!) return fail()
++        p += 4 + u16(p + 2)
++      }
++    }
++    aliases.add(name.toLowerCase())
++    entries.set(name, {
++      size,
++      compressed,
++      crc: u32(cursor + 16),
++      start: local,
++      end: start + compressed,
++    })
++    cursor += 46 + length + extra + comment
++  }
++  if (cursor !== end) return fail()
++  const ranges = [...entries.values()].sort((a, b) => a.start - b.start)
++  for (let n = 1; n < ranges.length; n++) if (ranges[n - 1]!.end > ranges[n]!.start) return fail()
++  const files = unzipSync(bytes, {
++    filter: (entry) => {
++      const declared = entries.get(entry.name)
++      if (!declared || declared.size !== entry.originalSize || declared.compressed !== entry.size)
++        return fail()
++      return true
++    },
++  })
++  if (Object.keys(files).length !== count) return fail()
++  for (const [name, entry] of entries)
++    if (!files[name] || files[name]!.length !== entry.size || crc32(files[name]!) !== entry.crc)
++      return fail()
++  return describeLottieArchive(files)
++}
++/** Manifest paths are exact; aliases, fallback and unvalidated active content are refused. */
++export function describeLottieArchive(files: Record<string, Uint8Array>): LottieArchive {
++  const decoder = new TextDecoder('utf-8', { fatal: true })
++  const read = (name: string) => {
++    if (!files[name]) return fail()
++    return parseArchiveJson(decoder.decode(files[name]))
++  }
++  const manifest = read('manifest.json')
++  if (manifest.version !== undefined && manifest.version !== '1' && manifest.version !== '2')
++    return fail()
++  if (
++    manifest.stateMachines !== undefined ||
++    (manifest.initial && record(manifest.initial).stateMachine !== undefined)
++  )
++    return fail()
++  if (
++    !Array.isArray(manifest.animations) ||
++    !manifest.animations.length ||
++    manifest.animations.length > 128
++  )
++    return fail()
++  const prefix = manifest.version === '2' ? 'a' : 'animations'
++  const known = new Set(['manifest.json']),
++    ids = new Set<string>()
++  const animations = manifest.animations.map((raw) => {
++    const item = record(raw),
++      animationId = id(item.id),
++      entry = `${prefix}/${animationId}.json`
++    if (ids.has(animationId)) return fail()
++    ids.add(animationId)
++    known.add(entry)
++    const document = read(entry)
++    assertArchiveExpressionsAbsent(document)
++    if (typeof document.v !== 'string' || !Array.isArray(document.layers)) return fail()
++    if (item.themes !== undefined && !Array.isArray(item.themes)) return fail()
++    return {
++      id: animationId,
++      entry,
++      document,
++      ...(Array.isArray(item.themes) && { themes: item.themes.map(id) }),
++      ...(item.initialTheme !== undefined && { initialTheme: id(item.initialTheme) }),
++    }
++  })
++  const initialAnimation = manifest.initial ? record(manifest.initial).animation : undefined
++  const defaultAnimationId =
++    initialAnimation === undefined ? animations[0]!.id : id(initialAnimation)
++  if (!ids.has(defaultAnimationId)) return fail()
++  const themes = new Map<string, string>()
++  if (manifest.themes !== undefined && !Array.isArray(manifest.themes)) return fail()
++  for (const raw of (manifest.themes ?? []) as unknown[]) {
++    const themeId = id(record(raw).id),
++      entry = `t/${themeId}.json`
++    if (themes.has(themeId)) return fail()
++    const theme = read(entry)
++    validateArchiveTheme(theme, ids)
++    themes.set(themeId, JSON.stringify(theme))
++    known.add(entry)
++  }
++  for (const raw of manifest.animations) {
++    const item = record(raw)
++    if (
++      item.initialTheme !== undefined &&
++      (!themes.has(id(item.initialTheme)) ||
++        (Array.isArray(item.themes) && !item.themes.includes(item.initialTheme)))
++    )
++      return fail()
++    if (
++      item.themes !== undefined &&
++      (!Array.isArray(item.themes) || item.themes.some((t) => !themes.has(id(t))))
++    )
++      return fail()
++  }
++  for (const name of Object.keys(files)) {
++    if (known.has(name)) continue
++    if (
++      !new RegExp(`^${manifest.version === '2' ? 'i' : 'images'}/[A-Za-z0-9_.-]+$`).test(name) &&
++      !/^f\/[A-Za-z0-9_.-]+$/.test(name)
++    )
++      return fail()
++  }
++  return { files, animations, themes, defaultAnimationId }
++}
++/** Pinned core theme.rs static, resource-free subset. Other branches remain explicit refusals. */
++export function validateArchiveTheme(
++  theme: Record<string, unknown>,
++  animations: Set<string>,
++): void {
++  if (
++    Object.keys(theme).some((k) => k !== 'rules') ||
++    !Array.isArray(theme.rules) ||
++    theme.rules.length > 1024
++  )
++    return fail()
++  const seen = new Set<string>()
++  for (const raw of theme.rules) {
++    const rule = record(raw),
++      slot = id(rule.id)
++    if (
++      seen.has(slot) ||
++      Object.keys(rule).some((k) => !['id', 'type', 'animations', 'value'].includes(k))
++    )
++      return fail()
++    seen.add(slot)
++    if (
++      rule.animations !== undefined &&
++      (!Array.isArray(rule.animations) || rule.animations.some((a) => !animations.has(id(a))))
++    )
++      return fail()
++    if (rule.type === 'Scalar') {
++      if (typeof rule.value !== 'number' || !Number.isFinite(rule.value)) return fail()
++    } else if (rule.type === 'Color' || rule.type === 'Vector') {
++      if (
++        !Array.isArray(rule.value) ||
++        !(rule.type === 'Color' ? [3, 4] : [2]).includes(rule.value.length) ||
++        rule.value.some((v) => typeof v !== 'number' || !Number.isFinite(v)) ||
++        (rule.type === 'Color' && rule.value.some((v) => v < 0 || v > 1))
++      )
++        return fail()
++    } else if (rule.type === 'Text') {
++      const value = record(rule.value)
++      if (
++        Object.keys(value).some((k) => k !== 'text') ||
++        typeof value.text !== 'string' ||
++        value.text.length > 10000
++      )
++        return fail()
++    } else return fail()
++  }
++}
++export function selectArchiveAnimation(archive: LottieArchive, requested?: string) {
++  const animation = archive.animations.find(
++    (a) => a.id === (requested ?? archive.defaultAnimationId),
++  )
++  if (!animation) return fail()
++  return animation
++}
++
++export function rasterMime(bytes: Uint8Array): string {
++  const ascii = (start: number, length: number) =>
++    String.fromCharCode(...bytes.subarray(start, start + length))
++  if ([137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value))
++    return 'image/png'
++  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg'
++  if (['GIF87a', 'GIF89a'].includes(ascii(0, 6))) return 'image/gif'
++  if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WEBP') return 'image/webp'
++  return fail()
++}
++
++export function archiveFontMime(bytes: Uint8Array): string {
++  const magic = String.fromCharCode(...bytes.subarray(0, 4))
++  if (magic === 'wOF2') return 'font/woff2'
++  if (magic === 'wOFF') return 'font/woff'
++  if (magic === 'OTTO') return 'font/otf'
++  if (magic === '\u0000\u0001\u0000\u0000') return 'font/ttf'
++  return fail()
++}
++
++/** Validate an original archive against its inventory, or a closed renderer document. */
++export function assertClosedLottieAnimation(
++  document: Record<string, unknown>,
++  files?: Record<string, Uint8Array>,
++): void {
++  if (document.assets !== undefined && !Array.isArray(document.assets)) return fail()
++  for (const raw of Array.isArray(document.assets) ? document.assets : []) {
++    const asset = record(raw)
++    if (asset.p === undefined) continue
++    if (typeof asset.p !== 'string') return fail()
++    if (!asset.p.startsWith('data:') && files) {
++      if (asset.u !== undefined && typeof asset.u !== 'string') return fail()
++      const entry = `${typeof asset.u === 'string' ? asset.u : ''}${asset.p}`
++      if (!/^(?:images|i)\/[A-Za-z0-9_.-]+$/.test(entry) || !Object.hasOwn(files, entry)) return fail()
++      rasterMime(files[entry]!)
++      continue
++    }
++    if (asset.u) return fail()
++    const match = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/]*={0,2})$/.exec(
++      asset.p,
++    )
++    if (!match) return fail()
++    const binary = atob(match[2]!)
++    if (
++      btoa(binary) !== match[2] ||
++      rasterMime(Uint8Array.from(binary, (c) => c.charCodeAt(0))) !== match[1]
++    )
++      return fail()
++  }
++  if (document.fonts !== undefined) {
++    const fonts = record(document.fonts)
++    if (fonts.list !== undefined && !Array.isArray(fonts.list)) return fail()
++    for (const raw of Array.isArray(fonts.list) ? fonts.list : []) {
++      const font = record(raw)
++      if (typeof font.fPath === 'string' && !font.fPath.startsWith('data:') && files) {
++        if (!/^f\/[A-Za-z0-9_.-]+$/.test(font.fPath) || !Object.hasOwn(files, font.fPath)) return fail()
++        archiveFontMime(files[font.fPath]!)
++        continue
++      }
++      // Embedded glyph-only documents retain their existing pinned renderer behavior.
++      if (
++        font.fPath !== undefined &&
++        (typeof font.fPath !== 'string' ||
++          !/^data:font\/(?:woff2?|otf|ttf);base64,[A-Za-z0-9+/]+={0,2}$/.test(font.fPath))
++      )
++        return fail()
++    }
++  }
++  for (const raw of Object.values(
++    document.slots && typeof document.slots === 'object' ? document.slots : {},
++  )) {
++    const slot = record(raw)
++    if (
++      slot.p &&
++      typeof slot.p === 'object' &&
++      typeof (slot.p as Record<string, unknown>).p === 'string'
++    )
++      return fail()
++  }
++}
+diff --git a/src/infrastructure/lottie/lottie-frame-provider.ts b/src/infrastructure/lottie/lottie-frame-provider.ts
+--- a/src/infrastructure/lottie/lottie-frame-provider.ts
++++ b/src/infrastructure/lottie/lottie-frame-provider.ts
+@@ -14,6 +14,7 @@
+  * Preview uses {@link LottieRenderer} directly against a visible canvas.
+  */
+ import { DotLottie } from '@lottiefiles/dotlottie-web'
++import { scopedMediaEpoch, subscribeScopedMedia } from '@/features/media-library/utils/scoped-media-resolution'
+ import { isLiveObjectUrl } from '@/infrastructure/browser/object-url-registry'
+ import type { LottieSlotValue } from './lottie-slots'
+ import { requireLottieDimensions } from './lottie-metadata'
+@@ -206,10 +207,14 @@
+         fail()
+         if (!this._destroyed) {
+           this._destroyed = true
+-          this.dotLottie.destroy()
+-        }
+-      }
+-      this.cancelReady = this.strict ? cancel : undefined
++          try {
++            this.dotLottie.destroy()
++          } catch {
++            // Preserve readiness rejection and finish every owner's teardown sweep.
++          }
++        }
++      }
++      this.cancelReady = cancel
+       if (this.strict) {
+         timer = setTimeout(cancel, 10_000)
+         config.signal?.addEventListener('abort', cancel, { once: true })
+@@ -386,8 +391,50 @@
+   constructor(
+     private readonly strict = false,
+     private readonly signal?: AbortSignal,
+-  ) {}
++  ) {
++    this.unsubscribeScope = subscribeScopedMedia(() => this.invalidateScope())
++  }
++  private generation = 0
++  private epoch = scopedMediaEpoch()
++  private destroyed = false
++  private readonly unsubscribeScope: () => void
++  private invalidateScope(): void {
++    this.generation++
++    this.epoch = scopedMediaEpoch()
++    for (const renderer of this.pendingRenderers) renderer.destroy()
++    this.pendingRenderers.clear()
++    for (const renderer of this.renderers.values()) renderer.destroy()
++    this.renderers.clear()
++    this.signatures.clear()
++    this.sourceGuards.clear()
++    this.rebuilds.clear()
++  }
++  private checkScope(generation = this.generation): void {
++    if (this.epoch !== scopedMediaEpoch()) this.invalidateScope()
++    if (this.destroyed || generation !== this.generation) throw new Error('LOTTIE_SOURCE_SUPERSEDED')
++    this.signal?.throwIfAborted()
++  }
+   private readonly renderers = new Map<string, LottieRenderer>()
++  private readonly pendingRenderers = new Set<LottieRenderer>()
++  private readonly sourceGuards = new Map<string, () => void>()
++  private currentKey(key: string): boolean {
++    if (this.epoch !== scopedMediaEpoch()) this.invalidateScope()
++    if (this.destroyed) return false
++    try { this.sourceGuards.get(key)?.(); return true } catch {
++      this.generation++
++      this.renderers.get(key)?.destroy()
++      this.renderers.delete(key)
++      this.signatures.delete(key)
++      this.sourceGuards.delete(key)
++      return false
++    }
++  }
++  /** Recheck grant expiry before callers reuse a composed frame cache. */
++  sourceRevision(): number {
++    if (this.epoch !== scopedMediaEpoch()) this.invalidateScope()
++    for (const key of [...this.sourceGuards.keys()]) this.currentKey(key)
++    return this.generation
++  }
+   /** Override signature the current renderer for a key was built with. */
+   private readonly signatures = new Map<string, string>()
+   /** In-flight rebuilds, keyed by item key, so concurrent renders dedupe. */
+@@ -408,30 +455,45 @@
+     signature?: string,
+     themeData?: string,
+     slots?: Record<string, LottieSlotValue>,
++    sourceCurrent?: () => void,
++    strictSource = false,
+   ): Promise<void> {
+     requireResource('asset:lottiefiles')
+-    if (this.strict) requireLottieDimensions(width, height)
+-    if (this.renderers.has(key)) return
++    this.checkScope()
++    sourceCurrent?.()
++    const generation = this.generation
++    if (this.strict || strictSource) requireLottieDimensions(width, height)
++    if (this.currentKey(key) && this.renderers.has(key)) return
+     const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height))
+     const renderer = new LottieRenderer(
+       data
+-        ? { canvas, data, themeData, slots, strict: this.strict, signal: this.signal }
+-        : { canvas, src, themeData, slots, strict: this.strict, signal: this.signal },
++        ? { canvas, data, themeData, slots, strict: this.strict || strictSource, signal: this.signal }
++        : { canvas, src, themeData, slots, strict: this.strict || strictSource, signal: this.signal },
+     )
++    this.pendingRenderers.add(renderer)
+     this.renderers.set(key, renderer)
++    if (sourceCurrent) this.sourceGuards.set(key, sourceCurrent)
+     if (signature !== undefined) this.signatures.set(key, signature)
+     try {
+       await renderer.ready
++      this.checkScope(generation)
++      sourceCurrent?.()
+     } catch (error) {
+       renderer.destroy()
+-      this.renderers.delete(key)
+-      this.signatures.delete(key)
++      if (this.renderers.get(key) === renderer) {
++        this.renderers.delete(key)
++        this.signatures.delete(key)
++        this.sourceGuards.delete(key)
++      }
+       throw error
++    } finally {
++      this.pendingRenderers.delete(renderer)
+     }
+   }
+ 
+   /** The override signature the key's current renderer was built with. */
+   getSignature(key: string): string | undefined {
++    if (!this.currentKey(key)) return undefined
+     return this.signatures.get(key)
+   }
+ 
+@@ -451,22 +513,30 @@
+     signature: string,
+     themeData?: string,
+     slots?: Record<string, LottieSlotValue>,
++    sourceCurrent?: () => void,
++    strictSource = false,
+   ): Promise<void> {
+     requireResource('asset:lottiefiles')
+-    if (this.signatures.get(key) === signature) return
++    this.checkScope()
++    sourceCurrent?.()
++    const generation = this.generation
++    if (this.currentKey(key) && this.signatures.get(key) === signature) return
+     const inFlight = this.rebuilds.get(key)
+     if (inFlight && inFlight.signature === signature) return inFlight.promise
+ 
+     const promise = (async () => {
+-      if (this.strict) requireLottieDimensions(width, height)
++      if (this.strict || strictSource) requireLottieDimensions(width, height)
+       const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height))
+       const renderer = new LottieRenderer(
+         data
+-          ? { canvas, data, themeData, slots, strict: this.strict, signal: this.signal }
+-          : { canvas, src, themeData, slots, strict: this.strict, signal: this.signal },
++          ? { canvas, data, themeData, slots, strict: this.strict || strictSource, signal: this.signal }
++          : { canvas, src, themeData, slots, strict: this.strict || strictSource, signal: this.signal },
+       )
++      this.pendingRenderers.add(renderer)
+       try {
+         await renderer.ready
++        this.checkScope(generation)
++        sourceCurrent?.()
+       } catch (error) {
+         try {
+           renderer.destroy()
+@@ -474,9 +544,13 @@
+           // Preserve the readiness failure even if native disposal also fails.
+         }
+         throw error
++      } finally {
++        this.pendingRenderers.delete(renderer)
+       }
+       const previous = this.renderers.get(key)
+       this.renderers.set(key, renderer)
++      if (sourceCurrent) this.sourceGuards.set(key, sourceCurrent)
++      else this.sourceGuards.delete(key)
+       this.signatures.set(key, signature)
+       previous?.destroy()
+     })()
+@@ -491,6 +565,7 @@
+   /** Render `lottieFrame` and return the OffscreenCanvas to composite, or null. */
+   renderFrame(key: string, lottieFrame: number): OffscreenCanvas | null {
+     requireResource('asset:lottiefiles')
++    if (!this.currentKey(key)) return null
+     const renderer = this.renderers.get(key)
+     if (!renderer || !renderer.isLoaded) return null
+     renderer.renderFrame(lottieFrame)
+@@ -498,13 +573,14 @@
+   }
+ 
+   get(key: string): LottieRenderer | undefined {
++    if (!this.currentKey(key)) return undefined
+     return this.renderers.get(key)
+   }
+ 
+   destroy(): void {
+-    for (const r of this.renderers.values()) r.destroy()
+-    this.renderers.clear()
+-    this.signatures.clear()
+-    this.rebuilds.clear()
+-  }
+-}
++    if (this.destroyed) return
++    this.destroyed = true
++    this.unsubscribeScope()
++    this.invalidateScope()
++  }
++}
+diff --git a/src/infrastructure/lottie/lottie-metadata.test.ts b/src/infrastructure/lottie/lottie-metadata.test.ts
+--- a/src/infrastructure/lottie/lottie-metadata.test.ts
++++ b/src/infrastructure/lottie/lottie-metadata.test.ts
+@@ -13,7 +13,7 @@
+ // A `.lottie` archive with an image asset (images/img.png = bytes 0x89 'PNG' …),
+ // pre-built with fflate in Node (see parseLottieFileBytes fixtures note).
+ const IMAGE_ARCHIVE_B64 =
+-  'UEsDBBQAAAAIAFCr5lzzzTiqHQAAABsAAAANAAAAbWFuaWZlc3QuanNvbqtWSszLzE0syczPK1ayiq5WykxRslJKVKqNrQUAUEsDBBQAAAAIAFCr5lw9+VcAgQAAAMgAAAARAAAAYW5pbWF0aW9ucy9hLmpzb25djlsKwjAQRfdyv4cYFRFmB65BigSc1qCtJalKCdm7k1o/2q/LPM6ZSXiDcTBHY0GoA3hvCb4Hazw1SvkBb63mbc6uVca3jRIuRhki+Jzgr1PXNXIprgmaGcLrP4sbnam38KbvikP0WK4IDzdK+LmGEbwjBKlPS+vqs7uup5yr/AVQSwMEFAAAAAgAUKvmXGULmf4LAAAACQAAAA4AAABpbWFnZXMvaW1nLnBuZ+sM8HNnZGJmYQUAUEsBAhQAFAAAAAgAUKvmXPPNOKodAAAAGwAAAA0AAAAAAAAAAAAAAAAAAAAAAG1hbmlmZXN0Lmpzb25QSwECFAAUAAAACABQq+ZcPflXAIEAAADIAAAAEQAAAAAAAAAAAAAAAABIAAAAYW5pbWF0aW9ucy9hLmpzb25QSwECFAAUAAAACABQq+ZcZQuZ/gsAAAAJAAAADgAAAAAAAAAAAAAAAAD4AAAAaW1hZ2VzL2ltZy5wbmdQSwUGAAAAAAMAAwC2AAAALwEAAAAA'
++  'UEsDBBQAAAAAAOGNSV3zzTiqGwAAABsAAAANAAAAbWFuaWZlc3QuanNvbnsiYW5pbWF0aW9ucyI6W3siaWQiOiJhIn1dfVBLAwQUAAAAAADhjUldPflXAMgAAADIAAAAEQAAAGFuaW1hdGlvbnMvYS5qc29ueyJ2IjoiNS43LjAiLCJmciI6MzAsImlwIjowLCJvcCI6MzAsInciOjEwMCwiaCI6MTAwLCJubSI6ImltZyIsImFzc2V0cyI6W3siaWQiOiJpbWFnZV8wIiwidyI6MTAsImgiOjEwLCJ1IjoiaW1hZ2VzLyIsInAiOiJpbWcucG5nIiwiZSI6MH1dLCJsYXllcnMiOlt7InR5IjoyLCJyZWZJZCI6ImltYWdlXzAiLCJpcCI6MCwib3AiOjMwLCJrcyI6e319XX1QSwMEFAAAAAAA4Y1JXaYAhkBGAAAARgAAAA4AAABpbWFnZXMvaW1nLnBuZ4lQTkcNChoKAAAADUlIRFIAAAABAAAAAQgGAAAAHxXEiQAAAA1JREFUCB1j+M/A8B8ABYACP0nC27QAAAAASUVORK5CYIJQSwECFAMUAAAAAADhjUld8804qhsAAAAbAAAADQAAAAAAAAAAAAAAgAEAAAAAbWFuaWZlc3QuanNvblBLAQIUAxQAAAAAAOGNSV09+VcAyAAAAMgAAAARAAAAAAAAAAAAAACAAUYAAABhbmltYXRpb25zL2EuanNvblBLAQIUAxQAAAAAAOGNSV2mAIZARgAAAEYAAAAOAAAAAAAAAAAAAACAAT0BAABpbWFnZXMvaW1nLnBuZ1BLBQYAAAAAAwADALYAAACvAQAAAAA='
+ 
+ function lottieJson(overrides: Record<string, unknown> = {}) {
+   return {
+@@ -51,10 +51,10 @@
+   empty:
+     'UEsDBBQAAAAIAFVH5lx1pkWvEwAAABEAAAANAAAAbWFuaWZlc3QuanNvbqtWSszLzE0syczPK1ayio6tBQBQSwECFAAUAAAACABVR+ZcdaZFrxMAAAARAAAADQAAAAAAAAAAAAAAAAAAAAAAbWFuaWZlc3QuanNvblBLBQYAAAAAAQABADsAAAA+AAAAAAA=',
+   // manifest {animations:[{id:'a',themes:['dark','light']}], themes:[{id:'dark'},{id:'light'}]};
+-  // animations/a.json (512x512) carries markers intro/loop/cue; themes/dark.json +
+-  // themes/light.json each hold a `bg` Color rule.
++  // animations/a.json (512x512) carries markers intro/loop/cue; t/dark.json +
++  // t/light.json each hold a `bg` Color rule.
+   themed:
+-    'UEsDBBQAAAAAAGMC51zS4vB/XQAAAF0AAAANAAAAbWFuaWZlc3QuanNvbnsiYW5pbWF0aW9ucyI6W3siaWQiOiJhIiwidGhlbWVzIjpbImRhcmsiLCJsaWdodCJdfV0sInRoZW1lcyI6W3siaWQiOiJkYXJrIn0seyJpZCI6ImxpZ2h0In1dfVBLAwQUAAAAAABjAudcJw8I9NUAAADVAAAAEQAAAGFuaW1hdGlvbnMvYS5qc29ueyJ2IjoiNS43LjAiLCJmciI6MzAsImlwIjowLCJvcCI6NjAsInciOjUxMiwiaCI6NTEyLCJubSI6ImEiLCJsYXllcnMiOlt7InR5Ijo0LCJubSI6ImwiLCJpcCI6MCwib3AiOjYwLCJrcyI6e319XSwibWFya2VycyI6W3sidG0iOjAsImNtIjoiaW50cm8iLCJkciI6MzB9LHsidG0iOjMwLCJjbSI6Imxvb3AiLCJkciI6MzB9LHsidG0iOjU5LCJjbSI6ImN1ZSIsImRyIjowfV19UEsDBBQAAAAAAGMC51w0nok/OAAAADgAAAAQAAAAdGhlbWVzL2RhcmsuanNvbnsicnVsZXMiOlt7ImlkIjoiYmciLCJ0eXBlIjoiQ29sb3IiLCJ2YWx1ZSI6WzAsMCwwLDFdfV19UEsDBBQAAAAAAGMC51wDXgtPOAAAADgAAAARAAAAdGhlbWVzL2xpZ2h0Lmpzb257InJ1bGVzIjpbeyJpZCI6ImJnIiwidHlwZSI6IkNvbG9yIiwidmFsdWUiOlsxLDEsMSwxXX1dfVBLAQIUABQAAAAAAGMC51zS4vB/XQAAAF0AAAANAAAAAAAAAAAAAAAAAAAAAABtYW5pZmVzdC5qc29uUEsBAhQAFAAAAAAAYwLnXCcPCPTVAAAA1QAAABEAAAAAAAAAAAAAAAAAiAAAAGFuaW1hdGlvbnMvYS5qc29uUEsBAhQAFAAAAAAAYwLnXDSeiT84AAAAOAAAABAAAAAAAAAAAAAAAAAAjAEAAHRoZW1lcy9kYXJrLmpzb25QSwECFAAUAAAAAABjAudcA14LTzgAAAA4AAAAEQAAAAAAAAAAAAAAAADyAQAAdGhlbWVzL2xpZ2h0Lmpzb25QSwUGAAAAAAQABAD3AAAAWQIAAAAA',
++    'UEsDBBQAAAAAAOGNSV3S4vB/XQAAAF0AAAANAAAAbWFuaWZlc3QuanNvbnsiYW5pbWF0aW9ucyI6W3siaWQiOiJhIiwidGhlbWVzIjpbImRhcmsiLCJsaWdodCJdfV0sInRoZW1lcyI6W3siaWQiOiJkYXJrIn0seyJpZCI6ImxpZ2h0In1dfVBLAwQUAAAAAADhjUldJw8I9NUAAADVAAAAEQAAAGFuaW1hdGlvbnMvYS5qc29ueyJ2IjoiNS43LjAiLCJmciI6MzAsImlwIjowLCJvcCI6NjAsInciOjUxMiwiaCI6NTEyLCJubSI6ImEiLCJsYXllcnMiOlt7InR5Ijo0LCJubSI6ImwiLCJpcCI6MCwib3AiOjYwLCJrcyI6e319XSwibWFya2VycyI6W3sidG0iOjAsImNtIjoiaW50cm8iLCJkciI6MzB9LHsidG0iOjMwLCJjbSI6Imxvb3AiLCJkciI6MzB9LHsidG0iOjU5LCJjbSI6ImN1ZSIsImRyIjowfV19UEsDBBQAAAAAAOGNSV00nok/OAAAADgAAAALAAAAdC9kYXJrLmpzb257InJ1bGVzIjpbeyJpZCI6ImJnIiwidHlwZSI6IkNvbG9yIiwidmFsdWUiOlswLDAsMCwxXX1dfVBLAwQUAAAAAADhjUldA14LTzgAAAA4AAAADAAAAHQvbGlnaHQuanNvbnsicnVsZXMiOlt7ImlkIjoiYmciLCJ0eXBlIjoiQ29sb3IiLCJ2YWx1ZSI6WzEsMSwxLDFdfV19UEsBAhQDFAAAAAAA4Y1JXdLi8H9dAAAAXQAAAA0AAAAAAAAAAAAAAIABAAAAAG1hbmlmZXN0Lmpzb25QSwECFAMUAAAAAADhjUldJw8I9NUAAADVAAAAEQAAAAAAAAAAAAAAgAGIAAAAYW5pbWF0aW9ucy9hLmpzb25QSwECFAMUAAAAAADhjUldNJ6JPzgAAAA4AAAACwAAAAAAAAAAAAAAgAGMAQAAdC9kYXJrLmpzb25QSwECFAMUAAAAAADhjUldA14LTzgAAAA4AAAADAAAAAAAAAAAAAAAgAHtAQAAdC9saWdodC5qc29uUEsFBgAAAAAEAAQA7QAAAE8CAAAAAA==',
+ }
+ 
+ const decodeB64 = (b64: string): Uint8Array => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+@@ -122,12 +122,12 @@
+     // 'first' is second in manifest order but must still be selectable by id
+     expect(parseLottieFileBytes(decodeB64(FIXTURES.multi), 'first')?.width).toBe(100)
+     expect(parseLottieFileBytes(decodeB64(FIXTURES.multi), 'second')?.width).toBe(999)
+-    // Unknown id falls back to the manifest-primary animation
+-    expect(parseLottieFileBytes(decodeB64(FIXTURES.multi), 'nope')?.width).toBe(999)
+-  })
+-
+-  it('falls back to the first animation entry when the manifest is absent', () => {
+-    expect(parseLottieFileBytes(decodeB64(FIXTURES.noManifest))?.width).toBe(256)
++    // An explicit unknown ID must not play another animation.
++    expect(parseLottieFileBytes(decodeB64(FIXTURES.multi), 'nope')).toBeNull()
++  })
++
++  it('refuses archive selection when the required root manifest is absent', () => {
++    expect(parseLottieFileBytes(decodeB64(FIXTURES.noManifest))).toBeNull()
+   })
+ 
+   it('returns null for a ZIP with no animations', () => {
+@@ -181,7 +181,9 @@
+ 
+     const withInline = extractLottieAnimation(bytes, true)!
+     const inlined = (withInline.assets as Array<Record<string, unknown>>)[0]!
+-    expect(inlined.p).toBe('data:image/png;base64,iVBORwECAwQF')
++    expect(inlined.p).toBe(
++      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
++    )
+     expect(inlined.u).toBe('')
+     expect(inlined.e).toBe(1)
+   })
+@@ -192,6 +194,7 @@
+     expect(extractLottieManifest(decodeB64(FIXTURES.themed))).toEqual({
+       animations: [{ id: 'a' }],
+       themes: ['dark', 'light'],
++      defaultAnimationId: 'a',
+     })
+   })
+ 
+@@ -199,6 +202,7 @@
+     expect(extractLottieManifest(decodeB64(FIXTURES.multi))).toEqual({
+       animations: [{ id: 'second' }, { id: 'first' }],
+       themes: [],
++      defaultAnimationId: 'second',
+     })
+   })
+ 
+diff --git a/src/infrastructure/lottie/lottie-metadata.ts b/src/infrastructure/lottie/lottie-metadata.ts
+--- a/src/infrastructure/lottie/lottie-metadata.ts
++++ b/src/infrastructure/lottie/lottie-metadata.ts
+@@ -7,7 +7,14 @@
+  *
+  * Handles both raw `.json` Lottie and `.lottie` dotLottie ZIP archives.
+  */
+-import { unzipSync } from 'fflate'
++import {
++  readLottieArchive,
++  parseArchiveJson,
++  selectArchiveAnimation,
++  rasterMime,
++  archiveFontMime,
++  assertClosedLottieAnimation,
++} from './lottie-archive'
+ 
+ /** Parsed intrinsic metadata for a Lottie animation. */
+ export interface LottieMetadata {
+@@ -92,89 +99,15 @@
+   )
+ }
+ 
+-/** The archive entry path for an animation id, or undefined if absent. */
+-function animationEntryForId(entries: string[], id: string): string | undefined {
+-  // `entries` is already the animation-folder allow-list, so match on the bare
+-  // `<id>.json` file name to stay agnostic of the folder (v1 `animations/`,
+-  // v2 `a/`). Plain string match (not a manifest-controlled RegExp) to avoid
+-  // ReDoS and regex-metacharacter mismatches on the id.
+-  const target = `${id}.json`.toLowerCase()
+-  return entries.find((p) => p.split('/').pop()?.toLowerCase() === target)
+-}
+-
+-/**
+- * Animation JSON entries in a `.lottie` (dotLottie ZIP), best-match first.
+- * dotLottie v1 stores animations at `animations/<id>.json`; v2 (generated by
+- * `@dotlottie/dotlottie-js`, which LottieFiles now serves) stores them at
+- * `a/<id>.json`. Both are listed in `manifest.json`. When `preferredId` is
+- * given (a user-selected animation) it is moved to the front; otherwise the
+- * manifest's first animation leads, so we probe the animation that actually
+- * plays by default. Shared by metadata parsing and full-animation extraction.
+- */
+-function orderedAnimationEntries(
+-  files: Record<string, Uint8Array>,
+-  preferredId?: string,
+-): string[] {
+-  const animationEntries = Object.keys(files).filter((p) =>
+-    /(^|\/)(?:animations|a)\/[^/]+\.json$/i.test(p),
+-  )
+-  if (animationEntries.length === 0) return []
+-
+-  const front = (id: string | undefined): string[] | null => {
+-    if (!id) return null
+-    const entry = animationEntryForId(animationEntries, id)
+-    return entry ? [entry, ...animationEntries.filter((p) => p !== entry)] : null
+-  }
+-
+-  const preferred = front(preferredId)
+-  if (preferred) return preferred
+-
+-  const manifestKey = Object.keys(files).find((p) => /(^|\/)manifest\.json$/i.test(p))
+-  if (!manifestKey) return animationEntries
+-  try {
+-    const manifest = JSON.parse(new TextDecoder().decode(files[manifestKey]!)) as {
+-      animations?: Array<{ id?: string }>
+-    }
+-    return front(manifest.animations?.[0]?.id) ?? animationEntries
+-  } catch {
+-    // ignore a malformed manifest — fall back to entry order
+-    return animationEntries
+-  }
+-}
+-
+ /** Read an animation's metadata from a `.lottie` (dotLottie ZIP). */
+ function parseDotLottieArchive(bytes: Uint8Array, animationId?: string): LottieMetadata | null {
+-  let files: Record<string, Uint8Array>
+-  try {
+-    files = unzipSync(bytes)
++  try {
++    return parseLottieMetadata(
++      selectArchiveAnimation(readLottieArchive(bytes), animationId).document,
++    )
+   } catch {
+     return null
+   }
+-  const decoder = new TextDecoder()
+-  for (const entry of orderedAnimationEntries(files, animationId)) {
+-    try {
+-      const meta = parseLottieMetadata(JSON.parse(decoder.decode(files[entry]!)))
+-      if (meta) return meta
+-    } catch {
+-      // try the next animation entry
+-    }
+-  }
+-  return null
+-}
+-
+-const IMAGE_MIME: Record<string, string> = {
+-  png: 'image/png',
+-  jpg: 'image/jpeg',
+-  jpeg: 'image/jpeg',
+-  gif: 'image/gif',
+-  webp: 'image/webp',
+-  svg: 'image/svg+xml',
+-  bmp: 'image/bmp',
+-}
+-
+-function mimeFromName(name: string): string {
+-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+-  return IMAGE_MIME[ext] ?? 'application/octet-stream'
+ }
+ 
+ function bytesToBase64(bytes: Uint8Array): string {
+@@ -186,38 +119,30 @@
+   return btoa(binary)
+ }
+ 
+-/**
+- * Rewrite a `.lottie` animation's `images/*` assets as inline data URIs, using
+- * the archive's file bytes, so the animation JSON renders standalone (no side
+- * channel). Assets already inlined (`data:`) or missing from the archive are
+- * left untouched.
+- */
+-function inlineArchiveImages(
+-  data: Record<string, unknown>,
+-  files: Record<string, Uint8Array>,
+-): void {
+-  const assets = data.assets
+-  if (!Array.isArray(assets)) return
+-  const keys = Object.keys(files)
+-  for (const raw of assets) {
+-    const asset = raw as { p?: unknown; u?: unknown; e?: unknown }
+-    const p = asset?.p
+-    if (typeof p !== 'string' || p.startsWith('data:')) continue
+-    const dir = typeof asset.u === 'string' ? asset.u : ''
+-    const candidates = [`${dir}${p}`, `images/${p}`, p].map((c) => c.toLowerCase())
+-    const entry = keys.find((k) => {
+-      const lower = k.toLowerCase()
+-      return candidates.includes(lower) || candidates.some((c) => lower.endsWith(`/${c}`))
+-    })
+-    if (!entry) continue
+-    try {
+-      asset.p = `data:${mimeFromName(p)};base64,${bytesToBase64(files[entry]!)}`
+-      asset.u = ''
+-      asset.e = 1
+-    } catch {
+-      // leave the asset reference as-is if encoding fails
+-    }
+-  }
++/** Close renderer-only raster/font references using the validated complete archive. */
++function inlineArchiveResources(data: Record<string, unknown>, files: Record<string, Uint8Array>): void {
++  assertClosedLottieAnimation(data, files)
++  const replacements: Array<{ target: Record<string, unknown>; key: string; bytes: Uint8Array; mime: string }> = []
++  for (const raw of Array.isArray(data.assets) ? data.assets : []) {
++    const asset = raw as Record<string, unknown>
++    if (typeof asset.p !== 'string' || asset.p.startsWith('data:')) continue
++    const entry = `${typeof asset.u === 'string' ? asset.u : ''}${asset.p}`
++    replacements.push({ target: asset, key: 'p', bytes: files[entry]!, mime: rasterMime(files[entry]!) })
++  }
++  const fonts = data.fonts as { list?: Array<Record<string, unknown>> } | undefined
++  for (const font of fonts?.list ?? []) {
++    if (typeof font.fPath !== 'string' || font.fPath.startsWith('data:')) continue
++    replacements.push({ target: font, key: 'fPath', bytes: files[font.fPath]!, mime: archiveFontMime(files[font.fPath]!) })
++  }
++  // Reserve source bytes, UTF16 document, binary/base64 intermediates and expanded copies first.
++  const allocation = Object.values(files).reduce((total, bytes) => total + bytes.length, 0) +
++    JSON.stringify(data).length * 4 + replacements.reduce((total, entry) => total + entry.bytes.length * 8, 0)
++  if (allocation > 32 * 1024 * 1024) throw new Error('LOTTIE_RESOURCE_ALLOCATION_LIMIT')
++  for (const { target, key, bytes, mime } of replacements) {
++    target[key] = `data:${mime};base64,${bytesToBase64(bytes)}`
++    if (key === 'p') { target.u = ''; target.e = 1 }
++  }
++  assertClosedLottieAnimation(data)
+ }
+ 
+ function asLottieObject(value: unknown): Record<string, unknown> | null {
+@@ -241,24 +166,14 @@
+   animationId?: string,
+ ): Record<string, unknown> | null {
+   if (isZipArchive(bytes)) {
+-    let files: Record<string, Uint8Array>
+     try {
+-      files = unzipSync(bytes)
++      const archive = readLottieArchive(bytes)
++      const data = structuredClone(selectArchiveAnimation(archive, animationId).document)
++      if (inlineImages) inlineArchiveResources(data, archive.files)
++      return data
+     } catch {
+       return null
+     }
+-    const decoder = new TextDecoder()
+-    for (const entry of orderedAnimationEntries(files, animationId)) {
+-      try {
+-        const data = asLottieObject(JSON.parse(decoder.decode(files[entry]!)))
+-        if (!data) continue
+-        if (inlineImages) inlineArchiveImages(data, files)
+-        return data
+-      } catch {
+-        // try the next animation entry
+-      }
+-    }
+-    return null
+   }
+   try {
+     return asLottieObject(JSON.parse(new TextDecoder().decode(bytes)))
+@@ -281,6 +196,9 @@
+     throw new Error('LOTTIE_LOAD_FAILED')
+   }
+   const reader = response.body.getReader()
++  const cancel = () => { void reader.cancel().catch(() => undefined) }
++  signal?.addEventListener('abort', cancel, { once: true })
++  if (signal?.aborted) cancel()
+   const chunks: Uint8Array[] = []
+   let length = 0
+   try {
+@@ -301,6 +219,7 @@
+     }
+     return bytes.buffer
+   } finally {
++    signal?.removeEventListener('abort', cancel)
+     await reader.cancel()
+     reader.releaseLock()
+   }
+@@ -310,7 +229,7 @@
+   src: string,
+   inlineImages = false,
+   animationId?: string,
+-  options: { strict?: boolean; signal?: AbortSignal } = {},
++  options: { strict?: boolean; signal?: AbortSignal; onArchiveSelection?: (selection: { archive: boolean; initialTheme?: string }) => void } = {},
+ ): Promise<Record<string, unknown> | null> {
+   requireResource('asset:lottiefiles')
+   try {
+@@ -327,12 +246,17 @@
+       // suffix-selected ZIP extractor as proof that a requested selection was applied.
+       if (
+         buffer.byteLength > 16 * 1024 * 1024 ||
+-        isZipArchive(new Uint8Array(buffer)) ||
+-        animationId
++        (!isZipArchive(new Uint8Array(buffer)) && animationId)
+       )
+         throw new Error('LOTTIE_SELECTION_UNAVAILABLE')
+-    }
+-    return extractLottieAnimation(new Uint8Array(buffer), inlineImages, animationId)
++      if (isZipArchive(new Uint8Array(buffer))) {
++        const selected = selectArchiveAnimation(readLottieArchive(new Uint8Array(buffer)), animationId)
++        options.onArchiveSelection?.({ archive: true, initialTheme: selected.initialTheme })
++      } else options.onArchiveSelection?.({ archive: false })
++    }
++    const animation = extractLottieAnimation(new Uint8Array(buffer), inlineImages, animationId)
++    if (animation && (options.strict || inlineImages)) assertClosedLottieAnimation(animation)
++    return animation
+   } catch (error) {
+     if (options.strict) throw error
+     return null
+@@ -352,6 +276,7 @@
+ 
+ /** dotLottie manifest summary: the animations and themes it bundles. */
+ export interface LottieManifestInfo {
++  defaultAnimationId?: string
+   animations: LottieAnimationEntry[]
+   /** Theme ids applicable across the archive. */
+   themes: string[]
+@@ -366,15 +291,6 @@
+   duration: number
+ }
+ 
+-function readArchiveFiles(bytes: Uint8Array): Record<string, Uint8Array> | null {
+-  if (!isZipArchive(bytes)) return null
+-  try {
+-    return unzipSync(bytes)
+-  } catch {
+-    return null
+-  }
+-}
+-
+ /**
+  * Summarize a `.lottie` archive's manifest: its animation ids and theme ids.
+  * Returns null for raw `.json` (no manifest) or an unreadable/absent manifest.
+@@ -382,51 +298,49 @@
+  * individual animations, so a picker sees every theme regardless of nesting.
+  */
+ export function extractLottieManifest(bytes: Uint8Array): LottieManifestInfo | null {
+-  const files = readArchiveFiles(bytes)
+-  if (!files) return null
+-  const manifestKey = Object.keys(files).find((p) => /(^|\/)manifest\.json$/i.test(p))
+-  if (!manifestKey) return null
+-  try {
+-    const manifest = JSON.parse(new TextDecoder().decode(files[manifestKey]!)) as {
+-      animations?: Array<{ id?: unknown; themes?: unknown }>
+-      themes?: Array<{ id?: unknown }>
+-    }
+-    const animations: LottieAnimationEntry[] = []
+-    const themeIds = new Set<string>()
+-    for (const raw of manifest.themes ?? []) {
+-      if (typeof raw?.id === 'string' && raw.id) themeIds.add(raw.id)
+-    }
+-    for (const raw of manifest.animations ?? []) {
+-      if (typeof raw?.id !== 'string' || !raw.id) continue
+-      animations.push({ id: raw.id })
+-      if (Array.isArray(raw.themes)) {
+-        for (const t of raw.themes) if (typeof t === 'string' && t) themeIds.add(t)
+-      }
+-    }
+-    if (animations.length === 0 && themeIds.size === 0) return null
+-    return { animations, themes: [...themeIds] }
++  if (!isZipArchive(bytes)) return null
++  try {
++    const archive = readLottieArchive(bytes)
++    return {
++      animations: archive.animations.map(({ id }) => ({ id })),
++      themes: [...archive.themes.keys()],
++      defaultAnimationId: archive.defaultAnimationId,
++    }
+   } catch {
+     return null
+   }
+ }
+ 
+ /**
+- * Read a theme's rule JSON (`{ rules: [...] }`) from a `.lottie` archive, ready
+- * to hand to dotlottie's `setThemeData`. dotLottie stores themes at
+- * `themes/<id>.json`. Returns null when the archive or theme is absent.
+- */
+-export function extractLottieThemeData(bytes: Uint8Array, themeId: string): string | null {
+-  const files = readArchiveFiles(bytes)
+-  if (!files) return null
+-  const suffix = `themes/${themeId}.json`.toLowerCase()
+-  const key = Object.keys(files).find((p) => {
+-    const lower = p.toLowerCase()
+-    return lower === suffix || lower.endsWith(`/${suffix}`)
+-  })
+-  if (!key) return null
+-  try {
+-    return new TextDecoder().decode(files[key]!)
+-  } catch {
++ * Read an explicit theme, or the selected animation's authored initial theme, ready
++ * to hand to dotlottie's `setThemeData`. Returns null when no theme applies.
++ */
++export function extractLottieThemeData(
++  bytes: Uint8Array,
++  themeId?: string,
++  animationId?: string,
++  strict = false,
++  expectedSelection?: { archive: boolean; initialTheme?: string },
++): string | null {
++  try {
++    const archive = readLottieArchive(bytes)
++    const selected = selectArchiveAnimation(archive, animationId)
++    if (expectedSelection && (!expectedSelection.archive || expectedSelection.initialTheme !== selected.initialTheme))
++      throw new Error('LOTTIE_THEME_SELECTION_CHANGED')
++    const resolvedThemeId = themeId ?? selected.initialTheme
++    if (!resolvedThemeId) return null
++    if (selected.themes && !selected.themes.includes(resolvedThemeId)) throw new Error('LOTTIE_THEME_UNAVAILABLE')
++    const source = archive.themes.get(resolvedThemeId)
++    if (!source) throw new Error('LOTTIE_THEME_UNAVAILABLE')
++    const theme = JSON.parse(source) as { rules: Array<Record<string, unknown>> }
++    // The renderer loads extracted animation JSON. Project the already-validated theme
++    // for its exact archive selection, then remove only the consumed animation filter.
++    theme.rules = theme.rules
++      .filter((rule) => !Array.isArray(rule.animations) || rule.animations.includes(selected.id))
++      .map(({ animations: _animations, ...rule }) => rule)
++    return JSON.stringify(theme)
++  } catch (error) {
++    if (strict) throw error
+     return null
+   }
+ }
+@@ -465,8 +379,8 @@
+ /** Fetch a Lottie `src` and read a theme's rule JSON. Null on failure/absence. */
+ export async function fetchLottieThemeData(
+   src: string,
+-  themeId: string,
+-  options: { strict?: boolean; signal?: AbortSignal } = {},
++  themeId?: string,
++  options: { strict?: boolean; signal?: AbortSignal; animationId?: string; expectedSelection?: { archive: boolean; initialTheme?: string } } = {},
+ ): Promise<string | null> {
+   requireResource('asset:lottiefiles')
+   try {
+@@ -478,8 +392,16 @@
+       ? await readStrictLottieBytes(response, options.signal)
+       : await response.arrayBuffer()
+     options.signal?.throwIfAborted()
+-    if (options.strict) throw new Error('LOTTIE_THEME_UNAVAILABLE')
+-    return extractLottieThemeData(new Uint8Array(buffer), themeId)
++    if (!isZipArchive(new Uint8Array(buffer))) {
++      if (options.strict) {
++        if (themeId || options.expectedSelection?.archive) throw new Error('LOTTIE_THEME_UNAVAILABLE')
++        const raw = asLottieObject(parseArchiveJson(new TextDecoder('utf-8', { fatal: true }).decode(buffer)))
++        if (!raw || typeof raw.v !== 'string') throw new Error('LOTTIE_ANIMATION_UNAVAILABLE')
++        assertClosedLottieAnimation(raw)
++      }
++      return null
++    }
++    return extractLottieThemeData(new Uint8Array(buffer), themeId, options.animationId, options.strict, options.expectedSelection)
+   } catch (error) {
+     if (options.strict) throw error
+     return null
+diff --git a/src/infrastructure/lottie/lottie-provider-scope.test.ts b/src/infrastructure/lottie/lottie-provider-scope.test.ts
+--- /dev/null
++++ b/src/infrastructure/lottie/lottie-provider-scope.test.ts
+@@ -0,0 +1,107 @@
++// @vitest-environment node
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { notifyScopedMedia, subscribeScopedMedia } from '@/features/media-library/utils/scoped-media-resolution'
++import { LottieExportProvider } from './lottie-frame-provider'
++
++const native = vi.hoisted(() => ({ defer: false, instances: [] as Array<{ destroy: ReturnType<typeof vi.fn>; load?: () => void }> }))
++vi.mock('@lottiefiles/dotlottie-web', () => ({ DotLottie: class {
++  static setWasmUrl() {}
++  isLoaded = !native.defer
++  totalFrames = 1
++  destroy = vi.fn()
++  constructor() { native.instances.push(this) }
++  addEventListener(name: string, callback: () => void) { if (name === 'load') this.load = callback }
++  load?: () => void
++  setFrame() {}
++  setThemeData() { return true }
++} }))
++vi.mock('@lottiefiles/dotlottie-web/dotlottie-player.wasm?url', () => ({ default: '/unrun-owned.wasm' }))
++afterEach(() => { native.defer = false; native.instances.length = 0; vi.unstubAllGlobals() })
++const canvas = () => vi.stubGlobal('OffscreenCanvas', class { constructor(public width: number, public height: number) {} })
++describe('provider source epoch ownership', () => {
++  it('retires an existing ready provider before a same-signature reuse or render', async () => {
++    canvas(); const provider = new LottieExportProvider()
++    try {
++      await provider.preload('item', '/source', 32, 64, '{"layers":[]}', 'same')
++      expect(provider.get('item')).toBeDefined()
++      notifyScopedMedia()
++      expect(provider.get('item')).toBeUndefined()
++      expect(provider.getSignature('item')).toBeUndefined()
++      expect(provider.renderFrame('item', 0)).toBeNull()
++      expect(native.instances[0]!.destroy).toHaveBeenCalledTimes(1)
++      await provider.preload('item', '/reauthorized', 32, 64, '{"layers":[]}', 'same')
++      expect(native.instances).toHaveLength(2)
++    } finally { provider.destroy() }
++  })
++  it('completes all owner cleanup when the first pending native destructor throws', async () => {
++    canvas()
++    const provider = new LottieExportProvider(), laterProvider = new LottieExportProvider()
++    const readAbort = new AbortController(), cacheInvalidated = vi.fn()
++    const stopRead = subscribeScopedMedia(() => readAbort.abort())
++    const stopCache = subscribeScopedMedia(cacheInvalidated)
++    try {
++      native.defer = true
++      const first = provider.preload('first', '/first', 32, 64, '{"layers":[]}', 'old')
++      const second = provider.rebuild('second', '/second', 32, 64, '{"layers":[]}', 'old')
++      const settled = Promise.allSettled([first, second])
++      native.defer = false
++      await provider.preload('ready', '/ready', 32, 64, '{"layers":[]}', 'old')
++      await laterProvider.preload('later', '/later', 32, 64, '{"layers":[]}', 'old')
++      native.instances[0]!.destroy.mockImplementation(() => { throw new Error('OWNED_DESTROY_FAILED') })
++      expect(() => notifyScopedMedia()).not.toThrow()
++      expect((await settled).map((result) => result.status)).toEqual(['rejected', 'rejected'])
++      for (const instance of native.instances) expect(instance.destroy).toHaveBeenCalledTimes(1)
++      expect(readAbort.signal.aborted).toBe(true)
++      expect(cacheInvalidated).toHaveBeenCalledTimes(1)
++      for (const key of ['first', 'second', 'ready']) {
++        expect(provider.get(key)).toBeUndefined()
++        expect(provider.getSignature(key)).toBeUndefined()
++        expect(provider.renderFrame(key, 0)).toBeNull()
++      }
++      expect(laterProvider.get('later')).toBeUndefined()
++      native.instances[0]!.load?.(); native.instances[1]!.load?.()
++      expect(provider.get('first')).toBeUndefined()
++      expect(provider.get('second')).toBeUndefined()
++      await provider.preload('first', '/new-owner', 32, 64, '{"layers":[]}', 'new')
++      expect(provider.getSignature('first')).toBe('new')
++    } finally {
++      stopRead(); stopCache()
++      expect(() => provider.destroy()).not.toThrow()
++      expect(() => laterProvider.destroy()).not.toThrow()
++    }
++  })
++  it('denies cached data when a grant expires before any epoch notification', async () => {
++    canvas(); const provider = new LottieExportProvider(); let live = true
++    try {
++      await provider.preload('item', '/source', 32, 64, '{"layers":[]}', 'same', undefined, undefined,
++        () => { if (!live) throw new Error('EXPIRED') })
++      const before = provider.sourceRevision()
++      live = false
++      expect(provider.sourceRevision()).toBeGreaterThan(before)
++      expect(provider.get('item')).toBeUndefined()
++      expect(provider.getSignature('item')).toBeUndefined()
++      expect(provider.renderFrame('item', 0)).toBeNull()
++    } finally { provider.destroy() }
++  })
++  for (const operation of ['preload', 'rebuild'] as const) {
++    it(`refuses deferred ${operation} publication and leaves a new owner intact`, async () => {
++      canvas(); const provider = new LottieExportProvider()
++      try {
++        native.defer = true
++        const old = operation === 'preload'
++          ? provider.preload('item', '/old', 32, 64, '{"layers":[]}', 'old')
++          : provider.rebuild('item', '/old', 32, 64, '{"layers":[]}', 'old')
++        const refusal = expect(old).rejects.toThrow()
++        notifyScopedMedia()
++        native.defer = false
++        await provider.preload('item', '/new', 32, 64, '{"layers":[]}', 'new')
++        native.instances[0]!.load?.()
++        await refusal
++        expect(provider.getSignature('item')).toBe('new')
++        expect(provider.get('item')).toBeDefined()
++        expect(native.instances[0]!.destroy).toHaveBeenCalledTimes(1)
++        expect(native.instances[1]!.destroy).not.toHaveBeenCalled()
++      } finally { provider.destroy() }
++    })
++  }
++})
+diff --git a/src/infrastructure/lottie/lottie-text.ts b/src/infrastructure/lottie/lottie-text.ts
+--- a/src/infrastructure/lottie/lottie-text.ts
++++ b/src/infrastructure/lottie/lottie-text.ts
+@@ -11,6 +11,8 @@
+  * Only top-level text layers are handled — nested precomp assets are out of scope.
+  */
+ import { applyLottieColorOverrides, extractLottieColorLayers } from './lottie-color'
++import { resolveScopedMedia, scopedMediaEpoch, peekScopedMedia, subscribeScopedMedia } from '@/features/media-library/utils/scoped-media-resolution'
++import { extractLottieValueSlots } from './lottie-slots'
+ import {
+   fetchLottieAnimation,
+   fetchLottieThemeData,
+@@ -196,6 +198,7 @@
+ 
+ /** The animation-level selections + overrides that shape a Lottie render. */
+ export interface LottieRenderInput {
++  mediaId?: string
+   sourceWidth?: number
+   sourceHeight?: number
+   /** Selected animation id in a multi-animation `.lottie` (default: primary). */
+@@ -210,6 +213,8 @@
+ 
+ /** Everything the renderer needs beyond `src` to reflect the item's edits. */
+ export interface LottieRenderSpec {
++  /** Host-closed sources must report native load/edit refusal instead of silently dropping an edit. */
++  strict?: boolean
+   dimensions?: { width: number; height: number }
+   /**
+    * Patched/selected animation JSON to load as `data`, or null to load `src`
+@@ -239,42 +244,105 @@
+   input: LottieRenderInput,
+   options: { strict?: boolean; signal?: AbortSignal } = {},
+ ): Promise<LottieRenderSpec> {
+-  const hasText = !!input.textOverrides && Object.keys(input.textOverrides).length > 0
+-  const hasColor = !!input.colorOverrides && Object.keys(input.colorOverrides).length > 0
+-  // Extract/patch the animation JSON only when overrides apply or a specific
+-  // (non-primary) animation is selected; a theme alone rides on the src load.
+-  const needsData = options.strict || hasText || hasColor || !!input.animationId
+-
+-  let data: string | null = null
+-  let dimensions: LottieRenderSpec['dimensions']
+-  if (needsData) {
+-    // Inline archive images so the patched JSON is self-contained for the renderer.
+-    const animation = await fetchLottieAnimation(src, true, input.animationId, options)
+-    if (animation) {
+-      if (options.strict) {
+-        dimensions = requireLottieDimensions(animation.w, animation.h)
+-        if (input.sourceWidth !== dimensions.width || input.sourceHeight !== dimensions.height)
+-          throw new Error('LOTTIE_SOURCE_DIMENSIONS_CHANGED')
+-        const textKeys = new Set(extractLottieTextLayers(animation).map((target) => target.key))
+-        const colorKeys = new Set(extractLottieColorLayers(animation).map((target) => target.key))
+-        if (
+-          Object.keys(input.textOverrides ?? {}).some((key) => !textKeys.has(key)) ||
+-          Object.keys(input.colorOverrides ?? {}).some((key) => !colorKeys.has(key))
+-        ) {
+-          throw new Error('LOTTIE_EDIT_TARGET_UNAVAILABLE')
++  const sourceEpoch = scopedMediaEpoch()
++  const readController = new AbortController()
++  const abortRead = () => readController.abort(options.signal?.reason)
++  options.signal?.addEventListener('abort', abortRead, { once: true })
++  if (options.signal?.aborted) abortRead()
++  const unsubscribe = subscribeScopedMedia(() => readController.abort(new Error('LOTTIE_SOURCE_SUPERSEDED')))
++  try {
++    let scopedSource = false
++    const checkSource = () => {
++      if (sourceEpoch !== scopedMediaEpoch()) throw new Error('LOTTIE_SOURCE_SUPERSEDED')
++      readController.signal.throwIfAborted()
++      if (scopedSource && input.mediaId) {
++        const live = peekScopedMedia(input.mediaId, true)
++        if (!live.handled || live.url !== src || !live.url) throw new Error('LOTTIE_SOURCE_REFUSED')
++      }
++    }
++    if (input.mediaId) {
++      const scoped = await resolveScopedMedia(input.mediaId, true)
++      if (scoped.handled) {
++        if (!scoped.url) throw new Error('LOTTIE_SOURCE_REFUSED')
++        src = scoped.url
++        scopedSource = true
++      }
++    }
++    checkSource()
++    const effectiveOptions = { ...options, signal: readController.signal, strict: options.strict || scopedSource }
++    let expectedSelection: { archive: boolean; initialTheme?: string } | undefined
++    const hasText = !!input.textOverrides && Object.keys(input.textOverrides).length > 0
++    const hasColor = !!input.colorOverrides && Object.keys(input.colorOverrides).length > 0
++    // Extract/patch the animation JSON only when overrides apply or a specific
++    // (non-primary) animation is selected; a theme alone rides on the src load.
++    const needsData = scopedSource || options.strict || hasText || hasColor || !!input.animationId
++
++    let data: string | null = null
++    let dimensions: LottieRenderSpec['dimensions']
++    if (needsData) {
++      // Close archive raster/font references for standalone renderer JSON.
++      const animation = await fetchLottieAnimation(src, true, input.animationId, { ...effectiveOptions,
++        onArchiveSelection: (selection) => { expectedSelection = selection },
++      })
++      checkSource()
++      if (animation) {
++        if (options.strict || scopedSource) {
++          dimensions = requireLottieDimensions(animation.w, animation.h)
++          if (input.sourceWidth !== dimensions.width || input.sourceHeight !== dimensions.height)
++            throw new Error('LOTTIE_SOURCE_DIMENSIONS_CHANGED')
++          const textKeys = new Set(extractLottieTextLayers(animation).map((target) => target.key))
++          const colorKeys = new Set(extractLottieColorLayers(animation).map((target) => target.key))
++          if (
++            Object.keys(input.textOverrides ?? {}).some((key) => !textKeys.has(key)) ||
++            Object.keys(input.colorOverrides ?? {}).some((key) => !colorKeys.has(key))
++          ) {
++            throw new Error('LOTTIE_EDIT_TARGET_UNAVAILABLE')
++          }
++          const valueSlots = new Map(
++            extractLottieValueSlots(animation).map((slot) => [slot.id, slot]),
++          )
++          for (const [id, value] of Object.entries(input.slotOverrides ?? {})) {
++            const slot = valueSlots.get(id)
++            if (
++              !slot ||
++              (slot.type === 'scalar'
++                ? typeof value !== 'number' || !Number.isFinite(value)
++                : !Array.isArray(value) || value.length !== 2 || !value.every(Number.isFinite))
++            )
++              throw new Error('LOTTIE_SLOT_UNAVAILABLE')
++          }
+         }
+-      }
+-      // Appliers mutate the object in place; we re-serialize once at the end.
+-      if (hasText) applyLottieTextOverrides(animation, input.textOverrides!)
+-      if (hasColor) applyLottieColorOverrides(animation, input.colorOverrides!)
+-      data = JSON.stringify(animation)
+-    } else if (options.strict) throw new Error('LOTTIE_ANIMATION_UNAVAILABLE')
+-  }
+-
+-  const themeData = input.themeId ? await fetchLottieThemeData(src, input.themeId, options) : null
+-  if (options.strict && input.themeId && !themeData) throw new Error('LOTTIE_THEME_UNAVAILABLE')
+-  options.signal?.throwIfAborted()
+-  const slots =
+-    input.slotOverrides && Object.keys(input.slotOverrides).length > 0 ? input.slotOverrides : null
+-  return { data, themeData, slots, ...(dimensions && { dimensions }) }
+-}
++        // Appliers mutate the object in place; we re-serialize once at the end.
++        if (hasText) applyLottieTextOverrides(animation, input.textOverrides!)
++        if (hasColor) applyLottieColorOverrides(animation, input.colorOverrides!)
++        data = JSON.stringify(animation)
++      } else if (options.strict || scopedSource) throw new Error('LOTTIE_ANIMATION_UNAVAILABLE')
++    }
++
++    // Project authored defaults for raw-source native loads as well as extracted JSON.
++    const themeData = await fetchLottieThemeData(src, input.themeId, {
++      ...effectiveOptions,
++      expectedSelection,
++      animationId: input.animationId,
++    })
++    checkSource()
++    if ((options.strict || scopedSource) && input.themeId && !themeData)
++      throw new Error('LOTTIE_THEME_UNAVAILABLE')
++    options.signal?.throwIfAborted()
++    const slots =
++      input.slotOverrides && Object.keys(input.slotOverrides).length > 0 ? input.slotOverrides : null
++    return {
++      data,
++      themeData,
++      slots,
++      ...(dimensions && { dimensions }),
++      ...((scopedSource || options.strict) && { strict: true }),
++    }
++  } catch (error) {
++    if (sourceEpoch !== scopedMediaEpoch()) throw new Error('LOTTIE_SOURCE_SUPERSEDED')
++    throw error
++  } finally {
++    unsubscribe()
++    options.signal?.removeEventListener('abort', abortRead)
++  }
++}
+diff --git a/src/runtime/composition-runtime/components/lottie-player/index.tsx b/src/runtime/composition-runtime/components/lottie-player/index.tsx
+--- a/src/runtime/composition-runtime/components/lottie-player/index.tsx
++++ b/src/runtime/composition-runtime/components/lottie-player/index.tsx
+@@ -1,4 +1,8 @@
+-import React, { useEffect, useMemo, useRef, useState } from 'react'
++import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
++import {
++  scopedMediaEpoch,
++  subscribeScopedMedia,
++} from '@/features/media-library/utils/scoped-media-resolution'
+ import { AbsoluteFill, useSequenceContext } from '@/runtime/composition-runtime/deps/player'
+ import { useVideoConfig } from '../../hooks/use-player-compat'
+ import {
+@@ -21,6 +25,7 @@
+  * resolution and CSS-stretched; the surrounding ItemVisualWrapper handles fit.
+  */
+ export const LottiePlayer: React.FC<LottiePlayerProps> = ({ item }) => {
++  const scopeEpoch = useSyncExternalStore(subscribeScopedMedia, scopedMediaEpoch)
+   const canvasRef = useRef<HTMLCanvasElement>(null)
+   const rendererRef = useRef<LottieRenderer | null>(null)
+   const [loaded, setLoaded] = useState(false)
+@@ -48,7 +53,7 @@
+   // autoResize lets dotlottie size its render target to the displayed canvas.
+   useEffect(() => {
+     const canvas = canvasRef.current
+-    if (!canvas || !item.src) return
++    if (!canvas || (!item.src && !item.mediaId)) return
+ 
+     setLoaded(false)
+     setFailed(false)
+@@ -59,10 +64,11 @@
+     void (async () => {
+       // Resolve the selected animation/theme + text/color edits before render;
+       // `data` is null when nothing needs patching (load `src` directly).
+-      const spec = await resolveLottieRenderSpec(item.src, item)
++      const spec = await resolveLottieRenderSpec(item.src ?? '', item)
+       if (cancelled) return
+       renderer = new LottieRenderer({
+         canvas,
++        strict: spec.strict,
+         autoResize: true,
+         themeData: spec.themeData ?? undefined,
+         slots: spec.slots ?? undefined,
+@@ -73,7 +79,9 @@
+       if (cancelled) return
+       if (renderer.isLoaded) setLoaded(true)
+       else setFailed(true)
+-    })()
++    })().catch(() => {
++      if (!cancelled) setFailed(true)
++    })
+ 
+     return () => {
+       cancelled = true
+@@ -81,7 +89,7 @@
+       rendererRef.current = null
+     }
+     // eslint-disable-next-line react-hooks/exhaustive-deps -- overridesKey stands in for item.textOverrides
+-  }, [item.src, overridesKey])
++  }, [item.src, item.mediaId, overridesKey, scopeEpoch])
+ 
+   // Seek to the frame for the current timeline position.
+   useEffect(() => {

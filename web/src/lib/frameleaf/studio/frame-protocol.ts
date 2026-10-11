@@ -15,19 +15,13 @@
  * explicit, but a same-origin frame is trusted code, not a sandbox. This file is imported by the
  * adapter build as well, so it stays free of Svelte and of runtime imports from the web app.
  */
-import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
+import type { StudioCommandEnvelope } from './commands';
 import type {
-  StudioCancelResult,
-  StudioDraftResult,
   StudioEditorScope,
-  StudioEditorCommitResult,
   StudioHostContext,
   StudioNavigationTarget,
   StudioNotificationTone,
-  StudioProjectHandle,
-  StudioProjectImportRef,
   StudioProjectImportUpload,
-  StudioWorkspaceSaveResult,
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
@@ -47,29 +41,8 @@ export interface StudioFrameManifest {
   commands: string;
 }
 
-/** Services the frame may call. Each maps one-to-one onto `StudioHostServices`. */
-export interface StudioFrameServiceCalls {
-  submitCommands: { args: [envelopes: StudioCommandEnvelope[]]; result: StudioCommandResult[] };
-  stageDraft: {
-    args: [graph: unknown, commandIds: string[], baseRevision?: number, graphVersion?: number];
-    result: StudioDraftResult;
-  };
-  commitEditorDraft: {
-    args: [graph: unknown, baseRevision: number, scope: StudioEditorScope];
-    result: StudioEditorCommitResult;
-  };
-  reloadProject: { args: []; result: StudioProjectHandle };
-  authorizeGeneratedMedia: { args: []; result: boolean };
-  saveWorkspace: { args: [layout: unknown]; result: StudioWorkspaceSaveResult };
-  /** Protocol 5 (FL-103 / FL-105): keep a file imported in the editor with the project. */
-  uploadProjectImport: { args: [upload: StudioProjectImportUpload]; result: StudioProjectImportRef };
-  cancelProjectImportPublication: {
-    args: [importId: string, publicationId: string, scope: StudioEditorScope];
-    result: StudioCancelResult;
-  };
-}
-
-export type StudioFrameServiceName = keyof StudioFrameServiceCalls;
+export type { StudioFrameServiceCalls, StudioFrameServiceName } from './frame-service-schema';
+import type { StudioFrameServiceName } from './frame-service-schema';
 
 /* Host → editor frame */
 export type StudioHostToFrameMessage =
@@ -77,6 +50,7 @@ export type StudioHostToFrameMessage =
   | { type: 'update'; context: StudioHostContext }
   | { type: 'dispose' }
   | { type: 'revoke-generated' }
+  | { type: 'revoke-sources' }
   | { type: 'service-result'; callId: number; ok: true; value: unknown }
   | { type: 'service-result'; callId: number; ok: false; error: string };
 
