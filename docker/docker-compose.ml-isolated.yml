@@ -22,7 +22,7 @@ services:
       - ${FRAMELEAF_ML_CACHE:-model-cache}:/cache:ro
     cap_drop:
       - ALL
-    security_opt:
+    security_opt: !override
       - no-new-privileges:true
 
   immich-model-staging:
