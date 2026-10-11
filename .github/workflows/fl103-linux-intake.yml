@@ -1,18 +1,14 @@
 name: FL103 Linux intake (no audio)
 
 on:
-  push:
-    branches: [aj/fl103-linux-intake-execute]
-    paths:
-      - .github/workflows/fl103-linux-intake.yml
-      - studio/tools/qualification/fl103-linux-intake/**
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   intake:
-    if: github.repository == 'Frameleaf/frameleaf-qualification'
+    if: github.repository == 'Frameleaf/frameleaf-qualification' && github.ref == 'refs/heads/aj/fl103-linux-intake-execute'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
