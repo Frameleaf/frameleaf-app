@@ -405,6 +405,34 @@ describe(CloudBackupMaintenance.name, () => {
       expect(result).toMatchObject({ checked: 5, done: true, dumpCursor: 'db/dump-20260926.sql.gz' });
     });
 
+    it('retains missing-dump degradation when paused at its checkpoint and resumed', async () => {
+      objects = nightlyBucket(2);
+      objects.delete('db/dump-20260925.sql.gz');
+      let saved = emptyVerifyResult('full', new Date());
+      saved.cursor = 'f'.repeat(64);
+      const stopped = await sut.verify(
+        bucket,
+        saved,
+        (value) => {
+          saved = value;
+          return Promise.resolve(false);
+        },
+        { operationId: 'verify', claimToken: 'claim-1' },
+      );
+      expect(stopped).toBeNull();
+      expect(saved).toMatchObject({
+        missing: 1,
+        degradedManifests: 1,
+        degradedKeys: ['m/20260925T030000Z.json.gz'],
+        dumpCursor: 'db/dump-20260925.sql.gz',
+      });
+      expect(index.markManifests).toHaveBeenCalledWith(bucket.bucketRef, ['m/20260925T030000Z.json.gz'], 'degraded');
+      store.head.mockClear();
+      const result = await sut.verify(bucket, saved, carryOn, { operationId: 'verify', claimToken: 'claim-2' });
+      expect(store.head).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ done: true, checked: 2, missing: 1, degradedManifests: 1 });
+    });
+
     it.each([400, 403, 429, 500])('stops on HTTP %s without counting intact objects as damaged', async (status) => {
       objects = nightlyBucket(1);
       store.head.mockRejectedValue(new CloudBackupStoreError('Storage refused the request', status, null));
