@@ -1049,7 +1049,7 @@ export class MediaOperationRepository {
       db
         .updateTable('media_operation')
         .set({
-          result: sql`jsonb_set(coalesce(result, '{}'::jsonb), '{backupTransfer}', ${JSON.stringify(transfer)}::jsonb)`,
+          result: sql`jsonb_set(coalesce(result, '{}'::jsonb), '{backupTransfer}', ${JSON.stringify(transfer)}::text::jsonb)`,
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
