@@ -45,6 +45,9 @@ const RAW_FETCH = {
   'repositories/frameleaf-cloud-ml.repository.ts': 'presigned ML job storage',
   // SigV4 requests to the backup bucket with the grant's scoped credentials (the grant itself is DPoP)
   'repositories/cloud-backup-store.repository.ts': 'backup object storage',
+  // FL-379: the Gmail API and Microsoft Graph, at three fixed addresses, with the connected account's own
+  // access token; never a Frameleaf Cloud call (the broker calls go through FrameleafCloudRepository, DPoP-signed)
+  'repositories/email.repository.ts': 'Gmail API and Microsoft Graph send',
   // local and self-hosted ML workers
   'repositories/machine-learning.repository.ts': 'ML workers',
   // generic OIDC profile pictures
