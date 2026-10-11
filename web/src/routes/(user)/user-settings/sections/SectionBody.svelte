@@ -6,6 +6,7 @@
    */
   import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
+  import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
   import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
@@ -16,11 +17,10 @@
   import DeduplicationSection from './DeduplicationSection.svelte';
   import EnrichmentCareSection from './EnrichmentCareSection.svelte';
   import Loader from './Loader.svelte';
-  import { loadProcessing, loadRenderWorkers } from './loaders';
+  import ComputersSection from './ComputersSection.svelte';
+  import { loadComputers } from './loaders';
   import MaintenanceSection from './MaintenanceSection.svelte';
-  import ProcessingSection from './ProcessingSection.svelte';
   import QueuesSection from './QueuesSection.svelte';
-  import RenderWorkersSection from './RenderWorkersSection.svelte';
   import RepairSection from './RepairSection.svelte';
   import TrashSection from './TrashSection.svelte';
   import UsersSection from './UsersSection.svelte';
@@ -36,22 +36,13 @@
   {#if section.key === 'deduplication'}
     <DeduplicationSection />
   {:else if section.key === 'computers'}
-    <Loader load={loadProcessing}>
+    <Loader load={loadComputers}>
       {#snippet children(data)}
-        <ProcessingSection section="workers" {data} />
-      {/snippet}
-    </Loader>
-    <Loader load={loadRenderWorkers}>
-      {#snippet children(data)}
-        <RenderWorkersSection {data} />
+        <ComputersSection {data} />
       {/snippet}
     </Loader>
   {:else if section.key === 'routing'}
-    <Loader load={loadProcessing}>
-      {#snippet children(data)}
-        <ProcessingSection section="routing" {data} />
-      {/snippet}
-    </Loader>
+    <WhereWorkRuns />
   {:else if section.key === 'queues'}
     <QueuesSection />
   {:else if section.key === 'cloud-processing'}
