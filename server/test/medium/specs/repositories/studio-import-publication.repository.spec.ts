@@ -514,6 +514,85 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     expect(await ready(next)).toHaveLength(1);
   });
 
+  it.each([
+    ['cleanup-failed', 'omitted-provenance'],
+    ['cleanup-failed', 'changed-label'],
+    ['cleanup-failed', 'both'],
+    ['lost-final-ack', 'omitted-provenance'],
+    ['lost-final-ack', 'changed-label'],
+    ['lost-final-ack', 'both'],
+  ] as const)('T5-R2 same-publication ready retry after %s: %s', async (outcome, variation) => {
+    const f = await setup();
+    const original = await prepare(f);
+    if (outcome === 'lost-final-ack') {
+      await expect(
+        f.repo.publish(f.key, linkFile).then(() => {
+          throw new Error('model_lost_final_ack');
+        }),
+      ).rejects.toThrow('model_lost_final_ack');
+    } else {
+      await f.repo.publish(f.key, linkFile);
+      await expect(
+        f.repo.release(f.key, async () => {
+          throw new Error('model_cleanup_failed');
+        }),
+      ).rejects.toThrow('model_cleanup_failed');
+    }
+    const before = await ready(f.key);
+    expect(await f.repo.get(f.key)).toMatchObject({ state: 'published', cleanupPending: true });
+    const scratch = await file(f.key, {
+      ...(variation !== 'changed-label' ? { processingProvenance: null } : {}),
+      ...(variation !== 'omitted-provenance' ? { fileName: 'retry-label.mp4' } : {}),
+    });
+    const reservation = await f.projects.createUpload({
+      ownerId: f.user.id,
+      path: scratch.stagedPath,
+      sizeBytes: scratch.declaration.sizeBytes,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const discard = vi.fn(removeScratch);
+    await expect(f.repo.prepare(f.key, scratch, discard, reservation.id)).resolves.toMatchObject({
+      status: 'ready',
+      imported: {
+        id: f.key.importId,
+        path: original.targetPath,
+        fileName: original.declaration.fileName,
+        processingProvenance: original.declaration.processingProvenance,
+      },
+    });
+    expect(discard).toHaveBeenCalledExactlyOnceWith(scratch);
+    await expect(lstat(scratch.stagedPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await lstat(original.stagedPath)).toBeDefined();
+    expect(await f.projects.getUpload(reservation.id, f.user.id)).toBeUndefined();
+    expect(await journal(f.key)).toMatchObject({ stagedPath: original.stagedPath, declaration: original.declaration });
+    expect(await ready(f.key)).toEqual(before);
+    await f.repo.release(f.key, removeFile);
+    expect(await readFile(original.targetPath, 'utf8')).toBe('test');
+  });
+
+  it.each(['different-provenance', 'null-enrichment'] as const)(
+    'T5-R2 same-publication ready retry retains supplied lineage conflicts: %s',
+    async (variation) => {
+      const f = await setup();
+      const original = await prepare(f, variation === 'null-enrichment' ? { processingProvenance: null } : {});
+      await f.repo.publish(f.key, linkFile);
+      const before = await ready(f.key),
+        scratch = await file(f.key),
+        discard = vi.fn(removeScratch);
+      if (variation === 'different-provenance') scratch.declaration.processingProvenance!.variant = 'threeD';
+      await expect(f.repo.prepare(f.key, scratch, discard)).rejects.toThrow('provenance_conflict');
+      expect(discard).not.toHaveBeenCalled();
+      expect(await ready(f.key)).toEqual(before);
+      expect(await journal(f.key)).toMatchObject({
+        stagedPath: original.stagedPath,
+        declaration: original.declaration,
+      });
+    },
+  );
+
   it.each(['different-provenance', 'null-enrichment', 'omitted-provenance'] as const)(
     'T4-14 ready immutable retry: %s',
     async (kind) => {
