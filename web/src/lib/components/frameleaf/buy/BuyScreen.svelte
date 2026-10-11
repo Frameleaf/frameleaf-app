@@ -35,6 +35,7 @@
     productKeyMessageKey,
     validateProductKey,
     licensedDiscount,
+    serverLicenceKind,
   } from '$lib/frameleaf/cloud';
   import type { LinkNotice } from '$lib/frameleaf/license-relay';
   import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
@@ -128,10 +129,14 @@
     }
   };
 
-  const discount = $derived(licensedDiscount({ serverLicensed: serverSupporter, personalKey: !!personal }));
-  // the share Frameleaf Cloud published (license/products), for a viewer who gets the discount
-  const share = $derived(discount === null ? 0 : (products?.licensedDiscount ?? 0));
-  const pct = $derived(discountPercent(products?.licensedDiscount ?? 0));
+  // FL-369: the kind of the server's own licence is on the licence status, which only administrators
+  // can read. Everyone else learns from the server features that it is licensed: that is a Server
+  // licence, because a server never holds an Individual licence as its own
+  const serverLicence = $derived(serverLicenceKind(serverKey) ?? (serverSupporter ? 'server' : null));
+  const discount = $derived(licensedDiscount({ serverLicence, personalKey: !!personal, rates: products }));
+  // the share Frameleaf Cloud published (license/products) for that licence
+  const share = $derived(discount?.share ?? 0);
+  const pct = $derived(discountPercent(share));
 
   const loadServerLicense = async () => {
     if (!isAdmin) {
@@ -389,9 +394,9 @@
             block: CLOUD_BACKUP_PRICING.blockTb,
           },
         })}
-        {#if share > 0 && discount === 'server'}
+        {#if share > 0 && discount?.reason === 'server'}
           {$t('frameleaf_buy_licensed_discount', { values: { pct } })}
-        {:else if share > 0 && discount === 'personal'}
+        {:else if share > 0 && discount?.reason === 'personal'}
           {$t('frameleaf_buy_personal_discount', { values: { pct } })}
         {/if}
       </p>
