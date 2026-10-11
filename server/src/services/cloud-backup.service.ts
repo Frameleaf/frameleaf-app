@@ -1554,6 +1554,14 @@ export class CloudBackupService {
     await this.openManifest(run);
     await this.recordRun(operation, progress.result, 'running');
 
+    // A pause after the database checkpoint can leave its completed receipt/source for this claim.
+    if (progress.result.phase !== 'database' && progress.result.database?.key.startsWith('db/v1/')) {
+      const path = join(StorageCore.getBaseFolder(StorageFolder.Backups), basename(progress.result.database.key));
+      if (await this.storageRepository.checkFileExists(path)) {
+        await this.store.finishClientUpload(run.connection, progress.result.database.key);
+        await this.storageRepository.unlink(path);
+      }
+    }
     if (progress.result.phase === 'database' && !(await this.backUpDatabase(run))) {
       return;
     }
@@ -1912,7 +1920,10 @@ export class CloudBackupService {
     };
     const proceed = await this.checkpoint(run);
     // A lost claim keeps its source; the next worker can still reach the staged upload.
-    if (proceed) await this.storageRepository.unlink(path);
+    if (proceed) {
+      if (database.key.startsWith('db/v1/')) await this.store.finishClientUpload(run.connection, database.key);
+      await this.storageRepository.unlink(path);
+    }
     return proceed;
   }
 

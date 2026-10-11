@@ -836,7 +836,7 @@ describe(CloudBackupService.name, () => {
           ciphertextSha256: 'a'.repeat(64),
         });
         expect(await readFile(historyPath, 'utf8')).not.toContain(file.client.keys[1]);
-        expect(store.finishClientUpload.mock.invocationCallOrder[0]).toBeGreaterThan(
+        expect(store.finishClientUpload.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(
           index.finishManifest.mock.invocationCallOrder[0],
         );
       } finally {
