@@ -1366,17 +1366,16 @@ export class CloudBackupService {
   /** A worker that restarted asks for the own-memory key; one that holds it shares it again. */
   @OnEvent({ name: 'CloudBackupKeyRequest', server: true })
   onKeyRequest() {
-    if (this.memoryKey) {
-      const ring = this.clientKeys.get(this.memoryKey.fingerprint);
-      const original = this.memoryKey.file?.trimStart().startsWith('{')
-        ? JSON.parse(this.memoryKey.file)
-        : { key: this.memoryKey.key.toString('base64') };
-      this.websocketRepository.serverSend('CloudBackupKeyShare', {
-        key: ring
-          ? JSON.stringify({ ...original, client: ring })
-          : (this.memoryKey.file ?? this.memoryKey.key.toString('base64')),
-      });
-    }
+    if (!this.memoryKey) return;
+    const ring = this.clientKeys.get(this.memoryKey.fingerprint);
+    const original = this.memoryKey.file?.trimStart().startsWith('{')
+      ? JSON.parse(this.memoryKey.file)
+      : { key: this.memoryKey.key.toString('base64') };
+    this.websocketRepository.serverSend('CloudBackupKeyShare', {
+      key: ring
+        ? JSON.stringify({ ...original, client: ring })
+        : (this.memoryKey.file ?? this.memoryKey.key.toString('base64')),
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -2122,10 +2121,9 @@ export class CloudBackupService {
     } else if (this.clientKeys.has(run.metadata.keyFingerprint)) {
       // Old client-format runs could populate the shared index without a legacy copy.
       for (const file of hashed) {
-        if (existing.has(file.sha256)) {
-          const stored = await this.store.head(run.connection, objectKey(file.sha256), run.bucketKey);
-          if (stored?.size !== file.size) existing.delete(file.sha256);
-        }
+        if (!existing.has(file.sha256)) continue;
+        const stored = await this.store.head(run.connection, objectKey(file.sha256), run.bucketKey);
+        if (stored?.size !== file.size) existing.delete(file.sha256);
       }
     }
     const recorded: CloudBackupEntry[] = [];
@@ -4225,7 +4223,11 @@ export class CloudBackupService {
       const result = await this.keys.write(
         identityDirectory(this.configRepository),
         keyFingerprint(key),
-        JSON.stringify({ ...file, ...(ring && { client: ring }), ...(imported && { recovery: imported }) }, null, 2),
+        JSON.stringify(
+          { ...file, ...(ring && { client: ring }), ...(imported ? { recovery: imported } : {}) },
+          null,
+          2,
+        ),
       );
       this.readClientKeys(options.keyFile ?? '', key, options.instanceId);
       return result;
