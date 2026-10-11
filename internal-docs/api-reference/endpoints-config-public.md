@@ -12,7 +12,7 @@ Get the public configuration
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PublicConfigDto](models-27.md#publicconfigdto).
+Models: [PublicConfigDto](models-28.md#publicconfigdto).
 
 Controller access declarations:
 
@@ -75,7 +75,7 @@ Get the public configuration defaults
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [PublicConfigDto](models-27.md#publicconfigdto).
+Models: [PublicConfigDto](models-28.md#publicconfigdto).
 
 Controller access declarations:
 

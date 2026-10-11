@@ -10,6 +10,7 @@ import {
   MemoryType,
   PetSpecies,
   PushEventType,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
@@ -284,6 +285,95 @@ describe(MemoryService.name, () => {
         expect.objectContaining({ type: MemoryType.PetStory }),
         expect.anything(),
       );
+    });
+  });
+
+  describe('onMemoriesCreate landmark visits (FL-356)', () => {
+    const park = { id: 'Q181185', name: 'Disneyland Park', kind: 'theme_park', rank: 80, radiusM: 600 };
+    const dayAtThePark = () =>
+      [9, 10, 11, 12, 13].map((hour) => ({
+        id: `asset-${hour}`,
+        localDateTime: new Date(Date.UTC(2026, 5, 1, hour)),
+        city: 'Anaheim',
+        state: 'California',
+        country: 'United States',
+        landmarks: [park],
+      }));
+    const eventStory = expect.objectContaining({ type: MemoryType.EventStory });
+
+    beforeEach(() => {
+      mocks.user.getList.mockResolvedValue([{ id: newUuid() }] as never);
+      mocks.asset.getEventStoryCandidates.mockResolvedValue(dayAtThePark());
+      mocks.memory.getExistingMemoryDates.mockResolvedValue([]);
+      mocks.memory.getPetStoryCandidates.mockResolvedValue([]);
+      mocks.memory.create.mockResolvedValue({} as never);
+    });
+
+    it('makes a memory of one day at a landmark, named for it', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ lastOnThisDayDate: new Date().toISOString() });
+
+      await sut.onMemoriesCreate();
+
+      expect(mocks.asset.getFrequentLandmarkIds).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Date),
+        expect.any(Date),
+        6,
+      );
+      expect(mocks.memory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MemoryType.EventStory,
+          data: expect.objectContaining({
+            dayCount: 1,
+            assetCount: 5,
+            title: 'Disneyland Park',
+            landmark: { id: park.id, name: park.name, kind: park.kind },
+          }),
+        }),
+        new Set(['asset-9', 'asset-10', 'asset-11', 'asset-12', 'asset-13']),
+      );
+    });
+
+    it('makes none at a landmark the owner is at all year', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ lastOnThisDayDate: new Date().toISOString() });
+      mocks.asset.getFrequentLandmarkIds.mockResolvedValue([park.id]);
+
+      await sut.onMemoriesCreate();
+
+      expect(mocks.memory.create).not.toHaveBeenCalledWith(eventStory, expect.anything());
+    });
+
+    it('makes none while reverse geocoding is off', async () => {
+      mocks.systemMetadata.get.mockImplementation(
+        (key) =>
+          Promise.resolve(
+            key === SystemMetadataKey.SystemConfig
+              ? { reverseGeocoding: { enabled: false } }
+              : { lastOnThisDayDate: new Date().toISOString() },
+          ) as never,
+      );
+
+      await sut.onMemoriesCreate();
+
+      expect(mocks.asset.getFrequentLandmarkIds).not.toHaveBeenCalled();
+      expect(mocks.memory.create).not.toHaveBeenCalledWith(eventStory, expect.anything());
+    });
+
+    it("returns the landmark's brand icon with the memory", async () => {
+      const userId = newUuid();
+      const memory = MemoryFactory.create({
+        ownerId: userId,
+        type: MemoryType.EventStory,
+        data: { kind: 'event_story', landmark: { id: park.id, name: park.name, kind: park.kind } } as never,
+      });
+      const icon = { background: '#102030', tile: true };
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.map.getLandmarkIcons.mockReturnValue(new Map([[park.id, icon]]));
+
+      await expect(sut.get(factory.auth({ user: { id: userId } }), memory.id)).resolves.toMatchObject({
+        data: { landmark: { id: park.id, icon } },
+      });
     });
   });
 

@@ -12,7 +12,7 @@ Register admin
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [SignUpDto](models-31.md#signupdto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [SignUpDto](models-33.md#signupdto), [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -90,7 +90,7 @@ Change password
 
 Permission: `auth.changePassword`. Admin only: `false`.
 
-Models: [ChangePasswordDto](models-07.md#changepassworddto), [UserAdminResponseDto](models-37.md#useradminresponsedto).
+Models: [ChangePasswordDto](models-07.md#changepassworddto), [UserAdminResponseDto](models-39.md#useradminresponsedto).
 
 Controller access declarations:
 
@@ -180,7 +180,7 @@ Login
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LoginCredentialDto](models-15.md#logincredentialdto), [LoginResponseDto](models-15.md#loginresponsedto).
+Models: [LoginCredentialDto](models-16.md#logincredentialdto), [LoginResponseDto](models-16.md#loginresponsedto).
 
 Controller access declarations:
 
@@ -258,7 +258,7 @@ Logout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LogoutResponseDto](models-15.md#logoutresponsedto).
+Models: [LogoutResponseDto](models-16.md#logoutresponsedto).
 
 Controller access declarations:
 
@@ -332,13 +332,13 @@ Complete operation contract:
 
 `DELETE /api/auth/pin-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L154).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L155).
 
 Reset pin code
 
 Permission: `pinCode.delete`. Admin only: `false`.
 
-Models: [PinCodeResetDto](models-26.md#pincoderesetdto).
+Models: [PinCodeResetDto](models-27.md#pincoderesetdto).
 
 Controller access declarations:
 
@@ -346,6 +346,7 @@ Controller access declarations:
 @ApiTags(ApiTag.Authentication)
 @Controller('auth')
 @Delete('pin-code')
+@RateLimited(RATE_LIMITS.login)
 @Authenticated({ permission: Permission.PinCodeDelete })
 @HttpCode(HttpStatus.NO_CONTENT)
 @Endpoint({
@@ -421,7 +422,7 @@ Setup pin code
 
 Permission: `pinCode.create`. Admin only: `false`.
 
-Models: [PinCodeSetupDto](models-26.md#pincodesetupdto).
+Models: [PinCodeSetupDto](models-27.md#pincodesetupdto).
 
 Controller access declarations:
 
@@ -504,7 +505,7 @@ Change pin code
 
 Permission: `pinCode.update`. Admin only: `false`.
 
-Models: [PinCodeChangeDto](models-26.md#pincodechangedto).
+Models: [PinCodeChangeDto](models-27.md#pincodechangedto).
 
 Controller access declarations:
 
@@ -512,6 +513,7 @@ Controller access declarations:
 @ApiTags(ApiTag.Authentication)
 @Controller('auth')
 @Put('pin-code')
+@RateLimited(RATE_LIMITS.login)
 @Authenticated({ permission: Permission.PinCodeUpdate })
 @HttpCode(HttpStatus.NO_CONTENT)
 @Endpoint({
@@ -581,7 +583,7 @@ Complete operation contract:
 
 `POST /api/auth/session/lock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L180).
 
 Lock auth session
 
@@ -651,13 +653,13 @@ Complete operation contract:
 
 `POST /api/auth/session/unlock`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/auth.controller.ts#L168).
 
 Unlock auth session
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [SessionUnlockDto](models-31.md#sessionunlockdto).
+Models: [SessionUnlockDto](models-32.md#sessionunlockdto).
 
 Controller access declarations:
 
@@ -818,7 +820,7 @@ Validate access token
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [ValidateAccessTokenResponseDto](models-38.md#validateaccesstokenresponsedto).
+Models: [ValidateAccessTokenResponseDto](models-40.md#validateaccesstokenresponsedto).
 
 Controller access declarations:
 
@@ -897,7 +899,7 @@ Start OAuth
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [OAuthAuthorizeResponseDto](models-18.md#oauthauthorizeresponsedto), [OAuthConfigDto](models-18.md#oauthconfigdto).
+Models: [OAuthAuthorizeResponseDto](models-19.md#oauthauthorizeresponsedto), [OAuthConfigDto](models-19.md#oauthconfigdto).
 
 Controller access declarations:
 
@@ -974,7 +976,7 @@ Backchannel OAuth logout
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [OAuthBackchannelLogoutDto](models-18.md#oauthbackchannellogoutdto).
+Models: [OAuthBackchannelLogoutDto](models-19.md#oauthbackchannellogoutdto).
 
 Controller access declarations:
 
@@ -1038,7 +1040,7 @@ Finish OAuth
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LoginResponseDto](models-15.md#loginresponsedto), [OAuthCallbackDto](models-18.md#oauthcallbackdto).
+Models: [LoginResponseDto](models-16.md#loginresponsedto), [OAuthCallbackDto](models-19.md#oauthcallbackdto).
 
 Controller access declarations:
 
@@ -1167,7 +1169,7 @@ Start Sign in with Frameleaf
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [OAuthAuthorizeResponseDto](models-18.md#oauthauthorizeresponsedto), [OAuthConfigDto](models-18.md#oauthconfigdto).
+Models: [OAuthAuthorizeResponseDto](models-19.md#oauthauthorizeresponsedto), [OAuthConfigDto](models-19.md#oauthconfigdto).
 
 Controller access declarations:
 
@@ -1243,7 +1245,7 @@ Finish Sign in with Frameleaf
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [LoginResponseDto](models-15.md#loginresponsedto), [OAuthCallbackDto](models-18.md#oauthcallbackdto).
+Models: [LoginResponseDto](models-16.md#loginresponsedto), [OAuthCallbackDto](models-19.md#oauthcallbackdto).
 
 Controller access declarations:
 
@@ -1319,7 +1321,7 @@ Sign in with a Frameleaf account token
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafTokenExchangeDto](models-12.md#frameleaftokenexchangedto), [FrameleafTokenExchangeErrorDto](models-12.md#frameleaftokenexchangeerrordto), [LoginResponseDto](models-15.md#loginresponsedto).
+Models: [FrameleafTokenExchangeDto](models-12.md#frameleaftokenexchangedto), [FrameleafTokenExchangeErrorDto](models-12.md#frameleaftokenexchangeerrordto), [LoginResponseDto](models-16.md#loginresponsedto).
 
 Controller access declarations:
 
@@ -1442,7 +1444,7 @@ Hand a Sign in with Frameleaf session to another address
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafHandoffCreateDto](models-11.md#frameleafhandoffcreatedto), [FrameleafHandoffResponseDto](models-11.md#frameleafhandoffresponsedto).
+Models: [FrameleafHandoffCreateDto](models-12.md#frameleafhandoffcreatedto), [FrameleafHandoffResponseDto](models-12.md#frameleafhandoffresponsedto).
 
 Controller access declarations:
 
@@ -1529,7 +1531,7 @@ Sign in with a handoff code
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [FrameleafHandoffRedeemDto](models-11.md#frameleafhandoffredeemdto), [LoginResponseDto](models-15.md#loginresponsedto).
+Models: [FrameleafHandoffRedeemDto](models-12.md#frameleafhandoffredeemdto), [LoginResponseDto](models-16.md#loginresponsedto).
 
 Controller access declarations:
 
@@ -1674,7 +1676,7 @@ Get your Frameleaf account link
 
 Permission: `frameleafAccount.read`. Admin only: `false`.
 
-Models: [FrameleafAccountLinkResponseDto](models-11.md#frameleafaccountlinkresponsedto).
+Models: [FrameleafAccountLinkResponseDto](models-12.md#frameleafaccountlinkresponsedto).
 
 Controller access declarations:
 
@@ -1751,7 +1753,7 @@ Link your Frameleaf account
 
 Permission: `frameleafAccount.update`. Admin only: `false`.
 
-Models: [FrameleafLinkDto](models-11.md#frameleaflinkdto), [FrameleafLinkResponseDto](models-12.md#frameleaflinkresponsedto).
+Models: [FrameleafLinkDto](models-12.md#frameleaflinkdto), [FrameleafLinkResponseDto](models-12.md#frameleaflinkresponsedto).
 
 Controller access declarations:
 
@@ -1840,7 +1842,7 @@ Confirm linking your Frameleaf account
 
 Permission: `frameleafAccount.update`. Admin only: `false`.
 
-Models: [FrameleafLinkConfirmDto](models-11.md#frameleaflinkconfirmdto), [FrameleafLinkResponseDto](models-12.md#frameleaflinkresponsedto).
+Models: [FrameleafLinkConfirmDto](models-12.md#frameleaflinkconfirmdto), [FrameleafLinkResponseDto](models-12.md#frameleaflinkresponsedto).
 
 Controller access declarations:
 

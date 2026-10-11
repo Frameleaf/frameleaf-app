@@ -860,6 +860,16 @@ export class AssetRepository {
           'asset_exif.state as state',
           'asset_exif.country as country',
         ])
+        // FL-356: every landmark the asset was taken at, so a visit to one can be a story
+        .select((eb) =>
+          jsonArrayFrom(
+            eb
+              .selectFrom('asset_landmark')
+              .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
+              .select(['landmark.id', 'landmark.name', 'landmark.kind', 'landmark.rank', 'landmark.radiusM'])
+              .whereRef('asset_landmark.assetId', '=', 'asset.id'),
+          ).as('landmarks'),
+        )
         .where('asset.ownerId', '=', ownerId)
         // FL-195 follow-up: Locked items make memories too; the memory is then hidden while locked
         .where(isOnTimelineWhateverLock('asset'))
@@ -878,6 +888,25 @@ export class AssetRepository {
         .orderBy('asset.id', 'asc')
         .execute()
     );
+  }
+  /**
+   * The landmarks one owner has media at on more than `maxDays` distinct local days in a window
+   * (FL-356): places that are part of home, where a day's photos are not a visit.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.DATE, DummyValue.DATE, 6] })
+  async getFrequentLandmarkIds(ownerId: string, from: Date, to: Date, maxDays: number): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset_landmark')
+      .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+      .select('asset_landmark.landmarkId')
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.localDateTime', '>=', from)
+      .where('asset.localDateTime', '<=', to)
+      .groupBy('asset_landmark.landmarkId')
+      .having(sql<boolean>`count(distinct (asset."localDateTime" at time zone 'UTC')::date) > ${maxDays}`)
+      .execute();
+    return rows.map(({ landmarkId }) => landmarkId);
   }
   /**
    * A spread of one owner's assets across a calendar year, for a year-in-review recap

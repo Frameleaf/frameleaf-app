@@ -12,7 +12,7 @@ List all plugins
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginResponseDto](models-26.md#pluginresponsedto).
+Models: [PluginResponseDto](models-27.md#pluginresponsedto).
 
 Controller access declarations:
 
@@ -138,7 +138,7 @@ Retrieve plugin methods
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginMethodResponseDto](models-26.md#pluginmethodresponsedto), [WorkflowTrigger](models-39.md#workflowtrigger), [WorkflowType](models-39.md#workflowtype).
+Models: [PluginMethodResponseDto](models-27.md#pluginmethodresponsedto), [WorkflowTrigger](models-40.md#workflowtrigger), [WorkflowType](models-40.md#workflowtype).
 
 Controller access declarations:
 
@@ -292,7 +292,7 @@ Retrieve workflow templates
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginTemplateResponseDto](models-26.md#plugintemplateresponsedto).
+Models: [PluginTemplateResponseDto](models-27.md#plugintemplateresponsedto).
 
 Controller access declarations:
 
@@ -365,7 +365,7 @@ Retrieve a plugin
 
 Permission: `plugin.read`. Admin only: `false`.
 
-Models: [PluginResponseDto](models-26.md#pluginresponsedto).
+Models: [PluginResponseDto](models-27.md#pluginresponsedto).
 
 Controller access declarations:
 

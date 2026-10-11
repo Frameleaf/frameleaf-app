@@ -672,7 +672,7 @@ Plan a classification rule re-evaluation
 
 Permission: `album.read`. Admin only: `false`.
 
-Models: [ClassificationPlanResponseDto](models-07.md#classificationplanresponsedto).
+Models: [ClassificationPlanResponseDto](models-08.md#classificationplanresponsedto).
 
 Controller access declarations:
 

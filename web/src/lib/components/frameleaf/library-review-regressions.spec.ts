@@ -145,6 +145,7 @@ const editorClosure = (name: string, end: string, dependencies: Record<string, u
 it('keeps the host dirty after Freecut saves while its draft send is pending', () => {
   let changed!: (settings: unknown, previous: unknown) => void;
   const post = vi.fn();
+  const invalidate = vi.fn();
   const watch = editorClosure('watchDirty', '\nfunction onLoadFinished', {
     useTimelineSettingsStore: {
       subscribe: (callback: typeof changed) => {
@@ -154,8 +155,9 @@ it('keeps the host dirty after Freecut saves while its draft send is pending', (
     },
     post,
   });
-  watch({ unsubscribe: [], writePending: true, pendingSend: false });
+  watch({ unsubscribe: [], writePending: true, pendingSend: false, vectors: { invalidate } });
   changed({ isDirty: false }, { isDirty: true });
+  expect(invalidate).toHaveBeenCalledOnce();
   expect(post).toHaveBeenLastCalledWith({ type: 'dirty', dirty: true });
 });
 

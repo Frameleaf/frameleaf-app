@@ -12,7 +12,7 @@ Read the signalling of a claimed preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerStreamSignalDto](models-29.md#renderworkerstreamsignaldto), [RenderWorkerStreamSignalRequestDto](models-29.md#renderworkerstreamsignalrequestdto).
+Models: [RenderWorkerStreamSignalDto](models-30.md#renderworkerstreamsignaldto), [RenderWorkerStreamSignalRequestDto](models-30.md#renderworkerstreamsignalrequestdto).
 
 Controller access declarations:
 
@@ -109,7 +109,7 @@ Offer a claimed preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerStreamOfferDto](models-29.md#renderworkerstreamofferdto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerStreamOfferDto](models-30.md#renderworkerstreamofferdto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -206,7 +206,7 @@ Begin validating a claimed operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerCompleteDto](models-29.md#renderworkercompletedto), [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerCompleteDto](models-30.md#renderworkercompletedto), [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 
@@ -302,7 +302,7 @@ List what this worker must stop or delete
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerRemoteReferenceDto](models-29.md#renderworkerremotereferencedto).
+Models: [RenderWorkerRemoteReferenceDto](models-30.md#renderworkerremotereferencedto).
 
 Controller access declarations:
 
@@ -381,7 +381,7 @@ Acknowledge a remote reference
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [RenderWorkerWriteResultDto](models-29.md#renderworkerwriteresultdto).
+Models: [RenderWorkerWriteResultDto](models-30.md#renderworkerwriteresultdto).
 
 Controller access declarations:
 

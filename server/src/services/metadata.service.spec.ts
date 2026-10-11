@@ -117,7 +117,7 @@ describe(MetadataService.name, () => {
   describe('onBootstrapEvent', () => {
     it('should pause and resume queue during init', async () => {
       mocks.job.pause.mockResolvedValue();
-      mocks.map.init.mockResolvedValue();
+      mocks.map.init.mockResolvedValue(false);
       mocks.job.resume.mockResolvedValue();
 
       await sut.onBootstrap();
@@ -125,6 +125,24 @@ describe(MetadataService.name, () => {
       expect(mocks.job.pause).toHaveBeenCalledTimes(1);
       expect(mocks.map.init).toHaveBeenCalledTimes(1);
       expect(mocks.job.resume).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should re-match landmarks after a geodata import', async () => {
+      mocks.map.init.mockResolvedValue(true);
+
+      await sut.onBootstrap();
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkMatchAll });
+    });
+  });
+
+  describe('handleLandmarkMatchAll', () => {
+    it('should re-match every asset', async () => {
+      mocks.map.matchAllLandmarks.mockResolvedValue();
+
+      await expect(sut.handleLandmarkMatchAll()).resolves.toBe(JobStatus.Success);
+      expect(mocks.map.matchAllLandmarks).toHaveBeenCalledTimes(1);
     });
   });
 

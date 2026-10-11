@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { LRUMap } from 'mnemonist';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -25,6 +25,7 @@ import {
   SearchFilter,
   SearchHistogramDto,
   SearchHistogramResponseDto,
+  SearchLandmarkResponseDto,
   SearchPeopleDto,
   SearchPlacesDto,
   SearchResponseDto,
@@ -38,9 +39,10 @@ import {
   isNewShapeRequest,
   mapPlaces,
 } from 'src/dtos/search.dto.js';
-import { AssetOrder, AssetType, AssetVisibility, MlWorkload, Permission } from 'src/enum.js';
+import { AssetOrder, AssetType, AssetVisibility, CacheControl, MlWorkload, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -409,6 +411,32 @@ export class SearchService extends BaseService {
     const userIds = this.getUserIdsToSearch(auth);
     const rows = await this.searchRepository.getCityAssetCounts(userIds, getHiddenContentQueryOptions(auth));
     return rows.map(({ city, count }) => ({ city, count: Number(count) }));
+  }
+
+  async getVisitedLandmarks(auth: AuthDto): Promise<SearchLandmarkResponseDto[]> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (!reverseGeocoding.enabled) {
+      return [];
+    }
+    const userIds = this.getUserIdsToSearch(auth);
+    const rows = await this.searchRepository.getVisitedLandmarks(userIds, getHiddenContentQueryOptions(auth));
+    const icons = this.mapRepository.getLandmarkIcons();
+    return rows.map((row) => ({
+      ...row,
+      icon: icons.get(row.id),
+      assetCount: Number(row.assetCount),
+      firstTakenAt: new Date(row.firstTakenAt).toISOString(),
+      lastTakenAt: new Date(row.lastTakenAt).toISOString(),
+    }));
+  }
+
+  /** A landmark's brand icon. The pack is the same for everyone, so any signed-in caller may read it. */
+  getLandmarkIcon(id: string): ImmichFileResponse {
+    const path = this.mapRepository.getLandmarkIconPath(id);
+    if (!path) {
+      throw new NotFoundException();
+    }
+    return new ImmichFileResponse({ path, contentType: 'image/png', cacheControl: CacheControl.PrivateWithCache });
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {

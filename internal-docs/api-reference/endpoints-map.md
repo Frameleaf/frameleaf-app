@@ -12,7 +12,7 @@ Retrieve map markers
 
 Permission: `map.read`. Admin only: `false`.
 
-Models: [MapMarkerResponseDto](models-15.md#mapmarkerresponsedto).
+Models: [MapMarkerResponseDto](models-16.md#mapmarkerresponsedto).
 
 Controller access declarations:
 
@@ -146,7 +146,7 @@ Reverse geocode coordinates
 
 Permission: `map.search`. Admin only: `false`.
 
-Models: [MapReverseGeocodeResponseDto](models-15.md#mapreversegeocoderesponsedto).
+Models: [MapReverseGeocodeResponseDto](models-16.md#mapreversegeocoderesponsedto).
 
 Controller access declarations:
 
@@ -250,7 +250,7 @@ Retrieve map statistics
 
 Permission: `map.read`. Admin only: `false`.
 
-Models: [MapStatisticsResponseDto](models-15.md#mapstatisticsresponsedto).
+Models: [MapStatisticsResponseDto](models-16.md#mapstatisticsresponsedto).
 
 Controller access declarations:
 

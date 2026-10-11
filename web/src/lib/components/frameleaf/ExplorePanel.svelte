@@ -13,7 +13,9 @@
    * for Best Photos.
    */
   import AlbumCover from '$lib/components/album-page/AlbumCover.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import type {
     ExploreBestPhotosPreview,
@@ -22,8 +24,16 @@
     ExploreShortcutCounts,
   } from '$lib/frameleaf/explore';
   import { buildExploreShortcuts, captureDay, isVideoAsset } from '$lib/frameleaf/explore';
+  import {
+    createLandmarkAlbum,
+    dismissLandmarkAlbum,
+    type LandmarkAlbumSuggestion,
+  } from '$lib/frameleaf/landmark-albums';
+  import { landmarkKind, type LandmarkCard } from '$lib/frameleaf/landmarks';
+  import { formatLocalDateRange } from '$lib/frameleaf/memory-stories';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, type AlbumResponseDto, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
@@ -35,10 +45,10 @@
     mdiMovieOpenOutline,
     mdiStarOutline,
   } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
 
   /** The sections that load on their own request and can therefore fail on their own. */
-  export type ExploreSection = 'people' | 'places' | 'things' | 'memories' | 'albums' | 'recents';
+  export type ExploreSection = 'people' | 'places' | 'landmarks' | 'things' | 'memories' | 'albums' | 'recents';
 
   export interface ExploreMemoryCard {
     id: string;
@@ -52,6 +62,10 @@
   interface Props {
     people: ExplorePersonCard[];
     places: ExploreCoverCard[];
+    /** FL-354: landmarks and attractions the account has photos at. */
+    landmarks?: LandmarkCard[];
+    /** FL-357: one visit to a landmark worth an album, offered under the landmarks. */
+    albumSuggestion?: LandmarkAlbumSuggestion | null;
     things: ExploreCoverCard[];
     /** Newest captures first (not uploads). */
     recents: AssetResponseDto[];
@@ -71,6 +85,8 @@
   let {
     people,
     places,
+    landmarks = [],
+    albumSuggestion = null,
     things,
     recents,
     memories,
@@ -86,6 +102,29 @@
 
   const shortcuts = $derived(buildExploreShortcuts(shortcutCounts));
 
+  // FL-357: the suggestion is answered once. "Not now" puts it away; "Create album" gathers the visit.
+  let suggestionState = $state<'open' | 'creating' | 'created' | 'dismissed'>('open');
+  const createSuggestedAlbum = async () => {
+    if (!albumSuggestion) {
+      return;
+    }
+    const { landmark, startDate, endDate } = albumSuggestion;
+    suggestionState = 'creating';
+    try {
+      await createLandmarkAlbum({ landmarkId: landmark.id, startDate, endDate, albumName: landmark.label });
+      suggestionState = 'created';
+    } catch (error) {
+      suggestionState = 'open';
+      handleError(error, $t('errors.something_went_wrong'));
+    }
+  };
+  const dismissSuggestedAlbum = () => {
+    if (albumSuggestion) {
+      dismissLandmarkAlbum(albumSuggestion);
+    }
+    suggestionState = 'dismissed';
+  };
+
   // A failed section is never "an empty library": the empty state is only for a library that
   // answered and has nothing in it.
   const anyFailed = $derived(Object.values(failed).some(Boolean));
@@ -94,6 +133,7 @@
       ? anyFailed ||
           people.length > 0 ||
           places.length > 0 ||
+          landmarks.length > 0 ||
           things.length > 0 ||
           recents.length > 0 ||
           memories.length > 0 ||
@@ -227,6 +267,88 @@
             </a>
           {/each}
         </div>
+      </section>
+    {/if}
+
+    {#if failed.landmarks}
+      {@render failure('landmarks', $t('frameleaf_landmarks_title'), 3)}
+    {:else if landmarks.length > 0}
+      <section class="el-section el-rise" style="--i: 3" aria-labelledby="explore-landmarks-heading">
+        {@render heading('explore-landmarks-heading', $t('frameleaf_landmarks_title'), Route.places())}
+        <div class="el-places">
+          {#each landmarks as landmark (landmark.id)}
+            {@const kind = $t(landmarkKind(landmark.kind).labelKey)}
+            <a
+              href={landmark.href}
+              class="el-place fl-continuous-corners"
+              aria-label={$t('frameleaf_landmarks_card_label', {
+                values: { name: landmark.label, kind, count: landmark.count },
+              })}
+            >
+              {@render cover(landmark.coverAssetId)}
+              <span class="el-cover-shade"></span>
+              <span class="el-landmark-kind">
+                <LandmarkBadge {landmark} size={24} />
+                {kind}
+              </span>
+              <span>
+                <strong>{landmark.label}</strong>
+                <small>
+                  {countLabel(landmark.count)} · {formatLocalDateRange(
+                    landmark.firstDay,
+                    landmark.lastDay,
+                    $locale ?? undefined,
+                  )}
+                </small>
+              </span>
+            </a>
+          {/each}
+        </div>
+        {#if albumSuggestion && suggestionState !== 'dismissed'}
+          {@const created = suggestionState === 'created'}
+          {@const place = albumSuggestion.landmark}
+          <!-- ExploreLibrary.jsx `.lm-suggestion`: a visit offered as an album, answered once. -->
+          <div class="lm-suggestion" role="group" aria-label={$t('frameleaf_landmarks_album_suggested')}>
+            <span class="lm-thumb">
+              <img src={getAssetMediaUrl({ id: place.coverAssetId, size: AssetMediaSize.Thumbnail })} alt="" />
+              <span class="lm-thumb-badge"><LandmarkBadge landmark={place} size={24} /></span>
+            </span>
+            <span class="lm-copy">
+              <strong>
+                {created
+                  ? $t('frameleaf_landmarks_album_created', { values: { name: place.label } })
+                  : $t('frameleaf_landmarks_album_photos_at', {
+                      values: { count: albumSuggestion.count, name: place.label },
+                    })}
+              </strong>
+              <small role={created ? 'status' : undefined}>
+                {created
+                  ? $t('frameleaf_landmarks_album_find')
+                  : $t('frameleaf_landmarks_album_ask', {
+                      values: {
+                        dates: formatLocalDateRange(
+                          albumSuggestion.startDate,
+                          albumSuggestion.endDate,
+                          $locale ?? undefined,
+                        ),
+                      },
+                    })}
+              </small>
+            </span>
+            {#if !created}
+              <span class="lm-actions">
+                <Button onclick={dismissSuggestedAlbum}>{$t('frameleaf_landmarks_album_not_now')}</Button>
+                <Button
+                  variant="primary"
+                  disabled={suggestionState === 'creating'}
+                  onclick={() => void createSuggestedAlbum()}
+                >
+                  {$t('create_album')}
+                </Button>
+              </span>
+            {/if}
+          </div>
+        {/if}
       </section>
     {/if}
 
@@ -564,6 +686,67 @@
   .el-place strong,
   .el-place small {
     display: block;
+  }
+  /* FL-357: a visit offered as an album (landmarks.css `.lm-suggestion`). */
+  .lm-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 14px;
+    padding: 10px 12px 10px 10px;
+    border: 1px solid var(--fl-border);
+    border-radius: 10px;
+    background: var(--fl-raised);
+  }
+  .lm-thumb {
+    position: relative;
+    flex: none;
+  }
+  .lm-thumb img {
+    display: block;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    object-fit: cover;
+  }
+  .lm-thumb-badge {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    display: grid;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--fl-raised);
+  }
+  .lm-copy {
+    flex: 1;
+    min-width: 0;
+  }
+  .lm-copy strong,
+  .lm-copy small {
+    display: block;
+  }
+  .lm-copy small {
+    margin-top: 3px;
+    color: var(--fl-muted);
+  }
+  .lm-actions {
+    display: flex;
+    gap: 8px;
+  }
+  /* FL-354: a landmark card names its kind beside its badge, over the cover's top corner. */
+  .el-landmark-kind {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 3px;
+    border-radius: var(--fl-radius-pill);
+    background: rgb(10 14 12 / 62%);
+    backdrop-filter: blur(12px);
+    font-size: 11px;
+    font-weight: 600;
   }
   .el-place strong {
     font-size: 15px;

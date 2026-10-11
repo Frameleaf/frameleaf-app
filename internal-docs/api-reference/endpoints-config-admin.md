@@ -174,7 +174,7 @@ List the server credentials
 
 Permission: `adminConfig.read`. Admin only: `true`.
 
-Models: [ConfigCredentialResponseDto](models-09.md#configcredentialresponsedto).
+Models: [ConfigCredentialResponseDto](models-10.md#configcredentialresponsedto).
 
 Controller access declarations:
 
@@ -253,7 +253,7 @@ Clear a server credential
 
 Permission: `adminConfig.update`. Admin only: `true`.
 
-Models: [ConfigCredential](models-09.md#configcredential), [ConfigCredentialResponseDto](models-09.md#configcredentialresponsedto).
+Models: [ConfigCredential](models-10.md#configcredential), [ConfigCredentialResponseDto](models-10.md#configcredentialresponsedto).
 
 Controller access declarations:
 
@@ -338,7 +338,7 @@ Replace a server credential
 
 Permission: `adminConfig.update`. Admin only: `true`.
 
-Models: [ConfigCredential](models-09.md#configcredential), [ConfigCredentialResponseDto](models-09.md#configcredentialresponsedto), [ConfigCredentialUpdateDto](models-09.md#configcredentialupdatedto).
+Models: [ConfigCredential](models-10.md#configcredential), [ConfigCredentialResponseDto](models-10.md#configcredentialresponsedto), [ConfigCredentialUpdateDto](models-10.md#configcredentialupdatedto).
 
 Controller access declarations:
 
@@ -510,7 +510,7 @@ Get the settings change history
 
 Permission: `adminConfig.read`. Admin only: `true`.
 
-Models: [SystemConfigHistoryResponseDto](models-36.md#systemconfighistoryresponsedto).
+Models: [SystemConfigHistoryResponseDto](models-38.md#systemconfighistoryresponsedto).
 
 Controller access declarations:
 

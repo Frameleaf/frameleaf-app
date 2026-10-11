@@ -30,7 +30,7 @@ export const SET_GROUP_LABEL_KEYS: Record<SetGroup, Translations> = {
   none: 'frameleaf_search_match_none',
 };
 
-/** An id-set condition (`personIds`, `petIds`, `tagIds`, `albumIds`). */
+/** An id-set condition (`personIds`, `petIds`, `tagIds`, `albumIds`, `landmarkIds`). */
 export type SetCondition = Partial<Record<SetGroup, string[]>> | null;
 type Condition = Record<string, unknown> | null | undefined;
 
@@ -254,6 +254,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   petIds: 'frameleaf_pets_title',
   tagIds: 'tags',
   albumIds: 'albums',
+  landmarkIds: 'frameleaf_landmarks_title',
   type: 'media_type',
   takenAt: 'frameleaf_search_field_taken_at',
   localDateTime: 'frameleaf_search_field_taken_at',
@@ -306,7 +307,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
 const DATE_FIELDS = new Set(['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt']);
-const SET_FIELDS = new Set(['personIds', 'petIds', 'tagIds', 'albumIds']);
+const SET_FIELDS = new Set(['personIds', 'petIds', 'tagIds', 'albumIds', 'landmarkIds']);
 
 const formatDay = (value: unknown, locale: string) => {
   const day = typeof value === 'string' ? value : '';
