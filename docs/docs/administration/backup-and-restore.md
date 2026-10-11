@@ -2,6 +2,8 @@
 
 Frameleaf keeps media files on your storage and their identity, ownership, albums, access controls, settings and job state in one PostgreSQL 19 database. A recoverable installation needs both the database and the matching media files. Back up deployment configuration and connector encryption keys as well: restoring encrypted sessions without their original key cannot recover them.
 
+Keep identity keys and recovery material on [private backup storage](./private-backup-storage.md). That guide covers server-only mounts, NAS ACL verification and migration that preserves existing keys.
+
 ## What to preserve
 
 - The complete Frameleaf database, including `public.frameleaf_migrations`, import journals, configuration and feature tables.
