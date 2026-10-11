@@ -226,6 +226,19 @@ export interface StudioProjectImportUpload {
   processingProvenance?: ProcessingProvenanceInput;
 }
 
+export interface StudioPublicationReceipt {
+  publicationId: string;
+  importId: string;
+  state: 'registered' | 'preparing' | 'published' | 'aborted';
+  createdAt: string;
+  expiresAt: string;
+  cleanupPending: boolean;
+  imported?: StudioProjectImportRef;
+}
+
+export type StudioReceiptPage = { items: StudioPublicationReceipt[]; nextCursor: string | null };
+export type StudioCancelResult = { status: 'cancelled' | 'already-published'; receipt: StudioPublicationReceipt };
+
 export interface StudioHostContext {
   project: StudioProjectHandle;
   /**
@@ -441,6 +454,12 @@ export interface StudioHostServices {
    * lasts only as long as the editor document.
    */
   uploadProjectImport?(upload: StudioProjectImportUpload): Promise<StudioProjectImportRef>;
+  /** A committed publication is reconciled in its original project, never erased by cancellation. */
+  cancelProjectImportPublication?(
+    importId: string,
+    publicationId: string,
+    scope: StudioEditorScope,
+  ): Promise<StudioCancelResult>;
   /**
    * Report where the playhead is, as an exact rational instant (FL-93), so review comments the
    * person adds from the host's Review panel are pinned there (`Studio.jsx:1759`) rather than at

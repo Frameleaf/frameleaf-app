@@ -465,11 +465,20 @@ function watchLocalImportsFor(state: Session) {
       state.context.auth.userId === scope.userId &&
       state.context.project.id === scope.projectId &&
       graphVersionOf(state.context) === scope.graphVersion
+    const publicationId = crypto.randomUUID()
     const retention = createCompletionRetention({
       workspace: state.workspace,
       watch,
       current,
       upload: (upload) => call('uploadProjectImport', { ...upload, scope }),
+      cancel: (id) => call('cancelProjectImportPublication', id, publicationId, scope),
+      cancelUnknown: () => {
+        if (current()) post({
+          type: 'notify',
+          message: 'Cancellation unavailable; reconcile publication receipts in the original project.',
+          tone: 'error',
+        })
+      },
       kept: (id) => state.media.kept(id),
     })
     completions.add(retention)
@@ -485,7 +494,7 @@ function watchLocalImportsFor(state: Session) {
             id: media.id,
             fileName: file.name,
             file,
-            publicationId: crypto.randomUUID(),
+            publicationId,
             scope,
             processingProvenance: {
               version: 1,

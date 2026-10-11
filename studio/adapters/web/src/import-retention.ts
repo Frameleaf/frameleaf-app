@@ -1,6 +1,7 @@
 import type {
   ProcessingProvenanceInput,
   StudioProjectImportRef,
+  StudioCancelResult,
   StudioProjectImportUpload,
 } from '@frameleaf/host/host-contract'
 import { writeBlob } from '@/infrastructure/storage/workspace-fs/fs-primitives'
@@ -25,6 +26,8 @@ export function createCompletionRetention(options: {
   watch: Pick<LocalImportWatch, 'hold'>
   current: () => boolean
   upload: (upload: CompletionUpload) => Promise<StudioProjectImportRef>
+  cancel?: (id: string) => Promise<StudioCancelResult>
+  cancelUnknown?: () => void
   kept: (id: string) => void
 }): CompletionRetention {
   const held = new Set<string>()
@@ -60,7 +63,15 @@ export function createCompletionRetention(options: {
       return imported
     },
     cancel(id) {
-      cancelled.add(id.toLowerCase())
+      id = id.toLowerCase()
+      if (disposed || cancelled.has(id)) return
+      cancelled.add(id)
+      // Session retirement detaches local work, never cancels through the next account.
+      if (held.has(id) && options.current() && options.cancel) {
+        void options.cancel(id).catch(() => {
+          if (!disposed && options.current()) options.cancelUnknown?.()
+        })
+      }
     },
     dispose() {
       disposed = true
