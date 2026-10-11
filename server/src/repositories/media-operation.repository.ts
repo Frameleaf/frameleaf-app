@@ -1043,6 +1043,26 @@ export class MediaOperationRepository {
     this.changed(row);
     return !!row;
   }
+  /** Save a nonsecret backup transfer receipt without replacing the task's cursor or counts. */
+  async setBackupTransfer(id: string, claimToken: string, transfer: Record<string, unknown> | null): Promise<boolean> {
+    const row = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          result: sql`jsonb_set(coalesce(result, '{}'::jsonb), '{backupTransfer}', ${JSON.stringify(transfer)}::text::jsonb)`,
+        })
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where('status', '=', MediaOperationStatus.Rendering)
+        .where('cancelRequestedAt', 'is', null)
+        .where('pauseRequestedAt', 'is', null)
+        .returning('id')
+        .executeTakeFirst(),
+    );
+    return !!row;
+  }
+
   /**
    * Record what a bulk operation has done so far (FL-32), and extend the lease while doing it.
    *

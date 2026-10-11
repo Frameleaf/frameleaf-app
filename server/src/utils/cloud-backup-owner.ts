@@ -42,7 +42,12 @@ export const ownerBackupHistoryPage = (
   const query = page.query?.toLocaleLowerCase();
   const filtered = Object.entries(manifest.assets)
     .filter(([id, item]) => {
-      if (item.owner !== auth.user.id || manifest.version !== 2 || !item.details || !item.originalFileName)
+      if (
+        item.owner !== auth.user.id ||
+        (manifest.version !== 2 && manifest.version !== 3) ||
+        !item.details ||
+        !item.originalFileName
+      )
         return false;
       if (item.details.visibility === 'hidden') return false;
       if (item.details.visibility === 'locked' && !auth.session?.hasElevatedPermission) return false;
