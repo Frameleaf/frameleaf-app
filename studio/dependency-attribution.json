@@ -177,6 +177,15 @@
       "source": "Official exact-version release commit; all 21 shipped TypeScript files and package.json match the integrity-verified npm archive byte-for-byte.",
       "sourceUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/LICENSE",
       "sourceRevision": "3a728b75062256951b6e19ce718907cf1a1d4cf0"
+    },
+    {
+      "component": "Rollup4.62.1 core source",
+      "id": "rollup-core-license",
+      "path": "notices/rollup-core-license.txt",
+      "scope": "package-core-source-only",
+      "sha256": "9dff12bb776f199482bc21fb2aba9615032c0403d19cfd1fa0bf101a9379b146",
+      "source": "Exact npm-published gitHead LICENSE-CORE.md; native constituent inventory remains unresolved",
+      "sourceUrl": "https://github.com/rollup/rollup/blob/caacf701b89e5be4a94b3ffdbf70b51e5cfa3a1a/LICENSE-CORE.md"
     }
   ],
   "bundledNotices": [
@@ -6105,6 +6114,29 @@
           "path": "package-notice-evidence/source-receipt.json",
           "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
           "sourceUrl": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@rollup/rollup-linux-x64-gnu",
+      "version": "4.62.1",
+      "integrity": "sha512-nVQGk/jStQc2V4rrkI+vPD2J+85boKqS4R4nOdPhc3eWw0kyW/b+AYRGoH8qo057XSVqaTx13AliH5qPeLTtgQ==",
+      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.62.1.tgz",
+      "sourceRevision": "caacf701b89e5be4a94b3ffdbf70b51e5cfa3a1a",
+      "noticeIds": [
+        "rollup-core-license"
+      ],
+      "unresolved": "Exact Rollup core MIT notice collected; native SWC/NAPI/mimalloc and transitive constituent license/NOTICE inventory remains incomplete. Core MIT and generated JavaScript notices do not qualify the Linux native payload.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@rollup--rollup-linux-x64-gnu-4.62.1.json",
+          "sha256": "6e2bee7a6c35a7dab6be097dd2382b3b51714114fe1764411d2e0a8d358b711d",
+          "sourceUrl": "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/4.62.1"
+        },
+        {
+          "path": "package-notice-evidence/rollup-linux-x64-gnu-source-receipt.json",
+          "sha256": "7f996358bc9029492d3021061ed7b17eab6829997032f8184d1470150f62c11d",
+          "sourceUrl": "https://codeload.github.com/rollup/rollup/tar.gz/caacf701b89e5be4a94b3ffdbf70b51e5cfa3a1a"
         }
       ]
     }
