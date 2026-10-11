@@ -55,7 +55,7 @@ const LicenseStatusResponseSchema = z
     licensed: z
       .boolean()
       .describe(
-        'A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products',
+        'A supporter key or plan is active or in grace. A Server licence takes licensedDiscount off plans, an Individual licence individualDiscount (license/products)',
       ),
     refresh: z
       .object({
@@ -135,7 +135,13 @@ const LicenseProductsResponseSchema = z
       .number()
       .meta({ format: 'double' })
       .describe(
-        'Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup',
+        'Share a Server licence takes off plans: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup',
+      ),
+    individualDiscount: z
+      .number()
+      .meta({ format: 'double' })
+      .describe(
+        'Share an Individual licence takes off plans, published or bundled like licensedDiscount. Never added to it: the Server licence share applies when both do',
       ),
     pricesVersion: z
       .string()

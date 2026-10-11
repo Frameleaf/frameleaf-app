@@ -2103,7 +2103,7 @@ export type LicenseStatusResponseDto = {
     key: (LicenseSlotDto) | null;
     keyHint: string | null;
     kind: (LicenseKind) | null;
-    /** A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products */
+    /** A supporter key or plan is active or in grace. A Server licence takes licensedDiscount off plans, an Individual licence individualDiscount (license/products) */
     licensed: boolean;
     /** This server is linked to a Frameleaf account */
     linked: boolean;
@@ -7299,7 +7299,9 @@ export type LicenseProductsResponseDto = {
         minimumUsd: number;
     };
     currency: Currency;
-    /** Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup */
+    /** Share an Individual licence takes off plans, published or bundled like licensedDiscount. Never added to it: the Server licence share applies when both do */
+    individualDiscount: number;
+    /** Share a Server licence takes off plans: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup */
     licensedDiscount: number;
     /** Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot */
     pricesVersion: string;

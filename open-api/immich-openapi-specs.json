@@ -22580,7 +22580,7 @@
     },
     "/license/products": {
       "get": {
-        "description": "Bundled plan and supporter prices in US dollars, the licensed-server discount, cloud backup pricing and the store this server was deployed with. Makes no outbound call.",
+        "description": "Bundled plan and supporter prices in US dollars, the plan discounts for a Server licence and an Individual licence, cloud backup pricing and the store this server was deployed with. Makes no outbound call.",
         "operationId": "getLicenseProducts",
         "parameters": [],
         "responses": {
@@ -78803,8 +78803,13 @@
             ],
             "type": "string"
           },
+          "individualDiscount": {
+            "description": "Share an Individual licence takes off plans, published or bundled like licensedDiscount. Never added to it: the Server licence share applies when both do",
+            "format": "double",
+            "type": "number"
+          },
           "licensedDiscount": {
-            "description": "Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
+            "description": "Share a Server licence takes off plans: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
             "format": "double",
             "type": "number"
           },
@@ -78828,6 +78833,7 @@
           "backup",
           "credit",
           "currency",
+          "individualDiscount",
           "licensedDiscount",
           "pricesVersion",
           "products",
@@ -78958,7 +78964,7 @@
             "nullable": true
           },
           "licensed": {
-            "description": "A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products",
+            "description": "A supporter key or plan is active or in grace. A Server licence takes licensedDiscount off plans, an Individual licence individualDiscount (license/products)",
             "type": "boolean"
           },
           "linked": {

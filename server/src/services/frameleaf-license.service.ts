@@ -78,8 +78,8 @@ export const LICENSE_PRODUCTS = Object.freeze([
 export const CLOUD_BACKUP_PRICE = Object.freeze({ includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 });
 
 /**
- * The bundled share taken off plans on a licensed server, used until Frameleaf Cloud publishes one
- * on a heartbeat. AI credit and extra backup blocks are never discounted (FL-156).
+ * The bundled share a Server licence takes off plans, used until Frameleaf Cloud publishes one on a
+ * heartbeat. AI credit and extra backup blocks are never discounted (FL-156).
  */
 export const LICENSED_DISCOUNT = BUNDLED_PRICING.licensedDiscountPercent / 100;
 
@@ -258,8 +258,8 @@ export class FrameleafLicenseService extends BaseService {
   }
 
   /**
-   * `GET license/products`: bundled prices, the plan discount Frameleaf Cloud published that is in
-   * effect by the server clock (else the bundled one) and the deployment's store. Makes no outbound
+   * `GET license/products`: bundled prices, the plan discounts Frameleaf Cloud published that are in
+   * effect by the server clock (else the bundled ones) and the deployment's store. Makes no outbound
    * call.
    */
   async getProducts(): Promise<LicenseProductsResponseDto> {
@@ -269,6 +269,7 @@ export class FrameleafLicenseService extends BaseService {
       currency: 'USD',
       pricesVersion: pricing.pricesVersion,
       licensedDiscount: pricing.licensedDiscountPercent / 100,
+      individualDiscount: pricing.individualDiscountPercent / 100,
       storeUrl,
       products: LICENSE_PRODUCTS.map((product) => ({
         ...product,
