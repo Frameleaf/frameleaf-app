@@ -348,8 +348,7 @@
   // As in the template, the Users manager carries its own heading.
   // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
   const ownHeading = $derived(
-    area === 'users' ||
-      (area === 'processing' && selected?.key === 'queues' && page.url.searchParams.has('queue')),
+    area === 'users' || (area === 'processing' && selected?.key === 'queues' && page.url.searchParams.has('queue')),
   );
 
   /** The navigation's pages under the current area: its sections, or the utility tools. */

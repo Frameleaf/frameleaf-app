@@ -40,11 +40,11 @@
   import {
     cloudOnlyChoices,
     isAiWork,
+    isLightWork,
     runsHere,
     WORK_KINDS,
     workKindNameKey,
     type HereAnswer,
-    type WorkKind,
   } from '$lib/frameleaf/work-places';
   import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
@@ -277,7 +277,6 @@
     unknown: 'frameleaf_gpucheck_unknown',
   };
   const ANSWER_TONES: Record<HereAnswer, KitTone> = { works: 'good', slow: 'good', no: 'warn', unknown: 'off' };
-  const LIGHT: readonly WorkKind[] = ['search', 'faces', 'ocr'];
   const can = $derived(
     WORK_KINDS.map((work) => {
       const answer = runsHere(work, { check, compatibility });
@@ -301,7 +300,7 @@
               { values: { count: Math.round(measured.perHour) } },
             ),
           );
-        } else if (LIGHT.includes(work) && !worker.gpu) {
+        } else if (isLightWork(work) && !worker.gpu) {
           parts.push($t('frameleaf_gpucheck_help_quick'));
         } else {
           parts.push($t(answer === 'works' ? 'frameleaf_gpucheck_help_card' : 'frameleaf_gpucheck_help_processor'));

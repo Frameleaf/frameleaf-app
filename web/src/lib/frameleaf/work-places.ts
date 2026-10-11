@@ -40,7 +40,8 @@ export type HereFacts = {
 };
 
 /** Work the AI service does quickly enough on a processor that a graphics card is not needed. */
-const LIGHT: readonly WorkKind[] = ['search', 'faces', 'ocr'];
+const LIGHT: ReadonlySet<WorkKind> = new Set(['search', 'faces', 'ocr']);
+export const isLightWork = (kind: WorkKind) => LIGHT.has(kind);
 
 /** Whether this server, with whatever is connected to it now, can do a kind of work. */
 export const runsHere = (kind: WorkKind, { check, compatibility }: HereFacts): HereAnswer => {
@@ -54,7 +55,7 @@ export const runsHere = (kind: WorkKind, { check, compatibility }: HereFacts): H
   if (!check || !check.ml.reachable) {
     return 'unknown';
   }
-  if (LIGHT.includes(kind)) {
+  if (LIGHT.has(kind)) {
     return 'works';
   }
   const worker = workerFromHardware(check);
