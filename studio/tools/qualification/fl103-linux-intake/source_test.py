@@ -58,8 +58,8 @@ class SourceChecks(unittest.TestCase):
   for value in ['kernelKillDuringParallelFork','explicitOwnedUnitCancellation',"report['result']=='timeout'","not (out/'gate-released.json').exists()"]:self.assertIn(value,owner)
  def test_fresh_vm_exact_push_only(self):
   text=(ROOT/'.github/workflows/fl103-linux-intake.yml').read_text()
-  for value in ['branches: [aj/fl103-linux-intake-execute]','runs-on: ubuntu-24.04','timeout-minutes: 25','contents: read','persist-credentials: false','retention-days: 7']:self.assertIn(value,text)
-  for value in ['ubuntu-slim','self-hosted','secrets.','workflow_dispatch','pull_request:','--with-deps']:self.assertNotIn(value,text)
+  for value in ["workflow_dispatch:","github.repository == 'Frameleaf/frameleaf-qualification' && github.ref == 'refs/heads/aj/fl103-linux-intake-execute'",'runs-on: ubuntu-24.04','timeout-minutes: 25','contents: read','persist-credentials: false','retention-days: 7']:self.assertIn(value,text)
+  for value in ['ubuntu-slim','self-hosted','secrets.','push:','paths:','inputs:','pull_request:','--with-deps']:self.assertNotIn(value,text)
  def test_acquisition_has_no_browser_or_audio_launch(self):
   text=(HERE/'payload.py').read_text()
   self.assertIn("'install','chromium','--only-shell'",text)
