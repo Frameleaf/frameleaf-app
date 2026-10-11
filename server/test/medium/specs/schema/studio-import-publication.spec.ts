@@ -45,8 +45,8 @@ const insertPublication = (
      "stagedIdentity", "createdAt", "expiresAt")
     VALUES (${row.id}::uuid, ${KEY.ownerId}::uuid, ${KEY.projectId}::uuid, ${row.importId}::uuid,
       ${row.state}, ${row.stagedPath}, ${row.targetPath},
-      ${row.declaration === null ? null : JSON.stringify(row.declaration)}::jsonb,
-      ${row.stagedIdentity === null ? null : JSON.stringify(row.stagedIdentity)}::jsonb,
+      ${row.declaration === null ? null : JSON.stringify(row.declaration)}::text::jsonb,
+      ${row.stagedIdentity === null ? null : JSON.stringify(row.stagedIdentity)}::text::jsonb,
       ${createdAt}, ${row.expiresAt})`.execute(db);
 };
 
