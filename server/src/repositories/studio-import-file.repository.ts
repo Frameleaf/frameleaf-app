@@ -1,6 +1,4 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { StorageCore } from 'src/cores/storage.core.js';
-import { StorageFolder } from 'src/enum.js';
 import { createHash } from 'node:crypto';
 import { type BigIntStats, constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
@@ -14,6 +12,8 @@ import type {
   PreparedImport,
   PublicationKey,
 } from 'src/utils/studio-import-publication.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageFolder } from 'src/enum.js';
 import { assertSameOwnedInode, syncAncestors } from 'src/utils/studio-import-durability.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 
@@ -60,13 +60,11 @@ export class StudioImportFileRepository implements FilePort {
     this.durabilityAdapter = adapter;
   }
 
-  private get adapter(): DurabilityAdapter {
+  private getAdapter(): DurabilityAdapter {
     return (this.durabilityAdapter ??= new LinuxDurabilityAdapter({
       root: StorageCore.getBaseFolder(StorageFolder.Exports),
       anchor: StorageCore.getBaseFolder(StorageFolder.Exports),
-      qualification: async () => {
-        throw new Error('UNQUALIFIED');
-      },
+      qualification: () => Promise.reject(new Error('UNQUALIFIED')),
     }));
   }
 
@@ -77,7 +75,7 @@ export class StudioImportFileRepository implements FilePort {
     ) {
       throw new Error('invalid_publication_path');
     }
-    const folder = join(this.adapter.root, key.ownerId, 'studio-imports');
+    const folder = join(this.getAdapter().root, key.ownerId, 'studio-imports');
     const stagedPath = incoming;
     const scratchName = basename(incoming);
     if (
@@ -87,12 +85,12 @@ export class StudioImportFileRepository implements FilePort {
     )
       throw new Error('invalid_publication_stage');
     const targetPath = join(folder, key.projectId, `${key.importId}${declaration.extension}`);
-    await this.adapter.requireQualified(dirname(stagedPath));
-    const identity = await this.adapter.capture(stagedPath);
+    await this.getAdapter().requireQualified(dirname(stagedPath));
+    const identity = await this.getAdapter().capture(stagedPath);
     const file = { stagedPath, targetPath, identity, declaration };
     this.paths(file);
     await this.verify(stagedPath, file, 'stage');
-    await this.adapter.syncFile(stagedPath);
+    await this.getAdapter().syncFile(stagedPath);
     await this.barriers(dirname(stagedPath));
     await this.verify(stagedPath, file, 'stage');
     return file;
@@ -100,19 +98,19 @@ export class StudioImportFileRepository implements FilePort {
 
   async publish(file: PreparedImport): Promise<void> {
     this.paths(file);
-    await this.adapter.requireQualified(dirname(file.targetPath));
+    await this.getAdapter().requireQualified(dirname(file.targetPath));
     await this.verify(file.stagedPath, file, 'linked');
     // Qualification attests active namespace isolation; mkdir alone is never that fence.
     await fs.mkdir(dirname(file.targetPath), { recursive: true, mode: 0o700 });
-    await this.adapter.requireQualified(dirname(file.targetPath));
+    await this.getAdapter().requireQualified(dirname(file.targetPath));
     try {
-      await this.adapter.linkExclusive(file.stagedPath, file.targetPath);
+      await this.getAdapter().linkExclusive(file.stagedPath, file.targetPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
     await this.verify(file.stagedPath, file, 'linked');
     await this.verify(file.targetPath, file, 'linked');
-    await this.adapter.syncFile(file.targetPath);
+    await this.getAdapter().syncFile(file.targetPath);
     await this.barriers(dirname(file.targetPath));
     await this.verify(file.stagedPath, file, 'linked');
     await this.verify(file.targetPath, file, 'linked');
@@ -121,11 +119,11 @@ export class StudioImportFileRepository implements FilePort {
   async release(file: PreparedImport, role: 'stage' | 'aborted'): Promise<void> {
     this.paths(file);
     if (role !== 'stage' && role !== 'aborted') throw new Error('invalid_publication_role');
-    await this.adapter.requireQualified(this.adapter.root);
+    await this.getAdapter().requireQualified(this.getAdapter().root);
     // Task 6 must count references for each exact role under its common path locks first.
     for (const path of role === 'stage' ? [file.stagedPath] : [file.targetPath, file.stagedPath]) {
       try {
-        await this.adapter.capture(path);
+        await this.getAdapter().capture(path);
       } catch (error) {
         if (errorCode(error) === 'PUBLICATION_LINK_COUNT') {
           // Two links are owned only when they are this exact intent's stage/target pair.
@@ -140,10 +138,10 @@ export class StudioImportFileRepository implements FilePort {
       } catch (error) {
         if (!absent(error)) throw error;
       }
-      await this.adapter.unlinkExact(path, file.identity);
+      await this.getAdapter().unlinkExact(path, file.identity);
       await this.barriers(dirname(path));
       try {
-        await this.adapter.capture(path);
+        await this.getAdapter().capture(path);
         throw new Error('publication_identity_changed');
       } catch (error) {
         if (!absent(error)) throw error;
@@ -152,12 +150,12 @@ export class StudioImportFileRepository implements FilePort {
   }
 
   private paths(file: PreparedImport) {
-    inside(this.adapter.anchor, this.adapter.root);
-    inside(this.adapter.root, file.stagedPath);
-    inside(this.adapter.root, file.targetPath);
+    inside(this.getAdapter().anchor, this.getAdapter().root);
+    inside(this.getAdapter().root, file.stagedPath);
+    inside(this.getAdapter().root, file.targetPath);
     const size = file.identity.size;
-    const stage = relative(this.adapter.root, file.stagedPath).split(sep);
-    const target = relative(this.adapter.root, file.targetPath).split(sep);
+    const stage = relative(this.getAdapter().root, file.stagedPath).split(sep);
+    const target = relative(this.getAdapter().root, file.targetPath).split(sep);
     if (
       stage.length !== 4 ||
       target.length !== 4 ||
@@ -184,14 +182,14 @@ export class StudioImportFileRepository implements FilePort {
   }
 
   private async verify(path: string, file: PreparedImport, role: 'stage' | 'linked') {
-    assertSameOwnedInode(file.identity, await this.adapter.capture(path, role));
-    if ((await this.adapter.hash(path, file.identity)) !== file.declaration.checksum)
+    assertSameOwnedInode(file.identity, await this.getAdapter().capture(path, role));
+    if ((await this.getAdapter().hash(path, file.identity)) !== file.declaration.checksum)
       throw new Error('publication_hash_changed');
-    assertSameOwnedInode(file.identity, await this.adapter.capture(path, role));
+    assertSameOwnedInode(file.identity, await this.getAdapter().capture(path, role));
   }
 
   private barriers(path: string) {
-    return syncAncestors(path, this.adapter.anchor, (directory) => this.adapter.syncDirectory(directory));
+    return syncAncestors(path, this.getAdapter().anchor, (directory) => this.getAdapter().syncDirectory(directory));
   }
 }
 

@@ -4,16 +4,16 @@ import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { DB } from 'src/schema/index.js';
+import type { FilePort, JournalPort, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { retainImport } from 'src/services/studio-import-publication.service.js';
-import type { FilePort, JournalPort, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
 import { DECLARATION } from 'test/fixtures/studio-import-retention.js';
-import { newMediumService } from 'test/medium.factory.js';
 import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/library-queue-database.js';
+import { newMediumService } from 'test/medium.factory.js';
 
 // Real disposable SQL and temporary bytes, with explicitly modelled FilePort barriers.
 // These cases exercise orchestration/transaction boundaries; they cannot qualify storage durability.
@@ -64,9 +64,9 @@ const scratch = async (key: PublicationKey): Promise<PreparedImport> => {
   };
 };
 const filePort = (file: PreparedImport, events: string[], failure?: 'target' | 'cleanup'): FilePort => ({
-  prepare: async () => {
+  prepare: () => {
     events.push('model-stage/file/ancestor-barriers');
-    return file;
+    return Promise.resolve(file);
   },
   publish: async () => {
     events.push('link');

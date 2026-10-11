@@ -292,7 +292,7 @@ const checkSources = (value: unknown, files: Record<string, StudioBundleFileDige
     }
 
     sources.push({
-      ...(processingProvenance ? { processingProvenance } : {}),
+      ...(processingProvenance && { processingProvenance }),
       key,
       kind: raw.kind,
       id: raw.id,

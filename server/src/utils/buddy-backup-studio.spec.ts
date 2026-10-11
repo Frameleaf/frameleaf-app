@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { buddyStudioImportSchema } from 'src/utils/buddy-backup-studio.js';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
-import { buddyStudioImportSchema } from './buddy-backup-studio.js';
 
 // Schema-only path; canonical managed destinations are exercised by the DB restore fixture.
 const legacyImport = {

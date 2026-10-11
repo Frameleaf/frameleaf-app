@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StudioProjectImport } from 'src/repositories/studio-project.repository.js';
 import type { FilePort, JournalPort, PublicationReceipt } from 'src/utils/studio-import-publication.js';
-import { KEY, PREPARED, DECLARATION } from 'test/fixtures/studio-import-retention.js';
-import { retainImport, StudioImportPublicationService } from './studio-import-publication.service.js';
+import { StudioImportPublicationService, retainImport } from 'src/services/studio-import-publication.service.js';
+import { DECLARATION, KEY, PREPARED } from 'test/fixtures/studio-import-retention.js';
 
 const imported = {
   ...DECLARATION,
@@ -54,24 +54,26 @@ describe('durable publication orchestration with synthetic ports (no SQL/storage
   it('orders stage barriers, prepare commit, target barriers, final commit and stage cleanup', async () => {
     const events: string[] = [];
     const { files, journal } = ports();
-    files.prepare.mockImplementation(async () => {
+    files.prepare.mockImplementation(() => {
       events.push('stage/file/ancestor-barriers');
-      return PREPARED;
+      return Promise.resolve(PREPARED);
     });
-    journal.prepare.mockImplementation(async () => {
+    journal.prepare.mockImplementation(() => {
       events.push('prepare-commit');
-      return { status: 'prepared', file: PREPARED };
+      return Promise.resolve({ status: 'prepared', file: PREPARED });
     });
-    files.publish.mockImplementation(async () => {
+    files.publish.mockImplementation(() => {
       events.push('link/target-barriers');
+      return Promise.resolve();
     });
     journal.publish.mockImplementation(async (_key, publish) => {
       await publish(PREPARED);
       events.push('final-commit');
       return imported;
     });
-    files.release.mockImplementation(async () => {
+    files.release.mockImplementation(() => {
       events.push('stage-unlink/barriers');
+      return Promise.resolve();
     });
     journal.release.mockImplementation(async (_key, release) => release(PREPARED, 'stage'));
     await expect(retainImport(journal, files, upload)).resolves.toBe(imported);
@@ -117,7 +119,7 @@ describe('durable publication orchestration with synthetic ports (no SQL/storage
 describe('publication owner facade', () => {
   const setup = () => {
     const { files, journal } = ports();
-    const studio = { requireOwnedProject: vi.fn(async () => ({ id: KEY.projectId, ownerId: KEY.ownerId })) };
+    const studio = { requireOwnedProject: vi.fn().mockResolvedValue({ id: KEY.projectId, ownerId: KEY.ownerId }) };
     const sut = new StudioImportPublicationService(journal as never, files as never, studio as never);
     const auth = { user: { id: KEY.ownerId } } as AuthDto;
     return { sut, auth, journal, studio };
@@ -184,7 +186,7 @@ describe('exact publication lookup authorizes current owner/project before resol
     const sut = new StudioImportPublicationService(journal as never, {} as never, studio as never);
     const actor = {
       user: { id: kind === 'stranger' ? KEY.importId : KEY.ownerId },
-      ...(kind === 'shared' ? { sharedLink: {} } : {}),
+      ...(kind === 'shared' && { sharedLink: {} }),
     } as AuthDto;
     if (kind === 'owner') {
       await expect(sut.findPublication(actor, KEY.projectId, KEY.publicationId)).resolves.toBe(receipt);

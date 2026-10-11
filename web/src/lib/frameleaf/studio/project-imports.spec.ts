@@ -157,7 +157,7 @@ const receiptDto = {
   publicationId: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e02',
   state: 'published' as const,
   createdAt: new Date(0).toISOString(),
-  expiresAt: new Date(21600000).toISOString(),
+  expiresAt: new Date(21_600_000).toISOString(),
   cleanupPending: true,
   imported: retentionDto,
 };

@@ -1,4 +1,3 @@
-import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import {
   BadRequestException,
   ConflictException,
@@ -10,6 +9,8 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { crc32 } from 'node:zlib';
+import type { RetainedProcessingProvenance } from 'src/utils/studio-import-provenance.js';
+import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetVisibility, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -37,7 +38,6 @@ import {
   readZipEntry,
   serializeStudioBundleProject,
 } from 'src/utils/studio-bundle.js';
-import type { RetainedProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind, extractStudioResourceReferences, studioReferenceKey } from 'src/utils/studio-resources.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -138,7 +138,7 @@ const memoryFs = () => {
     createWriteStream: vi.fn((path: string) => {
       const chunks: Buffer[] = [];
       return new Writable({
-        construct(callback) {
+        construct(this: Writable, callback) {
           this.emit('open');
           callback();
         },
@@ -544,7 +544,7 @@ describe(StudioBundleService.name, () => {
       expect(projects.createUpload).toHaveBeenCalledWith(
         expect.objectContaining({
           path: expect.stringMatching(
-            new RegExp(`/exports/${owner.user.id}/studio-imports/incoming/[a-f0-9-]+\\.upload$`),
+            new RegExp(String.raw`/exports/${owner.user.id}/studio-imports/incoming/[a-f0-9-]+\.upload$`),
           ),
         }),
       );
@@ -1185,7 +1185,7 @@ describe(StudioBundleService.name, () => {
           mode: item.bytes ? ('embedded' as const) : ('reference' as const),
           path,
           sha256: item.processingProvenance?.outputSha256 ?? null,
-          ...(item.processingProvenance ? { processingProvenance: item.processingProvenance } : {}),
+          ...(item.processingProvenance && { processingProvenance: item.processingProvenance }),
           bytes: item.bytes?.length ?? null,
           fileName: item.fileName,
           contentType: item.contentType,
@@ -1489,7 +1489,7 @@ describe(StudioBundleService.name, () => {
       projects.listImports.mockResolvedValue(
         rowsOf(sourceProject.id).map((row) => ({
           ...row,
-          ...(row.id === voice ? { processingProvenance: lineage } : {}),
+          ...(row.id === voice && { processingProvenance: lineage }),
         })),
       );
       await sut.run({ operation: exportJobOf(true, [voice, subs]), claimToken: 'token' });
@@ -1541,7 +1541,7 @@ describe(StudioBundleService.name, () => {
           declaration: expect.objectContaining({ processingProvenance: lineage }),
         }),
       );
-      expect(assets.getByIds.mock.calls.flat(2)).not.toContain(lineage.source.id);
+      expect(assets.getByIds.mock.calls.flat().flat()).not.toContain(lineage.source.id);
       expect(assets.getByChecksums).not.toHaveBeenCalled();
       expect(fs.files.get(created.path as string)).toEqual(wav);
     });
@@ -1584,7 +1584,7 @@ describe(StudioBundleService.name, () => {
       projects.listImports.mockResolvedValue(
         rowsOf(sourceProject.id).map((row) => ({
           ...row,
-          ...(row.id === voice ? { processingProvenance: { ...LINEAGE, outputSha256: row.checksum } } : {}),
+          ...(row.id === voice && { processingProvenance: { ...LINEAGE, outputSha256: row.checksum } }),
         })),
       );
       await sut.run({
@@ -1883,7 +1883,7 @@ describe(StudioBundleService.name, () => {
           staged = path;
           if (failure === 'exclusive-open') fs.files.set(path, foreignBytes);
           return new Writable({
-            construct(callback) {
+            construct(this: Writable, callback) {
               // Match async fs.WriteStream open failure; no test-owned error listener masks it.
               queueMicrotask(() => {
                 if (failure === 'exclusive-open') return callback(streamError);

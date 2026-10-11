@@ -1,4 +1,3 @@
-import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import {
   BadRequestException,
   ConflictException,
@@ -13,12 +12,14 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import type { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
+import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { CacheControl } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
-import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
+import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 const OWNER = '0198a1c2-0000-7000-8000-00000000000a';
 const STRANGER = '0198a1c2-0000-7000-8000-00000000000b';
@@ -52,9 +53,9 @@ describe(StudioProjectImportService.name, () => {
   let publications: {
     register: ReturnType<typeof vi.fn>;
     getPublication: ReturnType<typeof vi.fn>;
-    retain: ReturnType<typeof vi.fn>;
+    retain: ReturnType<typeof vi.fn<StudioImportPublicationService['retain']>>;
     recover: ReturnType<typeof vi.fn>;
-    cleanupIncoming: ReturnType<typeof vi.fn>;
+    cleanupIncoming: ReturnType<typeof vi.fn<StudioImportPublicationService['cleanupIncoming']>>;
   };
   let sut: StudioProjectImportService;
 
@@ -92,10 +93,10 @@ describe(StudioProjectImportService.name, () => {
     const storage = new StorageRepository({ setContext: vi.fn() } as never);
     publications = {
       recover: vi.fn().mockResolvedValue({ attempted: 0, deferred: 0 }),
-      cleanupIncoming: vi.fn().mockResolvedValue(false),
+      cleanupIncoming: vi.fn<StudioImportPublicationService['cleanupIncoming']>().mockResolvedValue(false),
       register: vi.fn().mockResolvedValue({ state: 'registered' }),
       getPublication: vi.fn().mockResolvedValue({ state: 'registered' }),
-      retain: vi.fn(async (_auth: AuthDto, upload: RetentionUpload) => {
+      retain: vi.fn<StudioImportPublicationService['retain']>(async (_auth: AuthDto, upload: RetentionUpload) => {
         const item = {
           ...upload.declaration,
           id: upload.key.importId,

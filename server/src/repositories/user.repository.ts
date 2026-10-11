@@ -657,7 +657,7 @@ export class UserRepository {
         WHERE "ownerId"=${user.id}::uuid AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL) LIMIT 1`.execute(
         db,
       );
-      if (pending.length)
+      if (pending.length > 0)
         throw new ConflictException('Studio import cleanup is pending; retry account deletion after cleanup');
       const result = await db.deleteFrom('user').where('id', '=', user.id).execute();
       await sql`DELETE FROM public.studio_import_publication WHERE "ownerId"=${user.id}::uuid

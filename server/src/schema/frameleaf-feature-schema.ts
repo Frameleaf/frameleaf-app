@@ -228,7 +228,7 @@ export const FRAMELEAF_FEATURE_SCHEMA_SQL: readonly string[] = [
   'ALTER TABLE public.studio_import_publication ADD CONSTRAINT "studio_import_publication_pkey" PRIMARY KEY (id)',
   'ALTER TABLE public.studio_import_publication ADD CONSTRAINT "studio_import_publication_preparing_check" CHECK (state <> \'preparing\'::text OR "stagedPath" IS NOT NULL)',
   'ALTER TABLE public.studio_import_publication ADD CONSTRAINT "studio_import_publication_registered_check" CHECK (state <> \'registered\'::text OR "stagedPath" IS NULL)',
-  'ALTER TABLE public.studio_import_publication ADD CONSTRAINT "studio_import_publication_state_check" CHECK (state = ANY (ARRAY[\'registered\'::text, \'preparing\'::text, \'published\'::text, \'aborted\'::text]))',
+  "ALTER TABLE public.studio_import_publication ADD CONSTRAINT \"studio_import_publication_state_check\" CHECK (state = ANY (ARRAY['registered'::text, 'preparing'::text, 'published'::text, 'aborted'::text]))",
   'ALTER TABLE public.studio_project_import ADD CONSTRAINT "studio_project_import_checksum_check" CHECK (checksum ~ \'^[a-f0-9]{64}$\'::text)',
   'ALTER TABLE public.studio_project_import ADD CONSTRAINT "studio_project_import_pkey" PRIMARY KEY ("projectId", id)',
   'ALTER TABLE public.studio_project_import ADD CONSTRAINT "studio_project_import_references_check" CHECK ("externalReferences" IS NULL OR "externalReferences" >= 0)',

@@ -34,18 +34,18 @@ const receipt: StudioPublicationReceipt = {
   importId: KEY.importId,
   state: 'registered',
   createdAt: new Date(0).toISOString(),
-  expiresAt: new Date(21600000).toISOString(),
+  expiresAt: new Date(21_600_000).toISOString(),
   cleanupPending: false,
 };
 const page: StudioReceiptPage = { items: [receipt], nextCursor: null };
 const setup = () => ({
   register: vi.fn(async () => receipt),
   upload: vi.fn(async () => imported),
-  discover: vi.fn(async (_project: string, _cursor?: string) => page),
-  cancel: vi.fn(async (_projectId: string, _importId: string, _publicationId: string) => ({
+  discover: vi.fn<RetentionApi['discover']>().mockResolvedValue(page),
+  cancel: vi.fn<RetentionApi['cancel']>().mockResolvedValue({
     status: 'cancelled' as const,
     receipt: { ...receipt, state: 'aborted' as const },
-  })),
+  }),
 });
 afterEach(() => retireStudioImportSessions());
 
@@ -106,10 +106,10 @@ describe('host retained import boundary', () => {
     'uses immutable upload verification for a matching %s receipt',
     async (state) => {
       const api = setup();
-      api.register.mockResolvedValueOnce({ ...receipt, state, ...(state === 'published' ? { imported } : {}) });
+      api.register.mockResolvedValueOnce({ ...receipt, state, ...(state === 'published' && { imported }) });
       expect(await submitRetainedImport(api, scope, () => true, upload)).toEqual(imported);
       expect(api.upload).toHaveBeenCalledTimes(1);
-      expect(receipt.expiresAt).toBe(new Date(21600000).toISOString());
+      expect(receipt.expiresAt).toBe(new Date(21_600_000).toISOString());
     },
   );
 

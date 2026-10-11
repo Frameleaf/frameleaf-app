@@ -21,13 +21,19 @@ export async function submitRetainedImport(
   isCurrent: () => boolean,
   upload: StudioProjectImportUpload & { publicationId: string },
 ): Promise<StudioProjectImportRef> {
-  if (!isCurrent()) throw new Error('origin_retired');
+  if (!isCurrent()) {
+    throw new Error('origin_retired');
+  }
   const receipt = await api.register(scope.projectId, upload.id, upload.publicationId);
-  if (!isCurrent()) throw new Error('origin_retired');
+  if (!isCurrent()) {
+    throw new Error('origin_retired');
+  }
   if (receipt.publicationId !== upload.publicationId || receipt.importId !== upload.id) {
     throw new Error('receipt_binding_changed');
   }
-  if (receipt.state === 'aborted') throw new Error('publication_aborted');
+  if (receipt.state === 'aborted') {
+    throw new Error('publication_aborted');
+  }
   // Even a published receipt needs the immutable byte/provenance check on an explicit retry.
   // A late committed response belongs to this origin; retirement must not turn it into rollback.
   return api.upload(scope.projectId, { ...upload, scope });
@@ -39,10 +45,16 @@ export async function reconcileRetainedImports(
   isCurrent: () => boolean,
   cursor?: string,
 ): Promise<StudioReceiptPage> {
-  if (!isCurrent()) throw new Error('origin_retired');
+  if (!isCurrent()) {
+    throw new Error('origin_retired');
+  }
   const page = await api.discover(scope.projectId, cursor);
-  if (!isCurrent()) throw new Error('origin_retired');
-  if (page.items.length > 100) throw new Error('invalid_receipt_page');
+  if (!isCurrent()) {
+    throw new Error('origin_retired');
+  }
+  if (page.items.length > 100) {
+    throw new Error('invalid_receipt_page');
+  }
   return page;
 }
 

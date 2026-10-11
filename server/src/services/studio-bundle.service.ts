@@ -896,11 +896,11 @@ export class StudioBundleService {
     for (const item of keptFiles) {
       // Only selected ready imports carry these historical labels. Never resolve their source IDs.
       const processingProvenance =
-        item.processingProvenance == null
+        item.processingProvenance === null || item.processingProvenance === undefined
           ? undefined
           : validateBundleImportProvenance(item.processingProvenance, item.checksum);
       const source = {
-        ...(processingProvenance ? { processingProvenance } : {}),
+        ...(processingProvenance && { processingProvenance }),
         key: studioReferenceKey({ kind: StudioResourceKind.ProjectImport, id: item.id }),
         kind: StudioResourceKind.ProjectImport,
         id: item.id,
@@ -1389,7 +1389,7 @@ export class StudioBundleService {
           });
           const finished = streamFinished(output);
           // Observe rejection before extraction can await I/O or write to a failed exclusive open.
-          void finished.catch(() => undefined);
+          void finished.catch(() => {});
           try {
             const extraction = digestZipEntry(source, entry, {
               onData: (chunk) =>
@@ -1418,7 +1418,7 @@ export class StudioBundleService {
             }
           } catch (error) {
             output.destroy();
-            await finished.catch(() => undefined);
+            await finished.catch(() => {});
             throw error;
           }
           // Registration owns no bytes. A definite failure here still permits request scratch cleanup.

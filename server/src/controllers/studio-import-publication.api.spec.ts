@@ -1,13 +1,13 @@
-import request from 'supertest';
 import { NotFoundException } from '@nestjs/common';
+import request from 'supertest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
-import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
-import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
-import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { controllerSetup, type ControllerContext } from 'test/utils.js';
+import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
+import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
+import { type ControllerContext, controllerSetup } from 'test/utils.js';
 
 const base = `/studio/projects/${KEY.projectId}/imports`;
 const receipt = {
@@ -37,9 +37,10 @@ describe('canonical publication HTTP contract (controlled repository)', () => {
   let ctx: ControllerContext;
   const journal = { register: vi.fn(), getByPublication: vi.fn(), discover: vi.fn(), cancel: vi.fn() };
   const studio = {
-    requireOwnedProject: vi.fn(async (auth: AuthDto, id: string) => {
-      if (auth.user.id !== KEY.ownerId || id !== KEY.projectId) throw new NotFoundException('Studio project not found');
-      return { id: KEY.projectId, ownerId: KEY.ownerId };
+    requireOwnedProject: vi.fn((auth: AuthDto, id: string) => {
+      if (auth.user.id !== KEY.ownerId || id !== KEY.projectId)
+        return Promise.reject(new NotFoundException('Studio project not found'));
+      return Promise.resolve({ id: KEY.projectId, ownerId: KEY.ownerId });
     }),
   };
   beforeAll(async () => {

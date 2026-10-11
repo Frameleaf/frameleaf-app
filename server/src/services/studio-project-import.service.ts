@@ -9,16 +9,20 @@ import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
+import type {
+  PublicationReceipt,
+  PublishedImportReceipt,
+  RawOptionalLineage,
+} from 'src/utils/studio-import-publication.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
-  StudioProjectImportDto,
-  StudioImportPublicationDto,
-  StudioImportPublicationRegisterDto,
-  StudioImportPublicationQueryDto,
-  StudioImportPublicationPageDto,
   StudioImportPublicationCancelDto,
+  StudioImportPublicationDto,
+  StudioImportPublicationPageDto,
+  StudioImportPublicationQueryDto,
+  StudioImportPublicationRegisterDto,
+  StudioProjectImportDto,
 } from 'src/dtos/studio-project-import.dto.js';
-import { UUIDv7ParamDto } from 'src/validation.js';
 import { CacheControl, StorageFolder } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -26,12 +30,6 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
-import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
-import type {
-  RawOptionalLineage,
-  PublicationReceipt,
-  PublishedImportReceipt,
-} from 'src/utils/studio-import-publication.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import {
   assertOwnerRestoreFile,
@@ -39,6 +37,7 @@ import {
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_TEXT_LIMITS,
@@ -52,6 +51,7 @@ import { studioProjectResourceUses } from 'src/utils/studio-inventory.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 import { parseStudioLottieDependencies } from 'src/utils/studio-vector-dependencies.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 
 const IMPORT_FOLDER = 'studio-imports';
 /** An upload older than this in the incoming folder belongs to a request that never finished. */
@@ -75,7 +75,7 @@ export const mapStudioProjectImport = (item: StudioProjectImport | PublishedImpo
   checksum: item.checksum,
   externalReferences: item.externalReferences,
   createdAt: new Date(item.createdAt).toISOString(),
-  ...(item.processingProvenance ? { processingProvenance: item.processingProvenance } : {}),
+  ...(item.processingProvenance && { processingProvenance: item.processingProvenance }),
 });
 
 /** Explicit projection: operational paths, identities and declarations never enter public receipts. */
@@ -86,7 +86,7 @@ export const mapStudioImportPublication = (item: PublicationReceipt): StudioImpo
   createdAt: item.createdAt,
   expiresAt: item.expiresAt,
   cleanupPending: item.cleanupPending,
-  ...(item.imported ? { imported: mapStudioProjectImport(item.imported) } : {}),
+  ...(item.imported && { imported: mapStudioProjectImport(item.imported) }),
 });
 
 /**
@@ -250,7 +250,7 @@ export class StudioProjectImportService {
     query: StudioImportPublicationQueryDto,
   ): Promise<StudioImportPublicationPageDto> {
     const page = await this.publications.discover(auth, projectId, query.cursor, query.state);
-    return { items: page.items.map(mapStudioImportPublication), nextCursor: page.nextCursor };
+    return { items: page.items.map((receipt) => mapStudioImportPublication(receipt)), nextCursor: page.nextCursor };
   }
 
   async getPublication(auth: AuthDto, projectId: string, publicationId: string): Promise<StudioImportPublicationDto> {
