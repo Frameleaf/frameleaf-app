@@ -12,21 +12,24 @@ import { utils } from 'src/utils.js';
  * thumbnail on screen, and frames during a scroll of the timeline (long frames over 50 ms).
  */
 const LIBRARY_ITEMS = 200;
+// The bounded worker pipeline needs several minutes for 200 uploads on CI; preparation is not measured.
+const PREPARATION_TIMEOUT = 600_000;
 
 test.describe('performance report (FL-139)', () => {
   let admin: LoginResponseDto;
 
   test.beforeAll(async () => {
-    test.setTimeout(120_000);
+    test.setTimeout(PREPARATION_TIMEOUT);
+    const deadline = Date.now() + PREPARATION_TIMEOUT;
     utils.initSdk();
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     for (let index = 0; index < LIBRARY_ITEMS; index++) {
       await utils.createAsset(admin.accessToken);
     }
-    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
-    await utils.waitForQueueFinish(admin.accessToken, 'storageTemplateMigration');
-    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction', deadline - Date.now());
+    await utils.waitForQueueFinish(admin.accessToken, 'storageTemplateMigration', deadline - Date.now());
+    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration', deadline - Date.now());
   });
 
   test('records startup, first thumbnail and scrolling on the library', async ({ context, page }) => {
