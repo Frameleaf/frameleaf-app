@@ -192,6 +192,26 @@ describe(StorageService.name, () => {
   });
 
   describe('handleDeleteFiles', () => {
+    it('announces committed removal from its durable cleanup intent', async () => {
+      mocks.asset.getById.mockResolvedValue(undefined);
+      await sut.handleDeleteFiles({ files: [], removedAssetId: 'asset-id', removedAssetOwnerId: 'user-id' });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetDelete', { assetId: 'asset-id', userId: 'user-id' });
+    });
+
+    it('keeps deletion listeners fenced when the removal did not commit', async () => {
+      mocks.asset.getById.mockResolvedValue({ id: 'asset-id' } as never);
+      await sut.handleDeleteFiles({ files: [], removedAssetId: 'asset-id', removedAssetOwnerId: 'user-id' });
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('does not swallow a failed durable deletion announcement', async () => {
+      mocks.asset.getById.mockResolvedValue(undefined);
+      mocks.event.emit.mockRejectedValue(new Error('Announcement unavailable'));
+      await expect(
+        sut.handleDeleteFiles({ files: [], removedAssetId: 'asset-id', removedAssetOwnerId: 'user-id' }),
+      ).rejects.toThrow('Announcement unavailable');
+    });
+
     // The repository owns the unlink so the reference count and the delete stay
     // inside one advisory-locked transaction; these mocks stand in for that
     // decision. Whether the count itself is correct is a repository concern.
