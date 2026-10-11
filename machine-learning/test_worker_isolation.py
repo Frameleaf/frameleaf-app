@@ -57,6 +57,11 @@ def test_isolated_compose_preserves_peers_and_excludes_server_secrets(tmp_path: 
     assert set(config["services"]["frameleaf-server"]["networks"]) == {"ml-inference", "default"}
     assert not worker.get("ports")
     assert not staging.get("ports")
+    assert worker["security_opt"] == ["no-new-privileges:true"]
+    assert staging["security_opt"] == ["no-new-privileges:true"]
+    assert "ALL" in worker["cap_drop"] and "ALL" in staging["cap_drop"]
+    if "rootless" in base:
+        assert worker["user"] == "1000:1000"
     assert worker["environment"]["MACHINE_LEARNING_MODEL_DOWNLOADS"] == "false"
     assert worker["environment"]["MACHINE_LEARNING_MODEL_TTL"] == "42"
     assert worker["environment"]["FRAMELEAF_ML_AUTH_TOKEN"] == "worker-fake"
