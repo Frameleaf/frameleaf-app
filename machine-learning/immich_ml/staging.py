@@ -98,7 +98,10 @@ def stage_model(model: InferenceModel, *, refresh: bool = False, rollback: bool 
                     except ModelUnavailableError:
                         pass
                     else:
+                        other_types = {kind.value for kind in ModelType} - {model.model_type.value}
                         for relative in cache_hashes(active):
+                            if Path(relative).parts[0] not in other_types:
+                                continue
                             destination = candidate / relative
                             if not destination.exists():
                                 destination.parent.mkdir(parents=True, exist_ok=True)

@@ -16,6 +16,7 @@ from immich_ml.main import load
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.florence_manifest import FLORENCE_MODELS
 from immich_ml.models.image_description import ImageDescriptionModel
+from immich_ml.models.nsfw_detection import NsfwDetectionModel
 from immich_ml.privacy import _download_client
 from immich_ml.schemas import ModelTask, ModelType
 from immich_ml.staging import RECEIPT, cache_hashes, stage_model, verify_staged
@@ -145,6 +146,29 @@ def test_empty_cache_can_be_staged(model: SyntheticModel) -> None:
     model.cache_dir.mkdir()
     stage_model(model)
     verify_staged(model.cache_dir)
+
+
+def test_refresh_does_not_restore_obsolete_paths_for_the_selected_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = NsfwDetectionModel("example/nsfw", cache_dir=tmp_path / "cache")
+
+    def acquire(repo: str, **kwargs: Any) -> None:
+        destination = Path(kwargs["local_dir"]) / layout
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+
+    layout, content = "onnx/model.onnx", b"old weights"
+    with patch("immich_ml.models.nsfw_detection.snapshot_download", side_effect=acquire):
+        stage_model(model)
+        layout, content = "model.onnx", b"new weights"
+        stage_model(model, refresh=True)
+    assert model.model_path == model.cache_dir / "model.onnx"
+    assert model.model_path.read_bytes() == b"new weights"
+    monkeypatch.setattr(settings, "model_downloads", False)
+    model.download()
+    stage_model(model, rollback=True)
+    assert model.model_path.read_bytes() == b"old weights"
 
 
 def test_refresh_preserves_unknown_previous_directory(model: SyntheticModel) -> None:
