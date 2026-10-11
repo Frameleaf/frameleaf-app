@@ -134,6 +134,13 @@ describe('studio engine manifest', () => {
     ).rejects.toMatchObject({ name: 'StudioEngineNotBuiltError' });
   });
 
+  it('requires protocol8 and refuses a held protocol7 build', async () => {
+    expect(STUDIO_FRAME_PROTOCOL_VERSION).toBe(8);
+    await expect(resolveStudioFrameManifest(async () => json({ ...manifest, protocolVersion: 7 }))).rejects.toThrow(
+      /protocol 7/,
+    );
+  });
+
   it('refuses another protocol and lets the loader refuse another engine revision', async () => {
     await expect(resolveStudioFrameManifest(async () => json({ ...manifest, protocolVersion: 99 }))).rejects.toThrow(
       /protocol 99/,
@@ -172,6 +179,68 @@ describe('studio editor frame (FL-88)', () => {
     await instance.dispose();
     expect(stage.querySelector('iframe')).toBeNull();
     expect(received.filter((message) => (message as { type: string }).type === 'dispose')).toHaveLength(1);
+  });
+
+  it('dispatches only well-formed scoped publication cancellation and returns public results', async () => {
+    const scope = {
+      userId: '0198a1c2-0000-7000-8000-00000000000a',
+      projectId: '0198a1c2-0000-7000-8000-0000000000aa',
+      graphVersion: 1,
+    };
+    const importId = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01';
+    const publicationId = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e02';
+    const result = {
+      status: 'already-published' as const,
+      receipt: {
+        importId,
+        publicationId,
+        state: 'published' as const,
+        createdAt: '',
+        expiresAt: '',
+        cleanupPending: true,
+      },
+    };
+    const host = { ...services(), cancelProjectImportPublication: vi.fn(async () => result) };
+    const frame = fakeFrame();
+    const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+      newStage(),
+      context(),
+      host,
+    );
+    const results: unknown[] = [];
+    const port = frame.port()!;
+    port.addEventListener('message', (event) => results.push(event.data));
+    port.postMessage({
+      type: 'service',
+      callId: 51,
+      name: 'cancelProjectImportPublication',
+      args: [importId, publicationId, scope],
+    });
+    port.postMessage({
+      type: 'service',
+      callId: 52,
+      name: 'cancelProjectImportPublication',
+      args: [importId, publicationId, { ...scope, graphVersion: -1 }],
+    });
+    port.postMessage({
+      type: 'service',
+      callId: 53,
+      name: 'cancelProjectImportPublication',
+      args: [importId, '../foreign', scope],
+    });
+    await tick();
+    expect(host.cancelProjectImportPublication).toHaveBeenCalledExactlyOnceWith(importId, publicationId, scope);
+    expect(results).toContainEqual({ type: 'service-result', callId: 51, ok: true, value: result });
+    for (const callId of [52, 53])
+      expect(results).toContainEqual(
+        expect.objectContaining({
+          type: 'service-result',
+          callId,
+          ok: false,
+          error: 'Invalid publication cancellation',
+        }),
+      );
+    await instance.dispose();
   });
 
   it('answers the frame’s service calls with the host services', async () => {
