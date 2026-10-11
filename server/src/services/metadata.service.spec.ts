@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
 import type { LockableProperty } from 'src/database.js';
 import type { QueueExecution } from 'src/queue/types.js';
+import { LANDMARK_ICON_PACK } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
@@ -12,6 +13,7 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   ExifOrientation,
+  ImmichEnvironment,
   ImmichWorker,
   JobName,
   JobStatus,
@@ -27,6 +29,7 @@ import { PersonFactory } from 'test/factories/person.factory.js';
 import { videoInfoStub } from 'test/fixtures/media.stub.js';
 import { tagStub } from 'test/fixtures/tag.stub.js';
 import { getForMetadataExtraction, getForSidecarWrite } from 'test/mappers.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -115,6 +118,11 @@ describe(MetadataService.name, () => {
   });
 
   describe('onBootstrapEvent', () => {
+    beforeEach(() => {
+      mocks.map.init.mockResolvedValue(false);
+      mocks.map.installLandmarkIcons.mockResolvedValue(false);
+    });
+
     it('should pause and resume queue during init', async () => {
       mocks.job.pause.mockResolvedValue();
       mocks.map.init.mockResolvedValue(false);
@@ -134,6 +142,46 @@ describe(MetadataService.name, () => {
       await sut.onBootstrap();
 
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LandmarkMatchAll });
+    });
+
+    // FL-355: the brand icon pack is fetched whole, in the background, by a production server
+    it('should fetch the landmark icon pack without waiting for it', async () => {
+      let finish = () => {};
+      mocks.map.installLandmarkIcons.mockReturnValue(new Promise((resolve) => (finish = () => resolve(true))));
+
+      await sut.onBootstrap();
+
+      await vi.waitFor(() => expect(mocks.map.installLandmarkIcons).toHaveBeenCalledWith(LANDMARK_ICON_PACK));
+      finish();
+    });
+
+    it('should start without the landmark icon pack when it cannot be fetched', async () => {
+      mocks.map.installLandmarkIcons.mockRejectedValue(new Error('offline'));
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      await vi.waitFor(() => expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('offline')));
+    });
+
+    // The fetch runs after the start returns, so each case waits a moment before looking.
+    const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+    it('should not fetch the landmark icon pack outside production', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ environment: ImmichEnvironment.Testing }));
+
+      await sut.onBootstrap();
+      await settled();
+
+      expect(mocks.map.installLandmarkIcons).not.toHaveBeenCalled();
+    });
+
+    it('should not fetch the landmark icon pack with reverse geocoding off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ reverseGeocoding: { enabled: false } });
+
+      await sut.onBootstrap();
+      await settled();
+
+      expect(mocks.map.installLandmarkIcons).not.toHaveBeenCalled();
     });
   });
 
