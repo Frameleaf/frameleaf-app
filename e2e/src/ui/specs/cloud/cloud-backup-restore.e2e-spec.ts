@@ -169,7 +169,8 @@ test.describe('Frameleaf Cloud backup run controls', () => {
   });
 
   test('pauses, resumes and cancels a backup run on the Cloud backup page', async ({ page }) => {
-    await page.goto(backupPage);
+    // A backup run is controlled on Backup › Cloud Backup (FL-362); Restore only lists what to bring back.
+    await page.goto('/user-settings?area=backups&section=cloud');
     const controls = page.getByRole('group', { name: 'Cloud backup controls', exact: true });
     await controls.getByRole('button', { name: 'Pause' }).click();
     await expect(controls.getByRole('button', { name: 'Resume' })).toBeVisible();
