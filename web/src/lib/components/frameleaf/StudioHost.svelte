@@ -163,6 +163,7 @@
     draftHeld = false,
     onOpenActivity,
     onExportBundle,
+    onImportRetention,
     onExport,
     onRename,
     mode = 'basic',
@@ -239,6 +240,7 @@
      * person owns a saved project, the one case the server exports; otherwise there is no button.
      */
     onExportBundle?: () => void;
+    onImportRetention?: () => void;
     /**
      * Opens the video export dialog (FL-106 server, `Studio.jsx` Export). Passed only for the owner of
      * a saved project this instance may write, the one case the server exports.
@@ -946,16 +948,21 @@
         </Button>
       {/if}
 
-      {#if editorUp && onExportBundle && !accessLost}
+      {#if !accessLost && ((editorUp && onExportBundle) || (projectAvailable && onImportRetention))}
         <!-- Rare actions live here, so the header keeps one primary button at every width. -->
         <Menu label={$t('more')} align="end">
           {#snippet trigger()}
             <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} />
           {/snippet}
-          <MenuItem onSelect={onExportBundle}>
-            <Icon icon={mdiPackageVariantClosed} size={ICON_SIZE.md} />
-            {$t('frameleaf_studio_bundle_export_action')}
-          </MenuItem>
+          {#if projectAvailable && onImportRetention}
+            <MenuItem onSelect={onImportRetention}>Import receipts</MenuItem>
+          {/if}
+          {#if editorUp && onExportBundle}
+            <MenuItem onSelect={onExportBundle}>
+              <Icon icon={mdiPackageVariantClosed} size={ICON_SIZE.md} />
+              {$t('frameleaf_studio_bundle_export_action')}
+            </MenuItem>
+          {/if}
         </Menu>
       {/if}
     </div>

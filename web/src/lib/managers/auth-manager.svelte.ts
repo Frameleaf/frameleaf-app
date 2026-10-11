@@ -11,6 +11,7 @@ import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
+import { retireStudioImportSessions } from '$lib/frameleaf/studio/import-retention';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
@@ -66,6 +67,9 @@ class AuthManager {
   async refresh() {
     try {
       const [user, preferences] = await Promise.all([getMyUser(), getMyPreferences()]);
+      if (this.#user && this.#user.id !== user.id) {
+        retireStudioImportSessions();
+      }
       this.#preferences = withoutLockedRuleIds(preferences);
       this.#user = user;
 
@@ -102,6 +106,9 @@ class AuthManager {
   }
 
   setUser(user: UserAdminResponseDto) {
+    if (this.#user && this.#user.id !== user.id) {
+      retireStudioImportSessions();
+    }
     this.#user = user;
   }
 
@@ -115,6 +122,7 @@ class AuthManager {
   }
 
   async logout() {
+    retireStudioImportSessions();
     let redirectUri = Route.login();
 
     try {
@@ -143,6 +151,7 @@ class AuthManager {
   }
 
   reset() {
+    retireStudioImportSessions();
     this.#user = undefined;
     this.#preferences = undefined;
   }

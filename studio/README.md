@@ -657,3 +657,20 @@ cannot recover original surround planes; this patch does not change that durable
 cache contract. Hardware monitor limits, semantic source/output layouts, real
 decoder/encoder/mux round trips, latency and per-browser acceptance remain open.
 Focused synthetic PCM/source tests, typechecking and builds do not close those gates.
+
+## Retained Anime4K completion source (FL-111)
+
+Patch `0132-anime4k-retained-provenance.patch` passes the admitted Anime4K worker result through
+its service and the shared generated-media persistence helper. The adapter holds the generated ID
+and writes an ephemeral `retention.json` before source bytes; completion submission follows source,
+thumbnail, metadata and project association on the captured workspace and editor scope. The generic
+observer and retry path never submit held IDs, even when a suppression record is malformed.
+Other generated-media callers retain their existing behavior and omit lineage.
+
+The processing record is historical client-reported evidence. Its FPS, dimensions, frame count,
+codec and variant come from the actual completion result; no weight digest or `modelBinding` is
+inferred. The server alone hashes retained output bytes. This source change adds no model, rights
+approval or license grant; existing Freecut MIT attribution and resource-rights gates still apply.
+Source composition does not qualify inference, WebGPU, HDR, browser hardware, durable storage or
+release delivery. The publication writer remains unexposed and storage remains UNQUALIFIED until
+the complete coupled acceptance and deployment gates pass.
