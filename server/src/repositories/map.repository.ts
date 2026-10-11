@@ -112,7 +112,10 @@ export class MapRepository {
     // TODO move to service init
     const geocodingMetadata = await this.metadataRepository.get(SystemMetadataKey.ReverseGeocodingState);
     if (geocodingMetadata?.lastUpdate === geodataDate) {
-      return false;
+      // A database backup leaves the place pack out (it ships with the server), so a restored database has
+      // the geodata of this date and no places: put them back.
+      const place = await this.db.selectFrom('landmark').select('id').limit(1).executeTakeFirst();
+      return place ? false : this.importLandmarks();
     }
 
     await Promise.all([this.importGeodata(), this.importNaturalEarthCountries(), this.importLandmarks()]);
@@ -128,9 +131,9 @@ export class MapRepository {
 
   /**
    * Replaces the place pack (FL-352). Reverse geocoding does not depend on it, so a missing or unreadable
-   * pack is logged and skipped rather than stopping the worker.
+   * pack is logged and skipped rather than stopping the worker. Resolves to whether any place was imported.
    */
-  private async importLandmarks() {
+  private async importLandmarks(): Promise<boolean> {
     const { resourcePaths } = this.configRepository.getEnv();
     try {
       const landmarks: Insertable<LandmarkTable>[] = [];
@@ -165,8 +168,10 @@ export class MapRepository {
         }
       });
       this.logger.log(`Imported ${landmarks.length} landmarks`);
+      return landmarks.length > 0;
     } catch (error) {
       this.logger.warn(`Landmarks were not imported: ${error}`);
+      return false;
     }
   }
 

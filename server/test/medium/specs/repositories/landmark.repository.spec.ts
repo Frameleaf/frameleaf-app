@@ -65,7 +65,7 @@ const setup = (landmarks: string, landmarkIcons = '/nonexistent/landmark-icons')
   const sut = new MapRepository(config as never, undefined as never, logger as never, db as never);
   return {
     sut,
-    importPack: () => (sut as unknown as { importLandmarks: () => Promise<void> }).importLandmarks(),
+    importPack: () => (sut as unknown as { importLandmarks: () => Promise<boolean> }).importLandmarks(),
   };
 };
 
@@ -160,6 +160,41 @@ describe('landmark matching', () => {
     await expect(landmarksOf(towerAssetId)).resolves.toEqual(['Q243']);
   });
 
+  it('puts the places back after a restore, which brings the tables without their rows', async () => {
+    const assetId = await newAsset(inPark);
+    const landmarks = writePack([park, resort, tower]);
+    const dateFile = join(mkdtempSync(join(tmpdir(), 'geodata-date-')), 'geodata-date.txt');
+    writeFileSync(dateFile, '2026-10-01');
+    const logger = { setContext: () => {}, log: () => {}, warn: () => {} };
+    // The geodata of this date is already in, as it is in a database that has just been restored.
+    const metadata = { get: () => Promise.resolve({ lastUpdate: '2026-10-01' }) };
+    const withPack = (pack: string) =>
+      new MapRepository(
+        { getEnv: () => ({ resourcePaths: { geodata: { dateFile, landmarks: pack } } }) } as never,
+        metadata as never,
+        logger as never,
+        db as never,
+      );
+
+    await expect(withPack(landmarks).init()).resolves.toBe(false);
+
+    await db.deleteFrom('landmark_area').execute();
+    await db.deleteFrom('landmark').execute();
+    await expect(withPack('/nonexistent/landmarks.ndjson.gz').init()).resolves.toBe(false);
+    await expect(withPack(landmarks).init()).resolves.toBe(true);
+
+    await expect(db.selectFrom('landmark').select('id').orderBy('id').execute()).resolves.toEqual([
+      { id: 'Q1516525' },
+      { id: 'Q181185' },
+      { id: 'Q243' },
+    ]);
+    await expect(db.selectFrom('landmark_area').select('landmarkId').execute()).resolves.toEqual([
+      { landmarkId: 'Q181185' },
+    ]);
+    // The item's own matches came back with the backup and are still its matches.
+    await expect(landmarksOf(assetId)).resolves.toEqual(['Q1516525', 'Q181185']);
+  });
+
   it('knows which landmarks have a brand icon, and none without the icon pack', () => {
     const directory = mkdtempSync(join(tmpdir(), 'landmark-icons-'));
     writeFileSync(join(directory, 'icons.json'), JSON.stringify({ Q243: { background: '#102030', tile: true } }));
@@ -217,7 +252,7 @@ describe('landmark matching', () => {
   });
 
   it('skips a missing pack without failing', async () => {
-    await expect(setup('/nonexistent/landmarks.ndjson.gz').importPack()).resolves.toBeUndefined();
+    await expect(setup('/nonexistent/landmarks.ndjson.gz').importPack()).resolves.toBe(false);
     await expect(db.selectFrom('landmark').select('id').execute()).resolves.toHaveLength(3);
   });
 });
