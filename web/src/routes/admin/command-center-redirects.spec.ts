@@ -80,7 +80,7 @@ describe('old addresses of Command Center sections', () => {
     [
       '/admin/render-workers',
       () => renderWorkers({ url: at('/admin/render-workers') } as never),
-      '/user-settings?area=processing&section=render-workers',
+      '/user-settings?area=processing&section=computers',
     ],
     ['/admin/users', () => users({ url: at('/admin/users') } as never), '/user-settings?area=users&section=accounts'],
     [
@@ -129,13 +129,13 @@ describe('old addresses of Command Center sections', () => {
     await expect(load()).rejects.toMatchObject({ status: 307, location });
   });
 
-  it("opens Workers & endpoints for the old page's #workers anchor", async () => {
+  it("opens Computers for the old page's #workers anchor", async () => {
     const previous = `${location.pathname}${location.search}${location.hash}`;
     history.replaceState(null, '', '/admin/processing-destinations#workers');
     try {
       await expect(destinations({ url: at('/admin/processing-destinations') } as never)).rejects.toMatchObject({
         status: 307,
-        location: '/user-settings?area=processing&section=workers',
+        location: '/user-settings?area=processing&section=computers',
       });
     } finally {
       history.replaceState(null, '', previous);

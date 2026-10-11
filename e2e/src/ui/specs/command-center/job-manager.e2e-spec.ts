@@ -3,10 +3,10 @@ import { BrowserContext, expect, test } from '@playwright/test';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 
 /**
- * The Command Center's Job manager (FL-71), the design template's `JobsManager.jsx` in Compute &
- * jobs → Queues & jobs, against a mocked server: the header and metrics, one queue with its
- * pause/resume through the review, the queue concurrency dialog on the settings draft, a
- * maintenance job through the create dialog and its review, and the old queue addresses.
+ * Background work (FL-364; the Job manager of FL-71) in Computers & background work, against a
+ * mocked server: the status sentence and the work listed under "Now", one kind of work with its
+ * pause/resume through the review, Light / Balanced / Fast and the numbers behind them on the
+ * settings draft, a task through "More tasks" and its review, and the old queue addresses.
  */
 type Statistics = {
   active: number;
@@ -149,27 +149,26 @@ test.describe('Job manager', () => {
     requests = await setupQueueMocks(context);
   });
 
-  test('shows the header, metrics and queues, and pauses and resumes a queue through its review', async ({ page }) => {
+  test('opens on the status and what is happening now, and pauses and resumes one kind of work through its review', async ({
+    page,
+  }) => {
     await page.goto(jobManager);
 
-    await expect(page.locator('.jobs-manager').getByText('Compute & jobs', { exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeVisible();
-    for (const action of ['Concurrency', 'Enrichment tasks', 'Create job']) {
-      await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
-    }
-    const metric = (label: string) => page.locator('.jm-metric', { hasText: label }).locator('strong');
-    await expect(metric('Processing')).toHaveText('2');
-    await expect(metric('Waiting & scheduled')).toHaveText('5');
-    await expect(metric('Failed')).toHaveText('3');
+    await expect(page.getByRole('heading', { level: 1, name: 'Background work' })).toBeVisible();
+    const status = page.getByRole('region', { name: 'Background work status' });
+    await expect(status.getByRole('heading', { name: '3 things failed' })).toBeVisible();
+    await expect(status.getByText(/Finding faces: 3 failed\./)).toBeVisible();
+    const now = page.getByRole('region', { name: 'Now' });
+    await expect(now.getByText('Making thumbnails')).toBeVisible();
+    await expect(now.getByText('7 left')).toBeVisible();
+    // Work with nothing to do is behind "Show all kinds of work".
+    await expect(now.getByText('Housekeeping')).toBeHidden();
+    await now.getByText('Show all 3 kinds of work').click();
+    await expect(now.getByText('Housekeeping')).toBeVisible();
 
-    // The queue's name opens it; the row no longer carries a second "Open" button (finding 78).
-    await page
-      .getByRole('region', { name: 'Processing queues' })
-      .getByRole('button', { name: /^Thumbnails/ })
-      .first()
-      .click();
+    await now.getByRole('link', { name: 'Manage Making thumbnails' }).first().click();
     await page.waitForURL('**/user-settings?area=processing&section=queues&queue=thumbnail-generation');
-    await expect(page.getByRole('heading', { level: 1, name: 'Thumbnails' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Making thumbnails' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     const pause = page.getByRole('dialog', { name: 'Pause queue' });
@@ -189,11 +188,11 @@ test.describe('Job manager', () => {
 
   test('removes failed records through the review, which asks for an acknowledgement', async ({ page }) => {
     await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Finding faces' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Remove failed records', exact: true }).click();
-    const review = page.getByRole('dialog', { name: 'Remove failed records' });
-    const confirm = review.getByRole('button', { name: 'Remove failed records', exact: true });
+    await page.getByRole('button', { name: 'Stop trying these', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Stop trying these' });
+    const confirm = review.getByRole('button', { name: 'Stop trying these', exact: true });
     await expect(confirm).toBeDisabled();
     await review.getByRole('checkbox').check();
     await confirm.click();
@@ -203,7 +202,7 @@ test.describe('Job manager', () => {
 
   test("names a failed job's account and worker, and retries failed jobs through the review", async ({ page }) => {
     await page.goto(`${jobManager}&queue=face-detection&tab=failed`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Finding faces' })).toBeVisible();
 
     const table = page.getByRole('table');
     await expect(table.getByRole('columnheader', { name: 'Account' })).toBeVisible();
@@ -211,10 +210,10 @@ test.describe('Job manager', () => {
     await expect(table.getByText('Ada Lovelace')).toBeVisible();
     await expect(table.getByText('Frameleaf Cloud')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Retry failed', exact: true }).click();
-    const review = page.getByRole('dialog', { name: 'Retry failed jobs' });
+    await page.getByRole('button', { name: 'Try again', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Try again' });
     await expect(review.getByText(/Put failed jobs back in the queue/)).toBeVisible();
-    await review.getByRole('button', { name: 'Retry failed jobs' }).click();
+    await review.getByRole('button', { name: 'Try again' }).click();
 
     await expect.poll(() => requests.retries).toEqual(['faceDetection']);
   });
@@ -225,7 +224,7 @@ test.describe('Job manager', () => {
     await page.goto(
       `${jobManager}&queue=face-detection&tab=failed&scope=${encodeURIComponent('account:a0000000-0000-4000-8000-000000000001')}`,
     );
-    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Finding faces' })).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Account filter' })).toHaveCount(0);
 
     await expect.poll(() => requests.ownerQueries).toContain('a0000000-0000-4000-8000-000000000001');
@@ -233,25 +232,30 @@ test.describe('Job manager', () => {
     await expect(page.getByRole('tab', { name: /Failed\s*0/ })).toBeVisible();
   });
 
-  test('edits queue concurrency in the settings draft', async ({ page }) => {
+  test('sets how hard the server works with Light, Balanced and Fast, in the settings draft', async ({ page }) => {
     await page.goto(jobManager);
 
-    await page.getByRole('button', { name: 'Concurrency', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Queue concurrency' });
-    const thumbnails = dialog.getByLabel('Thumbnails simultaneous jobs');
-    await expect(thumbnails).toHaveValue('3');
-    await thumbnails.fill('4');
-    await expect(dialog.getByText('Pending', { exact: true })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Review 1 pending settings' }).click();
+    const effort = page.getByRole('group', { name: 'How hard this server works in the background' });
+    await expect(effort.getByRole('button', { name: 'Balanced' })).toHaveAttribute('aria-pressed', 'true');
+    await effort.getByRole('button', { name: 'Fast' }).click();
+    await expect(page.getByText(/Fast: up to 6 thumbnails, 2 videos and 4 of each AI task at a time\./)).toBeVisible();
 
-    // The concurrency change joins the one settings review.
-    await expect(page.getByRole('dialog', { name: 'Review settings changes' })).toBeVisible();
+    // The numbers behind the choice; changing one makes them the server's own ("Custom").
+    await page.getByText('Set each kind of work yourself').click();
+    const thumbnails = page.getByLabel('Making thumbnails at the same time');
+    await expect(thumbnails).toHaveValue('6');
+    await thumbnails.fill('5');
+    await expect(page.getByText('Custom', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Your own numbers: up to 5 thumbnails/)).toBeVisible();
+    await page.getByRole('button', { name: 'Back to Balanced' }).click();
+    await expect(thumbnails).toHaveValue('3');
+    await expect(effort.getByRole('button', { name: 'Balanced' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('creates a maintenance job through the dialog and its review', async ({ page }) => {
+  test('runs a task from "More tasks" through its review', async ({ page }) => {
     await page.goto(jobManager);
 
-    await page.getByRole('button', { name: 'Create job', exact: true }).click();
+    await page.getByRole('button', { name: 'More tasks', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Create a maintenance job' });
     await dialog.getByRole('searchbox', { name: 'Search maintenance jobs' }).fill('unused tags');
     await dialog.getByRole('radio', { name: /Clean up unused tags/ }).check();
@@ -267,7 +271,7 @@ test.describe('Job manager', () => {
   test('runs enrichment tasks through their review and keeps a description reminder', async ({ page }) => {
     await page.goto(jobManager);
 
-    await page.getByRole('button', { name: 'Enrichment tasks', exact: true }).click();
+    await page.getByRole('button', { name: /^Redo descriptions/ }).click();
     let dialog = page.getByRole('dialog', { name: 'Enrichment tasks' });
     await dialog.getByLabel('When').selectOption('later');
     await dialog.getByRole('button', { name: 'Review task' }).click();
@@ -294,7 +298,7 @@ test.describe('Job manager', () => {
       .toEqual({ path: '/api/system-config/smart-albums/reevaluate', body: { kind: 'food' } });
 
     // A hardware preset joins the settings review instead of saving.
-    await page.getByRole('button', { name: 'Enrichment tasks', exact: true }).click();
+    await page.getByRole('button', { name: /^Redo descriptions/ }).click();
     dialog = page.getByRole('dialog', { name: 'Enrichment tasks' });
     await dialog.getByLabel('Task').selectOption('hardware');
     await dialog.getByLabel('Acceleration').selectOption('cuda');
@@ -305,11 +309,11 @@ test.describe('Job manager', () => {
   test('opens the old queue addresses in the Job manager', async ({ page }) => {
     await page.goto('/admin/queues');
     await page.waitForURL('**/user-settings?area=processing&section=queues');
-    await expect(page.getByRole('heading', { level: 1, name: 'Queues & jobs' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Background work' })).toBeVisible();
 
     await page.goto('/admin/queues/face-detection');
     await page.waitForURL('**/user-settings?area=processing&section=queues&queue=face-detection');
-    await expect(page.getByRole('heading', { level: 1, name: 'Face detection' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Finding faces' })).toBeVisible();
 
     await page.goto('/admin/jobs-status');
     await page.waitForURL('**/user-settings?area=processing&section=queues');

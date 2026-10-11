@@ -607,7 +607,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'job.*.concurrency',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte',
+    file: 'src/lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte',
     evidence: '?.concurrency',
   },
   {
