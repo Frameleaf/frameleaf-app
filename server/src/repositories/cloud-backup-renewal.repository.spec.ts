@@ -440,10 +440,9 @@ describe('temporary backup capability storage integration', () => {
       {
         mkdirSync: (path: string) => mkdirSync(path, { recursive: true }),
         checkFileExists: (path: string) =>
-          access(path).then(
-            () => true,
-            () => false,
-          ),
+          access(path)
+            .then(() => true)
+            .catch(() => false),
         unlink: (path: string) => rm(path),
         rename,
       } as never,
