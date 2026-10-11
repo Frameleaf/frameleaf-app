@@ -302,6 +302,36 @@ test.describe('Command Center settings', () => {
     await expect(page.getByText(/test email has been sent/i)).toHaveCount(0);
   });
 
+  // FL-379: this server is not linked to a Frameleaf account, so signing in with Google or Microsoft
+  // is explained, never offered, and the server refuses to start one. Gmail keeps its app password.
+  test('email delivery says why sign-in needs a linked server and refuses to start one', async ({ page }) => {
+    await page.goto(notificationsUrl);
+    const providers = page.getByRole('group', { name: 'Which email should Frameleaf send from?' });
+
+    for (const [tile, who] of [
+      [/^Gmail/, 'Google'],
+      [/^Microsoft/, 'Microsoft'],
+    ] as const) {
+      await providers.getByRole('button', { name: tile }).click();
+      await expect(page.getByText(`Signing in with ${who} needs a Frameleaf account`)).toBeVisible();
+      await expect(page.getByRole('button', { name: `Sign in with ${who}`, exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Link this server' })).toBeVisible();
+    }
+
+    await providers.getByRole('button', { name: /^Gmail/ }).click();
+    await page.getByRole('button', { name: 'Use an app password instead' }).click();
+    await expect(page.getByRole('textbox', { name: 'Email address' })).toBeVisible();
+
+    const headers = { Authorization: `Bearer ${admin.accessToken}` };
+    const state = await page.request.get('/api/admin/notifications/mail-connection', { headers });
+    expect(await state.json()).toMatchObject({ available: false, providers: [], connection: null, signIn: 'none' });
+    const start = await page.request.post('/api/admin/notifications/mail-connection/start', {
+      headers,
+      data: { provider: 'gmail' },
+    });
+    expect(start.status()).toBe(400);
+  });
+
   // FL-71 (FL-66): a save in one tab makes another tab's overlapping draft stale, with the conflict banner.
   test('another tab with an overlapping draft shows the stale banner after a save', async ({ context, page }) => {
     const before = await readConfig(admin);
