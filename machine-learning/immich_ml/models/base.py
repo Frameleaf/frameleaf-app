@@ -64,6 +64,15 @@ class InferenceModel(ABC):
             self.session = session
 
     def download(self) -> None:
+        if not settings.model_downloads:
+            from immich_ml.staging import verify_staged
+
+            # Semantic masks have their own pinned, offline snapshot verifier.
+            if self.model_task != ModelTask.SEMANTIC_MASK:
+                verify_staged(self.cache_dir)
+            if not self.cached:
+                raise ModelUnavailableError("Model is not staged; stop inference and run the model-staging command")
+            return
         if not self.cached:
             model_type = self.model_type.replace("-", " ")
             log.info(f"Downloading {model_type} model '{self.model_name}' to {self.model_path}. This may take a while.")
@@ -113,7 +122,7 @@ class InferenceModel(ABC):
                 cache_dir=self.cache_dir,
                 local_dir=self.cache_dir,
                 endpoint=endpoint,
-                # A Hugging Face token only ever goes to huggingface.co (see model_source_token).
+                # Intentional credentials are bound to this source; saved logins are never inherited.
                 token=model_source_token(),
                 **snapshot_kwargs,
             )

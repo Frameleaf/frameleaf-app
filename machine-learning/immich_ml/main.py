@@ -547,7 +547,9 @@ async def load(model: InferenceModel) -> InferenceModel:
     except ModelUnavailableError as error:
         # A missing model is a configuration problem; clearing the cache and retrying cannot fix it.
         raise HTTPException(503, str(error)) from error
-    except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile):
+    except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:
+        if not settings.model_downloads:
+            raise HTTPException(503, "Staged model failed to load; repair it with the model-staging command") from error
         log.warning(f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache.")
         model.clear_cache()
         return await run(_load, model)

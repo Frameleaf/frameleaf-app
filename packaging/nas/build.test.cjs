@@ -79,7 +79,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
   try {
     for (const name of INSTALL_FILES) {
       let body = fs.readFileSync(path.join(__dirname, '../../docker', name), 'utf8');
-      if (name.startsWith('docker-compose')) {
+      if (['docker-compose.yml', 'docker-compose.rootless.yml'].includes(name)) {
         const pinned = new RegExp(`${database.replaceAll('.', '\\.')}@sha256:[a-f0-9]{64}`, 'g');
         assert(pinned.test(body), `${name} must retain a pinned production PostgreSQL image`);
         body = body.replace(pinned, `${database}@${digest(8)}`);
