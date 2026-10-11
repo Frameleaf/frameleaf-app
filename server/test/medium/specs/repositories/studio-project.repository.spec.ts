@@ -422,6 +422,7 @@ describe(StudioProjectRepository.name, () => {
       try {
         const timeout = Date.now() + 5000;
         while (!waiting && Date.now() < timeout) {
+          await sql`SELECT pg_stat_clear_snapshot()`.execute(blocker);
           const { rows } = await sql<{ waiting: boolean }>`
             select exists (
               select 1 from pg_stat_activity
