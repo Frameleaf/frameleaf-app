@@ -69,7 +69,8 @@ describe('canonical complete closed native sources', () => {
         const reader = new FileReader(); reader.onload = () => resolve(reader.result as ArrayBuffer); reader.onerror = reject; reader.readAsArrayBuffer(source.blob)
       })
       expect(unzipSync(new Uint8Array(bytes))).toEqual(before)
-      expect(files).toEqual(before)
+      expect(Object.keys(files).sort()).toEqual(Object.keys(before).sort())
+      for (const [path, bytes] of Object.entries(files)) expect(Array.from(bytes)).toEqual(Array.from(before[path]!))
     })
     it(`v${version} refuses an invalid nested selection before dedup can hide it`, async () => {
       const ctx = context()
@@ -107,14 +108,17 @@ describe('canonical complete closed native sources', () => {
   for (const text of ['{"v":"5.7","v":"5.8","layers":[]}', '{"v":"5.7","layers":[],"assets":[{"p":"https://unowned.invalid/image"}]}']) {
     it('refuses malformed/unsupported content and zeroes owned partial decode allocations', async () => {
       const ctx = context(), zeroed: Uint8Array[] = []
-      const fill = Uint8Array.prototype.fill
-      vi.spyOn(Uint8Array.prototype, 'fill').mockImplementation(function (this: Uint8Array, value: number, ...args: [number?, number?]) {
-        const result = fill.call(this, value, ...args)
-        if (value === 0) zeroed.push(this)
-        return result
-      })
+      // jsdom's Node TextEncoder allocates in a different Uint8Array realm.
+      for (const prototype of new Set([Uint8Array.prototype, Object.getPrototypeOf(new TextEncoder().encode('')) as Uint8Array])) {
+        const fill = prototype.fill
+        vi.spyOn(prototype, 'fill').mockImplementation(function (this: Uint8Array, value: number, ...args: [number?, number?]) {
+          const result = fill.call(this, value, ...args)
+          if (value === 0) zeroed.push(this)
+          return result
+        })
+      }
       vi.mocked(call).mockResolvedValue(result(ctx, { 'animation.json': new TextEncoder().encode(text) }))
-      await expect(load(ctx)).rejects.toThrow()
+      await expect(load(ctx)).rejects.toThrow('LOTTIE_ARCHIVE_REFUSED')
       expect(zeroed.length).toBeGreaterThanOrEqual(2)
       expect(zeroed.every((bytes) => bytes.every((byte) => byte === 0))).toBe(true)
     })
