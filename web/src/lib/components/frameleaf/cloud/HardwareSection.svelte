@@ -1,24 +1,30 @@
 <script lang="ts">
   /**
-   * Settings → Compute & jobs → Hardware & GPU (FL-159, handoff §3.2; prototype HardwareCheck.jsx).
-   * Checks the GPU each container can use — the server container (video playback and export) and the
-   * ML container (AI features) — and explains set-up problems in plain words with a copy-ready docker
-   * compose fix per vendor. Detection runs inside each container (server probe, ML `/hardware`
-   * probe); nothing here is a sample. "Run a short benchmark" measures this hardware and the model
-   * sliders then show adjusted times.
+   * Computers & background work → Graphics card check (FL-364; before it Hardware & GPU, FL-159),
+   * after the approved prototype (`settings-v2/computers/Hardware.jsx`). The answer is the first
+   * line: no graphics card, working, not being used, or AI features not running. Then what this
+   * server can do on its own, as outcomes. The fact grids, the model names and the set-up fixes are
+   * kept, closed until someone needs them.
+   *
+   * Detection runs inside each container (server probe, ML `/hardware` probe); nothing here is a
+   * sample. AI features that do not answer count as needing attention, and nothing is promised
+   * about what they can run until they do.
    */
-  import './frameleaf-cloud.css';
-  import './gpu-models.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import {
-    benchmarkFor,
-    formatDateTime,
-    hardwareConsequences,
-    localCapability,
-    workerFromHardware,
-    workloadNameKey,
-    type WorkloadRowId,
-  } from '$lib/frameleaf/cloud-ml';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Coverage, { type CoverageRow } from '$lib/components/frameleaf/settings/kit/Coverage.svelte';
+  import Facts, { type Fact } from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
+  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { hardwareConsequences, workerFromHardware } from '$lib/frameleaf/cloud-ml';
+  import { applyDescriptionHardwarePreset } from '$lib/frameleaf/enrichment-tasks';
   import {
     composeFixes,
     fixStepKey,
@@ -29,99 +35,317 @@
     type ComposeFixId,
     type FixValues,
   } from '$lib/frameleaf/gpu-model-catalog';
-  import { Route } from '$lib/route';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
+  import {
+    cloudOnlyChoices,
+    isAiWork,
+    runsHere,
+    WORK_KINDS,
+    workKindNameKey,
+    type HereAnswer,
+    type WorkKind,
+  } from '$lib/frameleaf/work-places';
+  import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
   import {
     getHardwareCheck,
+    getMachineLearningHardware,
+    getRenderWorkerCompatibility,
+    MachineLearningHardwareAcceleration,
     runHardwareBenchmark,
     runHardwareCheck,
     type HardwareCheckResponseDto,
     type HardwareContainerCheckDto,
-    type HardwareGpuFactsDto,
     type HardwareWorkloadBenchmarkDto,
+    type RenderWorkerCompatibilityResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
-    mdiAlertOutline,
-    mdiCheckCircleOutline,
+    mdiAlertCircleOutline,
+    mdiChip,
     mdiContentCopy,
+    mdiCreation,
+    mdiDesktopTowerMonitor,
     mdiExpansionCard,
-    mdiLifebuoy,
-    mdiProgressClock,
+    mdiMovieOpenOutline,
+    mdiPlus,
     mdiRefresh,
-    mdiSourceBranch,
     mdiSpeedometer,
-    mdiWrenchOutline,
   } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { locale, t, type Translations } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   let check = $state<HardwareCheckResponseDto | null>(null);
+  let compatibility = $state<RenderWorkerCompatibilityResponseDto | null>();
   let loadError = $state(false);
-  let busy = $state<'check' | 'benchmark' | null>(null);
-  let notice = $state('');
+  let busy = $state<'check' | 'benchmark' | 'recommend' | null>(null);
+  let said = $state('');
+  const draft = getSystemConfigDraft();
 
-  onMount(async () => {
+  /** What Studio can run now. Unreadable is not "no": the Studio row then says it can't tell. */
+  const readCompatibility = async () => {
     try {
-      check = await getHardwareCheck();
-    } catch (error) {
-      loadError = true;
-      handleError(error, $t('frameleaf_hardware_error_load'));
-    }
-  });
-
-  const run = async (kind: 'check' | 'benchmark') => {
-    busy = kind;
-    notice = '';
-    const hadIssues = (check?.issues.length ?? 0) > 0;
-    try {
-      check = kind === 'check' ? await runHardwareCheck() : await runHardwareBenchmark();
-      notice =
-        kind === 'benchmark'
-          ? $t('frameleaf_hardware_benchmark_done')
-          : check.issues.length > 0 && hadIssues
-            ? $t('frameleaf_hardware_check_same_problem')
-            : $t('frameleaf_hardware_check_done');
-    } catch (error) {
-      handleError(error, $t('frameleaf_hardware_error_run'));
-    } finally {
-      busy = null;
+      return (await getRenderWorkerCompatibility()) ?? null;
+    } catch {
+      return null;
     }
   };
+  const load = async () => {
+    loadError = false;
+    try {
+      [check, compatibility] = await Promise.all([getHardwareCheck(), readCompatibility()]);
+    } catch {
+      loadError = true;
+    }
+  };
+  onMount(() => void load());
 
   const worker = $derived(workerFromHardware(check));
-  const benchmark = $derived(benchmarkFor(check));
   const found = $derived((check?.issues ?? []).map((id) => problemById(id)).filter((problem) => !!problem));
   /** Set-up problems to fix; a limit of the card (`note`) is shown as a note instead. */
   const issues = $derived(found.filter((problem) => !problem.note));
   const notes = $derived(found.filter((problem) => problem.note));
   /** One fix per snippet: the values the check found (a group number, a PCI path) make it copy-ready. */
   const fixes = $derived.by(() => {
-    const entries = new Map<string, { id: ComposeFixId; values: FixValues }>();
+    const entries = new Map<string, { id: ComposeFixId; values: FixValues; symptoms: string[] }>();
     for (const problem of issues) {
       if (!problem.fix) {
         continue;
       }
       const values = check?.findings?.find((finding) => finding.id === problem.id) ?? {};
-      const yaml = fixYaml(problem.fix, values) ?? '';
-      entries.set(`${problem.fix}:${yaml}`, { id: problem.fix, values });
+      const key = `${problem.fix}:${fixYaml(problem.fix, values) ?? ''}`;
+      const entry = entries.get(key) ?? { id: problem.fix, values, symptoms: [] as string[] };
+      entry.symptoms.push(problem.symptom);
+      entries.set(key, entry);
     }
     return [...entries.values()];
   });
-  const status = $derived(
-    issues.length > 0
-      ? { key: 'frameleaf_hardware_status_attention', tone: 'warning' }
-      : worker.gpu
-        ? { key: 'frameleaf_hardware_status_gpu', tone: 'ok' }
-        : { key: 'frameleaf_hardware_status_processor', tone: 'muted' },
+
+  /** AI features do not answer: this counts as needing attention, and nothing about them is claimed. */
+  const aiDown = $derived(!!check && !check.ml.reachable);
+  type Kind = 'ai-down' | 'setup' | 'working' | 'none';
+  const kind = $derived<Kind>(
+    aiDown ? 'ai-down' : issues.length > 0 ? 'setup' : worker.gpu || worker.serverGpu ? 'working' : 'none',
   );
 
-  /** First sentence as the heading, the rest as the explanation. */
-  const splitFirst = (text: string) => {
-    const index = text.indexOf('. ');
-    return index === -1 ? [text.replace(/\.$/, ''), ''] : [text.slice(0, index), text.slice(index + 2)];
+  const when = (value: string) =>
+    new Date(value).toLocaleString($locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const number = (value: number) => value.toLocaleString($locale, { maximumFractionDigits: 1 });
+
+  const hero = $derived.by(() => {
+    if (!check) {
+      return;
+    }
+    const checked = when(check.checkedAt);
+    switch (kind) {
+      case 'ai-down': {
+        return {
+          tone: 'warn' as const,
+          icon: mdiAlertCircleOutline,
+          title: $t('frameleaf_gpucheck_ai_down'),
+          body: $t('frameleaf_gpucheck_ai_down_body', {
+            values: { video: check.server.reachable && check.server.test?.ok ? 'yes' : 'no', when: checked },
+          }),
+        };
+      }
+      case 'setup': {
+        return {
+          tone: 'warn' as const,
+          icon: mdiAlertCircleOutline,
+          title: $t('frameleaf_gpucheck_setup'),
+          body: $t('frameleaf_gpucheck_setup_body', { values: { when: checked } }),
+        };
+      }
+      case 'working': {
+        return {
+          tone: 'good' as const,
+          icon: mdiExpansionCard,
+          title: $t('frameleaf_gpucheck_working'),
+          body: $t('frameleaf_gpucheck_working_body', {
+            values: {
+              card: (worker.gpu ?? worker.serverGpu)?.name ?? '',
+              what: worker.gpu && worker.serverGpu ? 'both' : worker.serverGpu ? 'video' : 'ai',
+              when: checked,
+            },
+          }),
+        };
+      }
+      default: {
+        return {
+          tone: 'good' as const,
+          icon: mdiChip,
+          title: $t('frameleaf_gpucheck_none'),
+          body: $t('frameleaf_gpucheck_none_body', { values: { when: checked } }),
+        };
+      }
+    }
+  });
+
+  /** A container's own problems, so one side can be fine while the other is not reached. */
+  const hasIssue = (container: 'server' | 'ml') =>
+    (check?.findings ?? []).some((finding) => finding.container === container && !problemById(finding.id)?.note);
+  const descriptionsPerHour = $derived(
+    check?.benchmark?.workloads?.find((row) => row.workload === 'descriptions' && row.perHour !== null)?.perHour,
+  );
+  const coverage = $derived.by((): CoverageRow[] => {
+    if (!check) {
+      return [];
+    }
+    const speed = check.benchmark?.transcodeSpeed ?? check.server.test?.value ?? null;
+    const video: CoverageRow = {
+      icon: mdiMovieOpenOutline,
+      name: $t('frameleaf_gpucheck_video'),
+      detail: $t('frameleaf_gpucheck_video_detail'),
+      ...(check.server.reachable
+        ? hasIssue('server')
+          ? {
+              tone: 'warn',
+              value: $t('frameleaf_gpucheck_on_processor_for_now'),
+              note: $t('frameleaf_gpucheck_not_reached'),
+            }
+          : {
+              tone: worker.serverGpu ? 'good' : 'off',
+              value: worker.serverGpu ? $t('frameleaf_gpucheck_on_card') : $t('frameleaf_gpucheck_on_processor'),
+              note:
+                speed === null
+                  ? $t('frameleaf_gpucheck_not_measured')
+                  : $t('frameleaf_gpucheck_video_speed', { values: { speed: number(speed) } }),
+            }
+        : {
+            tone: 'warn',
+            value: $t('frameleaf_gpucheck_not_answering'),
+            note: $t('frameleaf_gpucheck_nothing_checked'),
+          }),
+    };
+    const ai: CoverageRow = {
+      icon: mdiCreation,
+      name: $t('frameleaf_gpucheck_ai'),
+      detail: $t('frameleaf_gpucheck_ai_detail'),
+      ...(aiDown
+        ? {
+            tone: 'warn',
+            value: $t('frameleaf_gpucheck_not_answering'),
+            note: $t('frameleaf_gpucheck_nothing_checked'),
+          }
+        : hasIssue('ml')
+          ? {
+              tone: 'warn',
+              value: $t('frameleaf_gpucheck_on_processor_for_now'),
+              note: $t('frameleaf_gpucheck_not_reached'),
+            }
+          : {
+              tone: worker.gpu ? 'good' : 'off',
+              value: worker.gpu ? $t('frameleaf_gpucheck_on_card') : $t('frameleaf_gpucheck_on_processor'),
+              note:
+                descriptionsPerHour === undefined || descriptionsPerHour === null
+                  ? $t('frameleaf_gpucheck_not_measured')
+                  : $t('frameleaf_gpucheck_ai_speed', { values: { count: Math.round(descriptionsPerHour) } }),
+            }),
+    };
+    return [video, ai];
+  });
+
+  const run = async (action: 'check' | 'benchmark') => {
+    busy = action;
+    said = '';
+    const before = kind;
+    try {
+      check = action === 'check' ? await runHardwareCheck() : await runHardwareBenchmark();
+      compatibility = (await readCompatibility()) ?? compatibility;
+      said =
+        action === 'benchmark'
+          ? $t('frameleaf_gpucheck_said_measured')
+          : kind === 'ai-down' && before === 'ai-down'
+            ? $t('frameleaf_gpucheck_said_ai_same')
+            : kind === 'setup' && before === 'setup'
+              ? $t('frameleaf_gpucheck_said_same')
+              : $t('frameleaf_gpucheck_said_done');
+    } catch {
+      said = $t('frameleaf_gpucheck_run_failed');
+    } finally {
+      busy = null;
+    }
   };
+
+  // ---- what this server can do ---------------------------------------------------------------------
+
+  const ANSWER_KEYS: Record<HereAnswer, Translations> = {
+    works: 'frameleaf_gpucheck_works',
+    slow: 'frameleaf_gpucheck_slow',
+    no: 'frameleaf_gpucheck_no',
+    unknown: 'frameleaf_gpucheck_unknown',
+  };
+  const ANSWER_TONES: Record<HereAnswer, KitTone> = { works: 'good', slow: 'good', no: 'warn', unknown: 'off' };
+  const LIGHT: readonly WorkKind[] = ['search', 'faces', 'ocr'];
+  const can = $derived(
+    WORK_KINDS.map((work) => {
+      const answer = runsHere(work, { check, compatibility });
+      const measured = check?.benchmark?.workloads?.find((row) => row.workload === work && row.perHour !== null);
+      const parts: string[] = [];
+      if (answer === 'unknown') {
+        parts.push(
+          isAiWork(work) && aiDown ? $t('frameleaf_gpucheck_help_unknown_ai') : $t('frameleaf_gpucheck_help_unknown'),
+        );
+      } else if (work === 'render') {
+        parts.push($t(answer === 'works' ? 'frameleaf_gpucheck_help_export_yes' : 'frameleaf_gpucheck_help_export_no'));
+      } else if (answer === 'no') {
+        parts.push($t('frameleaf_gpucheck_help_needs_card'));
+      } else {
+        if (measured?.perHour) {
+          parts.push(
+            $t(
+              measured.unit === 'frame'
+                ? 'frameleaf_gpucheck_help_per_hour_frame'
+                : 'frameleaf_gpucheck_help_per_hour_photo',
+              { values: { count: Math.round(measured.perHour) } },
+            ),
+          );
+        } else if (LIGHT.includes(work) && !worker.gpu) {
+          parts.push($t('frameleaf_gpucheck_help_quick'));
+        } else {
+          parts.push($t(answer === 'works' ? 'frameleaf_gpucheck_help_card' : 'frameleaf_gpucheck_help_processor'));
+        }
+        if (answer === 'slow' && hasIssue('ml')) {
+          parts.push($t('frameleaf_gpucheck_help_after_fix'));
+        }
+        if (cloudOnlyChoices(work, check) > 0) {
+          parts.push($t('frameleaf_gpucheck_help_better_cloud'));
+        }
+      }
+      return { work, answer, help: parts.join(' ') };
+    }),
+  );
+  const needsHelp = $derived(can.some(({ answer }) => answer === 'no'));
+
+  // ---- tune and measure ----------------------------------------------------------------------------
+
+  /**
+   * "Use the recommended settings": the description settings that suit what the AI service reports
+   * it can use. They go into the settings draft, so every change is reviewed before it is saved.
+   */
+  const recommend = async () => {
+    if (!draft) {
+      return;
+    }
+    busy = 'recommend';
+    said = '';
+    try {
+      const { preferredAcceleration } = await getMachineLearningHardware({});
+      const added = applyDescriptionHardwarePreset(
+        draft.draft.machineLearning,
+        MachineLearningHardwareAcceleration.Auto,
+        preferredAcceleration,
+      );
+      said = $t(added ? 'frameleaf_gpucheck_recommended_added' : 'frameleaf_gpucheck_recommended_unavailable');
+    } catch {
+      said = $t('frameleaf_gpucheck_recommended_unavailable');
+    } finally {
+      busy = null;
+    }
+  };
+
+  // ---- set-up help ---------------------------------------------------------------------------------
 
   const BACKEND_KEY: Record<string, Translations> = {
     CUDA: 'frameleaf_hardware_backend_cuda',
@@ -132,19 +356,12 @@
     QSV: 'frameleaf_hardware_backend_qsv',
     CPU: 'frameleaf_hardware_backend_cpu',
   };
-
-  const containerStatus = (result: HardwareContainerCheckDto) => {
-    const gpu = result.backend !== 'CPU' && (result.vramGb ?? 0) > 0;
-    if (!result.reachable) {
-      return { key: 'frameleaf_hardware_container_unreachable', tone: 'warning' };
-    }
-    return gpu
-      ? { key: 'frameleaf_hardware_container_gpu', tone: 'ok' }
-      : result.test && !result.test.ok
-        ? { key: 'frameleaf_hardware_container_not_reached', tone: 'warning' }
-        : { key: 'frameleaf_hardware_container_processor', tone: 'muted' };
-  };
-
+  const yesNo = (value: boolean | null | undefined) =>
+    value === true
+      ? $t('frameleaf_hardware_fact_yes')
+      : value === false
+        ? $t('frameleaf_hardware_fact_no')
+        : $t('frameleaf_hardware_fact_unknown');
   const testText = (result: HardwareContainerCheckDto) => {
     const test = result.test;
     if (!result.reachable) {
@@ -166,21 +383,69 @@
       ? $t('frameleaf_hardware_test_embedding_failed', { values: { error: test.error ?? '' } })
       : $t('frameleaf_hardware_test_embedding', { values: { where, ms: test.value } });
   };
-
-  const workloadName = (workload: string) => $t(workloadNameKey(workload as WorkloadRowId));
-
-  const FACTS: Array<{ key: keyof HardwareGpuFactsDto; label: Translations }> = [
-    { key: 'present', label: 'frameleaf_hardware_fact_present' },
-    { key: 'visible', label: 'frameleaf_hardware_fact_visible' },
-    { key: 'usable', label: 'frameleaf_hardware_fact_usable' },
+  const grid = (result: HardwareContainerCheckDto): Fact[] => [
+    { label: $t('frameleaf_gpucheck_fact_maker'), value: result.vendor ?? $t('frameleaf_gpucheck_fact_none') },
+    { label: $t('frameleaf_gpucheck_fact_model'), value: result.model ?? '—' },
+    {
+      label: $t('frameleaf_gpucheck_fact_memory'),
+      value: result.vramGb ? $t('frameleaf_hardware_memory_value', { values: { gb: result.vramGb } }) : '—',
+      detail: $t('frameleaf_gpucheck_fact_memory_detail'),
+    },
+    { label: $t('frameleaf_gpucheck_fact_driver'), value: result.driver ?? '—' },
+    {
+      label: $t('frameleaf_gpucheck_fact_through'),
+      value: $t(BACKEND_KEY[result.backend]),
+      detail: $t('frameleaf_gpucheck_fact_through_detail'),
+    },
+    { label: $t('frameleaf_gpucheck_fact_present'), value: yesNo(result.gpu?.present) },
+    {
+      label: $t('frameleaf_gpucheck_fact_visible'),
+      value: yesNo(result.gpu?.visible),
+      detail: $t('frameleaf_gpucheck_fact_visible_detail'),
+    },
+    { label: $t('frameleaf_gpucheck_fact_usable'), value: yesNo(result.gpu?.usable) },
+    { label: $t('frameleaf_gpucheck_fact_test'), value: testText(result) },
   ];
-  const factText = (value: boolean | null | undefined) =>
-    value === true
-      ? $t('frameleaf_hardware_fact_yes')
-      : value === false
-        ? $t('frameleaf_hardware_fact_no')
-        : $t('frameleaf_hardware_fact_unknown');
-
+  /** The model each kind of work can run here: an answer for whoever looks after the server. */
+  const models = $derived(
+    aiDown
+      ? []
+      : hardwareConsequences(worker, null)
+          .filter((row) => row.heaviest)
+          .map((row) => ({
+            label: $t(workKindNameKey(row.workload)),
+            value: row.heaviest!.item.name,
+          })),
+  );
+  const measured = $derived.by((): Fact[] => {
+    const benchmark = check?.benchmark;
+    if (!benchmark) {
+      return [];
+    }
+    return [
+      ...(benchmark.embeddingMs === null
+        ? []
+        : [
+            {
+              label: $t('frameleaf_hardware_benchmark_embedding'),
+              value: $t('frameleaf_hardware_benchmark_ms', { values: { ms: benchmark.embeddingMs } }),
+            },
+          ]),
+      ...(benchmark.transcodeSpeed === null
+        ? []
+        : [
+            {
+              label: $t('frameleaf_hardware_benchmark_transcode'),
+              value: $t('frameleaf_hardware_benchmark_speed', { values: { speed: benchmark.transcodeSpeed } }),
+            },
+          ]),
+      // Each kind of work as it was measured, or why there is no figure for it.
+      ...(benchmark.workloads ?? []).map((row) => ({
+        label: $t(workKindNameKey(row.workload)),
+        value: throughputText(row),
+      })),
+    ];
+  });
   const throughputText = (row: HardwareWorkloadBenchmarkDto) => {
     if (row.unavailable) {
       if (row.unavailable === 'failed') {
@@ -208,275 +473,356 @@
     );
     return `${amount}. ${source}`;
   };
+
+  let copied = $state('');
+  const copy = async (key: string, text: string) => {
+    await copyToClipboard(text);
+    copied = key;
+  };
+  /** First sentence as the heading, the rest as the explanation. */
+  const splitFirst = (text: string) => {
+    const index = text.indexOf('. ');
+    return index === -1 ? [text.replace(/\.$/, ''), ''] : [text.slice(0, index), text.slice(index + 2)];
+  };
 </script>
-
-{#snippet facts(gpu: HardwareGpuFactsDto | undefined)}
-  {#each FACTS as fact (fact.key)}
-    <dt>{$t(fact.label)}</dt>
-    <dd data-fact={fact.key}>{factText(gpu?.[fact.key])}</dd>
-  {/each}
-{/snippet}
-
-{#snippet container(titleKey: Translations, purposeKey: Translations, result: HardwareContainerCheckDto)}
-  {@const state = containerStatus(result)}
-  <section class="hw-container" aria-label={$t(titleKey)}>
-    <header>
-      <div>
-        <h3>{$t(titleKey)}</h3>
-        <p>{$t(purposeKey)}</p>
-      </div>
-      <span class="fc-status" class:is-ok={state.tone === 'ok'} class:is-warning={state.tone === 'warning'}
-        >{$t(state.key as Translations)}</span
-      >
-    </header>
-    <dl class="fc-facts">
-      <dt>{$t('frameleaf_hardware_vendor')}</dt>
-      <dd>{result.vendor ?? $t('frameleaf_hardware_none_found')}</dd>
-      <dt>{$t('frameleaf_hardware_model')}</dt>
-      <dd>{result.model ?? '—'}</dd>
-      <dt>{$t('frameleaf_hardware_memory')}</dt>
-      <dd>{result.vramGb ? $t('frameleaf_hardware_memory_value', { values: { gb: result.vramGb } }) : '—'}</dd>
-      <dt>{$t('frameleaf_hardware_driver')}</dt>
-      <dd>{result.driver ?? '—'}</dd>
-      <dt>{$t('frameleaf_hardware_backend')}</dt>
-      <dd>{$t(BACKEND_KEY[result.backend])}</dd>
-      {@render facts(result.gpu)}
-    </dl>
-    <p class="hw-test" class:is-ok={result.test?.ok} class:is-bad={!result.test?.ok}>
-      <Icon icon={result.test?.ok ? mdiCheckCircleOutline : mdiAlertOutline} size="16" aria-hidden={true} />
-      <span>{testText(result)}</span>
-    </p>
-  </section>
-{/snippet}
 
 {#snippet fix(fixId: ComposeFixId, values: FixValues = {})}
   {@const entry = composeFixes[fixId]}
   {@const yaml = fixYaml(fixId, values)}
-  <div class="hw-fix">
-    <strong>{$t('frameleaf_hardware_fix_for', { values: { vendor: entry.title } })}</strong>
-    <ol>
-      {#each Array.from({ length: entry.steps }, (_, index) => index + 1) as step (step)}
-        <li>{$t(fixStepKey(fixId, step) as Translations)}</li>
-      {/each}
-    </ol>
-    {#if yaml}
-      <div class="hw-code">
-        <pre aria-label={$t('frameleaf_hardware_fix_code', { values: { vendor: entry.title } })}><code>{yaml}</code
-          ></pre>
-        <Button
-          label={$t('frameleaf_hardware_copy_fix', { values: { vendor: entry.title } })}
-          onclick={() => void copyToClipboard(yaml)}
-        >
-          <Icon icon={mdiContentCopy} size="16" aria-hidden={true} />
-          {$t('frameleaf_hardware_copy')}
-        </Button>
-      </div>
-    {/if}
-  </div>
+  <ol class="steps">
+    {#each Array.from({ length: entry.steps }, (_, index) => index + 1) as step (step)}
+      <li>{$t(fixStepKey(fixId, step) as Translations)}</li>
+    {/each}
+  </ol>
+  {#if yaml}
+    <div class="code">
+      <pre aria-label={$t('frameleaf_gpucheck_fix_lines')}><code>{yaml}</code></pre>
+      <Button
+        label={$t('frameleaf_gpucheck_copy_fix', { values: { maker: entry.title } })}
+        onclick={() => void copy(fixId, yaml)}
+      >
+        <Icon icon={mdiContentCopy} size="16" aria-hidden />
+        {$t('frameleaf_gpucheck_copy')}
+      </Button>
+    </div>
+  {/if}
 {/snippet}
 
-<div class="hw frameleaf-cloud">
-  {#if notice}
-    <p class="fc-banner" role="status">{notice}</p>
-  {/if}
-  <section class="fc-card fl-continuous-corners" aria-labelledby="hw-title">
-    <div class="fc-card-title">
-      <span class="fc-card-icon"><Icon icon={mdiExpansionCard} size="20" aria-hidden={true} /></span>
-      <div>
-        <h2 id="hw-title">{$t('frameleaf_hardware_title')}</h2>
-        <p>
-          {$t('frameleaf_hardware_description')}
-          {#if check}
-            {$t('frameleaf_hardware_last_checked', { values: { date: formatDateTime(check.checkedAt, $locale) } })}
-          {/if}
-        </p>
-      </div>
-      {#if check}
-        <span class="fc-status" class:is-ok={status.tone === 'ok'} class:is-warning={status.tone === 'warning'}
-          >{$t(status.key as Translations)}</span
-        >
-      {/if}
+<KitPage>
+  {#if loadError && !check}
+    <InlineError message={$t('frameleaf_gpucheck_load_failed')} onRetry={load} />
+  {:else if !check || !hero}
+    <div class="loading" role="status" aria-busy="true">
+      <span class="sr-only">{$t('frameleaf_gpucheck_loading')}</span>
+      <Skeleton variant="block" height="168px" />
+      <Skeleton variant="block" height="240px" />
     </div>
-    {#if loadError && !check}
-      <p class="fc-refusal" role="alert">
-        <Icon icon={mdiAlertOutline} size="16" aria-hidden={true} />
-        {$t('frameleaf_hardware_error_load')}
-      </p>
-    {:else if !check}
-      <p class="hw-running fc-waiting" role="status">
-        <Icon icon={mdiProgressClock} size="16" aria-hidden={true} />
-        {$t('frameleaf_hardware_checking')}
-      </p>
-    {:else}
-      <div class="hw-containers">
-        {@render container('frameleaf_hardware_server_title', 'frameleaf_hardware_server_purpose', check.server)}
-        {@render container('frameleaf_hardware_ml_title', 'frameleaf_hardware_ml_purpose', check.ml)}
-      </div>
-      {#if worker.gpu && worker.gpu.vramGb <= 4}
-        <p class="fc-muted">{$t('frameleaf_hardware_small_gpu_note')}</p>
+  {:else}
+    <p class="said" role="status" class:is-empty={!said && !busy && !copied}>
+      {#if busy === 'check'}
+        {$t('frameleaf_gpucheck_checking')}
+      {:else if busy === 'benchmark'}
+        {$t('frameleaf_gpucheck_measuring')}
+      {:else if said}
+        {said}
+      {:else if copied}
+        {$t('frameleaf_gpucheck_copied')}
       {/if}
-      {#each notes as note (note.id)}
-        <p class="fc-muted">{$t(problemExplainKey(note.id) as Translations)}</p>
-      {/each}
-    {/if}
-    {#if busy}
-      <p class="hw-running fc-waiting" role="status">
-        <Icon icon={mdiProgressClock} size="16" aria-hidden={true} />
-        {busy === 'check' ? $t('frameleaf_hardware_checking') : $t('frameleaf_hardware_benchmarking')}
-      </p>
-    {/if}
-    <div class="fc-actions">
-      <Button disabled={!!busy} onclick={() => void run('check')}>
-        <Icon icon={mdiRefresh} size="16" aria-hidden={true} />
-        {$t('frameleaf_hardware_run_check')}
-      </Button>
-      <Button disabled={!!busy} onclick={() => void run('benchmark')}>
-        <Icon icon={mdiSpeedometer} size="16" aria-hidden={true} />
-        {$t('frameleaf_hardware_run_benchmark')}
-      </Button>
-    </div>
-    {#if check?.benchmark}
-      <dl class="fc-facts hw-benchmark">
-        <dt>{$t('frameleaf_hardware_benchmark_embedding')}</dt>
-        <dd>
-          {check.benchmark.embeddingMs === null
-            ? '—'
-            : $t('frameleaf_hardware_benchmark_ms', { values: { ms: check.benchmark.embeddingMs } })}
-        </dd>
-        <dt>{$t('frameleaf_hardware_benchmark_transcode')}</dt>
-        <dd>
-          {check.benchmark.transcodeSpeed === null
-            ? '—'
-            : $t('frameleaf_hardware_benchmark_speed', { values: { speed: check.benchmark.transcodeSpeed } })}
-        </dd>
-        <dt>{$t('frameleaf_hardware_benchmark_ran')}</dt>
-        <dd>{formatDateTime(check.benchmark.ranAt, $locale)}</dd>
-      </dl>
-      {#if check.benchmark.workloads?.length}
-        <h3 class="hw-subtitle">{$t('frameleaf_hardware_benchmark_workloads')}</h3>
-        <dl class="fc-facts hw-benchmark" aria-label={$t('frameleaf_hardware_benchmark_workloads')}>
-          {#each check.benchmark.workloads as row (row.workload)}
-            <dt>{workloadName(row.workload)}</dt>
-            <dd>{throughputText(row)}</dd>
-          {/each}
-        </dl>
-      {/if}
-    {/if}
-  </section>
+    </p>
 
-  {#if issues.length > 0}
-    <section class="fc-card fl-continuous-corners" aria-labelledby="hw-issues-title">
-      <div class="fc-card-title">
-        <span class="fc-card-icon"><Icon icon={mdiWrenchOutline} size="20" aria-hidden={true} /></span>
-        <div>
-          <h2 id="hw-issues-title">{$t('frameleaf_hardware_issues_title')}</h2>
-          <p>{$t('frameleaf_hardware_issues_description')}</p>
-        </div>
-      </div>
-      {#each issues as issue (issue.id)}
-        {@const [heading, rest] = splitFirst($t(problemExplainKey(issue.id) as Translations))}
-        <div class="hw-issue">
-          <h3><Icon icon={mdiAlertOutline} size="16" aria-hidden={true} /> {heading}.</h3>
-          {#if rest}<p>{rest}</p>{/if}
-          <p>{$t('frameleaf_hardware_issue_log')} <code>{issue.symptom}</code></p>
-        </div>
-      {/each}
-      {#each fixes as entry, index (index)}
-        {@render fix(entry.id, entry.values)}
-      {/each}
-      <p class="fc-muted">{$t('frameleaf_hardware_after_fix')}</p>
-    </section>
-  {/if}
-
-  {#if check?.workers?.length}
-    <section class="fc-card fl-continuous-corners" aria-labelledby="hw-workers-title">
-      <div class="fc-card-title">
-        <span class="fc-card-icon"><Icon icon={mdiExpansionCard} size="20" aria-hidden={true} /></span>
-        <div>
-          <h2 id="hw-workers-title">{$t('frameleaf_hardware_workers_title')}</h2>
-          <p>{$t('frameleaf_hardware_workers_description')}</p>
-        </div>
-      </div>
-      <div class="hw-containers">
-        {#each check.workers as entry (entry.id)}
-          <section class="hw-container" aria-label={entry.name}>
-            <header>
-              <div>
-                <h3>{entry.name}</h3>
-                <p>
-                  {$t(
-                    entry.kind === 'render'
-                      ? 'frameleaf_hardware_worker_render'
-                      : 'frameleaf_hardware_worker_restoration',
-                  )}
-                </p>
-              </div>
-              {#if !entry.reachable}
-                <span class="fc-status is-warning">{$t('frameleaf_hardware_worker_offline')}</span>
-              {/if}
-            </header>
-            <dl class="fc-facts">
-              <dt>{$t('frameleaf_hardware_model')}</dt>
-              <dd>{entry.model ?? '—'}</dd>
-              <dt>{$t('frameleaf_hardware_memory')}</dt>
-              <dd>{entry.vramGb ? $t('frameleaf_hardware_memory_value', { values: { gb: entry.vramGb } }) : '—'}</dd>
-              {@render facts(entry.gpu)}
-            </dl>
-          </section>
-        {/each}
-      </div>
-    </section>
-  {/if}
-
-  {#if check}
-    <section class="fc-card fl-continuous-corners" aria-labelledby="hw-effect-title">
-      <div class="fc-card-title">
-        <span class="fc-card-icon"><Icon icon={mdiSourceBranch} size="20" aria-hidden={true} /></span>
-        <div>
-          <h2 id="hw-effect-title">{$t('frameleaf_hardware_can_run_title')}</h2>
-          <p>{$t('frameleaf_hardware_can_run_description')}</p>
-        </div>
-      </div>
-      <dl class="fc-facts">
-        {#each hardwareConsequences(worker, benchmark) as row (row.workload)}
-          <dt>{workloadName(row.workload)}</dt>
-          <dd>
-            {#if row.heaviest}
-              {$t(row.heaviest.band === 'gpu' ? 'frameleaf_hardware_up_to_gpu' : 'frameleaf_hardware_up_to_cpu', {
-                values: { model: row.heaviest.item.name, slow: row.heaviest.speedClass === 'slow' ? 'yes' : 'no' },
-              })}
-            {:else}
-              {@const capability = localCapability(row.workload, worker)}
-              {$t(capability.key, { values: capability.values })}
-            {/if}
-            {#if row.cloudOnly > 0}
-              {$t('frameleaf_hardware_cloud_only_count', { values: { count: row.cloudOnly } })}
-            {/if}
-          </dd>
-        {/each}
-      </dl>
-      <div class="fc-actions">
-        <a class="fc-link" href={Route.systemProcessingDestinations()}>{$t('frameleaf_hardware_choose_models')}</a>
-      </div>
-    </section>
-  {/if}
-
-  <details class="fc-disclosure fl-continuous-corners">
-    <summary
-      ><Icon icon={mdiLifebuoy} size="16" aria-hidden={true} /> {$t('frameleaf_hardware_common_problems')}</summary
+    <Hero
+      tone={hero.tone}
+      icon={hero.icon}
+      title={hero.title}
+      body={hero.body}
+      label={$t('frameleaf_gpucheck_status_label')}
     >
-    <ul class="hw-problems">
-      {#each gpuProblems as problem (problem.id)}
-        {@const [heading, rest] = splitFirst($t(problemExplainKey(problem.id) as Translations))}
-        <li>
-          <strong>{problem.vendor} · {heading}.</strong>
-          <code>{problem.symptom}</code>
-          {#if rest}<span>{rest}</span>{/if}
-        </li>
+      {#snippet actions()}
+        <Button
+          variant={kind === 'ai-down' || kind === 'setup' ? 'primary' : 'default'}
+          disabled={!!busy}
+          onclick={() => void run('check')}
+        >
+          <Icon icon={mdiRefresh} size="16" aria-hidden />
+          {$t(kind === 'ai-down' ? 'frameleaf_gpucheck_try_again' : 'frameleaf_gpucheck_check_again')}
+        </Button>
+        {#if kind === 'ai-down'}
+          <a class="button" href={commandCenterUrl('intelligence', 'machine-learning')}>
+            {$t('frameleaf_gpucheck_turn_on_ai')}
+          </a>
+        {/if}
+      {/snippet}
+      <Coverage rows={coverage} />
+    </Hero>
+
+    {#if issues.length > 0}
+      <Section title={$t('frameleaf_gpucheck_fix')} description={$t('frameleaf_gpucheck_fix_description')}>
+        {#each issues as issue (issue.id)}
+          {@const [heading, rest] = splitFirst($t(problemExplainKey(issue.id) as Translations))}
+          <div class="problem">
+            <strong>{heading}.</strong>
+            {#if rest}<span>{rest}</span>{/if}
+          </div>
+        {/each}
+        {#each fixes as entry, index (index)}
+          <Advanced summary={$t('frameleaf_gpucheck_fix_show', { values: { maker: composeFixes[entry.id].title } })}>
+            {@render fix(entry.id, entry.values)}
+            {#each entry.symptoms as symptom (symptom)}
+              <p class="hint">{$t('frameleaf_gpucheck_fix_log', { values: { symptom } })}</p>
+            {/each}
+          </Advanced>
+        {/each}
+        <p class="hint">{$t('frameleaf_gpucheck_after_fix')}</p>
+      </Section>
+    {/if}
+
+    <Section title={$t('frameleaf_gpucheck_can')} description={$t('frameleaf_gpucheck_can_description')}>
+      {#snippet action()}
+        <a class="button" href={commandCenterUrl('processing', 'routing')}>
+          {$t('frameleaf_computers_page_routing')}
+        </a>
+      {/snippet}
+      {#each can as row (row.work)}
+        <Row label={$t(workKindNameKey(row.work))} help={row.help}>
+          <Pill tone={ANSWER_TONES[row.answer]}>{$t(ANSWER_KEYS[row.answer])}</Pill>
+        </Row>
       {/each}
-    </ul>
-    {#each Object.keys(composeFixes) as fixId (fixId)}
-      {@render fix(fixId as ComposeFixId)}
-    {/each}
-  </details>
-</div>
+      {#each notes as note (note.id)}
+        <p class="hint">{$t(problemExplainKey(note.id) as Translations)}</p>
+      {/each}
+      {#if worker.gpu && worker.gpu.vramGb <= 4}
+        <p class="hint">{$t('frameleaf_hardware_small_gpu_note')}</p>
+      {/if}
+      {#if needsHelp}
+        <div class="actions">
+          <a class="button" href={commandCenterUrl('processing', 'computers', { add: 'name' })}>
+            <Icon icon={mdiPlus} size="16" aria-hidden />{$t('frameleaf_gpucheck_add_computer')}
+          </a>
+          <a class="button" href={commandCenterUrl('cloud')}>{$t('frameleaf_gpucheck_use_cloud')}</a>
+        </div>
+      {/if}
+    </Section>
+
+    <Section title={$t('frameleaf_gpucheck_tune')}>
+      {#if draft && !aiDown}
+        <Row label={$t('frameleaf_gpucheck_recommended')} help={$t('frameleaf_gpucheck_recommended_help')}>
+          <Button disabled={!!busy} onclick={() => void recommend()}>
+            {$t('frameleaf_gpucheck_recommended_button')}
+          </Button>
+        </Row>
+      {/if}
+      <Row
+        label={$t('frameleaf_gpucheck_measure')}
+        help={check.benchmark
+          ? `${$t('frameleaf_gpucheck_measure_help')} ${$t('frameleaf_gpucheck_measure_last', {
+              values: { when: when(check.benchmark.ranAt) },
+            })}`
+          : $t('frameleaf_gpucheck_measure_help')}
+      >
+        <Button disabled={!!busy} onclick={() => void run('benchmark')}>
+          <Icon icon={mdiSpeedometer} size="16" aria-hidden />
+          {$t('frameleaf_gpucheck_measure_button')}
+        </Button>
+      </Row>
+    </Section>
+
+    {#if check.workers?.length}
+      <Section title={$t('frameleaf_gpucheck_others')} description={$t('frameleaf_gpucheck_others_description')}>
+        <ItemList>
+          {#each check.workers as entry (entry.id)}
+            <Item
+              icon={mdiDesktopTowerMonitor}
+              name={entry.name}
+              detail={$t(
+                entry.kind === 'render' ? 'frameleaf_gpucheck_other_studio' : 'frameleaf_gpucheck_other_restoration',
+              )}
+              tone={entry.reachable ? 'good' : 'warn'}
+              status={$t(entry.reachable ? 'frameleaf_gpucheck_other_ready' : 'frameleaf_gpucheck_other_silent')}
+              note={[
+                entry.model,
+                entry.vramGb ? $t('frameleaf_hardware_memory_value', { values: { gb: entry.vramGb } }) : undefined,
+              ]
+                .filter(Boolean)
+                .join(' · ') || undefined}
+            >
+              {#snippet action()}
+                <a class="button" href={commandCenterUrl('processing', 'computers')}>
+                  {$t('frameleaf_computers_page_computers')}
+                </a>
+              {/snippet}
+            </Item>
+          {/each}
+        </ItemList>
+      </Section>
+    {/if}
+
+    <Section title={$t('frameleaf_gpucheck_help_title')} description={$t('frameleaf_gpucheck_help_description')}>
+      <Advanced summary={$t('frameleaf_gpucheck_technical')}>
+        <p class="hint">{$t('frameleaf_gpucheck_technical_intro')}</p>
+        <h3 class="subhead">{$t('frameleaf_gpucheck_technical_video')}</h3>
+        <Facts rows={grid(check.server)} />
+        <h3 class="subhead">{$t('frameleaf_gpucheck_technical_ai')}</h3>
+        {#if aiDown}
+          <p class="hint">{$t('frameleaf_gpucheck_technical_ai_silent')}</p>
+        {:else}
+          <Facts rows={grid(check.ml)} />
+        {/if}
+        {#if models.length > 0}
+          <h3 class="subhead">{$t('frameleaf_gpucheck_technical_models')}</h3>
+          <Facts rows={models} />
+        {/if}
+        {#if measured.length > 0}
+          <h3 class="subhead">{$t('frameleaf_gpucheck_technical_measured')}</h3>
+          <Facts rows={measured} />
+        {/if}
+      </Advanced>
+      <Advanced summary={$t('frameleaf_gpucheck_problems')}>
+        <ul class="problems">
+          {#each gpuProblems as problem (problem.id)}
+            {@const [heading] = splitFirst($t(problemExplainKey(problem.id) as Translations))}
+            {@const yaml = problem.fix ? fixYaml(problem.fix) : null}
+            <li>
+              <div>
+                <strong>{problem.vendor}: {heading}.</strong>
+                <span>{$t('frameleaf_gpucheck_problem_log', { values: { symptom: problem.symptom } })}</span>
+              </div>
+              {#if yaml}
+                <Button
+                  label={$t('frameleaf_gpucheck_copy_fix', { values: { maker: `${problem.vendor}: ${heading}` } })}
+                  onclick={() => void copy(problem.id, yaml)}
+                >
+                  <Icon icon={mdiContentCopy} size="16" aria-hidden />
+                  {$t('frameleaf_gpucheck_copy')}
+                </Button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+        <p class="hint">{$t('frameleaf_gpucheck_after_fix')}</p>
+      </Advanced>
+    </Section>
+  {/if}
+</KitPage>
+
+<style>
+  .loading {
+    display: grid;
+    gap: var(--fl-space-6);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  a.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  a.button:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  /* What just happened, said where a screen reader hears it. It takes no room while it is empty. */
+  .said {
+    margin: 0;
+    padding: var(--fl-space-3) var(--fl-space-4);
+    font-size: var(--fl-font-callout);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .said.is-empty {
+    display: none;
+  }
+  .hint {
+    margin: 0;
+    padding: var(--fl-space-2) 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+  }
+  .hint:last-child {
+    padding-bottom: var(--fl-space-4);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0 var(--fl-space-6);
+    border-top: 1px solid var(--fl-border);
+  }
+  .problem {
+    display: grid;
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-3) 0;
+    font-size: var(--fl-font-callout);
+    border-top: 1px solid var(--fl-border);
+  }
+  .problem span {
+    color: var(--fl-muted);
+  }
+  .subhead {
+    margin: var(--fl-space-4) 0 var(--fl-space-2);
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+  }
+  .steps {
+    display: grid;
+    gap: var(--fl-space-2);
+    margin: 0;
+    padding: var(--fl-space-2) 0 var(--fl-space-3) var(--fl-space-5);
+    font-size: var(--fl-font-callout);
+  }
+  .code {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-3);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+  }
+  .code pre {
+    margin: 0;
+    overflow-x: auto;
+    font-size: var(--fl-font-micro);
+    line-height: 1.5;
+  }
+  .problems {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .problems li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-4);
+    padding: var(--fl-space-3) 0;
+    border-top: 1px solid var(--fl-border);
+  }
+  .problems li > div {
+    display: grid;
+    gap: var(--fl-space-1);
+    min-width: 0;
+    font-size: var(--fl-font-callout);
+  }
+  .problems li span {
+    color: var(--fl-muted);
+    overflow-wrap: anywhere;
+  }
+  @container kit (max-width: 620px) {
+    .code,
+    .problems li {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
