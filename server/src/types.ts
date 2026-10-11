@@ -1207,12 +1207,15 @@ export type FrameleafLicenseStore = {
 };
 
 /**
- * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentage
- * taken off the Frameleaf Cloud plans on a licensed server (never AI credit or extra backup).
+ * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentages
+ * taken off the Frameleaf Cloud plans (never AI credit or extra backup) by a Server licence
+ * (`licensedDiscountPercent`) and by an Individual licence (FL-369). An older Frameleaf Cloud
+ * publishes no `individualDiscountPercent`: its one rate is for both.
  */
 export type FrameleafPricing = {
   pricesVersion: string;
   licensedDiscountPercent: number;
+  individualDiscountPercent?: number;
   effectiveFrom: string;
 };
 

@@ -561,7 +561,7 @@ export enum SystemMetadataKey {
   FrameleafLicense = 'frameleaf-license',
   /**
    * The last valid plan pricing Frameleaf Cloud published on a heartbeat (prices version and the
-   * licensed-server plan discount), so a restart keeps it instead of the bundled snapshot.
+   * Server and Individual licence plan discounts), so a restart keeps it instead of the bundled snapshot.
    */
   FrameleafPricing = 'frameleaf-pricing',
   /**
