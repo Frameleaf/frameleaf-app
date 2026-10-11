@@ -30,7 +30,7 @@ it('edits LAN discovery in the shared draft, saves it against the revision and r
   );
   draft.store = store;
   render(ServerSettings);
-  const toggle = screen.getByRole('switch', { name: 'Local network discovery' });
+  const toggle = screen.getByRole('switch', { name: 'Let phones on your Wi-Fi find this server' });
   expect(toggle).toHaveAttribute('aria-checked', 'true');
   await fireEvent.click(toggle);
   expect(store.draft.server.lanDiscovery).toBe(false);
@@ -50,7 +50,7 @@ it('keeps the actual control disabled when configuration is managed by a file', 
   );
   draft.store = store;
   render(ServerSettings);
-  const toggle = screen.getByRole('switch', { name: 'Local network discovery' });
+  const toggle = screen.getByRole('switch', { name: 'Let phones on your Wi-Fi find this server' });
   expect(toggle).toBeDisabled();
   await fireEvent.click(toggle);
   expect(store.draft.server.lanDiscovery).toBe(true);

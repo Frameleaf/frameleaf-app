@@ -21,10 +21,16 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
-  import BackupDestinationsSection from '$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte';
+  import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
+  import ComputersLanding from '$lib/components/frameleaf/computers/ComputersLanding.svelte';
+  import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
+  import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
+  import ServerLanding from '$lib/components/frameleaf/settings/server/ServerLanding.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -35,15 +41,16 @@
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
     AREA_TILE_COLORS,
-    BACKUP_PAGES,
     backupPageFor,
     commandCenterUrl,
+    hasLandingPage,
     honoursScope,
     isBackupSection,
     presentedArea,
     presentedAreaForSection,
     directoryGroup,
     isAreaAvailable,
+    isPlainArea,
     isScreenArea,
     resolveSettingsArea,
     resolveSettingsSection,
@@ -169,8 +176,8 @@
       icon: mdiShieldCheckOutline,
     },
     processing: {
-      title: $t('frameleaf_settings_area_processing'),
-      description: $t('frameleaf_settings_area_processing_description'),
+      title: $t('frameleaf_computers_area'),
+      description: $t('frameleaf_computers_area_description'),
       icon: mdiDesktopTowerMonitor,
     },
     // FL-154: the template's Frameleaf Cloud area (settings-catalog.mjs:125-131).
@@ -231,10 +238,21 @@
     },
     history: {
       title: $t('frameleaf_settings_area_history'),
-      description: $t('frameleaf_settings_area_history_description'),
+      // A member sees only their own changes, and the description says so (FL-368).
+      description: settingsDraft
+        ? $t('frameleaf_settings_area_history_description')
+        : $t('frameleaf_words_history_description_own'),
       icon: mdiHistory,
     },
   });
+
+  /** A settings page as the navigation names it ("Server & updates › Updates"), for Change history. */
+  const pageTitleOf = (target: { area: SettingsAreaId; section?: string }) => {
+    const title = sections.find((section) => section.key === target.section)?.title;
+    return title && title !== areaCopy[target.area].title
+      ? `${areaCopy[target.area].title} › ${title}`
+      : areaCopy[target.area].title;
+  };
 
   const groupCopy: Record<SettingsGroupId, string> = $derived({
     command: $t('frameleaf_settings_group_command'),
@@ -296,7 +314,14 @@
    * of Backup (design review finding 66) and a repair tool opened from Library care stays there.
    */
   const area = $derived(careTool ? 'care' : presentedArea(addressArea, selected?.key));
-  const backupPage = $derived(area === 'backups' ? backupPageFor(addressArea, selected?.key) : undefined);
+  const backupPage = $derived(
+    area === 'backups'
+      ? backupPageFor(addressArea, selected?.key, {
+          section: page.url.searchParams.get('section'),
+          backupView: page.url.searchParams.get('backupView'),
+        })
+      : undefined,
+  );
   const areaDefinition = $derived(SETTINGS_AREAS.find((item) => item.id === area));
   /** The sections listed under the shown area: Backup's pages are listed only under Backup. */
   const areaSections = $derived(
@@ -312,9 +337,8 @@
     'accounts',
     'contents',
     'queues',
-    'workers',
+    'computers',
     'routing',
-    'render-workers',
     'cloud-processing',
     'hardware',
     // FL-155..FL-158: the Frameleaf Cloud pages draw their own cards (frameleaf-cloud.css:3-7).
@@ -332,32 +356,26 @@
     'repair',
   ];
   // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
-  // the overline names the area's group instead.
-  const breadcrumb = $derived(selected !== undefined && selected.title !== areaCopy[area].title);
-  // As in the template, the Users manager and the Job manager carry their own headings.
-  const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
+  // the overline names the area's group instead. Backup is one screen under one heading, whichever
+  // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
+  const titled = $derived(area === 'backups' || area === 'sharing' ? undefined : selected);
+  const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
+  // As in the template, the Users manager carries its own heading.
+  // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
+  const ownHeading = $derived(
+    area === 'users' || (area === 'processing' && selected?.key === 'queues' && page.url.searchParams.has('queue')),
+  );
 
   /** The navigation's pages under the current area: its sections, or the utility tools. */
   const utilityTools = $derived(utilityToolsFor(isAdmin));
   type NavPage = { key: string; title: string; area: SettingsAreaId; section?: string };
-  /** Backup's pages: off-site copies, then the schedule and the backups this account is offered. */
-  const backupPages = $derived(
-    BACKUP_PAGES.flatMap((item): NavPage[] => {
-      if (!item.section) {
-        return [{ key: item.id, title: $t('frameleaf_cc_backup_page_destinations'), area: item.area }];
-      }
-      const section = sections.find((candidate) => candidate.admin && candidate.key === item.section);
-      return section ? [{ key: item.id, title: section.title, area: item.area, section: item.section }] : [];
-    }),
-  );
   const children = $derived.by((): NavPage[] => {
     if (area === 'utilities') {
       return utilityTools.map((tool) => ({ key: tool.id, title: $t(tool.titleKey), area, section: tool.id }));
     }
-    if (area === 'backups') {
-      return backupPages;
-    }
-    if (area === 'libraries' || area === 'trash') {
+    // Backup's pages are side by side in the page itself, as in the prototype; an area with a landing
+    // page (FL-364) or a plain-words area (FL-368) lists its pages on its own landing page.
+    if (['libraries', 'trash', 'backups'].includes(area) || hasLandingPage(area) || isPlainArea(area)) {
       return [];
     }
     return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
@@ -394,13 +412,7 @@
     return rows;
   });
   const activeChild = $derived(
-    area === 'utilities'
-      ? utilityTool(page.url.searchParams.get('section'))?.id
-      : area === 'backups'
-        ? backupPage
-        : careTool
-          ? undefined
-          : selected?.key,
+    area === 'utilities' ? utilityTool(page.url.searchParams.get('section'))?.id : careTool ? undefined : selected?.key,
   );
 
   let query = $state('');
@@ -629,7 +641,9 @@
   // The page scrolls inside `.cc-main`, which the router does not reset: a new page starts at its top
   // (design review finding 71). Also covers Back and Forward.
   const pageKey = $derived(`${addressArea}:${selectedKey ?? ''}`);
-  const scrollKey = $derived(`${pageKey}:${addressArea === 'utilities' ? page.url.searchParams.get('section') : ''}`);
+  const scrollKey = $derived(
+    `${pageKey}:${addressArea === 'utilities' || addressArea === 'backups' ? page.url.searchParams.get('section') : ''}`,
+  );
   $effect(() => {
     void scrollKey;
     if (main) {
@@ -877,16 +891,19 @@
               {#if !ownHeading}
                 <header class="cc-page-heading">
                   <SettingsOverline>
-                    {#if selected && breadcrumb}
+                    {#if titled && breadcrumb && hasLandingPage(area)}
+                      <!-- The way back is the link under the heading, as in the prototype. -->
+                      {areaCopy[area].title}
+                    {:else if titled && breadcrumb}
                       <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
                       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
-                      {selected.title}
+                      {titled.title}
                     {:else}
                       {groupCopy[areaDefinition?.group ?? 'library']}
                     {/if}
                   </SettingsOverline>
-                  <h1>{selected?.title ?? areaCopy[area].title}</h1>
-                  <p>{selected?.subtitle ?? areaCopy[area].description}</p>
+                  <h1>{titled?.title ?? areaCopy[area].title}</h1>
+                  <p>{titled?.subtitle ?? areaCopy[area].description}</p>
                 </header>
               {/if}
               {#if tourNotice}
@@ -901,29 +918,16 @@
                   </button>
                 </div>
               {/if}
-              {#if area === 'backups' && backupPages.length > 1}
-                <!-- One Backup area: its pages side by side, wherever the rail is collapsed or closed. -->
-                <nav
-                  class="cc-subnav"
-                  aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy.backups.title } })}
-                >
-                  {#each backupPages as item (item.key)}
-                    <a
-                      href={commandCenterUrl(item.area, item.section)}
-                      aria-current={backupPage === item.key ? 'page' : undefined}>{item.title}</a
-                    >
-                  {/each}
-                </nav>
-              {/if}
               {#if area === 'overview'}
                 <CommandCenterOverview />
-              {:else if area === 'backups' && !selected}
-                <BackupDestinationsSection />
+              {:else if area === 'backups' && backupPage}
+                <BackupArea page={backupPage} />
               {:else if area === 'history'}
                 <SettingsChangeHistory
                   entries={settingsDraft ? history : undefined}
                   preferences={preferenceHistory}
                   ownName={authManager.user.name}
+                  pageTitle={pageTitleOf}
                   error={historyError || preferenceHistoryError}
                   onRetry={() => {
                     if (settingsDraft) {
@@ -936,11 +940,18 @@
                     ? $t('frameleaf_settings_history_empty_action')
                     : $t('frameleaf_settings_history_empty_preferences_action')}
                 />
+              {:else if hasLandingPage(area) && !selected}
+                <KitPage><ComputersLanding /></KitPage>
               {:else if selected}
                 <div class="cc-settings-content">
+                  {#if hasLandingPage(area) && !ownHeading}
+                    <div class="cc-back-to-area">
+                      <BackLink href={commandCenterUrl(area)} label={areaCopy[area].title} />
+                    </div>
+                  {/if}
                   <section
                     class="cc-section fl-continuous-corners"
-                    class:cc-manager={MANAGER_SECTIONS.includes(selected.key)}
+                    class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
                     {#if area === 'storage' && selected.key === 'trash'}
@@ -959,6 +970,12 @@
                     {/if}
                   </section>
                 </div>
+              {:else if area === 'notifications'}
+                <NotificationsLanding sections={areaSections} />
+              {:else if area === 'server'}
+                <ServerLanding sections={areaSections} />
+              {:else if area === 'preferences'}
+                <PreferencesLanding sections={areaSections} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />
@@ -1183,6 +1200,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /*
+   * A long area name ("Computers & background work") takes a second line in the open rail, as in the
+   * prototype, instead of being cut short. The collapsed rail hides labels altogether.
+   */
+  .command-center:not(.cc-collapsed) .area > span:not(.tile, .pending) {
+    white-space: normal;
+    text-wrap: balance;
+  }
   .cc-nav-children button:hover,
   .cc-nav-children button[aria-current='page'] {
     color: var(--fl-text);
@@ -1256,39 +1281,6 @@
   .cc-scope-fixed {
     margin: 0;
   }
-  /* Backup's pages, as one row of links under its heading. */
-  .cc-subnav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-1);
-    margin: 0 0 var(--fl-space-5);
-    padding: var(--fl-space-1);
-    width: fit-content;
-    max-width: 100%;
-    background: var(--fl-raised);
-    border-radius: var(--fl-radius-control);
-  }
-  .cc-subnav a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--fl-control-height-compact);
-    padding: 0 var(--fl-space-3);
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    text-decoration: none;
-    border-radius: var(--fl-radius-sm);
-    transition:
-      background-color var(--fl-motion-fast) var(--fl-ease),
-      color var(--fl-motion-fast) var(--fl-ease);
-  }
-  .cc-subnav a:hover {
-    color: var(--fl-text);
-  }
-  .cc-subnav a[aria-current='page'] {
-    color: var(--fl-text);
-    background: var(--fl-panel);
-    box-shadow: var(--fl-shadow-1);
-  }
   /* The heading takes focus when the page changes so it is announced; it is not a control. */
   .cc-main :global(h1[tabindex='-1']:focus) {
     outline: none;
@@ -1298,7 +1290,7 @@
     align-items: center;
     gap: 10px;
     width: min(410px, 55%);
-    padding: 5px 10px;
+    padding: 5px var(--fl-space-3);
     color: var(--fl-muted);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
@@ -1387,6 +1379,19 @@
   /* The ported forms still carry the legacy inset; keep them flush inside the card. */
   .cc-section :global(.ms-4) {
     margin-inline-start: 0;
+  }
+  /*
+   * They also space their rows with a 16px column gap and draw their own rules between them, from
+   * when a row had neither padding nor a divider. Each Setting row now carries both, so the gap
+   * doubled the space above every divider and the rules doubled the dividers. Rows sit flush
+   * against rows, as on the pages written for this layout; anything else keeps its gap.
+   */
+  .cc-section :global(.flex.flex-col.gap-4 > :is(.field, .group) + :is(.field, .group, .page-tools)),
+  .cc-section :global(.flex.flex-col.gap-4 > :is(.field, .group) + hr + :is(.field, .group, .page-tools)) {
+    margin-top: calc(-1 * var(--fl-space-4));
+  }
+  .cc-section :global(hr:has(+ :is(.field, .group, .page-tools))) {
+    display: none;
   }
   /* command-center.css `.cc-subtle`. */
   .cc-subtle {
@@ -1507,16 +1512,17 @@
     }
   }
   @media (max-width: 1000px) {
+    /* 16px between the breadcrumb and the scope line, so the two do not read as one sentence. */
     .cc-context-bar {
       flex-wrap: wrap;
-      gap: 10px;
+      gap: var(--fl-space-3) var(--fl-space-4);
     }
     .cc-search {
       flex: 1;
       min-width: 200px;
     }
     .cc-main {
-      padding: 20px;
+      padding: var(--fl-space-6);
     }
   }
   @media (max-width: 700px) {
@@ -1558,19 +1564,11 @@
       background: var(--fl-scrim);
       border: 0;
     }
-    .cc-subnav {
-      width: 100%;
-    }
-    .cc-subnav a {
-      flex: 1;
-      justify-content: center;
-      min-height: var(--fl-control-height);
-    }
     .area {
       min-height: 44px;
     }
     .cc-context-bar {
-      padding: 9px 14px;
+      padding: 9px var(--fl-space-4);
     }
     .cc-search {
       flex-basis: 100%;
@@ -1579,8 +1577,9 @@
     .cc-search kbd {
       display: none;
     }
+    /* The phone gutter the Library and Albums use. */
     .cc-main {
-      padding: 18px 14px;
+      padding: var(--fl-space-5) var(--fl-space-4) var(--fl-space-3);
     }
   }
 </style>

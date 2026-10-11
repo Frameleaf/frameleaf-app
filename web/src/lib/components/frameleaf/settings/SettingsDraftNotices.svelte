@@ -7,33 +7,13 @@
    * offers to keep the draft's values on the latest settings or to discard the draft.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { configPathLabel, reviewValue, type ReviewValue } from '$lib/frameleaf/system-config-draft';
+  import { settingLabel, settingValue } from '$lib/frameleaf/setting-words';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   let { store }: { store: SystemConfigDraftStore } = $props();
-
-  const describe = (value: ReviewValue) => {
-    switch (value.kind) {
-      case 'secret': {
-        return $t('frameleaf_settings_draft_value_secret');
-      }
-      case 'empty': {
-        return $t('frameleaf_settings_draft_value_empty');
-      }
-      case 'on': {
-        return $t('frameleaf_settings_draft_value_on');
-      }
-      case 'off': {
-        return $t('frameleaf_settings_draft_value_off');
-      }
-      case 'text': {
-        return value.text;
-      }
-    }
-  };
 
   const errorText = $derived.by(() => {
     const error = store.error;
@@ -112,10 +92,10 @@
         <p>{$t('frameleaf_settings_draft_conflict_count', { values: { count: store.conflicts.length } })}</p>
         <ul>
           {#each store.conflicts as conflict (conflict.path)}
-            {@const saved = describe(reviewValue(conflict.path, conflict.theirs))}
-            {@const yours = describe(reviewValue(conflict.path, conflict.mine))}
+            {@const saved = settingValue($t, 'server', conflict.path, conflict.theirs)}
+            {@const yours = settingValue($t, 'server', conflict.path, conflict.mine)}
             <li>
-              <strong>{configPathLabel(conflict.path)}</strong>
+              <strong>{settingLabel($t, 'server', conflict.path)}</strong>
               <span>{$t('frameleaf_settings_draft_conflict_saved_now', { values: { value: saved } })}</span>
               <span>{$t('frameleaf_settings_draft_conflict_yours', { values: { value: yours } })}</span>
             </li>

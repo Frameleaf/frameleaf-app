@@ -101,7 +101,7 @@
 
 {#if !editable}
   {#if as === 'h1'}
-    <h1 class="text">{value || placeholder}</h1>
+    <h1 class="text plain">{value || placeholder}</h1>
   {:else if value}
     <p class="text">{value}</p>
   {/if}
@@ -133,7 +133,7 @@
 {:else if as === 'h1'}
   <h1 class="text">
     <button type="button" class="trigger" aria-label={label} onclick={start}>
-      <span class:muted={!value}>{value || placeholder}</span>
+      <span class="label" class:muted={!value}>{value || placeholder}</span>
       <span class="pencil" aria-hidden="true"><Icon icon={mdiPencilOutline} size="16" /></span>
     </button>
   </h1>
@@ -152,8 +152,25 @@
     color: var(--fl-text);
   }
   h1.text {
+    /* In a header's title row the name gives way, not the row. */
+    min-inline-size: 0;
     font-size: 1.5rem;
     font-weight: 650;
+  }
+  /*
+   * A title stays on one line and is cut with an ellipsis only when its row is too narrow for it.
+   * Phones, where the row is short, let it run onto a second line instead.
+   */
+  @media (min-width: 701px) {
+    h1.plain,
+    h1 .label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    h1 .label {
+      min-inline-size: 0;
+    }
   }
   p.text {
     font-size: 0.875rem;
@@ -163,9 +180,10 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    max-inline-size: 100%;
-    padding: 0.125rem 0.25rem;
-    margin-inline-start: -0.25rem;
+    /* The start margin hangs the button outside its heading; that width is still the button's to use. */
+    max-inline-size: calc(100% + var(--fl-space-2));
+    padding: 0.125rem var(--fl-space-2);
+    margin-inline-start: calc(-1 * var(--fl-space-2));
     text-align: start;
     font: inherit;
     color: inherit;

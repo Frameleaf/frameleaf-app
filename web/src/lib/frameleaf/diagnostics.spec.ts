@@ -3,9 +3,27 @@ import { describe, expect, it } from 'vitest';
 import { buildDiagnostics, diagnosticsFileName } from './diagnostics';
 
 const config = {
-  oauth: { clientSecret: 'oauth-secret', clientSecretConfigured: true, issuerUrl: 'https://id.example' },
+  oauth: {
+    clientSecret: 'oauth-secret',
+    clientSecretConfigured: true,
+    issuerUrl: 'https://id.example',
+    tokenEndpointAuthMethod: 'private_key_jwt',
+  },
+  passwordLogin: { enabled: true },
   notifications: { smtp: { transport: { password: 'smtp-secret', passwordConfigured: true, host: 'mail' } } },
   logging: { enabled: true, level: 'log' },
+  frameleafCloud: { cloudBackup: { s3: { secretAccessKey: 'storage-secret', secretAccessKeyConfigured: true } } },
+  futureSettings: [
+    {
+      PASS_PHRASE: 'passphrase-sentinel',
+      'recovery-key': 'recovery-sentinel',
+      wrappingKey: 'wrapping-sentinel',
+      'PASS.WORD': 'password-sentinel',
+      keys: { 1: 'keyring-sentinel' },
+      recoveryVerified: true,
+      fingerprint: 'kept',
+    },
+  ],
 } as unknown as AdminConfigDto;
 
 describe('buildDiagnostics (FL-71)', () => {
@@ -32,10 +50,51 @@ describe('buildDiagnostics (FL-71)', () => {
 
   it('never carries a credential value', () => {
     const text = JSON.stringify(diagnostics);
-    for (const secret of ['oauth-secret', 'smtp-secret']) {
+    for (const secret of [
+      'oauth-secret',
+      'smtp-secret',
+      'storage-secret',
+      'passphrase-sentinel',
+      'recovery-sentinel',
+      'wrapping-sentinel',
+      'password-sentinel',
+      'keyring-sentinel',
+    ]) {
       expect(text).not.toContain(secret);
     }
     expect(diagnostics.settings.oauth.clientSecretConfigured).toBe(true);
+    expect(diagnostics.settings.frameleafCloud?.cloudBackup?.s3.secretAccessKeyConfigured).toBe(true);
+    expect(diagnostics.settings).toMatchObject({ futureSettings: [{ fingerprint: 'kept', recoveryVerified: true }] });
+    expect(JSON.stringify(config)).toContain('keyring-sentinel');
+  });
+
+  it('leaves out the mail account and any sign-in inside an address (FL-368)', () => {
+    const report = buildDiagnostics({
+      generatedAt,
+      about: {} as ServerAboutResponseDto,
+      version: { major: 3, minor: 2, patch: 0, prerelease: null },
+      features: {} as ServerFeaturesDto,
+      storage: {} as never,
+      queues: [],
+      config: {
+        notifications: {
+          smtp: {
+            from: 'Rivera family <rivera@example.test>',
+            replyTo: 'rivera@example.test',
+            transport: { host: 'smtp.example.test', username: 'rivera@example.test', port: 465 },
+          },
+        },
+        machineLearning: { urls: ['http://helper:secret@192.168.1.20:3003'] },
+        map: { lightStyle: 'https://user:pass@tiles.example.test/style.json' },
+      } as unknown as AdminConfigDto,
+    });
+    const text = JSON.stringify(report);
+    for (const piece of ['rivera', 'smtp.example.test', 'secret', 'user:pass']) {
+      expect(text).not.toContain(piece);
+    }
+    expect(report.settings.notifications.smtp.transport.port).toBe(465);
+    expect(report.settings.map.lightStyle).toBe('https://tiles.example.test/style.json');
+    expect(report.settings.machineLearning.urls).toEqual(['http://192.168.1.20:3003']);
   });
 
   it('describes the build, storage totals and queues', () => {
@@ -46,6 +105,13 @@ describe('buildDiagnostics (FL-71)', () => {
       build: { version: 'v3.2.0', sourceRef: 'main' },
       storage: { diskSizeRaw: 100, diskUseRaw: 10 },
       queues: [{ name: 'thumbnailGeneration', isPaused: false, statistics: { active: 1 } }],
+    });
+  });
+
+  it('keeps sign-in metadata useful', () => {
+    expect(diagnostics.settings).toMatchObject({
+      passwordLogin: { enabled: true },
+      oauth: { tokenEndpointAuthMethod: 'private_key_jwt' },
     });
   });
 

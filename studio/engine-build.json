@@ -624,7 +624,12 @@
       "path": "patches/0128-persisted-subtitle-discriminator.patch",
       "sha256": "814f21171d2100a1680365d2a9b7c9b57d1485330417367d6feda4dd4c211e0f",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0130-native-roll-transient-lock-cancellation.patch",
+      "sha256": "c8c57cf897e8e3ce40808ec3a3ff61532dc1f52bf3e2b16599a6da87e8d971d0",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     }
   ],
-  "sourceSha256": "da567b8bd88a028da3c498617e36e371b55c35444b6a1249ee8f69471cf8c327"
+  "sourceSha256": "6d1edf68bb2d67195f3cfa5a58b78fe1c36148069934efef3060962d199e645d"
 }

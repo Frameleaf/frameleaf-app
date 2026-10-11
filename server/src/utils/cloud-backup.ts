@@ -282,6 +282,8 @@ export const signingRegion = (endpoint: string, configured: string) => {
 export type CloudBackupManifestFile = {
   role: string;
   path: string;
+  /** Exact client-encrypted object address; absent in legacy SSE-C histories. */
+  objectKey?: string;
   sha256: string;
   size: number;
   mtime: string | null;
@@ -395,7 +397,7 @@ export const readManifestSection = <T>(section: unknown, schema: z.ZodType<T>): 
 /** The manifest written to `m/<ISO>.json.gz`: asset id → its files, plus profile images and the dump. */
 export type CloudBackupManifest = {
   format: typeof CLOUD_BACKUP_MANIFEST_FORMAT;
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   instanceId: string;
   createdAt: string;
   database: { key: string; sha256: string; size: number } | null;
@@ -505,3 +507,7 @@ export const runProgress = (result: CloudBackupRunResult) => {
     }
   }
 };
+
+/** Every restore/preview follows the exact authenticated manifest reference. */
+export const manifestFileObjectKey = (file: { sha256: string; objectKey?: string }) =>
+  file.objectKey ?? objectKey(file.sha256);

@@ -249,6 +249,8 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   // FL-348: masks and relinking for the native Studio.
   'clip.setMask': ['readme.effects-masks-compositing.7'],
   'clip.relink': ['readme.media-import.4'],
+  // Crop and corner pin for the native Studio (protocol 17.6).
+  'clip.setCrop': ['readme.preview-playback.1'],
   // Shapes and title styles for the native Studio (protocol 17.4, 17.5 and 14.3.4).
   'shape.add': ['command.addItem'],
   'shape.setStyle': ['command.updateItem'],
@@ -1330,7 +1332,7 @@ const transformOf = (
   item: TimelineItem,
   intent: Record<string, unknown>,
 ): Partial<TransformProperties> => {
-  const allowed = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
+  const allowed = new Set(['x', 'y', 'scale', 'rotation', 'opacity', 'flipHorizontal', 'flipVertical'])
   for (const key of Object.keys(intent)) {
     if (!allowed.has(key)) invalid(`transform: unknown field "${key}"`)
   }
@@ -1357,6 +1359,12 @@ const transformOf = (
     )
     transform.width = fitted.width * (scale as number)
     transform.height = fitted.height * (scale as number)
+  }
+  for (const key of ['flipHorizontal', 'flipVertical'] as const) {
+    const value = intent[key]
+    if (value === undefined) continue
+    if (typeof value !== 'boolean') invalid(`transform.${key} must be a boolean`)
+    transform[key] = value as boolean
   }
   if (Object.keys(transform).length === 0) invalid('transform must change something')
   return transform
@@ -1857,7 +1865,7 @@ const handlers: Record<string, Handler> = {
     if (item.type !== 'video' && item.type !== 'audio')
       invalid('clip.setAudio applies to video and audio clips')
     for (const key of Object.keys(payload)) {
-      if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq'].includes(key))
+      if (!['clipId', 'volume', 'fadeIn', 'fadeOut', 'muted', 'pitchSemitones', 'pitchCents', 'eq', 'ducking'].includes(key))
         invalid(`clip.setAudio: unknown field "${key}"`)
     }
     const updates: Partial<TimelineItem> & Record<string, unknown> = {}
@@ -1898,7 +1906,36 @@ const handlers: Record<string, Handler> = {
       if (typeof payload.muted !== 'boolean') invalid('muted must be a boolean')
       updates.muted = payload.muted
     }
-    if (Object.keys(updates).length === 0) invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq or muted')
+    // 13.9: the engine's sidechain. The named clip is the duck source: while it sounds, the other
+    // audio (or only the tracks it names) is turned down by `duckOthersDb`.
+    if (payload.ducking === null) {
+      updates.audioDucking = undefined
+    } else if (payload.ducking !== undefined) {
+      if (!isPlainRecord(payload.ducking)) invalid('ducking must be an object or null')
+      const ducking = payload.ducking as Record<string, unknown>
+      for (const key of Object.keys(ducking)) {
+        if (!['duckOthersDb', 'attackSec', 'releaseSec', 'targetTrackIds'].includes(key))
+          invalid(`ducking: unknown field "${key}"`)
+      }
+      if (!finiteIn(ducking.duckOthersDb, -60, 0)) invalid('ducking.duckOthersDb must be in -60..0 dB')
+      const written: Record<string, unknown> = { duckOthersDb: ducking.duckOthersDb }
+      for (const key of ['attackSec', 'releaseSec'] as const) {
+        if (ducking[key] === undefined) continue
+        if (!finiteIn(ducking[key], 0, 5)) invalid(`ducking.${key} must be in 0..5 seconds`)
+        written[key] = ducking[key]
+      }
+      if (ducking.targetTrackIds !== undefined) {
+        const ids = ducking.targetTrackIds
+        if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== 'string' || id.length === 0))
+          invalid('ducking.targetTrackIds must be a list of track ids')
+        if (new Set(ids as string[]).size !== (ids as string[]).length) invalid('ducking.targetTrackIds repeats a track')
+        for (const id of ids as string[]) requireTrack(id, 'ducking.targetTrackIds')
+        written.targetTrackIds = [...(ids as string[])]
+      }
+      updates.audioDucking = written
+    }
+    if (Object.keys(updates).length === 0)
+      invalid('clip.setAudio needs volume, fadeIn, fadeOut, pitch, eq, ducking or muted')
     assertUnlocked([item.id], 'clip.setAudio')
     updateItem(item.id, updates)
   },
@@ -2135,6 +2172,71 @@ const handlers: Record<string, Handler> = {
       }
       updateItem(target.id, updates as Partial<TimelineItem>)
     }
+  },
+
+  // Protocol 17.6: the crop and the corner pin the editor's crop and pin gizmos write.
+  'clip.setCrop'(payload) {
+    const command = 'clip.setCrop'
+    for (const key of Object.keys(payload)) {
+      if (!['clipId', 'crop', 'cornerPin'].includes(key)) invalid(`${command}: unknown field`)
+    }
+    const item = requireItem(stringField(payload, 'clipId'))
+    const { crop, cornerPin } = payload
+    if (crop === undefined && cornerPin === undefined) invalid(`${command} needs crop or cornerPin`)
+    if (crop !== undefined && item.type !== 'video' && item.type !== 'image')
+      invalid(`${command}: crop applies to video and image clips`)
+    if (cornerPin !== undefined && !['video', 'image', 'composition', 'text'].includes(item.type))
+      invalid(`${command}: cornerPin applies to video, image, composition and text clips`)
+    const updates: Record<string, unknown> = {}
+    if (crop === null) {
+      updates.crop = undefined
+    } else if (crop !== undefined) {
+      if (!isPlainRecord(crop)) invalid(`${command}: crop must be an object or null`)
+      const fields = crop as Record<string, unknown>
+      for (const key of Object.keys(fields)) {
+        if (!['left', 'right', 'top', 'bottom', 'softness'].includes(key)) invalid(`${command}: unknown crop field`)
+      }
+      const side = (name: string) => {
+        if (fields[name] === undefined) return 0
+        if (!finiteIn(fields[name], 0, 1)) invalid(`${command}: crop.${name} must be a number from 0 to 1`)
+        return fields[name] as number
+      }
+      const [left, right, top, bottom] = [side('left'), side('right'), side('top'), side('bottom')]
+      if (fields.softness !== undefined && !finiteIn(fields.softness, -1, 1))
+        invalid(`${command}: crop.softness must be a number from -1 to 1`)
+      // The engine scales a pair of sides that would leave nothing; a command refuses it instead.
+      if (left + right > 0.999 || top + bottom > 0.999) invalid(`${command}: opposite crop sides must leave part of the picture`)
+      // A crop with no side above 0 is no crop: loading removes it, whatever its softness.
+      updates.crop =
+        left === 0 && right === 0 && top === 0 && bottom === 0
+          ? undefined
+          : { left, right, top, bottom, softness: (fields.softness as number | undefined) ?? 0 }
+    }
+    if (cornerPin === null) {
+      updates.cornerPin = undefined
+    } else if (cornerPin !== undefined) {
+      if (!isPlainRecord(cornerPin)) invalid(`${command}: cornerPin must be an object or null`)
+      const fields = cornerPin as Record<string, unknown>
+      const corners = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'] as const
+      for (const key of Object.keys(fields)) {
+        if (![...corners, 'referenceWidth', 'referenceHeight'].includes(key as never)) invalid(`${command}: unknown cornerPin field`)
+      }
+      const written: Record<string, unknown> = {}
+      for (const corner of corners) {
+        const value = fields[corner]
+        if (!Array.isArray(value) || value.length !== 2 || !value.every((n) => typeof n === 'number' && Number.isFinite(n)))
+          invalid(`${command}: cornerPin.${corner} must be [x, y]`)
+        written[corner] = [(value as number[])[0], (value as number[])[1]]
+      }
+      for (const key of ['referenceWidth', 'referenceHeight'] as const) {
+        if (!finiteIn(fields[key], 0, Number.MAX_VALUE) || (fields[key] as number) <= 0)
+          invalid(`${command}: cornerPin.${key} must be a positive number`)
+        written[key] = fields[key]
+      }
+      updates.cornerPin = written
+    }
+    assertUnlocked([item.id], command)
+    updateItem(item.id, updates as Partial<TimelineItem>)
   },
 
   // Protocol 17.4: a shape as the editor's shape tool makes it, or a pen path, optionally a mask.

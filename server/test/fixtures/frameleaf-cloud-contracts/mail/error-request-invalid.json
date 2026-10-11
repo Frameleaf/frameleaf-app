@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/sign-ins",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/sign-ins, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "A start without its PKCE challenge, with a field the contract doesn't have. `data.fields` names what was refused (`_` is the body itself) and never echoes a value.",
+    "body": {
+      "service": "google",
+      "state": "fixture-state-0000000000000000",
+      "returnUrl": "http://192.168.1.10:2283/"
+    }
+  },
+  "status": 422,
+  "headers": {},
+  "body": {
+    "code": "request-invalid",
+    "message": "Some fields are missing or invalid.",
+    "retryable": false,
+    "data": {
+      "fields": {
+        "codeChallenge": "Check this field.",
+        "_": "This field isn't accepted."
+      }
+    },
+    "requestId": "req_01J8ZK3M4N5P6Q95"
+  }
+}

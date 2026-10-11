@@ -198,7 +198,7 @@ Commands that place library media read a **media record** for each asset. This i
 | `audioCodec`      | Present when the video has sound. Its presence alone decides whether a linked audio item is placed. |
 | `colorTransfer`   | Optional: `sdr`, `pq`, `hlg` or `hdr`. The last three make a project HDR (`studio/spec/hdr.md` H3). |
 
-A native client builds the record from the asset's metadata, as the web host does when it probes the asset. `GET /studio/assets/{id}/media-facts` (FL-348) reads the original for it: `fps` (the exact `frameRate` pair as a float), `width`, `height`, `durationSeconds`, and `audioCodec`, present exactly when `hasAudio` is true. The fixtures give the records they used (`media.standard`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one.
+A native client builds the record from the asset's metadata, as the web host does when it probes the asset. `GET /studio/assets/{id}/media-facts` (FL-348) reads the original for it: `fps` (the exact `frameRate` pair as a float), `width`, `height`, `durationSeconds`, and `audioCodec`, present exactly when `hasAudio` is true. The fixtures give the records they used (`media.standard`). A record may also carry `colorTransfer` (`sdr`, `pq`, `hlg` or `hdr`), which a client sets itself from the original's picture stream when it places the clip (render spec `studio/spec/hdr.md`, H3 and H11): it decides whether the project is HDR and never reaches the graph (`clip.add/media-colour-transfer-is-not-stored`, media set `media.hdr`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one.
 
 ## 4. Ids
 
@@ -305,10 +305,10 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 77 commands with `mutatesGraph: true`.
 
-- **Engine (59):** the engine gives them meaning. Their mutation rules are in parts 2 to 4, captions, Lottie maps, masks, relinking and shapes: sections 12 to 17.
+- **Engine (60):** the engine gives them meaning. Their mutation rules are in parts 2 to 4, captions, Lottie maps, masks, relinking, shapes and crop: sections 12 to 17.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
-- **Not implemented (15):** the remaining 15 are refused by the engine as `not-implemented` (8.2).
+- **Not implemented (14):** the remaining 14 are refused by the engine as `not-implemented` (8.2).
 
 `commandStatus` in the fixtures lists each command's status, the story that specifies it and the section that holds its rule. Section 8.3 has one row for each of the 77.
 
@@ -324,14 +324,14 @@ The catalogue has 77 commands with `mutatesGraph: true`.
 | Engine: media source relink                      | `media.relink`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Engine: captions                                 | `captions.set`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Engine: masks and relinking                      | `clip.setMask`, `clip.relink`                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Engine: shapes and title styles                  | `shape.add`, `shape.setStyle`, `title.setStyle`                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Not implemented                                  | `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `effect.reorder`, `effect.update`, `media.import`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                                                              |
+| Engine: shapes and title styles                  | `shape.add`, `shape.setStyle`, `title.setStyle`, `clip.setCrop`                                                                                                                                                                                                                                                                                                                                                                                     |
+| Not implemented                                  | `clip.setBlendMode`, `clip.setGrade`, `effect.reorder`, `effect.update`, `media.import`, `media.remove`, `project.rename`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `voiceover.add`                                                                                                                                                                              |
 
 `music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, including persisted clip mute in `clip.update` (12.6.2). It implements the 12 existing part 3 commands and the gain, fade, pitch, EQ and mute fields of `clip.setAudio` (13.9). It also implements track gain, EQ and pan via `track.setAudio` (13.10). It implements the 8 existing part 4 commands, and the gain/mute/linear-envelope fields of `project.setMasterAudio` (14.7). Its `ducking` field is refused as `not-implemented`.
 
 ### 8.2 Not-implemented commands
 
-At this engine revision the web engine refuses these 15 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. A native client must not change the fields the other 13 would edit. Section 8.3 gives the rule for each command.
+At this engine revision the web engine refuses these 14 commands as `not-implemented` (fixture `batch/not-implemented`). Each has a fixture `not-implemented/<command>` that records the refusal, and `not-implemented/refuses-the-batch` shows that one such envelope refuses its whole batch. **Native rule:** a native client must not record them in a save. Section 13.8 states, for the graph fields three of them would edit (`effect.update`, `effect.reorder` and `clip.setBlendMode`: effect parameters, effect order and blend mode), how a native edit of those fields must look. `clip.setGrade` has no field of its own: 13.8.6 says which effects make a grade. A native client must not change the fields the other 10 would edit. Section 8.3 gives the rule for each command.
 
 ### 8.3 Every graph-changing command
 
@@ -358,8 +358,8 @@ One row for each of the 77 commands the catalogue marks `mutatesGraph`, in alpha
 | `clip.roll`                        | Engine          | 12.4.2  |                                                                                                                        |
 | `clip.setAudio`                    | Engine          | 13.9    | Gain, fades, pitch, EQ and persisted clip mute.                                                                        |
 | `clip.setBlendMode`                | Not implemented | 13.8.4  | Do not record it. Edit `blendMode` as 13.8.4 says; set opacity with `clip.setTransform` (12.6.3).                      |
-| `clip.setCrop`                     | Not implemented | 8.2     | Do not record it. Do not change `crop` or `cornerPin`.                                                                 |
-| `clip.setGrade`                    | Not implemented | 8.2     | Do not record it. Do not change a clip's colour grade.                                                                 |
+| `clip.setCrop`                     | Engine          | 17.6    | Sets or clears the crop of a video or image and the corner pin of a clip.                                              |
+| `clip.setGrade`                    | Not implemented | 13.8.6  | Do not record it. A grade is the colour effects of 13.8.6, added with `effect.add` (13.3.1).                           |
 | `clip.setKenBurns`                 | Engine          | 13.7.2  |                                                                                                                        |
 | `clip.setLink`                     | Engine          | 12.6.1  |                                                                                                                        |
 | `clip.setMask`                     | Engine          | 17.1    | Turns a shape into a mask, edits its mask fields and pen path, or clears it.                                           |
@@ -1017,6 +1017,8 @@ Sets a clip's playback speed by changing its length. Payload: `clipId`, `speed` 
 
 **Draws:** none.
 
+**Sound and picture of a retimed clip.** A speed change always preserves pitch: the engine time-stretches the clip's sound to the new length, in preview and in export, and the result sounds at the source's pitch. The graph has no field that turns this off. The only pitch control is the clip's own shift (`pitchSemitones` and `pitchCents` of `clip.setAudio`, 13.9), which is applied in the same pass; a client that wants the pitch to rise and fall with the speed writes a shift of 12 × log2(speed) semitones, rounded to cents, within the range of 13.9. Each output frame of a retimed clip shows one decoded source frame: the engine has no frame blending and no optical-flow interpolation, and the graph has no field for either. **Native rule:** a native client plays and exports a retimed clip the same way: pitch preserved, no blended or synthesised frames.
+
 **Implementation-defined.** A speed above 10 is accepted, but loading clamps `speed` to 0.1..10 (2.6), so the result is not in normal form (`clip.setSpeed/above-ten`, marked `outsideNormalForm`). **Native rule:** a native client must refuse a speed above 10.
 
 In and out points are clamped (12.2.7).
@@ -1243,18 +1245,19 @@ Fixtures `clip.update/style-bold`, `…/style-minimal`, `…/style-lower-third` 
 
 #### 12.6.3 `clip.setTransform`
 
-Sets a clip's position, scale, rotation and opacity. Payload: `clipId`, `transform` with any of `x`, `y`, `scale`, `rotation`, `opacity`.
+Sets a clip's position, scale, rotation, opacity and flips. Payload: `clipId`, `transform` with any of `x`, `y`, `scale`, `rotation`, `opacity`, `flipHorizontal`, `flipVertical`. An absent `anchorX` or `anchorY` is half the stored `width` or `height` and does not follow a keyframed size (`studio/spec/layers.md`, L6); a client that keyframes a size writes the anchor explicitly.
 
 **Refusals, in order**
 
 1. `transform` is not an object: `invalid`.
-2. It has a field other than those five: `invalid`.
+2. It has a field other than those seven: `invalid`.
 3. `x`, `y`, `rotation` or `opacity` is not a finite number: `invalid`.
 4. `opacity` is below 0 or above 1: `invalid`.
 5. `scale` is not a finite number above 0: `invalid`.
-6. It changes nothing (it is empty): `invalid`.
+6. `flipHorizontal` or `flipVertical` is not a boolean: `invalid`.
+7. It changes nothing (it is empty): `invalid`.
 
-**Effect.** A clip with no `transform` object first gets an empty one. Then `x`, `y`, `rotation` and `opacity` are written as given, and `scale` writes `width` and `height`:
+**Effect.** A clip with no `transform` object first gets an empty one. Then `x`, `y`, `rotation` and `opacity` are written as given, `flipHorizontal` and `flipVertical` are written as given (`false` is written, not removed; `clip.setTransform/flip`, `…/flip-off`), and `scale` writes `width` and `height`:
 
 ```text
 fit    = min(canvasWidth / sourceWidth, canvasHeight / sourceHeight)
@@ -2051,7 +2054,7 @@ A native client may set `effects[].enabled` to `true` or `false`. No catalogue c
 
 #### 13.8.4 Blend mode (`clip.setBlendMode`)
 
-A native client may set a visual clip's `blendMode` to a blend mode `id` of the catalogue. An absent `blendMode` means `normal`; to return to it, write `"normal"`. A shape with `isMask: true` is always `normal`: loading rewrites its blend mode, so a native client must not give it another. The opacity that the catalogue command also carries is `transform.opacity`, which `clip.setTransform` sets (12.6.3): use that command.
+A native client may set a visual clip's `blendMode` to a blend mode `id` of the catalogue. An absent `blendMode` means `normal`; to return to it, write `"normal"`. A shape with `isMask: true` is always `normal`: loading rewrites its blend mode, so a native client must not give it another. The opacity that the catalogue command also carries is `transform.opacity`, which `clip.setTransform` sets (12.6.3): use that command. A clip's `blendMode` is not applied while the clip is inside a transition's window: the transition is one layer, blended normally (render spec `studio/spec/layers.md`, L2).
 
 #### 13.8.5 Transition settings
 
@@ -2062,6 +2065,17 @@ A native client may set, on an existing transition:
 - `properties`: values of the presentation's `parameters`, by name. A `number` inside its range; a `color` as an array of three numbers.
 
 It must not change `alignment`, `type`, the clip ids or `trackId`. **Implementation-defined:** no command reads or writes an alignment other than 0.5, and the engine's rules for other alignments (handles, regions, repair) are exercised only by graphs made elsewhere. `durationInFrames` and `presentation` are set with `clip.setTransition`.
+
+#### 13.8.6 Colour grade (`clip.setGrade`)
+
+The graph has no grade node, and `clip.setGrade` is refused. A grade is a set of colour effects in the clip's `effects` stack, each added with `effect.add` (13.3.1) and edited as 13.8.1 to 13.8.3 say, with the parameters the catalogue lists for it. A native grade panel writes these effects, at most one of each, in this order in the stack:
+
+1. `gpu-exposure` (exposure, offset, gamma), `gpu-temperature` (temperature, tint), `gpu-contrast` and `gpu-saturation`: the primaries.
+2. `gpu-color-wheels`: lift, gamma and gain, the tonal wheels and its own primaries. A client that uses the wheels' own `exposure`, `contrast`, `saturation`, `temperature` and `tint` leaves the four effects of step 1 out, so that no control is applied twice.
+3. `gpu-curves`: the master and channel curves.
+4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`).
+
+The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
 
 ### 13.9 `clip.setAudio`
 
@@ -2074,6 +2088,9 @@ This command edits the named audio or video clip through the same `updateItem` a
 - `pitchSemitones`: an integer in −12..12, stored as `audioPitchSemitones`.
 - `pitchCents`: an integer in −100..100, stored as `audioPitchCents`. Effective pitch is semitones + cents / 100. Zero resets either field; changing one preserves the other. Playback and export use the existing pitch paths, with their existing channel/latency admission limits.
 - `eq`: an object with the settings below, replacing the clip's known EQ fields as an editor EQ preset does. Omitted settings take their defaults. An empty object resets the stage to flat defaults. `null` clears all known `audioEq*` fields. Omitted `eq` preserves the current stage.
+- `ducking`: sidechain ducking, stored as the clip's `audioDucking`. The named clip is the **duck source**: while it is audible, the other audio of the mix is turned down. An object is written whole, with only the fields given: `duckOthersDb`, required, a finite number in −60..0 dB (the gain applied to the other audio; 0 ducks nothing); `attackSec` and `releaseSec`, finite numbers in 0..5 seconds (the ramp into and out of the duck; absent means 0.08 and 0.25); and `targetTrackIds`, a non-empty list of distinct track ids of the timeline (absent means every other audible track; the source itself is never ducked by its own setting). `null` removes `audioDucking`. Omitted `ducking` preserves it. A `ducking` that is not `null` or a plain object, has another field, a value outside its range, or names a track that does not exist or is a group, is refused (`invalid`). Fixtures `clip.setAudio/ducking`, `…/ducking-all-fields`, `…/ducking-cleared`.
+
+**Ducking music under dialogue.** The engine has no "duck this track under that one" setting on a track or on the project; the sidechain belongs to the clips that should be heard. A native "duck the music under the dialogue" is therefore one `clip.setAudio` with `ducking: { duckOthersDb, attackSec?, releaseSec?, targetTrackIds: [the music tracks] }` for **each dialogue clip**, and a clip added to the dialogue later gets the same setting. It stays live: the duck follows the clips when they move, with no gain envelope to rebake. The duck is part of the **export mix**; at this revision the web editor's preview plays the mix without it, and a native preview may do either. `project.setMasterAudio`'s `ducking` field stays refused (14.7): the engine has no project-level sidechain to write it to.
 
 EQ setting names are stored with `audioEq` prefixed and the first letter capitalized. `enabled` is a boolean; omission clears `audioEqEnabled` so the engine's enabled-by-default behavior applies. Other `*Enabled` settings are booleans. All numeric settings must be finite. Gain (`outputGainDb`, every band's `*GainDb`, and legacy `midGainDb`) is in −20..20 dB, Q in 0.3..10.3, and cut slope is 6, 12, 18 or 24 dB/octave. Unknown settings, wrong types, out-of-range values and contradictory cut aliases are invalid, rather than silently clamped.
 
@@ -2310,7 +2327,7 @@ Sets or clears single style fields of a title, beside the named styles of 14.3.2
 
 Every `style` field is optional. A field left out is unchanged. `null` removes the field from the title, so the renderer's default applies again; a field marked _kept_ cannot be cleared. Numbers are finite and inside the range, both ends included.
 
-**Colours.** A colour in these commands is `#rrggbb` or `#rrggbbaa` (hexadecimal digits of either case; the last pair is alpha, `00` clear to `ff` opaque), and is stored exactly as given. Every other CSS form (`#rgb`, `rgb()`, `rgba()`, names, `oklch()`) is refused (`…/colour-with-alpha`, `…/colour-rgba-function`, `…/colour-short-hex`). A stored graph may still hold other forms, because the web editor's colour fields and its caption styles write them: the caption styles write `rgba(r, g, b, a)` for `backgroundColor` and for `textShadow.color`. A native client reads such a value as the colour it names and, when it rewrites the field, writes `#rrggbb` followed by `round(a × 255)` as two hexadecimal digits (`rgba(0, 0, 0, 0.55)` becomes `#0000008c`). The render spec (`studio/spec/layers.md`, `studio/spec/text.md`) says how the alpha is applied.
+**Colours.** A colour in these commands is `#rrggbb` or `#rrggbbaa` (hexadecimal digits of either case; the last pair is alpha, `00` clear to `ff` opaque), and is stored exactly as given. Every other CSS form (`#rgb`, `rgb()`, `rgba()`, names, `oklch()`) is refused (`…/colour-with-alpha`, `…/colour-rgba-function`, `…/colour-short-hex`). A stored graph may still hold other forms, because the web editor's colour fields and its caption styles write them: the caption styles write `rgba(r, g, b, a)` for `backgroundColor` and for `textShadow.color`. A native client reads such a value as the colour it names. The forms a native client must read are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(r, g, b)` and `rgba(r, g, b, a)` (render spec X12); for any other CSS form it keeps the value and draws the field's default. When it rewrites the field, it writes `#rrggbb` followed by `round(a × 255)` as two hexadecimal digits (`rgba(0, 0, 0, 0.55)` becomes `#0000008c`). The render spec (`studio/spec/layers.md`, `studio/spec/text.md`) says how the alpha is applied.
 
 | `style` field      | Value                                                         | Absent in the graph means |
 | ------------------ | ------------------------------------------------------------- | ------------------------- |
@@ -2349,7 +2366,7 @@ computed in doubles. So a scale change discards single fields set earlier, as it
 
 **`spans`** is `null` or an array of 1 to 64 spans `{ text, fontSize?, fontFamily?, fontWeight?, fontStyle?, underline?, color?, letterSpacing? }`, each field with the type and range of the table and no `null`. An array replaces `textSpans`, each span written with only the fields it was given. It also writes `text` (the spans' texts joined by a line feed) and `label` (the first line of that text with surrounding white space removed, or `Text` when that is empty), as the editor's span editor does. `null` removes `textSpans` and leaves `text` and `label` as they are. A span field that is absent takes the title's own field, and that in turn the default of the table. `style` fields never rewrite the spans.
 
-**`spanLayout`** is `stack` (each span is its own group of lines; the meaning of an absent field), `inline` (the spans flow as one wrapped text, with the first span's font, size and letter spacing for all), or `null`, which removes the field.
+**`spanLayout`** is `stack` (each span is its own group of lines; the meaning of an absent field), `inline` (the spans flow as one wrapped text, with the first span's font, size and letter spacing for all), or `null`, which removes the title's `spanLayout` field (the title then stacks, as an absent field means).
 
 **Refusals, in order**
 
@@ -2384,7 +2401,7 @@ A title's `fontFamily` (and a span's) is a family name of the engine's font cata
 - `GET /studio/fonts` (any signed-in session or API key) lists them: for each family its name as a graph writes it, the package and exact version the files come from, `license`, `copyright`, `reservedFontName`, and `files`. A file has `weight` (400, 500, 600 or 700: the four values of `fontWeight`), `style` (`normal` or `italic`), `subset` (`latin` or `latin-ext`), `format`, `size`, `sha256`, `decodedFrom` and `path`. Every font is listed twice: once with `format: "woff2"`, the file as its package ships it, and once with `format: "ttf"`, the same font decompressed to its TrueType (sfnt) form and nothing else changed (no subsetting, no merging), with `decodedFrom` naming the `sha256` of its WOFF2 file. The decode is checked when the catalogue is generated: same tables, same glyph count, and every table WOFF2 stores untransformed byte for byte. A client loads whichever format its platform registers; the two draw the same glyphs.
 - `GET /studio/fonts/{sha256}` (same authentication) answers the bytes of one listed file, as `font/woff2` or `font/ttf`. The URL names the content, so the answer never changes and is sent with `Cache-Control: private, max-age=31536000, immutable`. A hash the catalogue does not list is `404`. Nothing else is reachable through it: the server looks the hash up in its catalogue and never reads a name or path from the request.
 - A client checks `sha256` after download, keeps the file under that hash, and re-reads the catalogue after a server update; a file whose hash is still listed is unchanged.
-- **Fallback chain.** The files are per subset, as the package ships them. For one family, weight and style a client loads the `latin` file and the `latin-ext` file as a fallback chain, `latin` first: a character is drawn from the first of the two that has a glyph for it. The two files of a pair have the same metrics, so a line may mix them. A family has only the weights and styles the catalogue lists (`Anton` and `Bebas Neue` have 400 alone; `Orbitron` and `Space Grotesk` have no italic; `Orbitron` has no `latin-ext`). For a weight or style that is not listed a client uses the nearest listed weight of the family and does not synthesise a bold or an italic the web would not.
+- **Fallback chain.** The files are per subset, as the package ships them. For one family, weight and style a client loads the `latin` file and the `latin-ext` file as a fallback chain, `latin` first: a character is drawn from the first of the two that has a glyph for it. The two files of a pair have the same metrics, so a line may mix them. A family has only the weights and styles the catalogue lists (`Anton` and `Bebas Neue` have 400 alone; `Orbitron` and `Space Grotesk` have no italic; `Orbitron` has no `latin-ext`). For a weight that is not listed a client uses the nearest listed weight of the family (the lighter of two equally near), and for an italic the family lacks, the upright face of that weight; it synthesises neither a bold nor an italic. Advances and metrics are those of the face used, so layout does not change (render spec X4).
 
 **Native rule.** A native client draws exactly the bundled families, from these files. It offers only them in its font picker. A title or span whose family is not one of the seven, or whose text needs a glyph outside the bundled subsets, is **not drawable on the device**: the client shows it as such, keeps the graph as it is, and leaves drawing it to the web editor or to a server render. It never substitutes another family silently and never fetches a font from anywhere else. `title.setStyle` itself accepts every catalogue family, as the web editor may write any of them (`title.setStyle/each-title-family` writes the seven).
 
@@ -2816,7 +2833,7 @@ The shape is appended to `timeline.items`.
 
 Sets or clears the fill, stroke, geometry and pen-path fields of a shape. Payload: `clipId`, `style`. The same `style` object, with the same rules, is the `style` of `shape.add` (17.4).
 
-Every `style` field is optional. A field left out is unchanged. `null` removes the field from the shape; a field marked _kept_ cannot be cleared. Numbers are finite and inside the range, both ends included. Colours are as in 14.3.4: `#rrggbb` or `#rrggbbaa`, stored as given.
+Every `style` field is optional. A field left out is unchanged. `null` removes the field from the shape; a field marked _kept_ cannot be cleared. Numbers are finite and inside the range, both ends included. Colours are as in 14.3.4: `#rrggbb` or `#rrggbbaa`, stored as given. The range checks apply to the payload's fields only: the engine does not re-check the resulting shape, and a shape already in the graph with a value outside these ranges is drawn as `studio/spec/layers.md` says under "Ranges a client writes".
 
 | `style` field                            | Value                                    | Shapes                                     | Absent in the graph means             |
 | ---------------------------------------- | ---------------------------------------- | ------------------------------------------ | ------------------------------------- |
@@ -2871,21 +2888,53 @@ An empty `style` is applied and changes nothing. A mask is a shape, and its fiel
 
 **Draws:** none.
 
+### 17.6 `clip.setCrop`
+
+Sets or clears the crop of a picture and the corner pin of a clip: the fields the editor's crop and corner-pin gizmos write. Payload: `clipId`, and at least one of `crop` and `cornerPin`. A field left out is unchanged; `null` removes it.
+
+**`crop`** applies to a `video` or `image`. It is an object with any of `left`, `right`, `top`, `bottom` (each a fraction 0..1 of the source's width or height cut from that side; absent means 0) and `softness` (−1..1; absent means 0; the render spec, `studio/spec/layers.md` L5, says what it draws). `left + right` and `top + bottom` must each be at most 0.999. The crop is written whole as `{ left, right, top, bottom, softness }`, all five numbers. A crop whose four sides are all 0 is no crop: `crop` is removed, whatever the softness (`clip.setCrop/crop-without-sides-is-removed`). The engine's `refit` flag is an editor preference; no command writes it.
+
+**`cornerPin`** applies to a `video`, `image`, `composition` or `text` item. It is `{ topLeft, topRight, bottomRight, bottomLeft, referenceWidth, referenceHeight }`, all six required: each corner an offset `[dx, dy]` in pixels (finite) that moves that corner of the pin target, and the reference size (above 0) the size of the box the offsets were measured on. The renderer scales the offsets from the reference size to the size it draws (`studio/spec/layers.md` L11), so a client gives the size of the fitted picture, or of a title's box, that it showed while the person dragged the corners. It is written whole with its six fields. A pin whose eight numbers are 0 is stored as given; send `null` to remove a pin.
+
+**Refusals, in order**
+
+1. A payload field other than `clipId`, `crop` and `cornerPin`: `invalid`.
+2. `clipId` missing or empty; no such clip: `invalid`.
+3. Neither `crop` nor `cornerPin` is present: `invalid`.
+4. `crop` is present (even `null`) on a clip that is not a `video` or `image`; then `cornerPin` is present on a clip that is not a `video`, `image`, `composition` or `text`: `invalid`.
+5. `crop` is neither `null` nor a plain object, has another field, a side outside 0..1, a `softness` outside −1..1, or opposite sides above 0.999 together: `invalid`.
+6. `cornerPin` is neither `null` nor a plain object, has another field, a corner that is not two finite numbers, or a reference size that is missing or not above 0: `invalid`.
+7. The clip's track is locked: `failed`.
+
+**Consequences.** Linked, sync lock, overlap and transitions: none; only the named clip changes. Keyframes on the crop properties (13.2.5) are left as they are. The `transform` is not refitted.
+
+**Draws:** none.
+
+### 17.7 An effect inside a shape
+
+There is no field that limits an effect to a region, and none is needed: a mask masks the tracks below it **inside its own timeline**, and a group (14.2.5) is a timeline of its own. An effect that should show only inside a shape (a face blur, a pixelated plate) is this graph, made with existing commands:
+
+1. Place a second copy of the clip on a track above the original, with the same source window (`clip.add`), and add the effect to the copy (`effect.add`).
+2. Add the shape as a mask on a track above the copy (`shape.add` with `mask`, 17.4). Its box, or its pen path, is the region; keyframes on its transform or its path vertices (13.5) make it follow a face.
+3. Group the mask and the copy (`clip.group` with those two clips, 14.2.5).
+
+The group draws the affected copy only inside the shape and is transparent elsewhere, so the original shows around it. Fixture `clip.group/effect-inside-a-mask` shows the stored shape: a composition whose top track holds the mask and whose next track holds the clip with its effect. An `adjustment` item is not the tool for this: its effects apply to whole clips below it, one at a time (`studio/spec/layers.md`, L8), and a mask on the main timeline would also cut the original.
+
 ## 18. Rendering effects and transitions
 
 This protocol says which effects and transitions a graph may name, and with which parameters (13.2.1). What they draw is specified in `studio/spec/`, the render spec, which is part of the native-app contract on the same terms as this page: a clean-room specification written by reading the engine, with no engine source text, versioned with the same engine pin.
 
-| Path                              | What it is                                                                                                                                                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `studio/spec/README.md`           | The shared rules: coordinates, sampling, the SDR and linear HDR domains, alpha, the hash and noise functions, colour helpers, the effect clock, parameter sanitising, the transition progress curve and the transition routes. |
-| `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (54): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                           |
-| `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                 |
-| `studio/spec/hdr.md`              | HDR and colour management (H1 to H17): the `colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals.                                           |
-| `studio/spec/layers.md`           | Layer compositing: what a frame of a project looks like beyond effects and transitions (layer order, background, transform, opacity, blend modes, crop, masks, shapes).                                                        |
-| `studio/spec/text.md`             | Titles and text: style fields, layout, spans, text motion, and the font files a native client draws with (14.3).                                                                                                               |
-| `studio/spec/index.json`          | Every id with its page, whether it is fully specified, what is not specifiable, and its golden counts.                                                                                                                         |
-| `studio/spec/keyframes.md`        | Keyframe interpolation: what each easing computes, the value of a keyframed property at a frame, velocity handles and path tangents (13.2.6).                                                                                  |
-| `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, the progress-curve table, the keyframe values and the ASCII glyph atlases the goldens were rendered with.                               |
+| Path                              | What it is                                                                                                                                                                                                                                                                       |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `studio/spec/README.md`           | The shared rules: coordinates, sampling, the SDR and linear HDR domains, alpha, the hash and noise functions, colour helpers, the effect clock, parameter sanitising, the transition progress curve and the transition routes.                                                   |
+| `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (54): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                                                                             |
+| `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                                                                   |
+| `studio/spec/hdr.md`              | HDR and colour management (H1 to H17): the `colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals.                                                                                             |
+| `studio/spec/layers.md`           | Layer compositing: which items draw and in what order, the background, occlusion, transform and transform parents, fit, crop, flips, corner radius and corner pin, opacity and every blend mode, masks, every shape field, and the float route's shape shaders for HDR projects. |
+| `studio/spec/text.md`             | Titles and text: style fields, layout, spans, text motion, and the font files a native client draws with (14.3).                                                                                                                                                                 |
+| `studio/spec/index.json`          | Every id with its page, whether it is fully specified, what is not specifiable, and its golden counts.                                                                                                                                                                           |
+| `studio/spec/keyframes.md`        | Keyframe interpolation: what each easing computes, the value of a keyframed property at a frame, velocity handles and path tangents (13.2.6).                                                                                                                                    |
+| `studio/spec/goldens/*.json`      | Small deterministic inputs rendered through the real engine, with measured tolerances, the progress-curve table, the keyframe values and the ASCII glyph atlases the goldens were rendered with.                                                                                 |
 
 **Native rules.**
 

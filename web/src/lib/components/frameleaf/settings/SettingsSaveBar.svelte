@@ -16,13 +16,8 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SaveBarFrame from '$lib/components/frameleaf/settings/SaveBarFrame.svelte';
   import { presentedAreaForSection, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
-  import {
-    configPathLabel,
-    reviewValue,
-    sectionForConfigPath,
-    type ConfigChange,
-    type ReviewValue,
-  } from '$lib/frameleaf/system-config-draft';
+  import { describeChange } from '$lib/frameleaf/setting-words';
+  import { sectionForConfigPath, type ConfigChange } from '$lib/frameleaf/system-config-draft';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
@@ -51,25 +46,8 @@
 
   const count = $derived(store.changes.length);
 
-  const describe = (value: ReviewValue) => {
-    switch (value.kind) {
-      case 'secret': {
-        return $t('frameleaf_settings_draft_value_secret');
-      }
-      case 'empty': {
-        return $t('frameleaf_settings_draft_value_empty');
-      }
-      case 'on': {
-        return $t('frameleaf_settings_draft_value_on');
-      }
-      case 'off': {
-        return $t('frameleaf_settings_draft_value_off');
-      }
-      case 'text': {
-        return value.text;
-      }
-    }
-  };
+  // FL-368: a change reads here as it will in Change history, in the words on its page.
+  const reviewed = $derived(store.changes.map((change) => ({ change, words: describeChange($t, 'server', change) })));
 
   /** Where a change lives: its settings page and area. */
   const placeOf = (change: ConfigChange) => {
@@ -177,14 +155,14 @@
 >
   <p class="intro">{$t('frameleaf_settings_draft_review_intro')}</p>
   <div class="diff">
-    {#each store.changes as change (change.path)}
+    {#each reviewed as { change, words } (change.path)}
       <article>
-        <strong>{configPathLabel(change.path)}</strong>
+        <strong>{words.label}</strong>
         <small>{placeOf(change)}</small>
         <div>
-          <del>{describe(reviewValue(change.path, change.before))}</del>
+          <del>{words.before}</del>
           <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} />
-          <ins>{describe(reviewValue(change.path, change.after))}</ins>
+          <ins>{words.after}</ins>
         </div>
       </article>
     {/each}

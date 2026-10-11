@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 from immich_ml.config import log, settings
 from immich_ml.schemas import SessionNode
+from immich_ml.sessions import runtime_cache_dir
 
 from .loader import Ann
 
@@ -19,13 +20,18 @@ class AnnSession:
 
     def __init__(self, model_path: Path, cache_dir: Path = settings.cache_folder) -> None:
         self.model_path = model_path
-        self.cache_dir = cache_dir
-        self.ann = Ann(tuning_level=settings.ann_tuning_level, tuning_file=(cache_dir / "gpu-tuning.ann").as_posix())
+        self.cache_dir = runtime_cache_dir(model_path) if not settings.model_downloads else cache_dir
+        cached_network_path = model_path.with_suffix(".anncache")
+        if not settings.model_downloads:
+            cached_network_path = self.cache_dir / cached_network_path.name
+        self.ann = Ann(
+            tuning_level=settings.ann_tuning_level, tuning_file=(self.cache_dir / "gpu-tuning.ann").as_posix()
+        )
 
         log.info("Loading ANN model %s ...", model_path)
         self.model = self.ann.load(
             model_path.as_posix(),
-            cached_network_path=model_path.with_suffix(".anncache").as_posix(),
+            cached_network_path=cached_network_path.as_posix(),
             fp16=settings.ann_fp16_turbo,
         )
         log.info("Loaded ANN model with ID %d", self.model)

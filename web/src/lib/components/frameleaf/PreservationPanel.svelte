@@ -318,10 +318,12 @@
 />
 
 <style>
+  /* The lead and the lists are not settings rows: they bring the inset a row would have. */
   .preservation {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    padding-block: var(--fl-space-3);
   }
   .lead,
   .muted {
@@ -391,7 +393,7 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
   }
   .link-button {
     display: inline-flex;

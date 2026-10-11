@@ -670,8 +670,10 @@ describe(FrameleafLicenseService.name, () => {
       const products = await sut.getProducts();
       expect(products).toMatchObject({
         currency: 'USD',
-        pricesVersion: '2026-09-25.1',
-        licensedDiscount: 0.2,
+        pricesVersion: '2026-10-10.1',
+        // FL-369: a Server licence takes 7% off plans, an Individual licence 5%
+        licensedDiscount: 0.07,
+        individualDiscount: 0.05,
         storeUrl: `${cloud.url}/store`,
         backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
         credit: { minimumUsd: 20, maximumUsd: 500 },
@@ -690,9 +692,14 @@ describe(FrameleafLicenseService.name, () => {
       fetchSpy.mockRestore();
     });
 
-    it('serves the plan discount Frameleaf Cloud last published, and no other price moves', async () => {
+    it('serves the plan discounts Frameleaf Cloud last published, and no other price moves', async () => {
       metadata.set(SystemMetadataKey.FrameleafPricing, {
-        current: { pricesVersion: '2026-10-01.2', licensedDiscountPercent: 25, effectiveFrom: '2026-10-01T00:00:00Z' },
+        current: {
+          pricesVersion: '2026-10-01.2',
+          licensedDiscountPercent: 25,
+          individualDiscountPercent: 10,
+          effectiveFrom: '2026-10-01T00:00:00Z',
+        },
         // not in effect yet, so not served
         pending: { pricesVersion: '2999-01-01.1', licensedDiscountPercent: 40, effectiveFrom: '2999-01-01T00:00:00Z' },
       });
@@ -701,11 +708,19 @@ describe(FrameleafLicenseService.name, () => {
       expect(products).toMatchObject({
         pricesVersion: '2026-10-01.2',
         licensedDiscount: 0.25,
+        individualDiscount: 0.1,
         backup: { includedTb: 1, blockTb: 1, usdPerTbMonth: 9.99 },
       });
       expect(products.products.find(({ id }) => id === 'cloud-monthly')?.priceUsd).toBe(9.99);
       expect(fetchSpy).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
+    });
+
+    it('serves the one rate an older Frameleaf Cloud published for both licences (FL-369)', async () => {
+      metadata.set(SystemMetadataKey.FrameleafPricing, {
+        current: { pricesVersion: '2026-10-01.2', licensedDiscountPercent: 25, effectiveFrom: '2026-10-01T00:00:00Z' },
+      });
+      await expect(sut.getProducts()).resolves.toMatchObject({ licensedDiscount: 0.25, individualDiscount: 0.25 });
     });
 
     it('uses the store discovery names, as the link recorded it, still without an outbound call (FL-177)', async () => {

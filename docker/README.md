@@ -2,6 +2,8 @@
 
 Install from a [published Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases), using its Compose files and environment example together. Files from a development checkout can differ from a published release.
 
+ML-specific environment settings now belong in the optional `.env.ml` beside `.env`; the inference container does not inherit the server's credentials. Before upgrading, move existing ML-only customization there. Follow the [private backup storage guide](../docs/docs/administration/private-backup-storage.md) to qualify NAS ACLs and migrate identity/recovery files to a server-only private mount without changing keys.
+
 | Component        | Container image                                |
 | ---------------- | ---------------------------------------------- |
 | Server and web   | `ghcr.io/frameleaf/frameleaf-server`           |
@@ -34,6 +36,8 @@ After verifying a database and media backup, run `docker compose down` **with yo
 Back up the database and originals before changing releases. Frameleaf uses PostgreSQL 19 beta 4 with pgvector 0.8.7 and HNSW. Release bundles pin the owned database image by digest. These installation files create a fresh canonical database. Mount its parent directory at `/var/lib/postgresql` and retain the versioned PostgreSQL directory within it. An offline read-only Immich 3.x export through stable 3.2.4 is supported separately as a one-time import; old database directories must not be attached as the Frameleaf database.
 
 Cloud processing is Frameleaf Cloud, added and consented to by an administrator in the app; no image setting or Compose change enables it.
+
+For local inference with internet access denied, use the release's `docker-compose.ml-isolated.yml` overlay and the [model-staging procedure](../docs/docs/administration/model-staging.md). Acquisition runs separately, without media or backup mounts; the worker loads the verified cache offline. Keep the existing cache/project and follow the documented runtime/source environment split before enabling the overlay.
 
 ## Local builds
 

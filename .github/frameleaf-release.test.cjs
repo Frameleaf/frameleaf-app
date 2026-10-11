@@ -312,8 +312,14 @@ const testJobNames = [
   "Medium Scale Tests (Server)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
   "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-  "End-to-End Tests (Web) (ubuntu-24.04)",
-  "End-to-End Tests (Web) (ubuntu-24.04-arm)",
+  "End-to-End Image (ubuntu-24.04)",
+  "End-to-End Image (ubuntu-24.04-arm)",
+  "End-to-End Tests (Web) (ubuntu-24.04, 1)",
+  "End-to-End Tests (Web) (ubuntu-24.04, 2)",
+  "End-to-End Tests (Web) (ubuntu-24.04, 3)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
   "End-to-End Tests Success",
   "Unit Test ML",
   ".github Files Formatting",
@@ -358,12 +364,12 @@ function testQualificationFixture() {
   };
   return fixture;
 }
-test("same-SHA Test qualification requires every real non-mobile job, including all four E2E lanes", async () => {
+test("same-SHA Test qualification requires every real non-mobile job, including every E2E lane and shard", async () => {
   const fixture = testQualificationFixture();
   const evidence = await requireTestQualification(sha, fixture.request);
   assert.equal(evidence.runId, 42);
   assert.equal(evidence.attempt, 2);
-  assert.equal(evidence.jobs.length, 20);
+  assert.equal(evidence.jobs.length, 26);
   assert.deepEqual(
     evidence.jobs
       .filter((job) => job.name.startsWith("End-to-End Tests ("))
@@ -371,8 +377,12 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
     [
       "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
       "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-      "End-to-End Tests (Web) (ubuntu-24.04)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm)",
+      "End-to-End Tests (Web) (ubuntu-24.04, 1)",
+      "End-to-End Tests (Web) (ubuntu-24.04, 2)",
+      "End-to-End Tests (Web) (ubuntu-24.04, 3)",
+      "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
+      "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
+      "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
     ],
   );
 });
@@ -390,9 +400,15 @@ test("the qualification job catalog covers the non-mobile Test workflow and both
     const matrix = /^        runner:\n((?:          - [^\n]+\n)+)/m.exec(
       block,
     )?.[1];
+    // FL-380: a second matrix axis (web shards) resolves as "name (runner, shard)".
+    const shards = /^        shard: \[([^\]]+)\]$/m
+      .exec(block)?.[1]
+      .split(", ");
     return matrix
-      ? [...matrix.matchAll(/^          - (.+)$/gm)].map(
-          ([, runner]) => `${name} (${runner})`,
+      ? [...matrix.matchAll(/^          - (.+)$/gm)].flatMap(([, runner]) =>
+          shards
+            ? shards.map((shard) => `${name} (${runner}, ${shard})`)
+            : [`${name} (${runner})`],
         )
       : [name];
   });
@@ -664,6 +680,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     const installFiles = [
       "docker-compose.yml",
       "docker-compose.rootless.yml",
+      "docker-compose.ml-isolated.yml",
       "example.env",
       "hwaccel.ml.yml",
       "hwaccel.transcoding.yml",

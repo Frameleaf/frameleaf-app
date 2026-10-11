@@ -37,20 +37,26 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'backup.database.cronExpression',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/BackupSettings.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
     evidence: 'database.cronExpression',
   },
   {
     pattern: 'backup.database.enabled',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/BackupSettings.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
     evidence: 'database.enabled',
   },
   {
     pattern: 'backup.database.keepLastAmount',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/BackupSettings.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
     evidence: 'database.keepLastAmount',
+  },
+  {
+    pattern: 'backup.schedule.cronExpression',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'backup.schedule.cronExpression',
   },
   {
     pattern: 'frameleafCloud.cloudBackup.enabled',
@@ -139,7 +145,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'frameleafCloud.cloudBackup.schedule.cronExpression',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/CloudBackupSection.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
     evidence: 'schedule.cronExpression',
   },
   {
@@ -601,7 +607,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'job.*.concurrency',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte',
+    file: 'src/lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte',
     evidence: '?.concurrency',
   },
   {
@@ -1016,7 +1022,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'newVersionCheck.frequency',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
-    evidence: 'newVersionCheck.frequency',
+    evidence: 'check.frequency = ',
   },
   {
     pattern: 'nightlyTasks.clusterNewFaces',
@@ -1107,6 +1113,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
     evidence: 'transport.secure',
+  },
+  {
+    // FL-379: set by signing in or disconnecting (the server writes it), and by choosing a mail server
+    pattern: 'notifications.smtp.transport.type',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'transport.type',
   },
   {
     pattern: 'notifications.smtp.transport.username',
@@ -1275,7 +1288,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'server.lanDiscovery',
     kind: 'control',
     file: 'src/routes/admin/system-settings/ServerSettings.svelte',
-    evidence: 'bind:checked={configToEdit.server.lanDiscovery}',
+    evidence: 'draft.server.lanDiscovery = ',
   },
   {
     pattern: 'server.loginPageMessage',
@@ -1292,7 +1305,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'server.publicUsers',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    file: 'src/routes/(user)/user-settings/SharingSettings.svelte',
     evidence: 'server.publicUsers',
   },
   {
@@ -1374,6 +1387,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'theme.customCss',
   },
   {
+    pattern: 'theme.customCssEnabled',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ThemeSettings.svelte',
+    evidence: 'theme.customCssEnabled',
+  },
+  {
     pattern: 'trash.days',
     kind: 'control',
     file: 'src/routes/admin/system-settings/TrashSettings.svelte',
@@ -1398,7 +1417,7 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
   {
     pattern: 'albums.defaultAssetOrder',
     kind: 'control',
-    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
     evidence: 'albums.defaultAssetOrder',
   },
   {

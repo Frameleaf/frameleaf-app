@@ -14,6 +14,7 @@ const smtpTransport = Object.freeze<SystemConfig>({
       ...defaults.notifications.smtp,
       enabled: true,
       transport: {
+        ...defaults.notifications.smtp.transport,
         ignoreCert: false,
         host: 'localhost',
         port: 587,

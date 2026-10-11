@@ -9,7 +9,6 @@ import { createGunzip, createGzip, gzipSync } from 'node:zlib';
 import type { Stats } from 'node:fs';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -38,7 +37,6 @@ describe(DatabaseBackupService.name, () => {
       mocks.process,
       mocks.database as never,
       mocks.user as never,
-      mocks.cron as never,
       mocks.job as never,
       maintenanceHealthRepositoryMock as never,
     );
@@ -46,67 +44,6 @@ describe(DatabaseBackupService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
-  });
-
-  describe('onBootstrapEvent', () => {
-    it('should init cron job and handle config changes', async () => {
-      mocks.database.tryLock.mockResolvedValue(true);
-      mocks.cron.create.mockResolvedValue();
-
-      await sut.onConfigInit({ newConfig: systemConfigStub.backupEnabled as SystemConfig });
-
-      expect(mocks.cron.create).toHaveBeenCalled();
-    });
-
-    it('should not initialize backup database cron job when lock is taken', async () => {
-      mocks.database.tryLock.mockResolvedValue(false);
-
-      await sut.onConfigInit({ newConfig: systemConfigStub.backupEnabled as SystemConfig });
-
-      expect(mocks.cron.create).not.toHaveBeenCalled();
-    });
-
-    it('should not initialise backup database job when running on microservices', async () => {
-      mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
-      await sut.onConfigInit({ newConfig: systemConfigStub.backupEnabled as SystemConfig });
-
-      expect(mocks.cron.create).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('onConfigUpdateEvent', () => {
-    beforeEach(async () => {
-      mocks.database.tryLock.mockResolvedValue(true);
-      mocks.cron.create.mockResolvedValue();
-
-      await sut.onConfigInit({ newConfig: defaults });
-    });
-
-    it('should update cron job if backup is enabled', () => {
-      mocks.cron.update.mockResolvedValue();
-
-      sut.onConfigUpdate({
-        oldConfig: defaults,
-        newConfig: {
-          backup: {
-            database: {
-              enabled: true,
-              cronExpression: '0 1 * * *',
-            },
-          },
-        } as SystemConfig,
-      });
-
-      expect(mocks.cron.update).toHaveBeenCalledWith({ name: 'backupDatabase', expression: '0 1 * * *', start: true });
-      expect(mocks.cron.update).toHaveBeenCalled();
-    });
-
-    it('should do nothing if instance does not have the backup database lock', async () => {
-      mocks.database.tryLock.mockResolvedValue(false);
-      await sut.onConfigInit({ newConfig: defaults });
-      sut.onConfigUpdate({ newConfig: systemConfigStub.backupEnabled as SystemConfig, oldConfig: defaults });
-      expect(mocks.cron.update).not.toHaveBeenCalled();
-    });
   });
 
   describe('cleanupDatabaseBackups', () => {
@@ -360,7 +297,6 @@ describe(DatabaseBackupService.name, () => {
         mocks.process,
         mocks.database as never,
         mocks.user as never,
-        mocks.cron as never,
         mocks.job as never,
         void 0 as never,
       );
@@ -585,7 +521,6 @@ describe(DatabaseBackupService.name, () => {
           mocks.process,
           mocks.database as never,
           mocks.user as never,
-          mocks.cron as never,
           mocks.job as never,
           void 0 as never,
         );
@@ -660,7 +595,6 @@ describe(DatabaseBackupService.name, () => {
           mocks.process,
           mocks.database as never,
           mocks.user as never,
-          mocks.cron as never,
           mocks.job as never,
           void 0 as never,
         );
@@ -723,7 +657,6 @@ describe(DatabaseBackupService.name, () => {
           mocks.process,
           mocks.database as never,
           mocks.user as never,
-          mocks.cron as never,
           mocks.job as never,
           void 0 as never,
         );
@@ -766,7 +699,6 @@ describe(DatabaseBackupService.name, () => {
           mocks.process,
           mocks.database as never,
           mocks.user as never,
-          mocks.cron as never,
           mocks.job as never,
           void 0 as never,
         );
@@ -1025,7 +957,6 @@ describe(DatabaseBackupService.name, () => {
         mocks.process,
         mocks.database as never,
         mocks.user as never,
-        mocks.cron as never,
         mocks.job as never,
         maintenanceHealthRepositoryMock,
       );

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
+import { BUBBLE_NAME_LAYER, CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
 import { mapSettings } from '$lib/stores/preferences.store';
 import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
@@ -73,6 +74,8 @@ describe('MapScreen (FL-193)', () => {
 
     const { onerror } = getMapLibreStubProps();
     onerror?.({ error: new Error('boom'), sourceId: 'geojson' });
+    // …nor is one from the names drawn beside the bubbles
+    onerror?.({ error: new Error('boom'), sourceId: BUBBLE_NAME_LAYER });
 
     await Promise.resolve();
     expect(screen.queryByText(en.frameleaf_map_tiles_failed_title)).not.toBeInTheDocument();
@@ -169,5 +172,106 @@ describe('MapScreen (FL-193)', () => {
     await waitFor(() => expect(rows()).toBe(240));
     vi.unstubAllGlobals();
     mapSettings.update((settings) => ({ ...settings, showAssetPanel: false }));
+  });
+
+  it('keeps the markers source and the layers its bubbles are read through when the theme swaps the style', () => {
+    const setStyle = vi.fn();
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getZoom: () => 3,
+      fitBounds: vi.fn(),
+      setStyle,
+    });
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const [url, { transformStyle }] = setStyle.mock.calls[0];
+    expect(url).toBe('https://tiles.frameleaf.cloud/v1/style/light.json');
+
+    const markers = { type: 'geojson', data: { type: 'FeatureCollection', features: [] } };
+    const tiles = { type: 'vector', url: 'https://tiles.frameleaf.cloud/v1.json' };
+    const swapped = transformStyle(
+      {
+        version: 8,
+        sources: { tiles, geojson: markers },
+        layers: [
+          { id: 'land', type: 'background' },
+          { id: 'fill-1', type: 'fill', source: 'geojson' },
+          clusterObstacleLayer('geojson'),
+        ],
+      },
+      { version: 8, sources: { tiles }, layers: [{ id: 'land-dark', type: 'background' }] },
+    );
+
+    expect(swapped.sources).toEqual({ tiles, geojson: markers });
+    // Not the obstacles: they go back on with the place-name offsets, which the new style has lost.
+    expect(swapped.layers.map(({ id }: { id: string }) => id)).toEqual(['land-dark', 'fill-1']);
+  });
+
+  it('puts the bubble obstacles back after a theme change only once MapLibre has drawn its frame', async () => {
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const listeners: Record<string, (event: { sourceId?: string }) => void> = {};
+    let obstacles: unknown;
+    const addLayer = vi.fn((layer: unknown) => {
+      obstacles = layer;
+    });
+    // The new style has dropped the obstacle layer and kept the markers source, tiles and all.
+    getMapLibreStubProps().onload?.({
+      on: (type: string, listener: (event: { sourceId?: string }) => void) => (listeners[type] = listener),
+      getLayer: () => obstacles,
+      getSource: () => ({}),
+      getStyle: () => ({ layers: [] }),
+      hasImage: () => true,
+      addLayer,
+    });
+    // the first load has put the obstacles on (below); the theme change then drops them
+    await Promise.resolve();
+    obstacles = undefined;
+    addLayer.mockClear();
+
+    // MapLibre reports the change from inside its frame, after it has evaluated the layers and before
+    // it draws them: a symbol layer added here is drawn with no layout and throws in the renderer.
+    listeners.sourcedata({ sourceId: 'geojson' });
+    listeners.styledata({});
+    expect(addLayer).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(addLayer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: CLUSTER_OBSTACLE_LAYER }));
+  });
+
+  it('puts the bubble obstacles on at the first load, with no style or source event left to wait for', async () => {
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const addLayer = vi.fn();
+    // The markers source went on at "style.load": its events are over by the time "load" runs this.
+    getMapLibreStubProps().onload?.({
+      on: vi.fn(),
+      getLayer: () => {},
+      getSource: () => ({}),
+      getStyle: () => ({ layers: [] }),
+      hasImage: () => true,
+      addLayer,
+    });
+    expect(addLayer).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(addLayer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: CLUSTER_OBSTACLE_LAYER }));
+  });
+
+  it('names the bubbles when the map comes to rest, and is quiet until the names layer is there', async () => {
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const listeners: Record<string, () => void> = {};
+    const getSource = vi.fn();
+    getMapLibreStubProps().onload?.({
+      on: (type: string, listener: () => void) => (listeners[type] = listener),
+      getLayer: () => ({}),
+      getSource,
+    });
+    await Promise.resolve();
+    getSource.mockClear();
+
+    listeners.idle();
+    expect(getSource).toHaveBeenCalledWith(BUBBLE_NAME_LAYER);
+    // while it moves, a name only ever goes: nothing to do before one is drawn
+    listeners.move();
+    await Promise.resolve();
+    expect(getSource).toHaveBeenCalledTimes(2);
   });
 });

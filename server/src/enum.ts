@@ -555,13 +555,20 @@ export enum SystemMetadataKey {
   FrameleafSetupCode = 'frameleaf-setup-code',
   /** FL-159: the cached Frameleaf Cloud service discovery document. */
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
+  /**
+   * FL-379: the Gmail or Microsoft account this server sends email from. The refresh token in it is
+   * sealed with the server's own secret; nothing in it is returned by any API except the address.
+   */
+  FrameleafMailConnection = 'frameleaf-mail-connection',
+  /** FL-379: a mail sign-in an administrator started and has not finished (state and PKCE verifier, sealed). */
+  FrameleafMailSignIn = 'frameleaf-mail-sign-in',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
   FrameleafMlWallet = 'frameleaf-ml-wallet',
   /** FL-156: this server's Frameleaf licence certificate and its refresh state. */
   FrameleafLicense = 'frameleaf-license',
   /**
    * The last valid plan pricing Frameleaf Cloud published on a heartbeat (prices version and the
-   * licensed-server plan discount), so a restart keeps it instead of the bundled snapshot.
+   * Server and Individual licence plan discounts), so a restart keeps it instead of the bundled snapshot.
    */
   FrameleafPricing = 'frameleaf-pricing',
   /**
@@ -628,6 +635,8 @@ export enum SystemMetadataKey {
    * the original files, each recorded separately, and who recorded it.
    */
   BackupRestoreVerification = 'backup-restore-verification',
+  /** FL-362: the backup run in progress: which place it has reached, and a start that is still due. */
+  BackupSequence = 'backup-sequence',
   /**
    * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
    * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
@@ -2297,6 +2306,8 @@ export enum JobName {
   CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
   /** FL-164: the cloud backup schedule's tick: queue a backup run unless an operation is in progress. */
   CloudBackupSchedule = 'CloudBackupSchedule',
+  /** FL-362: the one backup schedule's tick: back up each place that is on, one after another. */
+  BackupSequence = 'BackupSequence',
   /** FL-164: the hourly check that queues the weekly sample or the monthly full verification when due. */
   CloudBackupVerify = 'CloudBackupVerify',
   /** FL-228: one push notice, encrypted per device and handed to the Frameleaf push gateway. */
@@ -2457,8 +2468,15 @@ export enum DatabaseLock {
   /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
   FrameleafServerClaim = 971,
   BuddyBackup = 972,
+  /** FL-362: one server runs the backup schedule and moves a run from one place to the next. */
+  BackupSequence = 973,
   /** FL-218: Cloud authority replacement/revocation and account-link confirmation cannot overlap. */
   FrameleafLinkAuthority = 974,
+  /**
+   * FL-379: reading, refreshing and replacing the mail account this server sends from is one step, so
+   * two workers never refresh the same token at once and a disconnect never races a refresh.
+   */
+  FrameleafMailConnection = 975,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two
@@ -3234,6 +3252,78 @@ export enum ConfigCredential {
   /** `frameleafCloud.cloudBackup.s3.secretAccessKey` (FL-160): the secret of your own S3 bucket. */
   CloudBackupS3SecretKey = 'cloud-backup-s3-secret-key',
 }
+
+/** FL-379: how this server hands an email over for delivery. */
+export enum MailTransportType {
+  /** A mail server entered by hand (host, port, account and password). */
+  Smtp = 'smtp',
+  /** The Gmail API, with a Google account connected by one-click sign-in. */
+  Gmail = 'gmail',
+  /** Microsoft Graph, with an Outlook.com or Microsoft 365 account connected by one-click sign-in. */
+  Microsoft = 'microsoft',
+}
+
+export const MailTransportTypeSchema = z
+  .enum(MailTransportType)
+  .describe('FL-379: how this server sends email: a mail server entered by hand, Gmail or Microsoft')
+  .meta({ id: 'MailTransportType' });
+
+/** FL-379: the mail providers an administrator can connect by signing in. */
+export enum MailSignInProvider {
+  Gmail = 'gmail',
+  Microsoft = 'microsoft',
+}
+
+export const MailSignInProviderSchema = z
+  .enum(MailSignInProvider)
+  .describe('FL-379: a mail provider connected by signing in')
+  .meta({ id: 'MailSignInProvider' });
+
+/** FL-379: whether the connected mail account can still send. */
+export enum MailConnectionStatus {
+  Connected = 'connected',
+  /** The provider refused to renew access (revoked, or the password changed): sign in again. */
+  NeedsSignIn = 'needs-sign-in',
+}
+
+export const MailConnectionStatusSchema = z
+  .enum(MailConnectionStatus)
+  .describe('FL-379: whether the connected mail account can still send')
+  .meta({ id: 'MailConnectionStatus' });
+
+/** FL-379: why one-click mail sign-in is not offered on this server. */
+export enum MailSignInUnavailableReason {
+  /** `FRAMELEAF_CLOUD_URL` is not set. */
+  NotConfigured = 'not-configured',
+  /** This server is not linked to a Frameleaf Cloud account. */
+  NotLinked = 'not-linked',
+  /** Frameleaf Cloud could not be asked which providers it offers. */
+  CloudUnreachable = 'cloud-unreachable',
+}
+
+export const MailSignInUnavailableReasonSchema = z
+  .enum(MailSignInUnavailableReason)
+  .describe('FL-379: why one-click mail sign-in is not offered on this server')
+  .meta({ id: 'MailSignInUnavailableReason' });
+
+/** FL-379: where a mail sign-in an administrator started stands. */
+export enum MailSignInState {
+  /** Nothing is in progress. */
+  None = 'none',
+  /** Waiting for the administrator to finish at the provider. */
+  Pending = 'pending',
+  /** Finished: the account is connected. */
+  Connected = 'connected',
+  /** The administrator cancelled at the provider or on the confirmation page. */
+  Denied = 'denied',
+  /** Too late, or already used: start again. */
+  Expired = 'expired',
+}
+
+export const MailSignInStateSchema = z
+  .enum(MailSignInState)
+  .describe('FL-379: where a mail sign-in an administrator started stands')
+  .meta({ id: 'MailSignInState' });
 
 export const ConfigCredentialSchema = z
   .enum(ConfigCredential)

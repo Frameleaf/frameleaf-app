@@ -899,6 +899,10 @@ export class JobRepository {
       case JobName.CloudMlDescriptionBatch: {
         return { deduplication: { id: JobName.CloudMlDescriptionBatch } };
       }
+      // FL-362: one start of the backup schedule at a time
+      case JobName.BackupSequence: {
+        return { deduplication: { id: JobName.BackupSequence } };
+      }
       // FL-164: one schedule tick and one verification check at a time
       case JobName.CloudBackupSchedule: {
         return { deduplication: { id: JobName.CloudBackupSchedule } };

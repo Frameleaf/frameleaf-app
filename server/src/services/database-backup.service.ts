@@ -7,10 +7,9 @@ import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { finished, pipeline } from 'node:stream/promises';
 import { coerce, gt, satisfies } from 'semver';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnEvent, OnJob } from 'src/decorators.js';
+import { OnJob } from 'src/decorators.js';
 import {
   BackupRestoreVerificationRecordDto,
   BackupRestoreVerificationResponseDto,
@@ -19,7 +18,6 @@ import {
 import {
   CacheControl,
   DatabaseLock,
-  ImmichWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -29,7 +27,6 @@ import {
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { CronRepository } from 'src/repositories/cron.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -49,7 +46,6 @@ import {
 } from 'src/utils/database-backups.js';
 import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { handlePromiseError } from 'src/utils/misc.js';
 
 /** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
 export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
@@ -93,8 +89,6 @@ export class DatabaseBackupService {
     private readonly databaseRepository: DatabaseRepository,
     private readonly userRepository: UserRepository,
     @Optional()
-    private readonly cronRepository: CronRepository,
-    @Optional()
     private readonly jobRepository: JobRepository,
     @Optional()
     private readonly maintenanceHealthRepository: MaintenanceHealthRepository,
@@ -102,43 +96,9 @@ export class DatabaseBackupService {
     this.logger.setContext(this.constructor.name);
   }
 
-  private backupLock = false;
-
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
-  async onConfigInit({
-    newConfig: {
-      backup: { database },
-    },
-  }: ArgOf<'ConfigInit'>) {
-    if (!this.cronRepository || !this.jobRepository) {
-      return;
-    }
-
-    this.backupLock = await this.databaseRepository.tryLock(DatabaseLock.BackupDatabase);
-
-    if (this.backupLock) {
-      this.cronRepository.create({
-        name: 'backupDatabase',
-        expression: database.cronExpression,
-        onTick: () => handlePromiseError(this.jobRepository.queue({ name: JobName.DatabaseBackup }), this.logger),
-        start: database.enabled,
-      });
-    }
-  }
-
-  @OnEvent({ name: 'ConfigUpdate', server: true })
-  onConfigUpdate({ newConfig: { backup } }: ArgOf<'ConfigUpdate'>) {
-    if (!this.cronRepository || !this.jobRepository || !this.backupLock) {
-      return;
-    }
-
-    this.cronRepository.update({
-      name: 'backupDatabase',
-      expression: backup.database.cronExpression,
-      start: backup.database.enabled,
-    });
-  }
-
+  // FL-362: the library data copy has no timer of its own any more. The one backup schedule
+  // (`BackupSequenceService`) makes it first, then Buddy Backup, then Cloud Backup. This job is still
+  // what "Take a snapshot now" queues.
   @OnJob({ name: JobName.DatabaseBackup, queue: QueueName.BackupDatabase })
   async handleBackupDatabase(): Promise<JobStatus> {
     try {

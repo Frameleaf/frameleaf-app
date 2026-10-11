@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { LookupAddress } from 'node:dns';
 import type { RequestOptions } from 'node:https';
@@ -16,6 +17,8 @@ import type { FrameleafCloudBackup } from 'src/types.js';
 import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
+import type { Mock } from 'vitest';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   DatabaseLock,
   JobStatus,
@@ -23,8 +26,10 @@ import {
   MediaOperationStatus,
   MlAdmissionRefusal,
   PushEventType,
+  StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import {
   CloudBackupClaimError,
   CloudBackupFileChangedError,
@@ -33,26 +38,52 @@ import {
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
-import {
-  CLOUD_BACKUP_SCHEDULE_CRON,
-  CLOUD_BACKUP_VERIFY_CRON,
-  CloudBackupService,
-} from 'src/services/cloud-backup.service.js';
+import { CLOUD_BACKUP_VERIFY_CRON, CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
+import {
+  addClientBackupKeys,
+  clientBackupContext,
+  clientBackupObjectKey,
+  decryptClientBackup,
+  encryptClientBackup,
+  rotateClientBackupKeys,
+} from 'src/utils/cloud-backup-crypto.js';
 import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
-import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
+import {
+  type BackupKeyRequest,
+  CloudBackupKeyChannel,
+  loadBackupWorkerIdentity,
+} from 'src/utils/cloud-backup-key-channel.js';
+import {
+  appendBackupSnapshot,
+  readBackupHistory,
+  selectBackupSnapshot,
+  signBackupSnapshot,
+  unwrapBackupRecoveryKit,
+  writeBackupHistory,
+} from 'src/utils/cloud-backup-recovery.js';
+import { backupKeyFile, bucketRef, emptyRunResult, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { readConfig } from 'src/utils/config.js';
 import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
-import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
-import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
+import { FrameleafCloudError, ed25519Thumbprint, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
+import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
+import {
+  OperationClaimLostError,
+  OperationDeadlineError,
+  withOperationExecution,
+} from 'src/utils/operation-execution.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
+vi.mock('src/utils/cloud-backup-key-channel.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/cloud-backup-key-channel.js')>()),
+  loadBackupWorkerIdentity: vi.fn(),
+}));
 vi.mock('node:dns', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:dns')>()),
   lookup: vi.fn(),
@@ -73,6 +104,7 @@ const SHA_SIDECAR = hex('sidecar');
 const SHA_DUMP = hex('dump');
 
 const key = Buffer.alloc(32, 7);
+const workerIdentity = generateKeyPairSync('ed25519').privateKey;
 const fingerprint = keyFingerprint(key);
 const s3 = {
   endpoint: 'https://s3.eu-central-2.storage.example',
@@ -160,20 +192,86 @@ const entry = (fileKey: string, overrides: Partial<CloudBackupEntry> = {}): Clou
   ...overrides,
 });
 
-const dumpKey = 'db/cloud-backup-immich-db-backup-dump.sql.gz';
+const dumpName = 'cloud-backup-frameleaf-db-backup-dump.sql.gz';
+const dumpKey = `db/${dumpName}`;
 const ALBUM_ID = '5b0c4e8a-1d2f-4a3b-9c8d-7e6f5a4b3c2d';
+
+const recoveryFixture = () => {
+  const vaultId = 'f0000000-0000-4000-8000-000000000001';
+  const file = addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId });
+  const pair = generateKeyPairSync('ed25519');
+  const jwk = pair.publicKey.export({ format: 'jwk' });
+  const publicJwk = { kty: 'OKP' as const, crv: 'Ed25519' as const, x: jwk.x! };
+  const signer = {
+    kid: ed25519Thumbprint(publicJwk),
+    publicJwk,
+    sign: () => '',
+    signBytes: (bytes: Buffer) => sign(null, bytes, pair.privateKey),
+  };
+  const snapshot = (sequence: number, previousDigest: string | null, versionId = `version-${sequence}`) =>
+    signBackupSnapshot(
+      {
+        version: 2,
+        instanceId: vaultId,
+        vaultId,
+        snapshotId: `f0000000-0000-4000-8000-${String(sequence + 10).padStart(12, '0')}`,
+        sequence,
+        previousDigest,
+        createdAt: '2026-10-11T00:00:00.000Z',
+        manifest: {
+          format: 'frameleaf-client-backup',
+          formatVersion: 1,
+          keyVersion: 1,
+          objectKey: `m/v1/${vaultId}/1/20261011T0000${String(sequence).padStart(2, '0')}Z.json.gz`,
+          versionId,
+          ciphertextSha256: 'a'.repeat(64),
+        },
+        signerKid: signer.kid,
+      },
+      signer,
+    );
+  const first = snapshot(1, null);
+  const older = appendBackupSnapshot(null, first);
+  const second = snapshot(2, first.digest);
+  return { vaultId, file, signer, snapshot, older, history: appendBackupSnapshot(older, second), first, second };
+};
+
+const managedGrantFixture = (name: string) => {
+  const legacy = cloudContractFixture(name);
+  const {
+    accessKeyId: _id,
+    expiresAt: _expires,
+    rotateAfterSec: _after,
+    previousKeyExpiresAt: _previous,
+    credentials,
+    ...metadata
+  } = legacy;
+  const current = cloudContractFixture('backup/capability-upload.json');
+  return {
+    ...metadata,
+    version: 4,
+    coverage: current.coverage,
+    objectFormats: current.objectFormats,
+    ...(credentials && {
+      capability: {
+        ...current.capability,
+        credentials: { ...credentials, sessionToken: 'synthetic-session-token-example' },
+      },
+    }),
+  };
+};
 
 describe(CloudBackupService.name, () => {
   let sut: CloudBackupService;
   let mocks: ReturnType<typeof getMocks>;
   let metadata: Record<string, unknown>;
-  let operations: Record<string, ReturnType<typeof vi.fn>>;
-  let store: Record<string, ReturnType<typeof vi.fn>>;
-  let index: Record<string, ReturnType<typeof vi.fn>>;
-  let keys: Record<string, ReturnType<typeof vi.fn>>;
-  let databaseBackup: Record<string, ReturnType<typeof vi.fn>>;
-  let cloudBackup: Record<string, ReturnType<typeof vi.fn>>;
-  let details: Record<string, ReturnType<typeof vi.fn>>;
+  let operations: Record<string, Mock>;
+  let store: Record<string, Mock>;
+  let index: Record<string, Mock>;
+  let keys: Record<string, Mock>;
+  let databaseBackup: Record<string, Mock>;
+  let cloudBackup: Record<string, Mock>;
+  let details: Record<string, Mock>;
   /** What each streamed upload sent (the gzipped manifests). */
   let streamed: Buffer[];
 
@@ -218,8 +316,13 @@ describe(CloudBackupService.name, () => {
   type Recorded = { mock: { calls: unknown[][]; invocationCallOrder: number[] } };
   const orderOf = (recorded: Recorded, predicate: (args: unknown[]) => boolean) =>
     recorded.mock.invocationCallOrder[recorded.mock.calls.findIndex((args) => predicate(args))];
+  const keyRequest = () =>
+    mocks.websocket.serverSend.mock.calls.findLast(
+      ([name]) => name === 'CloudBackupKeyRequest',
+    )?.[1] as BackupKeyRequest;
 
   beforeEach(() => {
+    vi.mocked(loadBackupWorkerIdentity).mockReset().mockResolvedValue(workerIdentity);
     vi.mocked(selectBackupLocation).mockReset();
     mocks = getMocks();
     metadata = {};
@@ -257,6 +360,7 @@ describe(CloudBackupService.name, () => {
       heartbeat: vi.fn().mockResolvedValue(true),
       reportProgress: vi.fn().mockResolvedValue(true),
       setBulkResult: vi.fn().mockResolvedValue(running),
+      setBackupTransfer: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
@@ -332,7 +436,7 @@ describe(CloudBackupService.name, () => {
       remove: vi.fn().mockResolvedValue(undefined),
     };
     databaseBackup = {
-      createDatabaseBackup: vi.fn().mockResolvedValue('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz'),
+      createDatabaseBackup: vi.fn().mockResolvedValue(join(StorageCore.getBaseFolder(StorageFolder.Backups), dumpName)),
     };
     cloudBackup = {
       metadata: vi.fn().mockResolvedValue(null),
@@ -345,11 +449,15 @@ describe(CloudBackupService.name, () => {
       putEscrow: vi.fn().mockResolvedValue(undefined),
       getEscrow: vi.fn(),
       deleteEscrow: vi.fn().mockResolvedValue(undefined),
+      reportSnapshot: vi.fn().mockResolvedValue(undefined),
+      putRecoveryPackage: vi.fn().mockResolvedValue(undefined),
+      deleteRecoveryPackages: vi.fn().mockResolvedValue(undefined),
     };
     sut = build();
     // an own-memory key is asked for without waiting; a spec that needs the wait sets it
     sut.keyAskMs = 0;
   });
+  afterEach(() => sut.onShutdown());
 
   describe('task checkpoint progress', () => {
     beforeEach(() => vi.useFakeTimers());
@@ -401,6 +509,24 @@ describe(CloudBackupService.name, () => {
         key: key.toString('base64'),
         ...overrides,
       } as never);
+
+    it('does not install a memory key if a lock overtakes setup', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-memory' });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig('own-memory');
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let release!: () => void;
+      const barrier = new Promise<void>((done) => (release = done));
+      store.claim.mockReturnValueOnce(barrier.then(() => ({ existing: true, claimedAt: '2026-09-25T00:00:00.000Z' })));
+      const pending = setup({ keyMode: 'own-memory', acknowledgement: 'I understand' });
+      await vi.waitFor(() => expect(store.claim).toHaveBeenCalledOnce());
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      const rejected = expect(pending).rejects.toThrow('changed or locked');
+      release();
+      await rejected;
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+    });
 
     it('claims the bucket with the generated key and keeps the key only in its 0600 key file (server mode)', async () => {
       mocks.crypto.randomBytes.mockReturnValue(key);
@@ -460,11 +586,8 @@ describe(CloudBackupService.name, () => {
       const status = await setup({ keyMode: 'own-memory', acknowledgement: ' I understand ' });
 
       expect(keys.write).not.toHaveBeenCalled();
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
-      // shared only once the claim is saved, so the other workers accept it
-      const saved = orderOf(mocks.systemMetadata.set, ([name]) => name === SystemMetadataKey.FrameleafCloudBackup);
-      const shared = orderOf(mocks.websocket.serverSend, ([name]) => name === 'CloudBackupKeyShare');
-      expect(saved).toBeLessThan(shared);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('CloudBackupKeyShare', expect.anything());
+      expect(JSON.stringify(mocks.websocket.serverSend.mock.calls)).not.toContain(key.toString('base64'));
       expect(status.keyLoaded).toBe(true);
     });
 
@@ -503,6 +626,27 @@ describe(CloudBackupService.name, () => {
 
       await expect(setup()).rejects.toThrow('could not be stored on this server');
       expect(store.claim).not.toHaveBeenCalled();
+    });
+
+    it('does not activate roots from a failed key-file write', async () => {
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ ...instance, instanceId: vaultId } as never);
+      const file = JSON.stringify(addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId }));
+      keys.write.mockRejectedValue(new Error('EACCES'));
+      await expect(setup({ key: file })).rejects.toThrow('could not be stored');
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-memory', instanceId: vaultId });
+      await sut.unlock({ key: key.toString('base64') });
+      const recipient = new CloudBackupKeyChannel('recipient', () => Promise.resolve(workerIdentity));
+      try {
+        const binding = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
+        await sut.onKeyRequest((await recipient.request(binding))!);
+        const share = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1];
+        expect(await recipient.accept(share, binding)).toBe(true);
+        expect(recipient.getRecovery(binding)).toBeNull();
+        expect(sut['clientKeys'].size).toBe(0);
+      } finally {
+        recipient.close();
+      }
     });
 
     it('forgets what it knew of a bucket it claims afresh (emptied or recreated), and keeps it for its own claim', async () => {
@@ -553,7 +697,7 @@ describe(CloudBackupService.name, () => {
       ['endpoint', 'https://different-s3.test'],
       ['bucket', 'different-bucket'],
     ])('refuses stale safety proof after changed BYO %s with the same target', async (field, value) => {
-      await sut.onKeyShare({ key: key.toString('base64') });
+      await sut.unlock({ key: key.toString('base64') });
       const settings = enabledConfig('own-memory');
       settings.frameleafCloud.cloudBackup.s3 = { ...s3, [field]: value };
       metadata[SystemMetadataKey.SystemConfig] = settings;
@@ -589,14 +733,17 @@ describe(CloudBackupService.name, () => {
       expect(store.probe).not.toHaveBeenCalled();
     });
 
-    it('reports a unloaded key and recognizes another worker loading it', async () => {
+    it('reports an unloaded key and recognizes another worker loading it', async () => {
       await expect(sut.getSafetyAvailability()).resolves.toEqual({
         state: 'paused-key-unloaded',
         bucket: ref,
         readOnly: false,
         readOnlyReason: null,
       });
-      await sut.onKeyShare({ key: key.toString('base64') });
+      const holder = new CloudBackupKeyChannel('holder', () => Promise.resolve(workerIdentity));
+      holder.setKey(claim(), key);
+      await sut.onKeyShare((await holder.share(keyRequest(), claim()))!);
+      holder.close();
       await expect(sut.getSafetyAvailability()).resolves.toEqual({
         state: 'ready',
         bucket: ref,
@@ -620,7 +767,7 @@ describe(CloudBackupService.name, () => {
       const status = await sut.unlock({ key: key.toString('base64') });
 
       expect(status.keyLoaded).toBe(true);
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('CloudBackupKeyShare', expect.anything());
       await sut.startRun(authStub.admin);
       expect(operations.createExclusive).toHaveBeenCalledWith(
         expect.objectContaining({ kind: MediaOperationKind.CloudBackup }),
@@ -629,23 +776,406 @@ describe(CloudBackupService.name, () => {
       );
     });
 
-    it('accepts the key another worker loaded, only for this bucket', async () => {
-      await sut.onKeyShare({ key: Buffer.alloc(32, 9).toString('base64') });
+    it('rejects plaintext key events and answers only authenticated recipients for this bucket', async () => {
+      await sut.onKeyShare({ key: key.toString('base64') } as never);
       await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
-
-      await sut.onKeyShare({ key: key.toString('base64') });
-      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: true });
-      sut.onKeyRequest();
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyShare', { key: key.toString('base64') });
+      await sut.unlock({ key: key.toString('base64') });
+      const recipient = new CloudBackupKeyChannel('recipient', () => Promise.resolve(workerIdentity));
+      try {
+        const request = (await recipient.request(claim()))!;
+        await sut.onKeyRequest({ ...request, workerId: 'forged' });
+        expect(mocks.websocket.serverSend).not.toHaveBeenCalledWith('CloudBackupKeyShare', expect.anything());
+        await sut.onKeyRequest(request);
+        const share = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1];
+        expect(await recipient.accept(share, claim())).toBe(true);
+        const publications = mocks.websocket.serverSend.mock.calls.length;
+        await sut.onKeyRequest(request);
+        expect(mocks.websocket.serverSend.mock.calls).toHaveLength(publications);
+        expect(
+          JSON.stringify([
+            mocks.websocket.serverSend.mock.calls,
+            mocks.logger.log.mock.calls,
+            mocks.logger.warn.mock.calls,
+          ]),
+        ).not.toContain(key.toString('base64'));
+      } finally {
+        recipient.close();
+      }
     });
+
+    it('retains the full client keyring when the same legacy bucket key is unlocked again', async () => {
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-memory', instanceId: vaultId });
+      const file = addClientBackupKeys({ ...JSON.parse(keyFileOf('own-memory')), instanceId: vaultId });
+      await sut.unlock({ key: JSON.stringify(file) });
+      await sut.unlock({ key: key.toString('base64') });
+      const recipient = new CloudBackupKeyChannel('recipient', () => Promise.resolve(workerIdentity));
+      try {
+        const binding = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
+        await sut.onKeyRequest((await recipient.request(binding))!);
+        const share = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1];
+        expect(await recipient.accept(share, binding)).toBe(true);
+        expect(JSON.parse(recipient.getRecovery(binding)!.toString()).client).toEqual(file.client);
+      } finally {
+        recipient.close();
+      }
+      expect(keys.write).not.toHaveBeenCalled();
+    });
+
+    it('unlocks a restarted worker with rotated independent roots and pinned history without exposing them', async () => {
+      const fixture = recoveryFixture();
+      const file = {
+        ...fixture.file,
+        client: rotateClientBackupKeys(fixture.file.client, key),
+        recovery: fixture.history,
+      };
+      const binding = claim({ keyMode: 'own-memory', instanceId: fixture.vaultId });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = binding;
+      const status = await sut.unlock({ key: JSON.stringify(file) });
+      const peer = build();
+      peer.keyAskMs = 0;
+      try {
+        await peer.onBootstrapAskForKey();
+        await sut.onKeyRequest(keyRequest());
+        const share = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1];
+        await peer.onKeyShare(share as never);
+        expect(await peer.getStatus()).toMatchObject({ keyLoaded: true });
+        expect(peer['clientKeys'].get(fingerprint)).toEqual(file.client);
+        expect(peer['importedHistory'].get(fingerprint)?.anchor).toEqual(fixture.history.anchor);
+        expect(keys.write).not.toHaveBeenCalled();
+        const publicState = JSON.stringify([
+          status,
+          metadata,
+          configWrites(),
+          mocks.websocket.serverSend.mock.calls,
+          mocks.logger.log.mock.calls,
+          mocks.logger.warn.mock.calls,
+          mocks.logger.error.mock.calls,
+          mocks.systemMetadata.set.mock.calls,
+        ]);
+        for (const value of [key.toString('base64'), ...Object.values(file.client.keys)])
+          expect(publicState).not.toContain(value);
+      } finally {
+        await peer.onShutdown();
+      }
+    });
+
+    it('refreshes unlocked peers after root rotation even when a restarted worker first hears an older holder', async () => {
+      const fixture = recoveryFixture();
+      const directory = await mkdtemp(join(tmpdir(), 'worker-root-rotation-'));
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: directory } }),
+      );
+      store.readMarker.mockResolvedValue({ instanceId: fixture.vaultId });
+      const binding = claim({ keyMode: 'own-memory', instanceId: fixture.vaultId });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = binding;
+      const oldFile = { ...fixture.file, recovery: fixture.history };
+      const file = { ...oldFile, client: rotateClientBackupKeys(oldFile.client, key) };
+      const peer = build();
+      const stale = build();
+      const restarted = build();
+      try {
+        await sut.unlock({ key: JSON.stringify(oldFile) });
+        await peer.unlock({ key: JSON.stringify(oldFile) });
+        await stale.unlock({ key: JSON.stringify(oldFile) });
+        const active = (await peer['openBucket'](operationOf(), 'claim-1', () => Promise.resolve()))!;
+        await sut.unlock({ key: JSON.stringify(file) });
+        const update = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyUpdate')?.[1];
+        expect(update).toBeTruthy();
+        await peer.onKeyUpdate(update as never);
+        expect(await peer['loadKey'](binding, true)).toBeNull();
+        const refresh = keyRequest();
+        expect(refresh).toMatchObject({ version: 2, keyVersion: 2 });
+        await stale.onKeyRequest(refresh);
+        await peer.onKeyShare(
+          mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1] as never,
+        );
+        expect(peer['clientKeys'].get(fingerprint)?.current).toBe(1);
+        await sut.onKeyRequest(refresh);
+        await peer.onKeyShare(
+          mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1] as never,
+        );
+        expect(peer['clientKeys'].get(fingerprint)).toEqual(file.client);
+        expect(active.clientKeys).toEqual(oldFile.client);
+        expect(active.connection.recoveryKeys).toEqual(oldFile.client.keys);
+        expect(active.bucketKey).toEqual(key);
+        expect(
+          peer['clientWriteVersion']({
+            clientKeys: active.clientKeys,
+            metadata: binding,
+            progress: { result: {} },
+          } as never),
+        ).toBe(1);
+
+        await restarted.onBootstrapAskForKey();
+        const bootstrap = keyRequest();
+        await stale.onKeyRequest(bootstrap);
+        const oldReply = mocks.websocket.serverSend.mock.calls.findLast(
+          ([name]) => name === 'CloudBackupKeyShare',
+        )?.[1];
+        await restarted.onKeyShare(oldReply as never);
+        expect(restarted['clientKeys'].get(fingerprint)?.current).toBe(1);
+        await sut.onKeyRequest(bootstrap);
+        const newer = mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyUpdate')?.[1];
+        await restarted.onKeyUpdate(newer as never);
+        expect(await restarted['loadKey'](binding, true)).toBeNull();
+        await restarted.onKeyShare(oldReply as never);
+        await sut.onKeyRequest(keyRequest());
+        await restarted.onKeyShare(
+          mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1] as never,
+        );
+        expect(restarted['clientKeys'].get(fingerprint)).toEqual(file.client);
+        for (const worker of [peer, restarted]) {
+          expect(
+            worker['clientWriteVersion']({
+              clientKeys: worker['clientKeys'].get(fingerprint),
+              metadata: binding,
+              progress: { result: {} },
+            } as never),
+          ).toBe(2);
+          expect(
+            worker['ownBucketConnection'](binding, (await savedConfig()).frameleafCloud.cloudBackup).recoveryKeys,
+          ).toEqual(file.client.keys);
+          expect(worker['importedHistory'].get(fingerprint)?.anchor).toEqual(fixture.history.anchor);
+          const operationKey = await worker['loadKey'](binding, true);
+          expect(operationKey).toEqual(key);
+          const connection = worker['ownBucketConnection'](binding, (await savedConfig()).frameleafCloud.cloudBackup);
+          for (const version of [1, 2]) {
+            const plaintext = Buffer.from(`historical media version ${version}`);
+            const root = Buffer.from(file.client.keys[version], 'base64');
+            const object = clientBackupObjectKey(
+              root,
+              fixture.vaultId,
+              version,
+              createHash('sha256').update(plaintext).digest('hex'),
+            );
+            const context = clientBackupContext(connection.bucket, object)!;
+            const ciphertext = Buffer.concat(
+              await Array.fromAsync(encryptClientBackup(Readable.from([plaintext]), plaintext.length, root, context)),
+            );
+            const restored = Buffer.concat(
+              await Array.fromAsync(
+                decryptClientBackup(
+                  Readable.from([ciphertext]),
+                  Buffer.from(connection.recoveryKeys![version], 'base64'),
+                  context,
+                ),
+              ),
+            );
+            expect(restored).toEqual(plaintext);
+          }
+        }
+      } finally {
+        await Promise.all([peer, stale, restarted].map((worker) => worker.onShutdown()));
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('ignores forged version hints and cannot reacquire keys from a hint after a lock', async () => {
+      const fixture = recoveryFixture();
+      const binding = claim({ keyMode: 'own-memory', instanceId: fixture.vaultId });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = binding;
+      await sut.unlock({ key: JSON.stringify(fixture.file) });
+      const holder = new CloudBackupKeyChannel('holder', () => Promise.resolve(workerIdentity));
+      holder.setKey(binding, key);
+      try {
+        const update = (await holder.update(binding, 2))!;
+        mocks.websocket.serverSend.mockClear();
+        await sut.onKeyUpdate({ ...update, keyVersion: 3 });
+        expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+        let release!: () => void;
+        vi.mocked(loadBackupWorkerIdentity).mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              release = () => done(workerIdentity);
+            }),
+        );
+        const accepting = sut.onKeyUpdate(update);
+        await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+        sut['clearMemoryKey']();
+        release();
+        await accepting;
+        await sut.onKeyUpdate((await holder.update(binding, 2))!);
+        expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+        expect(sut['keyChannel'].getKey(binding)).toBeNull();
+        expect(sut['keyDiscovery'].size).toBe(0);
+      } finally {
+        holder.close();
+      }
+    });
+
+    it.each([true, false])(
+      'accepts a replacement bucket on a remote peer after the old bucket rotated (CSE %s)',
+      async (client) => {
+        const fixture = recoveryFixture();
+        const binding = claim({ keyMode: 'own-memory', instanceId: fixture.vaultId });
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = binding;
+        mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ ...instance, instanceId: fixture.vaultId } as never);
+        store.readMarker.mockResolvedValue({ instanceId: fixture.vaultId });
+        const peer = build();
+        peer.keyAskMs = 0;
+        try {
+          await sut.unlock({ key: JSON.stringify(fixture.file) });
+          await peer.unlock({ key: JSON.stringify(fixture.file) });
+          await sut.unlock({
+            key: JSON.stringify({ ...fixture.file, client: rotateClientBackupKeys(fixture.file.client, key) }),
+          });
+          await peer.onKeyUpdate(
+            mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyUpdate')?.[1] as never,
+          );
+          await sut.onKeyRequest(keyRequest());
+          const oldReply = mocks.websocket.serverSend.mock.calls.findLast(
+            ([name]) => name === 'CloudBackupKeyShare',
+          )?.[1];
+          await peer.onKeyShare(oldReply as never);
+          expect(peer['clientKeys'].get(fingerprint)?.current).toBe(2);
+
+          await sut.unlock({
+            key: JSON.stringify({
+              ...fixture.file,
+              client: rotateClientBackupKeys(sut['clientKeys'].get(fingerprint)!, key),
+            }),
+          });
+          const oldUpdate = mocks.websocket.serverSend.mock.calls.findLast(
+            ([name]) => name === 'CloudBackupKeyUpdate',
+          )?.[1];
+          let release!: () => void;
+          vi.mocked(loadBackupWorkerIdentity).mockImplementationOnce(
+            () =>
+              new Promise((done) => {
+                release = () => done(workerIdentity);
+              }),
+          );
+          const delayed = peer.onKeyUpdate(oldUpdate as never);
+          await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+
+          const newKey = Buffer.alloc(32, 11);
+          const newFile = addClientBackupKeys({
+            ...fixture.file,
+            key: newKey.toString('base64'),
+            fingerprint: keyFingerprint(newKey),
+            bucket: 'new-family-backup',
+          });
+          await sut.setup(authStub.admin, {
+            target: 'byo-s3',
+            s3: { ...s3, bucket: newFile.bucket },
+            keyMode: 'own-memory',
+            key: client ? JSON.stringify(newFile) : newKey.toString('base64'),
+            acknowledgement: 'I understand',
+          });
+          const config = mocks.event.emit.mock.calls.findLast(([name]) => name === 'ConfigUpdate')?.[1];
+          peer.onConfigUpdate(config as never);
+          await peer.getStatus();
+          const request = keyRequest();
+          release();
+          await delayed;
+          expect(keyRequest()).toBe(request);
+          expect(request).toMatchObject({
+            version: 1,
+            bucketRef: bucketRef(s3.endpoint, newFile.bucket),
+            keyFingerprint: keyFingerprint(newKey),
+          });
+          expect(request.keyVersion).toBeUndefined();
+          await peer.onKeyShare(oldReply as never);
+          await sut.onKeyRequest(request);
+          await peer.onKeyShare(
+            mocks.websocket.serverSend.mock.calls.findLast(([name]) => name === 'CloudBackupKeyShare')?.[1] as never,
+          );
+          const current = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
+          const opened = (await peer['openBucket'](
+            operationOf({
+              snapshot: { version: 1, bucketRef: current.bucketRef, keyFingerprint: current.keyFingerprint },
+            }),
+            'claim-new',
+            () => Promise.resolve(),
+          ))!;
+          expect(opened.bucketKey).toEqual(newKey);
+          expect(opened.clientKeys).toEqual(client ? newFile.client : undefined);
+        } finally {
+          await peer.onShutdown();
+        }
+      },
+    );
+
+    it('does not activate CSE roots or history when a lock overtakes an asynchronous unlock', async () => {
+      const fixture = recoveryFixture();
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: 'own-memory', instanceId: fixture.vaultId });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig('own-memory');
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let release!: () => void;
+      vi.mocked(loadBackupWorkerIdentity).mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            release = () => done(workerIdentity);
+          }),
+      );
+      const pending = sut.unlock({ key: JSON.stringify({ ...fixture.file, recovery: fixture.history }) });
+      await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      const rejected = expect(pending).rejects.toThrow('changed or locked');
+      release();
+      await rejected;
+      expect(sut['clientKeys'].size).toBe(0);
+      expect(sut['importedHistory'].size).toBe(0);
+      expect(
+        sut['keyChannel'].getRecovery(metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup),
+      ).toBeNull();
+    });
+
+    it.each(['embedded-key', 'vault', 'legacy-root', 'history'])(
+      'refuses an authenticated reply with invalid CSE %s before installing keys',
+      async (invalid) => {
+        const fixture = recoveryFixture();
+        const binding = claim({ keyMode: 'own-memory', instanceId: fixture.vaultId });
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = binding;
+        const file = { ...fixture.file, recovery: fixture.history };
+        switch (invalid) {
+          case 'embedded-key': {
+            file.key = Buffer.alloc(32, 19).toString('base64');
+            break;
+          }
+          case 'vault': {
+            file.client.vaultId = 'f0000000-0000-4000-8000-000000000099';
+            break;
+          }
+          case 'legacy-root': {
+            file.client.keys[1] = key.toString('base64');
+            break;
+          }
+          case 'history': {
+            file.recovery.snapshots[0].signature = 'A'.repeat(86);
+            break;
+          }
+        }
+        const holder = new CloudBackupKeyChannel('holder', () => Promise.resolve(workerIdentity));
+        holder.setKey(binding, key, holder.revision, Buffer.from(JSON.stringify(file)));
+        try {
+          await sut.onBootstrapAskForKey();
+          await sut.onKeyShare((await holder.share(keyRequest(), binding))!);
+          expect(sut['keyChannel'].getKey(binding)).toBeNull();
+          expect(sut['keyChannel'].getRecovery(binding)).toBeNull();
+          expect(sut['clientKeys'].size).toBe(0);
+          expect(sut['importedHistory'].size).toBe(0);
+        } finally {
+          holder.close();
+        }
+      },
+    );
 
     it('asks the other workers for the key when this worker restarted without it', async () => {
       sut.keyAskMs = 5000;
       const status = sut.getStatus();
-      await vi.waitFor(() => expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest'));
+      await vi.waitFor(() =>
+        expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest', expect.anything()),
+      );
 
       // another worker answers: the status is read with the key, without waiting out the timeout
-      await sut.onKeyShare({ key: key.toString('base64') });
+      const holder = new CloudBackupKeyChannel('holder', () => Promise.resolve(workerIdentity));
+      holder.setKey(claim(), key);
+      await sut.onKeyShare((await holder.share(keyRequest(), claim()))!);
+      holder.close();
 
       await expect(status).resolves.toMatchObject({ keyLoaded: true });
     });
@@ -653,7 +1183,10 @@ describe(CloudBackupService.name, () => {
     it('asks for the key when a worker starts', async () => {
       await sut.onBootstrapAskForKey();
 
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest');
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith(
+        'CloudBackupKeyRequest',
+        expect.objectContaining({ version: 1, publicKey: expect.any(String), signature: expect.any(String) }),
+      );
     });
 
     it('has nothing to unlock in the stored key modes', async () => {
@@ -665,7 +1198,7 @@ describe(CloudBackupService.name, () => {
     it('lets a run wait for the key without failing it', async () => {
       await sut.run(operationOf(), 'claim-1');
 
-      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest');
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('CloudBackupKeyRequest', expect.anything());
       expect(operations.requeue).toHaveBeenCalledWith(
         'run-1',
         'claim-1',
@@ -681,6 +1214,100 @@ describe(CloudBackupService.name, () => {
         lastRun: { status: 'waiting-for-key' },
       });
     });
+
+    it('requires a usable private identity to unlock and reports a mount problem without logging material', async () => {
+      vi.mocked(loadBackupWorkerIdentity).mockRejectedValue(new Error('identity unavailable'));
+      await expect(sut.unlock({ key: key.toString('base64') })).rejects.toThrow('FRAMELEAF_IDENTITY_DIR');
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      expect(JSON.stringify(mocks.logger.warn.mock.calls)).not.toContain(key.toString('base64'));
+    });
+
+    it.each(['metadata', 'identity'])('does not reinstall a key when a lock overtakes the %s read', async (phase) => {
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let release!: () => void;
+      let entered!: () => void;
+      const barrier = new Promise<void>((done) => (release = done));
+      const started = new Promise<void>((done) => (entered = done));
+      if (phase === 'identity') {
+        vi.mocked(loadBackupWorkerIdentity).mockImplementationOnce(async () => {
+          entered();
+          await barrier;
+          return workerIdentity;
+        });
+      } else {
+        mocks.systemMetadata.get.mockImplementationOnce(async () => {
+          entered();
+          await barrier;
+          return claim({ keyMode: 'own-memory' }) as never;
+        });
+      }
+      const pending = sut.unlock({ key: key.toString('base64') });
+      await started;
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      const rejected = expect(pending).rejects.toThrow('changed or locked');
+      release();
+      await rejected;
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      metadata[SystemMetadataKey.SystemConfig] = newConfig;
+      await expect(sut.unlock({ key: key.toString('base64') })).resolves.toMatchObject({ keyLoaded: true });
+    });
+
+    it.each(['own-memory', 'server'])('keeps a newer key when an older %s status read finishes', async (mode) => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ keyMode: mode });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig(mode);
+      keys.read.mockResolvedValue(keyFileOf());
+      let release!: () => void;
+      operations.getActiveOfKind.mockReturnValueOnce(new Promise<void>((done) => (release = done)));
+      const previousStatus = sut.getStatus();
+      expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.FrameleafCloudBackup);
+      const next = Buffer.alloc(32, 17);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        keyMode: 'own-memory',
+        keyFingerprint: keyFingerprint(next),
+      });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig('own-memory');
+      await expect(sut.unlock({ key: next.toString('base64') })).resolves.toMatchObject({ keyLoaded: true });
+      release();
+      await previousStatus;
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: true });
+    });
+
+    it('clears own-memory keys on configuration lock, mode change and shutdown', async () => {
+      await sut.unlock({ key: key.toString('base64') });
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      sut.onConfigUpdate({ oldConfig, newConfig });
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      await sut.unlock({ key: key.toString('base64') });
+      const stored = structuredClone(newConfig);
+      stored.frameleafCloud.cloudBackup.keyMode = 'server';
+      sut.onConfigUpdate({ oldConfig: newConfig, newConfig: stored });
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+      await sut.unlock({ key: key.toString('base64') });
+      await sut.onShutdown();
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+    });
+
+    it('keeps an active operation key stable through a memory lock, then wipes its private copy', async () => {
+      await sut.unlock({ key: key.toString('base64') });
+      const oldConfig = await savedConfig();
+      const newConfig = structuredClone(oldConfig);
+      newConfig.frameleafCloud.cloudBackup.enabled = false;
+      let operationKey: Buffer | undefined;
+      store.readMarker.mockImplementation((_connection: unknown, bytes: Buffer) => {
+        operationKey = bytes;
+        sut.onConfigUpdate({ oldConfig, newConfig });
+        expect(bytes).toEqual(key);
+        return { instanceId: 'instance-1' };
+      });
+      await sut.run(operationOf(), 'claim-1');
+      expect(operations.complete).toHaveBeenCalled();
+      expect(operationKey).toEqual(Buffer.alloc(32));
+      await expect(sut.getStatus()).resolves.toMatchObject({ keyLoaded: false });
+    });
   });
 
   describe('run', () => {
@@ -688,6 +1315,117 @@ describe(CloudBackupService.name, () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
+    });
+
+    it.each(['server', 'own-memory'] as const)(
+      'writes v3 references and durably anchors the exact encrypted manifest in %s mode',
+      async (keyMode) => {
+        const directory = await mkdtemp(join(tmpdir(), 'client-backup-run-'));
+        const vaultId = 'f0000000-0000-4000-8000-000000000001';
+        const file = addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId });
+        const root = Buffer.from(file.client.keys[1], 'base64');
+        const manifestId = 'f0000000-0000-4000-8000-000000000002';
+        const pair = generateKeyPairSync('ed25519');
+        const jwk = pair.publicKey.export({ format: 'jwk' });
+        const publicJwk = { kty: 'OKP' as const, crv: 'Ed25519' as const, x: jwk.x! };
+        mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ ...instance, instanceId: vaultId } as never);
+        mocks.instanceIdentity.currentSigner.mockReturnValue({
+          kid: ed25519Thumbprint(publicJwk),
+          publicJwk,
+          sign: () => '',
+          signBytes: (bytes: Buffer) => sign(null, bytes, pair.privateKey),
+        });
+        mocks.config.getEnv.mockReturnValue(
+          mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: directory } }),
+        );
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ instanceId: vaultId, keyMode });
+        metadata[SystemMetadataKey.SystemConfig] = enabledConfig(keyMode);
+        store.readMarker.mockResolvedValue({
+          format: 'frameleaf-backup',
+          version: 1,
+          instanceId: vaultId,
+          keyFingerprint: fingerprint,
+          claimedAt: '2026-09-25T00:00:00.000Z',
+        });
+        keys.read.mockResolvedValue(JSON.stringify(file));
+        let operationRoot: Buffer | undefined;
+        if (keyMode === 'own-memory') {
+          keys.read.mockResolvedValue(null);
+          await sut.unlock({ key: JSON.stringify(file) });
+          const binding = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
+          const ownedKey = sut['keyChannel'].getKey(binding)!;
+          const ownedRecovery = sut['keyChannel'].getRecovery(binding)!;
+          const oldConfig = await savedConfig();
+          const newConfig = structuredClone(oldConfig);
+          newConfig.frameleafCloud.cloudBackup.enabled = false;
+          store.uploadFile.mockImplementationOnce((_connection, _key, _path, bytes) => {
+            operationRoot = [...sut['operationKeys']].find((value) => value.equals(root));
+            sut.onConfigUpdate({ oldConfig, newConfig });
+            expect(ownedKey).toEqual(Buffer.alloc(32));
+            expect(ownedRecovery).toEqual(Buffer.alloc(ownedRecovery.length));
+            expect(bytes).toEqual(key);
+            expect(operationRoot).toEqual(root);
+            return Promise.resolve({ etag: 'database', size: 50 });
+          });
+        }
+        index.createManifest.mockImplementation(({ key }) => Promise.resolve({ id: manifestId, key }));
+        index.listAssets.mockResolvedValueOnce([asset('asset-1', SHA_A)]).mockResolvedValueOnce([]);
+        index.getEntriesPage.mockResolvedValue([entry('asset-1:original')]);
+        store.hashObject = vi.fn().mockRejectedValue(new CloudBackupStoreError('missing', 404, 'NoSuchKey'));
+        store.finishClientUpload = vi.fn().mockResolvedValue(undefined);
+        store.uploadStream.mockImplementation(async (_connection, _key, source: AsyncIterable<Buffer>) => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of source) chunks.push(Buffer.from(chunk));
+          streamed.push(Buffer.concat(chunks));
+          return {
+            etag: 'encrypted',
+            size: streamed.at(-1)!.length,
+            versionId: 'provider-version-1',
+            ciphertextSha256: 'a'.repeat(64),
+          };
+        });
+        vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '1');
+        try {
+          await sut.run(operationOf(), 'claim-1');
+          expect(operations.fail).not.toHaveBeenCalled();
+          expect(operations.complete).toHaveBeenCalled();
+          if (keyMode === 'own-memory') {
+            expect(operationRoot).toEqual(Buffer.alloc(32));
+            expect(sut['clientKeys'].size).toBe(0);
+            expect(sut['importedHistory'].size).toBe(0);
+          }
+          expect(manifestOf()).toMatchObject({
+            version: 3,
+            instanceId: vaultId,
+            assets: {
+              'asset-1': {
+                files: [expect.objectContaining({ objectKey: clientBackupObjectKey(root, vaultId, 1, SHA_A) })],
+              },
+            },
+          });
+          const historyPath = join(directory, `cloud-backup-history-${hex(ref)}.json`);
+          const history = (await readBackupHistory(historyPath))!;
+          expect(selectBackupSnapshot(history).record.descriptor.manifest).toMatchObject({
+            versionId: 'provider-version-1',
+            ciphertextSha256: 'a'.repeat(64),
+          });
+          expect(await readFile(historyPath, 'utf8')).not.toContain(file.client.keys[1]);
+          expect(store.finishClientUpload.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(
+            index.finishManifest.mock.invocationCallOrder[0],
+          );
+        } finally {
+          vi.unstubAllEnvs();
+          await rm(directory, { recursive: true, force: true });
+        }
+      },
+    );
+
+    it('keeps BYO multipart permission requirements and avoids Cloud capability calls', async () => {
+      await sut.run(operationOf(), 'claim-1');
+      expect(store.uploadFile).toHaveBeenCalled();
+      expect(store.uploadFile.mock.calls.every(([connection]) => connection.transfer === undefined)).toBe(true);
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+      expect(cloudBackup.rotate).not.toHaveBeenCalled();
     });
 
     it('backs up the database first, then every unique file once, then the manifest', async () => {
@@ -710,12 +1448,7 @@ describe(CloudBackupService.name, () => {
         signal: expect.any(AbortSignal),
         progress: expect.any(Function),
       });
-      expect(uploadedKeys()).toEqual([
-        'db/cloud-backup-immich-db-backup-dump.sql.gz',
-        `o/${SHA_A}`,
-        `o/${SHA_B}`,
-        `o/${SHA_SIDECAR}`,
-      ]);
+      expect(uploadedKeys()).toEqual([dumpKey, `o/${SHA_A}`, `o/${SHA_B}`, `o/${SHA_SIDECAR}`]);
       // the checksum on record was trusted for the originals; the sidecar was hashed now
       expect(mocks.crypto.hashFile).toHaveBeenCalledWith('sidecar', 'sha256');
       expect(mocks.crypto.hashFile).not.toHaveBeenCalledWith('/data/library/asset-1.jpg', 'sha256');
@@ -728,7 +1461,9 @@ describe(CloudBackupService.name, () => {
       );
       // only the run's own dump is removed from this server
       expect(mocks.storage.unlink).toHaveBeenCalledOnce();
-      expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz');
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(
+        join(StorageCore.getBaseFolder(StorageFolder.Backups), dumpName),
+      );
 
       const [, manifestKey, , bucketKey, contentType] = store.uploadStream.mock.calls[0];
       expect(manifestKey).toBe('m/20260926T030000Z.json.gz');
@@ -830,13 +1565,15 @@ describe(CloudBackupService.name, () => {
       index.listAssets
         .mockResolvedValueOnce([asset('asset-1', SHA_A), asset('asset-2', SHA_B)])
         .mockResolvedValueOnce([]);
-      mocks.storage.stat
-        .mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'ENOENT' }))
-        .mockResolvedValue({ size: 100, mtime: new Date('2026-09-01T00:00:00.000Z') } as never);
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/data/library/asset-1.jpg'
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve({ size: 100, mtime: new Date('2026-09-01T00:00:00.000Z') } as never),
+      );
 
       await sut.run(operationOf(), 'claim-1');
 
-      expect(uploadedKeys()).toEqual(['db/cloud-backup-immich-db-backup-dump.sql.gz', `o/${SHA_B}`]);
+      expect(uploadedKeys()).toEqual([dumpKey, `o/${SHA_B}`]);
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { missing: 1 } });
     });
 
@@ -907,15 +1644,17 @@ describe(CloudBackupService.name, () => {
 
     it('writes its cursor every 25 assets and stops there when paused', async () => {
       index.listAssets.mockResolvedValue(Array.from({ length: 25 }, (_, i) => asset(`asset-${i}`, SHA_A)));
-      operations.setBulkResult
-        .mockResolvedValueOnce(running)
-        .mockResolvedValueOnce(running)
-        .mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+      operations.setBulkResult.mockImplementation((_id, _token, { result }) =>
+        Promise.resolve(result.cursor === 'asset-24' ? { ...running, pauseRequestedAt: new Date() } : running),
+      );
 
       await sut.run(operationOf(), 'claim-1');
 
-      const assetWrite = operations.setBulkResult.mock.calls[2][2] as { result: { cursor: string; assets: number } };
-      expect(assetWrite.result).toMatchObject({ cursor: 'asset-24', assets: 25 });
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ result: expect.objectContaining({ cursor: 'asset-24', assets: 25 }) }),
+      );
       expect(operations.settlePause).toHaveBeenCalledWith('run-1', 'claim-1');
       expect(store.uploadStream).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
@@ -1224,8 +1963,8 @@ describe(CloudBackupService.name, () => {
       );
       expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'failed' });
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'failed' } });
-      // the local dump is still removed
-      expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz');
+      // The checkpointed dump remains reachable for a retry; a fresh run can remove abandoned dumps.
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
     it('tells the owner by push that cloud backup needs attention when a run fails for good (FL-228)', async () => {
@@ -1358,17 +2097,15 @@ describe(CloudBackupService.name, () => {
       mocks.database.tryLock.mockResolvedValue(true);
       await sut.onConfigInit({ newConfig: scheduled() });
       expect(mocks.database.tryLock).toHaveBeenCalledWith(DatabaseLock.FrameleafCloudBackupCheck);
-      expect(mocks.cron.create).toHaveBeenCalledWith(
-        expect.objectContaining({ name: CLOUD_BACKUP_SCHEDULE_CRON, expression: '0 4 * * *', start: true }),
-      );
+      // FL-362: the run itself is started by the one backup schedule, so only the check has a timer here.
+      expect(mocks.cron.create).toHaveBeenCalledTimes(1);
       expect(mocks.cron.create).toHaveBeenCalledWith(
         expect.objectContaining({ name: CLOUD_BACKUP_VERIFY_CRON, start: true }),
       );
 
       sut.onConfigUpdate({ newConfig: scheduled('0 */6 * * *'), oldConfig: scheduled() });
-      expect(mocks.cron.update).toHaveBeenCalledWith(
-        expect.objectContaining({ name: CLOUD_BACKUP_SCHEDULE_CRON, expression: '0 */6 * * *' }),
-      );
+      expect(mocks.cron.update).toHaveBeenCalledTimes(1);
+      expect(mocks.cron.update).toHaveBeenCalledWith(expect.objectContaining({ name: CLOUD_BACKUP_VERIFY_CRON }));
     });
 
     it('queues one scheduled run under the lock, owned by the first administrator', async () => {
@@ -1544,8 +2281,8 @@ describe(CloudBackupService.name, () => {
   });
 
   describe('Frameleaf-managed storage (FL-164)', () => {
-    const grant = cloudContractFixture('backup/grant-response.json');
-    const rotated = cloudContractFixture('backup/grant-rotate-response.json');
+    const grant = managedGrantFixture('backup/grant-response.json');
+    const rotated = managedGrantFixture('backup/grant-rotate-response.json');
     const managedRef = managedStorageRef(grant.storageId);
     const cloudUrl = 'https://cloud.frameleaf.test';
     const managedClaim = (overrides: Record<string, unknown> = {}) =>
@@ -1589,14 +2326,183 @@ describe(CloudBackupService.name, () => {
 
       expect(cloudBackup.rotate).toHaveBeenCalledTimes(1);
       expect(store.readMarker).toHaveBeenCalledWith(
-        expect.objectContaining({ bucket: grant.bucket, accessKeyId: rotated.credentials.accessKeyId }),
+        expect.objectContaining({ bucket: grant.bucket, accessKeyId: rotated.capability.credentials.accessKeyId }),
         key,
       );
       expect(operations.complete).toHaveBeenCalled();
-      const secret = rotated.credentials.secretAccessKey;
+      const secret = rotated.capability.credentials.secretAccessKey;
       expect(JSON.stringify(metadata)).not.toContain(secret);
       expect(JSON.stringify(configWrites())).not.toContain(secret);
       expect(JSON.stringify(mocks.logger.log.mock.calls)).not.toContain(secret);
+    });
+
+    it('retains the same transfer operation while Cloud renewal is temporarily unavailable', async () => {
+      store.uploadFile.mockRejectedValueOnce(new ManagedBackupAuthorizationError(undefined, 120_000));
+      await sut.run(managedOperation(), 'claim-1');
+      expect(operations.requeue).toHaveBeenCalledWith('run-1', 'claim-1', {
+        delayMs: 120_000,
+        returnAttempt: true,
+        requireActiveClaim: true,
+      });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(index.finishManifest).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('retains a pinned CSE dump and journal through renewal outage, root rotation and a paused replacement claim', async () => {
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      const file = addClientBackupKeys({ ...JSON.parse(keyFileOf()), instanceId: vaultId });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ instanceId: vaultId });
+      keys.read.mockResolvedValue(JSON.stringify(file));
+      store.readMarker.mockResolvedValue({ instanceId: vaultId });
+      index.createManifest.mockImplementation(({ key }) => Promise.resolve({ id: 'manifest-1', key }));
+      store.finishClientUpload = vi.fn().mockResolvedValue(undefined);
+      store.uploadFile.mockImplementationOnce(async (connection, objectKey) => {
+        await connection.transfer.save({
+          kind: 'upload',
+          key: objectKey,
+          source: '/identity/cloud-backup-staging/pinned.ciphertext',
+          sourceStamp: 'ciphertext-stamp',
+          expectedSha256: 'd'.repeat(64),
+          uploadId: 'upload-1',
+          previousUploads: [],
+          parts: [],
+          completing: false,
+        });
+        throw new ManagedBackupAuthorizationError(undefined, 60_000);
+      });
+      const first = managedOperation();
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '1');
+      try {
+        await sut.run(first, 'claim-1');
+        const pinned = operations.setBulkResult.mock.calls
+          .map((call) => call[2].result)
+          .find((result) => result.phase === 'database' && result.database);
+        expect(pinned.database.key).toMatch(/^db\/v1\/.+\/1\//);
+        expect(operations.requeue).toHaveBeenCalledWith(
+          'run-1',
+          'claim-1',
+          expect.objectContaining({ requireActiveClaim: true }),
+        );
+        keys.read.mockResolvedValue(JSON.stringify({ ...file, client: rotateClientBackupKeys(file.client, key) }));
+        vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '0');
+        index.getManifest.mockResolvedValue({ id: 'manifest-1', key: pinned.manifestKey, status: 'running' });
+        operations.setBulkResult.mockImplementation((_id, _claim, progress) =>
+          Promise.resolve(
+            progress.result.phase === 'reconcile' ? { ...running, pauseRequestedAt: new Date() } : running,
+          ),
+        );
+        store.uploadFile.mockImplementationOnce(async (connection) => {
+          expect(connection.recoveryKeys[1]).toBe(file.client.keys[1]);
+          expect(connection.transfer.current).toMatchObject({ expectedSha256: 'd'.repeat(64), uploadId: 'upload-1' });
+          await connection.transfer.save(null);
+          return { size: 50, etag: 'completed-ciphertext' };
+        });
+        await sut.run(
+          operationOf({
+            snapshot: first.snapshot,
+            result: { ...pinned, backupTransfer: (first.result as Record<string, unknown>).backupTransfer },
+          }),
+          'claim-2',
+        );
+        expect(databaseBackup.createDatabaseBackup).toHaveBeenCalledTimes(1);
+        expect(mocks.crypto.hashFile).toHaveBeenCalledTimes(1);
+        expect(store.uploadFile.mock.calls.map(([, objectKey]) => objectKey)).toEqual([
+          pinned.database.key,
+          pinned.database.key,
+        ]);
+        expect(operations.setBackupTransfer).toHaveBeenNthCalledWith(
+          1,
+          'run-1',
+          'claim-1',
+          expect.objectContaining({ uploadId: 'upload-1' }),
+        );
+        expect(operations.setBackupTransfer).toHaveBeenNthCalledWith(2, 'run-1', 'claim-2', null);
+        expect(operations.setBulkResult).toHaveBeenCalledWith(
+          'run-1',
+          'claim-2',
+          expect.objectContaining({
+            result: expect.objectContaining({
+              phase: 'reconcile',
+              database: expect.objectContaining({ key: pinned.database.key }),
+              backupTransfer: null,
+            }),
+          }),
+        );
+        expect(operations.settlePause).toHaveBeenCalledWith('run-1', 'claim-2');
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        expect(store.finishClientUpload).not.toHaveBeenCalled();
+        expect(operations.fail).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('adopts the exact legacy database source from a pre-CSE renewal receipt without redumping it', async () => {
+      const source = join(StorageCore.getBaseFolder(StorageFolder.Backups), dumpName);
+      const resumed = managedOperation();
+      resumed.result = {
+        ...emptyRunResult(),
+        backupTransfer: {
+          kind: 'upload',
+          key: dumpKey,
+          source,
+          sourceStamp: 'legacy-source',
+          expectedSha256: SHA_DUMP,
+          uploadId: 'upload-legacy',
+          previousUploads: [],
+          parts: [],
+          completing: false,
+        },
+      };
+      await sut.run(resumed, 'claim-2');
+      expect(databaseBackup.createDatabaseBackup).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashFile).not.toHaveBeenCalled();
+      expect(store.uploadFile).toHaveBeenCalledWith(expect.anything(), dumpKey, source, key, SHA_DUMP);
+      expect(operations.complete).toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('stops persistent provider authorization failures without replaying a refused operation', async () => {
+      store.uploadFile.mockRejectedValueOnce(new ManagedBackupAuthorizationError('Capability refused'));
+      await sut.run(managedOperation(), 'claim-1');
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: 'Capability refused' }),
+        { retry: false, requireActiveClaim: true },
+      );
+      expect(operations.requeue).not.toHaveBeenCalled();
+    });
+
+    it.each(['pause', 'cancel', 'lost', 'expired'])(
+      'settles a refused transfer checkpoint after %s without recording failure',
+      async (reason) => {
+        store.uploadFile.mockRejectedValueOnce(new OperationClaimLostError());
+        operations.getOfKind.mockResolvedValue({
+          ...managedOperation(),
+          claimToken: reason === 'lost' ? 'replacement-claim' : 'claim-1',
+          ...(reason === 'pause' && { pauseRequestedAt: new Date() }),
+          ...(reason === 'cancel' && { cancelRequestedAt: new Date() }),
+          ...(reason === 'expired' && { claimExpiresAt: new Date(0) }),
+        });
+        await sut.run(managedOperation(), 'claim-1');
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(index.finishManifest).not.toHaveBeenCalled();
+        if (reason === 'pause') expect(operations.settlePause).toHaveBeenCalledWith('run-1', 'claim-1');
+        else if (reason === 'cancel')
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run-1', 'claim-1', { released: false });
+      },
+    );
+
+    it.each([
+      ['verify', undefined, 'restore'],
+      ['prune', true, 'restore'],
+      ['prune', false, 'prune'],
+      ['backup', undefined, 'upload'],
+    ])('requests the least authority for %s (dry run %s)', (task, dryRun, expected) => {
+      expect(sut['backupOperation'](operationOf({ snapshot: { task, dryRun } }))).toBe(expected);
     });
 
     it('follows the first backup of the activation chain by push, ending it when the backup is done (FL-228)', async () => {
@@ -1772,19 +2678,22 @@ describe(CloudBackupService.name, () => {
     it('sets up with the bucket Frameleaf Cloud grants, and keeps no credential for it', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
       metadata[SystemMetadataKey.SystemConfig] = {};
-      cloudBackup.grant.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
+      cloudBackup.grant.mockResolvedValue(managedGrantFixture('backup/grant-metadata.json'));
 
       await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
 
       // a repeated grant answers without a key, so one is rotated for the claim
       expect(selectBackupLocation).toHaveBeenCalled();
-      expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), grant.location.locationId);
+      expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), grant.location.locationId, 'upload');
       expect(vi.mocked(selectBackupLocation).mock.invocationCallOrder[0]).toBeLessThan(
         cloudBackup.grant.mock.invocationCallOrder[0],
       );
       expect(cloudBackup.rotate).toHaveBeenCalled();
       expect(store.claim).toHaveBeenCalledWith(
-        expect.objectContaining({ bucket: grant.bucket, secretAccessKey: rotated.credentials.secretAccessKey }),
+        expect.objectContaining({
+          bucket: grant.bucket,
+          secretAccessKey: rotated.capability.credentials.secretAccessKey,
+        }),
         key,
         expect.anything(),
       );
@@ -1801,7 +2710,7 @@ describe(CloudBackupService.name, () => {
       });
       const persisted = JSON.stringify(configWrites());
       expect(persisted).toContain('"target":"managed"');
-      expect(persisted).not.toContain(rotated.credentials.secretAccessKey);
+      expect(persisted).not.toContain(rotated.capability.credentials.secretAccessKey);
       expect(cloudBackup.putSettings).toHaveBeenCalledWith(expect.anything(), {
         keyMode: 'server',
         scheduleEnabled: true,
@@ -1884,22 +2793,30 @@ describe(CloudBackupService.name, () => {
           return Promise.resolve(schema.parse(grant));
         },
       );
-      const repository = new FrameleafCloudBackupRepository({ requestJson: transport } as never);
+      const repository = new FrameleafCloudBackupRepository({
+        requestJson: transport,
+        requestJsonTimed: async (
+          schema: Parameters<typeof transport>[0],
+          request: Parameters<typeof transport>[1],
+        ) => ({ data: await transport(schema, request), serverTime: Date.parse('2026-10-11T12:00:00Z'), elapsedMs: 0 }),
+      } as never);
       cloudBackup.metadata = vi.fn<FrameleafCloudBackupRepository['metadata']>((target) => repository.metadata(target));
       cloudBackup.locations = vi.fn<FrameleafCloudBackupRepository['locations']>((target) =>
         repository.locations(target),
       );
-      cloudBackup.grant = vi.fn<FrameleafCloudBackupRepository['grant']>((target, id) => repository.grant(target, id));
+      cloudBackup.grant = vi.fn<FrameleafCloudBackupRepository['grant']>((target, id, operation) =>
+        repository.grant(target, id, operation),
+      );
       try {
         await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
         expect(request).toHaveBeenCalledTimes(9);
         expect(Object.values(samples)).toEqual([[], [], []]);
-        expect(cloudBackup.grant).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'loc-07');
+        expect(cloudBackup.grant).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'loc-07', 'upload');
         expect(transport).toHaveBeenLastCalledWith(expect.anything(), {
           method: 'POST',
-          url: 'https://api.frameleaf.test/v2/backup/grant',
+          url: 'https://api.frameleaf.test/v4/backup/grant',
           dpop: expect.anything(),
-          body: { locationId: 'loc-07' },
+          body: { locationId: 'loc-07', operation: 'upload' },
         });
         expect(vi.mocked(request).mock.invocationCallOrder.at(-1)).toBeLessThan(
           cloudBackup.grant.mock.invocationCallOrder[0],
@@ -1921,15 +2838,15 @@ describe(CloudBackupService.name, () => {
       ['selected location', { ...grant, location: { ...grant.location, locationId: 'loc-01' } }, rotated],
       [
         'storage ID',
-        cloudContractFixture('backup/grant-metadata.json'),
+        managedGrantFixture('backup/grant-metadata.json'),
         { ...rotated, storageId: '0194b445-9c8a-7001-8000-000000000099' },
       ],
       [
         'bucket',
-        cloudContractFixture('backup/grant-metadata.json'),
+        managedGrantFixture('backup/grant-metadata.json'),
         { ...rotated, bucket: grant.bucket.replace('fl-eu-', 'fl-na-') },
       ],
-      ['region', cloudContractFixture('backup/grant-metadata.json'), { ...rotated, region: 'us-east-1' }],
+      ['region', managedGrantFixture('backup/grant-metadata.json'), { ...rotated, region: 'us-east-1' }],
     ])(
       'refuses an initial setup grant/rotation %s mismatch before local claim or settings persistence',
       async (_field, offered, issued) => {
@@ -1944,7 +2861,11 @@ describe(CloudBackupService.name, () => {
         await expect(
           sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
         ).rejects.toThrow('different storage binding');
-        expect(cloudBackup.grant).toHaveBeenCalledExactlyOnceWith(expect.anything(), grant.location.locationId);
+        expect(cloudBackup.grant).toHaveBeenCalledExactlyOnceWith(
+          expect.anything(),
+          grant.location.locationId,
+          'upload',
+        );
         expect(store.claim).not.toHaveBeenCalled();
         expect(keys.write).not.toHaveBeenCalled();
         expect(configWrites()).toEqual([]);
@@ -1955,12 +2876,12 @@ describe(CloudBackupService.name, () => {
     );
 
     it('reuses the persisted location on setup retry without fetching or probing a new catalog', async () => {
-      const recorded = cloudContractFixture('backup/grant-metadata.json');
+      const recorded = managedGrantFixture('backup/grant-metadata.json');
       cloudBackup.metadata.mockResolvedValue(recorded);
       cloudBackup.grant.mockResolvedValue(grant);
 
       await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
-      expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), recorded.location.locationId);
+      expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), recorded.location.locationId, 'upload');
       expect(cloudBackup.locations).not.toHaveBeenCalled();
       expect(selectBackupLocation).not.toHaveBeenCalled();
     });
@@ -2036,7 +2957,7 @@ describe(CloudBackupService.name, () => {
 
     it('rejects a rotation that disagrees with the POST binding during first setup before claiming storage', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
-      cloudBackup.grant.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
+      cloudBackup.grant.mockResolvedValue(managedGrantFixture('backup/grant-metadata.json'));
       for (const changed of [
         { ...rotated, region: 'us-east-1' },
         { ...rotated, storageId: '0194b445-9c8a-7001-8000-000000000099' },
@@ -2059,7 +2980,7 @@ describe(CloudBackupService.name, () => {
         lastSuccessAt,
         managed: { readOnly: false, readOnlyReason: null, quotaBytes: grant.quotaBytes, checkedAt: lastSuccessAt },
       });
-      cloudBackup.metadata.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
+      cloudBackup.metadata.mockResolvedValue(managedGrantFixture('backup/grant-metadata.json'));
       cloudBackup.grant.mockResolvedValue(grant);
       store.claim.mockResolvedValue({ existing: true, claimedAt: lastSuccessAt });
       await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
@@ -2069,7 +2990,7 @@ describe(CloudBackupService.name, () => {
       expect(saved.lastSuccessAt).toBe(lastSuccessAt);
       expect(saved.managed?.storageId).toBeUndefined();
       expect(index.deleteBucket).not.toHaveBeenCalled();
-      expect(sut['managedConnection'](rotated, saved).region).toBe(grant.region);
+      expect(sut['managedConnection'](rotated, saved, 'upload').region).toBe(grant.region);
     });
 
     it('does not serve a warm manifest cache after its recorded storage binding changes', async () => {
@@ -2120,6 +3041,29 @@ describe(CloudBackupService.name, () => {
     });
 
     it(
+      'wraps independent and historical client roots into v2 escrow without sending plaintext recovery material',
+      { timeout: SCRYPT_TEST_TIMEOUT_MS },
+      async () => {
+        const vaultId = 'f0000000-0000-4000-8000-000000000001';
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ instanceId: vaultId });
+        const file = JSON.stringify(
+          addClientBackupKeys(
+            backupKeyFile({ key, instanceId: vaultId, bucket: s3.bucket, mode: 'server', createdAt: new Date() }),
+          ),
+        );
+        keys.read.mockResolvedValue(file);
+        const passphrase = 'correct horse battery staple';
+        await sut.storeEscrow(authStub.admin, { passphrase });
+        expect(cloudBackup.putEscrow).not.toHaveBeenCalled();
+        const blob = cloudBackup.putRecoveryPackage.mock.calls[0][1];
+        expect(JSON.parse(await unwrapBackupRecoveryKit(blob, passphrase))).toEqual(JSON.parse(file));
+        const wire = JSON.stringify(cloudBackup.putRecoveryPackage.mock.calls);
+        expect(wire).not.toContain(JSON.parse(file).client.keys[1]);
+        expect(wire).not.toContain(passphrase);
+      },
+    );
+
+    it(
       'sends only the scrypt-wrapped key, never the key or the passphrase (server key mode)',
       { timeout: SCRYPT_TEST_TIMEOUT_MS },
       async () => {
@@ -2161,6 +3105,7 @@ describe(CloudBackupService.name, () => {
       const status = await sut.removeEscrow(authStub.admin);
 
       expect(cloudBackup.deleteEscrow).toHaveBeenCalled();
+      expect(cloudBackup.deleteRecoveryPackages).toHaveBeenCalled();
       expect(status.escrow).toMatchObject({ stored: false });
     });
   });
@@ -2577,9 +3522,10 @@ describe(CloudBackupService.name, () => {
       );
 
       expect(store.readMarker).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), key);
-      expect(store.get).toHaveBeenCalledWith(expect.anything(), manifestKey, key);
+      expect(store.get).toHaveBeenCalledWith(expect.anything(), manifestKey, key, undefined);
       expect(result).toMatchObject({ manifestKey, files: 1, databaseRestored: false });
       expect(lines.join('\n')).not.toContain(key.toString('base64'));
+      expect(loadBackupWorkerIdentity).not.toHaveBeenCalled();
     });
 
     it('refuses a cached manifest after it stops being kept', async () => {
@@ -2843,8 +3789,285 @@ describe(CloudBackupService.name, () => {
     });
   });
 
+  describe('client recovery regressions', () => {
+    let directory: string;
+    let fixture: ReturnType<typeof recoveryFixture>;
+
+    beforeEach(async () => {
+      directory = await mkdtemp(join(tmpdir(), 'client-recovery-service-'));
+      fixture = recoveryFixture();
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: directory } }),
+      );
+      mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ ...instance, instanceId: fixture.vaultId } as never);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({ instanceId: fixture.vaultId });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(JSON.stringify(fixture.file));
+      store.readMarker.mockResolvedValue({ instanceId: fixture.vaultId });
+    });
+
+    afterEach(async () => {
+      vi.unstubAllEnvs();
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    const manifestBytes = (vaultId: string, version = 3) =>
+      gzipSync(
+        JSON.stringify({
+          format: 'frameleaf-backup-manifest',
+          version,
+          instanceId: vaultId,
+          createdAt: '2026-10-11T00:00:00.000Z',
+          database: null,
+          assets: {},
+          profiles: {},
+          albums: {},
+          people: {},
+        }),
+      );
+
+    const batch = (client: boolean) => {
+      sut['readClientKeys'](JSON.stringify(fixture.file), key, fixture.vaultId);
+      return {
+        id: 'run-1',
+        claimToken: 'claim-1',
+        operation: operationOf(),
+        metadata: claim({ instanceId: fixture.vaultId }),
+        connection: { ...s3, vaultId: fixture.vaultId, recoveryKeys: fixture.file.client.keys },
+        bucketKey: key,
+        clientKeys: structuredClone(fixture.file.client),
+        uploadedNow: new Set<string>(),
+        progress: {
+          result: {
+            ...emptyRunResult(),
+            manifestId: 'manifest-1',
+            manifestKey: client ? fixture.first.descriptor.manifest.objectKey : 'm/20261011T000001Z.json.gz',
+          },
+        },
+      };
+    };
+
+    const fileBatch = () => [
+      {
+        fileKey: 'asset-1:original',
+        assetId: 'asset-1',
+        ownerId: 'owner-1',
+        role: 'original',
+        path: '/data/library/asset-1.jpg',
+        recorded: { sha256: SHA_A, size: 100, verifiedAt: new Date('2026-10-11T00:00:00.000Z') },
+      },
+    ];
+
+    it('uploads the legacy address after a client-only run, even with an old polluted index', async () => {
+      const present = new Set<string>();
+      index.getExisting.mockImplementation(() => Promise.resolve(new Set([SHA_A])));
+      store.hashObject = vi.fn().mockRejectedValue(new CloudBackupStoreError('missing', 404, 'NoSuchKey'));
+      store.head = vi
+        .fn()
+        .mockImplementation((_connection, object) =>
+          Promise.resolve(present.has(object) ? { size: 100, etag: 'etag' } : null),
+        );
+      store.uploadFile.mockImplementation((_connection, object) => {
+        present.add(object);
+        return Promise.resolve({ size: 100, etag: 'etag' });
+      });
+      await sut['backUpFiles'](batch(true), fileBatch());
+      expect(index.record).not.toHaveBeenCalled();
+      await sut['backUpFiles'](batch(false), fileBatch());
+      expect(uploadedKeys()).toEqual([
+        clientBackupObjectKey(Buffer.from(fixture.file.client.keys[1], 'base64'), fixture.vaultId, 1, SHA_A),
+        `o/${SHA_A}`,
+      ]);
+    });
+
+    it('repairs failed client authentication even when a same-size object still exists', async () => {
+      const run = batch(true);
+      const object = clientBackupObjectKey(
+        Buffer.from(fixture.file.client.keys[1], 'base64'),
+        fixture.vaultId,
+        1,
+        SHA_A,
+      );
+      store.head = vi.fn().mockResolvedValue({ size: 100, etag: 'unchanged-length' });
+      store.hashObject = vi
+        .fn()
+        .mockRejectedValue(new CloudBackupStoreError('authentication failed', null, 'ChecksumMismatch'));
+      const bad = await sut['maintenance']['checkObject'](
+        { bucketRef: ref, connection: run.connection, bucketKey: key },
+        SHA_A,
+        100,
+        'sample',
+        object,
+      );
+      expect(bad).toBe('mismatched');
+      await sut['maintenance']['settleBad'](
+        { bucketRef: ref, connection: run.connection, bucketKey: key },
+        [SHA_A],
+        new Set(),
+      );
+      await sut['backUpFiles'](run, fileBatch());
+      expect(index.forget).toHaveBeenCalledWith(ref, [SHA_A]);
+      expect(uploadedKeys()).toEqual([object]);
+      expect(index.record).not.toHaveBeenCalled();
+      store.hashObject.mockResolvedValue({ size: 100, sha256: SHA_A });
+      await sut['backUpFiles'](batch(true), fileBatch());
+      expect(store.uploadFile).toHaveBeenCalledOnce();
+    });
+
+    it.each(['byo-s3', 'managed'] as const)(
+      'keeps the established %s anchor when an older kit is supplied to restore or export',
+      async (target) => {
+        const binding = target === 'managed' ? managedStorageRef('f0000000-0000-4000-8000-000000000099') : ref;
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+          target,
+          bucketRef: binding,
+          instanceId: fixture.vaultId,
+        });
+        await writeBackupHistory(sut['clientHistoryPath'](binding), fixture.history);
+        const bytes = manifestBytes(fixture.vaultId);
+        store.get.mockResolvedValue(bytes);
+        store.exportObject = vi.fn().mockResolvedValue(undefined);
+        store.hashObject = vi
+          .fn()
+          .mockResolvedValue({ sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length });
+        const options = {
+          s3,
+          key: JSON.stringify({ ...fixture.file, recovery: fixture.older }),
+          scope: 'files' as const,
+          restoreDatabase: false,
+        };
+        const restored = await sut.restoreFromBucket(options, vi.fn());
+        expect(restored.manifestKey).toBe(fixture.second.descriptor.manifest.objectKey);
+        const exported = await sut.exportFromBucket(options, join(directory, 'export'));
+        expect(exported.manifestKey).toBe(restored.manifestKey);
+        const conflicting = appendBackupSnapshot(null, fixture.snapshot(1, null, 'conflicting-version'));
+        const poisoned = { ...options, key: JSON.stringify({ ...fixture.file, recovery: conflicting }) };
+        await expect(sut.restoreFromBucket(poisoned, vi.fn())).rejects.toThrow('conflicts with the local anchor');
+        await expect(sut.exportFromBucket(poisoned, join(directory, 'conflict'))).rejects.toThrow(
+          'conflicts with the local anchor',
+        );
+      },
+    );
+
+    it.each([false, true])(
+      'retains imported authority across an immediate setup restart (existing file: %s)',
+      async (existing) => {
+        const repository = new CloudBackupKeyRepository(mocks.logger as never);
+        keys.read.mockImplementation(repository.read.bind(repository));
+        keys.write.mockImplementation(repository.write.bind(repository));
+        if (existing)
+          await repository.write(directory, fingerprint, JSON.stringify({ ...fixture.file, recovery: fixture.older }));
+        store.claim.mockResolvedValue({ existing: true, claimedAt: '2026-10-11T00:00:00.000Z' });
+        await sut.setup(authStub.admin, {
+          target: 'byo-s3',
+          s3,
+          keyMode: 'own-stored',
+          key: JSON.stringify({ ...fixture.file, recovery: fixture.history }),
+        });
+        const stored = JSON.parse((await repository.read(directory, fingerprint))!);
+        expect(stored.recovery).toEqual(fixture.history);
+        const restarted = build();
+        const metadata = claim({ instanceId: fixture.vaultId, keyMode: 'own-stored' });
+        expect((await restarted['loadKey'](metadata))!.equals(key)).toBe(true);
+        const connection = { ...s3, trustedManifestHead: undefined as string | undefined };
+        await restarted['attachClientHistory'](connection, metadata);
+        expect(connection.trustedManifestHead).toBe(fixture.second.descriptor.manifest.objectKey);
+      },
+    );
+
+    it.each(['historical client', 'legacy from mixed history'])(
+      'restores the exported %s snapshot by default while retaining its latest anchor',
+      async (selection) => {
+        const selected =
+          selection === 'historical client'
+            ? fixture.first.descriptor.manifest.objectKey
+            : 'm/20260926T030000Z.json.gz';
+        const bytes = manifestBytes(fixture.vaultId, selection === 'historical client' ? 3 : 2);
+        const exportedObjects = new Set<string>();
+        store.get.mockImplementation((connection, object) => {
+          if (object !== selected || (connection.offlineDirectory && !exportedObjects.has(object)))
+            return Promise.reject(new CloudBackupStoreError('not exported', 404, 'NoSuchKey'));
+          return Promise.resolve(bytes);
+        });
+        store.exportObject = vi.fn().mockImplementation((_connection, object) => {
+          exportedObjects.add(object);
+          return Promise.resolve();
+        });
+        store.hashObject = vi
+          .fn()
+          .mockResolvedValue({ size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+        const destination = join(directory, 'export');
+        await sut.exportFromBucket(
+          {
+            s3,
+            key: JSON.stringify({ ...fixture.file, recovery: fixture.history }),
+            manifestKey: selected,
+            scope: 'files',
+            restoreDatabase: false,
+          },
+          destination,
+        );
+        const kit = await readFile(join(destination, 'key-file.json'), 'utf8');
+        expect(JSON.parse(kit).recovery.anchor).toEqual(fixture.history.anchor);
+        const restored = await sut.restoreFromBucket(
+          {
+            s3: { ...s3, accessKeyId: '', secretAccessKey: '' },
+            key: kit,
+            offlineDirectory: destination,
+            scope: 'files',
+            restoreDatabase: false,
+          },
+          vi.fn(),
+        );
+        expect(restored.manifestKey).toBe(selected);
+        expect(store.readMarker).toHaveBeenCalledOnce();
+        expect(store.listAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it('reclaims the checkpointed database identity and original write version after interruption', async () => {
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '1');
+      const row = { id: 'manifest-1', key: fixture.first.descriptor.manifest.objectKey };
+      index.createManifest.mockResolvedValue(row);
+      let checkpoint: Record<string, unknown> | undefined;
+      operations.setBulkResult.mockImplementation((_id, _token, value) => {
+        checkpoint = structuredClone(value.result);
+        return Promise.resolve(
+          value.result.phase === 'reconcile' ? { ...running, pauseRequestedAt: new Date() } : running,
+        );
+      });
+      operations.fail.mockResolvedValue('retrying');
+      store.uploadFile.mockImplementationOnce(() => {
+        expect(checkpoint).toMatchObject({
+          phase: 'database',
+          manifestId: row.id,
+          manifestKey: row.key,
+          database: { sha256: SHA_DUMP },
+        });
+        return Promise.reject(new CloudBackupStoreError('connection interrupted', null, null));
+      });
+      await sut.run(operationOf(), 'claim-1');
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      const pending = checkpoint!;
+      const firstRequest = store.uploadFile.mock.calls[0];
+      expect(firstRequest[1]).toContain(`/1/`);
+      index.getManifest.mockResolvedValue(row);
+      keys.read.mockResolvedValue(
+        JSON.stringify({ ...fixture.file, client: rotateClientBackupKeys(fixture.file.client, key) }),
+      );
+      vi.stubEnv('FRAMELEAF_BACKUP_CLIENT_ENCRYPTION', '0');
+      const restarted = build();
+      await restarted.run(operationOf({ result: pending } as never), 'claim-2');
+      expect(store.uploadFile.mock.calls[1].slice(1)).toEqual(firstRequest.slice(1));
+      expect(databaseBackup.createDatabaseBackup).toHaveBeenCalledOnce();
+      expect(mocks.crypto.hashFile).toHaveBeenCalledOnce();
+      expect(mocks.storage.readdir).toHaveBeenCalledOnce();
+      expect(checkpoint).toMatchObject({ phase: 'reconcile', database: { key: firstRequest[1] } });
+    });
+  });
+
   describe('FL-234 owner setup progress', () => {
-    const grant = cloudContractFixture('backup/grant-response.json');
+    const grant = managedGrantFixture('backup/grant-response.json');
     const cloudUrl = 'https://cloud.frameleaf.test';
     const managedRef = bucketRef(grant.endpoint, grant.bucket);
     const managedClaim = (overrides: CloudBackupClaimOverrides = {}) =>

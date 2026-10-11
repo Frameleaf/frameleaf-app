@@ -277,7 +277,7 @@
     margin-block-start: 0.5rem;
   }
   h3 {
-    margin: 0.25rem 0;
+    margin: var(--fl-space-1) 0 var(--fl-space-2);
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;

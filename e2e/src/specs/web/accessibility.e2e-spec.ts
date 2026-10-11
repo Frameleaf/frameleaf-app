@@ -103,6 +103,7 @@ test.describe('Accessibility of the key web pages (FL-139)', () => {
   test('the sign-in page', async ({ page }) => {
     await page.goto('/auth/login');
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await expect(page.locator('.auth-screen[data-entering]')).toHaveCount(0);
     await audit(page, 'sign-in');
   });
 

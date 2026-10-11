@@ -5,6 +5,7 @@ import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
 import type { SetupGateDeps } from 'src/utils/frameleaf-setup-gate.js';
+import type { MailConnectionDeps } from 'src/utils/mail-connection.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
@@ -382,6 +383,21 @@ export class BaseService {
     return {
       configRepo: this.configRepository,
       metadataRepo: this.systemMetadataRepository,
+      logger: this.logger,
+    };
+  }
+
+  /** FL-379: what sending through a connected Gmail or Microsoft account needs (`utils/mail-connection.ts`). */
+  protected get mailDeps(): MailConnectionDeps {
+    return {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+      cryptoRepository: this.cryptoRepository,
+      emailRepository: this.emailRepository,
+      eventRepository: this.eventRepository,
       logger: this.logger,
     };
   }

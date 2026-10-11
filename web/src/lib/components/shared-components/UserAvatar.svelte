@@ -19,12 +19,11 @@
   interface Props {
     user: User;
     size?: Size;
-    interactive?: boolean;
     noTitle?: boolean;
     label?: string | undefined;
   }
 
-  let { user, size = 'full', interactive = false, noTitle = false, label = undefined }: Props = $props();
+  let { user, size = 'full', noTitle = false, label = undefined }: Props = $props();
 
   let img: HTMLImageElement | undefined = $state();
   let showFallback = $state(true);
@@ -70,17 +69,15 @@
   let colorClass = $derived(colorClasses[user.avatarColor]);
   let sizeClass = $derived(sizeClasses[size]);
   let title = $derived(label ?? `${user.name} (${user.email})`);
-  let interactiveClass = $derived(
-    interactive
-      ? 'border-2 border-immich-primary hover:border-immich-dark-primary dark:hover:border-immich-primary dark:border-immich-dark-primary transition-colors'
-      : '',
-  );
 </script>
 
-<figure
-  class="{sizeClass} {colorClass} {interactiveClass} fl-squircle overflow-hidden shadow-md"
-  title={noTitle ? undefined : title}
->
+<!--
+  The figure is only the squircle (app.css masks it) and carries no colour or border of its own. A
+  square border under that mask shows as four slivers at the sides, and a tile colour painted
+  behind the photo shows at the photo's edge at fractional pixel ratios, so the colour belongs to
+  the fallback tile alone and is gone once the photo is up.
+-->
+<figure class="{sizeClass} fl-squircle overflow-hidden shadow-md" title={noTitle ? undefined : title}>
   {#if user.profileImagePath}
     <img
       bind:this={img}
@@ -93,7 +90,7 @@
   {/if}
   {#if showFallback}
     <span
-      class="flex size-full items-center justify-center font-medium uppercase select-none"
+      class="{colorClass} flex size-full items-center justify-center font-medium uppercase select-none"
       class:text-xs={size === 'sm'}
       class:text-lg={size === 'lg'}
       class:text-xl={size === 'xl'}

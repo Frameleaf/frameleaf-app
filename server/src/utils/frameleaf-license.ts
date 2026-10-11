@@ -447,9 +447,10 @@ export const certificateProblem = (reason: LicenseRefusal) => {
 
 /** The pricing bundled with this release, used until Frameleaf Cloud publishes a valid one. */
 export const BUNDLED_PRICING: Readonly<FrameleafPricing> = Object.freeze({
-  pricesVersion: '2026-09-25.1',
-  licensedDiscountPercent: 20,
-  effectiveFrom: '2026-09-25T00:00:00Z',
+  pricesVersion: '2026-10-10.1',
+  licensedDiscountPercent: 7,
+  individualDiscountPercent: 5,
+  effectiveFrom: '2026-10-10T00:00:00Z',
 });
 
 const publishedPricingSchema = z.object({
@@ -458,6 +459,7 @@ const publishedPricingSchema = z.object({
     .max(32)
     .regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$/),
   licensedDiscountPercent: z.number().int().min(0).max(50),
+  individualDiscountPercent: z.number().int().min(0).max(50).optional(),
   effectiveFrom: z.iso.datetime(),
 });
 
@@ -516,8 +518,9 @@ export const acceptPublishedPricing = (
     return state;
   }
   if (Date.parse(published.effectiveFrom) <= now) {
-    // the same version republished keeps the stored copy (null while the bundle is in force)
-    return { current: order === 0 ? state.current : published };
+    // the same version republished stays in force: nothing is stored while that is the bundle, and a
+    // stored copy is renewed, which gives one an earlier release kept its Individual licence rate
+    return { current: order === 0 && !state.current ? null : published };
   }
   if (order === 0 || (state.pending && comparePricing(published, state.pending) <= 0)) {
     return state;
@@ -525,8 +528,17 @@ export const acceptPublishedPricing = (
   return { current: state.current, pending: published };
 };
 
-/** The pricing in force at `now`: the last good published value that has taken effect, else the bundle. */
+/**
+ * The pricing in force at `now`: the last good published value that has taken effect, else the bundle.
+ * One published without an Individual licence rate has the one rate for both licences.
+ */
 export const effectivePricing = (
   stored: FrameleafPricingState | null | undefined,
   now = Date.now(),
-): FrameleafPricing => settlePricing(stored, now).current ?? BUNDLED_PRICING;
+): Required<FrameleafPricing> => {
+  const pricing = settlePricing(stored, now).current ?? BUNDLED_PRICING;
+  return {
+    ...pricing,
+    individualDiscountPercent: pricing.individualDiscountPercent ?? pricing.licensedDiscountPercent,
+  };
+};

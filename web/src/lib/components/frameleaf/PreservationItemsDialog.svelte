@@ -196,7 +196,7 @@
     color: var(--fl-muted);
   }
   select {
-    padding: 0.375rem 0.5rem;
+    padding: 0.375rem var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

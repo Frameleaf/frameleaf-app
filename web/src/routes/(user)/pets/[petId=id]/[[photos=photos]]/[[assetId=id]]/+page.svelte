@@ -133,7 +133,7 @@
 </script>
 
 <UserPageLayout scrollbar={false}>
-  <section class="frameleaf pet-photos m-4 mb-12">
+  <section class="frameleaf pet-photos m-4 mb-12 max-md:mx-(--fl-space-2)">
     <ResultsView
       assets={timelineAssets}
       {downloadFileName}

@@ -219,8 +219,10 @@ export const Route = {
     commandCenterUrl('maintenance', params?.section, { continue: params?.continue }),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
   systemProcessingDestinations: () => commandCenterUrl('processing', 'routing'),
-  /** Workers & endpoints (FL-72): the worker inventory at the top of the same page. */
-  systemWorkers: () => commandCenterUrl('processing', 'workers'),
+  /** Computers (FL-364): this server and every computer that helps it. */
+  computers: () => commandCenterUrl('processing', 'computers'),
+  /** Workers & endpoints (FL-72) is part of Computers; older callers keep this name. */
+  systemWorkers: () => commandCenterUrl('processing', 'computers'),
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     commandCenterUrl('maintenance', 'integrity', { report: reportType }),
 
@@ -270,7 +272,7 @@ export const Route = {
   viewWorkflow: ({ id }: { id: string }) => utilitiesUrl('workflows', { workflowId: id }),
 
   // render workers
-  renderWorkers: () => commandCenterUrl('processing', 'render-workers'),
+  renderWorkers: () => commandCenterUrl('processing', 'computers'),
 
   // queues
   queues: () => commandCenterUrl('processing', 'queues'),

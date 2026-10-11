@@ -159,6 +159,8 @@ test.describe('Map', () => {
     const position = new URL(page.url()).hash;
     await page.getByRole('button', { name: 'Search this area' }).click();
     await page.waitForURL(/\/photos\?area=/);
+    await expect(page.getByRole('heading', { name: 'Map area' })).toBeVisible();
+    await expect(page.locator(`[data-asset-id="${located.id}"]`)).toBeVisible();
     await page.goBack();
     await page.waitForURL(/\/map/);
     expect(new URL(page.url()).hash).toBe(position);

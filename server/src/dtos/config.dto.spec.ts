@@ -59,6 +59,16 @@ describe('config visibility', () => {
     expect(AdminConfigDto.schema.safeParse(defaults)).toEqual(expect.objectContaining({ success: true }));
   });
 
+  it('should keep custom styling in use for a configuration that does not say (FL-368)', () => {
+    const parsed = AdminConfigSchema.safeParse({ ...defaults, theme: { customCss: 'body {}' } });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.theme).toEqual({ customCss: 'body {}', customCssEnabled: true });
+    expect(defaults.theme.customCssEnabled).toBe(true);
+    // The switch is for administrators: only the text itself is public, as before.
+    expect((mapPublicConfig(defaults) as Record<string, any>).theme).toEqual({ customCss: '' });
+  });
+
   it('should map the defaults onto the user and public schemas', () => {
     expect(UserConfigDto.schema.safeParse(mapUserConfig(defaults))).toEqual(expect.objectContaining({ success: true }));
     expect(PublicConfigDto.schema.safeParse(mapPublicConfig(defaults))).toEqual(
