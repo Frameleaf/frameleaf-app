@@ -3,14 +3,19 @@
     icon: string;
     title: string;
     body: string;
-    href: string;
+    /** Where the row goes. A row that does something on this page gives `onSelect` instead. */
+    href?: string;
+    onSelect?: () => void;
     /** Shown instead of a link when the row cannot be used; `body` then says why. */
     disabled?: boolean;
   };
 </script>
 
 <script lang="ts">
-  /** Rows that open another page: for a landing page, or "what do you need?". */
+  /**
+   * Rows that open another page: for a landing page, or "what do you need?". A row can also start
+   * something on this page (`onSelect`), such as a task that asks before it runs.
+   */
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
 
@@ -26,6 +31,13 @@
           <strong>{row.title}</strong>
           <span class="body">{row.body}</span>
         </div>
+      {:else if row.onSelect}
+        <button type="button" class="link" onclick={row.onSelect}>
+          <span class="icon" aria-hidden="true"><Icon icon={row.icon} size="24" /></span>
+          <strong>{row.title}</strong>
+          <span class="body">{row.body}</span>
+          <span class="chevron" aria-hidden="true"><Icon icon={mdiChevronRight} size="20" /></span>
+        </button>
       {:else}
         <a class="link" href={row.href}>
           <span class="icon" aria-hidden="true"><Icon icon={row.icon} size="24" /></span>
@@ -65,10 +77,18 @@
     border-radius: var(--fl-radius-card);
     transition: border-color var(--fl-motion-fast) var(--fl-ease);
   }
-  a.link:hover {
+  button.link {
+    width: 100%;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  a.link:hover,
+  button.link:hover {
     border-color: var(--fl-accent);
   }
-  a.link:focus-visible {
+  a.link:focus-visible,
+  button.link:focus-visible {
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
   }

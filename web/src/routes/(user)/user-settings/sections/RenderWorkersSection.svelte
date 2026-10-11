@@ -29,9 +29,13 @@
 
   type Props = {
     data: RenderWorkersData;
+    /** Raise this number to open the "connect a Studio helper" form from the Computers page (FL-364). */
+    enrolRequest?: number;
+    /** Called when a helper is added, changed or removed, so the page's list can follow. */
+    onChanged?: () => void;
   };
 
-  const { data }: Props = $props();
+  const { data, enrolRequest = 0, onChanged }: Props = $props();
 
   let workers: RenderWorkerDto[] = $state(data.workers);
   let limits: RenderWorkerLimitsResponseDto = $state(data.limits);
@@ -91,6 +95,7 @@
     workerDialog = null;
     if (saved) {
       await Promise.all([refreshWorkers(), refreshAudit()]);
+      onChanged?.();
     }
   };
 
@@ -98,8 +103,14 @@
     revokeTarget = null;
     if (revoked) {
       await Promise.all([refreshWorkers(), refreshAudit()]);
+      onChanged?.();
     }
   };
+  $effect(() => {
+    if (enrolRequest > 0) {
+      workerDialog = {};
+    }
+  });
 
   const onLimitDialogClose = async (saved?: RenderWorkerLimitDto) => {
     limitDialog = null;
