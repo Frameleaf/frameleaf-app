@@ -56,6 +56,7 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
     expect(importedSourceId(['media', TAKE, 'Voiceover 1.webm'])).toBe(TAKE)
     expect(importedSourceId(['media', TAKE, 'metadata.json'])).toBeNull()
     expect(importedSourceId(['media', TAKE, 'thumbnail.jpg'])).toBeNull()
+    expect(importedSourceId(['media', TAKE, 'retention.json'])).toBeNull()
     expect(importedSourceId(['media', TAKE, 'cache', 'waveform.bin'])).toBeNull()
     expect(importedSourceId(['media', 'restored-x', 'a.mp4'])).toBeNull()
     expect(importedSourceId(['projects', TAKE, 'project.json'])).toBeNull()
@@ -109,6 +110,49 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
     await tick()
     expect(uploads).toHaveLength(3)
   })
+
+  it('holds generated source writes and generic retry until explicit full completion', async () => {
+    const workspace = new VirtualWorkspace()
+    const upload = vi.fn()
+    const watch = watchLocalImports({
+      workspace,
+      media: { known: () => false, kept: vi.fn() },
+      upload,
+      refused: vi.fn(),
+    })
+    watch.hold(TAKE.toUpperCase())
+    await writeBlob(
+      workspace.handle(),
+      ['media', TAKE, 'retention.json'],
+      new TextEncoder().encode('{"version":1,"state":"held"}'),
+    )
+    await writeBlob(workspace.handle(), ['media', TAKE, 'upscaled.mp4'], new Uint8Array([1, 2, 3, 4]))
+    await watch.retry()
+    expect(upload).not.toHaveBeenCalled()
+    workspace.dispose()
+    expect(await workspace.readFile(['media', TAKE, 'upscaled.mp4'])).toBeNull()
+    watch.stop()
+  })
+
+  it.each(['{"version":1,"state":"held"}', '{malformed', '', '{"state":"published"}'])(
+    'fails closed on any suppression record across watcher replacement: %s',
+    async (marker) => {
+      const workspace = new VirtualWorkspace()
+      const upload = vi.fn()
+      await writeBlob(workspace.handle(), ['media', TAKE, 'retention.json'], new TextEncoder().encode(marker))
+      const watch = watchLocalImports({
+        workspace,
+        media: { known: () => false, kept: vi.fn() },
+        upload,
+        refused: vi.fn(),
+      })
+      await writeBlob(workspace.handle(), ['media', TAKE, 'upscaled.mp4'], new Uint8Array([1]))
+      await watch.retry()
+      expect(upload).not.toHaveBeenCalled()
+      watch.stop()
+      workspace.dispose()
+    },
+  )
 
   it('offers a kept file back under its media id, without replacing one this document holds', async () => {
     const workspace = new VirtualWorkspace()
