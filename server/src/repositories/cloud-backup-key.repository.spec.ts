@@ -126,7 +126,7 @@ describe(CloudBackupKeyRepository.name, () => {
     const alias = join(directory, 'alias');
     await symlink(directory, alias);
     await expect(sut.read(alias, 'ABCD-1234')).rejects.toThrow('real private directory');
-    const getuid = vi.spyOn(process, 'geteuid').mockReturnValue(process.geteuid() + 1);
+    const getuid = vi.spyOn(process, 'geteuid').mockReturnValue((await stat(directory)).uid + 1);
     try {
       await expect(sut.read(directory, 'ABCD-1234')).rejects.toThrow('private storage');
     } finally {
