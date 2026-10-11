@@ -329,7 +329,6 @@ describe.skipIf(!process.env.FL111_CRASH_OWNER)(
           workerUid: owner.workerUid,
           workerGid: owner.workerGid,
           node: process.execPath,
-          tsx: import.meta.resolve('tsx'),
         };
         const run = (mode: 'publish' | 'recover') => {
           crashClosureUnknown = true;

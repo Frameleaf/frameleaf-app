@@ -19,6 +19,7 @@ POINTS = ('stage-file-barrier', 'stage-namespace-barrier', 'prepare-commit',
           'stage-unlink', 'cleanup-namespace-barrier')
 HERE = Path(__file__).resolve().parent
 WORKER = HERE / 'studio-import-crash-worker.ts'
+BOOTSTRAP = HERE / 'studio-import-crash-bootstrap.mjs'
 SOURCE = HERE.parents[2]
 
 
@@ -59,7 +60,7 @@ def validate_record(record, path, now):
     require(type(record.get('expiresAt')) in (int, float) and 0 < record['expiresAt'] - now <= 600, 'owner_expiry')
     for key in ('workerUid', 'workerGid'):
         require(type(record.get(key)) is int and record[key] > 0, 'nonroot_worker')
-    for key in ('driverSha256', 'workerSha256', 'sourceHead', 'sourceTree'):
+    for key in ('driverSha256', 'workerSha256', 'bootstrapSha256', 'sourceHead', 'sourceTree'):
         require(isinstance(record.get(key), str) and re.fullmatch('[a-f0-9]{64}' if key.endswith('Sha256') else '[a-f0-9]{40}', record[key]), 'owner_source')
     require(isinstance(record.get('scratchRoot'), str) and Path(record['scratchRoot']).is_absolute(), 'scratch_root')
     require(isinstance(record.get('scratchIdentity'), dict) and set(record['scratchIdentity']) == {'device', 'inode', 'uid'} and record['scratchIdentity']['uid'] == 0, 'scratch_identity')
@@ -124,7 +125,7 @@ def admit(owner_path):
     st = parent.lstat()
     require(stat.S_ISDIR(st.st_mode) and st.st_uid == 0 and st.st_mode & 0o077 == 0, 'owner_directory')
     require(Path('/proc/sys/kernel/random/boot_id').read_text().strip() == record['bootId'], 'boot_changed')
-    require(digest(Path(__file__)) == record['driverSha256'] and digest(WORKER) == record['workerSha256'], 'source_changed')
+    require(digest(Path(__file__)) == record['driverSha256'] and digest(WORKER) == record['workerSha256'] and digest(BOOTSTRAP) == record['bootstrapSha256'], 'source_changed')
     require(command(['/usr/bin/git', '-C', str(SOURCE), 'rev-parse', 'HEAD']) == record['sourceHead'], 'head_changed')
     require(command(['/usr/bin/git', '-C', str(SOURCE), 'rev-parse', 'HEAD^{tree}']) == record['sourceTree'], 'tree_changed')
     require(command(['/usr/bin/git', '-C', str(SOURCE), 'status', '--porcelain', '--untracked-files=no']) == '', 'source_dirty')
@@ -174,7 +175,7 @@ def run(owner_path, task):
         env = {'PATH': '/usr/bin:/bin', 'IMMICH_TEST_POSTGRES_URL': os.environ['IMMICH_TEST_POSTGRES_URL'],
                'TSX_TSCONFIG_PATH': str(SOURCE / 'server/tsconfig.json')}
         # No application/SQL work before admission. Supplementary groups and inherited FDs are removed.
-        child = subprocess.Popen([task['node'], '--import', task['tsx'], str(WORKER)], cwd=SOURCE / 'server',
+        child = subprocess.Popen([task['node'], str(BOOTSTRAP)], cwd=SOURCE / 'server',
                                  env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                  bufsize=0, close_fds=True, user=record['workerUid'],
                                  group=record['workerGid'], extra_groups=[])
@@ -249,7 +250,7 @@ def self_test():
                       'driverUnit': 'fl111-crash-driver-' + nonce + '.service',
                       'guardianInvocation': 'b' * 32, 'driverInvocation': 'c' * 32,
                       'expiresAt': 100, 'workerUid': 1001, 'workerGid': 1001,
-                      'driverSha256': 'd' * 64, 'workerSha256': 'e' * 64,
+                      'driverSha256': 'd' * 64, 'workerSha256': 'e' * 64, 'bootstrapSha256': '2' * 64,
                       'sourceHead': 'f' * 40, 'sourceTree': '1' * 40,
                       'identity': {'device': 1, 'inode': 2, 'uid': 0},
                       'scratchRoot': '/tmp/fl111-owned-test', 'scratchIdentity': {'device': 1, 'inode': 3, 'uid': 0}}
@@ -258,7 +259,7 @@ def self_test():
             self.assertEqual(validate_record(record, path, 99), record)
             for key, value in [('workerUid', 0), ('workerGid', True), ('expiresAt', 99),
                                ('expiresAt', 1000), ('controlGroup', '/'), ('guardianInvocation', ''),
-                               ('driverControlGroup', record['controlGroup']), ('sourceHead', 'bad')]:
+                               ('driverControlGroup', record['controlGroup']), ('sourceHead', 'bad'), ('bootstrapSha256', ''), ('bootstrapSha256', None)]:
                 with self.subTest(key=key), self.assertRaises(RuntimeError):
                     validate_record({**record, key: value}, path, 99)
             with self.assertRaises(RuntimeError):

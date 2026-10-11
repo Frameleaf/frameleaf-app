@@ -1,23 +1,22 @@
-// Builtins only until the Root driver admits this exact parked, nonroot child to its lane.
+// Loaded only after the builtin bootstrap verifies admission.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { open, readFile, unlink } from 'node:fs/promises';
-import { createInterface } from 'node:readline/promises';
 import type { DB } from 'src/schema/index.js';
+import type { ImportFaultPoint } from 'src/utils/studio-import-faults.js';
+import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 
-const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
-const lines = input[Symbol.asyncIterator]();
-const emit = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
-// This standalone CLI worker must also exit when its admitted controller disappears.
-// eslint-disable-next-line unicorn/no-process-exit
-const deadline = setTimeout(() => process.exit(124), 45_000);
-try {
-  assert.equal(process.platform, 'linux');
-  assert.ok(process.getuid!() > 0 && process.getgid!() > 0);
-  emit({ state: 'parked', pid: process.pid });
-  const first = await lines.next();
-  assert.ok(!first.done);
-  const task = JSON.parse(first.value);
+interface CrashTask {
+  controlGroup: string;
+  mode: 'publish' | 'recover';
+  databaseName: string;
+  root: string;
+  point: ImportFaultPoint;
+  upload: RetentionUpload;
+}
+
+export async function runCrashWorker(task: CrashTask) {
+  const emit = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
   assert.equal((await readFile('/proc/self/cgroup', 'utf8')).trim(), `0::${task.controlGroup}`);
   assert.ok(['publish', 'recover'].includes(task.mode));
   assert.ok(/^[a-z0-9_]+$/.test(task.databaseName) && task.databaseName.startsWith('frameleaf_'));
@@ -134,11 +133,4 @@ try {
     await retainImport(journal, new StudioImportFileRepository(adapter, faults), task.upload, faults);
     throw new Error('crash_barrier_not_reached');
   }
-} catch {
-  // Never print SQL credentials, paths, media, application errors or arbitrary input.
-  emit({ state: 'failed', error: 'crash_worker_refused' });
-  process.exitCode = 1;
-} finally {
-  clearTimeout(deadline);
-  input.close();
 }
