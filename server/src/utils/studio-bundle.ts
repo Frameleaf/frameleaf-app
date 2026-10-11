@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto';
 import { createInflateRaw, inflateRawSync } from 'node:zlib';
 import { MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { RetainedProcessingProvenance, validateBundleImportProvenance } from 'src/utils/studio-import-provenance.js';
 import {
   StudioProjectEnvelope,
   canonicalJson,
@@ -154,6 +155,8 @@ export type StudioBundleSource = {
   bytes: number | null;
   fileName: string | null;
   contentType: string | null;
+  /** Historical client-reported labels, only for this project-import artifact. */
+  processingProvenance?: RetainedProcessingProvenance;
 };
 
 export type StudioBundleFileDigest = { sha256: string; bytes: number };
@@ -273,7 +276,23 @@ const checkSources = (value: unknown, files: Record<string, StudioBundleFileDige
       return `sources[${index}]: bytes must be a non-negative integer or null`;
     }
 
+    let processingProvenance: RetainedProcessingProvenance | undefined;
+    if (raw.processingProvenance !== undefined) {
+      if (raw.kind !== StudioResourceKind.ProjectImport) {
+        return `sources[${index}]: processing provenance belongs only to a project import`;
+      }
+      try {
+        processingProvenance = validateBundleImportProvenance(raw.processingProvenance, sha256 ?? '');
+        if (path && files[path].sha256 !== processingProvenance.outputSha256) {
+          return `sources[${index}]: processing provenance does not match the embedded file`;
+        }
+      } catch {
+        return `sources[${index}]: invalid processing provenance or checksum association`;
+      }
+    }
+
     sources.push({
+      ...(processingProvenance ? { processingProvenance } : {}),
       key,
       kind: raw.kind,
       id: raw.id,

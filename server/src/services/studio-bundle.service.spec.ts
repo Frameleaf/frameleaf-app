@@ -37,9 +37,11 @@ import {
   readZipEntry,
   serializeStudioBundleProject,
 } from 'src/utils/studio-bundle.js';
+import type { RetainedProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind, extractStudioResourceReferences, studioReferenceKey } from 'src/utils/studio-resources.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
 
@@ -1163,6 +1165,7 @@ describe(StudioBundleService.name, () => {
         fileName: string | null;
         contentType: string | null;
         sha256?: string;
+        processingProvenance?: RetainedProcessingProvenance;
       }>,
     ) => {
       const document = { ...envelope, graph: { sequences: [{ id: 'seq-1', tracks: [] }] } };
@@ -1181,7 +1184,8 @@ describe(StudioBundleService.name, () => {
           id: item.id,
           mode: item.bytes ? ('embedded' as const) : ('reference' as const),
           path,
-          sha256: null,
+          sha256: item.processingProvenance?.outputSha256 ?? null,
+          ...(item.processingProvenance ? { processingProvenance: item.processingProvenance } : {}),
           bytes: item.bytes?.length ?? null,
           fileName: item.fileName,
           contentType: item.contentType,
@@ -1451,6 +1455,201 @@ describe(StudioBundleService.name, () => {
       });
       expect(fs.files.get(imported.path as string)).toEqual(bytes);
       expect(lastResult()).toMatchObject({ embeddedVerified: 5, missing: [] });
+    });
+
+    it.each([true, false])('carries only selected historical labels with media=%s', async (includeMedia) => {
+      const rows = rowsOf(sourceProject.id).map((row) => ({
+        ...row,
+        processingProvenance:
+          row.id === voice || row.id === unplaced
+            ? {
+                ...LINEAGE,
+                source: { ...LINEAGE.source, id: unplaced },
+                outputSha256: row.checksum,
+              }
+            : null,
+      }));
+      projects.listImports.mockResolvedValue(rows);
+      const job = exportJobOf(includeMedia, [voice, lut]);
+      job.snapshot = { ...job.snapshot, sequenceIds: ['seq-2'] };
+      await sut.run({ operation: job, claimToken: 'token' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      const manifest = await readBundleManifest(fs.files.get(lastResult().path as string)!);
+      const selected = manifest.sources.filter((item) => item.kind === StudioResourceKind.ProjectImport);
+      expect(selected.map((item) => item.id)).toEqual([voice, lut]);
+      expect(selected[0].processingProvenance).toEqual(rows[0].processingProvenance);
+      expect(selected[1]).not.toHaveProperty('processingProvenance');
+      expect(manifest.sources.some((item) => item.id === unplaced)).toBe(false);
+      expect(JSON.stringify(manifest)).not.toContain(rows[0].path);
+      expect(JSON.stringify(manifest)).not.toContain('publicationId');
+    });
+
+    it('round trips an included generated import alongside a legacy import through the safe upload path', async () => {
+      const lineage = { ...LINEAGE, outputSha256: sha256(wav).toString('hex') };
+      projects.listImports.mockResolvedValue(
+        rowsOf(sourceProject.id).map((row) => ({
+          ...row,
+          ...(row.id === voice ? { processingProvenance: lineage } : {}),
+        })),
+      );
+      await sut.run({ operation: exportJobOf(true, [voice, subs]), claimToken: 'token' });
+      const bundle = fs.files.get(lastResult().path as string)!;
+      const manifest = await readBundleManifest(bundle);
+      const sources = manifest.sources.filter((item) => item.kind === StudioResourceKind.ProjectImport);
+      expect(sources.find((item) => item.id === voice)?.processingProvenance).toEqual(lineage);
+      expect(sources.find((item) => item.id === subs)).not.toHaveProperty('processingProvenance');
+      fs.files.clear();
+      const upload = uploadOf(bundle, manifest);
+      await sut.run({ operation: importJobOf(upload), claimToken: 'import' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(registered).toEqual([
+        expect.objectContaining({ id: voice, processingProvenance: lineage }),
+        expect.objectContaining({ id: subs, processingProvenance: null }),
+      ]);
+      expect(publications.retain).toHaveBeenCalledTimes(2);
+      expect(registered[0].projectId).not.toBe(sourceProject.id);
+      expect(registered[0].processingProvenance).toEqual(lineage);
+    });
+
+    it('rebinds foreign historical labels to the new owner and verified staged bytes without source lookup', async () => {
+      const lineage = {
+        ...LINEAGE,
+        source: { ...LINEAGE.source, id: 'foreign-historical-only' },
+        outputSha256: sha256(wav).toString('hex'),
+      };
+      const { bundle, manifest } = handMade([{ ...kept[0], processingProvenance: lineage }]);
+      const upload = uploadOf(bundle, manifest);
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      const created = registered[0];
+      expect(created).toMatchObject({
+        ownerId: owner.user.id,
+        processingProvenance: lineage,
+        checksum: lineage.outputSha256,
+      });
+      expect(created.projectId).not.toBe(LINEAGE.source.projectId);
+      expect(publications.register).toHaveBeenCalledWith(
+        expect.objectContaining({ user: owner.user }),
+        created.projectId,
+        { importId: voice, publicationId: expect.any(String) },
+      );
+      expect(publications.retain).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          key: expect.objectContaining({ ownerId: owner.user.id, projectId: created.projectId }),
+          reservationId: expect.any(String),
+          declaration: expect.objectContaining({ processingProvenance: lineage }),
+        }),
+      );
+      expect(assets.getByIds.mock.calls.flat(2)).not.toContain(lineage.source.id);
+      expect(assets.getByChecksums).not.toHaveBeenCalled();
+      expect(fs.files.get(created.path as string)).toEqual(wav);
+    });
+
+    it('keeps reference-only lineage descriptive without registration or a ready row', async () => {
+      const { bundle, manifest } = handMade([
+        {
+          ...kept[0],
+          bytes: undefined,
+          processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') },
+        },
+      ]);
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+      expect(publications.register).not.toHaveBeenCalled();
+      expect(lastResult().missing).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: voice, embedded: false })]),
+      );
+    });
+
+    it('verifies staged bytes, not just the archive stream, before discarding the historical hash', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') } },
+      ]);
+      const original = fs.storage.createWriteStream.getMockImplementation()!;
+      fs.storage.createWriteStream.mockImplementation((path: string) => {
+        const output = original(path);
+        output.once('finish', () => fs.files.set(path, Buffer.alloc(wav.length, 0)));
+        return output;
+      });
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(publications.register).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+      expect(fs.files.keys().some((path) => path.includes('/incoming/'))).toBe(false);
+    });
+
+    it('carries lineage on a full project export while leaving legacy imports absent', async () => {
+      projects.listImports.mockResolvedValue(
+        rowsOf(sourceProject.id).map((row) => ({
+          ...row,
+          ...(row.id === voice ? { processingProvenance: { ...LINEAGE, outputSha256: row.checksum } } : {}),
+        })),
+      );
+      await sut.run({
+        operation: exportJobOf(
+          true,
+          kept.map((item) => item.id),
+        ),
+        claimToken: 'token',
+      });
+      const manifest = await readBundleManifest(fs.files.get(lastResult().path as string)!);
+      expect(
+        manifest.sources.find((item) => item.kind === StudioResourceKind.ProjectImport && item.id === voice),
+      ).toHaveProperty('processingProvenance.outputSha256', sha256(wav).toString('hex'));
+      expect(
+        manifest.sources.find((item) => item.kind === StudioResourceKind.ProjectImport && item.id === subs),
+      ).not.toHaveProperty('processingProvenance');
+      expect(manifest.sources.filter((item) => item.kind === StudioResourceKind.ProjectImport)).toHaveLength(
+        kept.length,
+      );
+    });
+
+    it('cleans request scratch after a registration failure before journal ownership', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') } },
+      ]);
+      publications.register.mockRejectedValueOnce(new Error('registration unavailable'));
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(publications.retain).not.toHaveBeenCalled();
+      expect(fs.files.keys().some((path) => path.includes('/incoming/'))).toBe(false);
+      expect(projects.deleteUpload).toHaveBeenCalledWith(expect.any(String), owner.user.id);
+    });
+
+    it('preserves lineage scratch and reservation when prepare ownership may have committed', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') } },
+      ]);
+      publications.retain.mockRejectedValueOnce(new Error('prepare acknowledgement lost'));
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      const attempt = publications.retain.mock.calls[0][1] as RetentionUpload;
+      expect(attempt.declaration.processingProvenance?.outputSha256).toBe(sha256(wav).toString('hex'));
+      expect(fs.files.get(attempt.incoming)).toEqual(wav);
+      expect(projects.deleteUpload).not.toHaveBeenCalledWith(attempt.reservationId, owner.user.id);
+    });
+
+    it('refuses a historical digest that disagrees with actual archive bytes before publication', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: 'ab'.repeat(32) } },
+      ]);
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(publications.register).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+    });
+
+    it('refuses an export whose stored historical claim disagrees with its import checksum', async () => {
+      projects.listImports.mockResolvedValue(
+        rowsOf(sourceProject.id).map((row) => ({
+          ...row,
+          processingProvenance: { ...LINEAGE, outputSha256: 'ab'.repeat(32) },
+        })),
+      );
+      await sut.run({ operation: exportJobOf(true, [voice]), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(fs.storage.createZipStream).not.toHaveBeenCalled();
     });
 
     it('refuses extraction before opening an output when temporary storage cannot be reserved', async () => {
