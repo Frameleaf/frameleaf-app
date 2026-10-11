@@ -10,7 +10,7 @@ export const COMPOSITION_SOURCES = {
   'src/features/export/utils/canvas-item-renderer/gpu.ts':
     'd1843c356eb48c35db04be1b8df139fdf07301f4a70412d9cfaeee357f9660f8',
   'src/features/export/utils/client-render-engine.ts':
-    '21797780075882f91d96f4a70eea411d77af7f88efa8dcc94cff72a8e3ce5d39',
+    'f050d28f80f045b5d0d2bd862e41306e3a117fa0316e5a1b5243278245a468a9',
   'src/infrastructure/gpu-media/media-render-pipeline.ts':
     '7bb7481cf141a07ec99c83c768c48feed16a686fb2fe33ec00b9d623faa79cef',
   'src/infrastructure/gpu-compositor/compositor-pipeline.ts':

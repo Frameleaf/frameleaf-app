@@ -624,3 +624,44 @@ describe('FilePort and Linux primitives with synthetic checked handles', () => {
     expect(() => assertSameOwnedInode({ dev: '1', ino: '2', size: 4 }, { dev: '1', ino: '3', size: 4 })).toThrow();
   });
 });
+
+describe('test-only file barrier hooks with synthetic syscalls', () => {
+  it('reports each completed boundary in order around the actual file repository', async () => {
+    const { adapter, events } = syntheticLinux();
+    const observed: { point: string; events: string[] }[] = [];
+    const faults = {
+      reached: (point: string) => {
+        observed.push({ point, events: [...events] });
+        return Promise.resolve();
+      },
+    };
+    const repository = new StudioImportFileRepository(adapter, faults);
+    const file = await repository.prepare(KEY, stage, declaration);
+    await repository.publish(file);
+    await repository.release(file, 'stage');
+    expect(observed.map(({ point }) => point)).toEqual([
+      'stage-file-barrier',
+      'stage-namespace-barrier',
+      'target-link',
+      'target-namespace-barrier',
+      'stage-unlink',
+      'cleanup-namespace-barrier',
+    ]);
+    expect(observed[0].events).toEqual([`sync:${stage}`]);
+    expect(observed[1].events.at(-1)).toBe(`sync:${root}`);
+    expect(observed[2].events.at(-1)).toBe(`link:${target}`);
+    expect(observed[3].events.at(-1)).toBe(`sync:${root}`);
+    expect(observed[4].events.at(-1)).toBe(`unlink:${stage}`);
+    expect(observed[5].events.at(-1)).toBe(`sync:${root}`);
+  });
+  it('does not reach the namespace hook after a failed staged file barrier', async () => {
+    const { adapter, hooks } = syntheticLinux();
+    hooks.sync = () => {
+      throw new Error('sync_failed');
+    };
+    const reached = vi.fn(() => Promise.resolve());
+    const repository = new StudioImportFileRepository(adapter, { reached });
+    await expect(repository.prepare(KEY, stage, declaration)).rejects.toThrow('sync_failed');
+    expect(reached).not.toHaveBeenCalled();
+  });
+});

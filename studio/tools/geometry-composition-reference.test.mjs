@@ -274,6 +274,15 @@ for (const [name, mutate] of [
       }),
   ],
   ['unknown source', (a) => (a.contract.binding.sourceSha256 = '0'.repeat(64))],
+  [
+    'stale composition renderer',
+    (a) =>
+      (a.contract.sourceHashes = {
+        ...a.contract.sourceHashes,
+        'src/features/export/utils/client-render-engine.ts':
+          '21797780075882f91d96f4a70eea411d77af7f88efa8dcc94cff72a8e3ce5d39',
+      }),
+  ],
   ['unknown browser', (a) => (a.contract.binding.browser = '149')],
   ['foreign layer resource', (a) => (a.contract.audit.operations[3].layers[1].input.id = 999)],
   [
