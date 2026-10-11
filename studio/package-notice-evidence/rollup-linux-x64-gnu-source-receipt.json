@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "qualification": "Exact Linux GNU package/core-source notice evidence only; native SWC/NAPI/mimalloc constituent obligations remain unresolved. No distribution approval.",
+  "sourceRevision": "caacf701b89e5be4a94b3ffdbf70b51e5cfa3a1a",
+  "registry": {
+    "url": "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/4.62.1",
+    "sha256": "6e2bee7a6c35a7dab6be097dd2382b3b51714114fe1764411d2e0a8d358b711d"
+  },
+  "package": {
+    "location": "node_modules/@rollup/rollup-linux-x64-gnu",
+    "version": "4.62.1",
+    "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.62.1.tgz",
+    "integrity": "sha512-nVQGk/jStQc2V4rrkI+vPD2J+85boKqS4R4nOdPhc3eWw0kyW/b+AYRGoH8qo057XSVqaTx13AliH5qPeLTtgQ==",
+    "sha256": "344473e97b15d3e70371516b5f9eb1e47185a247a77f4de63c249ae2a78fdb5f",
+    "noticePaths": [],
+    "files": [
+      {
+        "path": "package/package.json",
+        "size": 480,
+        "sha256": "45da85fb4caf890629610ea8de71288cc8d5329e1a0c5b4df7d4c6af5a5b0886"
+      },
+      {
+        "path": "package/README.md",
+        "size": 95,
+        "sha256": "402b9c21aeef80d2372edcac4f1c12f66cd01c4f2b3d1d0709c48b0d457534f7"
+      },
+      {
+        "path": "package/rollup.linux-x64-gnu.node",
+        "size": 2067608,
+        "sha256": "b4a7c6dbc701831445442e109dbcb735c6dcd2d679bb5036f1c24a0a0d988f1a"
+      }
+    ],
+    "packageJson": {
+      "name": "@rollup/rollup-linux-x64-gnu",
+      "version": "4.62.1",
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "files": [
+        "rollup.linux-x64-gnu.node"
+      ],
+      "description": "Native bindings for Rollup",
+      "author": "Lukas Taegert-Atkinson",
+      "homepage": "https://rollupjs.org/",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rollup/rollup.git"
+      },
+      "libc": [
+        "glibc"
+      ],
+      "main": "./rollup.linux-x64-gnu.node"
+    }
+  },
+  "source": {
+    "url": "https://codeload.github.com/rollup/rollup/tar.gz/caacf701b89e5be4a94b3ffdbf70b51e5cfa3a1a",
+    "sha256": "bc19557af1740b85182b0f16a1fce72cd037b26fa33ff2a5bc482bee8dbae60a",
+    "bytes": 2234414,
+    "noticePath": "LICENSE-CORE.md",
+    "noticeSha256": "9dff12bb776f199482bc21fb2aba9615032c0403d19cfd1fa0bf101a9379b146",
+    "nativeDeclarationFiles": [
+      {
+        "path": "rust/bindings_napi/Cargo.toml",
+        "sha256": "e51d6d75e734da5f0ef6cac918179d987af37a17d228565e60b6c8a513bb5e55"
+      },
+      {
+        "path": "rust/parse_ast/Cargo.toml",
+        "sha256": "7273dd440af974c496d4135d088a3a2329a1f551daf90f73d605bc1fe6bbfad6"
+      },
+      {
+        "path": "rust/xxhash/Cargo.toml",
+        "sha256": "4c6671cc5573d71b4c98a49655dc8064c067fa1f63e3497f95da45722e96156c"
+      },
+      {
+        "path": "rust/Cargo.lock",
+        "sha256": "56cd6d0ea5a3f0fa50e300632933269d141d38f1a0c55b8d073a95dc2438f7bc"
+      },
+      {
+        "path": "build-plugins/generate-license-file.ts",
+        "sha256": "3dbf142e714d025f8205414416dc39e4297ac3f2b034b7df71dd752d50decbc7"
+      }
+    ],
+    "packageVersion": "4.62.1"
+  },
+  "nativeConstituentsQualified": false,
+  "generatedRootLicenseQualification": "LICENSE.md aggregates core and bundled JavaScript notices; not substituted for a complete native Rust constituent inventory.",
+  "platformQualification": "Bound only to @rollup/rollup-linux-x64-gnu4.62.1 x86_64-unknown-linux-gnu; no Darwin equivalence claimed."
+}
