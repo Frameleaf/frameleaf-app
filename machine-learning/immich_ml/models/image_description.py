@@ -7,14 +7,16 @@ import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import numpy as np
 import orjson
 from huggingface_hub import snapshot_download
 from PIL import Image
 
-from immich_ml.config import log, settings
-from immich_ml.models.base import InferenceModel
+from immich_ml.config import HUGGING_FACE_HOST, log, model_source_url, settings
+from immich_ml.models.base import InferenceModel, ModelUnavailableError
+from immich_ml.models.florence_manifest import florence_manifest, verify_florence_snapshot
 from immich_ml.schemas import ImageDescriptionAcceleration, ModelTask, ModelType
 
 # KEEP IN SYNC WITH: server/src/services/prompt-assembler.service.ts (JSON_SCHEMA_BLOCK)
@@ -133,6 +135,7 @@ MEDICAL_TAGS = {
     "x-ray",
 }
 
+# The acknowledgement generator reads these public setting names.
 FLORENCE_MODEL_NAMES = {
     "microsoft/Florence-2-base",
     "microsoft/Florence-2-base-ft",
@@ -254,10 +257,29 @@ class ImageDescriptionModel(InferenceModel):
                 log.warning("Ignoring image description device change until the model is reloaded.")
 
     def _download(self) -> None:
+        if manifest := florence_manifest(self.hf_model_name):
+            endpoint = model_source_url()
+            repo = (
+                manifest["repository"]
+                if urlsplit(endpoint).hostname == HUGGING_FACE_HOST
+                else manifest["mirrorRepository"]
+            )
+            snapshot_download(
+                repo,
+                revision=manifest["revision"],
+                allow_patterns=list(manifest["files"]),
+                cache_dir=self.cache_dir,
+                local_dir=self.model_path,
+                endpoint=endpoint,
+                token=False,
+            )
+            verify_florence_snapshot(self.model_path, manifest)
+            return
+        self._check_custom_florence_trust()
         snapshot_download(self.hf_model_name, cache_dir=self.cache_dir, local_dir=self.cache_dir)
 
     def _load(self) -> Any:
-        if self.acceleration == ImageDescriptionAcceleration.CUDA:
+        if self.acceleration == ImageDescriptionAcceleration.CUDA or florence_manifest(self.hf_model_name):
             return self._load_cuda()
 
         return self._load_openvino(self.device)
@@ -273,7 +295,7 @@ class ImageDescriptionModel(InferenceModel):
     def _predict(self, image: Image.Image, **model_kwargs: Any) -> dict[str, Any]:
         nsfw = model_kwargs.get("nsfw")
         external_prompt = model_kwargs.get("external_prompt")
-        if self.acceleration == ImageDescriptionAcceleration.CUDA:
+        if self.acceleration == ImageDescriptionAcceleration.CUDA or florence_manifest(self.hf_model_name):
             return self._predict_cuda(image, nsfw, external_prompt)
 
         prompt = self._make_openvino_prompt(nsfw, external_prompt)
@@ -316,9 +338,20 @@ class ImageDescriptionModel(InferenceModel):
         return "accessing out-of-range dimension" in str(error).lower()
 
     def _load_cuda(self) -> dict[str, Any]:
+        manifest = florence_manifest(self.hf_model_name)
+        if manifest:
+            verify_florence_snapshot(self.model_path, manifest)
+        else:
+            self._check_custom_florence_trust()
         try:
             import torch
-            from transformers import AutoModelForCausalLM, AutoModelForImageTextToText, AutoProcessor
+            from transformers import (
+                AutoModelForCausalLM,
+                AutoModelForImageTextToText,
+                AutoProcessor,
+                Florence2ForConditionalGeneration,
+                Florence2Processor,
+            )
         except ImportError as error:
             raise ImportError(
                 "torch and transformers are required for CUDA image description models. "
@@ -327,12 +360,23 @@ class ImageDescriptionModel(InferenceModel):
 
         device = self._torch_device(torch)
         torch_dtype = torch.float16 if str(device).startswith("cuda") else torch.float32
-        trust_remote_code = self._is_florence_model()
+        trust_remote_code = self._is_florence_model() and manifest is None
         # AutoProcessor's dynamic factory is unannotated in Transformers 5.x.
-        load_processor = cast(Callable[..., Any], AutoProcessor.from_pretrained)
-        processor = load_processor(str(self.cache_dir), trust_remote_code=trust_remote_code, local_files_only=True)
+        load_processor = cast(
+            Callable[..., Any], Florence2Processor.from_pretrained if manifest else AutoProcessor.from_pretrained
+        )
+        processor = load_processor(str(self.model_path), trust_remote_code=trust_remote_code, local_files_only=True)
 
-        if self._is_florence_model():
+        model: Any
+        if manifest:
+            model = Florence2ForConditionalGeneration.from_pretrained(
+                str(self.model_path),
+                dtype=torch_dtype,
+                use_safetensors=True,
+                trust_remote_code=False,
+                local_files_only=True,
+            )
+        elif self._is_florence_model():
             model = AutoModelForCausalLM.from_pretrained(
                 str(self.cache_dir),
                 torch_dtype=torch_dtype,
@@ -356,6 +400,18 @@ class ImageDescriptionModel(InferenceModel):
         cast(Callable[[], object], getattr(model, "eval"))()
         return {"model": model, "processor": processor, "device": device, "torch": torch, "torch_dtype": torch_dtype}
 
+    def _check_custom_florence_trust(self) -> None:
+        if (
+            self._is_florence_model()
+            and florence_manifest(self.hf_model_name) is None
+            and self.hf_model_name not in settings.image_description.trusted_custom_models
+        ):
+            raise ModelUnavailableError(
+                "Custom Florence models execute repository Python. A worker administrator must explicitly "
+                "allow this model in MACHINE_LEARNING_IMAGE_DESCRIPTION__TRUSTED_CUSTOM_MODELS "
+                "and confine the worker before loading it."
+            )
+
     def _predict_cuda(self, image: Image.Image, nsfw: Any = None, external_prompt: str | None = None) -> dict[str, Any]:
         if self._is_florence_model():
             # Florence uses task tokens, not prompts. external_prompt is ignored intentionally.
@@ -363,13 +419,7 @@ class ImageDescriptionModel(InferenceModel):
         return self._predict_qwen(image, nsfw, external_prompt)
 
     def _is_florence_model(self) -> bool:
-        """Case-insensitive Florence model check.
-
-        Original FLORENCE_MODEL_NAMES membership was case-sensitive; an admin
-        entering ``Microsoft/Florence-2-base`` (capital M) would silently skip
-        ``trust_remote_code`` and the load would fail. Matches the substring
-        style used by ``_uses_phi_openvino_model`` / ``_uses_qwen_openvino_model``.
-        """
+        """Keep built-in aliases and deliberately trusted custom Florence models on the task-token path."""
         return "florence-2" in self.hf_model_name.lower()
 
     def _predict_qwen(self, image: Image.Image, nsfw: Any = None, external_prompt: str | None = None) -> dict[str, Any]:
@@ -825,6 +875,12 @@ class ImageDescriptionModel(InferenceModel):
 
     @property
     def cached(self) -> bool:
+        if manifest := florence_manifest(self.hf_model_name):
+            # Existing revision directories must verify, never silently repair corruption on the inference path.
+            if not self.model_path.exists():
+                return False
+            verify_florence_snapshot(self.model_path, manifest)
+            return True
         # A non-empty directory is not enough: a partial download or operator
         # intervention can leave junk behind that ``snapshot_download`` will
         # silently skip over, then the loader crashes opaquely on missing
@@ -844,4 +900,6 @@ class ImageDescriptionModel(InferenceModel):
 
     @property
     def model_path(self) -> Path:
+        if manifest := florence_manifest(self.hf_model_name):
+            return self.cache_dir / cast(str, manifest["revision"])
         return self.cache_dir
