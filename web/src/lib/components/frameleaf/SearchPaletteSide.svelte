@@ -275,7 +275,7 @@
     cursor: pointer;
   }
   h3 {
-    margin: 0 0 6px;
+    margin: 0 0 var(--fl-space-2);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -340,14 +340,14 @@
   .sp-facet-people {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--fl-space-2);
   }
   .sp-facets button,
   .sp-facet-people button {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 10px;
+    padding: 4px 11px;
     border: 1px solid var(--sp-edge);
     border-radius: 999px;
     background: transparent;

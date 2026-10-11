@@ -68,10 +68,10 @@ test.describe('Integrity', () => {
     await page.getByLabel('Filter findings by path').fill(`${folder}/untracked`);
     await expect(row(page, `${folder}/untracked1.png`)).toBeVisible();
 
-    await row(page, `${folder}/untracked2.png`).getByRole('button', { name: 'Delete' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Delete this finding?' });
+    await row(page, `${folder}/untracked2.png`).getByRole('button', { name: 'Delete file' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Delete this file from disk?' });
     await expect(dialog).toContainText('The file is deleted from disk.');
-    await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Delete file', exact: true }).click();
 
     await expect(row(page, `${folder}/untracked2.png`)).toHaveCount(0);
     await expect(row(page, `${folder}/untracked1.png`)).toBeVisible();
@@ -120,10 +120,10 @@ test.describe('Integrity', () => {
     await page.goto(untrackedReport);
     await expect(page.locator('tbody tr').first()).toContainText('/data/');
 
-    await page.getByRole('button', { name: 'Delete report' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Delete this report?' });
-    await expect(dialog).toContainText('Every file in this report is deleted from disk.');
-    await dialog.getByRole('button', { name: 'Delete report' }).click();
+    await page.getByRole('button', { name: 'Delete files from disk' }).click();
+    const dialog = page.getByRole('dialog', { name: /Delete (every file in this list|\d+ files?) from disk\?/ });
+    await expect(dialog).toContainText('Every file in this list is deleted from disk');
+    await dialog.getByRole('button', { name: 'Delete files from disk' }).click();
 
     await expect(page.getByText('No findings.')).toBeVisible();
     await utils.waitForQueueFinish(admin.accessToken, QueueName.IntegrityCheck);

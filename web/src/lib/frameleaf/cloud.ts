@@ -6,7 +6,7 @@
  * in US dollars in every country and never converted. The store address comes from the server's
  * deployment configuration (`GET license/products`), never from here.
  */
-import { CloudLinkRefusal } from '@frameleaf/sdk';
+import { CloudLinkRefusal, type LicenseProductsResponseDto, type LicenseSlotDto } from '@frameleaf/sdk';
 
 // ------------------------------------------------------------------ prices
 
@@ -19,25 +19,54 @@ export const formatUsd = (amount: number, digits?: number) =>
     maximumFractionDigits: digits ?? 2,
   }).format(amount);
 
-/**
- * FL-156: why plan prices are lower for this viewer, or null. An activated server key (the
- * server's supporter entitlement) or the viewer's own individual supporter key counts; the server
- * reason wins when both apply. AI credit is never discounted, whatever this says.
- */
-export type LicensedDiscount = 'server' | 'personal' | null;
-export const licensedDiscount = (input: { serverLicensed: boolean; personalKey: boolean }): LicensedDiscount =>
-  input.serverLicensed ? 'server' : input.personalKey ? 'personal' : null;
+/** The plan discount shares of `GET license/products`: what Frameleaf Cloud last published, else the bundled ones. */
+type LicenceRates = Pick<LicenseProductsResponseDto, 'licensedDiscount' | 'individualDiscount'>;
 
 /**
- * A plan price after the licensed-server discount. `share` is the `licensedDiscount` from
- * `GET license/products` (what Frameleaf Cloud last published) for a viewer who gets the discount,
- * else 0. Plans only: never AI credit or extra backup blocks.
+ * The licence activated on this server, as the licence status names its key, while that key is
+ * active or in grace: a Server licence or an Individual one. Null when the server holds none.
  */
-export const cloudPlanPrice = (price: number, share: number) =>
-  share > 0 ? Math.round(price * (1 - share) * 100) / 100 : price;
+export const serverLicenceKind = (key: LicenseSlotDto | null | undefined): 'server' | 'individual' | null =>
+  key?.state === 'active' || key?.state === 'grace' ? (key.kind === 'individual' ? 'individual' : 'server') : null;
 
-/** A discount share as the percentage shown in copy, for example "20%" for 0.2. */
+/**
+ * FL-156, FL-369: why plan prices are lower for this viewer and by what share, or null. A Server
+ * licence activated on this server takes `licensedDiscount` off. An Individual licence takes
+ * `individualDiscount`, whether it is the one activated on this server or the viewer's own supporter
+ * key. The two are never added: a Server licence wins when both apply. AI credit is never
+ * discounted, whatever this says.
+ */
+export type LicensedDiscount = { reason: 'server' | 'personal'; share: number } | null;
+export const licensedDiscount = (input: {
+  serverLicence: 'server' | 'individual' | null;
+  personalKey: boolean;
+  rates: LicenceRates | null | undefined;
+}): LicensedDiscount => {
+  if (!input.serverLicence && !input.personalKey) {
+    return null;
+  }
+  const share = input.serverLicence === 'server' ? input.rates?.licensedDiscount : input.rates?.individualDiscount;
+  return { reason: input.serverLicence ? 'server' : 'personal', share: share ?? 0 };
+};
+
+/**
+ * A plan price after a licence discount, in whole cents exactly as Frameleaf Cloud charges it:
+ * `cents - round(cents × percent / 100)`. `share` is the viewer's share (`licensedDiscount()`), else
+ * 0. Plans only: never AI credit or extra backup blocks.
+ */
+export const cloudPlanPrice = (price: number, share: number) => {
+  const cents = Math.round(price * 100);
+  return share > 0 ? (cents - Math.round((cents * Math.round(share * 100)) / 100)) / 100 : price;
+};
+
+/** A discount share as the percentage shown in copy, for example "7%" for 0.07. */
 export const discountPercent = (share: number) => `${Math.round(share * 100)}%`;
+
+/** Both licence rates as shown in copy that offers a licence, for example `{ server: "7%", individual: "5%" }`. */
+export const discountOffer = (rates: LicenceRates | null | undefined) => ({
+  server: discountPercent(rates?.licensedDiscount ?? 0),
+  individual: discountPercent(rates?.individualDiscount ?? 0),
+});
 
 /**
  * Cloud backup pricing, matching the prices Frameleaf Cloud records (owner decision, 2026-09-25):

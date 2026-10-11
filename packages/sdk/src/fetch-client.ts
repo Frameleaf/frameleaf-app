@@ -1146,8 +1146,13 @@ export type AdminConfigDatabaseBackupDto = {
     /** Keep last amount */
     keepLastAmount: number;
 };
+export type AdminConfigBackupScheduleDto = {
+    /** When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used */
+    cronExpression: string | "";
+};
 export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
+    schedule: AdminConfigBackupScheduleDto;
 };
 export type AdminConfigFFmpegRealtimeDto = {
     /** Enable real-time HLS transcoding (alpha) */
@@ -1774,6 +1779,8 @@ export type AdminConfigTemplatesDto = {
 export type AdminConfigThemeDto = {
     /** Custom CSS for theming */
     customCss: string;
+    /** Serve the custom CSS to the web app */
+    customCssEnabled?: boolean;
 };
 export type AdminConfigTrashDto = {
     /** Days */
@@ -1902,6 +1909,29 @@ export type BackupRestoreVerificationRecordDto = {
     metadata: boolean;
     /** Original files restored and their checksums were verified */
     originals: boolean;
+};
+export type BackupScheduleResponseDto = {
+    /** Whether the schedule was chosen in Backup settings; false while it is the one stored before */
+    chosen: boolean;
+    /** The schedule in force, in the server time zone */
+    cronExpression: string;
+    /** When the last run ended */
+    lastFinishedAt: string | null;
+    /** When the next run starts */
+    nextRunAt: string | null;
+    /** The places a run visits, in order */
+    places: {
+        id: BackupSequencePlace;
+        /** Whether a run backs up to this place */
+        on: boolean;
+    }[];
+    /** The run in progress */
+    run: {
+        place: BackupSequencePlace;
+        startedAt: string;
+    } | null;
+    /** The server time zone the schedule runs in */
+    timezone: string;
 };
 export type FrameleafSetupCodeDto = {
     /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
@@ -2103,7 +2133,7 @@ export type LicenseStatusResponseDto = {
     key: (LicenseSlotDto) | null;
     keyHint: string | null;
     kind: (LicenseKind) | null;
-    /** A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products */
+    /** A supporter key or plan is active or in grace. A Server licence takes licensedDiscount off plans, an Individual licence individualDiscount (license/products) */
     licensed: boolean;
     /** This server is linked to a Frameleaf account */
     linked: boolean;
@@ -7299,7 +7329,9 @@ export type LicenseProductsResponseDto = {
         minimumUsd: number;
     };
     currency: Currency;
-    /** Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup */
+    /** Share an Individual licence takes off plans, published or bundled like licensedDiscount. Never added to it: the Server licence share applies when both do */
+    individualDiscount: number;
+    /** Share a Server licence takes off plans: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup */
     licensedDiscount: number;
     /** Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot */
     pricesVersion: string;
@@ -12786,7 +12818,11 @@ export type SharedLinkResponseDto = {
     allowDownload: boolean;
     /** Allow uploads */
     allowUpload: boolean;
+    /** Number of assets the link shares: its own for an individual link, the album's for an album link */
+    assetCount: number;
     assets: AssetResponseDto[];
+    /** Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first */
+    coverAssetIds: string[];
     /** Creation date */
     createdAt: string;
     /** Link description */
@@ -14205,8 +14241,14 @@ export type TagBulkAssetsResponseDto = {
 export type TagStatisticsResponseDto = {
     /** Timeline items tagged with exactly this tag */
     count: number;
+    /** Up to four assets for a cover: the newest captures tagged with this tag or any tag nested under it */
+    coverAssetIds: string[];
+    /** End date (latest of the `total` items) */
+    endDate: string;
     /** Tag ID */
     id: string;
+    /** Start date (earliest of the `total` items) */
+    startDate: string;
     /** Timeline items tagged with this tag or any tag nested under it */
     total: number;
 };
@@ -14217,6 +14259,10 @@ export type TagUpdateDto = {
     name?: string;
     /** Move the tag under this parent tag; null moves it to the top level. The tag and all its descendants take the new path */
     parentId?: string | null;
+};
+export type TagMergeDto = {
+    /** The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag */
+    targetId: string;
 };
 export type TakeoutAlbumDto = {
     /** Items in the folder */
@@ -14836,10 +14882,16 @@ export type CreateProfileImageResponseDto = {
 export type FolderSummaryResponseDto = {
     /** Originals directly in this folder */
     count: number;
+    /** Up to four assets for a cover: the newest captures directly in this folder */
+    coverAssetIds: string[];
+    /** End date (latest original in this folder) */
+    endDate: string;
     /** Folder path, without a trailing slash */
     path: string;
     /** Bytes of the originals directly in this folder */
     size: number;
+    /** Start date (earliest original in this folder) */
+    startDate: string;
 };
 export type WorkflowIssueDto = {
     code: WorkflowIssueCode;
@@ -17270,6 +17322,17 @@ export function recordBackupRestoreVerification({ backupRestoreVerificationRecor
         method: "POST",
         body: backupRestoreVerificationRecordDto
     })));
+}
+/**
+ * Get the backup schedule
+ */
+export function getBackupSchedule(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupScheduleResponseDto;
+    }>("/admin/database-backups/schedule", {
+        ...opts
+    }));
 }
 /**
  * Start database backup restore flow
@@ -27287,6 +27350,22 @@ export function tagAssets({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * Merge a tag into another
+ */
+export function mergeTag({ id, tagMergeDto }: {
+    id: string;
+    tagMergeDto: TagMergeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TagResponseDto;
+    }>(`/tags/${encodeURIComponent(id)}/merge`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: tagMergeDto
+    })));
+}
+/**
  * List Google Photos imports
  */
 export function listTakeoutImports(opts?: Oazapfts.RequestOpts) {
@@ -29018,6 +29097,11 @@ export enum SystemConfigHistoryKind {
 export enum SystemConfigHistorySource {
     ServerCli = "server-cli",
     FrameleafCloud = "frameleaf-cloud"
+}
+export enum BackupSequencePlace {
+    Local = "local",
+    Buddy = "buddy",
+    Cloud = "cloud"
 }
 export enum HardwareRunsOn {
     Gpu = "gpu",
@@ -31311,6 +31395,7 @@ export enum JobName {
     FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
     CloudMlDescriptionBatch = "CloudMlDescriptionBatch",
     CloudBackupSchedule = "CloudBackupSchedule",
+    BackupSequence = "BackupSequence",
     CloudBackupVerify = "CloudBackupVerify",
     PushDeliver = "PushDeliver",
     PushBackupStaleCheck = "PushBackupStaleCheck",

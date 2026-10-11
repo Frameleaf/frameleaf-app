@@ -2,6 +2,7 @@ import {
   AssetTypeEnum,
   AssetVisibility,
   deleteAssets,
+  getAllAlbums,
   getAssetDevelop,
   getAssetInfo,
   getFaces,
@@ -119,6 +120,8 @@ vi.mock('@frameleaf/sdk', async () => {
     getAssetInfo: vi.fn(),
     getAssetDevelop: vi.fn().mockResolvedValue({ assetId: 'asset', currentRevisionId: null, revisions: [] }),
     deleteAssets: vi.fn().mockResolvedValue(undefined),
+    // The More menu reads the albums that hold the item, for its "Album cover" entry.
+    getAllAlbums: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -126,6 +129,7 @@ describe('AssetViewer', () => {
   beforeEach(() => {
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: 'asset', currentRevisionId: null, revisions: [] });
     vi.mocked(getFaces).mockResolvedValue([]);
+    vi.mocked(getAllAlbums).mockResolvedValue([]);
   });
 
   beforeAll(() => {

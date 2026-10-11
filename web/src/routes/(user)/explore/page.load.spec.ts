@@ -4,6 +4,7 @@ import {
   getAlbumTree,
   getAllPeople,
   getAssetStatistics,
+  getBestPhotos,
   getTimeBuckets,
   searchAssets,
   searchAssetStatistics,
@@ -81,6 +82,48 @@ describe('the Explore loader', () => {
     expect(getTimeBuckets).toHaveBeenCalledWith({ isFavorite: true, withStacked: true });
     expect(getAssetStatistics).not.toHaveBeenCalled();
     expect(data.shortcutCounts.favorites).toBe(5);
+  });
+
+  describe('the Best Photos card', () => {
+    const ranked = { id: 'ranked-first' } as never;
+    const scored = { id: 'scored-first' } as never;
+
+    it('borrows its picture from the top of the Best Photos page when nothing reaches the threshold', async () => {
+      vi.mocked(getBestPhotos)
+        .mockResolvedValueOnce({ total: 0, count: 0, items: [], nextPage: null })
+        .mockResolvedValueOnce({ total: 204, count: 1, items: [ranked], nextPage: '2' });
+
+      const data = await open();
+
+      // The same ranking the Best Photos page opens with: no threshold.
+      expect(vi.mocked(getBestPhotos).mock.calls.map(([query]) => query)).toEqual([
+        { minScore: 0.9, limit: 1 },
+        { limit: 1 },
+      ]);
+      // The picture is borrowed; the count is still the threshold's own.
+      expect(data.bestPhotosPreview).toEqual({ total: 0, cover: ranked });
+    });
+
+    it('asks once when an item reaches the threshold', async () => {
+      vi.mocked(getBestPhotos).mockResolvedValueOnce({ total: 7, count: 1, items: [scored], nextPage: '2' });
+
+      const data = await open();
+
+      expect(getBestPhotos).toHaveBeenCalledOnce();
+      expect(data.bestPhotosPreview).toEqual({ total: 7, cover: scored });
+    });
+
+    it('has no picture when nothing is ranked at all, or the ranking cannot be read', async () => {
+      expect((await open()).bestPhotosPreview).toEqual({ total: 0, cover: null });
+
+      vi.mocked(getBestPhotos)
+        .mockResolvedValueOnce({ total: 0, count: 0, items: [], nextPage: null })
+        .mockRejectedValueOnce(new Error('offline'));
+      expect((await open()).bestPhotosPreview).toEqual({ total: 0, cover: null });
+
+      vi.mocked(getBestPhotos).mockRejectedValueOnce(new Error('offline'));
+      expect((await open()).bestPhotosPreview).toEqual({ total: null, cover: null });
+    });
   });
 
   it('still opens when a section fails, and says which sections could not load', async () => {

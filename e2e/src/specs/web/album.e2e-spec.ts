@@ -392,7 +392,7 @@ test.describe('Album', () => {
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toContain('"exposure":0.7');
     await page.goto(albumUrl);
     await page.getByRole('button', { name: `Account menu for ${owner.name}` }).click();
-    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/auth\/login/);
     await expect.poll(() => page.evaluate((key) => sessionStorage.getItem(key), draftKey)).toBeNull();
     await expect
@@ -516,12 +516,12 @@ test.describe('Album', () => {
     menu = await openActions('Dialogs album, renamed');
     await menu.getByRole('menuitem', { name: 'Create link' }).click();
     const link = page.getByRole('dialog', { name: 'Create shared link' });
-    await expect(link.getByRole('switch', { name: /^Show metadata/ })).not.toBeChecked();
+    await expect(link.getByRole('switch', { name: /^Show photo details/ })).not.toBeChecked();
     // Originals carry their EXIF and GPS, so download follows metadata (off and disabled until it is on).
     const download = link.getByRole('switch', { name: /^Allow download/ });
     await expect(download).not.toBeChecked();
     await expect(download).toBeDisabled();
-    await link.getByRole('switch', { name: /^Show metadata/ }).check();
+    await link.getByRole('switch', { name: /^Show photo details/ }).check();
     await expect(download).toBeEnabled();
     await link.getByRole('button', { name: 'Create link', exact: true }).click();
     const ready = page.getByRole('dialog', { name: 'Link ready' });

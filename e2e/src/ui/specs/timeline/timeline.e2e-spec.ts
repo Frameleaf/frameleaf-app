@@ -507,7 +507,7 @@ test.describe('Timeline', () => {
 
       // The link restores the query: the grid narrows to it, and it matches nothing.
       await page.goto(filtered.pathname + filtered.search);
-      await expect(page.getByText('No matching media')).toBeVisible();
+      await expect(page.getByText('No matching photos or videos')).toBeVisible();
       await expect(thumbnailUtils.locator(page)).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Clear search and filters' }).click();

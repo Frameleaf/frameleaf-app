@@ -404,7 +404,7 @@
   label {
     display: flex;
     flex-direction: column;
-    gap: 0.4375rem;
+    gap: var(--fl-space-2);
     color: var(--fl-muted);
     font-size: 0.6875rem;
   }
@@ -412,7 +412,7 @@
   select {
     width: 100%;
     min-height: 2.125rem;
-    padding: 0.5rem 0.625rem;
+    padding: 0.5rem var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: 0.1875rem;
     background: var(--fl-canvas);
@@ -460,7 +460,7 @@
   .map-controls > div {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: var(--fl-space-2);
   }
   .map-controls {
     justify-content: space-between;
@@ -558,6 +558,13 @@
     .location,
     .photo-grid {
       grid-template-columns: 1fr;
+    }
+    /* Three fields in one row cut their own text off on a phone; they wrap instead. */
+    .toolbar {
+      flex-wrap: wrap;
+    }
+    .toolbar label {
+      flex: 1 1 9rem;
     }
   }
 </style>

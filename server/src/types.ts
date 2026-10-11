@@ -534,6 +534,7 @@ export type JobItem =
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
+  | { name: JobName.BackupSequence; data?: IBaseJob }
 
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
@@ -1207,12 +1208,15 @@ export type FrameleafLicenseStore = {
 };
 
 /**
- * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentage
- * taken off the Frameleaf Cloud plans on a licensed server (never AI credit or extra backup).
+ * Plan pricing Frameleaf Cloud publishes on the heartbeat: the prices version and the percentages
+ * taken off the Frameleaf Cloud plans (never AI credit or extra backup) by a Server licence
+ * (`licensedDiscountPercent`) and by an Individual licence (FL-369). An older Frameleaf Cloud
+ * publishes no `individualDiscountPercent`: its one rate is for both.
  */
 export type FrameleafPricing = {
   pricesVersion: string;
   licensedDiscountPercent: number;
+  individualDiscountPercent?: number;
   effectiveFrom: string;
 };
 
@@ -1461,6 +1465,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
+  [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
 }
 
@@ -1475,6 +1480,9 @@ export type FrameleafSetupState = {
   progress: Record<string, unknown> | null;
   updatedAt: string | null;
 };
+
+/** FL-362: see `src/utils/backup-sequence.ts`. */
+export type BackupSequenceState = import('src/utils/backup-sequence.js').BackupSequenceState;
 
 /** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
 export type BackupRestoreVerification = {

@@ -220,8 +220,7 @@ export const CLOUD_BACKUP_MANIFEST_PAGE = 1000;
 const ABANDONED_SWEEP_INTERVAL_MS = 60_000;
 /** A worker asks the others for an own-memory key at most this often. */
 const KEY_ASK_INTERVAL_MS = 10_000;
-/** FL-164: the cron jobs of the one server holding `DatabaseLock.FrameleafCloudBackupCheck`. */
-export const CLOUD_BACKUP_SCHEDULE_CRON = 'cloudBackupSchedule';
+/** FL-164: the cron job of the one server holding `DatabaseLock.FrameleafCloudBackupCheck`. */
 export const CLOUD_BACKUP_VERIFY_CRON = 'cloudBackupVerify';
 /** FL-164: whether a verification is due is looked at hourly; it runs when nothing else holds the bucket. */
 const VERIFY_CHECK_EXPRESSION = '23 * * * *';
@@ -1144,13 +1143,8 @@ export class CloudBackupService {
       return;
     }
     const backup = newConfig.frameleafCloud.cloudBackup;
-    this.cronRepository.create({
-      name: CLOUD_BACKUP_SCHEDULE_CRON,
-      expression: backup.schedule.cronExpression,
-      onTick: () =>
-        handlePromiseError(this.jobRepository.queue({ name: JobName.CloudBackupSchedule, data: {} }), this.logger),
-      start: backup.enabled && backup.target !== 'off',
-    });
+    // FL-362: scheduled runs are started by the one backup schedule (`BackupSequenceService`), after
+    // the library data copy and Buddy Backup; only the verification check keeps a timer here.
     this.cronRepository.create({
       name: CLOUD_BACKUP_VERIFY_CRON,
       expression: VERIFY_CHECK_EXPRESSION,
@@ -1171,11 +1165,6 @@ export class CloudBackupService {
       return;
     }
     this.cronRepository.update({
-      name: CLOUD_BACKUP_SCHEDULE_CRON,
-      expression: backup.schedule.cronExpression,
-      start: backup.enabled && backup.target !== 'off',
-    });
-    this.cronRepository.update({
       name: CLOUD_BACKUP_VERIFY_CRON,
       expression: VERIFY_CHECK_EXPRESSION,
       start: backup.enabled && backup.target !== 'off' && backup.verifyWeekly,
@@ -1183,7 +1172,25 @@ export class CloudBackupService {
   }
 
   /**
-   * The schedule's tick: queue a backup run, owned by the first administrator so it shows in their
+   * FL-362: what the one backup schedule needs to know. `on`: Cloud Backup is set up and switched on, so
+   * a run includes it. `busy`: a backup run is queued or running; one that is paused, or a check or
+   * clean-up, does not hold the schedule's run up.
+   */
+  async sequenceStatus(): Promise<{ on: boolean; busy: boolean }> {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    const { frameleafCloud } = await this.readSettings();
+    const settings = frameleafCloud.cloudBackup;
+    const on = !!metadata && settings.enabled && settings.target !== 'off';
+    if (!on) {
+      return { on, busy: false };
+    }
+    const run = (await this.getStatus()).activeRun;
+    return { on, busy: !!run && run.task === 'backup' && (run.state === 'queued' || run.state === 'running') };
+  }
+
+  /**
+   * The schedule's turn (FL-362: called by `BackupSequenceService` when the places before it have
+   * finished; the job remains for a queued tick from before): queue a backup run, owned by the first administrator so it shows in their
    * Activity. An operation already queued or running is never duplicated: the run is created under
    * `DatabaseLock.FrameleafCloudBackup` only when no backup operation or restore is unfinished.
    */

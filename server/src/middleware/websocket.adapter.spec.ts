@@ -1,8 +1,12 @@
+import { createAdapter } from '@socket.io/postgres-adapter';
+import { EventEmitter } from 'node:events';
+import { Server } from 'socket.io';
 import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 
 const fixture = vi.hoisted(() => ({
   query: vi.fn(),
+  acquire: vi.fn(),
   close: vi.fn(),
   connect: undefined as ((client: unknown) => void) | undefined,
   adapter: { init: vi.fn(), serverCount: vi.fn(), close: vi.fn() },
@@ -11,6 +15,7 @@ vi.mock('@socket.io/postgres-adapter', () => ({ createAdapter: vi.fn(() => 'post
 vi.mock('src/utils/shared-service-pool.js', () => ({
   createSharedServicePool: () => ({
     query: fixture.query,
+    connect: fixture.acquire,
     on: (event: string, callback: (client: unknown) => void) => {
       if (event === 'connect') {
         fixture.connect = callback;
@@ -145,5 +150,62 @@ describe(PostgresSocketTransport.name, () => {
     const action = vi.fn();
     await expect(transport.publish(action)).rejects.toThrow('is stopping');
     expect(action).not.toHaveBeenCalled();
+  });
+
+  describe('teardown of the real adapter', () => {
+    const NOTIFY = 'SELECT pg_notify($1, $2)';
+    beforeEach(async () => {
+      const actual = await vi.importActual<typeof import('@socket.io/postgres-adapter')>('@socket.io/postgres-adapter');
+      vi.mocked(createAdapter).mockImplementationOnce(actual.createAdapter);
+    });
+
+    it('announces its departure once, while the pool is open, and leaves the closed pool alone', async () => {
+      // pg-pool rejects every use after end().
+      const late: string[] = [];
+      let ended = false;
+      fixture.query.mockImplementation((text: string) => {
+        if (ended) {
+          late.push(text);
+          return Promise.reject(new Error('Cannot use a pool after calling end on the pool'));
+        }
+        return Promise.resolve({ rows: [] });
+      });
+      fixture.close.mockImplementation(() => void (ended = true));
+      const listener = Object.assign(new EventEmitter(), {
+        query: vi.fn().mockResolvedValue({ rows: [] }),
+        release: vi.fn(),
+      });
+      fixture.acquire.mockImplementation(() => {
+        fixture.connect!(listener);
+        return Promise.resolve(listener);
+      });
+      const notices = () => fixture.query.mock.calls.filter(([text]) => text === NOTIFY).length;
+      const transport = new PostgresSocketTransport({} as ConfigRepository);
+      await transport.attach(new Server(), false);
+      const published = notices();
+
+      await transport.close();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(console.error).not.toHaveBeenCalled();
+      expect(late).toEqual([]);
+      expect(notices()).toBe(published + 1);
+      expect(listener.release).toHaveBeenCalledOnce();
+    });
+
+    it('clears the reconnect of an adapter initialization that fails as the pool closes', async () => {
+      let fail!: (error: Error) => void;
+      fixture.acquire.mockImplementation(() => new Promise((_resolve, reject) => (fail = reject)));
+      fixture.close.mockImplementation(() => fail(new Error('Connection terminated')));
+      const transport = new PostgresSocketTransport({} as ConfigRepository);
+      const rejected = expect(transport.attach(new Server(), false)).rejects.toThrow('LISTEN timed out');
+      await vi.advanceTimersByTimeAsync(5000);
+      await rejected;
+
+      await transport.close();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(fixture.acquire).toHaveBeenCalledOnce();
+    });
   });
 });

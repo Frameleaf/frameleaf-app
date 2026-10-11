@@ -34,6 +34,16 @@ export const TagUpdateSchema = z
   })
   .meta({ id: 'TagUpdateDto' });
 
+const TagMergeSchema = z
+  .object({
+    targetId: z
+      .uuidv4()
+      .describe(
+        'The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag',
+      ),
+  })
+  .meta({ id: 'TagMergeDto' });
+
 const TagUpsertSchema = z
   .object({
     tags: z.array(z.string()).describe('Tag names to upsert'),
@@ -71,18 +81,27 @@ export const TagResponseSchema = z
  * FL-46: how many items carry each tag, as the Tags browser counts them. `total` is what "Show all"
  * opens (the tag filter matches a tag and every tag under it); `count` is the items carrying exactly
  * this tag. Only Timeline items are counted, so nothing archived, Locked or hidden, and a tag the
- * session may not see is left out.
+ * session may not see is left out. The cover and the dates describe the items of `total`, and the
+ * dates read like an album's.
  */
 const TagStatisticsResponseSchema = z
   .object({
     id: z.uuidv4().describe('Tag ID'),
     count: z.int().min(0).describe('Timeline items tagged with exactly this tag'),
     total: z.int().min(0).describe('Timeline items tagged with this tag or any tag nested under it'),
+    coverAssetIds: z
+      .array(z.uuidv4())
+      .describe('Up to four assets for a cover: the newest captures tagged with this tag or any tag nested under it'),
+    // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
+    startDate: z.string().meta({ format: 'date-time' }).describe('Start date (earliest of the `total` items)'),
+    // TODO: use `isoDatetimeToDate` when using `ZodSerializerDto` on the controllers.
+    endDate: z.string().meta({ format: 'date-time' }).describe('End date (latest of the `total` items)'),
   })
   .meta({ id: 'TagStatisticsResponseDto' });
 
 export class TagCreateDto extends createZodDto(TagCreateSchema) {}
 export class TagUpdateDto extends createZodDto(TagUpdateSchema) {}
+export class TagMergeDto extends createZodDto(TagMergeSchema) {}
 export class TagUpsertDto extends createZodDto(TagUpsertSchema) {}
 export class TagBulkAssetsDto extends createZodDto(TagBulkAssetsSchema) {}
 export class TagBulkAssetsResponseDto extends createZodDto(TagBulkAssetsResponseSchema) {}

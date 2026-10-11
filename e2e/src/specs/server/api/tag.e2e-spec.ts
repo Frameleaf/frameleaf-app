@@ -22,6 +22,16 @@ const create = (accessToken: string, dto: TagCreateDto) =>
 const upsert = (accessToken: string, tags: string[]) =>
   upsertTags({ tagUpsertDto: { tags } }, { headers: asBearerAuth(accessToken) });
 
+const merge = (accessToken: string, id: string, targetId: string) =>
+  request(app).post(`/tags/${id}/merge`).send({ targetId }).set('Authorization', `Bearer ${accessToken}`);
+
+// Tagging writes each sidecar and reads it back. A read still on its way when a tag goes would create
+// that tag again from the list it started with, as it would after a delete.
+const settleTagging = async (adminAccessToken: string) => {
+  await utils.waitForQueueFinish(adminAccessToken, 'sidecar');
+  await utils.waitForQueueFinish(adminAccessToken, 'metadataExtraction');
+};
+
 describe('/tags', () => {
   let admin: LoginResponseDto;
   let user: LoginResponseDto;
@@ -189,8 +199,8 @@ describe('/tags', () => {
       expect(body).toHaveLength(2);
       expect(body).toEqual(
         expect.arrayContaining([
-          { id: trips.id, count: 1, total: 2 },
-          { id: rockies.id, count: 1, total: 1 },
+          expect.objectContaining({ id: trips.id, count: 1, total: 2 }),
+          expect.objectContaining({ id: rockies.id, count: 1, total: 1 }),
         ]),
       );
     });
@@ -409,6 +419,139 @@ describe('/tags', () => {
       const tags = await getAllTags({ headers: asBearerAuth(user.accessToken) });
       expect(tags.length).toBe(1);
       expect(tags[0]).toEqual(tagA);
+    });
+  });
+
+  describe('POST /tags/:id/merge', () => {
+    it('should require authentication', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB' });
+      const { status } = await request(app).post(`/tags/${tagA.id}/merge`).send({ targetId: tagB.id });
+      expect(status).toBe(401);
+    });
+
+    it('should need both tag.delete and tag.update from an API key', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB' });
+      const withKey = async (permissions: Permission[]) => {
+        const { secret } = await utils.createApiKey(user.accessToken, permissions);
+        return request(app).post(`/tags/${tagA.id}/merge`).set('x-api-key', secret).send({ targetId: tagB.id });
+      };
+
+      const updateOnly = await withKey([Permission.TagUpdate]);
+      expect(updateOnly.status).toBe(403);
+      expect(updateOnly.body).toEqual(errorDto.forbidden('Missing required permission: tag.delete'));
+      const deleteOnly = await withKey([Permission.TagDelete]);
+      expect(deleteOnly.status).toBe(403);
+      expect(deleteOnly.body).toEqual(errorDto.forbidden('Missing required permission: tag.update'));
+      expect(await getAllTags({ headers: asBearerAuth(user.accessToken) })).toHaveLength(2);
+
+      const both = await withKey([Permission.TagDelete, Permission.TagUpdate]);
+      expect(both.status).toBe(200);
+      expect(both.body).toEqual(expect.objectContaining({ id: tagB.id, value: 'TagB' }));
+    });
+
+    it('should give every item the other tag, move the tags inside it and delete the merged tag', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const inside = await create(user.accessToken, { name: 'Inside', parentId: tagA.id });
+      const tagB = await create(user.accessToken, { name: 'TagB', color: '#5794f7' });
+      const onBoth = await utils.createAsset(user.accessToken);
+      const onInside = await utils.createAsset(user.accessToken);
+      // an item the Tags screen does not count still carries the other tag afterwards
+      const archived = await utils.createAsset(user.accessToken);
+      await utils.archiveAssets(user.accessToken, [archived.id]);
+      await utils.tagAssets(user.accessToken, tagA.id, [userAsset.id, onBoth.id, archived.id]);
+      await utils.tagAssets(user.accessToken, tagB.id, [onBoth.id]);
+      await utils.tagAssets(user.accessToken, inside.id, [onInside.id]);
+      await settleTagging(admin.accessToken);
+
+      const { status, body } = await merge(user.accessToken, tagA.id, tagB.id);
+      expect(status).toBe(200);
+      expect(body).toEqual(expect.objectContaining({ id: tagB.id, name: 'TagB', value: 'TagB', color: '#5794f7' }));
+      expect(body.parentId).toBeUndefined();
+
+      const tags = await getAllTags({ headers: asBearerAuth(user.accessToken) });
+      expect(tags).toHaveLength(2);
+      expect(tags).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: tagB.id, value: 'TagB' }),
+          expect.objectContaining({ id: inside.id, value: 'TagB/Inside', parentId: tagB.id }),
+        ]),
+      );
+      const statistics = await request(app).get('/tags/statistics').set('Authorization', `Bearer ${user.accessToken}`);
+      expect(statistics.body).toHaveLength(2);
+      expect(statistics.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: tagB.id, count: 2, total: 3 }),
+          expect.objectContaining({ id: inside.id, count: 1, total: 1 }),
+        ]),
+      );
+      for (const id of [userAsset.id, onBoth.id, archived.id]) {
+        const asset = await utils.getAssetInfo(user.accessToken, id);
+        expect(asset.tags?.map((tag) => tag.value)).toEqual(['TagB']);
+      }
+      const moved = await utils.getAssetInfo(user.accessToken, onInside.id);
+      expect(moved.tags?.map((tag) => tag.value)).toEqual(['TagB/Inside']);
+      const gone = await request(app).get(`/tags/${tagA.id}`).set('Authorization', `Bearer ${user.accessToken}`);
+      expect(gone.status).toBe(404);
+    });
+
+    it('should merge a tag inside it into the tag of the same name there', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const insideA = await create(user.accessToken, { name: 'Same', parentId: tagA.id });
+      const deeper = await create(user.accessToken, { name: 'Deeper', parentId: insideA.id });
+      const tagB = await create(user.accessToken, { name: 'TagB' });
+      const insideB = await create(user.accessToken, { name: 'Same', parentId: tagB.id });
+      await utils.tagAssets(user.accessToken, insideA.id, [userAsset.id]);
+      await settleTagging(admin.accessToken);
+
+      const { status } = await merge(user.accessToken, tagA.id, tagB.id);
+      expect(status).toBe(200);
+
+      const tags = await getAllTags({ headers: asBearerAuth(user.accessToken) });
+      expect(tags.map(({ id, value }) => [id, value])).toEqual([
+        [tagB.id, 'TagB'],
+        [insideB.id, 'TagB/Same'],
+        [deeper.id, 'TagB/Same/Deeper'],
+      ]);
+      const asset = await utils.getAssetInfo(user.accessToken, userAsset.id);
+      expect(asset.tags?.map((tag) => tag.id)).toEqual([insideB.id]);
+    });
+
+    it('should not merge a tag into itself or a tag inside it', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const tagB = await create(user.accessToken, { name: 'TagB', parentId: tagA.id });
+      for (const targetId of [tagA.id, tagB.id]) {
+        const { status, body } = await merge(user.accessToken, tagA.id, targetId);
+        expect(status).toBe(400);
+        expect(body).toEqual(errorDto.badRequest('A tag cannot be merged into itself or one of its descendants'));
+      }
+      expect(await getAllTags({ headers: asBearerAuth(user.accessToken) })).toHaveLength(2);
+    });
+
+    it("should answer another user's tag, in either place, like a tag that does not exist", async () => {
+      const mine = await create(user.accessToken, { name: 'Mine' });
+      const theirs = await create(admin.accessToken, { name: 'Theirs' });
+      for (const [id, targetId] of [
+        [mine.id, theirs.id],
+        [theirs.id, mine.id],
+        [mine.id, '00000000-0000-4000-8000-000000000000'],
+      ]) {
+        const { status, body } = await merge(user.accessToken, id, targetId);
+        expect(status).toBe(404);
+        expect(body).toEqual(errorDto.notFound('Tag not found'));
+      }
+      expect(await getAllTags({ headers: asBearerAuth(user.accessToken) })).toEqual([mine]);
+      expect(await getAllTags({ headers: asBearerAuth(admin.accessToken) })).toEqual([theirs]);
+    });
+
+    it('should require the tag to merge into', async () => {
+      const tagA = await create(user.accessToken, { name: 'TagA' });
+      const { status } = await request(app)
+        .post(`/tags/${tagA.id}/merge`)
+        .send({})
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(400);
     });
   });
 

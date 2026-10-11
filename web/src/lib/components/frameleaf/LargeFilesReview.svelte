@@ -395,13 +395,15 @@
       <thead>
         <tr>
           <th>
-            <input
-              type="checkbox"
-              aria-label={$t('frameleaf_large_files_select_all')}
-              checked={allChosen}
-              disabled={editable.length === 0}
-              onchange={() => (selected = allChosen ? [] : editable.map((asset) => asset.id))}
-            />
+            <label class="fl-check-target">
+              <input
+                type="checkbox"
+                aria-label={$t('frameleaf_large_files_select_all')}
+                checked={allChosen}
+                disabled={editable.length === 0}
+                onchange={() => (selected = allChosen ? [] : editable.map((asset) => asset.id))}
+              />
+            </label>
           </th>
           <th>{$t('frameleaf_large_files_column_original')}</th>
           <th>{$t('frameleaf_large_files_column_account')}</th>
@@ -413,13 +415,15 @@
         {#each rows as asset (asset.id)}
           <tr>
             <td>
-              <input
-                type="checkbox"
-                aria-label={$t('frameleaf_large_files_select_item', { values: { name: asset.originalFileName } })}
-                disabled={!canTrashLargeFile(asset, context)}
-                checked={selectedSet.has(asset.id)}
-                onchange={() => toggle(asset.id)}
-              />
+              <label class="fl-check-target">
+                <input
+                  type="checkbox"
+                  aria-label={$t('frameleaf_large_files_select_item', { values: { name: asset.originalFileName } })}
+                  disabled={!canTrashLargeFile(asset, context)}
+                  checked={selectedSet.has(asset.id)}
+                  onchange={() => toggle(asset.id)}
+                />
+              </label>
             </td>
             <td>
               <div class="lf-file">
@@ -656,7 +660,7 @@
   .lf-toolbar input,
   .lf-toolbar select {
     width: 100%;
-    padding: 10px;
+    padding: 10px var(--fl-space-3);
     font-size: var(--fl-font-small);
     color: var(--fl-text);
     background: var(--fl-panel);
