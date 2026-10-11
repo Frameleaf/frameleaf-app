@@ -42,6 +42,9 @@ const project: StudioProjectHandle = {
   revision: 0,
   graph: null,
   hasLease: true,
+  graphDigest: null,
+  leaseEpoch: 0,
+  leaseExpiresAt: null,
 };
 
 const services = (): StudioHostServices => ({

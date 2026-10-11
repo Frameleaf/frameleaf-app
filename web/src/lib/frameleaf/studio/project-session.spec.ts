@@ -48,7 +48,7 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
   createdAt: '2026-09-22T10:00:00.000Z',
   updatedAt: '2026-09-22T10:05:00.000Z',
   envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { tracks: ['t1'] } },
-  digest: 'd3',
+  digest: '3'.repeat(64),
   withheld: false,
   resources: {
     complete: true,
@@ -73,7 +73,7 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
 const saved = (revision: number): StudioProjectSaveResponseDto => ({
   revision,
   revisionId: `r-${revision}`,
-  digest: `d${revision}`,
+  digest: String(revision).repeat(64).slice(0, 64),
   replayed: false,
   unchanged: false,
   lease: lease(),
@@ -174,6 +174,8 @@ describe('studio project session', () => {
         access: 'owner',
         project: { id: 'p-1', name: 'Lake trip', revision: 3, graph: { tracks: ['t1'] }, hasLease: true },
       });
+      expect(last().project.graphDigest).toBe('3'.repeat(64));
+      expect(last().project.leaseExpiresAt).toBe(lease().expiresAt);
       expect(timers.pending().map((timer) => timer.ms)).toEqual([30_000]);
     });
 
@@ -1432,5 +1434,66 @@ describe('rename (Studio.jsx renameProject)', () => {
     await expect(session.rename('Lake trip')).resolves.toBe(true);
     expect(api.rename).not.toHaveBeenCalled();
     expect(session.state.project.name).toBe('Lake trip');
+  });
+});
+
+describe('saved-envelope acknowledgement across durable session operations', () => {
+  const fixture = (projectId: string | null = 'p-1') => {
+    const api = makeApi();
+    const session = createStudioProjectSession({ api, projectId, clientId: 'source-tab',
+      name: 'Source acknowledgement', engineRevision: 'rev', onChange: () => undefined,
+      now: () => 1000, isOnline: () => true, setTimer: makeTimers().setTimer, newKey: () => 'source-key' });
+    return { api, session };
+  };
+  for (const mode of ['new', 'replayed', 'unchanged'] as const) {
+    it(`${mode} save keeps only the returned server digest and clears it while saving`, async () => {
+      const { api, session } = fixture();
+      await session.open();
+      expect(session.state.project.graphDigest).toBe('3'.repeat(64));
+      let complete!: (value: StudioProjectSaveResponseDto) => void;
+      api.save.mockReturnValue(new Promise<StudioProjectSaveResponseDto>((resolve) => { complete = resolve; }));
+      session.stage({ exactSavedGraph: mode });
+      expect(session.state.project.graphDigest).toBeNull();
+      const saving = session.flush();
+      expect(session.state.project.graphDigest).toBeNull();
+      complete({ ...saved(4), replayed: mode === 'replayed', unchanged: mode === 'unchanged' });
+      await saving;
+      expect(session.state.project.graphDigest).toBe('4'.repeat(64));
+      await session.dispose();
+      expect(session.state.project.graphDigest).toBeNull();
+      expect(session.state.project.leaseExpiresAt).toBeNull();
+    });
+  }
+  it('an unsaved draft has no acknowledgement; create keeps its actual initial saved digest', async () => {
+    const { api, session } = fixture(null);
+    await session.open();
+    expect(session.state.project.graphDigest).toBeNull();
+    api.create.mockResolvedValue(detail({ id: 'created', revision: 1, digest: '1'.repeat(64),
+      envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { initial: true } } }));
+    session.stage({ initial: true });
+    await session.flush();
+    expect(session.state.project).toMatchObject({ id: 'created', revision: 1, graphDigest: '1'.repeat(64) });
+    await session.dispose();
+  });
+  it('restore publishes only the reloaded saved envelope and advances the graph version', async () => {
+    const { api, session } = fixture();
+    await session.open();
+    const version = session.state.project.graphVersion!;
+    api.restore.mockResolvedValue(saved(4));
+    api.get.mockResolvedValue(detail({ revision: 4, digest: '4'.repeat(64), envelope: {
+      schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { restored: true } } }));
+    expect(await session.restore(1)).toBe(true);
+    expect(session.state.project.graphDigest).toBe('4'.repeat(64));
+    expect(session.state.project.graphVersion).toBeGreaterThan(version);
+    await session.dispose();
+  });
+  it('withheld or absent acknowledgements never authorize source bytes', async () => {
+    for (const withheld of [true, false]) {
+      const { api, session } = fixture();
+      api.get.mockResolvedValue(detail({ withheld, digest: withheld ? '3'.repeat(64) : null }));
+      await session.open();
+      expect(session.state.project.graphDigest).toBeNull();
+      await session.dispose();
+    }
   });
 });

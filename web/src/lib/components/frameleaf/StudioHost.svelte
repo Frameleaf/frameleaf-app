@@ -150,6 +150,7 @@
     project,
     assets,
     projectImports = [],
+    sourceEpoch = 0,
     handoffAssetIds = [],
     auth,
     capabilities,
@@ -206,6 +207,7 @@
     assets: readonly StudioAssetRef[];
     /** Files kept with the project (FL-103 / FL-105), offered to the editor under their media ids. */
     projectImports?: readonly StudioProjectImportRef[];
+    sourceEpoch?: number;
     handoffAssetIds?: readonly string[];
     auth: StudioAuthContext;
     /** Null until the route's capability probe has answered; nothing is judged missing before. */
@@ -514,6 +516,7 @@
 
   const context = (): StudioHostContext => ({
     project,
+    sourceEpoch,
     assets,
     projectImports,
     handoffAssetIds,

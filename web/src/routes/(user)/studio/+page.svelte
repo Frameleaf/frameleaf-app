@@ -29,6 +29,7 @@
     toStudioRestoredAsset,
     withHdrSources,
   } from '$lib/frameleaf/studio/assets';
+  import { createStudioSourceResolution, studioSourceJson } from '$lib/frameleaf/studio/source-resolution';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { decideStudioDraft, studioDraftHeld, studioDraftResult } from '$lib/frameleaf/studio/draft-staging';
@@ -95,6 +96,7 @@
     AssetRestorationMode,
     createStudioExport,
     getMediaOperation,
+    resolveStudioProjectSource,
     getStudioRestoredVersion,
     isHttpError,
     type StudioRestoredVersionDto,
@@ -359,6 +361,9 @@
       id: data.projectId ?? STUDIO_DRAFT_PROJECT_ID,
       name: $t('frameleaf_studio_untitled_project'),
       revision: 0,
+      graphDigest: null,
+      leaseEpoch: 0,
+      leaseExpiresAt: null,
       graph: null,
       // Nothing may be written before the session has decided who holds the lease.
       hasLease: false,
@@ -789,7 +794,32 @@
     return Promise.resolve(result);
   };
 
+  const sourceController = new AbortController();
+  let sourceEpoch = $state(0);
+  let sourceIdentity = '';
+  const sourceAuthority = () => {
+    const identity = studioSourceJson({ project, imports: projectImports, assets, online,
+      userId: authManager.user.id, authenticated: authManager.authenticated,
+      accessLost, forbidden, dirty, status: sessionState?.status, hasDraft: sessionState?.hasDraft,
+      resources: sessionState?.resources, access: sessionState?.access, conflict: sessionState?.conflict, withheld: sessionState?.withheld });
+    if (identity !== sourceIdentity) { sourceIdentity = identity; sourceEpoch += 1; }
+    return {
+      userId: authManager.user.id, project, sourceEpoch, generation: 0, online,
+      eligible: authManager.authenticated && !accessLost && !forbidden && !dirty &&
+        sessionState?.access === 'owner' && sessionState?.status === 'saved' &&
+        !sessionState.hasDraft && !sessionState.conflict && !sessionState.withheld &&
+        sessionState.resources?.complete === true,
+    };
+  };
+  $effect(() => { sourceAuthority(); });
+  const resolveSource = createStudioSourceResolution({
+    authority: sourceAuthority,
+    signal: sourceController.signal,
+    resolve: (id, studioSourceResolutionRequestDto, signal) =>
+      resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }, { signal }),
+  });
   const services: StudioHostServices = {
+    resolveStudioProjectSource: resolveSource,
     submitCommands: (envelopes) => bridge.submit(envelopes),
     stageDraft,
     commitEditorDraft: async (graph, baseRevision, scope) => {
@@ -1200,6 +1230,7 @@
 
   onDestroy(() => {
     detachImports();
+    sourceController.abort();
     clearTimeout(exportTimer);
     capabilityRefresh.dispose();
     settleExportChoice(null);
@@ -1283,6 +1314,7 @@
   {project}
   {assets}
   {projectImports}
+  {sourceEpoch}
   {handoffAssetIds}
   {auth}
   {capabilities}
