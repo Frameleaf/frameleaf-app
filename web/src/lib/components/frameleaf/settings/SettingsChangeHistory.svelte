@@ -141,7 +141,7 @@
     const pages: Item['pages'] = [];
     for (const change of changes) {
       const title = change.page && pageTitle?.(change.page);
-      if (change.page && title && !pages.some((known) => known.title === title)) {
+      if (change.page && title && pages.every((known) => known.title !== title)) {
         pages.push({ page: change.page, title });
       }
     }

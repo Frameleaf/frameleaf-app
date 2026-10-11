@@ -152,7 +152,7 @@ export type SettingPage = { area: SettingsAreaId; section?: string };
 /** The page a setting lives on, where the app knows it. */
 export const settingPage = (kind: SettingKind, path: string): SettingPage | undefined => {
   if (kind === 'preference') {
-    return PREFERENCE_PAGES[path.split('.')[0]];
+    return PREFERENCE_PAGES[path.split('.', 1)[0]];
   }
   if (path === 'server.publicUsers') {
     return { area: 'sharing' };

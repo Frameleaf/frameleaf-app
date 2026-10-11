@@ -272,34 +272,45 @@
     }
     const current = dialog;
     let ok: boolean;
-    if (current.kind === 'invite') {
-      ok = await run(
-        () =>
-          createClusterGroupRequest({ id: clusterGroupId, clusterGroupRequestCreateDto: { userId: current.userId } }),
-        $t('frameleaf_people_sharing.invitation_sent'),
-        'errors.something_went_wrong',
-      );
-      await refresh();
-    } else if (current.kind === 'partner-add') {
-      ok = await run(
-        () => createPartner({ partnerCreateDto: { sharedWithId: current.userId } }),
-        $t('frameleaf_people_sharing.partner_added'),
-        'errors.unable_to_add_partners',
-      );
-      await refreshPartners();
-    } else if (current.kind === 'erase') {
-      ok = await run(
-        () => clusterGroupRegeneratePeople({ id: clusterGroupId }),
-        $t('frameleaf_sharing_erase_started'),
-        'errors.something_went_wrong',
-      );
-    } else {
-      ok = await run(
-        () => acceptClusterGroupRequest({ id: current.request.id }),
-        $t('frameleaf_people_sharing.invitation_accepted'),
-        'errors.something_went_wrong',
-      );
-      await refresh();
+    switch (current.kind) {
+      case 'invite': {
+        ok = await run(
+          () =>
+            createClusterGroupRequest({
+              id: clusterGroupId,
+              clusterGroupRequestCreateDto: { userId: current.userId },
+            }),
+          $t('frameleaf_people_sharing.invitation_sent'),
+          'errors.something_went_wrong',
+        );
+        await refresh();
+        break;
+      }
+      case 'partner-add': {
+        ok = await run(
+          () => createPartner({ partnerCreateDto: { sharedWithId: current.userId } }),
+          $t('frameleaf_people_sharing.partner_added'),
+          'errors.unable_to_add_partners',
+        );
+        await refreshPartners();
+        break;
+      }
+      case 'erase': {
+        ok = await run(
+          () => clusterGroupRegeneratePeople({ id: clusterGroupId }),
+          $t('frameleaf_sharing_erase_started'),
+          'errors.something_went_wrong',
+        );
+        break;
+      }
+      default: {
+        ok = await run(
+          () => acceptClusterGroupRequest({ id: current.request.id }),
+          $t('frameleaf_people_sharing.invitation_accepted'),
+          'errors.something_went_wrong',
+        );
+        await refresh();
+      }
     }
     if (ok) {
       dialogOpen = false;
@@ -653,7 +664,9 @@
       {@const choices =
         dialog.kind === 'invite'
           ? inviteChoices
-          : accounts.filter((user) => user.id !== me && !partners.some((p) => p.user.id === user.id && p.sharedByMe))}
+          : accounts.filter(
+              (user) => user.id !== me && partners.every((p) => !(p.user.id === user.id && p.sharedByMe)),
+            )}
       <label class="field" for={selectId}>
         {$t('frameleaf_sharing_choose')}
         <select id={selectId} bind:value={dialog.userId} data-initial-focus>
