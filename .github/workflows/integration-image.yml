@@ -108,8 +108,10 @@ jobs:
             org.opencontainers.image.description=Pre-release integration build, not a release
             org.frameleaf.build.variant=cpu
             org.frameleaf.build.channel=integration
-          # Read the Deploy build cache; never write it.
-          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:${{ matrix.cache }}
+          # Read the integration branch's cache (e2e-build-cache.yml) and the Deploy build cache; never write either.
+          cache-from: |
+            type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-${{ matrix.architecture }}
+            type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:${{ matrix.cache }}
           secrets: |
             mise_github_token=${{ github.token }}
           build-args: |

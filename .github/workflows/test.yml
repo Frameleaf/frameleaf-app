@@ -351,6 +351,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         working-directory: ./server
@@ -372,6 +373,13 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
+      - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Build medium native runner
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
@@ -381,8 +389,9 @@ jobs:
           build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
-          cache-from: type=gha,scope=server-medium
-          cache-to: type=gha,scope=server-medium,mode=max
+          # The integration branch's registry cache (e2e-build-cache.yml). The Actions cache is not
+          # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}
       - name: Run all medium tests in the native runner
         if: ${{ !cancelled() }}
@@ -426,6 +435,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      packages: read
     defaults:
       run:
         working-directory: ./server
@@ -447,6 +457,13 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
+      - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Build medium native runner
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
@@ -456,7 +473,9 @@ jobs:
           build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
-          cache-from: type=gha,scope=server-medium
+          # The integration branch's registry cache (e2e-build-cache.yml). The Actions cache is not
+          # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
+          cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}
       - name: Run the medium scale suite in the native runner
         if: ${{ !cancelled() }}
@@ -488,6 +507,57 @@ jobs:
           MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
         run: docker rm -f "$MEDIUM_CONTAINER" >/dev/null 2>&1 || true
     timeout-minutes: 90
+  # FL-380: the server image is built once per architecture and handed to every end-to-end job, which
+  # used to build it themselves. The registry cache it reads is written by e2e-build-cache.yml.
+  e2e-image:
+    env:
+      FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
+      FRAMELEAF_CI_STUDIO_NODE_IMAGE: mirror.gcr.io/library/node@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
+    name: End-to-End Image
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Configure public Docker Hub mirror
+        run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Login to owned GHCR namespace for the build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build the server image
+        working-directory: ./e2e
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: docker compose build frameleaf-server
+      - name: Save the server image
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-image"
+          docker save frameleaf-server:latest -o "$RUNNER_TEMP/e2e-image/server.tar"
+      - name: Hand the server image to the end-to-end jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-image-${{ matrix.runner }}
+          path: ${{ runner.temp }}/e2e-image/server.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
+    timeout-minutes: 120
   e2e-tests-server-cli:
     env:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
@@ -495,6 +565,7 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Server & CLI)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    needs: e2e-image
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -547,9 +618,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - name: Fetch the server image built for this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-image-${{ matrix.runner }}
+          path: ${{ runner.temp }}/e2e-image
+      - name: Load the server image
+        run: docker load -i "$RUNNER_TEMP/e2e-image/server.tar"
       - name: Start Docker Compose
         id: docker
-        run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+        run: docker compose up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
         if: ${{ !cancelled() }}
       - name: Wait for Immich server readiness
         id: server-ready
@@ -789,6 +867,7 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Tests (Web)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    needs: e2e-image
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -802,6 +881,9 @@ jobs:
         runner:
           - ubuntu-24.04
           - ubuntu-24.04-arm
+        # FL-380: the specs are split by file across three stacks of their own. The web project shares
+        # one server and database per stack, so it stays on one worker; more stacks, not more workers.
+        shard: [1, 2, 3]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -839,43 +921,50 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - name: Fetch the server image built for this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-image-${{ matrix.runner }}
+          path: ${{ runner.temp }}/e2e-image
+      - name: Load the server image
+        run: docker load -i "$RUNNER_TEMP/e2e-image/server.tar"
       - name: Docker build
         id: docker
-        run: docker compose -f docker-compose.yml -f docker-compose.ml-fixture.yml up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+        run: docker compose -f docker-compose.yml -f docker-compose.ml-fixture.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
         if: ${{ !cancelled() }}
       - name: Run e2e tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
           FL144_ML_FIXTURE: 'true'
-        run: pnpm test:web
+        run: pnpm test:web --shard=${{ matrix.shard }}/3
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive e2e test (web) results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: success() || failure()
         with:
-          name: e2e-web-test-results-${{ matrix.runner }}
+          name: e2e-web-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
       - name: Run ui tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
-        run: pnpm test:web:ui
+        run: pnpm test:web:ui --shard=${{ matrix.shard }}/3
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive ui test (web) results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: success() || failure()
         with:
-          name: e2e-ui-test-results-${{ matrix.runner }}
+          name: e2e-ui-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
       - name: Run maintenance tests
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
         run: pnpm test:web:maintenance
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 1 }}
       - name: Archive maintenance tests (web) results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: success() || failure()
         with:
-          name: e2e-maintenance-isolated-test-results-${{ matrix.runner }}
+          name: e2e-maintenance-isolated-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
       - name: Capture Docker logs
         if: always()
@@ -885,14 +974,14 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: e2e-web-docker-logs-${{ matrix.runner }}
+          name: e2e-web-docker-logs-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/docker-compose-logs.txt
       # FL-144: FL-68 iCloud Photos sync against the test-only fake bridge. The whole stack restarts fresh
       # with the bridge override (after the main logs above are kept); the main web run never sees it.
       - name: Start the fake iCloud bridge
         id: icloud-fixture
         run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 2 }}
       - name: Run e2e tests (iCloud sync)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
@@ -902,7 +991,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
         with:
-          name: e2e-icloud-test-results-${{ matrix.runner }}
+          name: e2e-icloud-test-results-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/playwright-report/
       - name: Capture iCloud sync Docker logs
         if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
@@ -911,7 +1000,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
         with:
-          name: e2e-icloud-docker-logs-${{ matrix.runner }}
+          name: e2e-icloud-docker-logs-${{ matrix.runner }}-${{ matrix.shard }}
           path: e2e/docker-icloud-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
