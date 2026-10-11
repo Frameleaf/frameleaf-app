@@ -10,13 +10,14 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import type { LookupAddress } from 'node:dns';
 import type { RequestOptions } from 'node:https';
 import type { LookupFunction } from 'node:net';
+import type { Mock } from 'vitest';
 import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
 import type { FrameleafCloudBackup } from 'src/types.js';
 import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
-import { StorageCore } from 'src/cores/storage.core.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   DatabaseLock,
   JobStatus,
@@ -24,8 +25,8 @@ import {
   MediaOperationStatus,
   MlAdmissionRefusal,
   PushEventType,
-  SystemMetadataKey,
   StorageFolder,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import {
@@ -220,13 +221,13 @@ describe(CloudBackupService.name, () => {
   let sut: CloudBackupService;
   let mocks: ReturnType<typeof getMocks>;
   let metadata: Record<string, unknown>;
-  let operations: Record<string, ReturnType<typeof vi.fn>>;
-  let store: Record<string, ReturnType<typeof vi.fn>>;
-  let index: Record<string, ReturnType<typeof vi.fn>>;
-  let keys: Record<string, ReturnType<typeof vi.fn>>;
-  let databaseBackup: Record<string, ReturnType<typeof vi.fn>>;
-  let cloudBackup: Record<string, ReturnType<typeof vi.fn>>;
-  let details: Record<string, ReturnType<typeof vi.fn>>;
+  let operations: Record<string, Mock>;
+  let store: Record<string, Mock>;
+  let index: Record<string, Mock>;
+  let keys: Record<string, Mock>;
+  let databaseBackup: Record<string, Mock>;
+  let cloudBackup: Record<string, Mock>;
+  let details: Record<string, Mock>;
   /** What each streamed upload sent (the gzipped manifests). */
   let streamed: Buffer[];
 

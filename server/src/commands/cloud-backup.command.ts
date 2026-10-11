@@ -1,6 +1,7 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
 import { readFile } from 'node:fs/promises';
 import { CloudBackupBareMetalRestore, CloudBackupService } from 'src/services/cloud-backup.service.js';
+import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { addClientBackupKeys, parseClientBackupKeys, rotateClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import {
@@ -9,7 +10,6 @@ import {
   unwrapBackupRecoveryKit,
 } from 'src/utils/cloud-backup-recovery.js';
 import { parseBackupKey } from 'src/utils/cloud-backup.js';
-import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
 
 /** Secrets come from the environment, never from the command line, so they stay out of shell history. */
