@@ -8,9 +8,20 @@
 </script>
 
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import {
+    landmarksWithItems,
+    layoutLandmarkPins,
+    PIN_BRAND_PX,
+    PIN_ICON_PX,
+    pinNameWidth,
+    type LandmarkPin,
+  } from '$lib/frameleaf/landmark-pins';
+  import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
   import {
     applyClusterLabelLayout,
     BUBBLE_NAME_LAYER,
@@ -34,8 +45,10 @@
     getAlbumMapMarkers,
     getMapMarkers,
     getMapStatistics,
+    getVisitedLandmarks,
     type MapMarkerResponseDto,
     type MapStatisticsResponseDto,
+    type SearchLandmarkResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
   import {
@@ -56,7 +69,7 @@
   import { LngLatBounds, type GeoJSONSource, type Map } from 'maplibre-gl';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { AttributionControl, GeoJSON, MapLibre, MarkerLayer } from 'svelte-maplibre';
+  import { AttributionControl, GeoJSON, MapLibre, Marker, MarkerLayer } from 'svelte-maplibre';
 
   /**
    * The Map screen (prototype `MapView.jsx`, FL-51): located items as clusters over the configured
@@ -217,6 +230,55 @@
         loadFailed = true;
       });
   });
+  /* ------------------------------------------------------------------ */
+  /* Landmark pins (FL-355)                                              */
+  /* ------------------------------------------------------------------ */
+  // The landmarks the viewer has items at, most photographed first. An album's own map has none yet.
+  let landmarks = $state<SearchLandmarkResponseDto[]>([]);
+  $effect(() => {
+    if (scoped) {
+      return;
+    }
+    getVisitedLandmarks()
+      .then((visited) => (landmarks = visited))
+      // an older server, or one without the place pack: a map without pins
+      .catch(() => {});
+  });
+  const pinLandmarks = $derived(scoped ? [] : landmarksWithItems(landmarks, markers));
+  let pins = $state<LandmarkPin<SearchLandmarkResponseDto>[]>([]);
+
+  /** Which pins to draw for this view, and how: `layoutLandmarkPins` has the rules. */
+  const layoutPins = () => {
+    const instance = map;
+    if (!instance || pinLandmarks.length === 0) {
+      pins = [];
+      return;
+    }
+    // The photo bubbles on screen, which a pin's name must not cover.
+    let bubbles: { x: number; y: number; count: number }[] = [];
+    try {
+      bubbles = instance.querySourceFeatures('geojson').map((feature) => ({
+        ...instance.project((feature.geometry as Point).coordinates as [number, number]),
+        count: (feature.properties?.point_count as number) ?? 1,
+      }));
+    } catch {
+      // no style yet: the pins are laid out again once the items are on the map
+    }
+    const canvas = instance.getCanvas();
+    pins = layoutLandmarkPins({
+      places: pinLandmarks,
+      zoom: instance.getZoom(),
+      size: { width: canvas.clientWidth, height: canvas.clientHeight },
+      project: ({ longitude, latitude }) => instance.project([longitude, latitude]),
+      bubbles,
+      textWidth: pinNameWidth,
+    });
+  };
+  $effect(() => {
+    void pinLandmarks;
+    layoutPins();
+  });
+
   const retryMarkers = () => {
     loadFailed = false;
     attempt += 1;
@@ -330,6 +392,7 @@
     inView = all ? markers : markers.filter(({ lon, lat }) => bounds.contains([lon, lat]));
     listShown = LIST_PAGE;
     zoom = map.getZoom();
+    layoutPins();
   };
 
   const fitAll = (announce = true) => {
@@ -508,10 +571,13 @@
         const layoutLabels = () => queueMicrotask(() => applyClusterLabelLayout(instance, 'geojson'));
         instance.on('styledata', layoutLabels);
         instance.on('sourcedata', (event: { sourceId?: string }) => {
-          if (event.sourceId === 'geojson') {
-            layoutLabels();
+          if (event.sourceId !== 'geojson') {
+            return;
           }
+          layoutLabels();
         });
+        // The bubbles have settled for this view: the pins keep clear of where they are now.
+        instance.on('idle', layoutPins);
         // The markers source goes on at "style.load", so on a first load both events are over before
         // "load" attaches the listeners above, and nothing would lay the labels out until the view
         // crossed a zoom level. "load" itself is fired after the frame has been drawn.
@@ -598,6 +664,36 @@
           {/snippet}
         </MarkerLayer>
       </GeoJSON>
+      <!-- FL-355, MapView.jsx `landmarkPins`: a pin above the photos taken at a landmark; it opens them. -->
+      {#each pins as pin (pin.place.id)}
+        {@const landmark = pin.place}
+        <Marker
+          lngLat={[landmark.longitude, landmark.latitude]}
+          anchor="bottom"
+          offset={[0, -30]}
+          zIndex={2}
+          asButton
+          onclick={() => void goto(landmarkHref(landmark.id))}
+        >
+          <span
+            class="lm-pin"
+            class:branded={pin.branded}
+            class:compact={pin.compact}
+            class:side={pin.side}
+            role="img"
+            aria-label={$t('frameleaf_landmarks_card_label', {
+              values: {
+                name: landmark.name,
+                kind: $t(landmarkKind(landmark.kind).labelKey),
+                count: landmark.assetCount,
+              },
+            })}
+          >
+            <LandmarkBadge {landmark} size={pin.branded ? PIN_BRAND_PX : PIN_ICON_PX} brand={pin.branded} />
+            {#if !pin.compact}{landmark.name}{/if}
+          </span>
+        </Marker>
+      {/each}
     </MapLibre>
 
     <p id="fl-map-help" class="sr-only">{$t('frameleaf_map_help')}</p>
@@ -1066,6 +1162,55 @@
     height: 38px;
     border-radius: 50%;
     object-fit: cover;
+  }
+  /* Landmark pins: icon and name, lifted above the photo bubble at the same spot (landmarks.css `.lm-pin`). */
+  .lm-pin {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 11px 4px 4px;
+    border-radius: 999px;
+    background: rgba(244, 247, 245, 0.96);
+    color: #10201a;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+  }
+  .lm-pin::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -5px;
+    width: 10px;
+    height: 10px;
+    background: inherit;
+    transform: translateX(-50%) rotate(45deg);
+    border-radius: 2px;
+  }
+  .lm-pin.branded {
+    padding: 3px 13px 3px 3px;
+    gap: 9px;
+    font-size: 13px;
+  }
+  .lm-pin.compact {
+    padding: 4px;
+  }
+  .lm-pin.branded.compact {
+    padding: 3px;
+  }
+  /* The name runs right from the pin instead of being centred on it. */
+  .lm-pin.side {
+    --lm-icon: 16px;
+    transform: translateX(calc(50% - var(--lm-icon)));
+  }
+  .lm-pin.side.branded {
+    --lm-icon: 22px;
+  }
+  .lm-pin.side::after {
+    left: var(--lm-icon);
   }
   :global(.maplibregl-marker:hover) .cluster,
   :global(.maplibregl-marker:hover) .single,

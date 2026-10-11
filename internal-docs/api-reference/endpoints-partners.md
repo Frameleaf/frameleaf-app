@@ -12,7 +12,7 @@ Retrieve partners
 
 Permission: `partner.read`. Admin only: `false`.
 
-Models: [PartnerDirection](models-18.md#partnerdirection), [PartnerResponseDto](models-18.md#partnerresponsedto).
+Models: [PartnerDirection](models-19.md#partnerdirection), [PartnerResponseDto](models-19.md#partnerresponsedto).
 
 Controller access declarations:
 
@@ -103,7 +103,7 @@ Create a partner
 
 Permission: `partner.create`. Admin only: `false`.
 
-Models: [PartnerCreateDto](models-18.md#partnercreatedto), [PartnerResponseDto](models-18.md#partnerresponsedto).
+Models: [PartnerCreateDto](models-19.md#partnercreatedto), [PartnerResponseDto](models-19.md#partnerresponsedto).
 
 Controller access declarations:
 
@@ -192,7 +192,7 @@ Get the Locked partner items notice
 
 Permission: `partner.read`. Admin only: `false`.
 
-Models: [PartnerLockedNoticeResponseDto](models-18.md#partnerlockednoticeresponsedto).
+Models: [PartnerLockedNoticeResponseDto](models-19.md#partnerlockednoticeresponsedto).
 
 Controller access declarations:
 
@@ -263,7 +263,7 @@ Dismiss the Locked partner items notice
 
 Permission: `partner.update`. Admin only: `false`.
 
-Models: [PartnerLockedNoticeResponseDto](models-18.md#partnerlockednoticeresponsedto).
+Models: [PartnerLockedNoticeResponseDto](models-19.md#partnerlockednoticeresponsedto).
 
 Controller access declarations:
 
@@ -415,7 +415,7 @@ Create a partner
 
 Permission: `partner.create`. Admin only: `false`.
 
-Models: [PartnerResponseDto](models-18.md#partnerresponsedto).
+Models: [PartnerResponseDto](models-19.md#partnerresponsedto).
 
 Controller access declarations:
 
@@ -504,7 +504,7 @@ Update a partner
 
 Permission: `partner.update`. Admin only: `false`.
 
-Models: [PartnerResponseDto](models-18.md#partnerresponsedto), [PartnerUpdateDto](models-18.md#partnerupdatedto).
+Models: [PartnerResponseDto](models-19.md#partnerresponsedto), [PartnerUpdateDto](models-19.md#partnerupdatedto).
 
 Controller access declarations:
 

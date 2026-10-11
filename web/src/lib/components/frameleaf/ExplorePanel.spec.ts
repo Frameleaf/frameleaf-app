@@ -3,10 +3,17 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildExplorePeople, buildExplorePlaces, buildExploreThings } from '$lib/frameleaf/explore';
+import { createLandmarkAlbum, dismissLandmarkAlbum } from '$lib/frameleaf/landmark-albums';
+import { buildLandmarkCards } from '$lib/frameleaf/landmarks';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import ExplorePanel from './ExplorePanel.svelte';
+
+vi.mock('$lib/frameleaf/landmark-albums', () => ({
+  createLandmarkAlbum: vi.fn().mockResolvedValue('album'),
+  dismissLandmarkAlbum: vi.fn(),
+}));
 
 const jamie = personFactory.build({ id: 'jamie', name: 'Jamie', isHidden: false });
 const clip = assetFactory.build({
@@ -52,6 +59,86 @@ describe('ExplorePanel', () => {
     const thing = things.getByRole('link', { name: /beach/ });
     expect(thing).toHaveTextContent('1 item');
     expect(thing.getAttribute('href')).toContain('tagIds');
+  });
+
+  it('lists visited landmarks with their kind, count and dates, each opening its search (FL-354)', () => {
+    const landmarks = buildLandmarkCards([
+      {
+        id: 'Q181185',
+        name: 'Disneyland Park',
+        kind: 'theme_park',
+        latitude: 33.8121,
+        longitude: -117.919,
+        radiusM: 600,
+        assetCount: 14,
+        firstTakenAt: '2026-06-03T10:00:00.000Z',
+        lastTakenAt: '2026-06-03T21:30:00.000Z',
+        coverAssetId: 'park-cover',
+        city: 'Anaheim',
+        state: 'California',
+        country: 'United States of America',
+        icon: { background: '#ffffff', tile: false },
+      },
+    ]);
+    render(ExplorePanel, props({ landmarks }));
+
+    const section = within(screen.getByRole('region', { name: 'Landmarks & attractions' }));
+    const card = section.getByRole('link', { name: /Disneyland Park, Theme park, 14 items/ });
+    expect(card).toHaveTextContent('Theme park');
+    expect(card).toHaveTextContent('14 items');
+    expect(card).toHaveTextContent('2026');
+    expect(card.getAttribute('href')).toContain('landmarkIds');
+    // its own brand icon, in a circle of the icon's background colour
+    const icon = card.querySelector(':scope .lm-badge-brand img');
+    expect(icon?.getAttribute('src')).toContain('/search/landmarks/Q181185/icon');
+  });
+
+  // FL-357: one visit offered as an album under the landmarks, answered once.
+  it('offers a visit as an album, and makes it or puts the offer away', async () => {
+    const [resort] = buildLandmarkCards([
+      {
+        id: 'Q1229066',
+        name: 'Disneyland Resort',
+        kind: 'resort',
+        latitude: 33.809,
+        longitude: -117.909,
+        radiusM: 1993,
+        assetCount: 20,
+        firstTakenAt: '2026-09-10T09:00:00.000Z',
+        lastTakenAt: '2026-09-11T12:05:00.000Z',
+        coverAssetId: 'resort-cover',
+        city: 'Anaheim',
+        state: 'California',
+        country: 'United States of America',
+      },
+    ]);
+    const albumSuggestion = { landmark: resort, startDate: '2026-09-10', endDate: '2026-09-11', count: 20 };
+    const { unmount } = render(ExplorePanel, props({ landmarks: [resort], albumSuggestion }));
+
+    const offer = within(screen.getByRole('group', { name: 'Suggested album' }));
+    expect(offer.getByText('20 photos at Disneyland Resort')).toBeInTheDocument();
+    expect(offer.getByText(/Sep 10, 2026 – Sep 11, 2026 · Make it an album\?/)).toBeInTheDocument();
+    await fireEvent.click(offer.getByRole('button', { name: 'Create album' }));
+
+    expect(createLandmarkAlbum).toHaveBeenCalledWith({
+      landmarkId: 'Q1229066',
+      startDate: '2026-09-10',
+      endDate: '2026-09-11',
+      albumName: 'Disneyland Resort',
+    });
+    expect(await offer.findByText('Album created: Disneyland Resort')).toBeInTheDocument();
+    expect(offer.queryByRole('button')).toBeNull();
+    unmount();
+
+    render(ExplorePanel, props({ landmarks: [resort], albumSuggestion }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(dismissLandmarkAlbum).toHaveBeenCalledWith(albumSuggestion);
+    expect(screen.queryByRole('group', { name: 'Suggested album' })).toBeNull();
+  });
+
+  it('shows no landmarks section for an account that has been to none', () => {
+    render(ExplorePanel, props());
+    expect(screen.queryByRole('region', { name: 'Landmarks & attractions' })).toBeNull();
   });
 
   it('opens the same search the person and place counts came from', () => {

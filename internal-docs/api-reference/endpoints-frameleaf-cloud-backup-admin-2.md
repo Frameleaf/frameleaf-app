@@ -1637,7 +1637,7 @@ List own kept backups with accessible deleted history
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [OwnerBackupsResponseDto](models-18.md#ownerbackupsresponsedto).
+Models: [OwnerBackupsResponseDto](models-19.md#ownerbackupsresponsedto).
 
 Controller access declarations:
 
@@ -1732,7 +1732,7 @@ Search own deleted history in one kept backup
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [OwnerBackupHistoryResponseDto](models-18.md#ownerbackuphistoryresponsedto).
+Models: [OwnerBackupHistoryResponseDto](models-19.md#ownerbackuphistoryresponsedto).
 
 Controller access declarations:
 

@@ -95,7 +95,7 @@ Retrieve stacks
 
 Permission: `stack.read`. Admin only: `false`.
 
-Models: [StackResponseDto](models-32.md#stackresponsedto).
+Models: [StackResponseDto](models-33.md#stackresponsedto).
 
 Controller access declarations:
 
@@ -189,7 +189,7 @@ Create a stack
 
 Permission: `stack.create`. Admin only: `false`.
 
-Models: [StackCreateDto](models-32.md#stackcreatedto), [StackResponseDto](models-32.md#stackresponsedto).
+Models: [StackCreateDto](models-33.md#stackcreatedto), [StackResponseDto](models-33.md#stackresponsedto).
 
 Controller access declarations:
 
@@ -361,7 +361,7 @@ Retrieve a stack
 
 Permission: `stack.read`. Admin only: `false`.
 
-Models: [StackResponseDto](models-32.md#stackresponsedto).
+Models: [StackResponseDto](models-33.md#stackresponsedto).
 
 Controller access declarations:
 
@@ -451,7 +451,7 @@ Update a stack
 
 Permission: `stack.update`. Admin only: `false`.
 
-Models: [StackResponseDto](models-32.md#stackresponsedto), [StackUpdateDto](models-32.md#stackupdatedto).
+Models: [StackResponseDto](models-33.md#stackresponsedto), [StackUpdateDto](models-33.md#stackupdatedto).
 
 Controller access declarations:
 

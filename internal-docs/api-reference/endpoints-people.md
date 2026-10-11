@@ -95,7 +95,7 @@ Get all people
 
 Permission: `person.read`. Admin only: `false`.
 
-Models: [PeopleResponseDto](models-18.md#peopleresponsedto).
+Models: [PeopleResponseDto](models-19.md#peopleresponsedto).
 
 Controller access declarations:
 
@@ -319,7 +319,7 @@ Update people
 
 Permission: `person.update`. Admin only: `false`.
 
-Models: [BulkIdResponseDto](models-07.md#bulkidresponsedto), [PeopleUpdateDto](models-18.md#peopleupdatedto).
+Models: [BulkIdResponseDto](models-07.md#bulkidresponsedto), [PeopleUpdateDto](models-19.md#peopleupdatedto).
 
 Controller access declarations:
 

@@ -2,6 +2,161 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## getStorageMigrationStatus
+
+`GET /api/admin/storage-migration`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/storage-migration-admin.controller.ts#L18).
+
+Get storage migration status
+
+Permission: `queue.read`. Admin only: `true`.
+
+Models: [StorageMigrationStatusResponseDto](models-33.md#storagemigrationstatusresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Queues)
+@Controller('admin/storage-migration')
+@Get()
+@Authenticated({ permission: Permission.QueueRead, admin: true })
+@Endpoint({
+    summary: 'Get storage migration status',
+    description:
+      'Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Whether the storage template is on, which template originals are moved to, and where the storage template migration queue stands: running, paused, unfinished work and job counts.",
+  "operationId": "getStorageMigrationStatus",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get storage migration status",
+  "tags": [
+    "Queues"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "queue.read",
+  "x-immich-state": "Alpha"
+}
+```
+
+## runStorageMigrationInBackground
+
+`POST /api/admin/storage-migration`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/storage-migration-admin.controller.ts#L30).
+
+Run storage migration in the background
+
+Permission: `queue.update`. Admin only: `true`.
+
+Models: [StorageMigrationStatusResponseDto](models-33.md#storagemigrationstatusresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Queues)
+@Controller('admin/storage-migration')
+@Post()
+@Authenticated({ permission: Permission.QueueUpdate, admin: true })
+@HttpCode(HttpStatus.ACCEPTED)
+@Endpoint({
+    summary: 'Run storage migration in the background',
+    description:
+      'Start moving originals to the paths the storage template names, in the background, and return the status. Refused with 400 while the storage template is off and with 409 while a migration is already running.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Start moving originals to the paths the storage template names, in the background, and return the status. Refused with 400 while the storage template is off and with 409 while a migration is already running.",
+  "operationId": "runStorageMigrationInBackground",
+  "parameters": [],
+  "responses": {
+    "202": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Run storage migration in the background",
+  "tags": [
+    "Queues"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "queue.update",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## getQueues
 
 `GET /api/queues`
@@ -12,7 +167,7 @@ List all queues
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [QueueResponseDto](models-27.md#queueresponsedto).
+Models: [QueueResponseDto](models-28.md#queueresponsedto).
 
 Controller access declarations:
 
@@ -91,7 +246,7 @@ Retrieve a queue
 
 Permission: `queue.read`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueResponseDto](models-27.md#queueresponsedto).
+Models: [QueueName](models-28.md#queuename), [QueueResponseDto](models-28.md#queueresponsedto).
 
 Controller access declarations:
 
@@ -176,7 +331,7 @@ Update a queue
 
 Permission: `queue.update`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueResponseDto](models-27.md#queueresponsedto), [QueueUpdateDto](models-27.md#queueupdatedto).
+Models: [QueueName](models-28.md#queuename), [QueueResponseDto](models-28.md#queueresponsedto), [QueueUpdateDto](models-28.md#queueupdatedto).
 
 Controller access declarations:
 
@@ -271,7 +426,7 @@ Empty a queue
 
 Permission: `queueJob.delete`. Admin only: `true`.
 
-Models: [QueueDeleteDto](models-27.md#queuedeletedto), [QueueName](models-27.md#queuename).
+Models: [QueueDeleteDto](models-28.md#queuedeletedto), [QueueName](models-28.md#queuename).
 
 Controller access declarations:
 
@@ -360,7 +515,7 @@ Retrieve queue jobs
 
 Permission: `queueJob.read`. Admin only: `true`.
 
-Models: [QueueJobResponseDto](models-27.md#queuejobresponsedto), [QueueJobStatus](models-27.md#queuejobstatus), [QueueName](models-27.md#queuename).
+Models: [QueueJobResponseDto](models-28.md#queuejobresponsedto), [QueueJobStatus](models-28.md#queuejobstatus), [QueueName](models-28.md#queuename).
 
 Controller access declarations:
 
@@ -471,7 +626,7 @@ Retry failed queue jobs
 
 Permission: `queueJob.create`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueRetryFailedResponseDto](models-27.md#queueretryfailedresponsedto).
+Models: [QueueName](models-28.md#queuename), [QueueRetryFailedResponseDto](models-28.md#queueretryfailedresponsedto).
 
 Controller access declarations:
 
@@ -557,7 +712,7 @@ Retrieve queue statistics for an account
 
 Permission: `queueJob.read`. Admin only: `true`.
 
-Models: [QueueName](models-27.md#queuename), [QueueOwnerStatisticsResponseDto](models-27.md#queueownerstatisticsresponsedto).
+Models: [QueueName](models-28.md#queuename), [QueueOwnerStatisticsResponseDto](models-28.md#queueownerstatisticsresponsedto).
 
 Controller access declarations:
 

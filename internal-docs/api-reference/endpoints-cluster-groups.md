@@ -12,7 +12,7 @@ Retrieve cluster group requests
 
 Permission: `clusterGroupRequest.read`. Admin only: `false`.
 
-Models: [ClusterGroupRequestResponseDto](models-09.md#clustergrouprequestresponsedto).
+Models: [ClusterGroupRequestResponseDto](models-10.md#clustergrouprequestresponsedto).
 
 Controller access declarations:
 
@@ -377,7 +377,7 @@ Retrieve the requests sent by a cluster group
 
 Permission: `clusterGroupRequest.read`. Admin only: `false`.
 
-Models: [ClusterGroupRequestResponseDto](models-09.md#clustergrouprequestresponsedto).
+Models: [ClusterGroupRequestResponseDto](models-10.md#clustergrouprequestresponsedto).
 
 Controller access declarations:
 
@@ -461,7 +461,7 @@ Create a cluster group request
 
 Permission: `clusterGroupRequest.create`. Admin only: `false`.
 
-Models: [ClusterGroupRequestCreateDto](models-09.md#clustergrouprequestcreatedto), [ClusterGroupRequestResponseDto](models-09.md#clustergrouprequestresponsedto).
+Models: [ClusterGroupRequestCreateDto](models-09.md#clustergrouprequestcreatedto), [ClusterGroupRequestResponseDto](models-10.md#clustergrouprequestresponsedto).
 
 Controller access declarations:
 
@@ -552,7 +552,7 @@ Retrieve the users of a cluster group
 
 Permission: `clusterGroup.read`. Admin only: `false`.
 
-Models: [UserResponseDto](models-38.md#userresponsedto).
+Models: [UserResponseDto](models-39.md#userresponsedto).
 
 Controller access declarations:
 

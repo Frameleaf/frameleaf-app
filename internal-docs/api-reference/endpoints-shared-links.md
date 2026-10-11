@@ -12,7 +12,7 @@ Retrieve all shared links
 
 Permission: `sharedLink.read`. Admin only: `false`.
 
-Models: [SharedLinkResponseDto](models-31.md#sharedlinkresponsedto).
+Models: [SharedLinkResponseDto](models-32.md#sharedlinkresponsedto).
 
 Controller access declarations:
 
@@ -123,7 +123,7 @@ Create a shared link
 
 Permission: `sharedLink.create`. Admin only: `false`.
 
-Models: [SharedLinkCreateDto](models-31.md#sharedlinkcreatedto), [SharedLinkResponseDto](models-31.md#sharedlinkresponsedto).
+Models: [SharedLinkCreateDto](models-32.md#sharedlinkcreatedto), [SharedLinkResponseDto](models-32.md#sharedlinkresponsedto).
 
 Controller access declarations:
 
@@ -212,7 +212,7 @@ Shared link login
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [SharedLinkLoginDto](models-31.md#sharedlinklogindto), [SharedLinkResponseDto](models-31.md#sharedlinkresponsedto).
+Models: [SharedLinkLoginDto](models-32.md#sharedlinklogindto), [SharedLinkResponseDto](models-32.md#sharedlinkresponsedto).
 
 Controller access declarations:
 
@@ -314,7 +314,7 @@ Retrieve current shared link
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [SharedLinkResponseDto](models-31.md#sharedlinkresponsedto).
+Models: [SharedLinkResponseDto](models-32.md#sharedlinkresponsedto).
 
 Controller access declarations:
 
@@ -491,7 +491,7 @@ Retrieve a shared link
 
 Permission: `sharedLink.read`. Admin only: `false`.
 
-Models: [SharedLinkResponseDto](models-31.md#sharedlinkresponsedto).
+Models: [SharedLinkResponseDto](models-32.md#sharedlinkresponsedto).
 
 Controller access declarations:
 
@@ -581,7 +581,7 @@ Update a shared link
 
 Permission: `sharedLink.update`. Admin only: `false`.
 
-Models: [SharedLinkEditDto](models-31.md#sharedlinkeditdto), [SharedLinkResponseDto](models-31.md#sharedlinkresponsedto).
+Models: [SharedLinkEditDto](models-32.md#sharedlinkeditdto), [SharedLinkResponseDto](models-32.md#sharedlinkresponsedto).
 
 Controller access declarations:
 

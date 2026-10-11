@@ -29,6 +29,14 @@
 
 <UserPageLayout>
   <Theme theme={appTheme}>
-    <PlacesPanel places={data.items} {counts} unplaced={data.unplaced} failed={data.failed} {onRetry} {retrying} />
+    <PlacesPanel
+      places={data.items}
+      {counts}
+      landmarks={data.landmarks}
+      unplaced={data.unplaced}
+      failed={data.failed}
+      {onRetry}
+      {retrying}
+    />
   </Theme>
 </UserPageLayout>

@@ -2,6 +2,149 @@
 
 Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
+## ClassificationPlanResponseDto
+
+Related models: [ClassificationScoredAssetDto](models-08.md#classificationscoredassetdto).
+
+```json
+{
+  "properties": {
+    "added": {
+      "description": "Items that would be added or suggested",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "assetIds": {
+      "description": "Every item applying would change, for the apply call or a bulk job",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "durable": {
+      "description": "True when applying must run as a durable bulk job",
+      "type": "boolean"
+    },
+    "items": {
+      "description": "The first items that would be added",
+      "items": {
+        "$ref": "#/components/schemas/ClassificationScoredAssetDto"
+      },
+      "type": "array"
+    },
+    "matched": {
+      "description": "Items the rule matches now",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "removed": {
+      "description": "Items the rule applied that no longer match",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "True when there were more changes than one apply can carry",
+      "type": "boolean"
+    },
+    "visualSearchAvailable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "added",
+    "assetIds",
+    "durable",
+    "items",
+    "matched",
+    "removed",
+    "truncated",
+    "visualSearchAvailable"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationPreviewDto
+
+Related models: [ClassificationMediaType](models-07.md#classificationmediatype).
+
+```json
+{
+  "properties": {
+    "mediaType": {
+      "$ref": "#/components/schemas/ClassificationMediaType",
+      "default": "any"
+    },
+    "personIds": {
+      "default": [],
+      "description": "Match any of these people",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "sampleSize": {
+      "default": 500,
+      "description": "How many of the newest items a visual preview reads",
+      "maximum": 2000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "tagIds": {
+      "default": [],
+      "description": "Match any of these tags, or a tag beneath one of them",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "takenAfter": {
+      "default": null,
+      "description": "Taken on or after this day (YYYY-MM-DD)",
+      "nullable": true,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "takenBefore": {
+      "default": null,
+      "description": "Taken on or before this day (YYYY-MM-DD)",
+      "nullable": true,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "threshold": {
+      "default": 0.25,
+      "description": "The confidence a visual phrase has to reach",
+      "format": "double",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "visualQueries": {
+      "default": [],
+      "description": "Visual category phrases compared with each item",
+      "items": {
+        "maxLength": 120,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array"
+    }
+  },
+  "type": "object"
+}
+```
+
 ## ClassificationPreviewResponseDto
 
 Related models: [ClassificationScoredAssetDto](models-08.md#classificationscoredassetdto).
@@ -2282,155 +2425,6 @@ Related models: [CloudMlModelDto](models-09.md#cloudmlmodeldto).
   },
   "required": [
     "models"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlConnection
-
-
-```json
-{
-  "description": "not-configured: FRAMELEAF_CLOUD_URL is unset; not-linked: the server is not linked to a Frameleaf account; ready: the regional gateway answered; unavailable: linked but the cloud did not answer",
-  "enum": [
-    "not-configured",
-    "not-linked",
-    "ready",
-    "unavailable"
-  ],
-  "type": "string"
-}
-```
-
-## CloudMlConsentFeaturesDto
-
-
-```json
-{
-  "properties": {
-    "identityNames": {
-      "type": "boolean"
-    },
-    "medicalSignals": {
-      "type": "boolean"
-    },
-    "ocrAddon": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "identityNames",
-    "medicalSignals",
-    "ocrAddon"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlConsentHistoryResponseDto
-
-Related models: [CloudMlConsentRecordDto](models-08.md#cloudmlconsentrecorddto).
-
-```json
-{
-  "properties": {
-    "records": {
-      "items": {
-        "$ref": "#/components/schemas/CloudMlConsentRecordDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "records"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlConsentRecordDto
-
-Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesdto).
-
-```json
-{
-  "properties": {
-    "acceptedAt": {
-      "type": "string"
-    },
-    "acceptedBy": {
-      "type": "string"
-    },
-    "features": {
-      "$ref": "#/components/schemas/CloudMlConsentFeaturesDto"
-    },
-    "revokedAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "version": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "acceptedAt",
-    "acceptedBy",
-    "features",
-    "revokedAt",
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## CloudMlConsentStateDto
-
-Related models: [CloudMlConsentFeaturesDto](models-08.md#cloudmlconsentfeaturesdto).
-
-```json
-{
-  "properties": {
-    "acceptedVersion": {
-      "description": "The version an administrator accepted on this server",
-      "nullable": true,
-      "type": "string"
-    },
-    "documentUrl": {
-      "description": "The full consent text, when Frameleaf Cloud links one",
-      "nullable": true,
-      "type": "string"
-    },
-    "features": {
-      "$ref": "#/components/schemas/CloudMlConsentFeaturesDto",
-      "description": "The feature choices on record"
-    },
-    "outdated": {
-      "description": "Consent was given, but for an older version; processing is refused until renewed",
-      "type": "boolean"
-    },
-    "recordedVersion": {
-      "description": "The version Frameleaf Cloud has on record for this server",
-      "nullable": true,
-      "type": "string"
-    },
-    "requiredVersion": {
-      "description": "The consent version Frameleaf Cloud requires now",
-      "type": "string"
-    },
-    "summary": {
-      "description": "What the consent covers, as Frameleaf Cloud words it",
-      "type": "string"
-    }
-  },
-  "required": [
-    "acceptedVersion",
-    "documentUrl",
-    "features",
-    "outdated",
-    "recordedVersion",
-    "requiredVersion",
-    "summary"
   ],
   "type": "object"
 }

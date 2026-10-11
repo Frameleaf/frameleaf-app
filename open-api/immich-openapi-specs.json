@@ -35957,6 +35957,102 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/search/landmarks": {
+      "get": {
+        "description": "Retrieve the landmarks, theme parks and other notable places the user has timeline photos or videos at, most photographed first, each with a count, the dates of the first and latest item, a cover and the city, state and country most of its items were taken in. Locked, hidden and trashed media are never counted. Returns an empty list while reverse geocoding is disabled.",
+        "operationId": "getVisitedLandmarks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SearchLandmarkResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve visited landmarks",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
+    "/search/landmarks/{id}/icon": {
+      "get": {
+        "description": "Retrieve a landmark's own brand icon as a square PNG. Only landmarks whose `icon` is present have one; for the rest this is 404 and the client shows the icon for the landmark's kind.",
+        "operationId": "getLandmarkIcon",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "pattern": "^Q\\d{1,18}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get landmark icon",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/search/large-assets": {
       "post": {
         "description": "Search for assets that are considered large based on specified criteria.",
@@ -61638,6 +61734,13 @@
             "description": "Is trashed",
             "type": "boolean"
           },
+          "landmarks": {
+            "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+            "items": {
+              "$ref": "#/components/schemas/LandmarkSummaryDto"
+            },
+            "type": "array"
+          },
           "libraryId": {
             "description": "Library ID",
             "format": "uuid",
@@ -63194,6 +63297,13 @@
           "isTrashed": {
             "description": "Is trashed",
             "type": "boolean"
+          },
+          "landmarks": {
+            "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+            "items": {
+              "$ref": "#/components/schemas/LandmarkSummaryDto"
+            },
+            "type": "array"
           },
           "libraryId": {
             "description": "Library ID",
@@ -72307,6 +72417,10 @@
             ],
             "type": "string"
           },
+          "landmark": {
+            "$ref": "#/components/schemas/LandmarkSummaryDto",
+            "description": "The landmark the event was a visit to, when most of it was taken at one"
+          },
           "place": {
             "$ref": "#/components/schemas/MemoryStoryPlaceDto"
           },
@@ -72315,7 +72429,7 @@
             "type": "string"
           },
           "title": {
-            "description": "Place label for the event, when it has one",
+            "description": "Landmark name or place label for the event, when it has one",
             "type": "string"
           },
           "year": {
@@ -78012,6 +78126,7 @@
           "HlsSessionCleanup",
           "MemoryCleanup",
           "MemoryGenerate",
+          "LandmarkMatchAll",
           "MemoryExport",
           "NotificationsCleanup",
           "NotifyUserSignup",
@@ -78750,6 +78865,70 @@
         },
         "required": [
           "version"
+        ],
+        "type": "object"
+      },
+      "LandmarkIconDto": {
+        "properties": {
+          "background": {
+            "description": "The icon's own background colour (#rrggbb): fill the circle around the icon with it",
+            "type": "string"
+          },
+          "tile": {
+            "description": "Whether the icon fills its frame and is drawn edge to edge; otherwise it is a mark drawn inset",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "background",
+          "tile"
+        ],
+        "type": "object"
+      },
+      "LandmarkIdsFilter": {
+        "properties": {
+          "any": {
+            "items": {
+              "pattern": "^Q\\d{1,18}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "none": {
+            "items": {
+              "pattern": "^Q\\d{1,18}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LandmarkSummaryDto": {
+        "properties": {
+          "icon": {
+            "$ref": "#/components/schemas/LandmarkIconDto",
+            "description": "Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind"
+          },
+          "id": {
+            "description": "Landmark ID (its Wikidata ID, for example Q243)",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Kind of place, for example theme_park, museum or national_park",
+            "type": "string"
+          },
+          "name": {
+            "description": "Landmark name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name"
         ],
         "type": "object"
       },
@@ -108969,6 +109148,9 @@
           "isScreenshot": {
             "$ref": "#/components/schemas/BoolFilter"
           },
+          "landmarkIds": {
+            "$ref": "#/components/schemas/LandmarkIdsFilter"
+          },
           "lensModel": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
@@ -109089,6 +109271,9 @@
           },
           "isScreenshot": {
             "$ref": "#/components/schemas/BoolFilter"
+          },
+          "landmarkIds": {
+            "$ref": "#/components/schemas/LandmarkIdsFilter"
           },
           "lensModel": {
             "$ref": "#/components/schemas/StringPatternFilter"
@@ -109864,6 +110049,97 @@
           "buckets",
           "granularity",
           "total"
+        ],
+        "type": "object"
+      },
+      "SearchLandmarkResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of timeline photos and videos taken at this landmark",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "city": {
+            "description": "City most of these photos and videos were taken in",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country most of these photos and videos were taken in",
+            "nullable": true,
+            "type": "string"
+          },
+          "coverAssetId": {
+            "description": "The latest photo or video here, for use as a cover",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "firstTakenAt": {
+            "description": "Local capture time of the earliest photo or video here",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "icon": {
+            "$ref": "#/components/schemas/LandmarkIconDto",
+            "description": "Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind"
+          },
+          "id": {
+            "description": "Landmark ID (its Wikidata ID, for example Q243)",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Kind of place, for example theme_park, museum or national_park",
+            "type": "string"
+          },
+          "lastTakenAt": {
+            "description": "Local capture time of the latest photo or video here",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "latitude": {
+            "description": "Latitude of the landmark",
+            "format": "double",
+            "type": "number"
+          },
+          "longitude": {
+            "description": "Longitude of the landmark",
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "description": "Landmark name",
+            "type": "string"
+          },
+          "radiusM": {
+            "description": "How far the landmark reaches from its centre, in metres: a resort contains the parks within this",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "State or region most of these photos and videos were taken in",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "city",
+          "country",
+          "coverAssetId",
+          "firstTakenAt",
+          "id",
+          "kind",
+          "lastTakenAt",
+          "latitude",
+          "longitude",
+          "name",
+          "radiusM",
+          "state"
         ],
         "type": "object"
       },

@@ -25,13 +25,17 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import { createLandmarkAlbum } from '$lib/frameleaf/landmark-albums';
   import { memoryMotionStyle, memoryOverlineKey, memoryPreviewMotion } from '$lib/frameleaf/memory-engine';
   import {
+    eventStoryLandmark,
     groupMemories,
+    isEventStory,
     localToday,
     memoryStoryKind,
     showLessOptions,
@@ -67,6 +71,7 @@
     mdiHeart,
     mdiHeartOutline,
     mdiHistory,
+    mdiImageAlbum,
     mdiImageMultipleOutline,
     mdiMapMarkerOutline,
     mdiMinusCircleOutline,
@@ -210,6 +215,28 @@
     }
   };
 
+  /** FL-356: everything taken at the landmark on the days of the visit, as an album. */
+  const saveAsAlbum = async (memory: MemoryResponseDto) => {
+    const landmark = eventStoryLandmark(memory);
+    if (!landmark || !isEventStory(memory)) {
+      return;
+    }
+    const { startDate, endDate } = memory.data;
+    const albumName = $memoryHeadline(memory).title;
+    try {
+      const albumId = await createLandmarkAlbum({
+        landmarkId: landmark.id,
+        startDate,
+        endDate,
+        albumName,
+        assetIds: memory.assets.map(({ id }) => id),
+      });
+      status = albumId ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_search_save_snapshot_empty');
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    }
+  };
+
   const restore = (memory: MemoryResponseDto) =>
     run(
       () => memoryManager.restoreMemory(memory.id),
@@ -277,6 +304,7 @@
   {@const headline = $memoryHeadline(memory)}
   {@const count = $t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
   {@const kind = memoryStoryKind(memory)}
+  {@const landmark = eventStoryLandmark(memory)}
   <article class="fm-card {size}" class:favorite={memory.isSaved}>
     <a
       class="fm-card-main"
@@ -289,7 +317,11 @@
       <span class="fm-shade" aria-hidden="true"></span>
       <span class="fm-card-copy">
         <span class="fm-overline">
-          <Icon icon={KIND_ICON[kind]} size="14" aria-hidden="true" />
+          {#if landmark}
+            <LandmarkBadge {landmark} size={20} />
+          {:else}
+            <Icon icon={KIND_ICON[kind]} size="14" aria-hidden="true" />
+          {/if}
           {badge(entry) ?? $t(memoryOverlineKey(kind))}
         </span>
         <strong>{headline.title}</strong>
@@ -317,6 +349,12 @@
           <Icon icon={memory.isSaved ? mdiHeart : mdiHeartOutline} size="16" aria-hidden="true" />
           {memory.isSaved ? $t('frameleaf_memories_remove_from_favorites') : $t('favorite')}
         </MenuItem>
+        {#if landmark}
+          <MenuItem onSelect={() => void saveAsAlbum(memory)}>
+            <Icon icon={mdiImageAlbum} size="16" aria-hidden="true" />
+            {$t('frameleaf_memories_save_as_album')}
+          </MenuItem>
+        {/if}
         <hr class="fm-menu-separator" />
         {#each showLessOptions(memory, { t: $t, locale: $locale }) as option (option.rule.kind + option.rule.value)}
           <MenuItem onSelect={() => void showLess(option.rule)}>

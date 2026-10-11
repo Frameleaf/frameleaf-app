@@ -195,7 +195,17 @@ export class DatabaseBackupService {
     }
 
     switch (bin) {
-      case 'pg_dump':
+      case 'pg_dump': {
+        args.push(
+          '--clean',
+          '--if-exists',
+          // FL-352: the place pack ships with the server and is put back when the tables are empty, so a
+          // backup carries the tables without their rows. An item's own matches (asset_landmark) stay in.
+          '--exclude-table-data=public.landmark',
+          '--exclude-table-data=public.landmark_area',
+        );
+        break;
+      }
       case 'pg_dumpall': {
         args.push('--clean', '--if-exists');
         break;

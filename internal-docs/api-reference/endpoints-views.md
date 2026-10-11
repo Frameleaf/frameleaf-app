@@ -12,7 +12,7 @@ Retrieve best photos
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [BestPhotosResponseDto](models-06.md#bestphotosresponsedto).
+Models: [BestPhotosResponseDto](models-07.md#bestphotosresponsedto).
 
 Controller access declarations:
 

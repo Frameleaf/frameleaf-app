@@ -21,6 +21,7 @@ export const FILTER_ENTITY_FIELDS: Readonly<Record<string, FilterEntityKind>> = 
   petIds: 'pet',
   tagIds: 'tag',
   albumIds: 'album',
+  landmarkIds: 'landmark',
 };
 
 /** i18n keys for an entity whose name could not be read (hidden, unnamed, gone or not allowed). */
@@ -29,6 +30,7 @@ export const FILTER_ENTITY_FALLBACK_KEYS: Readonly<Record<FilterEntityKind, Tran
   pet: 'frameleaf_pets_unnamed',
   tag: 'tag',
   album: 'album',
+  landmark: 'frameleaf_landmark_kind_landmark',
 };
 
 const ID_GROUPS = ['any', 'all', 'none', 'in', 'notIn'] as const;

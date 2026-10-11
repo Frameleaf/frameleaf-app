@@ -4247,6 +4247,22 @@ export type ImageEncodingInfo = {
     transfer?: number | "adaptive";
     width?: number;
 };
+export type LandmarkIconDto = {
+    /** The icon's own background colour (#rrggbb): fill the circle around the icon with it */
+    background: string;
+    /** Whether the icon fills its frame and is drawn edge to edge; otherwise it is a mark drawn inset */
+    tile: boolean;
+};
+export type LandmarkSummaryDto = {
+    /** Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind */
+    icon?: LandmarkIconDto;
+    /** Landmark ID (its Wikidata ID, for example Q243) */
+    id: string;
+    /** Kind of place, for example theme_park, museum or national_park */
+    kind: string;
+    /** Landmark name */
+    name: string;
+};
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
@@ -4330,6 +4346,8 @@ export type AssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
+    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
     /** Live photo video ID */
@@ -5227,6 +5245,8 @@ export type BestPhotoAssetResponseDto = {
     isOffline: boolean;
     /** Is trashed */
     isTrashed: boolean;
+    /** Landmarks this asset was taken at, the most specific first. Only on the single-asset response. */
+    landmarks?: LandmarkSummaryDto[];
     /** Library ID */
     libraryId?: string | null;
     /** Live photo video ID */
@@ -7862,10 +7882,12 @@ export type EventStoryDto = {
     endDate: string;
     /** Discriminator for an event story */
     kind: Kind4;
+    /** The landmark the event was a visit to, when most of it was taken at one */
+    landmark?: LandmarkSummaryDto;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
-    /** Place label for the event, when it has one */
+    /** Landmark name or place label for the event, when it has one */
     title?: string;
     /** Year the event started */
     year: number;
@@ -11091,6 +11113,10 @@ export type IdFilter = {
     eq?: string;
     ne?: string;
 };
+export type LandmarkIdsFilter = {
+    "any"?: string[];
+    none?: string[];
+};
 export type IdFilterNullable = {
     eq?: string | null;
     ne?: string | null;
@@ -11147,6 +11173,7 @@ export type SearchFilterBranch = {
     isOffline?: BoolFilter;
     isPanorama?: BoolFilter;
     isScreenshot?: BoolFilter;
+    landmarkIds?: LandmarkIdsFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -11185,6 +11212,7 @@ export type SearchFilter = {
     isOffline?: BoolFilter;
     isPanorama?: BoolFilter;
     isScreenshot?: BoolFilter;
+    landmarkIds?: LandmarkIdsFilter;
     lensModel?: StringPatternFilter;
     libraryId?: IdFilterNullable;
     localDateTime?: DateFilter;
@@ -12110,6 +12138,36 @@ export type SearchHistogramResponseDto = {
     granularity: SearchHistogramGranularity;
     /** Sum of every bucket; equals POST /search/statistics for the same body */
     total: number;
+};
+export type SearchLandmarkResponseDto = {
+    /** Number of timeline photos and videos taken at this landmark */
+    assetCount: number;
+    /** City most of these photos and videos were taken in */
+    city: string | null;
+    /** Country most of these photos and videos were taken in */
+    country: string | null;
+    /** The latest photo or video here, for use as a cover */
+    coverAssetId: string;
+    /** Local capture time of the earliest photo or video here */
+    firstTakenAt: string;
+    /** Present when the landmark has its own brand icon, served by GET /search/landmarks/{id}/icon; without it, show the icon for its kind */
+    icon?: LandmarkIconDto;
+    /** Landmark ID (its Wikidata ID, for example Q243) */
+    id: string;
+    /** Kind of place, for example theme_park, museum or national_park */
+    kind: string;
+    /** Local capture time of the latest photo or video here */
+    lastTakenAt: string;
+    /** Latitude of the landmark */
+    latitude: number;
+    /** Longitude of the landmark */
+    longitude: number;
+    /** Landmark name */
+    name: string;
+    /** How far the landmark reaches from its centre, in metres: a resort contains the parks within this */
+    radiusM: number;
+    /** State or region most of these photos and videos were taken in */
+    state: string | null;
 };
 export type MetadataSearchDto = {
     /** Filter by album IDs */
@@ -25069,6 +25127,30 @@ export function searchHistogram({ searchHistogramDto }: {
     })));
 }
 /**
+ * Retrieve visited landmarks
+ */
+export function getVisitedLandmarks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SearchLandmarkResponseDto[];
+    }>("/search/landmarks", {
+        ...opts
+    }));
+}
+/**
+ * Get landmark icon
+ */
+export function getLandmarkIcon({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/search/landmarks/${encodeURIComponent(id)}/icon`, {
+        ...opts
+    }));
+}
+/**
  * Search large assets
  */
 export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, petIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
@@ -31598,6 +31680,7 @@ export enum JobName {
     HlsSessionCleanup = "HlsSessionCleanup",
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",
+    LandmarkMatchAll = "LandmarkMatchAll",
     MemoryExport = "MemoryExport",
     NotificationsCleanup = "NotificationsCleanup",
     NotifyUserSignup = "NotifyUserSignup",
