@@ -1643,6 +1643,7 @@ export type AdminConfigSmtpTransportDto = {
     port: number;
     /** Whether to use secure connection (TLS/SSL) */
     secure: boolean;
+    "type"?: MailTransportType;
     /** SMTP username */
     username: string;
 };
@@ -2231,6 +2232,46 @@ export type NotificationDto = {
     /** Notification title */
     title: string;
     "type": NotificationType;
+};
+export type MailDisconnectResponseDto = {
+    provider: MailSignInProvider;
+    /** Whether access was also removed at the provider. False for Microsoft, which offers no way to: the administrator removes Frameleaf under the account's app permissions. */
+    revoked: boolean;
+};
+export type MailConnectionDto = {
+    /** When the account was connected */
+    connectedAt: string;
+    /** The address of the connected account */
+    email: string;
+    /** When the provider refused to renew access; emails since then were not sent */
+    needsSignInSince?: string;
+    provider: MailSignInProvider;
+    status: MailConnectionStatus;
+};
+export type MailConnectionStateDto = {
+    /** Whether one-click sign-in can be started from this server now */
+    available: boolean;
+    /** The connected account, or null */
+    connection: (MailConnectionDto) | null;
+    /** The providers Frameleaf Cloud offers sign-in for */
+    providers: MailSignInProvider[];
+    /** `pending` while a sign-in this server started is waiting, else `none` */
+    signIn: MailSignInState;
+    unavailableReason?: MailSignInUnavailableReason;
+};
+export type MailSignInCompleteResponseDto = {
+    /** The connected account once `state` is `connected` */
+    connection: (MailConnectionDto) | null;
+    state: MailSignInState;
+};
+export type MailSignInStartDto = {
+    provider: MailSignInProvider;
+};
+export type MailSignInStartResponseDto = {
+    /** The provider's sign-in page, to open in the administrator's browser */
+    authorizationUrl: string;
+    /** When this sign-in can no longer be finished */
+    expiresAt: string;
 };
 export type TemplateDto = {
     /** Template name */
@@ -17635,6 +17676,56 @@ export function createNotification({ notificationCreateDto }: {
     })));
 }
 /**
+ * Disconnect the mail account
+ */
+export function disconnectMailAccount(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MailDisconnectResponseDto;
+    }>("/admin/notifications/mail-connection", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get the mail account connection
+ */
+export function getMailConnection(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MailConnectionStateDto;
+    }>("/admin/notifications/mail-connection", {
+        ...opts
+    }));
+}
+/**
+ * Complete a mail account sign-in
+ */
+export function completeMailSignIn(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MailSignInCompleteResponseDto;
+    }>("/admin/notifications/mail-connection/complete", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Start a mail account sign-in
+ */
+export function startMailSignIn({ mailSignInStartDto }: {
+    mailSignInStartDto: MailSignInStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MailSignInStartResponseDto;
+    }>("/admin/notifications/mail-connection/start", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mailSignInStartDto
+    })));
+}
+/**
  * Render email template
  */
 export function getNotificationTemplateAdmin({ name, templateDto }: {
@@ -29023,6 +29114,11 @@ export enum VersionCheckFrequency {
     Daily = "daily",
     Weekly = "weekly"
 }
+export enum MailTransportType {
+    Smtp = "smtp",
+    Gmail = "gmail",
+    Microsoft = "microsoft"
+}
 export enum OAuthTokenEndpointAuthMethod {
     ClientSecretPost = "client_secret_post",
     ClientSecretBasic = "client_secret_basic"
@@ -29155,6 +29251,26 @@ export enum NotificationType {
     SharedSpaceMention = "SharedSpaceMention",
     SharedSpaceReply = "SharedSpaceReply",
     Custom = "Custom"
+}
+export enum MailSignInProvider {
+    Gmail = "gmail",
+    Microsoft = "microsoft"
+}
+export enum MailConnectionStatus {
+    Connected = "connected",
+    NeedsSignIn = "needs-sign-in"
+}
+export enum MailSignInState {
+    None = "none",
+    Pending = "pending",
+    Connected = "connected",
+    Denied = "denied",
+    Expired = "expired"
+}
+export enum MailSignInUnavailableReason {
+    NotConfigured = "not-configured",
+    NotLinked = "not-linked",
+    CloudUnreachable = "cloud-unreachable"
 }
 export enum PhysicalDeduplicationCopyFile {
     Removed = "removed",

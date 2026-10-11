@@ -47,6 +47,7 @@ import { JobController } from 'src/controllers/job.controller.js';
 import { LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
 import { MapController } from 'src/controllers/map.controller.js';
 import { MediaHealthController } from 'src/controllers/media-health.controller.js';
@@ -168,6 +169,7 @@ export const controllers = [
   WorkerInventoryController,
   NotificationController,
   NotificationAdminController,
+  MailConnectionController,
   OAuthController,
   PartnerController,
   PersonController,
