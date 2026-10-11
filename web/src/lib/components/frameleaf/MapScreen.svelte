@@ -11,7 +11,13 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import { applyClusterLabelLayout, clusterRadius, MAP_CLUSTER_DISTANCE } from '$lib/frameleaf/map-clusters';
+  import {
+    applyClusterLabelLayout,
+    BUBBLE_NAME_LAYER,
+    clusterRadius,
+    MAP_CLUSTER_DISTANCE,
+    updateBubbleNames,
+  } from '$lib/frameleaf/map-clusters';
   import {
     markerCardLine,
     markerDetail,
@@ -480,7 +486,8 @@
         // map's first "load" (offline at startup, or the tile server unreachable) still shows the
         // offline state instead of leaving the map blank. onload only fires once the style has
         // loaded, so an error handler registered there would never see a startup failure.
-        if ((event as { sourceId?: string }).sourceId !== 'geojson') {
+        const failed = (event as { sourceId?: string }).sourceId;
+        if (failed !== 'geojson' && failed !== BUBBLE_NAME_LAYER) {
           tilesFailed = true;
         }
       }}
@@ -505,6 +512,14 @@
             layoutLabels();
           }
         });
+        // The markers source goes on at "style.load", so on a first load both events are over before
+        // "load" attaches the listeners above, and nothing would lay the labels out until the view
+        // crossed a zoom level. "load" itself is fired after the frame has been drawn.
+        layoutLabels();
+        // …and a place hidden under a bubble is named at the bubble's edge, once the map is at rest.
+        // While it moves, a name goes as soon as its bubble regroups.
+        instance.on('idle', () => updateBubbleNames(instance, 'geojson'));
+        instance.on('move', () => queueMicrotask(() => updateBubbleNames(instance, 'geojson', false)));
       }}
       bind:map
     >
