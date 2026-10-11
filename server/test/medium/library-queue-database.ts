@@ -70,7 +70,10 @@ export async function explainLibrarySettlement(db: Kysely<DB>) {
 /** Clone the migrated synthetic template, then use the coordinator's exact pool/SQL limits.
  * The temporary admin connection exists only after both execution connections are closed.
  */
-export async function getLibraryQueueDB(): Promise<Kysely<DB>> {
+export async function getLibraryQueueDB(
+  maxConnections: 1 | 2 = 2,
+  preserveForCrashWindowOwner = false,
+): Promise<Kysely<DB>> {
   const clone = await getKyselyDB();
   const name = (await sql<{ name: string }>`select current_database() name`.execute(clone)).rows[0].name;
   await clone.destroy();
@@ -82,7 +85,7 @@ export async function getLibraryQueueDB(): Promise<Kysely<DB>> {
   const client = boundExecutionReservations(
     createPostgres({
       connection: { connectionType: 'url', url: target.href },
-      maxConnections: 2,
+      maxConnections,
       connectTimeoutSeconds: 5,
       statementTimeoutMs: 5000,
       lockTimeoutMs: 3000,
@@ -119,6 +122,9 @@ export async function getLibraryQueueDB(): Promise<Kysely<DB>> {
         'library-fixture-sql-calibration',
         JSON.stringify({ queryCount, totalSqlMs, maximumSqlMs, slowestSql }),
       );
+    // Local worker PASS cannot authorize disposal ahead of the independent owner's final closure.
+    // Preserve even after local success; an authenticated external disposal gate is not installed here.
+    if (preserveForCrashWindowOwner) return;
     target.pathname = '/postgres';
     const admin = createPostgres({
       connection: { connectionType: 'url', url: target.href },

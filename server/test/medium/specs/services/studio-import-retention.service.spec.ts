@@ -1,8 +1,9 @@
 import { Kysely, sql } from 'kysely';
+import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { chmod, chown, link, lstat, mkdir, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import type { FilePort, JournalPort, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
@@ -11,6 +12,8 @@ import { StudioImportPublicationRepository } from 'src/repositories/studio-impor
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { retainImport } from 'src/services/studio-import-publication.service.js';
+import { IMPORT_FAULT_POINTS } from 'test/fixtures/studio-import-barrier-faults.js';
+import { teardownRetentionFixture } from 'test/fixtures/studio-import-fixture-teardown.js';
 import { DECLARATION } from 'test/fixtures/studio-import-retention.js';
 import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/library-queue-database.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -19,21 +22,26 @@ import { newMediumService } from 'test/medium.factory.js';
 // These cases exercise orchestration/transaction boundaries; they cannot qualify storage durability.
 let db: Kysely<DB>;
 let root: string;
+const crashWindowOwned = Boolean(process.env.FL111_CRASH_OWNER);
 const paths = new Set<string>();
 beforeAll(async () => {
-  db = await createRetentionTestDatabase();
+  db = await createRetentionTestDatabase(crashWindowOwned ? 1 : 2, crashWindowOwned);
   root = await mkdtemp(join(tmpdir(), 'fl111-retain-'));
 });
 afterAll(async () => {
-  try {
-    for (const path of paths)
-      await unlink(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error;
-      });
-    if (root) await rmdir(root);
-  } finally {
-    await db?.destroy();
-  }
+  await teardownRetentionFixture(
+    crashWindowOwned,
+    async () => {
+      for (const path of paths)
+        await unlink(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+      if (root) await rmdir(root);
+    },
+    async () => {
+      await db?.destroy();
+    },
+  );
 });
 const setup = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
@@ -260,3 +268,169 @@ describe('retention orchestration with real journal SQL and modelled storage bar
     expect(events).not.toContain('link');
   });
 });
+
+// Opt-in only: the enclosing Root-owned Linux runtime window supplies the private
+// cgroup/guardian record. An absent lane is pending coverage, never a crash pass.
+describe.skipIf(!process.env.FL111_CRASH_OWNER)(
+  'real Linux worker crash and restarted durable-journal recovery',
+  () => {
+    it.each(IMPORT_FAULT_POINTS)(
+      'recovers observed SQL and exact file identities after %s',
+      async (point) => {
+        expect(process.platform).toBe('linux');
+        expect(process.getuid!()).toBe(0);
+        const admission = spawnSync(
+          '/usr/bin/python3',
+          [resolve('test/fixtures/studio-import-crash-driver.py'), '--admit', process.env.FL111_CRASH_OWNER!],
+          {
+            encoding: 'utf8',
+            timeout: 15_000,
+            maxBuffer: 65_536,
+            env: { PATH: '/usr/bin:/bin' },
+          },
+        );
+        expect(admission.error).toBeUndefined();
+        expect(admission.status, 'Root lane admission must pass before fixture allocation').toBe(0);
+        const owner = JSON.parse(admission.stdout);
+        const { key, journal } = await setup();
+        const caseRoot = await mkdtemp(join(owner.scratchRoot, 'case-'));
+        const exportRoot = join(caseRoot, 'exports');
+        const ownerRoot = join(exportRoot, key.ownerId);
+        const imports = join(ownerRoot, 'studio-imports');
+        const incoming = join(imports, 'incoming');
+        const project = join(imports, key.projectId);
+        const stagedPath = join(incoming, `${key.publicationId}.upload`);
+        const targetPath = join(project, `${key.importId}.mp4`);
+        const foreignPath = join(project, `${randomUUID()}.mp4`);
+        await chmod(caseRoot, 0o755);
+        await mkdir(incoming, { recursive: true, mode: 0o700 });
+        await mkdir(project, { mode: 0o700 });
+        for (const path of [exportRoot, ownerRoot, imports, incoming, project]) {
+          await chmod(path, 0o700);
+          await chown(path, owner.workerUid, owner.workerGid);
+        }
+        const bytes = Buffer.from('test');
+        const checksum = createHash('sha256').update(bytes).digest('hex');
+        const declaration = {
+          ...DECLARATION,
+          checksum,
+          processingProvenance: { ...DECLARATION.processingProvenance, outputSha256: checksum },
+        };
+        for (const path of [stagedPath, foreignPath]) {
+          await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
+          await chown(path, owner.workerUid, owner.workerGid);
+        }
+        const stageIdentity = await lstat(stagedPath, { bigint: true });
+        const foreignIdentity = await lstat(foreignPath, { bigint: true });
+        const databaseName = (await sql<{ name: string }>`select current_database() name`.execute(db)).rows[0].name;
+        console.info('FL111_CRASH_FIXTURE', JSON.stringify({ point, databaseName, caseRoot }));
+        const upload = { key, incoming: stagedPath, declaration };
+        const task = {
+          point,
+          root: exportRoot,
+          upload,
+          databaseName,
+          sourceHead: owner.sourceHead,
+          workerUid: owner.workerUid,
+          workerGid: owner.workerGid,
+          node: process.execPath,
+        };
+        const run = (mode: 'publish' | 'recover') => {
+          const result = spawnSync(
+            '/usr/bin/python3',
+            [resolve('test/fixtures/studio-import-crash-driver.py'), process.env.FL111_CRASH_OWNER!],
+            {
+              input: JSON.stringify({ ...task, mode }) + '\n',
+              encoding: 'utf8',
+              timeout: 90_000,
+              maxBuffer: 65_536,
+              env: { PATH: '/usr/bin:/bin', IMMICH_TEST_POSTGRES_URL: process.env.IMMICH_TEST_POSTGRES_URL! },
+            },
+          );
+          // No recovery or fixture deletion after UNKNOWN ownership/closure.
+          expect(result.error, 'Owned crash driver must complete within its Root window').toBeUndefined();
+          expect(result.status, 'Crash driver refused; preserve the fixture for its registered guardian').toBe(0);
+          const receipt = JSON.parse(result.stdout);
+          expect(receipt).toMatchObject({
+            point,
+            cleanup: 'kernel-cgroup-populated-zero',
+            populatedAfterKill: 0,
+            boundary: 'process-restart-only',
+            sourceHead: owner.sourceHead,
+          });
+          return receipt;
+        };
+        expect(run('publish')).toMatchObject({ barrierObserved: true, descendantObserved: true, workerExitCode: -9 });
+        const published = ['publication-commit', 'stage-unlink', 'cleanup-namespace-barrier'].includes(point);
+        const prepared = !['stage-file-barrier', 'stage-namespace-barrier'].includes(point);
+        const linked = !['stage-file-barrier', 'stage-namespace-barrier', 'prepare-commit'].includes(point);
+        const stageRemoved = ['stage-unlink', 'cleanup-namespace-barrier'].includes(point);
+        const exists = async (path: string) => {
+          try {
+            await lstat(path);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            return false;
+          }
+        };
+        expect(await journal.get(key)).toMatchObject({
+          state: published ? 'published' : prepared ? 'preparing' : 'registered',
+          cleanupPending: prepared,
+        });
+        expect(await rows(key)).toHaveLength(published ? 1 : 0);
+        expect(await exists(stagedPath)).toBe(!stageRemoved);
+        expect(await exists(targetPath)).toBe(linked);
+        if (linked) {
+          const target = await lstat(targetPath, { bigint: true });
+          expect([target.dev, target.ino, target.size]).toEqual([
+            stageIdentity.dev,
+            stageIdentity.ino,
+            stageIdentity.size,
+          ]);
+          expect(
+            createHash('sha256')
+              .update(await readFile(targetPath))
+              .digest('hex'),
+          ).toBe(checksum);
+        }
+        expect(run('recover')).toMatchObject({ restartedRecoveryCompleted: true, workerExitCode: 0 });
+        expect(await journal.get(key)).toMatchObject({
+          state: published ? 'published' : 'aborted',
+          cleanupPending: false,
+        });
+        expect(await rows(key)).toHaveLength(published ? 1 : 0);
+        expect(await exists(stagedPath)).toBe(false);
+        expect(await exists(targetPath)).toBe(published);
+        if (published) {
+          const imported = (await rows(key))[0];
+          expect(imported).toMatchObject({
+            processingProvenance: declaration.processingProvenance,
+            checksum,
+            path: targetPath,
+            ownerId: key.ownerId,
+            projectId: key.projectId,
+          });
+          expect(
+            createHash('sha256')
+              .update(await readFile(targetPath))
+              .digest('hex'),
+          ).toBe(checksum);
+          const target = await lstat(targetPath, { bigint: true });
+          expect([target.dev, target.ino, target.nlink]).toEqual([stageIdentity.dev, stageIdentity.ino, 1n]);
+        }
+        const foreignAfter = await lstat(foreignPath, { bigint: true });
+        expect([foreignAfter.dev, foreignAfter.ino, foreignAfter.size, foreignAfter.nlink]).toEqual([
+          foreignIdentity.dev,
+          foreignIdentity.ino,
+          foreignIdentity.size,
+          foreignIdentity.nlink,
+        ]);
+        expect(await readFile(foreignPath)).toEqual(bytes);
+        // Preserve exact files even after local PASS: only the independent crash-window owner
+        // can authenticate final closure/disposal. No parent-side external disposal gate exists.
+      },
+      180_000,
+    );
+  },
+);
