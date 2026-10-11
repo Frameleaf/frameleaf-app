@@ -956,8 +956,10 @@ jobs:
       - name: Run ui tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
-        run: pnpm test:web:ui --shard=${{ matrix.shard }}/3
-        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+        # Not sharded: this project is fully parallel, so shards split it test by test and put the
+        # heavy timeline specs together on one runner, where they timed out. Shard 3 runs it whole.
+        run: pnpm test:web:ui
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' && matrix.shard == 3 }}
       - name: Archive ui test (web) results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: success() || failure()
