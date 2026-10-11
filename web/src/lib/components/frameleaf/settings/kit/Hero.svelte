@@ -2,6 +2,7 @@
   /**
    * The answer a page opens on: is it working, and what needs doing. One per page. `actions` are the
    * few things to do about it; `children` sit under a rule (the coverage rows, or a run in progress).
+   * `quiet` is neither good nor a problem: something optional that is not set up.
    */
   import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import { Icon } from '@frameleaf/ui';
@@ -16,7 +17,7 @@
     actions,
     children,
   }: {
-    tone?: Exclude<KitTone, 'off'>;
+    tone?: Exclude<KitTone, 'off'> | 'quiet';
     icon: string;
     title: string;
     body?: string;
@@ -75,6 +76,10 @@
   }
   .kit-hero[data-tone='bad'] {
     --kit-tone: var(--fl-danger);
+  }
+  .kit-hero[data-tone='quiet'] .icon {
+    color: var(--fl-muted);
+    background: var(--fl-raised);
   }
   h2 {
     margin: 0;

@@ -248,7 +248,8 @@ The default configuration looks like this:
     }
   },
   "theme": {
-    "customCss": ""
+    "customCss": "",
+    "customCssEnabled": true
   },
   "trash": {
     "days": 30,

@@ -14,15 +14,16 @@
 <script lang="ts">
   /**
    * Rows that open another page: for a landing page, or "what do you need?". A row can also start
-   * something on this page (`onSelect`), such as a task that asks before it runs.
+   * something on this page (`onSelect`), such as a task that asks before it runs. `stacked` lists
+   * them one under another, for a landing page where each row says its current state.
    */
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
 
-  let { rows }: { rows: LinkRow[] } = $props();
+  let { rows, stacked = false }: { rows: LinkRow[]; stacked?: boolean } = $props();
 </script>
 
-<ul class="kit-links">
+<ul class="kit-links" class:is-stacked={stacked}>
   {#each rows as row (row.title)}
     <li>
       {#if row.disabled}
@@ -58,6 +59,9 @@
     margin: 0;
     padding: 0 0 var(--fl-space-6);
     list-style: none;
+  }
+  .kit-links.is-stacked {
+    grid-template-columns: 1fr;
   }
   li {
     display: grid;
