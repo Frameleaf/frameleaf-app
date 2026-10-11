@@ -220,7 +220,8 @@ export interface StudioEditorScope {
   graphVersion: number;
 }
 
-export type StudioEditorCommitResult = { status: 'saved'; revision: number; graphDigest: string | null } | { status: 'rejected'; reason: string };
+export type StudioEditorCommitResult =
+  { status: 'saved'; revision: number; graphDigest: string | null } | { status: 'rejected'; reason: string };
 
 export interface StudioProjectImportUpload {
   id: string;
@@ -436,7 +437,10 @@ export interface StudioHostServices {
   commitEditorDraft?(graph: unknown, baseRevision: number, scope: StudioEditorScope): Promise<StudioEditorCommitResult>;
   /** Re-read the project, for reconciling after a `stale-revision` rejection. */
   reloadProject(): Promise<StudioProjectHandle>;
-  resolveStudioProjectSource?(request: StudioSourceResolutionRequestDto, scope: StudioEditorScope): Promise<StudioSourceResolutionDto>;
+  resolveStudioProjectSource?(
+    request: StudioSourceResolutionRequestDto,
+    scope: StudioEditorScope,
+  ): Promise<StudioSourceResolutionDto>;
   /** Resolve one asset the engine knows only by id. */
   resolveAsset(assetId: string): StudioAssetRef | undefined;
   /** Show a message in the host's own notification surface. */

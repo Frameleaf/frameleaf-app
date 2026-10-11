@@ -798,20 +798,49 @@
   let sourceEpoch = $state(0);
   let sourceIdentity = '';
   const sourceAuthority = () => {
-    const identity = studioSourceJson({ project, imports: projectImports, assets, online,
-      userId: authManager.user.id, authenticated: authManager.authenticated,
-      accessLost, forbidden, dirty, status: sessionState?.status, hasDraft: sessionState?.hasDraft,
-      resources: sessionState?.resources, access: sessionState?.access, conflict: sessionState?.conflict, withheld: sessionState?.withheld });
-    if (identity !== sourceIdentity) { sourceIdentity = identity; sourceEpoch += 1; }
+    const identity = studioSourceJson({
+      project,
+      imports: projectImports,
+      assets,
+      online,
+      userId: authManager.user.id,
+      authenticated: authManager.authenticated,
+      accessLost,
+      forbidden,
+      dirty,
+      status: sessionState?.status,
+      hasDraft: sessionState?.hasDraft,
+      resources: sessionState?.resources,
+      access: sessionState?.access,
+      conflict: sessionState?.conflict,
+      withheld: sessionState?.withheld,
+    });
+    if (identity !== sourceIdentity) {
+      sourceIdentity = identity;
+      sourceEpoch += 1;
+    }
     return {
-      userId: authManager.user.id, project, sourceEpoch, generation: 0, online,
-      eligible: authManager.authenticated && !accessLost && !forbidden && !dirty &&
-        sessionState?.access === 'owner' && sessionState?.status === 'saved' &&
-        !sessionState.hasDraft && !sessionState.conflict && !sessionState.withheld &&
+      userId: authManager.user.id,
+      project,
+      sourceEpoch,
+      generation: 0,
+      online,
+      eligible:
+        authManager.authenticated &&
+        !accessLost &&
+        !forbidden &&
+        !dirty &&
+        sessionState?.access === 'owner' &&
+        sessionState?.status === 'saved' &&
+        !sessionState.hasDraft &&
+        !sessionState.conflict &&
+        !sessionState.withheld &&
         sessionState.resources?.complete === true,
     };
   };
-  $effect(() => { sourceAuthority(); });
+  $effect(() => {
+    sourceAuthority();
+  });
   const resolveSource = createStudioSourceResolution({
     authority: sourceAuthority,
     signal: sourceController.signal,

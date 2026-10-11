@@ -221,7 +221,10 @@ describe('saved source acknowledgement provenance', () => {
   it('a saved response without an envelope digest cannot authorize bytes', async () => {
     const { session, api } = await fixture();
     api.save.mockResolvedValue({ revision: 4, digest: null, lease });
-    await expect(session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!)).resolves.toMatchObject({ status: 'saved', graphDigest: null });
+    await expect(session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!)).resolves.toMatchObject({
+      status: 'saved',
+      graphDigest: null,
+    });
     expect(session.state.project.graphDigest).toBeNull();
     await session.dispose();
   });

@@ -533,6 +533,7 @@ diff --git a/src/features/media-library/utils/media-resolver.ts b/src/features/m
    // Store the pending request
    pendingRequests.set(mediaId, requestPromise)
 diff --git a/src/features/media-library/utils/scoped-media-resolution.ts b/src/features/media-library/utils/scoped-media-resolution.ts
+new file mode 100644
 --- /dev/null
 +++ b/src/features/media-library/utils/scoped-media-resolution.ts
 @@ -0,0 +1,41 @@
@@ -676,6 +677,7 @@ diff --git a/src/features/preview/hooks/use-preview-media-resolution.ts b/src/fe
    useEffect(() => {
      let isCancelled = false
 diff --git a/src/infrastructure/lottie/lottie-archive-selection.test.ts b/src/infrastructure/lottie/lottie-archive-selection.test.ts
+new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/lottie/lottie-archive-selection.test.ts
 @@ -0,0 +1,360 @@
@@ -1040,6 +1042,7 @@ diff --git a/src/infrastructure/lottie/lottie-archive-selection.test.ts b/src/in
 +  }
 +}
 diff --git a/src/infrastructure/lottie/lottie-archive.ts b/src/infrastructure/lottie/lottie-archive.ts
+new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/lottie/lottie-archive.ts
 @@ -0,0 +1,439 @@
@@ -2164,6 +2167,7 @@ diff --git a/src/infrastructure/lottie/lottie-metadata.ts b/src/infrastructure/l
      if (options.strict) throw error
      return null
 diff --git a/src/infrastructure/lottie/lottie-provider-scope.test.ts b/src/infrastructure/lottie/lottie-provider-scope.test.ts
+new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/lottie/lottie-provider-scope.test.ts
 @@ -0,0 +1,107 @@
