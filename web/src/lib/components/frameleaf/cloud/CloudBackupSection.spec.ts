@@ -98,7 +98,7 @@ describe('CloudBackupSection read-only storage (FL-301)', () => {
     render(CloudBackupSection);
 
     expect(await screen.findByText('Amsterdam, Netherlands')).toBeInTheDocument();
-    expect(screen.getByText('Location')).toBeInTheDocument();
+    expect(screen.getByText('Stored in')).toBeInTheDocument();
     expect(screen.queryByText('eu-central-1')).not.toBeInTheDocument();
     expect(screen.queryByText('s3.eu-central-1.backup.frameleaf.cloud')).not.toBeInTheDocument();
   });

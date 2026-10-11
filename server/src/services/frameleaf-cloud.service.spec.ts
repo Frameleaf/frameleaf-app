@@ -1396,11 +1396,12 @@ describe(FrameleafCloudService.name, () => {
     });
 
     it('keeps the plan pricing a check-in publishes, holds a future one, and keeps the last good one through a bad value', async () => {
-      // in effect already (newer than the bundled 2026-09-25.1), and one far in the future
+      // in effect already (newer than the bundled 2026-10-10.1), and one far in the future
       const pricing = {
-        pricesVersion: '2026-09-25.2',
+        pricesVersion: '2026-10-10.2',
         licensedDiscountPercent: 25,
-        effectiveFrom: '2026-09-25T00:00:00Z',
+        individualDiscountPercent: 10,
+        effectiveFrom: '2026-10-10T00:00:00Z',
       };
       const future = {
         pricesVersion: '2999-01-01.1',
@@ -1429,9 +1430,9 @@ describe(FrameleafCloudService.name, () => {
 
     it('still completes the check-in when the published pricing cannot be stored', async () => {
       const pricing = {
-        pricesVersion: '2026-09-25.2',
+        pricesVersion: '2026-10-10.2',
         licensedDiscountPercent: 25,
-        effectiveFrom: '2026-09-25T00:00:00Z',
+        effectiveFrom: '2026-10-10T00:00:00Z',
       };
       cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { nextHeartbeatSec: 120, pricing } }));
       makeDue();

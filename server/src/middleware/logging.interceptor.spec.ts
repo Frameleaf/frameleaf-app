@@ -1,4 +1,8 @@
-import { redactLogUrl, replacer } from 'src/middleware/logging.interceptor.js';
+import { ExecutionContext } from '@nestjs/common';
+import { Request, Response } from 'express';
+import { firstValueFrom, of, throwError } from 'rxjs';
+import { LoggingInterceptor, redactLogUrl, replacer } from 'src/middleware/logging.interceptor.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 describe('logging interceptor redaction (FL-81)', () => {
   it('masks the maintenance sign-in token and shared-link keys in a logged address', () => {
@@ -124,5 +128,81 @@ describe('logging interceptor redaction (FL-81)', () => {
     const logged = JSON.parse(JSON.stringify({ ids: Array.from({ length: 102 }, (_, index) => index) }, replacer));
     expect(logged.ids).toHaveLength(101);
     expect(logged.ids.at(-1)).toBe('...and 2 more');
+  });
+
+  it.each([
+    'passphrase',
+    'newPassphrase',
+    'PASS_PHRASE',
+    'pass-phrase',
+    'pass.phrase',
+    'pass phrase',
+    'recoveryKey',
+    'RECOVERY_CODE',
+    'recovery-kit',
+    'keyring',
+    'keys',
+    'wrappingKey',
+    'wrap_key',
+    'bucket-key',
+    'encryptionKey',
+    'masterKey',
+    'rootKey',
+    'wrapping_secret',
+    'PASS_WORD',
+  ])('redacts nested backup material named %s in bodies and queries', (name) => {
+    const sentinel = 'synthetic-private-material';
+    const body = { nested: [{ [name]: { 1: sentinel }, operationId: 'kept' }], fingerprint: 'kept' };
+    const logged = JSON.stringify(body, replacer);
+    expect(logged).not.toContain(sentinel);
+    expect(JSON.parse(logged)).toEqual({ nested: [{ [name]: '********', operationId: 'kept' }], fingerprint: 'kept' });
+    const query = redactLogUrl(`/api/test?${encodeURIComponent(name)}=${sentinel}&page=2`);
+    expect(query).not.toContain(sentinel);
+    expect(new URLSearchParams(query.split('?', 2)[1]).get('page')).toBe('2');
+    expect(body.nested[0][name]).toEqual({ 1: sentinel });
+  });
+});
+
+describe('secret request body exclusion', () => {
+  it.each([
+    '/api/admin/cloud/backup/check',
+    '/api/admin/cloud/backup/setup',
+    '/api/admin/cloud/backup/key/unlock',
+    '/api/admin/cloud/backup/escrow',
+    '/api/admin/buddy-backup/key/escrow',
+    '/api/admin/buddy-backup/key/escrow/import',
+    '/api/admin/buddy-backup/key/import',
+    '/api/admin/buddy-backup/key/verify',
+    '/api/admin/config/credentials/smtp-password',
+    '/ADMIN/BUDDY-BACKUP/KEY/IMPORT/',
+  ])('excludes arbitrary bodies for %s on success and failure', async (path) => {
+    for (const failed of [false, true]) {
+      const log = { setContext: vi.fn(), debug: vi.fn(), verbose: vi.fn() };
+      const req = {
+        method: 'POST',
+        ip: '127.0.0.1',
+        path,
+        url: path,
+        body: { arbitrary: ['synthetic-private-material'] },
+      } as Request;
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => req,
+          getResponse: () => ({ statusCode: failed ? 400 : 200 }) as Response,
+        }),
+      } as unknown as ExecutionContext;
+      const sut = new LoggingInterceptor(log as unknown as LoggingRepository);
+      const result = firstValueFrom(
+        sut.intercept(context, { handle: () => (failed ? throwError(() => new Error('refused')) : of('ok')) }),
+      );
+      if (failed) {
+        await expect(result).rejects.toThrow('refused');
+      } else {
+        await expect(result).resolves.toBe('ok');
+      }
+      expect(log.verbose).not.toHaveBeenCalled();
+      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining(path));
+      expect(JSON.stringify(log.debug.mock.calls)).not.toContain('synthetic-private-material');
+    }
   });
 });

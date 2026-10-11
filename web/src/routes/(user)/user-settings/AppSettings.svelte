@@ -1,13 +1,23 @@
 <script lang="ts">
   /**
-   * Your preferences → App settings (FL-71 CC-50): the same device preferences as before, in the
-   * Frameleaf setting rows (`SettingToggle`, `SettingSelect`) instead of the upstream `Field`,
-   * `Switch` and Combobox controls.
+   * Your preferences › Look & playback (FL-368, after the approved prototype
+   * `settings-v2/server/preferences.jsx`): the same device preferences as before in four headed
+   * groups, with the theme and the date format each as one choice instead of a switch and a field.
+   *
+   * Everything here but "Show albums" is kept on this device and applies as it is chosen, as it
+   * always has. "Show albums" is an account preference (it moved here from Features) and keeps the
+   * Save bar.
    */
-  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { invalidateAll } from '$app/navigation';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import { fallbackLocale, locales } from '$lib/constants';
+  import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import {
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
@@ -20,7 +30,8 @@
   } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { convertBCP47, getClosestAvailableLocale, langCodes, langs } from '$lib/utils/i18n';
-  import { Theme, themeManager, ThemePreference } from '@frameleaf/ui';
+  import { AssetOrder } from '@frameleaf/sdk';
+  import { ThemePreference, themeManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
   import { locale as i18nLocale, t } from 'svelte-i18n';
 
@@ -36,101 +47,141 @@
     };
   });
 
-  const languageOptions = langs.map((entry) => ({ text: entry.name, value: convertBCP47(entry.code) }));
+  const languageOptions = langs.map((entry) => ({ label: entry.name, value: convertBCP47(entry.code) }));
   const language = $derived(getClosestAvailableLocale([$lang], langCodes));
-  const onLanguage = async (value: string | number) => {
-    $lang = String(value);
-    await i18nLocale.set(convertBCP47(String(value)));
+  const onLanguage = async (value: string) => {
+    $lang = value;
+    await i18nLocale.set(convertBCP47(value));
     await invalidateAll();
   };
 
   const localeOptions = locales
     .filter(({ code }) => Intl.NumberFormat.supportedLocalesOf(code).length > 0)
-    .map(({ name, code }) => ({ text: name, value: code }));
+    .map(({ name, code }) => ({ label: name, value: code }));
 
   let editedLocale = $derived(findLocale($locale).code);
-  let selectedDate: string = $derived(createDateFormatter(editedLocale).formatDateTime(time));
+  let sample: string = $derived(createDateFormatter(editedLocale).formatDateTime(time));
   const customLocale = $derived(findLocale(editedLocale).code || fallbackLocale.code);
 
-  const handleToggleSystemTheme = (checked: boolean) => {
-    const current = themeManager.value === Theme.Dark ? ThemePreference.Dark : ThemePreference.Light;
-    themeManager.setPreference(checked ? ThemePreference.System : current);
-  };
+  const albums = createOwnPreferencesDraft(['albums.defaultAssetOrder']);
 </script>
 
-<section class="app-settings">
-  <SettingToggle
-    title={$t('theme_selection')}
-    subtitle={$t('theme_selection_description')}
-    checked={themeManager.preference === ThemePreference.System}
-    onToggle={handleToggleSystemTheme}
-  />
+<!-- The Save bar is for "Show albums" alone; the rest of the page is kept on this device as it is chosen. -->
+<OwnPreferencesForm store={albums}>
+  <KitPage>
+    <Section
+      title={$t('frameleaf_prefs_look_appearance')}
+      description={$t('frameleaf_prefs_look_appearance_description')}
+    >
+      <Row
+        label={$t('frameleaf_prefs_look_theme')}
+        help={themeManager.preference === ThemePreference.System
+          ? $t('frameleaf_prefs_look_theme_help_device')
+          : $t('frameleaf_prefs_look_theme_help_chosen')}
+      >
+        <SegmentedControl
+          label={$t('frameleaf_prefs_look_theme')}
+          options={[
+            { value: ThemePreference.System, label: $t('frameleaf_prefs_look_theme_device') },
+            { value: ThemePreference.Light, label: $t('frameleaf_prefs_look_theme_light') },
+            { value: ThemePreference.Dark, label: $t('frameleaf_prefs_look_theme_dark') },
+          ]}
+          value={themeManager.preference}
+          onChange={(value) => themeManager.setPreference(value as ThemePreference)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_language')} help={$t('frameleaf_prefs_look_language_help')}>
+        <Select
+          label={$t('frameleaf_prefs_look_language')}
+          value={languageOptions.some((option) => option.value === language) ? (language ?? 'en') : 'en'}
+          options={languageOptions}
+          onChange={onLanguage}
+        />
+      </Row>
+    </Section>
 
-  <SettingSelect
-    label={$t('language')}
-    desc={$t('language_setting_description')}
-    value={language}
-    options={languageOptions}
-    onSelect={onLanguage}
-  />
+    <Section title={$t('frameleaf_prefs_look_browsing')}>
+      <Row
+        label={$t('frameleaf_prefs_look_dates')}
+        help={$t('frameleaf_prefs_look_dates_help', { values: { sample } })}
+      >
+        <SegmentedControl
+          label={$t('frameleaf_prefs_look_dates')}
+          options={[
+            { value: 'device', label: $t('frameleaf_prefs_look_dates_device') },
+            { value: 'region', label: $t('frameleaf_prefs_look_dates_region') },
+          ]}
+          value={$locale === 'default' ? 'device' : 'region'}
+          onChange={(value) => ($locale = value === 'device' ? 'default' : fallbackLocale.code)}
+        />
+        {#if $locale !== 'default'}
+          <Select
+            label={$t('frameleaf_prefs_look_region')}
+            value={customLocale}
+            options={localeOptions}
+            onChange={(value) => ($locale = value)}
+          />
+        {/if}
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_albums')} help={$t('frameleaf_prefs_look_albums_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_prefs_look_albums')}
+          options={[
+            { value: AssetOrder.Desc, label: $t('newest_first') },
+            { value: AssetOrder.Asc, label: $t('oldest_first') },
+          ]}
+          value={albums.draft['albums.defaultAssetOrder']}
+          onChange={(value) => albums.set('albums.defaultAssetOrder', value as AssetOrder)}
+        />
+      </Row>
+    </Section>
 
-  <SettingToggle
-    title={$t('use_browser_locale')}
-    subtitle={$t('use_browser_locale_description')}
-    checked={$locale === 'default'}
-    onToggle={(checked) => ($locale = checked ? 'default' : fallbackLocale.code)}
-  >
-    <p class="sample">{selectedDate}</p>
-  </SettingToggle>
+    <Section title={$t('frameleaf_prefs_look_media')}>
+      <Row label={$t('frameleaf_prefs_look_full_quality')} help={$t('frameleaf_prefs_look_full_quality_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_full_quality')}
+          checked={$alwaysLoadOriginalFile}
+          onChange={(value) => ($alwaysLoadOriginalFile = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_hover')} help={$t('frameleaf_prefs_look_hover_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_hover')}
+          checked={$playVideoThumbnailOnHover}
+          onChange={(value) => ($playVideoThumbnailOnHover = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_auto_play')} help={$t('frameleaf_prefs_look_auto_play_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_auto_play')}
+          checked={$autoPlayVideo}
+          onChange={(value) => ($autoPlayVideo = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_loop')} help={$t('frameleaf_prefs_look_loop_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_loop')}
+          checked={$loopVideo}
+          onChange={(value) => ($loopVideo = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_original_video')} help={$t('frameleaf_prefs_look_original_video_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_original_video')}
+          checked={$alwaysLoadOriginalVideo}
+          onChange={(value) => ($alwaysLoadOriginalVideo = value)}
+        />
+      </Row>
+    </Section>
 
-  {#if $locale !== 'default'}
-    <SettingSelect
-      label={$t('custom_locale')}
-      desc={$t('custom_locale_description')}
-      value={customLocale}
-      options={localeOptions}
-      onSelect={(value) => ($locale = String(value))}
-    />
-  {/if}
-
-  <SettingToggle
-    title={$t('display_original_photos')}
-    subtitle={$t('display_original_photos_setting_description')}
-    bind:checked={$alwaysLoadOriginalFile}
-  />
-  <SettingToggle
-    title={$t('video_hover_setting')}
-    subtitle={$t('video_hover_setting_description')}
-    bind:checked={$playVideoThumbnailOnHover}
-  />
-  <SettingToggle
-    title={$t('setting_video_viewer_auto_play_title')}
-    subtitle={$t('setting_video_viewer_auto_play_subtitle')}
-    bind:checked={$autoPlayVideo}
-  />
-  <SettingToggle title={$t('loop_videos')} subtitle={$t('loop_videos_description')} bind:checked={$loopVideo} />
-  <SettingToggle
-    title={$t('play_original_video')}
-    subtitle={$t('play_original_video_setting_description')}
-    bind:checked={$alwaysLoadOriginalVideo}
-  />
-  <SettingToggle
-    title={$t('permanent_deletion_warning')}
-    subtitle={$t('permanent_deletion_warning_setting_description')}
-    bind:checked={$showDeleteModal}
-  />
-</section>
-
-<style>
-  .app-settings {
-    display: grid;
-    gap: 0.25rem;
-    margin: 0.5rem 0;
-  }
-  .sample {
-    margin: 0.375rem 0 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: var(--fl-font-small);
-    color: var(--fl-muted);
-  }
-</style>
+    <Section title={$t('frameleaf_prefs_look_safety')}>
+      <Row label={$t('frameleaf_prefs_look_ask_delete')} help={$t('frameleaf_prefs_look_ask_delete_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_ask_delete')}
+          checked={$showDeleteModal}
+          onChange={(value) => ($showDeleteModal = value)}
+        />
+      </Row>
+    </Section>
+  </KitPage>
+</OwnPreferencesForm>

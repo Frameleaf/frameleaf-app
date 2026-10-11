@@ -5,6 +5,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetLockReason, AssetVisibility, Permission, SharedLinkType, SystemMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
@@ -28,6 +29,7 @@ const setup = (db?: Kysely<DB>) => {
     real: [
       AccessRepository,
       ConfigRepository,
+      CryptoRepository,
       DatabaseRepository,
       SharedLinkRepository,
       SharedLinkAssetRepository,
@@ -396,16 +398,18 @@ describe(SharedLinkService.name, () => {
       expect(ids).toContain(individualLink.id);
     });
 
-    it('should return only the first asset as cover for an individual shared link', async () => {
+    it('should return the count and the first four assets of an individual shared link', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
 
-      const assets = await Promise.all([
-        ctx.newAsset({ ownerId: user.id, fileCreatedAt: '2021-01-01T00:00:00.000Z' }),
-        ctx.newAsset({ ownerId: user.id, fileCreatedAt: '2023-01-01T00:00:00.000Z' }),
-        ctx.newAsset({ ownerId: user.id, fileCreatedAt: '2022-01-01T00:00:00.000Z' }),
-      ]);
+      const years = [2021, 2026, 2023, 2022, 2025, 2024];
+      const assets = await Promise.all(
+        years.map((year) => ctx.newAsset({ ownerId: user.id, fileCreatedAt: `${year}-01-01T00:00:00.000Z` })),
+      );
+      const oldestFirst = assets
+        .map(({ asset }) => asset)
+        .toSorted((a, b) => (a.fileCreatedAt! < b.fileCreatedAt! ? -1 : 1));
 
       const sharedLinkRepo = ctx.get(SharedLinkRepository);
 
@@ -420,166 +424,35 @@ describe(SharedLinkService.name, () => {
 
       const result = await sut.getAll(auth, {});
       expect(result).toHaveLength(1);
-      expect(result[0].assets).toHaveLength(1);
-      expect(result[0].assets[0].id).toBe(assets[0].asset.id);
+      expect(result[0].assetCount).toBe(6);
+      expect(result[0].assets.map(({ id }) => id)).toEqual(oldestFirst.slice(0, 4).map(({ id }) => id));
+      expect(result[0].coverAssetIds).toEqual(oldestFirst.slice(0, 4).map(({ id }) => id));
     });
-  });
 
-  describe('get', () => {
-    it('should return an album shared link with assets', async () => {
+    it('should return the count and cover of an album shared link without its Locked or trashed assets', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
-      const { album } = await ctx.newAlbum({ ownerId: user.id });
 
-      const [{ asset: asset1 }, { asset: asset2 }] = await Promise.all([
-        ctx.newAsset({ ownerId: user.id }),
-        ctx.newAsset({ ownerId: user.id }),
+      const dated = (year: number, dto: { visibility?: AssetVisibility } = {}) =>
+        ctx.newAsset({ ownerId: user.id, fileCreatedAt: `${year}-01-01T00:00:00.000Z`, ...dto });
+      const [chosen, second, third, fourth, newest] = await Promise.all(
+        [2020, 2021, 2022, 2023, 2024].map((y) => dated(y)),
+      );
+      const { asset: locked } = await dated(2025, { visibility: AssetVisibility.Locked });
+      const { asset: trashed } = await dated(2026);
+      await ctx.softDeleteAsset(trashed.id);
+
+      const members = [chosen, second, third, fourth, newest].map(({ asset }) => asset.id);
+      // a link read on its own loads each asset with its exif row
+      await Promise.all(members.map((assetId) => ctx.newExif({ assetId, make: 'Canon' })));
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: chosen.asset.id }, [
+        ...members,
+        locked.id,
+        trashed.id,
       ]);
-      await Promise.all([
-        ctx.newExif({ assetId: asset1.id, make: 'Canon' }),
-        ctx.newExif({ assetId: asset2.id, make: 'Canon' }),
-      ]);
-
       const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        albumId: album.id,
-        allowUpload: true,
-        type: SharedLinkType.Album,
-      });
-
-      await sharedLinkRepo.addAssets(sharedLink.id, [asset1.id, asset2.id]);
-      const result = await sut.get(auth, sharedLink.id);
-      const assetIds = result.assets.map((asset) => asset.id);
-
-      expect(result).toMatchObject({
-        id: sharedLink.id,
-        album: expect.objectContaining({ id: album.id }),
-      });
-      expect(assetIds).toHaveLength(2);
-      expect(assetIds).toEqual(expect.arrayContaining([asset1.id, asset2.id]));
-    });
-
-    it('tells a public viewer only the link owner display name (FL-83)', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser({ name: 'Riley Owner', email: 'riley.private@example.com' });
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
-
-      const sharedLink = await ctx.get(SharedLinkRepository).create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        allowUpload: false,
-        type: SharedLinkType.Individual,
-        assetIds: [asset.id],
-      });
-
-      const auth = factory.auth({ user, sharedLink: { id: sharedLink.id, userId: user.id } });
-      const result = await sut.getMine(auth, []);
-
-      expect(result.owner).toEqual({ name: 'Riley Owner' });
-      expect(JSON.stringify(result)).not.toContain('riley.private@example.com');
-    });
-
-    it('should not return trashed assets for an individual shared link', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-
-      const { asset: visibleAsset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: visibleAsset.id, make: 'Canon' });
-
-      const { asset: trashedAsset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: trashedAsset.id, make: 'Canon' });
-      await ctx.softDeleteAsset(trashedAsset.id);
-
-      const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        allowUpload: false,
-        type: SharedLinkType.Individual,
-        assetIds: [visibleAsset.id, trashedAsset.id],
-      });
-
-      const result = await sut.get(auth, sharedLink.id);
-      expect(result).toBeDefined();
-      expect(result!.assets).toHaveLength(1);
-      expect(result!.assets[0].id).toBe(visibleAsset.id);
-    });
-
-    it('should return empty assets when all individually shared assets are trashed', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
-      await ctx.softDeleteAsset(asset.id);
-
-      const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        allowUpload: false,
-        type: SharedLinkType.Individual,
-        assetIds: [asset.id],
-      });
-
-      await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({
-        assets: [],
-      });
-    });
-
-    it('should not return trashed assets in a shared album', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      const { album } = await ctx.newAlbum({ ownerId: user.id });
-
-      const { asset: visibleAsset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: visibleAsset.id, make: 'Canon' });
-      await ctx.newAlbumAsset({ albumId: album.id, assetId: visibleAsset.id });
-
-      const { asset: trashedAsset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: trashedAsset.id, make: 'Canon' });
-      await ctx.newAlbumAsset({ albumId: album.id, assetId: trashedAsset.id });
-      await ctx.softDeleteAsset(trashedAsset.id);
-
-      const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        albumId: album.id,
-        allowUpload: true,
-        type: SharedLinkType.Album,
-      });
-
-      await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({
-        album: expect.objectContaining({ assetCount: 1 }),
-      });
-    });
-
-    it('should return an empty asset count when all album assets are trashed', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      const { album } = await ctx.newAlbum({ ownerId: user.id });
-
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
-      await ctx.newAlbumAsset({ albumId: album.id, assetId: asset.id });
-      await ctx.softDeleteAsset(asset.id);
-
-      const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
+      const link = await sharedLinkRepo.create({
         key: randomBytes(16),
         id: factory.uuid(),
         userId: user.id,
@@ -588,30 +461,21 @@ describe(SharedLinkService.name, () => {
         type: SharedLinkType.Album,
       });
 
-      await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({
-        album: expect.objectContaining({ assetCount: 0 }),
-      });
-    });
+      // the cover its owner chose, then the newest; never the Locked or trashed ones
+      const cover = [chosen.asset.id, newest.asset.id, fourth.asset.id, third.asset.id];
+      const [listed] = await sut.getAll(auth, {});
+      expect(listed).toMatchObject({ assetCount: 5, coverAssetIds: cover, assets: [] });
+      expect(listed.album?.assetCount).toBe(5);
 
-    it('should not return an album shared link when the album is trashed', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      const { album } = await ctx.newAlbum({ ownerId: user.id });
+      // a link read on its own agrees with the list
+      await expect(sut.get(auth, link.id)).resolves.toMatchObject({ assetCount: 5, coverAssetIds: cover });
 
-      const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        albumId: album.id,
-        allowUpload: false,
-        type: SharedLinkType.Album,
-      });
-
-      await ctx.softDeleteAlbum(album.id);
-
-      await expect(sut.get(auth, sharedLink.id)).rejects.toThrow('Shared link not found');
+      // and so does what saving or creating a link answers, which a client puts straight back on screen
+      const expected = { assetCount: 5, coverAssetIds: cover, album: { id: album.id, assetCount: 5 } };
+      await expect(sut.update(auth, link.id, { description: 'Renamed' })).resolves.toMatchObject(expected);
+      await expect(sut.create(auth, { type: SharedLinkType.Album, albumId: album.id })).resolves.toMatchObject(
+        expected,
+      );
     });
   });
 

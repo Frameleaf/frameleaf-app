@@ -1,5 +1,6 @@
 import { SharedLinkType, type ServerConfigDto } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import {
   asUrl,
   handleCreateSharedLink,
@@ -33,6 +34,32 @@ describe('SharedLinkService', () => {
       );
     });
   });
+  describe('creating a link', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("announces an album link with the server's answer as it is, without reading the link again", async () => {
+      // The answer to a new album link already carries the album, its item count and its cover.
+      const created = sharedLinkFactory.build({
+        type: SharedLinkType.Album,
+        album: { id: 'album-1', albumName: 'Rockies', assetCount: 15 } as never,
+        assetCount: 15,
+        coverAssetIds: ['cover', 'n1', 'n2', 'n3'],
+      });
+      sdkMock.createSharedLink.mockResolvedValue(created);
+      const announced = vi.fn();
+      const stop = eventManager.on({ SharedLinkCreate: announced });
+
+      await expect(handleCreateSharedLink({ type: SharedLinkType.Album, albumId: 'album-1' })).resolves.toBe(created);
+      stop();
+
+      expect(announced).toHaveBeenCalledWith(created);
+      expect(sdkMock.createSharedLink).toHaveBeenCalledTimes(1);
+      expect(sdkMock.getSharedLinkById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a custom address already in use (FL-83 AL-26)', () => {
     const slugTaken = () => ({ name: 'HttpError', status: 400, data: { message: SHARED_LINK_SLUG_TAKEN } });
 

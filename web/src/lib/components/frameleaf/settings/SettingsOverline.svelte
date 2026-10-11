@@ -17,8 +17,10 @@
   /* Doubled so a manager's own heading paragraph styles never restyle it. */
   .cc-overline.cc-overline {
     display: flex;
+    /* A breadcrumb too long for one line breaks between its crumbs, never inside one. */
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 0 var(--fl-space-2);
     margin: 0 0 8px;
     color: var(--fl-muted);
     font-size: 10px;
@@ -26,6 +28,7 @@
     letter-spacing: 1.3px;
     line-height: 1.4;
     text-transform: uppercase;
+    white-space: nowrap;
   }
   .cc-overline :global(button) {
     padding: 0;

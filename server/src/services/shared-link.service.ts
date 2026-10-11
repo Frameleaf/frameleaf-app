@@ -138,7 +138,10 @@ export class SharedLinkService extends BaseService {
         slug: dto.slug || null,
       });
 
-      return mapSharedLink(sharedLink, { stripAssetMetadata: false, externalDomain: await this.externalDomain() });
+      return mapSharedLink(await this.withAlbumListing(auth, sharedLink), {
+        stripAssetMetadata: false,
+        externalDomain: await this.externalDomain(),
+      });
     } catch (error) {
       this.handleError(error);
     }
@@ -172,7 +175,9 @@ export class SharedLinkService extends BaseService {
         showExif: dto.showMetadata,
         slug: dto.slug || null,
       });
-      const sharedLink = nsfwOptions ? await this.findOrFail(auth.user.id, id, nsfwOptions) : updatedSharedLink;
+      const sharedLink = nsfwOptions
+        ? await this.findOrFail(auth.user.id, id, nsfwOptions)
+        : await this.withAlbumListing(auth, updatedSharedLink);
       return this.mapSharedLink(auth, sharedLink, { stripAssetMetadata: false });
     } catch (error) {
       this.handleError(error);
@@ -349,6 +354,24 @@ export class SharedLinkService extends BaseService {
       'shared-link-unlock',
       `${sharedLink.id}-${sharedLink.password}`,
     );
+  }
+
+  /**
+   * What create and update read back holds an individual link's assets but nothing of an album. An album
+   * link's album, count and cover come from the list of links, which loads them without the album's assets.
+   */
+  private async withAlbumListing(auth: AuthDto, sharedLink: SharedLink): Promise<SharedLink> {
+    if (sharedLink.type !== SharedLinkType.Album || sharedLink.album) {
+      return sharedLink;
+    }
+    const [listed] = await this.sharedLinkRepository.getAll({
+      userId: auth.user.id,
+      id: sharedLink.id,
+      ...this.nsfwOptions(auth),
+    });
+    return listed
+      ? { ...sharedLink, album: listed.album, assetCount: listed.assetCount, coverAssets: listed.coverAssets }
+      : sharedLink;
   }
 
   private async mapSharedLink(

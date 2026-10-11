@@ -7,8 +7,8 @@ const maxArrayLength = 100;
 const REDACTED = '********';
 
 /**
- * FL-81: request logs never carry a credential. Names are compared case-insensitively with `_` and
- * `-` removed, so `access_token`, `api_key`, `private-key` and `sessionKey` all match.
+ * FL-81: request logs never carry a credential. Names ignore case and separators, so
+ * `access_token`, `api_key`, `private-key` and `sessionKey` all match.
  *
  * - Body fields and query parameters whose name says they hold a secret are masked: passwords, PIN
  *   codes, any token (maintenance, OAuth, access, refresh), secrets, API / private / session keys
@@ -19,9 +19,10 @@ const REDACTED = '********';
  * - CLD-004: licence keys and link codes (`licenseKey`, `linkCode`) are masked wherever they appear,
  *   and the licence routes and the `/link` page never have their query string recorded at all.
  */
-const normalize = (name: string) => name.toLowerCase().replaceAll(/[_-]/g, '');
-const SECRET_PART = /password|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier|licen[cs]ekey|linkcode/;
-const SECRET_EXACT = new Set(['key', 'code', 'state', 'slug', 'appleid']);
+const normalize = (name: string) => name.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+const SECRET_PART =
+  /password|passphrase|pincode|token|secret|apikey|privatekey|sessionkey|codeverifier|licen[cs]ekey|linkcode|recovery(?:key|code|kit|phrase|seed)|keyring|(?:wrap(?:ping)?|bucket|encryption|master|root)key/;
+const SECRET_EXACT = new Set(['key', 'keys', 'code', 'state', 'slug', 'appleid']);
 const isSecretName = (name: string) => {
   const normalized = normalize(name);
   return SECRET_PART.test(normalized) || SECRET_EXACT.has(normalized);
@@ -34,6 +35,10 @@ const redactUrlQuery = (url: string) => {
 
 /** CLD-004: routes whose query string is never recorded, whatever its parameters are called. */
 const QUERYLESS_ROUTES = /^\/(?:link|api\/(?:admin\/license|license|users\/me\/license))(?:[/?#]|$)/;
+
+// Secret routes can carry numeric key maps, opaque recovery packages or a credential named `value`.
+const BODYLESS_ROUTES =
+  /^\/(?:api\/)?admin\/(?:cloud\/backup\/(?:check|setup|escrow|key(?:\/.*)?)|buddy-backup\/key(?:\/.*)?|config\/credentials\/[^/]+)\/?$/i;
 
 export const redactLogUrl = (url: string) => {
   const queryStart = url.indexOf('?');
@@ -93,7 +98,7 @@ export class LoggingInterceptor implements NestInterceptor {
         const { statusCode } = res;
 
         this.logger.debug(`${method} ${redactLogUrl(url)} ${statusCode} ${duration}ms ${ip}`);
-        if (req.body && Object.keys(req.body).length > 0) {
+        if (!BODYLESS_ROUTES.test(req.route?.path ?? req.path) && req.body && Object.keys(req.body).length > 0) {
           this.logger.verbose(JSON.stringify(req.body, replacer));
         }
       }),

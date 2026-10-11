@@ -42,6 +42,13 @@ export const loadProcessing = async () => {
 };
 export type ProcessingData = Awaited<ReturnType<typeof loadProcessing>>;
 
+/** Computers (FL-364): every computer that helps this server, whichever record it is kept in. */
+export const loadComputers = async () => {
+  const [processing, render] = await Promise.all([loadProcessing(), loadRenderWorkers()]);
+  return { processing, render };
+};
+export type ComputersData = Awaited<ReturnType<typeof loadComputers>>;
+
 export const loadDeduplication = async () => {
   const [preview, users] = await Promise.all([
     getPhysicalDeduplicationPreview(),

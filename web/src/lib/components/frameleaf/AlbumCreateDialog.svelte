@@ -242,7 +242,7 @@
   .create {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--fl-space-4);
     margin-block-start: 1rem;
     width: min(32rem, 100%);
   }
@@ -257,7 +257,7 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--fl-space-2);
   }
   .field > span,
   .field-label {
@@ -271,7 +271,7 @@
   .field input,
   .field textarea,
   .field select {
-    padding: 0.5rem 0.625rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     background: var(--fl-raised);

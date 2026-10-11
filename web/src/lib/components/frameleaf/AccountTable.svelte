@@ -122,7 +122,7 @@
             </a>
           </th>
           <td>{user.isAdmin ? $t('frameleaf_users_role_admin') : $t('frameleaf_users_role_user')}</td>
-          <td>
+          <td class="items">
             {#if stats}
               {count(stats.photos + stats.videos)}
               <small>{$t('frameleaf_users_items_videos', { values: { count: stats.videos } })}</small>
@@ -177,23 +177,34 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 1rem;
-  }
-  .toolbar input {
-    flex: 1;
-    min-width: 180px;
+    container-type: inline-size;
   }
   .toolbar input,
   .toolbar select {
     min-width: 0;
     max-width: 100%;
     min-height: 36px;
-    padding: 8px 10px;
+    padding: 8px var(--fl-space-3);
     font: inherit;
     font-size: 12px;
     color: var(--fl-text);
     background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
+  }
+  /* After the shared rule: its `min-width: 0` let the search field shrink to nothing instead of wrapping. */
+  .toolbar input {
+    flex: 1;
+    min-width: 180px;
+  }
+  /* accounts-libraries.css below 540px, measured on the toolbar: the search field has the first row. */
+  @container (max-width: 560px) {
+    .toolbar input {
+      flex-basis: 100%;
+    }
+    .toolbar select {
+      max-width: calc(50% - 6px);
+    }
   }
   .count {
     font-size: 11px;
@@ -250,6 +261,10 @@
     display: block;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
+  }
+  /* The count, then the video count under it: two whole lines however narrow the column gets. */
+  .items {
+    white-space: nowrap;
   }
   /* accounts-libraries.css `.resource-quota`. */
   .quota {

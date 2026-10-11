@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -14,39 +14,78 @@ import {
 import en from '../../../../../i18n/en.json';
 import AppSettings from './AppSettings.svelte';
 
-vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn() }));
+const albums = vi.hoisted(() => ({
+  draft: { 'albums.defaultAssetOrder': 'desc' },
+  baseline: { 'albums.defaultAssetOrder': 'desc' },
+  dirty: false,
+  stale: false,
+  loading: false,
+  saving: false,
+  error: null,
+  notice: null,
+  set: vi.fn(),
+  follow: vi.fn(),
+  cancel: vi.fn(),
+  save: vi.fn(),
+  loadLatest: vi.fn(),
+}));
+vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
+vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDraft: () => albums }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences: {}, user: {} } }));
 
-describe('AppSettings (CC-50)', () => {
+describe('AppSettings: Look & playback (FL-368)', () => {
   beforeAll(() => {
     addMessages('dev', en);
   });
 
-  it('uses Frameleaf switches and selects, and hides the custom locale behind the browser locale', async () => {
+  it('groups the page under four headings', () => {
+    render(AppSettings);
+
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
+      'Appearance',
+      'Browsing',
+      'Photos and videos',
+      'Safety',
+    ]);
+    expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Light or dark' })).toBeInTheDocument();
+  });
+
+  it('makes the date format one choice, with the region only once a region is asked for', async () => {
     locale.set('default');
     render(AppSettings);
 
-    expect(screen.getByRole('switch', { name: en.theme_selection })).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: en.language })).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: en.custom_locale })).not.toBeInTheDocument();
+    const dates = screen.getByRole('group', { name: 'Dates and numbers' });
+    expect(within(dates).getByRole('button', { name: 'Match this device', pressed: true })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Region' })).not.toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole('switch', { name: en.use_browser_locale }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose a region' }));
     expect(get(locale)).not.toBe('default');
-    expect(screen.getByRole('combobox', { name: en.custom_locale })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Region' })).toBeInTheDocument();
+    expect(dates).toBeInTheDocument();
+    locale.set('default');
   });
 
-  // FL-71: every device setting of the source App settings page (upstream AppSettings.svelte) keeps
-  // a switch on this device's page, and the switch writes this browser's setting.
+  it('keeps "Show albums" as an account preference that waits for the Save bar', async () => {
+    render(AppSettings);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Oldest first' }));
+    expect(albums.set).toHaveBeenCalledWith('albums.defaultAssetOrder', 'asc');
+  });
+
+  // FL-71: every device setting of the source App settings page keeps a switch on this device's
+  // page, and the switch writes this browser's setting.
   it.each([
-    ['display_original_photos', alwaysLoadOriginalFile],
-    ['play_original_video', alwaysLoadOriginalVideo],
-    ['video_hover_setting', playVideoThumbnailOnHover],
-    ['setting_video_viewer_auto_play_title', autoPlayVideo],
-    ['loop_videos', loopVideo],
-    ['permanent_deletion_warning', showDeleteModal],
-  ] as const)('keeps the %s device setting as a switch that writes this browser', async (key, store) => {
+    ['Show full-quality photos', alwaysLoadOriginalFile],
+    ['Play the original video file', alwaysLoadOriginalVideo],
+    ['Play a video when the pointer rests on it', playVideoThumbnailOnHover],
+    ['Start videos by themselves', autoPlayVideo],
+    ['Repeat videos', loopVideo],
+    ['Ask before deleting forever', showDeleteModal],
+  ] as const)('keeps "%s" as a switch that writes this browser', async (name, store) => {
     render(AppSettings);
     const before = get(store);
-    await fireEvent.click(screen.getByRole('switch', { name: en[key] }));
+    await fireEvent.click(screen.getByRole('switch', { name }));
     expect(get(store)).toBe(!before);
     store.set(before);
   });

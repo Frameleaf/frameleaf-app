@@ -179,7 +179,7 @@ test.describe('Album roles', () => {
 
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(0);
-    await expect(page.getByText('Your role changed: you can now only view this album.')).toBeVisible();
+    await expect(page.getByText('Your access changed. You can view this album but not add to it.')).toBeVisible();
 
     // And back again, so the other cases keep an editor.
     await updateAlbumUser(

@@ -87,6 +87,31 @@ describe('ExplorePanel', () => {
     expect(thing.querySelector('img')?.getAttribute('src')).toContain('beach-cover');
   });
 
+  describe('the Best Photos card', () => {
+    const card = () => screen.getByRole('link', { name: /Best Photos/ });
+
+    it('shows its picture and, with nothing at the quality threshold, makes no claim about a count', () => {
+      render(ExplorePanel, props({ bestPhotos: { total: 0, cover: still } }));
+
+      expect(card().querySelector('img')?.getAttribute('src')).toContain('still');
+      expect(card()).toHaveTextContent('Find your strongest photos and videos');
+      expect(card()).not.toHaveTextContent('picked for you');
+    });
+
+    it('counts the picks that reach the quality threshold', () => {
+      render(ExplorePanel, props({ bestPhotos: { total: 2, cover: still } }));
+      expect(card()).toHaveTextContent('2 best shots picked for you');
+    });
+
+    it('keeps its invitation, without a picture, when nothing is ranked yet', () => {
+      render(ExplorePanel, props({ bestPhotos: { total: 0, cover: null } }));
+
+      expect(card().querySelector('img')).toBeNull();
+      expect(card().querySelector('.el-cover-empty')).not.toBeNull();
+      expect(card()).toHaveTextContent('Find your strongest photos and videos');
+    });
+  });
+
   it('points an empty library at uploading, in the prototype empty-state pattern', () => {
     render(ExplorePanel, props({ libraryTotal: 0 }));
     expect(screen.getByRole('status')).toHaveTextContent('Nothing to explore yet');

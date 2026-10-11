@@ -13,6 +13,7 @@ import {
   ImageFormat,
   LogLevel,
   MachineLearningHardwareAcceleration,
+  MailTransportType,
   OAuthTokenEndpointAuthMethod,
   QueueName,
   ReleaseChannel,
@@ -68,6 +69,9 @@ const updatedConfig = Object.freeze<SystemConfig>({
       enabled: true,
       cronExpression: '0 02 * * *',
       keepLastAmount: 14,
+    },
+    schedule: {
+      cronExpression: '',
     },
   },
   analytics: {
@@ -334,6 +338,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   theme: {
     customCss: '',
+    customCssEnabled: true,
   },
   library: {
     scan: {
@@ -353,6 +358,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       from: '',
       replyTo: '',
       transport: {
+        type: MailTransportType.Smtp,
         host: '',
         port: 587,
         secure: false,
@@ -1744,6 +1750,21 @@ describe(SystemConfigService.name, () => {
   describe('getCustomCss', () => {
     it('should return the default theme', async () => {
       await expect(sut.getCustomCss()).resolves.toEqual(defaults.theme.customCss);
+    });
+
+    it('should serve the saved styling while it is in use', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ theme: { customCss: 'body { color: red; }' } });
+      await expect(sut.getCustomCss()).resolves.toEqual('body { color: red; }');
+    });
+
+    it('should serve nothing when custom styling is turned off, keeping the text in the settings', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        theme: { customCss: 'body { color: red; }', customCssEnabled: false },
+      });
+      await expect(sut.getCustomCss()).resolves.toEqual('');
+      await expect(sut.getAdminConfig()).resolves.toMatchObject({
+        theme: { customCss: 'body { color: red; }', customCssEnabled: false },
+      });
     });
   });
 

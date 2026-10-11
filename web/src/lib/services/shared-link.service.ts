@@ -1,6 +1,5 @@
 import {
   createSharedLink,
-  getSharedLinkById,
   isHttpError,
   removeSharedLinkAssets,
   updateSharedLink,
@@ -39,11 +38,8 @@ export const handleCreateSharedLink = async (dto: SharedLinkCreateDto, options?:
   const $t = await getFormatter();
 
   try {
-    let sharedLink = await createSharedLink({ sharedLinkCreateDto: dto });
-    if (dto.albumId) {
-      // fetch album details, for event
-      sharedLink = await getSharedLinkById({ id: sharedLink.id });
-    }
+    // The answer is the whole link: for an album link it carries the album, its item count and its cover.
+    const sharedLink = await createSharedLink({ sharedLinkCreateDto: dto });
 
     eventManager.emit('SharedLinkCreate', sharedLink);
 

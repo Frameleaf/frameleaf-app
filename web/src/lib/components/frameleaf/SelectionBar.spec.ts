@@ -1,6 +1,7 @@
 import { SharedLinkType } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { handleCreateSharedLink } from '$lib/services/shared-link.service';
 import en from '../../../../../i18n/en.json';
 import SelectionBar from './SelectionBar.svelte';
@@ -10,6 +11,11 @@ vi.mock('$lib/services/shared-link.service', () => ({
   handleCreateSharedLink: vi.fn().mockResolvedValue(true),
   handleUpdateSharedLink: vi.fn(),
 }));
+
+// The shared link form reads the person's own links when it opens, to say whether a custom address is free.
+beforeEach(() => {
+  sdkMock.getAllSharedLinks.mockResolvedValue([]);
+});
 
 it('shares every explicitly selected ID after part of the selection leaves the loaded window', async () => {
   addMessages('dev', en);
@@ -25,6 +31,7 @@ it('shares every explicitly selected ID after part of the selection leaves the l
   });
 
   await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_bulk_create_shared_link }));
+  expect(sdkMock.getAllSharedLinks).toHaveBeenCalledWith({});
   await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
 
   expect(handleCreateSharedLink).toHaveBeenCalledWith(

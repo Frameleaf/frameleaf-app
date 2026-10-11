@@ -36,6 +36,9 @@ The default configuration looks like this:
       "cronExpression": "0 02 * * *",
       "enabled": true,
       "keepLastAmount": 14
+    },
+    "schedule": {
+      "cronExpression": ""
     }
   },
   "ffmpeg": {
@@ -245,7 +248,8 @@ The default configuration looks like this:
     }
   },
   "theme": {
-    "customCss": ""
+    "customCss": "",
+    "customCssEnabled": true
   },
   "trash": {
     "days": 30,

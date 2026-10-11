@@ -161,7 +161,7 @@ def test_hub_downloads_remain_available(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("source", "expected_token"),
     [
-        ("https://huggingface.co", None),
+        ("https://huggingface.co", False),
         ("https://models.frameleaf.cloud", False),
         ("https://hub-mirror.example.com", False),
         ("https://huggingface.co.example.com", False),

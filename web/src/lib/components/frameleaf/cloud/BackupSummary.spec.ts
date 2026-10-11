@@ -53,10 +53,10 @@ describe('Backup operational summary', () => {
   it('shows both encrypted directions after expiry, and replaces stale values when refresh fails', async () => {
     render(BackupSummary, { analytics: true });
     const outgoing = await screen.findByRole('link', { name: /My backup · outgoing.*Recovery only/ });
-    expect(outgoing).toHaveAttribute('href', '/user-settings?area=backups&backupView=status');
+    expect(outgoing).toHaveAttribute('href', '/user-settings?area=backups&section=buddy');
     expect(screen.getByRole('link', { name: /Hosting for my buddy · incoming.*Recovery only/ })).toHaveAttribute(
       'href',
-      '/user-settings?area=backups&backupView=controls',
+      '/user-settings?area=backups&section=buddy',
     );
     expect(screen.getByText(/Independent of the library filters/)).toBeInTheDocument();
     expect(screen.getByText(/Hosting is encrypted storage only/)).toBeInTheDocument();

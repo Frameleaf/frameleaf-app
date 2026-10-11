@@ -612,7 +612,7 @@
     display: flex;
     flex-shrink: 0;
     align-items: center;
-    gap: 4px;
+    gap: var(--fl-space-2);
     margin-inline-start: auto;
   }
 
@@ -621,7 +621,7 @@
     place-items: center;
     min-width: 30px;
     min-height: 30px;
-    padding: 4px 10px;
+    padding: 4px 12px;
     border: 0;
     border-radius: var(--fl-radius-pill);
     background: color-mix(in srgb, var(--fl-viewer-text) 10%, transparent);
@@ -653,7 +653,7 @@
 
   .fl-pill {
     display: inline-block;
-    padding: 1px 7px;
+    padding: 1px 8px;
     border-radius: 999px;
     font-size: 10px;
     font-style: normal;
