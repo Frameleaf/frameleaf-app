@@ -17,10 +17,12 @@
   let {
     open = $bindable(false),
     projectName,
+    historicalLabels = false,
     onConfirm,
   }: {
     open?: boolean;
     projectName: string;
+    historicalLabels?: boolean;
     /** The person chose Export; closing the dialog any other way is a cancel. */
     onConfirm: (includeMedia: boolean) => void;
   } = $props();
@@ -42,6 +44,12 @@
       <span>{$t('frameleaf_studio_bundle_include_media')}</span>
     </label>
     <p class="note">{$t('frameleaf_studio_bundle_include_media_note')}</p>
+    {#if historicalLabels}
+      <p class="note">
+        Included generated imports carry historical processing and source labels, including in reference-only bundles.
+        These labels grant no access to the original source.
+      </p>
+    {/if}
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
       <Button variant="primary" onclick={() => onConfirm(includeMedia)}>

@@ -41,7 +41,7 @@ describe(StudioBundleUploadInterceptor.name, () => {
     const result = await sut.intercept(context, next);
     await expect(lastValueFrom(result)).rejects.toThrow('invalid ZIP');
     expect(service.reserveUpload).toHaveBeenCalledWith(request.user, 123);
-    expect(service.abortUpload).toHaveBeenCalledWith(request.user, 'reservation');
+    expect(service.abortUpload).toHaveBeenCalledWith(request.user, 'reservation', false);
   });
 
   it('rejects oversized bodies before allocating a reservation', async () => {

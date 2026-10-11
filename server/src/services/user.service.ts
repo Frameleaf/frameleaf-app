@@ -456,6 +456,11 @@ export class UserService extends BaseService {
       return;
     }
 
+    if (await this.userRepository.hasPendingImportCleanup(user.id)) {
+      this.logger.warn(`Deferred user deletion while Studio import cleanup is pending: ${user.id}`);
+      return;
+    }
+
     this.logger.log(`Deleting user: ${user.id}`);
 
     this.logger.warn(`Removing user from database: ${user.id}`);
@@ -511,17 +516,15 @@ export class UserService extends BaseService {
       StorageCore.getFolderLocation(StorageFolder.Upload, user.id),
       StorageCore.getFolderLocation(StorageFolder.Thumbnails, user.id),
       StorageCore.getFolderLocation(StorageFolder.EncodedVideo, user.id),
+      // Exports may hold journal stages, retained imports, Buddy pins and shared derivatives.
+      StorageCore.getFolderLocation(StorageFolder.Exports, user.id),
     ];
     for (const folder of sharedFolders) {
       this.logger.warn(`Removing user from filesystem: ${folder}`);
       await this.removeUnreferencedFiles(folder, originals);
     }
 
-    const privateFolders = [
-      StorageCore.getFolderLocation(StorageFolder.Profile, user.id),
-      // Owner-private export artefacts: bundles, uploads and staged Studio renders (FL-62, FL-91, FL-106).
-      StorageCore.getFolderLocation(StorageFolder.Exports, user.id),
-    ];
+    const privateFolders = [StorageCore.getFolderLocation(StorageFolder.Profile, user.id)];
     for (const folder of privateFolders) {
       this.logger.warn(`Removing user from filesystem: ${folder}`);
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });

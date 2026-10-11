@@ -1,3 +1,4 @@
+import type { RetentionUpload } from 'src/utils/studio-import-publication.js';
 import {
   BadRequestException,
   ConflictException,
@@ -20,7 +21,11 @@ import {
 } from 'src/repositories/studio-project.repository.js';
 import { STUDIO_BUNDLE_DOCUMENT_RESERVATION } from 'src/repositories/studio-storage-admission.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
-import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
+import {
+  StudioProjectImportService,
+  studioImportIncomingFolder,
+  studioImportProjectFolder,
+} from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import {
@@ -32,9 +37,11 @@ import {
   readZipEntry,
   serializeStudioBundleProject,
 } from 'src/utils/studio-bundle.js';
+import type { RetainedProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind, extractStudioResourceReferences, studioReferenceKey } from 'src/utils/studio-resources.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
 
@@ -131,6 +138,10 @@ const memoryFs = () => {
     createWriteStream: vi.fn((path: string) => {
       const chunks: Buffer[] = [];
       return new Writable({
+        construct(callback) {
+          this.emit('open');
+          callback();
+        },
         write(chunk: Buffer, _encoding, callback) {
           chunks.push(chunk);
           callback();
@@ -329,7 +340,7 @@ describe(StudioBundleService.name, () => {
       users as never,
       resources as unknown as StudioResourceService,
       studio as unknown as StudioProjectService,
-      { sweep: vi.fn().mockResolvedValue(undefined) } as never,
+      { sweep: vi.fn().mockResolvedValue(undefined), releaseIncoming: vi.fn().mockResolvedValue(false) } as never,
     );
   });
 
@@ -528,6 +539,22 @@ describe(StudioBundleService.name, () => {
       expect(projects.createUpload).toHaveBeenCalledTimes(1);
     });
 
+    it('allocates direct-import request scratch only beneath the owner incoming root', async () => {
+      await sut.reserveUpload(owner, 123, 'import');
+      expect(projects.createUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: expect.stringMatching(
+            new RegExp(`/exports/${owner.user.id}/studio-imports/incoming/[a-f0-9-]+\\.upload$`),
+          ),
+        }),
+      );
+    });
+    it('preserves a pre-existing file when exclusive request scratch creation failed', async () => {
+      projects.getUpload.mockResolvedValue({ id: 'upload', path: '/private/foreign.zip' });
+      await sut.abortUpload(owner, 'upload', false);
+      expect(fs.storage.unlink).not.toHaveBeenCalled();
+      expect(projects.deleteUpload).toHaveBeenCalledWith('upload', owner.user.id);
+    });
     it('retains the charged upload row when file cleanup fails', async () => {
       projects.getUpload.mockResolvedValue({ id: 'upload', path: '/private/failed.zip' });
       fs.storage.unlink.mockRejectedValueOnce(new Error('disk unavailable'));
@@ -1056,6 +1083,11 @@ describe(StudioBundleService.name, () => {
 
     let sourceProject: StudioProject;
     let registered: Array<Record<string, unknown>>;
+    let publications: {
+      register: ReturnType<typeof vi.fn>;
+      getPublication: ReturnType<typeof vi.fn>;
+      retain: ReturnType<typeof vi.fn>;
+    };
 
     const rowsOf = (projectId: string) =>
       kept.map((item) => ({
@@ -1133,6 +1165,7 @@ describe(StudioBundleService.name, () => {
         fileName: string | null;
         contentType: string | null;
         sha256?: string;
+        processingProvenance?: RetainedProcessingProvenance;
       }>,
     ) => {
       const document = { ...envelope, graph: { sequences: [{ id: 'seq-1', tracks: [] }] } };
@@ -1151,7 +1184,8 @@ describe(StudioBundleService.name, () => {
           id: item.id,
           mode: item.bytes ? ('embedded' as const) : ('reference' as const),
           path,
-          sha256: null,
+          sha256: item.processingProvenance?.outputSha256 ?? null,
+          ...(item.processingProvenance ? { processingProvenance: item.processingProvenance } : {}),
           bytes: item.bytes?.length ?? null,
           fileName: item.fileName,
           contentType: item.contentType,
@@ -1196,10 +1230,29 @@ describe(StudioBundleService.name, () => {
       projects.listImportDeclarations.mockResolvedValue(rows.map(({ id, sizeBytes }) => ({ id, sizeBytes })));
       projects.getImport = vi.fn().mockResolvedValue(undefined);
       projects.getImportBytes = vi.fn().mockResolvedValue(0);
-      projects.registerImport = vi.fn().mockImplementation((item: Record<string, unknown>) => {
-        registered.push(item);
-        return Promise.resolve({ ...item, createdAt: new Date(0) });
-      });
+      const deleteReservation = vi.fn<StudioProjectRepository['deleteUpload']>().mockResolvedValue(undefined);
+      projects.deleteUpload = deleteReservation;
+      publications = {
+        register: vi.fn().mockResolvedValue({ state: 'registered' }),
+        getPublication: vi.fn().mockResolvedValue({ state: 'registered' }),
+        retain: vi.fn(async (_auth: AuthDto, upload: RetentionUpload) => {
+          const item = {
+            ...upload.declaration,
+            id: upload.key.importId,
+            projectId: upload.key.projectId,
+            ownerId: upload.key.ownerId,
+            path: join(
+              studioImportProjectFolder(upload.key.ownerId, upload.key.projectId),
+              `${upload.key.importId}${upload.declaration.extension}`,
+            ),
+          };
+          registered.push(item);
+          fs.files.set(item.path, Buffer.from(fs.files.get(upload.incoming)!));
+          await fs.storage.unlink(upload.incoming);
+          if (upload.reservationId) await deleteReservation(upload.reservationId, upload.key.ownerId);
+          return { ...item, createdAt: new Date(0) };
+        }),
+      };
       // The real upload path: the owner check answers with the project the import created.
       const ownedStudio = {
         ...studio,
@@ -1226,6 +1279,7 @@ describe(StudioBundleService.name, () => {
           fs.crypto as never,
           users as never,
           ownedStudio as never,
+          publications as never,
         ),
       );
     });
@@ -1403,6 +1457,201 @@ describe(StudioBundleService.name, () => {
       expect(lastResult()).toMatchObject({ embeddedVerified: 5, missing: [] });
     });
 
+    it.each([true, false])('carries only selected historical labels with media=%s', async (includeMedia) => {
+      const rows = rowsOf(sourceProject.id).map((row) => ({
+        ...row,
+        processingProvenance:
+          row.id === voice || row.id === unplaced
+            ? {
+                ...LINEAGE,
+                source: { ...LINEAGE.source, id: unplaced },
+                outputSha256: row.checksum,
+              }
+            : null,
+      }));
+      projects.listImports.mockResolvedValue(rows);
+      const job = exportJobOf(includeMedia, [voice, lut]);
+      job.snapshot = { ...job.snapshot, sequenceIds: ['seq-2'] };
+      await sut.run({ operation: job, claimToken: 'token' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      const manifest = await readBundleManifest(fs.files.get(lastResult().path as string)!);
+      const selected = manifest.sources.filter((item) => item.kind === StudioResourceKind.ProjectImport);
+      expect(selected.map((item) => item.id)).toEqual([voice, lut]);
+      expect(selected[0].processingProvenance).toEqual(rows[0].processingProvenance);
+      expect(selected[1]).not.toHaveProperty('processingProvenance');
+      expect(manifest.sources.some((item) => item.id === unplaced)).toBe(false);
+      expect(JSON.stringify(manifest)).not.toContain(rows[0].path);
+      expect(JSON.stringify(manifest)).not.toContain('publicationId');
+    });
+
+    it('round trips an included generated import alongside a legacy import through the safe upload path', async () => {
+      const lineage = { ...LINEAGE, outputSha256: sha256(wav).toString('hex') };
+      projects.listImports.mockResolvedValue(
+        rowsOf(sourceProject.id).map((row) => ({
+          ...row,
+          ...(row.id === voice ? { processingProvenance: lineage } : {}),
+        })),
+      );
+      await sut.run({ operation: exportJobOf(true, [voice, subs]), claimToken: 'token' });
+      const bundle = fs.files.get(lastResult().path as string)!;
+      const manifest = await readBundleManifest(bundle);
+      const sources = manifest.sources.filter((item) => item.kind === StudioResourceKind.ProjectImport);
+      expect(sources.find((item) => item.id === voice)?.processingProvenance).toEqual(lineage);
+      expect(sources.find((item) => item.id === subs)).not.toHaveProperty('processingProvenance');
+      fs.files.clear();
+      const upload = uploadOf(bundle, manifest);
+      await sut.run({ operation: importJobOf(upload), claimToken: 'import' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(registered).toEqual([
+        expect.objectContaining({ id: voice, processingProvenance: lineage }),
+        expect.objectContaining({ id: subs, processingProvenance: null }),
+      ]);
+      expect(publications.retain).toHaveBeenCalledTimes(2);
+      expect(registered[0].projectId).not.toBe(sourceProject.id);
+      expect(registered[0].processingProvenance).toEqual(lineage);
+    });
+
+    it('rebinds foreign historical labels to the new owner and verified staged bytes without source lookup', async () => {
+      const lineage = {
+        ...LINEAGE,
+        source: { ...LINEAGE.source, id: 'foreign-historical-only' },
+        outputSha256: sha256(wav).toString('hex'),
+      };
+      const { bundle, manifest } = handMade([{ ...kept[0], processingProvenance: lineage }]);
+      const upload = uploadOf(bundle, manifest);
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      const created = registered[0];
+      expect(created).toMatchObject({
+        ownerId: owner.user.id,
+        processingProvenance: lineage,
+        checksum: lineage.outputSha256,
+      });
+      expect(created.projectId).not.toBe(LINEAGE.source.projectId);
+      expect(publications.register).toHaveBeenCalledWith(
+        expect.objectContaining({ user: owner.user }),
+        created.projectId,
+        { importId: voice, publicationId: expect.any(String) },
+      );
+      expect(publications.retain).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          key: expect.objectContaining({ ownerId: owner.user.id, projectId: created.projectId }),
+          reservationId: expect.any(String),
+          declaration: expect.objectContaining({ processingProvenance: lineage }),
+        }),
+      );
+      expect(assets.getByIds.mock.calls.flat(2)).not.toContain(lineage.source.id);
+      expect(assets.getByChecksums).not.toHaveBeenCalled();
+      expect(fs.files.get(created.path as string)).toEqual(wav);
+    });
+
+    it('keeps reference-only lineage descriptive without registration or a ready row', async () => {
+      const { bundle, manifest } = handMade([
+        {
+          ...kept[0],
+          bytes: undefined,
+          processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') },
+        },
+      ]);
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+      expect(publications.register).not.toHaveBeenCalled();
+      expect(lastResult().missing).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: voice, embedded: false })]),
+      );
+    });
+
+    it('verifies staged bytes, not just the archive stream, before discarding the historical hash', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') } },
+      ]);
+      const original = fs.storage.createWriteStream.getMockImplementation()!;
+      fs.storage.createWriteStream.mockImplementation((path: string) => {
+        const output = original(path);
+        output.once('finish', () => fs.files.set(path, Buffer.alloc(wav.length, 0)));
+        return output;
+      });
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(publications.register).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+      expect(fs.files.keys().some((path) => path.includes('/incoming/'))).toBe(false);
+    });
+
+    it('carries lineage on a full project export while leaving legacy imports absent', async () => {
+      projects.listImports.mockResolvedValue(
+        rowsOf(sourceProject.id).map((row) => ({
+          ...row,
+          ...(row.id === voice ? { processingProvenance: { ...LINEAGE, outputSha256: row.checksum } } : {}),
+        })),
+      );
+      await sut.run({
+        operation: exportJobOf(
+          true,
+          kept.map((item) => item.id),
+        ),
+        claimToken: 'token',
+      });
+      const manifest = await readBundleManifest(fs.files.get(lastResult().path as string)!);
+      expect(
+        manifest.sources.find((item) => item.kind === StudioResourceKind.ProjectImport && item.id === voice),
+      ).toHaveProperty('processingProvenance.outputSha256', sha256(wav).toString('hex'));
+      expect(
+        manifest.sources.find((item) => item.kind === StudioResourceKind.ProjectImport && item.id === subs),
+      ).not.toHaveProperty('processingProvenance');
+      expect(manifest.sources.filter((item) => item.kind === StudioResourceKind.ProjectImport)).toHaveLength(
+        kept.length,
+      );
+    });
+
+    it('cleans request scratch after a registration failure before journal ownership', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') } },
+      ]);
+      publications.register.mockRejectedValueOnce(new Error('registration unavailable'));
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(publications.retain).not.toHaveBeenCalled();
+      expect(fs.files.keys().some((path) => path.includes('/incoming/'))).toBe(false);
+      expect(projects.deleteUpload).toHaveBeenCalledWith(expect.any(String), owner.user.id);
+    });
+
+    it('preserves lineage scratch and reservation when prepare ownership may have committed', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: sha256(wav).toString('hex') } },
+      ]);
+      publications.retain.mockRejectedValueOnce(new Error('prepare acknowledgement lost'));
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      const attempt = publications.retain.mock.calls[0][1] as RetentionUpload;
+      expect(attempt.declaration.processingProvenance?.outputSha256).toBe(sha256(wav).toString('hex'));
+      expect(fs.files.get(attempt.incoming)).toEqual(wav);
+      expect(projects.deleteUpload).not.toHaveBeenCalledWith(attempt.reservationId, owner.user.id);
+    });
+
+    it('refuses a historical digest that disagrees with actual archive bytes before publication', async () => {
+      const { bundle, manifest } = handMade([
+        { ...kept[0], processingProvenance: { ...LINEAGE, outputSha256: 'ab'.repeat(32) } },
+      ]);
+      await sut.run({ operation: importJobOf(uploadOf(bundle, manifest)), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(publications.register).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+    });
+
+    it('refuses an export whose stored historical claim disagrees with its import checksum', async () => {
+      projects.listImports.mockResolvedValue(
+        rowsOf(sourceProject.id).map((row) => ({
+          ...row,
+          processingProvenance: { ...LINEAGE, outputSha256: 'ab'.repeat(32) },
+        })),
+      );
+      await sut.run({ operation: exportJobOf(true, [voice]), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      expect(fs.storage.createZipStream).not.toHaveBeenCalled();
+    });
+
     it('refuses extraction before opening an output when temporary storage cannot be reserved', async () => {
       const { bundle, manifest } = handMade([kept[0]]);
       const upload = uploadOf(bundle, manifest);
@@ -1494,7 +1743,8 @@ describe(StudioBundleService.name, () => {
           path: join(studioImportProjectFolder(owner.user.id, created), `${item.id}${item.extension}`),
           fileName: item.fileName,
           externalReferences: item.contentType === 'image/svg+xml' ? 0 : null,
-          reservationId: expect.any(String),
+          extension: item.extension,
+          processingProvenance: null,
         })),
       );
       for (const item of kept) {
@@ -1614,6 +1864,72 @@ describe(StudioBundleService.name, () => {
       expect(fs.files.keys().toArray().sort()).toEqual(
         ['/uploads/kept.zip', join(studioImportProjectFolder(owner.user.id, created), `${good}.wav`)].sort(),
       );
+    });
+
+    it.each(['exclusive-open', 'early-write'] as const)(
+      'reports a controlled carried-import stream failure: %s',
+      async (failure) => {
+        const { bundle, manifest } = handMade([
+          { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' },
+        ]);
+        const upload = uploadOf(bundle, manifest);
+        const job = importJobOf(upload);
+        const streamError = Object.assign(new Error(failure === 'exclusive-open' ? 'EEXIST' : 'EIO'), {
+          code: failure === 'exclusive-open' ? 'EEXIST' : 'EIO',
+        });
+        let staged!: string;
+        const foreignBytes = Buffer.from('pre-existing path');
+        fs.storage.createWriteStream.mockImplementationOnce((path: string) => {
+          staged = path;
+          if (failure === 'exclusive-open') fs.files.set(path, foreignBytes);
+          return new Writable({
+            construct(callback) {
+              // Match async fs.WriteStream open failure; no test-owned error listener masks it.
+              queueMicrotask(() => {
+                if (failure === 'exclusive-open') return callback(streamError);
+                fs.files.set(path, Buffer.alloc(0));
+                this.emit('open');
+                callback();
+              });
+            },
+            write(_chunk, _encoding, callback) {
+              callback(streamError);
+            },
+          });
+        });
+        await expect(sut.run({ operation: job, claimToken: 'stream-error' })).resolves.toBeUndefined();
+        expect(operations.fail).toHaveBeenCalledWith(
+          job.id,
+          'stream-error',
+          expect.objectContaining({ error: streamError.message }),
+        );
+        expect(publications.retain).not.toHaveBeenCalled();
+        const reservation = projects.createUpload.mock.results.at(-1)!;
+        const reserved = await reservation.value;
+        expect(projects.deleteUpload).toHaveBeenCalledWith(reserved.id, owner.user.id);
+        if (failure === 'exclusive-open') {
+          expect(fs.files.get(staged)).toEqual(foreignBytes);
+          expect(fs.storage.unlink).not.toHaveBeenCalledWith(staged);
+        } else {
+          expect(fs.files.has(staged)).toBe(false);
+          expect(fs.storage.unlink).toHaveBeenCalledWith(staged);
+        }
+      },
+    );
+
+    it('does not blanket-unlink a bundle stage after an unknown prepare acknowledgement', async () => {
+      const { bundle, manifest } = handMade([
+        { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav' },
+      ]);
+      const upload = uploadOf(bundle, manifest);
+      publications.retain.mockRejectedValue(new Error('commit_unknown'));
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalled();
+      const attempt = publications.retain.mock.calls[0][1];
+      expect(fs.files.get(attempt.incoming)).toEqual(wav);
+      expect(fs.storage.createWriteStream).toHaveBeenCalledWith(attempt.incoming, { flags: 'wx', mode: 0o600 });
+      expect(fs.storage.unlink).not.toHaveBeenCalledWith(attempt.incoming);
+      expect(projects.deleteUpload).not.toHaveBeenCalledWith(attempt.reservationId, owner.user.id);
     });
 
     it('fails the import, and creates nothing, when a carried file does not match its digest', async () => {
@@ -1911,12 +2227,27 @@ describe(StudioBundleService.name, () => {
   });
 
   describe('sweep', () => {
+    it('defers an expired incoming reservation to locked import cleanup without direct unlink or metadata deletion', async () => {
+      const path = join(studioImportIncomingFolder(owner.user.id), newUuid() + '.upload'),
+        id = newUuidV7();
+      fs.files.set(path, Buffer.from('journal-owned stage'));
+      projects.listExpiredUploads.mockResolvedValue([{ id, ownerId: owner.user.id, path }]);
+      const imports = (sut as unknown as { imports: { releaseIncoming: ReturnType<typeof vi.fn> } }).imports;
+      await sut.sweep(new Date());
+      expect(imports.releaseIncoming).toHaveBeenCalledWith(owner.user.id, path, expect.any(Date));
+      expect(fs.storage.unlink).not.toHaveBeenCalledWith(path);
+      expect(projects.deleteUpload).not.toHaveBeenCalledWith(id, owner.user.id);
+      expect(fs.files.has(path)).toBe(true);
+    });
+
     it('purges expired trash, uploads and export files, and never touches library media', async () => {
       fs.files.set('/uploads/old.zip', Buffer.from('old'));
       fs.files.set('/exports/old.zip', Buffer.from('old'));
       fs.files.set('/library/a.mov', Buffer.from('keep'));
       projects.deletePurgeable.mockResolvedValue([newUuidV7()]);
-      projects.listExpiredUploads.mockResolvedValue([{ id: newUuidV7(), path: '/uploads/old.zip' }]);
+      projects.listExpiredUploads.mockResolvedValue([
+        { id: newUuidV7(), ownerId: owner.user.id, path: '/uploads/old.zip' },
+      ]);
       const expired = {
         id: newUuidV7(),
         ownerId: owner.user.id,
