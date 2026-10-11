@@ -53,6 +53,7 @@ export const StudioSourceResolutionSchema = z
               .string()
               .min(1)
               .max(1024)
+              // eslint-disable-next-line no-control-regex, unicorn/escape-case, unicorn/prefer-unicode-code-point-escapes -- Reject controls while preserving the canonical exported pattern spelling.
               .regex(/^(?!\/)(?!.*(?:\\|\/\/|(?:^|\/)\.\.?(?:\/|$)|[\u0000-\u001f\u007f]))[^/]+(?:\/[^/]+)*$/),
             sha256: digest,
             base64: z

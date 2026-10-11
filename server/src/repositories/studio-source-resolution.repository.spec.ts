@@ -1,10 +1,10 @@
 import { ConflictException } from '@nestjs/common';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Permission } from 'src/enum.js';
 import {
-  StudioSourceResolutionRepository,
   type StudioSourceAdmission,
+  StudioSourceResolutionRepository,
 } from 'src/repositories/studio-source-resolution.repository.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 
 const stores = vi.hoisted(() => ({
   currentAuth: vi.fn(),
@@ -103,7 +103,7 @@ function setup() {
         select: () => query,
         where: () => query,
         forShare: () => query,
-        executeTakeFirst: async () => (table === 'studio_project' ? project : revision),
+        executeTakeFirst: () => Promise.resolve(table === 'studio_project' ? project : revision),
       };
       return query;
     },
@@ -150,25 +150,25 @@ describe('source publication authority orchestration (mocked stores, no SQL)', (
   });
   it('refuses session withdrawal caused during the final original lookup await', async () => {
     const f = setup();
-    stores.originals.mockImplementation(async () => {
+    stores.originals.mockImplementation(() => {
       stores.currentAuth.mockResolvedValue(undefined);
-      return [f.source];
+      return Promise.resolve([f.source]);
     });
     await expect(f.sut.guard(auth, f.admission)).rejects.toThrow('Studio source unavailable');
   });
   it('refuses a lock transition between the last two session authority awaits', async () => {
     const f = setup();
-    stores.originals.mockImplementation(async () => {
+    stores.originals.mockImplementation(() => {
       stores.currentAuth.mockResolvedValue({ ...auth, session: { ...auth.session, hasElevatedPermission: false } });
-      return [f.source];
+      return Promise.resolve([f.source]);
     });
     await expect(f.sut.guard(auth, f.admission)).rejects.toThrow('Studio source unavailable');
   });
   it('refuses source epoch withdrawal during the final original await', async () => {
     const f = setup();
-    stores.originals.mockImplementation(async () => {
+    stores.originals.mockImplementation(() => {
       stores.hold.mockRejectedValue(new ConflictException('epoch-changed'));
-      return [f.source];
+      return Promise.resolve([f.source]);
     });
     await expect(f.sut.guard(auth, f.admission)).rejects.toThrow('epoch-changed');
   });
@@ -194,9 +194,9 @@ describe('source publication authority orchestration (mocked stores, no SQL)', (
   it('checks expiry after the final current-session await', async () => {
     vi.useFakeTimers();
     const f = setup();
-    stores.currentAuth.mockResolvedValueOnce(auth).mockImplementation(async () => {
+    stores.currentAuth.mockResolvedValueOnce(auth).mockImplementation(() => {
       vi.advanceTimersByTime(5001);
-      return auth;
+      return Promise.resolve(auth);
     });
     await expect(f.sut.guard(auth, f.admission)).rejects.toThrow('studio_source_expired');
   });

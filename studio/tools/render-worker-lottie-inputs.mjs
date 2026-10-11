@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { timelineViews } from "./render-worker-video-inputs.mjs";
 const require = createRequire(
   new URL("../engine/package.json", import.meta.url),
@@ -38,11 +39,14 @@ export async function deriveClaimVectors(
     validateStudioLottieItem,
     validateStudioVectorClosure,
   } = await tsImport(
-    new URL(
-      "../../server/src/utils/studio-lottie-source.ts",
-      import.meta.url,
-    ).href,
-    { parentURL: import.meta.url, tsconfig: false },
+    new URL("../../server/src/utils/studio-lottie-source.ts", import.meta.url)
+      .href,
+    {
+      parentURL: import.meta.url,
+      tsconfig: fileURLToPath(
+        new URL("../../server/tsconfig.json", import.meta.url),
+      ),
+    },
   );
   if (waitForLease) await waitForLease();
   const entries = prepared.snapshot.studio.resources;

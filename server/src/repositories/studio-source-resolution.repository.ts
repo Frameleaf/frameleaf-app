@@ -2,14 +2,14 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
+import type { StudioAuthorizedEntry, StudioAuthorizedManifest } from 'src/services/studio-resource.service.js';
 import { AlbumUserRole, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { holdSourceAdmission } from 'src/repositories/studio-source-admission.js';
-import type { DB } from 'src/schema/index.js';
-import type { StudioAuthorizedEntry, StudioAuthorizedManifest } from 'src/services/studio-resource.service.js';
 import { checkAccess } from 'src/utils/access.js';
 
 export type StudioSourceAuthorizedAuth = AuthDto & {
@@ -86,7 +86,7 @@ export class StudioSourceResolutionRepository {
       const privacy = new DerivativePrivacyRepository(tx);
       const sourceIds = admission.manifest.sourceEpochs?.map((row) => row.assetId) ?? [];
       const sources = await privacy.lockSources(tx, sourceIds);
-      const shared = await privacy.lockSharedAccess(tx, auth.user.id, [...sources.values()]);
+      const shared = await privacy.lockSharedAccess(tx, auth.user.id, sources.values().toArray());
       if (
         sourceIds.some((id) => {
           const source = sources.get(id);
@@ -108,7 +108,8 @@ export class StudioSourceResolutionRepository {
         })
       )
         unavailable();
-      for (const entry of admission.inputs.filter((entry) => entry.sourceAccess === 'project')) {
+      for (const entry of admission.inputs) {
+        if (entry.sourceAccess !== 'project') continue;
         const { rows } = await sql<{ path: string; checksum: string; ownerId: string }>`
           SELECT path, checksum, "ownerId" FROM public.studio_project_import
           WHERE "projectId"=${admission.projectId}::uuid AND id=${entry.id}::uuid FOR SHARE`.execute(tx);
@@ -133,12 +134,14 @@ export class StudioSourceResolutionRepository {
         library.some(
           (entry) =>
             !allowed.has(entry.id) ||
-            !originals.some(
+            originals.every(
               (row) =>
-                row.id === entry.id &&
-                row.ownerId === entry.ownerId &&
-                row.originalPath === entry.path &&
-                row.checksum.toString('base64') === entry.checksum,
+                !(
+                  row.id === entry.id &&
+                  row.ownerId === entry.ownerId &&
+                  row.originalPath === entry.path &&
+                  row.checksum.toString('base64') === entry.checksum
+                ),
             ),
         )
       )

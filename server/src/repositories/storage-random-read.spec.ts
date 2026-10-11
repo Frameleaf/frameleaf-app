@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+
 vi.mock('src/repositories/logging.repository.js', () => ({ LoggingRepository: class {} }));
 vi.mock('src/dtos/library.dto.js', () => ({}));
 vi.mock('src/utils/library-walk.js', () => ({ walkLibraryPaths: () => {} }));
@@ -13,11 +14,11 @@ describe('bounded source read ownership', () => {
   it('wipes a partial random-read buffer when the file read rejects', async () => {
     let partial: Buffer | undefined;
     const handle = {
-      stat: vi.fn(async () => ({ size: 16 })),
-      read: vi.fn(async (buffer: Buffer) => {
+      stat: vi.fn(() => Promise.resolve({ size: 16 })),
+      read: vi.fn((buffer: Buffer) => {
         partial = buffer;
         buffer.fill(42);
-        throw new Error('read failed');
+        return Promise.reject(new Error('read failed'));
       }),
       close: vi.fn(async () => {}),
     };

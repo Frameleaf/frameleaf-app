@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
-import { buildZip, lottieAnimation, ownedLottieArchive } from 'test/fixtures/studio-lottie.js';
-import { readLottieArchive, selectArchiveAnimation } from './studio-lottie-archive.js';
+import { sniffStudioImport } from 'src/utils/studio-imports.js';
+import { readLottieArchive, selectArchiveAnimation } from 'src/utils/studio-lottie-archive.js';
 import {
   classifyStudioLottieParent,
   materializeStudioLottieSource,
   parseStudioLottieSource,
   validateStudioLottieItem,
-} from './studio-lottie-source.js';
-import { sniffStudioImport } from './studio-imports.js';
+} from 'src/utils/studio-lottie-source.js';
+import { buildZip, lottieAnimation, ownedLottieArchive } from 'test/fixtures/studio-lottie.js';
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const parentId = '11111111-1111-4111-8111-111111111111';
@@ -36,8 +36,8 @@ describe('owned strict dotLottie archives', () => {
       bytes,
       'application/json',
       [],
-      async () => {
-        throw new Error('UNEXPECTED_DEPENDENCY_READ');
+      () => {
+        return Promise.reject(new Error('UNEXPECTED_DEPENDENCY_READ'));
       },
     );
     expect(source.archive).toBeNull();
@@ -64,10 +64,7 @@ describe('owned strict dotLottie archives', () => {
     });
 
     it(`v${version} retains the selected authored default and refuses invalid initial themes`, async () => {
-      const archiveBytes = (
-        selected: Record<string, unknown> = {},
-        rule: Record<string, unknown> = { id: 'opacity', type: 'Scalar', value: 25 },
-      ) =>
+      const archiveBytes = (selected: Record<string, unknown> = {}, rule?: Record<string, unknown>) =>
         ownedLottieArchive(version, {
           manifest: {
             version,
@@ -79,7 +76,12 @@ describe('owned strict dotLottie archives', () => {
             themes: [{ id: 'authored' }, { id: 'alternate' }],
           },
           extra: [
-            { name: 't/authored.json', data: Buffer.from(JSON.stringify({ rules: [rule] })) },
+            {
+              name: 't/authored.json',
+              data: Buffer.from(
+                JSON.stringify({ rules: [rule === undefined ? { id: 'opacity', type: 'Scalar', value: 25 } : rule] }),
+              ),
+            },
             {
               name: 't/alternate.json',
               data: Buffer.from(JSON.stringify({ rules: [{ id: 'scale', type: 'Vector', value: [25, 75] }] })),
@@ -146,7 +148,7 @@ describe('owned strict dotLottie archives', () => {
         id: childId,
         checksum: sha(png),
       };
-      const read = vi.fn(async () => png);
+      const read = vi.fn(() => Promise.resolve(png));
       const parsed = await materializeStudioLottieSource(
         graph,
         { kind: 'vector-graphic', id: parentId },
@@ -164,8 +166,8 @@ describe('owned strict dotLottie archives', () => {
         materializeStudioLottieSource(graph, { kind: 'vector-graphic', id: parentId }, bytes, type, [], read),
       ).rejects.toThrow('Unauthorized');
       await expect(
-        materializeStudioLottieSource(graph, { kind: 'vector-graphic', id: parentId }, bytes, type, [child], async () =>
-          Buffer.from('changed'),
+        materializeStudioLottieSource(graph, { kind: 'vector-graphic', id: parentId }, bytes, type, [child], () =>
+          Promise.resolve(Buffer.from('changed')),
         ),
       ).rejects.toThrow('bytes changed');
     });
@@ -199,13 +201,19 @@ describe('owned strict dotLottie archives', () => {
   });
 
   it('refuses duplicate names, path aliases/traversal, local-central disagreement and terminal ambiguity', async () => {
-    for (const name of ['../outside.json', '/absolute.json', 'a/../first.json', 'a\\first.json', 'a//first.json']) {
+    for (const name of [
+      '../outside.json',
+      '/absolute.json',
+      'a/../first.json',
+      String.raw`a\first.json`,
+      'a//first.json',
+    ]) {
       await expect(readLottieArchive(buildZip([{ name, data: Buffer.from('{}') }]))).rejects.toThrow();
     }
     await expect(readLottieArchive(Buffer.from([0x50, 0x4b, 3, 4]))).rejects.toThrow();
     const normal = ownedLottieArchive('2');
     const changedName = Buffer.from(normal);
-    changedName[30] = 'z'.charCodeAt(0);
+    changedName[30] = 'z'.codePointAt(0)!;
     const changedCrc = Buffer.from(normal);
     changedCrc[14] ^= 1;
     const changedSize = Buffer.from(normal);
@@ -252,7 +260,14 @@ describe('owned strict dotLottie archives', () => {
         readLottieArchive(
           ownedLottieArchive('2', {
             manifest: { version: '2', animations: [{ id: 'first' }, { id: 'selected' }], themes: [{ id: 'unsafe' }] },
-            extra: [{ name: 't/unsafe.json', data: Buffer.from(JSON.stringify({ rules: [rule] })) }],
+            extra: [
+              {
+                name: 't/unsafe.json',
+                data: Buffer.from(
+                  JSON.stringify({ rules: [rule === undefined ? { id: 'opacity', type: 'Scalar', value: 25 } : rule] }),
+                ),
+              },
+            ],
           }),
         ),
       ).rejects.toThrow();

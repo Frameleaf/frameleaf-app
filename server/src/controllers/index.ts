@@ -1,4 +1,3 @@
-import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -86,6 +85,7 @@ import { StudioPreviewStreamController } from 'src/controllers/studio-preview-st
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectImportController } from 'src/controllers/studio-project-import.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
+import { StudioSourceResolutionController } from 'src/controllers/studio-source-resolution.controller.js';
 import { StudioSourceController } from 'src/controllers/studio-source.controller.js';
 import { StudioWorkspaceController } from 'src/controllers/studio-workspace.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
