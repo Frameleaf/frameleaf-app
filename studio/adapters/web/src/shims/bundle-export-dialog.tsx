@@ -34,6 +34,11 @@ export function BundleExportDialog({ open, onClose, onBeforeExport }: BundleExpo
         })
         return
       }
+      post({
+        type: 'notify',
+        message: 'Included generated imports carry historical processing and source labels.',
+        tone: 'info',
+      })
       await call('submitCommands', [
         {
           id: 'project.exportBundle',

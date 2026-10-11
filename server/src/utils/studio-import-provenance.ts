@@ -71,3 +71,10 @@ export function assertReadyRetry(
     throw new Error('provenance_conflict');
   }
 }
+
+/** Historical bundle claims are labels, accepted only for the bytes the bundle actually carries. */
+export function validateBundleImportProvenance(value: unknown, checksum: string): RetainedProcessingProvenance {
+  const retained = RetainedProcessingProvenanceSchema.parse(value);
+  if (retained.outputSha256 !== checksum) throw new Error('bundle_provenance_checksum');
+  return retained;
+}

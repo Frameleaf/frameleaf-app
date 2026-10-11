@@ -5,6 +5,7 @@ import {
   bindProcessingProvenance,
   parseProcessingProvenance,
   sameProvenance,
+  validateBundleImportProvenance,
 } from 'src/utils/studio-import-provenance.js';
 import { LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
@@ -202,5 +203,16 @@ describe('processing provenance', () => {
     const malformed = { ...stored, source: { ...stored.source, unknown: true } };
     expect(() => sameProvenance(malformed, stored)).toThrow();
     expect(() => sameProvenance(stored, malformed)).toThrow();
+  });
+});
+
+describe('bundle retained provenance', () => {
+  it('validates the historical binding without permitting an input hash override', () => {
+    const carried = { ...LINEAGE, outputSha256: checksum };
+    expect(validateBundleImportProvenance(carried, checksum)).toEqual(carried);
+    expect(() => validateBundleImportProvenance(carried, 'cd'.repeat(32))).toThrow('bundle_provenance_checksum');
+    expect(() => validateBundleImportProvenance({ ...carried, version: 2 }, checksum)).toThrow();
+    expect(() => validateBundleImportProvenance({ ...carried, path: '/private' }, checksum)).toThrow();
+    expect(() => parseProcessingProvenance(carried)).toThrow();
   });
 });
