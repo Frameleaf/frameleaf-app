@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { resolveStudioProjectSource } from "../build/index.js";
+import {
+  resolveStudioProjectSource,
+  StudioSourceParentKind,
+} from "../build/index.js";
 
 const schema = JSON.parse(
   await readFile(
@@ -52,6 +55,18 @@ test("one canonical source resolution operation has exact request and result sch
     );
     assert.deepEqual([...dto.required].sort(), properties.sort(), name);
   }
+  assert.deepEqual(
+    schema.components.schemas.StudioSourceParentDto.properties.kind,
+    { $ref: "#/components/schemas/StudioSourceParentKind" },
+  );
+  assert.deepEqual(schema.components.schemas.StudioSourceParentKind, {
+    enum: ["project-import", "vector-graphic"],
+    type: "string",
+  });
+  assert.deepEqual(StudioSourceParentKind, {
+    ProjectImport: "project-import",
+    VectorGraphic: "vector-graphic",
+  });
   const result = schema.components.schemas.StudioSourceResolutionDto;
   assert.equal(result.files, undefined);
   assert.equal(result.properties.files.maxItems, 256);
