@@ -15,6 +15,7 @@ import {
 import { joinItems, rippleDeleteItems, rollingTrimItems, slideItem, slipItem, splitItem } from '@/features/timeline/stores/actions/item-actions'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { useEditorStore } from '@/shared/state/editor'
+import { useSelectionStore } from '@/shared/state/selection'
 import { VirtualWorkspace } from '../src/virtual-workspace'
 
 // jsdom's Blob predates `text()` and `arrayBuffer()`; browsers have both.
@@ -323,10 +324,11 @@ describe('FL-94 timeline state across save and reload', () => {
     { tool: 'slip', run: () => slipItem('middle-v', 15), ranges: [[0, 60, 0, 60], [60, 60, 75, 135], [120, 60, 120, 180]] },
     { tool: 'slide', run: () => slideItem('middle-v', 15, 'left-v', 'right-v'), ranges: [[0, 75, 0, 75], [75, 60, 75, 135], [135, 45, 135, 180]] },
   ]
-  it.each(nestedEdits.flatMap((edit) => [false, true].map((locked) => ({ ...edit, locked }))))(
-    'preserves nested linked $tool history and reload (audio locked: $locked)',
-    async ({ tool, run, ranges, locked }) => {
-      const initial = graph(`fl-nested-${tool.replaceAll(' ', '-')}-${locked}`)
+  it.each(nestedEdits.flatMap((edit) => ['none', 'direct', 'inherited', ...(edit.tool === 'ripple delete' ? ['downstream', 'downstream-inherited', 'unaffected', 'sync-off'] : [])].map((lockMode) => ({ ...edit, lockMode }))))(
+    'preserves nested linked $tool history and reload (lock: $lockMode)',
+    async ({ tool, run, ranges, lockMode }) => {
+      const locked = ['direct', 'inherited', 'downstream', 'downstream-inherited'].includes(lockMode)
+      const initial = graph(`fl-nested-${tool.replaceAll(' ', '-')}-${lockMode}`)
       const parent = initial.timeline!.compositions![0]!
       parent.items.push({
         id: 'inner-wrapper', trackId: 'b1', type: 'composition', compositionId: 'inner',
@@ -336,7 +338,7 @@ describe('FL-94 timeline state across save and reload', () => {
       parent.durationInFrames = 240
       initial.timeline!.compositions!.push({
         id: 'inner', name: 'Inner sequence', editorKind: 'sequence',
-        tracks: [track('inner-v', 'video', 0), track('inner-a', 'audio', 1, { locked })],
+        tracks: [track('inner-v', 'video', 0), track('inner-a', 'audio', 1, { locked: lockMode === 'direct', ...(lockMode === 'inherited' ? { parentTrackId: 'locked-group' } : {}) }), ...(lockMode === 'inherited' ? [track('locked-group', 'audio', 2, { isGroup: true, locked: true })] : [])],
         items: ['v', 'a'].flatMap((kind) => ['left', 'middle', 'right'].map((part, index) =>
           clip(`${part}-${kind}`, `inner-${kind}`, kind === 'v' ? 'video' : 'audio', {
             from: index * 60, durationInFrames: 60, sourceStart: index * 60,
@@ -345,6 +347,26 @@ describe('FL-94 timeline state across save and reload', () => {
         transitions: [], keyframes: [], fps: 30, width: 1920, height: 1080,
         durationInFrames: 180, markers: [{ id: 'inner-marker', frame: 30, color: '#fff' }],
       } as never)
+      if (['downstream', 'downstream-inherited', 'unaffected', 'sync-off'].includes(lockMode)) {
+        const inner = initial.timeline!.compositions!.find(({ id }) => id === 'inner')!
+        inner.tracks.push(track('extra-a', 'audio', 2, {
+          locked: lockMode !== 'downstream-inherited', syncLock: lockMode !== 'sync-off',
+          ...(lockMode === 'downstream-inherited' ? { parentTrackId: 'extra-group' } : {}),
+        }))
+        if (lockMode.startsWith('downstream')) {
+          // The right A/V pair shifts after deleting the middle pair; its audio lives on a locked lane.
+          inner.items.find(({ id }) => id === 'right-a')!.trackId = 'extra-a'
+          if (lockMode === 'downstream-inherited') inner.tracks.push(track('extra-group', 'audio', 3, { isGroup: true, locked: true }))
+        } else {
+          // Existing policy excludes unrelated locked/sync-disabled lanes from propagation.
+          inner.items.push(clip('extra', 'extra-a', 'audio', {
+            from: lockMode === 'unaffected' ? 0 : 180,
+            durationInFrames: lockMode === 'unaffected' ? 30 : 60,
+            sourceStart: 0, sourceEnd: lockMode === 'unaffected' ? 30 : 60, linkedGroupId: undefined,
+          }) as never)
+          if (lockMode === 'sync-off') inner.durationInFrames = 240
+        }
+      }
       await createProject(initial)
       await loadTimeline(initial.id)
       useCompositionNavigationStore.getState().switchToSequence('seq-b')
@@ -357,10 +379,13 @@ describe('FL-94 timeline state across save and reload', () => {
         const history = useTimelineCommandStore.getState()
         const undoBefore = [...history.undoStack]
         const redoBefore = [...history.redoStack]
+        useSelectionStore.getState().selectItems(['middle-v'])
+        const selectionBefore = useSelectionStore.getState()
         run()
         const edited = structuredClone(buildTimelineFromStores())
         if (locked) {
           expect(edited).toEqual(before)
+          expect(useSelectionStore.getState()).toEqual(selectionBefore)
           expect(useTimelineCommandStore.getState().undoStack).toEqual(undoBefore)
           expect(useTimelineCommandStore.getState().redoStack).toEqual(redoBefore)
         } else {
@@ -375,7 +400,7 @@ describe('FL-94 timeline state across save and reload', () => {
           expect(tracks[0]!.map((item) => item.linkedGroupId)).toEqual(tracks[1]!.map((item) => item.linkedGroupId))
           expect(new Set(tracks[0]!.map((item) => item.linkedGroupId)).size).toBe(ranges.length)
           expect(tracks[0]!.every((item) => Boolean(item.linkedGroupId))).toBe(true)
-          expect(inner.durationInFrames).toBe(tool === 'ripple delete' ? 120 : 180)
+          expect(inner.durationInFrames).toBe(lockMode === 'sync-off' ? 240 : tool === 'ripple delete' ? 120 : 180)
           const outer = (timeline: ProjectTimeline) => ({
             ...timeline, compositions: timeline.compositions!.filter(({ id }) => id !== 'inner'),
           })
