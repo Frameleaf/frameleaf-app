@@ -159,8 +159,12 @@ test.describe('Job manager', () => {
     await expect(status.getByRole('heading', { name: '3 things failed' })).toBeVisible();
     await expect(status.getByText(/Finding faces: 3 failed\./)).toBeVisible();
     const now = page.getByRole('region', { name: 'Now' });
-    await expect(now.getByText('Making thumbnails')).toBeVisible();
-    await expect(now.getByText('7 left')).toBeVisible();
+    // "Now" lists the work in hand; every kind of work is listed again, closed, under "Show all".
+    const thumbnails = now.getByRole('listitem').filter({ hasText: 'Making thumbnails' });
+    await expect(thumbnails).toHaveCount(1);
+    await expect(thumbnails.getByText('Making thumbnails', { exact: true })).toBeVisible();
+    await expect(thumbnails.getByText('Running', { exact: true })).toBeVisible();
+    await expect(thumbnails.getByText('7 left', { exact: true })).toBeVisible();
     // Work with nothing to do is behind "Show all kinds of work".
     await expect(now.getByText('Housekeeping')).toBeHidden();
     await now.getByText('Show all 3 kinds of work').click();
