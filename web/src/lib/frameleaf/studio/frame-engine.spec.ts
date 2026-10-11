@@ -691,6 +691,9 @@ describe('explicit protocol8 source publication fence', () => {
           next.sourceEpoch = 99;
           break;
         }
+        case 'expiry': {
+          break;
+        }
       }
       if (change !== 'expiry') {
         instance.update(next);
