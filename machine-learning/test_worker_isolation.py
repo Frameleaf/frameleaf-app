@@ -22,7 +22,7 @@ def test_isolated_compose_preserves_peers_and_excludes_server_secrets(tmp_path: 
     if "rootless" in base:
         with (tmp_path / ".env").open("a") as env:
             env.write("FRAMELEAF_ML_CACHE=./ml-model-cache\n")
-    (tmp_path / "machine-learning.env").write_text(
+    (tmp_path / ".env.ml").write_text(
         "MACHINE_LEARNING_MODEL_TTL=42\nMACHINE_LEARNING_REQUEST_THREADS=3\nFRAMELEAF_ML_AUTH_TOKEN=worker-fake\n"
     )
     (tmp_path / "model-staging.env").write_text(
@@ -68,6 +68,7 @@ def test_isolated_compose_preserves_peers_and_excludes_server_secrets(tmp_path: 
     assert "DB_PASSWORD" not in worker["environment"]
     assert "CLOUD_PROVISIONING_TOKEN" not in worker["environment"]
     assert "MACHINE_LEARNING_MODEL_SOURCE_TOKEN" not in worker["environment"]
+    assert staging["environment"]["MACHINE_LEARNING_MODEL_TTL"] == "42"
     assert staging["environment"]["MACHINE_LEARNING_MODEL_SOURCE_TOKEN"] == "staging-only-fake"
     assert "CLOUD_PROVISIONING_TOKEN" not in staging["environment"]
     assert len(worker["volumes"]) == 1

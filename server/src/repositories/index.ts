@@ -102,6 +102,7 @@ import { StudioExportRepository } from 'src/repositories/studio-export.repositor
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioReverseConformRepository } from 'src/repositories/studio-reverse-conform.repository.js';
+import { StudioSourceResolutionRepository } from 'src/repositories/studio-source-resolution.repository.js';
 import { StudioTranscriptionRepository } from 'src/repositories/studio-transcription.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
 import { SyncRepository } from 'src/repositories/sync.repository.js';
@@ -238,4 +239,5 @@ export const repositories = [
   VideoStreamRepository,
   WebsocketRepository,
   WorkflowRepository,
+  StudioSourceResolutionRepository,
 ];

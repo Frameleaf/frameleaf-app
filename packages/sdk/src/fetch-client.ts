@@ -13820,6 +13820,39 @@ export type StudioProjectDiffDto = {
     /** More paths changed than are listed */
     truncated: boolean;
 };
+export type StudioSourceParentDto = {
+    checksum: string;
+    id: string;
+    kind: StudioSourceParentKind;
+};
+export type StudioSourceSelectionDto = {
+    animationId?: string;
+    themeId?: string;
+};
+export type StudioSourceResolutionRequestDto = {
+    /** Exact acknowledged saved envelope digest */
+    graphDigest: string;
+    parent: StudioSourceParentDto;
+    revision: number;
+    selection: StudioSourceSelectionDto;
+};
+export type StudioSourceFileDto = {
+    base64: string;
+    path: string;
+    sha256: string;
+};
+export type StudioSourceResolutionDto = {
+    archive: boolean;
+    expiresAt: string;
+    files: StudioSourceFileDto[];
+    graphDigest: string;
+    /** SHA-256 of canonical JSON containing every result field except files.base64 and manifestDigest */
+    manifestDigest: string;
+    parent: StudioSourceParentDto;
+    projectId: string;
+    revision: number;
+    selection: StudioSourceSelectionDto;
+};
 export type StudioTranscriptionCreateDto = {
     /** A video or audio clip on the main timeline of the head revision */
     clipId: string;
@@ -26691,6 +26724,22 @@ export function diffStudioProjectRevision({ against, id, revision }: {
     }));
 }
 /**
+ * Resolve an exact saved Studio source
+ */
+export function resolveStudioProjectSource({ id, studioSourceResolutionRequestDto }: {
+    id: string;
+    studioSourceResolutionRequestDto: StudioSourceResolutionRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioSourceResolutionDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/source-resolutions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioSourceResolutionRequestDto
+    })));
+}
+/**
  * Transcribe a Studio clip
  */
 export function createStudioTranscription({ id, studioTranscriptionCreateDto }: {
@@ -31545,6 +31594,10 @@ export enum Id {
 }
 export enum DestinationId {
     Local = "local"
+}
+export enum StudioSourceParentKind {
+    ProjectImport = "project-import",
+    VectorGraphic = "vector-graphic"
 }
 export enum StudioWorkerCapability {
     AnalysisWorker = "analysisWorker",

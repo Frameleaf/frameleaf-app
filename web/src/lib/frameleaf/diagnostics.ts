@@ -26,6 +26,17 @@ export type DiagnosticsInput = {
   config: AdminConfigDto;
 };
 
+// Newer servers may return settings this client's write-only credential list does not yet know.
+const diagnosticsReplacer = (key: string, value: unknown) => {
+  const name = key.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+  const secret =
+    /password|passphrase|token|secret|apikey|privatekey|sessionkey|recovery(?:key|code|kit|phrase|seed)|keyring|(?:wrap(?:ping)?|bucket|encryption|master|root)key|^(?:key|keys)$/;
+  if (typeof value === 'boolean' || name === 'passwordlogin' || name === 'tokenendpointauthmethod') {
+    return value;
+  }
+  return secret.test(name) ? '********' : value;
+};
+
 export const buildDiagnostics = ({
   generatedAt,
   about,
@@ -57,7 +68,7 @@ export const buildDiagnostics = ({
     diskUsagePercentage: storage.diskUsagePercentage,
   },
   queues: queues.map(({ name, isPaused, statistics }) => ({ name, isPaused, statistics })),
-  settings: withoutCredentialValues(config),
+  settings: JSON.parse(JSON.stringify(withoutCredentialValues(config), diagnosticsReplacer)) as AdminConfigDto,
 });
 
 export const diagnosticsFileName = (generatedAt: Date) =>

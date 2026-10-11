@@ -11,7 +11,7 @@ services:
     ports: !reset []
     # Do not pass the server .env (backup/provisioning credentials) to inference.
     env_file: !override
-      - path: ./machine-learning.env
+      - path: .env.ml
         required: false
     environment:
       MACHINE_LEARNING_MODEL_DOWNLOADS: 'false'
@@ -31,7 +31,7 @@ services:
     image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
     entrypoint: ['tini', '--', 'python', '-m', 'immich_ml.staging']
     env_file:
-      - path: ./machine-learning.env
+      - path: .env.ml
         required: false
       - path: ./model-staging.env
         required: false

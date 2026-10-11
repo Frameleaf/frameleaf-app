@@ -145,8 +145,10 @@ services:
     volumes:
       - ../machine-learning/immich_ml:/usr/src/immich_ml
       - model_cache:/cache
+    # Keep server credentials out of the inference worker.
     env_file:
-      - .env
+      - path: .env.ml
+        required: false
     depends_on:
       - database
     restart: unless-stopped
