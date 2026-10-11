@@ -1,0 +1,341 @@
+diff --git a/src/features/timeline/hooks/use-timeline-trim.ts b/src/features/timeline/hooks/use-timeline-trim.ts
+--- a/src/features/timeline/hooks/use-timeline-trim.ts
++++ b/src/features/timeline/hooks/use-timeline-trim.ts
+@@ -49,6 +49,7 @@
+ } from '../utils/trim-edit-constraints'
+ import { getTransitionBridgeAtHandle } from '../utils/transition-edit-guards'
+ import { createRafCoalescedCallback } from '../utils/raf-coalesced-callback'
++import { resolveEffectiveTrackStates } from '../utils/group-utils'
+
+ interface TrimState {
+   isTrimming: boolean
+@@ -125,6 +126,42 @@
+   const trimStateRef = useRef(trimState)
+   trimStateRef.current = trimState
+
++  // A track lock cancels a held Roll, even if it is unlocked before mouseup.
++  const rollInvalidatedRef = useRef(false)
++  const rollParticipantIdsRef = useRef<string[]>([])
++  const unsubscribeRollLocksRef = useRef<(() => void) | null>(null)
++
++  const validateRollLocks = useCallback(() => {
++    if (rollInvalidatedRef.current) return false
++    const current = useItemsStore.getState()
++    const effectiveTracks = resolveEffectiveTrackStates(current.tracks)
++    const valid = rollParticipantIdsRef.current.every((id) => {
++      const participant = current.items.find((candidate) => candidate.id === id)
++      return (
++        participant &&
++        effectiveTracks.some((track) => track.id === participant.trackId && !track.locked)
++      )
++    })
++    if (!valid) rollInvalidatedRef.current = true
++    return valid
++  }, [])
++
++  const captureRollParticipants = useCallback(
++    (neighborId: string) => {
++      const current = useItemsStore.getState()
++      const cutIds = [item.id, neighborId]
++      const participants = useEditorStore.getState().linkedSelectionEnabled
++        ? cutIds.flatMap((id) =>
++            getSynchronizedLinkedItems(current.items, id).map((entry) => entry.id),
++          )
++        : cutIds
++      rollParticipantIdsRef.current = Array.from(new Set([...cutIds, ...participants]))
++    },
++    [item.id],
++  )
++
++  useEffect(() => () => unsubscribeRollLocksRef.current?.(), [])
++
+   // Track Alt key state for rolling edit
+   const altKeyRef = useRef(false)
+
+@@ -208,7 +245,12 @@
+           transitions,
+         )
+         if (neighbor) neighborId = neighbor.id
+-      }
++        if (neighborId) {
++          captureRollParticipants(neighborId)
++          if (!validateRollLocks()) return
++        }
++      }
++      if (rollInvalidatedRef.current) return
+
+       // Calculate the target edge position and apply snapping
+       // During rolling edit, exclude the neighbor from snap targets.
+@@ -678,6 +720,8 @@
+       setActiveSnapTarget,
+       item.id,
+       getItemFromStore,
++      captureRollParticipants,
++      validateRollLocks,
+     ],
+   )
+
+@@ -687,8 +731,10 @@
+       const state = trimStateRef.current
+       const deltaFrames = trimStateRef.current.currentDelta
+
+-      // Only update store if there was actual change
+-      if (deltaFrames !== 0) {
++      if (state.isRollingEdit && state.neighborId) captureRollParticipants(state.neighborId)
++      const canCommit = !rollInvalidatedRef.current && validateRollLocks()
++      // Only update store if there was actual change and the held Roll stayed valid.
++      if (deltaFrames !== 0 && canCommit) {
+         const transitionIdsToRemove =
+           state.destroyTransitionAtHandle && state.handle
+             ? useTransitionsStore
+@@ -727,6 +773,10 @@
+           }
+         }
+       }
++
++      unsubscribeRollLocksRef.current?.()
++      unsubscribeRollLocksRef.current = null
++      rollParticipantIdsRef.current = []
+
+       // Clear rolling edit preview
+       useRollingEditPreviewStore.getState().clearPreview()
+@@ -763,7 +813,7 @@
+         trimmedItemIds: [],
+       })
+     }
+-  }, [item.id, setActiveSnapTarget, setDragState])
++  }, [item.id, setActiveSnapTarget, setDragState, captureRollParticipants, validateRollLocks])
+
+   // Setup and cleanup mouse event listeners
+   useEffect(() => {
+@@ -879,6 +929,14 @@
+           ? verticallyAlignedTrimItemIds
+           : [currentItem.id]
+
++      rollInvalidatedRef.current = false
++      rollParticipantIdsRef.current = []
++      unsubscribeRollLocksRef.current?.()
++      if (wantsRolling && neighborId) captureRollParticipants(neighborId)
++      // Subscribe before drag publication, which can synchronously notify other UI.
++      unsubscribeRollLocksRef.current = useItemsStore.subscribe(validateRollLocks)
++      validateRollLocks()
++
+       magneticSnapTargetsRef.current = getMagneticSnapTargets()
+       setDragState({
+         isDragging: true,
+@@ -934,6 +992,8 @@
+       item.id,
+       setActiveSnapTarget,
+       setDragState,
++      captureRollParticipants,
++      validateRollLocks,
+     ],
+   )
+
+diff --git a/src/features/timeline/hooks/use-timeline-trim.test.tsx b/src/features/timeline/hooks/use-timeline-trim.test.tsx
+--- a/src/features/timeline/hooks/use-timeline-trim.test.tsx
++++ b/src/features/timeline/hooks/use-timeline-trim.test.tsx
+@@ -15,6 +15,10 @@
+ import { useTransitionBreakPreviewStore } from '../stores/transition-break-preview-store'
+ import { useLinkedEditPreviewStore } from '../stores/linked-edit-preview-store'
+ import { useTimelineTrim } from './use-timeline-trim'
++import { useTimelineTracks } from './use-timeline-tracks'
++import { useEditorStore } from '@/shared/state/editor'
++import { captureSnapshot } from '../stores/commands/snapshot'
++import { buildTimelineFromStores } from '../stores/timeline-persistence'
+
+ const TIMELINE_DURATION = 600
+ let rafCallbacks: FrameRequestCallback[] = []
+@@ -621,6 +625,192 @@
+     })
+   })
+
++  describe('rolling transient-lock regression', () => {
++    function renderLiveLockTrimHook(item: TimelineItem) {
++      return renderHook(() => {
++        const { tracks, toggleTrackLock } = useTimelineTracks()
++        const track = tracks.find((candidate) => candidate.id === item.trackId)
++        const parent = track?.parentTrackId
++          ? tracks.find((candidate) => candidate.id === track.parentTrackId && candidate.isGroup)
++          : undefined
++        const trackLocked = Boolean(track?.locked || parent?.locked)
++        const trim = useTimelineTrim(item, TIMELINE_DURATION, trackLocked)
++        return { ...trim, trackLocked, toggleTrackLock }
++      })
++    }
++
++    function seedRollPair() {
++      const a = makeTimelineVideoItem({ id: 'a' })
++      const b = makeTimelineVideoItem({ id: 'b', from: 60 })
++      useItemsStore.getState().setItems([a, b])
++      return a
++    }
++
++    function durableState() {
++      const history = useTimelineCommandStore.getState()
++      // Capture values now: no live object references can mask a later write.
++      return JSON.stringify({
++        timeline: buildTimelineFromStores(),
++        native: captureSnapshot(),
++        dirty: useTimelineSettingsStore.getState().isDirty,
++        undo: history.undoStack,
++        redo: history.redoStack,
++        canUndo: history.canUndo,
++        canRedo: history.canRedo,
++        contexts: history.stacksByContext,
++        activeContext: history.activeContextKey,
++      })
++    }
++
++    function expectTrimCleared(result: { current: ReturnType<typeof useTimelineTrim> }) {
++      expect(result.current.isTrimming).toBe(false)
++      expect(result.current.trimDelta).toBe(0)
++      expect(useSelectionStore.getState().dragState).toBeNull()
++      expect(useSelectionStore.getState().activeSnapTarget).toBeNull()
++      expect(useRollingEditPreviewStore.getState().trimmedItemId).toBeNull()
++      expect(useRollingEditPreviewStore.getState().neighborDelta).toBe(0)
++      expect(useRippleEditPreviewStore.getState().trimmedItemId).toBeNull()
++      expect(useTransitionBreakPreviewStore.getState().itemId).toBeNull()
++      expect(useLinkedEditPreviewStore.getState().updatesById).toEqual({})
++    }
++
++    it('cancels a held Roll after committed lock then unlock without another move', () => {
++      const a = seedRollPair()
++      const { result } = renderLiveLockTrimHook(a)
++      startTrim(result, 'end', { forcedMode: 'rolling' })
++      moveMouse(20)
++      expect(result.current.isRollingEdit).toBe(true)
++      expect(result.current.trimDelta).toBe(20)
++      expect(useRollingEditPreviewStore.getState().neighborDelta).toBe(20)
++      expect(useTimelineCommandStore.getState().undoStack).toHaveLength(0)
++
++      // Separate act turns commit both the invalid state and its React prop.
++      act(() => result.current.toggleTrackLock(a.trackId))
++      expect(useItemsStore.getState().tracks.find((track) => track.id === a.trackId)?.locked).toBe(
++        true,
++      )
++      expect(result.current.trackLocked).toBe(true)
++      act(() => result.current.toggleTrackLock(a.trackId))
++      expect(useItemsStore.getState().tracks.find((track) => track.id === a.trackId)?.locked).toBe(
++        false,
++      )
++      expect(result.current.trackLocked).toBe(false)
++      expect(
++        useTimelineCommandStore.getState().undoStack.map((entry) => entry.command.type),
++      ).toEqual(['SET_TRACKS', 'SET_TRACKS'])
++
++      // No independent edit/undo, new gesture or pointer move intervenes.
++      // Legitimate toggle history/dirty changes belong to the baseline snapshot.
++      const beforeRelease = durableState()
++      releaseMouse()
++      expect(durableState()).toBe(beforeRelease)
++      expectTrimCleared(result)
++    })
++
++    it('keeps the existing sustained explicit-lock Roll refusal', () => {
++      const a = seedRollPair()
++      const { result } = renderLiveLockTrimHook(a)
++      startTrim(result, 'end', { forcedMode: 'rolling' })
++      moveMouse(20)
++      expect(result.current.trimDelta).toBe(20)
++      act(() => result.current.toggleTrackLock(a.trackId))
++      expect(result.current.trackLocked).toBe(true)
++      expect(useItemsStore.getState().tracks.find((track) => track.id === a.trackId)?.locked).toBe(
++        true,
++      )
++      const beforeRelease = durableState()
++      releaseMouse()
++      expect(durableState()).toBe(beforeRelease)
++      expectTrimCleared(result)
++    })
++
++    it('invalidates a linked companion lock without a primary lock prop change', () => {
++      const previousLinked = useEditorStore.getState().linkedSelectionEnabled
++      useEditorStore.getState().setLinkedSelectionEnabled(true)
++      try {
++        const a = makeTimelineVideoItem({ id: 'a', linkedGroupId: 'left' })
++        const b = makeTimelineVideoItem({ id: 'b', from: 60, linkedGroupId: 'right' })
++        useItemsStore
++          .getState()
++          .setItems([
++            a,
++            b,
++            makeTimelineAudioItem({ id: 'audio-a', linkedGroupId: 'left' }),
++            makeTimelineAudioItem({ id: 'audio-b', from: 60, linkedGroupId: 'right' }),
++          ])
++        const { result } = renderLiveLockTrimHook(a)
++        startTrim(result, 'end', { forcedMode: 'rolling' })
++        moveMouse(20)
++        expect(result.current.trimDelta).toBe(20)
++        act(() => result.current.toggleTrackLock('track-a1'))
++        expect(
++          useItemsStore.getState().tracks.find((track) => track.id === 'track-a1')?.locked,
++        ).toBe(true)
++        expect(result.current.trackLocked).toBe(false)
++        act(() => result.current.toggleTrackLock('track-a1'))
++        expect(
++          useItemsStore.getState().tracks.find((track) => track.id === 'track-a1')?.locked,
++        ).toBe(false)
++        expect(result.current.trackLocked).toBe(false)
++        const beforeRelease = durableState()
++        releaseMouse()
++        expect(durableState()).toBe(beforeRelease)
++        expectTrimCleared(result)
++      } finally {
++        useEditorStore.getState().setLinkedSelectionEnabled(previousLinked)
++      }
++    })
++
++    it('does not cancel a Roll for an unrelated track lock', () => {
++      const a = seedRollPair()
++      const { result } = renderLiveLockTrimHook(a)
++      startTrim(result, 'end', { forcedMode: 'rolling' })
++      moveMouse(20)
++      act(() => result.current.toggleTrackLock('track-v2'))
++      expect(result.current.trackLocked).toBe(false)
++      releaseMouse()
++      expect(getItem('a').durationInFrames).toBe(80)
++      expect(getItem('b').from).toBe(80)
++      expect(getItem('b').durationInFrames).toBe(40)
++      expect(useItemsStore.getState().tracks.find((track) => track.id === 'track-v2')?.locked).toBe(
++        true,
++      )
++      expect(
++        useTimelineCommandStore.getState().undoStack.map((entry) => entry.command.type),
++      ).toEqual(['SET_TRACKS', 'ROLLING_EDIT'])
++      expectTrimCleared(result)
++    })
++
++    it('keeps an uninterrupted unlocked Roll literal graph and complete undo/redo', () => {
++      const a = seedRollPair()
++      const { result } = renderLiveLockTrimHook(a)
++      const before = JSON.stringify(buildTimelineFromStores())
++      const expected = structuredClone(buildTimelineFromStores())
++      expected.items = expected.items!.map((item) =>
++        item.id === 'a'
++          ? { ...item, durationInFrames: 80, sourceEnd: 80 }
++          : item.id === 'b'
++            ? { ...item, from: 80, durationInFrames: 40, sourceStart: 20 }
++            : item,
++      )
++      startTrim(result, 'end', { forcedMode: 'rolling' })
++      moveMouse(20)
++      expect(result.current.trimDelta).toBe(20)
++      releaseMouse()
++      expect(buildTimelineFromStores()).toEqual(expected)
++      expect(getItem('b').from + getItem('b').durationInFrames).toBe(120)
++      expect(
++        useTimelineCommandStore.getState().undoStack.map((entry) => entry.command.type),
++      ).toEqual(['ROLLING_EDIT'])
++      expectTrimCleared(result)
++      const after = JSON.stringify(buildTimelineFromStores())
++      act(() => useTimelineCommandStore.getState().undo())
++      expect(JSON.stringify(buildTimelineFromStores())).toBe(before)
++      act(() => useTimelineCommandStore.getState().redo())
++      expect(JSON.stringify(buildTimelineFromStores())).toBe(after)
++    })
++  })
++
+   describe('transition handling', () => {
+     it('removes the transition at the handle when destroyTransitionAtHandle is set', () => {
+       const a = makeTimelineVideoItem({ id: 'a' })
