@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { buildDiagnostics, diagnosticsFileName } from './diagnostics';
 
 const config = {
-  oauth: { clientSecret: 'oauth-secret', clientSecretConfigured: true, issuerUrl: 'https://id.example' },
+  oauth: {
+    clientSecret: 'oauth-secret',
+    clientSecretConfigured: true,
+    issuerUrl: 'https://id.example',
+    tokenEndpointAuthMethod: 'private_key_jwt',
+  },
+  passwordLogin: { enabled: true },
   notifications: { smtp: { transport: { password: 'smtp-secret', passwordConfigured: true, host: 'mail' } } },
   logging: { enabled: true, level: 'log' },
   frameleafCloud: { cloudBackup: { s3: { secretAccessKey: 'storage-secret', secretAccessKeyConfigured: true } } },
@@ -57,7 +63,7 @@ describe('buildDiagnostics (FL-71)', () => {
       expect(text).not.toContain(secret);
     }
     expect(diagnostics.settings.oauth.clientSecretConfigured).toBe(true);
-    expect(diagnostics.settings.frameleafCloud.cloudBackup.s3.secretAccessKeyConfigured).toBe(true);
+    expect(diagnostics.settings.frameleafCloud?.cloudBackup?.s3.secretAccessKeyConfigured).toBe(true);
     expect(diagnostics.settings).toMatchObject({ futureSettings: [{ fingerprint: 'kept', recoveryVerified: true }] });
     expect(JSON.stringify(config)).toContain('keyring-sentinel');
   });
@@ -70,6 +76,13 @@ describe('buildDiagnostics (FL-71)', () => {
       build: { version: 'v3.2.0', sourceRef: 'main' },
       storage: { diskSizeRaw: 100, diskUseRaw: 10 },
       queues: [{ name: 'thumbnailGeneration', isPaused: false, statistics: { active: 1 } }],
+    });
+  });
+
+  it('keeps sign-in metadata useful', () => {
+    expect(diagnostics.settings).toMatchObject({
+      passwordLogin: { enabled: true },
+      oauth: { tokenEndpointAuthMethod: 'private_key_jwt' },
     });
   });
 

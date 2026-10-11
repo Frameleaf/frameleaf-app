@@ -31,7 +31,10 @@ const diagnosticsReplacer = (key: string, value: unknown) => {
   const name = key.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
   const secret =
     /password|passphrase|token|secret|apikey|privatekey|sessionkey|recovery(?:key|code|kit|phrase|seed)|keyring|(?:wrap(?:ping)?|bucket|encryption|master|root)key|^(?:key|keys)$/;
-  return typeof value !== 'boolean' && secret.test(name) ? '********' : value;
+  if (typeof value === 'boolean' || name === 'passwordlogin' || name === 'tokenendpointauthmethod') {
+    return value;
+  }
+  return secret.test(name) ? '********' : value;
 };
 
 export const buildDiagnostics = ({
