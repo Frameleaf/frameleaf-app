@@ -48,6 +48,16 @@ vi.mock('$lib/components/frameleaf/computers/ComputersLanding.svelte', async () 
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
+// FL-368: the landing pages read live state of their own; the host only has to mount them.
+vi.mock('$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/server/ServerLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAdminConfigHistory: vi.fn().mockResolvedValue({ entries: [] }),
@@ -209,14 +219,13 @@ describe('the Command Center (FL-71)', () => {
     expect(directory.querySelector('.cc-directory-scope')).toBeNull();
   });
 
-  it('tags only the rows whose scope differs from the rest of the area', () => {
+  it('opens a plain-words area on its own landing page instead of a directory (FL-368)', () => {
     open('/user-settings?area=notifications');
     const { container } = render(SettingsHost, { sections });
-    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
-    const tags = [...directory.querySelectorAll('.cc-directory-scope')].map((tag) => tag.textContent);
-    expect(tags).toEqual(['Just you']);
-    expect(within(directory).getByRole('button', { name: /Your email notifications/ })).toHaveTextContent('Just you');
-    expect(within(directory).getByRole('button', { name: /Email delivery/ })).not.toHaveTextContent('Just you');
+    expect(container.querySelector('.cc-directory')).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Notifications' })).toBeInTheDocument();
+    // The landing page lists the area's pages, so the navigation does not repeat them.
+    expect(screen.queryByLabelText('Notifications pages')).toBeNull();
   });
 
   it("lists Library care's repair tools after its sections", async () => {
@@ -404,8 +413,14 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=history', false);
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
 
-    expect(await screen.findByText('1 preference changed')).toBeInTheDocument();
-    expect(screen.getByText('Ada · iOS · Mobile')).toBeInTheDocument();
+    // In the words on the page the change came from, with the page named (FL-368).
+    expect(await screen.findByText('Tags turned on')).toBeInTheDocument();
+    expect(screen.getByText(/· Ada · iOS · Mobile$/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open this setting' })).toHaveAttribute(
+      'href',
+      '/user-settings?area=preferences&section=feature',
+    );
+    expect(screen.getByText('Every change you saved to your own settings: what changed and when.')).toBeInTheDocument();
   });
 
   it('searches areas, sections and utility tools, and clears an empty search', async () => {
@@ -413,7 +428,10 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     const search = screen.getByRole('searchbox', { name: 'Search all settings' });
     await userEvent.type(search, 'email');
-    const result = await screen.findByRole('button', { name: /Email delivery/ });
+    // The Notifications area also mentions email delivery in its description; this is the page itself.
+    const result = (await screen.findAllByRole('button', { name: /Email delivery/ })).find(
+      (button) => button.querySelector('strong')?.textContent === 'Email delivery',
+    )!;
     await userEvent.click(result);
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=notifications&section=notifications',
@@ -571,7 +589,7 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     const search = screen.getByRole('searchbox', { name: 'Search all settings' });
     await userEvent.type(search, 'email');
-    const first = await screen.findByRole('button', { name: /Email delivery/ });
+    const [first] = await screen.findAllByRole('button', { name: /Email delivery/ });
     await userEvent.keyboard('{ArrowDown}');
     expect(first.parentElement!.querySelector('button')).toHaveFocus();
     await userEvent.keyboard('{ArrowUp}');

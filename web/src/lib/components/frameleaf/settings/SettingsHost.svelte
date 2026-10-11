@@ -28,6 +28,9 @@
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
+  import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
+  import ServerLanding from '$lib/components/frameleaf/settings/server/ServerLanding.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -47,6 +50,7 @@
     presentedAreaForSection,
     directoryGroup,
     isAreaAvailable,
+    isPlainArea,
     isScreenArea,
     resolveSettingsArea,
     resolveSettingsSection,
@@ -234,10 +238,21 @@
     },
     history: {
       title: $t('frameleaf_settings_area_history'),
-      description: $t('frameleaf_settings_area_history_description'),
+      // A member sees only their own changes, and the description says so (FL-368).
+      description: settingsDraft
+        ? $t('frameleaf_settings_area_history_description')
+        : $t('frameleaf_words_history_description_own'),
       icon: mdiHistory,
     },
   });
+
+  /** A settings page as the navigation names it ("Server & updates › Updates"), for Change history. */
+  const pageTitleOf = (target: { area: SettingsAreaId; section?: string }) => {
+    const title = sections.find((section) => section.key === target.section)?.title;
+    return title && title !== areaCopy[target.area].title
+      ? `${areaCopy[target.area].title} › ${title}`
+      : areaCopy[target.area].title;
+  };
 
   const groupCopy: Record<SettingsGroupId, string> = $derived({
     command: $t('frameleaf_settings_group_command'),
@@ -342,8 +357,8 @@
   ];
   // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
   // the overline names the area's group instead. Backup is one screen under one heading, whichever
-  // of its pages (or older addresses) is open.
-  const titled = $derived(area === 'backups' ? undefined : selected);
+  // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
+  const titled = $derived(area === 'backups' || area === 'sharing' ? undefined : selected);
   const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
   // As in the template, the Users manager carries its own heading.
   // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
@@ -358,8 +373,9 @@
     if (area === 'utilities') {
       return utilityTools.map((tool) => ({ key: tool.id, title: $t(tool.titleKey), area, section: tool.id }));
     }
-    // Backup's pages are side by side in the page itself, as in the prototype.
-    if (['libraries', 'trash', 'backups'].includes(area) || hasLandingPage(area)) {
+    // Backup's pages are side by side in the page itself, as in the prototype; an area with a landing
+    // page (FL-364) or a plain-words area (FL-368) lists its pages on its own landing page.
+    if (['libraries', 'trash', 'backups'].includes(area) || hasLandingPage(area) || isPlainArea(area)) {
       return [];
     }
     return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
@@ -911,6 +927,7 @@
                   entries={settingsDraft ? history : undefined}
                   preferences={preferenceHistory}
                   ownName={authManager.user.name}
+                  pageTitle={pageTitleOf}
                   error={historyError || preferenceHistoryError}
                   onRetry={() => {
                     if (settingsDraft) {
@@ -934,7 +951,7 @@
                   {/if}
                   <section
                     class="cc-section fl-continuous-corners"
-                    class:cc-manager={MANAGER_SECTIONS.includes(selected.key)}
+                    class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
                     {#if area === 'storage' && selected.key === 'trash'}
@@ -953,6 +970,12 @@
                     {/if}
                   </section>
                 </div>
+              {:else if area === 'notifications'}
+                <NotificationsLanding sections={areaSections} />
+              {:else if area === 'server'}
+                <ServerLanding sections={areaSections} />
+              {:else if area === 'preferences'}
+                <PreferencesLanding sections={areaSections} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />

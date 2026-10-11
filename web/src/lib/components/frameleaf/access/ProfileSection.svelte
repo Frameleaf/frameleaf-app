@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Your profile, from the `profile` section of the design template's settings (`PersonalAccess`
-   * header and facts, the display name and email fields): the avatar with Upload photo, Remove
-   * photo and a colour, the account id and storage label, and name and email with Save.
+   * Your preferences › Your profile (FL-368, after the approved prototype
+   * `settings-v2/server/preferences.jsx`): the photo first, then name and email with their own Save,
+   * and the two codes only a helper asks for behind "Details for support".
    *
    * Every change uses the account's own endpoints: `createProfileImage` / `deleteProfileImage`
    * for the photo, `updateMyUser` for colour, name and email. The colour shows whenever there is
@@ -10,17 +10,22 @@
    * avatar in place and says why.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { isProfileImageFile, PROFILE_IMAGE_EXTENSIONS } from '$lib/frameleaf/personal-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import { createProfileImage, deleteProfileImage, getMyUser, updateMyUser, UserAvatarColor } from '@frameleaf/sdk';
   import { toastManager } from '@frameleaf/ui';
-  import { t } from 'svelte-i18n';
-  import './access.css';
+  import { t, type Translations } from 'svelte-i18n';
 
   const user = $derived(authManager.user);
   const colors = Object.values(UserAvatarColor);
+  const colorName = (color: UserAvatarColor) => $t(`frameleaf_prefs_colour_${color}` as Translations);
 
   let name = $state(authManager.user.name);
   let email = $state(authManager.user.email);
@@ -42,13 +47,11 @@
     if (!file) {
       return;
     }
-
     photoError = '';
     if (!isProfileImageFile(file)) {
       photoError = $t('frameleaf_access_profile_photo_type');
       return;
     }
-
     photoWorking = true;
     try {
       await createProfileImage({ createProfileImageDto: { file } });
@@ -91,7 +94,6 @@
     if (saving || !dirty || !valid) {
       return;
     }
-
     saving = true;
     try {
       const updated = await updateMyUser({ userUpdateMeDto: { name: name.trim(), email: email.trim() } });
@@ -105,35 +107,27 @@
       saving = false;
     }
   };
+
+  let copied = $state(false);
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(user.id);
+      copied = true;
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_copy_to_clipboard'));
+    }
+  };
 </script>
 
-<section class="fl-access-section" aria-labelledby="fl-access-profile">
-  <div class="fl-access-head">
-    <div>
-      <p>{$t('frameleaf_access_eyebrow')}</p>
-      <h3 id="fl-access-profile">{$t('frameleaf_access_profile_title')}</h3>
-      <p>{user.name} · {user.email}</p>
-    </div>
-    <div class="avatar">
+<KitPage>
+  <Section title={$t('frameleaf_prefs_profile_photo_section')}>
+    <Row label={$t('frameleaf_prefs_profile_photo')} help={$t('frameleaf_prefs_profile_photo_help')}>
       <UserAvatar {user} size="lg" noTitle />
-    </div>
-  </div>
-
-  <dl class="fl-access-facts">
-    <dt>{$t('frameleaf_access_profile_account_id')}</dt>
-    <dd><code>{user.id}</code></dd>
-    <dt>{$t('frameleaf_access_profile_storage_label')}</dt>
-    <dd>{user.storageLabel || $t('frameleaf_access_profile_storage_label_automatic')}</dd>
-  </dl>
-
-  <div class="fl-access-section">
-    <h3>{$t('frameleaf_access_profile_photo')}</h3>
-    <div class="fl-access-actions">
       <Button disabled={photoWorking} onclick={() => fileInput?.click()}>
-        {$t('frameleaf_access_profile_photo_upload')}
+        {hasPhoto ? $t('frameleaf_prefs_profile_photo_change') : $t('frameleaf_prefs_profile_photo_upload')}
       </Button>
       {#if hasPhoto}
-        <Button disabled={photoWorking} onclick={removePhoto}>{$t('frameleaf_access_profile_photo_remove')}</Button>
+        <Button disabled={photoWorking} onclick={removePhoto}>{$t('frameleaf_prefs_profile_photo_remove')}</Button>
       {/if}
       <input
         bind:this={fileInput}
@@ -144,91 +138,114 @@
         aria-hidden="true"
         onchange={uploadPhoto}
       />
-    </div>
+    </Row>
     {#if photoError}
-      <p class="fl-access-error" role="alert">{photoError}</p>
+      <p class="error" role="alert">{photoError}</p>
     {/if}
-    <fieldset class="colors">
-      <legend>{$t('frameleaf_access_profile_color')}</legend>
-      <p class="fl-access-footnote">{$t('frameleaf_access_profile_color_description')}</p>
-      <div class="swatches">
+    <Row
+      label={$t('frameleaf_prefs_colour')}
+      help={$t(hasPhoto ? 'frameleaf_prefs_colour_help_photo' : 'frameleaf_prefs_colour_help_no_photo', {
+        values: { colour: colorName(user.avatarColor) },
+      })}
+    >
+      <div class="swatches" role="radiogroup" aria-label={$t('frameleaf_prefs_colour')}>
         {#each colors as color (color)}
           <label class="swatch" class:selected={color === user.avatarColor}>
             <input
               type="radio"
               name="avatar-color"
               value={color}
+              aria-label={colorName(color)}
               checked={color === user.avatarColor}
               onchange={() => setColor(color)}
             />
-            <UserAvatar user={{ ...user, profileImagePath: '', avatarColor: color }} size="md" label={color} noTitle />
-            <span class="sr-only">{color}</span>
+            <UserAvatar user={{ ...user, profileImagePath: '', avatarColor: color }} size="md" noTitle />
           </label>
         {/each}
       </div>
-    </fieldset>
-  </div>
+    </Row>
+  </Section>
 
-  <form class="fl-access-form" autocomplete="off" onsubmit={save}>
-    <label class="fl-access-field">
-      <span>{$t('frameleaf_access_profile_name')}</span>
-      <input required maxlength={256} disabled={saving} bind:value={name} />
-    </label>
-    <label class="fl-access-field">
-      <span>{$t('frameleaf_access_profile_email')}</span>
-      <input type="email" required disabled={saving} bind:value={email} />
-    </label>
-    <p class="fl-access-footnote">{$t('frameleaf_access_profile_email_description')}</p>
-    <footer>
-      <Button
-        disabled={saving || !dirty}
-        onclick={() => {
-          name = user.name;
-          email = user.email;
-        }}
-      >
-        {$t('cancel')}
-      </Button>
-      <Button type="submit" variant="primary" disabled={saving || !dirty || !valid}>{$t('save')}</Button>
-    </footer>
+  <form autocomplete="off" onsubmit={save}>
+    <Section title={$t('frameleaf_prefs_profile_name_and_email')}>
+      {#snippet action()}
+        <Button
+          disabled={saving || !dirty}
+          onclick={() => {
+            name = user.name;
+            email = user.email;
+          }}
+        >
+          {$t('frameleaf_prefs_profile_undo')}
+        </Button>
+        <Button type="submit" variant="primary" disabled={saving || !dirty || !valid}>{$t('save')}</Button>
+      {/snippet}
+      <Row label={$t('frameleaf_prefs_profile_name')} help={$t('frameleaf_prefs_profile_name_help')}>
+        <Field
+          label={$t('frameleaf_prefs_profile_name')}
+          value={name}
+          disabled={saving}
+          invalid={name.trim().length === 0}
+          autocomplete="name"
+          onChange={(value) => (name = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_profile_email')} help={$t('frameleaf_prefs_profile_email_help')}>
+        <Field
+          label={$t('frameleaf_prefs_profile_email')}
+          type="email"
+          value={email}
+          disabled={saving}
+          invalid={email.trim().length === 0}
+          autocomplete="email"
+          onChange={(value) => (email = value)}
+        />
+      </Row>
+      <!-- Only a helper asks for these, so they stay closed at the bottom. -->
+      <Advanced summary={$t('frameleaf_prefs_profile_support')}>
+        <Row label={$t('frameleaf_prefs_profile_account_id')} help={$t('frameleaf_prefs_profile_account_id_help')}>
+          <code>{user.id}</code>
+          <Button label={$t('frameleaf_prefs_profile_copy_label')} onclick={copyId}>
+            {copied ? $t('frameleaf_documents_copied') : $t('frameleaf_prefs_profile_copy')}
+          </Button>
+        </Row>
+        <Row label={$t('frameleaf_prefs_profile_folder')} help={$t('frameleaf_prefs_profile_folder_help')}>
+          <span class="value">{user.storageLabel || $t('frameleaf_prefs_profile_folder_automatic')}</span>
+        </Row>
+      </Advanced>
+    </Section>
   </form>
-</section>
+</KitPage>
 
 <style>
-  .avatar {
-    flex-shrink: 0;
-  }
   .file {
     display: none;
   }
-  .colors {
-    display: grid;
-    gap: var(--fl-space-2);
+  .error {
     margin: 0;
-    padding: 0;
-    border: 0;
-  }
-  legend {
-    padding: 0;
-    font-weight: 550;
-    color: var(--fl-text);
+    padding-bottom: var(--fl-space-4);
+    color: var(--fl-danger);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
   }
   .swatches {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
+    max-width: 320px;
   }
   .swatch {
     display: inline-grid;
     place-items: center;
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 44px;
+    height: 44px;
     border: 2px solid transparent;
     border-radius: var(--fl-radius-pill);
     cursor: pointer;
   }
   .swatch.selected {
-    border-color: var(--fl-accent);
+    border-color: var(--fl-text);
   }
   .swatch:focus-within {
     outline: var(--fl-focus-ring);
@@ -236,8 +253,21 @@
   }
   .swatch input {
     position: absolute;
-    opacity: 0;
     width: 1px;
     height: 1px;
+    opacity: 0;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--fl-font-small);
+    overflow-wrap: anywhere;
+  }
+  .value {
+    font-size: var(--fl-font-callout);
+  }
+  @container kit (max-width: 620px) {
+    .swatches {
+      justify-content: flex-start;
+    }
   }
 </style>

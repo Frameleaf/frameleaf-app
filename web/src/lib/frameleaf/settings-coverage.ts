@@ -1022,7 +1022,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'newVersionCheck.frequency',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NewVersionCheckSettings.svelte',
-    evidence: 'newVersionCheck.frequency',
+    evidence: 'check.frequency = ',
   },
   {
     pattern: 'nightlyTasks.clusterNewFaces',
@@ -1281,7 +1281,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     pattern: 'server.lanDiscovery',
     kind: 'control',
     file: 'src/routes/admin/system-settings/ServerSettings.svelte',
-    evidence: 'bind:checked={configToEdit.server.lanDiscovery}',
+    evidence: 'draft.server.lanDiscovery = ',
   },
   {
     pattern: 'server.loginPageMessage',
@@ -1298,7 +1298,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'server.publicUsers',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    file: 'src/routes/(user)/user-settings/SharingSettings.svelte',
     evidence: 'server.publicUsers',
   },
   {
@@ -1380,6 +1380,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'theme.customCss',
   },
   {
+    pattern: 'theme.customCssEnabled',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ThemeSettings.svelte',
+    evidence: 'theme.customCssEnabled',
+  },
+  {
     pattern: 'trash.days',
     kind: 'control',
     file: 'src/routes/admin/system-settings/TrashSettings.svelte',
@@ -1404,7 +1410,7 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
   {
     pattern: 'albums.defaultAssetOrder',
     kind: 'control',
-    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
     evidence: 'albums.defaultAssetOrder',
   },
   {

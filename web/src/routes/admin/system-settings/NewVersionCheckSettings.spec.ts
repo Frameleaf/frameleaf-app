@@ -6,9 +6,10 @@ import {
   VersionCheckFrequency,
   type AdminConfigDto,
 } from '@frameleaf/sdk';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { websocketStore } from '$lib/stores/websocket';
 import en from '../../../../../i18n/en.json';
 import NewVersionCheckSettings from './NewVersionCheckSettings.svelte';
 
@@ -38,8 +39,9 @@ const newStore = (enabled: boolean) =>
     { config: config(enabled), revision: 'r1' },
     { defaults: config(false), load: vi.fn(), save: vi.fn() },
   );
+const status = () => within(screen.getByRole('region', { name: 'Update status' }));
 
-describe('Versions & compatibility (FL-80 S-4)', () => {
+describe('Updates (FL-368; the check is FL-80 S-4)', () => {
   beforeAll(() => {
     addMessages('dev', en);
   });
@@ -48,33 +50,38 @@ describe('Versions & compatibility (FL-80 S-4)', () => {
     vi.mocked(checkVersionNow).mockReset();
     vi.mocked(getVersionCheck).mockReset();
     vi.mocked(getVersionCheck).mockResolvedValue({ checkedAt: null, releaseVersion: null });
+    websocketStore.serverVersion.set({ major: 3, minor: 2, patch: 0, prerelease: null } as never);
   });
 
-  it('edits the saved check setting in the draft', async () => {
+  it('opens on the installed version and says when the server is not looking', async () => {
+    draft.store = newStore(false);
+    render(NewVersionCheckSettings);
+
+    expect(await status().findByRole('heading', { name: "You're running Frameleaf 3.2.0" })).toBeInTheDocument();
+    expect(status().getByText(/Frameleaf is not looking for newer versions/)).toBeInTheDocument();
+  });
+
+  it('makes the switch and the frequency one choice that writes the two saved values', async () => {
     const store = newStore(false);
     draft.store = store;
     render(NewVersionCheckSettings);
 
-    expect(await screen.findByText('Checks off')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('switch', { name: /Check for updates/ }));
-    expect(store.draft.newVersionCheck.enabled).toBe(true);
+    const look = within(screen.getByRole('group', { name: 'Look for updates' }));
+    expect(look.getByRole('button', { name: 'Never', pressed: true })).toBeInTheDocument();
+
+    await fireEvent.click(look.getByRole('button', { name: 'Every week' }));
+    expect(store.draft.newVersionCheck).toMatchObject({ enabled: true, frequency: VersionCheckFrequency.Weekly });
+
+    await fireEvent.click(look.getByRole('button', { name: 'Never' }));
+    expect(store.draft.newVersionCheck).toMatchObject({ enabled: false, frequency: VersionCheckFrequency.Weekly });
   });
 
-  it('edits the saved check frequency with the prototype choices (FL-71)', async () => {
-    const store = newStore(true);
-    draft.store = store;
+  it('says the server is up to date from what it last recorded', async () => {
+    draft.store = newStore(true);
+    vi.mocked(getVersionCheck).mockResolvedValue({ checkedAt: new Date().toISOString(), releaseVersion: 'v3.2.0' });
     render(NewVersionCheckSettings);
 
-    const select = screen.getByRole('combobox', { name: 'Check frequency' });
-    expect(screen.getByText('Choose how often to check when automatic update checks are enabled.')).toBeInTheDocument();
-    expect([...(select as HTMLSelectElement).options].map((option) => [option.value, option.text])).toEqual([
-      ['daily', 'Daily'],
-      ['weekly', 'Weekly'],
-    ]);
-    expect(select).toHaveValue('daily');
-
-    await fireEvent.change(select, { target: { value: 'weekly' } });
-    expect(store.draft.newVersionCheck.frequency).toBe(VersionCheckFrequency.Weekly);
+    expect(await status().findByRole('heading', { name: 'Frameleaf 3.2.0 is up to date' })).toBeInTheDocument();
   });
 
   it('checks now and links the release notes of a newer version', async () => {
@@ -83,30 +90,43 @@ describe('Versions & compatibility (FL-80 S-4)', () => {
       isAvailable: true,
       checkedAt: new Date().toISOString(),
       serverVersion: { major: 3, minor: 2, patch: 0, prerelease: null },
-      releaseVersion: { major: 3, minor: 3, patch: 0, prerelease: 2, prereleaseName: 'beta.2' },
-      type: ReleaseType.Preminor,
-    });
+      releaseVersion: { major: 3, minor: 3, patch: 0, prerelease: null },
+      type: ReleaseType.Minor,
+    } as never);
     render(NewVersionCheckSettings);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
 
-    expect(await screen.findByText(/Frameleaf v3\.3\.0-beta\.2 is available/)).toBeInTheDocument();
-    expect(screen.getByText('Update available')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Release notes' })).toHaveAttribute(
+    expect(await status().findByRole('heading', { name: 'Frameleaf 3.3.0 is available' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /What is new/ })).toHaveAttribute(
       'href',
-      'https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-v3.3.0-beta.2&expanded=true',
+      'https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-v3.3.0&expanded=true',
+    );
+    expect(screen.getByRole('link', { name: /Before you update/ })).toHaveAttribute(
+      'href',
+      '/user-settings?area=backups',
     );
   });
 
-  it('says plainly when update information is unavailable, and offers Try again', async () => {
+  it('says plainly when the check got no answer, and lets it be tried again', async () => {
     draft.store = newStore(true);
     vi.mocked(checkVersionNow).mockRejectedValue(new Error('offline'));
     render(NewVersionCheckSettings);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
 
-    expect(await screen.findByText('Update information is unavailable. Try again later.')).toBeInTheDocument();
-    expect(screen.getByText('Unavailable')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled();
+    expect(await status().findByRole('heading', { name: "Couldn't check for updates" })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled();
+  });
+
+  it('keeps early versions behind Advanced, off unless asked for', async () => {
+    const store = newStore(true);
+    draft.store = store;
+    render(NewVersionCheckSettings);
+
+    const early = within(screen.getByRole('group', { name: 'Get early versions' }));
+    expect(early.getByRole('button', { name: 'Off (recommended)', pressed: true })).toBeInTheDocument();
+    await fireEvent.click(early.getByRole('button', { name: 'On' }));
+    expect(store.draft.newVersionCheck.channel).toBe(ReleaseChannel.ReleaseCandidate);
   });
 });

@@ -1301,6 +1301,9 @@
   "theme.customCss": {
     "type": "string"
   },
+  "theme.customCssEnabled": {
+    "type": "boolean"
+  },
   "trash.days": {
     "type": "integer",
     "minimum": 0,

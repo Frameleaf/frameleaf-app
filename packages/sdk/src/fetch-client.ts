@@ -1779,6 +1779,8 @@ export type AdminConfigTemplatesDto = {
 export type AdminConfigThemeDto = {
     /** Custom CSS for theming */
     customCss: string;
+    /** Serve the custom CSS to the web app */
+    customCssEnabled?: boolean;
 };
 export type AdminConfigTrashDto = {
     /** Days */

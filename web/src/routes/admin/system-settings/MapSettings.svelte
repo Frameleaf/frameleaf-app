@@ -1,83 +1,130 @@
 <script lang="ts">
-  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
-  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  /**
+   * Server & updates › Maps & places (FL-368, after the approved prototype
+   * `settings-v2/server/server-updates.jsx`): the two switches on the page itself, each saying what
+   * it does and what turning it off costs, and the map's look as one choice. The two long style
+   * addresses stay behind Advanced and can only be typed once "Custom" is chosen.
+   */
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
-  import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { Link } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
-  import { reveal } from '$lib/frameleaf/motion';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
-  const configToEdit = $derived(settingsDraft.draft);
-  const config = $derived(settingsDraft.baseline);
+  const map = $derived(settingsDraft.draft.map);
+  const standard = $derived(settingsDraft.defaults.map);
 
   // FL-135: this installation's documentation, or no link at all
   const geocodingDocs = $derived(helpLinks.docs('features/reverse-geocoding'));
+
+  /** "Custom" is chosen, or the saved addresses are already not the standard map's. */
+  let chosenCustom = $state(false);
+  const differs = $derived(map.lightStyle !== standard.lightStyle || map.darkStyle !== standard.darkStyle);
+  const custom = $derived(chosenCustom || differs);
+  const useStandard = () => {
+    chosenCustom = false;
+    map.lightStyle = standard.lightStyle;
+    map.darkStyle = standard.darkStyle;
+  };
 </script>
 
-<div>
-  <div in:reveal>
-    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="flex flex-col gap-4">
-        <SettingGroup key="map" title={$t('admin.map_settings')} subtitle={$t('admin.map_settings_description')}>
-          <div class="flex flex-col gap-4">
-            <SettingToggle
-              title={$t('admin.map_enable_description')}
-              subtitle={$t('admin.map_implications')}
-              {disabled}
-              bind:checked={configToEdit.map.enabled}
-            />
+<KitPage>
+  <Section title={$t('frameleaf_server_maps_map')}>
+    <Row
+      label={$t('frameleaf_server_maps_show')}
+      help={map.enabled ? $t('frameleaf_server_maps_show_on') : $t('frameleaf_server_maps_show_off')}
+    >
+      <Switch
+        label={$t('frameleaf_server_maps_show')}
+        checked={map.enabled}
+        held={disabled}
+        onChange={(value) => (settingsDraft.draft.map.enabled = value)}
+      />
+    </Row>
+    <Row
+      label={$t('frameleaf_server_maps_look')}
+      help={custom ? $t('frameleaf_server_maps_look_custom') : $t('frameleaf_server_maps_look_standard')}
+    >
+      <SegmentedControl
+        label={$t('frameleaf_server_maps_look')}
+        options={[
+          { value: 'standard', label: $t('frameleaf_server_maps_standard') },
+          { value: 'custom', label: $t('frameleaf_server_maps_custom') },
+        ]}
+        value={custom ? 'custom' : 'standard'}
+        disabled={disabled || !map.enabled}
+        onChange={(value) => (value === 'custom' ? (chosenCustom = true) : useStandard())}
+      />
+    </Row>
+    <Advanced open={custom}>
+      <p class="hint">{$t('frameleaf_server_maps_style_about')}</p>
+      <Row label={$t('frameleaf_server_maps_style_light')}>
+        <Field
+          wide
+          type="url"
+          label={$t('frameleaf_server_maps_style_light')}
+          value={map.lightStyle}
+          disabled={disabled || !map.enabled || !custom}
+          onChange={(value) => (settingsDraft.draft.map.lightStyle = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_server_maps_style_dark')}>
+        <Field
+          wide
+          type="url"
+          label={$t('frameleaf_server_maps_style_dark')}
+          value={map.darkStyle}
+          disabled={disabled || !map.enabled || !custom}
+          onChange={(value) => (settingsDraft.draft.map.darkStyle = value)}
+        />
+      </Row>
+      {#if custom}
+        <Row label={$t('frameleaf_server_maps_back')} help={$t('frameleaf_server_maps_back_help')}>
+          <Button {disabled} onclick={useStandard}>{$t('frameleaf_server_maps_back_action')}</Button>
+        </Row>
+      {/if}
+    </Advanced>
+  </Section>
 
-            <hr />
+  <Section title={$t('frameleaf_server_maps_places')}>
+    <Row
+      label={$t('frameleaf_server_maps_name')}
+      help={settingsDraft.draft.reverseGeocoding.enabled
+        ? $t('frameleaf_server_maps_name_on')
+        : $t('frameleaf_server_maps_name_off')}
+      link={geocodingDocs
+        ? { text: $t('frameleaf_server_maps_name_more'), href: geocodingDocs, external: true }
+        : undefined}
+    >
+      <Switch
+        label={$t('frameleaf_server_maps_name')}
+        checked={settingsDraft.draft.reverseGeocoding.enabled}
+        held={disabled}
+        onChange={(value) => (settingsDraft.draft.reverseGeocoding.enabled = value)}
+      />
+    </Row>
+  </Section>
 
-            <SettingField
-              inputType={SettingInputFieldType.TEXT}
-              label={$t('admin.map_light_style')}
-              description={$t('admin.map_style_description')}
-              bind:value={configToEdit.map.lightStyle}
-              disabled={disabled || !configToEdit.map.enabled}
-              isEdited={configToEdit.map.lightStyle !== config.map.lightStyle}
-            />
-            <SettingField
-              inputType={SettingInputFieldType.TEXT}
-              label={$t('admin.map_dark_style')}
-              description={$t('admin.map_style_description')}
-              bind:value={configToEdit.map.darkStyle}
-              disabled={disabled || !configToEdit.map.enabled}
-              isEdited={configToEdit.map.darkStyle !== config.map.darkStyle}
-            />
-          </div></SettingGroup
-        >
+  <SettingActions keys={['map', 'reverseGeocoding']} {disabled} />
+</KitPage>
 
-        <SettingGroup key="reverse-geocoding" title={$t('admin.map_reverse_geocoding_settings')}>
-          {#snippet subtitleSnippet()}
-            {#if geocodingDocs}
-              <p class="text-sm dark:text-immich-dark-fg">
-                <FormatMessage key="admin.map_manage_reverse_geocoding_settings">
-                  {#snippet children({ message })}
-                    <Link href={geocodingDocs}>{message}</Link>
-                  {/snippet}
-                </FormatMessage>
-              </p>
-            {/if}
-          {/snippet}
-          <div class="flex flex-col gap-4">
-            <SettingToggle
-              title={$t('admin.map_reverse_geocoding_enable_description')}
-              {disabled}
-              bind:checked={configToEdit.reverseGeocoding.enabled}
-            />
-          </div></SettingGroup
-        >
-
-        <SettingActions keys={['map', 'reverseGeocoding']} {disabled} />
-      </div>
-    </form>
-  </div>
-</div>
+<style>
+  .hint {
+    max-width: 640px;
+    margin: 0;
+    padding-bottom: var(--fl-space-4);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+</style>
