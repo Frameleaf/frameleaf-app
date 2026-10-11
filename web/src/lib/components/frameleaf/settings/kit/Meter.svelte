@@ -23,7 +23,7 @@
 
 <div class="kit-meter">
   <div>
-    <strong>{value}</strong>{#if max}{' '}<span>{max}</span>{/if}
+    <strong>{value}</strong>{#if max}<span>{max}</span>{/if}
   </div>
   {#if percent !== undefined}
     <div
@@ -52,6 +52,7 @@
     font-weight: 600;
   }
   .kit-meter > div > span {
+    margin-inline-start: 0.3em;
     color: var(--fl-muted);
   }
   .track {

@@ -37,7 +37,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'backup.database.cronExpression',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
     evidence: 'database.cronExpression',
   },
   {
@@ -51,6 +51,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
     evidence: 'database.keepLastAmount',
+  },
+  {
+    pattern: 'backup.schedule.cronExpression',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'backup.schedule.cronExpression',
   },
   {
     pattern: 'frameleafCloud.cloudBackup.enabled',
@@ -139,7 +145,7 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'frameleafCloud.cloudBackup.schedule.cronExpression',
     kind: 'control',
-    file: 'src/lib/components/frameleaf/cloud/CloudBackupSection.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
     evidence: 'schedule.cronExpression',
   },
   {

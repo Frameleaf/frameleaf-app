@@ -16,6 +16,8 @@
   import Meter from '$lib/components/frameleaf/settings/kit/Meter.svelte';
   import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Steps, { type Step } from '$lib/components/frameleaf/settings/kit/Steps.svelte';
+  import { behindAfterMs, clockTime, cronToSchedule, scheduleWords } from '$lib/frameleaf/backup-schedule';
   import {
     BACKUP_PLACE_IDS,
     backupSummary,
@@ -38,10 +40,12 @@
   import {
     CloudBackupLastRunStatus,
     CloudBackupTargetSetting,
+    getBackupSchedule,
     getBuddyBackupStatus,
     getCloudBackupStatus,
     getServerStatistics,
     listDatabaseBackups,
+    type BackupScheduleResponseDto,
     type BuddyStatusDto,
     type CloudBackupStatusResponseDto,
     type DatabaseBackupDto,
@@ -69,17 +73,19 @@
   let buddy = $state<BuddyStatusDto | null>(null);
   let snapshots = $state<DatabaseBackupDto[] | null>(null);
   let stats = $state<ServerStatsResponseDto | null>(null);
+  let plan = $state<BackupScheduleResponseDto | null>(null);
   let loaded = $state(false);
   /** The places whose status could not be read; the rest of the page still shows. */
   let unread = $state<BackupPlaceId[]>([]);
   let disposed = false;
 
   const load = async () => {
-    const [cloudResult, buddyResult, localResult, statsResult] = await Promise.allSettled([
+    const [cloudResult, buddyResult, localResult, statsResult, planResult] = await Promise.allSettled([
       getCloudBackupStatus(),
       getBuddyBackupStatus(),
       listDatabaseBackups(),
       getServerStatistics(),
+      getBackupSchedule(),
     ]);
     if (disposed) {
       return;
@@ -88,6 +94,7 @@
     buddy = buddyResult.status === 'fulfilled' ? buddyResult.value : null;
     snapshots = localResult.status === 'fulfilled' ? localResult.value.backups : null;
     stats = statsResult.status === 'fulfilled' ? statsResult.value : null;
+    plan = planResult.status === 'fulfilled' ? planResult.value : null;
     unread = [
       ...(cloudResult.status === 'rejected' ? (['cloud'] as const) : []),
       ...(buddyResult.status === 'rejected' ? (['buddy'] as const) : []),
@@ -111,10 +118,13 @@
 
   // The clock the page judges "up to date" by, moved on with every reading.
   let now = $state(new Date());
+  // A schedule that runs on chosen days is given longer before a backup counts as behind.
+  const schedule = $derived(plan ? cronToSchedule(plan.cronExpression) : undefined);
+  const behind = $derived(schedule ? behindAfterMs(schedule) : undefined);
   const places = $derived({
-    cloud: cloudPlaceState(cloud, now),
-    buddy: buddyPlaceState(buddy, { linked, entitled }, now),
-    local: localPlaceState(snapshots, settingsDraft?.baseline.backup.database.enabled ?? true, now),
+    cloud: cloudPlaceState(cloud, now, behind),
+    buddy: buddyPlaceState(buddy, { linked, entitled }, now, behind),
+    local: localPlaceState(snapshots, settingsDraft?.baseline.backup.database.enabled ?? true, now, behind),
   });
 
   $effect(() => {
@@ -199,6 +209,46 @@
       local: { count: saved.length, bytes: saved.reduce((sum, backup) => sum + backup.filesize, 0) },
     };
   });
+
+  const scheduleSentence = $derived.by(() => {
+    if (!schedule) {
+      return '';
+    }
+    const { key, values } = scheduleWords(schedule, $locale);
+    return $t(key, { values });
+  });
+  /** The order of a run, and where a run in progress has reached. */
+  const steps = $derived.by((): Step[] => {
+    const order = (plan?.places ?? []).filter((place) => place.on);
+    const at = plan?.run ? order.findIndex((place) => place.id === plan?.run?.place) : -1;
+    return order.map((place, index) => ({
+      title: name(place.id),
+      state: plan?.run ? (index < at ? 'done' : index === at ? 'now' : 'waiting') : undefined,
+      detail: plan?.run
+        ? $t(
+            index < at
+              ? 'frameleaf_backup_schedule_step_done'
+              : index === at
+                ? 'frameleaf_backup_state_running'
+                : 'frameleaf_backup_schedule_step_waiting',
+          )
+        : index === 0
+          ? schedule && 'time' in schedule
+            ? $t('frameleaf_backup_schedule_step_starts', { values: { time: clockTime(schedule.time, $locale) } })
+            : $t('frameleaf_backup_schedule_step_first')
+          : $t('frameleaf_backup_schedule_step_then'),
+    }));
+  });
+  /** The hero's sentences, with when the next run starts once everything is backed up. */
+  const heroBody = $derived(
+    [
+      ...summary.body.map((sentence) => words(sentence)),
+      ...(summary.kind === 'ok' && plan?.nextRunAt
+        ? [$t('frameleaf_backup_hero_next', { values: { when: when(new Date(plan.nextRunAt), true) } })]
+        : []),
+      ...(summary.kind === 'running' ? [$t('frameleaf_backup_hero_running_one')] : []),
+    ].join(' '),
+  );
 
   // What this server keeps for the buddy in return.
   const hosted = $derived(buddy?.pairing?.vaults.find((vault) => vault.destinationInstanceId === buddy?.instanceId));
@@ -297,7 +347,7 @@
     tone={summary.tone}
     icon={HERO_ICONS[summary.kind]}
     title={words(summary.title)}
-    body={summary.body.map((sentence) => words(sentence)).join(' ')}
+    body={heroBody}
     label={$t('frameleaf_backup_status_label')}
   >
     {#snippet actions()}
@@ -419,6 +469,18 @@
     </Section>
   {/if}
 
+  {#if schedule && steps.length > 0}
+    <Section
+      title={$t('frameleaf_backup_tab_schedule')}
+      description={$t('frameleaf_backup_schedule_summary', { values: { schedule: scheduleSentence } })}
+    >
+      {#snippet action()}
+        <a class="button" href={backupPageUrl('schedule')}>{$t('change')}</a>
+      {/snippet}
+      <div class="steps"><Steps {steps} label={$t('frameleaf_backup_schedule_order')} /></div>
+    </Section>
+  {/if}
+
   <Section title={$t('frameleaf_backup_recent_title')}>
     {#snippet action()}
       <a class="button" href={Route.activity()}>{$t('frameleaf_backup_all_activity')}</a>
@@ -435,7 +497,6 @@
       <p class="empty">{$t('frameleaf_backup_recent_empty')}</p>
     {/if}
   </Section>
-
 {/if}
 
 <style>
@@ -522,6 +583,9 @@
     grid-column: 1 / -1;
     font-size: var(--fl-font-small);
     text-align: center;
+  }
+  .steps {
+    padding-bottom: var(--fl-space-6);
   }
   .empty {
     padding: var(--fl-space-4) 0 var(--fl-space-5);
