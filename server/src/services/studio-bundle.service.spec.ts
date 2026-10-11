@@ -1960,13 +1960,18 @@ describe(StudioBundleService.name, () => {
       const job = importJobOf(upload);
       const project = { id: newUuidV7(), ownerId: owner.user.id, importedFromDigest: upload.digest } as StudioProject;
       projects.createWithRevision.mockResolvedValueOnce({ project, created: true });
-      // The second file cannot be moved into place: storage fails, which is not a refusal.
-      fs.storage.rename.mockImplementationOnce(fs.storage.rename.getMockImplementation()!);
-      fs.storage.rename.mockImplementationOnce(() => Promise.reject(new Error('EIO')));
+      // The durable writer fails on the second file; this is not a validation refusal.
+      publications.retain.mockImplementationOnce(publications.retain.getMockImplementation()!);
+      publications.retain.mockRejectedValueOnce(new Error('EIO'));
 
       await sut.run({ operation: job, claimToken: 'token' });
       expect(operations.fail).toHaveBeenCalledWith(job.id, 'token', expect.objectContaining({ error: 'EIO' }));
-      expect(registered.map((item) => item.id)).toEqual([first, second]);
+      expect(publications.retain).toHaveBeenCalledTimes(2);
+      expect(registered.map((item) => item.id)).toEqual([first]);
+      const failedAttempt = publications.retain.mock.calls[1][1];
+      expect(fs.files.get(failedAttempt.incoming)).toEqual(png);
+      expect(fs.storage.unlink).not.toHaveBeenCalledWith(failedAttempt.incoming);
+      expect(fs.files.has(join(studioImportProjectFolder(owner.user.id, project.id), `${second}.png`))).toBe(false);
       const prepared = operations.setBulkResult.mock.calls.find((call) => call[2].result?.projectId === null)?.[2]
         .result;
 
