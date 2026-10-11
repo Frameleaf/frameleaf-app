@@ -5,7 +5,9 @@ import {
   areaForPersonalSection,
   areaSectionKeys,
   areaForSection,
-  BACKUP_PAGES,
+  BACKUP_PLACE_PAGES,
+  BACKUP_TABS,
+  backupPageUrl,
   backupPageFor,
   commandCenterUrl,
   defaultSettingsArea,
@@ -112,17 +114,28 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('backup')).toBe('backup');
   });
 
-  it('shows every backup page under the one Backup area without moving its address (design review finding 66)', () => {
-    expect(BACKUP_PAGES.map(({ id }) => id)).toEqual(['destinations', 'schedule', 'restore']);
+  it('shows every backup page under the one Backup area without moving its address (FL-362, design review finding 66)', () => {
+    expect([...BACKUP_TABS]).toEqual(['overview', 'schedule', 'restore']);
+    expect([...BACKUP_PLACE_PAGES]).toEqual(['cloud', 'buddy', 'local']);
     // The schedule, the backups manager and Cloud backup are shown in Backup…
     expect(presentedArea('backup', 'backup')).toBe('backups');
     expect(presentedArea('maintenance', 'backups')).toBe('backups');
     expect(presentedArea('cloud', 'cloud-backup')).toBe('backups');
     expect(presentedAreaForSection('backup')).toBe('backups');
-    expect(backupPageFor('backups')).toBe('destinations');
+    // …each on the page that took its place.
     expect(backupPageFor('backup', 'backup')).toBe('schedule');
-    expect(backupPageFor('maintenance', 'backups')).toBe('restore');
-    expect(backupPageFor('cloud', 'cloud-backup')).toBe('destinations');
+    expect(backupPageFor('maintenance', 'backups')).toBe('local');
+    expect(backupPageFor('cloud', 'cloud-backup')).toBe('cloud');
+    // Inside Backup the page is the address's own section, or the view an older link names.
+    expect(backupPageFor('backups')).toBe('overview');
+    expect(backupPageFor('backups', undefined, { section: 'restore' })).toBe('restore');
+    expect(backupPageFor('backups', undefined, { section: 'buddy' })).toBe('buddy');
+    expect(backupPageFor('backups', undefined, { section: 'unknown' })).toBe('overview');
+    expect(backupPageFor('backups', undefined, { backupView: 'controls' })).toBe('buddy');
+    expect(backupPageFor('backups', undefined, { backupView: 'cloud' })).toBe('cloud');
+    expect(backupPageFor('backups', undefined, { section: 'local', backupView: 'cloud' })).toBe('local');
+    expect(backupPageUrl()).toBe('/user-settings?area=backups');
+    expect(backupPageUrl('cloud')).toBe('/user-settings?area=backups&section=cloud');
     // …and nothing else moves.
     expect(presentedArea('backup', 'takeout')).toBe('backup');
     expect(presentedArea('maintenance', 'integrity')).toBe('maintenance');

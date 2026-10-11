@@ -10,7 +10,7 @@
   import CloudWorkControls from '$lib/components/frameleaf/cloud/CloudWorkControls.svelte';
   import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
   import { cloudWorkRows } from '$lib/frameleaf/cloud-backup';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getCloudBackupStatus, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
@@ -56,7 +56,7 @@
       {@const title = $t(row.titleKey)}
       {@const runState = stateOf(row.id)}
       <div class="fc-last-run">
-        <h3><a href={commandCenterUrl('backups', undefined, { backupView: 'cloud' })}>{title}</a></h3>
+        <h3><a href={backupPageUrl('cloud')}>{title}</a></h3>
         <p class="fc-muted" role="status">
           {[
             $t(ACTIVITY_STAGE_KEYS[row.stage]),

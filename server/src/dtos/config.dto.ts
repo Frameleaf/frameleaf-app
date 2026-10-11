@@ -860,6 +860,15 @@ const AdminConfigSchemaWithVisibility = z
             keepLastAmount: z.int().min(1).describe('Keep last amount'),
           })
           .meta({ id: 'AdminConfigDatabaseBackupDto' }),
+        schedule: z
+          .object({
+            cronExpression: cronExpressionSchema
+              .or(z.literal(''))
+              .describe(
+                'When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used',
+              ),
+          })
+          .meta({ id: 'AdminConfigBackupScheduleDto' }),
       })
       .meta({ id: 'AdminConfigBackupsDto' }),
     ffmpeg: AdminConfigFFmpegSchema,
@@ -1413,6 +1422,9 @@ export const defaults = Object.freeze<SystemConfig>({
       enabled: true,
       cronExpression: CronExpression.EVERY_DAY_AT_2AM,
       keepLastAmount: 14,
+    },
+    schedule: {
+      cronExpression: '',
     },
   },
   ffmpeg: {
