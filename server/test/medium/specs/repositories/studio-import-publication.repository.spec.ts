@@ -1,0 +1,960 @@
+import { Kysely, Transaction, sql } from 'kysely';
+import { createHash, randomUUID } from 'node:crypto';
+import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { BUDDY_CAPTURE_LOCK, countPathReferences } from 'src/repositories/physical-file.repository.js';
+import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import type { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
+import type { ImportDeclaration, PreparedImport, PublicationKey } from 'src/utils/studio-import-publication.js';
+import { DECLARATION } from 'test/fixtures/studio-import-retention.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/library-queue-database.js';
+
+let db: Kysely<DB>;
+let root: string;
+const ownedFiles = new Set<string>();
+
+beforeAll(async () => {
+  db = await createRetentionTestDatabase();
+  root = await mkdtemp(join(tmpdir(), 'fl111-journal-'));
+});
+
+afterAll(async () => {
+  try {
+    for (const path of ownedFiles) {
+      await unlink(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    }
+    if (root) await rmdir(root);
+  } finally {
+    // The existing helper closes its bounded pool and drops only its own generated clone.
+    await db?.destroy();
+  }
+});
+
+const setup = async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const projects = ctx.get(StudioProjectRepository);
+  const project = await projects.create({ ownerId: user.id, name: 'Retention journal acceptance' });
+  const key = { ownerId: user.id, projectId: project.id, importId: randomUUID(), publicationId: randomUUID() };
+  return { ctx, user, projects, project, key, repo: new StudioImportPublicationRepository(db) };
+};
+
+const file = async (key: PublicationKey, changes: Partial<ImportDeclaration> = {}): Promise<PreparedImport> => {
+  const stagedPath = join(root, `${randomUUID()}.stage`);
+  const targetPath = join(root, `${key.projectId}-${key.importId}.mp4`);
+  const bytes = Buffer.from('test');
+  await writeFile(stagedPath, bytes, { flag: 'wx', mode: 0o600 });
+  ownedFiles.add(stagedPath);
+  ownedFiles.add(targetPath);
+  const stat = await lstat(stagedPath, { bigint: true });
+  const checksum = createHash('sha256').update(bytes).digest('hex');
+  return {
+    stagedPath,
+    targetPath,
+    identity: { dev: String(stat.dev), ino: String(stat.ino), size: Number(stat.size) },
+    declaration: {
+      ...structuredClone(DECLARATION),
+      checksum,
+      processingProvenance: { ...structuredClone(DECLARATION.processingProvenance), outputSha256: checksum },
+      ...changes,
+    },
+  };
+};
+
+// These callbacks model an acknowledged file barrier for DB tests; they do not qualify storage durability.
+const linkFile = async (prepared: PreparedImport) => {
+  await link(prepared.stagedPath, prepared.targetPath);
+};
+const removeFile = async (prepared: PreparedImport, role: 'stage' | 'aborted') => {
+  for (const path of role === 'stage' ? [prepared.stagedPath] : [prepared.stagedPath, prepared.targetPath]) {
+    await unlink(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+};
+
+const journal = async (key: PublicationKey) => {
+  const { rows } = await sql<{
+    id: string;
+    ownerId: string;
+    projectId: string;
+    importId: string;
+    state: string;
+    createdAt: Date;
+    expiresAt: Date;
+    stagedPath: string | null;
+    targetPath: string | null;
+    declaration: ImportDeclaration | null;
+    stagedIdentity: PreparedImport['identity'] | null;
+  }>`SELECT * FROM public.studio_import_publication WHERE id=${key.publicationId}::uuid`.execute(db);
+  return rows[0];
+};
+const ready = async (key: PublicationKey) =>
+  (
+    await sql<{
+      id: string;
+      path: string;
+      checksum: string;
+      processingProvenance: unknown;
+    }>`SELECT id,path,checksum,"processingProvenance" FROM public.studio_project_import
+  WHERE "projectId"=${key.projectId}::uuid AND id=${key.importId}::uuid`.execute(db)
+  ).rows;
+
+const prepare = async (fixture: Awaited<ReturnType<typeof setup>>, changes: Partial<ImportDeclaration> = {}) => {
+  const prepared = await file(fixture.key, changes);
+  await fixture.repo.register(fixture.key);
+  await fixture.repo.prepare(fixture.key, prepared, removeScratch);
+  return prepared;
+};
+const removeScratch = async (prepared: PreparedImport) => {
+  await unlink(prepared.stagedPath);
+};
+const expire = async (key: PublicationKey) => {
+  // Fixture clock setup preserves the real six-hour CHECK and never synthesizes a transition.
+  await sql`WITH stamp AS (SELECT clock_timestamp()-interval '1 second' AS expired)
+    UPDATE public.studio_import_publication SET "createdAt"=stamp.expired-interval '6 hours',
+    "expiresAt"=stamp.expired FROM stamp WHERE id=${key.publicationId}::uuid`.execute(db);
+};
+const defer = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+const waitForCallback = async (entered: Promise<void>, operation: Promise<unknown>) => {
+  await Promise.race([
+    entered,
+    operation.then(() => {
+      throw new Error('Expected callback was not entered');
+    }),
+  ]);
+};
+const pathKey = (path: string) => createHash('sha1').update(path).digest().readBigInt64BE(0).toString();
+
+const blockedOperation = async (
+  take: (tx: Transaction<DB>) => Promise<unknown>,
+  operation: () => Promise<unknown>,
+  inspect: (tx: Transaction<DB>, pid: number) => Promise<void> = async () => {},
+) => {
+  let pending: Promise<{ error?: unknown }> | undefined;
+  try {
+    await db.transaction().execute(async (tx) => {
+      await take(tx);
+      pending = operation().then(
+        () => ({}),
+        (error: unknown) => ({ error }),
+      );
+      let pid: number | undefined;
+      // Observe actual lock waiting through the blocker connection; do not add a third pool connection.
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const result = await sql<{ pid: number }>`SELECT pid FROM pg_stat_activity
+          WHERE datname=current_database() AND pid<>pg_backend_pid()
+            AND pg_backend_pid()=ANY(pg_blocking_pids(pid))`.execute(tx);
+        pid = result.rows[0]?.pid;
+        if (pid) break;
+        await new Promise((done) => setTimeout(done, 10));
+      }
+      expect(pid, 'Repository operation must actually wait on the held SQL lock').toBeDefined();
+      await inspect(tx, pid!);
+    });
+  } finally {
+    // Draining after the blocker commits/rolls back prevents an orphan operation during a failed assertion.
+    const outcome = await pending;
+    if (outcome?.error) throw outcome.error;
+  }
+};
+const projectLockHeld = async (tx: Transaction<DB>, projectId: string) => {
+  const { rows } = await sql<{ available: boolean }>`SELECT pg_try_advisory_xact_lock(
+    hashtextextended(${`buddy-studio:${projectId}`},0)) AS available`.execute(tx);
+  expect(rows[0].available).toBe(false);
+};
+
+// No journal transitions are emulated with SQL. Every register/prepare/publish/cancel/release calls the real repository.
+describe('Studio import publication — real journal SQL acceptance', () => {
+  it('T4-01 cancellation before registration commits an irreversible compact tombstone', async () => {
+    const f = await setup();
+    expect((await f.repo.cancel(f.key)).status).toBe('cancelled');
+    expect(await journal(f.key)).toMatchObject({
+      state: 'aborted',
+      stagedPath: null,
+      targetPath: null,
+      declaration: null,
+    });
+    await expect(f.repo.register(f.key)).rejects.toThrow('publication_aborted');
+    const scratch = await file(f.key);
+    await expect(f.repo.prepare(f.key, scratch, removeScratch)).rejects.toThrow('publication_aborted');
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it('T4-02 concurrent matching registration retains one binding and fixed six-hour expiry', async () => {
+    const f = await setup();
+    const receipts = await Promise.all([f.repo.register(f.key), f.repo.register(f.key)]);
+    expect(receipts[0]).toEqual(receipts[1]);
+    const before = (await journal(f.key))!;
+    expect(before.expiresAt.getTime() - before.createdAt.getTime()).toBe(6 * 60 * 60 * 1000);
+    await f.repo.register(f.key);
+    expect(await journal(f.key)).toEqual(before);
+    expect((await f.repo.discover(f.user.id, f.project.id)).items).toHaveLength(1);
+  });
+
+  it.each(['ownerId', 'projectId', 'importId'] as const)(
+    'T4-03 refuses changed %s for an established publication ID',
+    async (field) => {
+      const f = await setup();
+      const other = await setup();
+      await f.repo.register(f.key);
+      const before = await journal(f.key);
+      const changed = {
+        ...f.key,
+        [field]: field === 'ownerId' ? other.user.id : field === 'projectId' ? other.project.id : randomUUID(),
+      };
+      await expect(f.repo.register(changed)).rejects.toThrow();
+      await expect(f.repo.prepare(changed, await file(changed), removeScratch)).rejects.toThrow();
+      await expect(f.repo.cancel(changed)).rejects.toThrow();
+      expect(await journal(f.key)).toEqual(before);
+    },
+  );
+
+  it('T4-04 rechecks owner authority on registration, exact query and every discovery page', async () => {
+    const f = await setup();
+    const other = await setup();
+    await f.repo.register(f.key);
+    await expect(f.repo.register({ ...f.key, ownerId: other.user.id, publicationId: randomUUID() })).rejects.toThrow();
+    await expect(f.repo.get({ ...f.key, ownerId: other.user.id })).rejects.toThrow();
+    await expect(f.repo.discover(other.user.id, f.project.id)).rejects.toThrow();
+    expect(await f.repo.get(f.key)).toMatchObject({ publicationId: f.key.publicationId, state: 'registered' });
+    expect(await f.projects.listImports(f.project.id)).toEqual([]);
+  });
+
+  it.each(['archived', 'trashed', 'owner-deleted'] as const)(
+    'T4-05 rechecks %s after registration and before final callback',
+    async (state) => {
+      const f = await setup();
+      await prepare(f);
+      if (state === 'archived') await f.projects.update(f.project.id, { archivedAt: new Date() });
+      if (state === 'trashed') await f.projects.trash(f.project.id, new Date(Date.now() + 60_000));
+      if (state === 'owner-deleted') await f.ctx.get(UserRepository).delete({ id: f.user.id });
+      const link = vi.fn(linkFile);
+      await expect(f.repo.publish(f.key, link)).rejects.toThrow();
+      expect(link).not.toHaveBeenCalled();
+      expect(await ready(f.key)).toEqual([]);
+      expect(await journal(f.key)).toMatchObject({ state: 'preparing' });
+    },
+  );
+
+  it('T4-06 two registered IDs for one import cannot both reserve a preparing intent', async () => {
+    const f = await setup();
+    const next = { ...f.key, publicationId: randomUUID() };
+    await Promise.all([f.repo.register(f.key), f.repo.register(next)]);
+    const a = await file(f.key),
+      b = await file(next);
+    const attempts = await Promise.allSettled([
+      f.repo.prepare(f.key, a, removeScratch),
+      f.repo.prepare(next, b, removeScratch),
+    ]);
+    expect(attempts.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const { rows } = await sql<{ count: number }>`SELECT count(*)::int AS count FROM public.studio_import_publication
+      WHERE "projectId"=${f.project.id}::uuid AND "importId"=${f.key.importId}::uuid AND state='preparing'`.execute(db);
+    expect(rows[0].count).toBe(1);
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it('T4-07 matching prepare retries keep original handles and discard only the new scratch', async () => {
+    const f = await setup();
+    const original = await prepare(f);
+    const duplicate = await file(f.key);
+    const discard = vi.fn(removeScratch);
+    const result = await f.repo.prepare(f.key, duplicate, discard);
+    expect(result).toEqual({ status: 'prepared', file: original });
+    expect(discard).toHaveBeenCalledExactlyOnceWith(duplicate);
+    expect(await lstat(original.stagedPath)).toBeDefined();
+    expect(await journal(f.key)).toMatchObject({
+      stagedPath: original.stagedPath,
+      targetPath: original.targetPath,
+      stagedIdentity: original.identity,
+    });
+  });
+
+  it.each([
+    ['checksum', { checksum: 'c'.repeat(64) }],
+    ['size', { sizeBytes: 5 }],
+    ['type', { contentType: 'audio/wav' }],
+    ['extension', { extension: '.wav' }],
+    ['name', { fileName: 'other.mp4' }],
+    ['external references', { externalReferences: 1 }],
+    ['provenance', { processingProvenance: null }],
+  ] satisfies Array<[string, Partial<ImportDeclaration>]>)(
+    'T4-08 refuses a changed full declaration: %s',
+    async (_name, change) => {
+      const f = await setup();
+      const original = await prepare(f);
+      const discard = vi.fn(removeScratch);
+      await expect(f.repo.prepare(f.key, await file(f.key, change), discard)).rejects.toThrow();
+      expect(discard).not.toHaveBeenCalled();
+      expect(await journal(f.key)).toMatchObject({
+        stagedPath: original.stagedPath,
+        declaration: original.declaration,
+      });
+    },
+  );
+
+  it('T4-09 JSONB key order does not change immutable matching provenance', async () => {
+    const f = await setup();
+    const original = await prepare(f);
+    const retry = await file(f.key);
+    const lineage = retry.declaration.processingProvenance!;
+    retry.declaration.processingProvenance = Object.fromEntries(Object.entries(lineage).reverse()) as typeof lineage;
+    await expect(f.repo.prepare(f.key, retry, removeScratch)).resolves.toEqual({ status: 'prepared', file: original });
+  });
+
+  it('T4-10 final callback precedes one atomic ready-import and published-journal commit', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await f.repo.publish(f.key, async (value) => {
+      expect(value).toEqual(prepared);
+      expect(await ready(f.key)).toEqual([]);
+      expect(await journal(f.key)).toMatchObject({ state: 'preparing' });
+      expect(await f.projects.listImports(f.project.id)).toEqual([]);
+      await linkFile(value);
+    });
+    expect(await ready(f.key)).toEqual([
+      expect.objectContaining({
+        id: f.key.importId,
+        path: prepared.targetPath,
+        processingProvenance: prepared.declaration.processingProvenance,
+      }),
+    ]);
+    expect(await journal(f.key)).toMatchObject({ state: 'published', stagedPath: prepared.stagedPath });
+    expect((await f.repo.get(f.key))!.cleanupPending).toBe(true);
+  });
+
+  it('T4-11 link/barrier rejection rolls back ready insertion and preserves exact preparing evidence', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await expect(
+      f.repo.publish(f.key, async () => {
+        throw new Error('target-barrier-failed');
+      }),
+    ).rejects.toThrow('target-barrier-failed');
+    expect(await ready(f.key)).toEqual([]);
+    expect(await journal(f.key)).toMatchObject({
+      state: 'preparing',
+      stagedPath: prepared.stagedPath,
+      stagedIdentity: prepared.identity,
+    });
+  });
+
+  it('T4-12 a lost postcommit acknowledgement reconciles the actual ready row without linking twice', async () => {
+    const f = await setup();
+    await prepare(f);
+    await expect(
+      (async () => {
+        await f.repo.publish(f.key, linkFile);
+        throw new Error('ack-lost');
+      })(),
+    ).rejects.toThrow('ack-lost');
+    const retryLink = vi.fn(linkFile);
+    const imported = await f.repo.publish(f.key, retryLink);
+    expect(imported.id).toBe(f.key.importId);
+    expect(retryLink).not.toHaveBeenCalled();
+    expect(await ready(f.key)).toHaveLength(1);
+    expect((await f.repo.cancel(f.key)).status).toBe('already-published');
+    expect(await ready(f.key)).toHaveLength(1);
+  });
+
+  it('T4-13 a new-ID ready retry creates its own published receipt without rebinding the ready row', async () => {
+    const f = await setup();
+    const original = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    const next = { ...f.key, publicationId: randomUUID() };
+    await f.repo.register(next);
+    const scratch = await file(next);
+    const result = await f.repo.prepare(next, scratch, removeScratch);
+    expect(result).toMatchObject({ status: 'ready', imported: { id: f.key.importId, path: original.targetPath } });
+    expect(await journal(next)).toMatchObject({ state: 'published' });
+    expect(await ready(next)).toHaveLength(1);
+  });
+
+  it.each(['different-provenance', 'null-enrichment', 'omitted-provenance'] as const)(
+    'T4-14 ready immutable retry: %s',
+    async (kind) => {
+      const f = await setup();
+      await prepare(f, kind === 'null-enrichment' ? { processingProvenance: null } : {});
+      await f.repo.publish(f.key, linkFile);
+      const before = await ready(f.key);
+      const next = { ...f.key, publicationId: randomUUID() };
+      await f.repo.register(next);
+      const scratch = await file(next);
+      if (kind === 'different-provenance') scratch.declaration.processingProvenance!.variant = 'threeD';
+      if (kind === 'omitted-provenance') scratch.declaration.processingProvenance = null;
+      if (kind === 'omitted-provenance')
+        await expect(f.repo.prepare(next, scratch, removeScratch)).resolves.toMatchObject({ status: 'ready' });
+      else await expect(f.repo.prepare(next, scratch, removeScratch)).rejects.toThrow('provenance_conflict');
+      expect(await ready(f.key)).toEqual(before);
+    },
+  );
+
+  it.each([{ checksum: 'd'.repeat(64) }, { contentType: 'audio/wav' }, { sizeBytes: 7 }])(
+    'T4-15 ready retries refuse changed bytes/type/size %j',
+    async (change) => {
+      const f = await setup();
+      await prepare(f);
+      await f.repo.publish(f.key, linkFile);
+      const before = await ready(f.key),
+        next = { ...f.key, publicationId: randomUUID() };
+      await f.repo.register(next);
+      const discard = vi.fn(removeScratch);
+      await expect(f.repo.prepare(next, await file(next, change), discard)).rejects.toThrow();
+      expect(discard).not.toHaveBeenCalled();
+      expect(await ready(f.key)).toEqual(before);
+    },
+  );
+
+  it('T4-16 missing ready bytes refuse repair-required instead of adopting new scratch', async () => {
+    const f = await setup();
+    const original = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    await unlink(original.targetPath);
+    const next = { ...f.key, publicationId: randomUUID() };
+    await f.repo.register(next);
+    const discard = vi.fn(removeScratch);
+    await expect(f.repo.prepare(next, await file(next), discard)).rejects.toThrow(/repair.required/i);
+    expect(discard).not.toHaveBeenCalled();
+    expect(await ready(f.key)).toHaveLength(1);
+  });
+
+  it('T4-17 cancellation winning before publication prevents its callback and ready row', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    expect((await f.repo.cancel(f.key)).status).toBe('cancelled');
+    const link = vi.fn(linkFile);
+    await expect(f.repo.publish(f.key, link)).rejects.toThrow('publication_aborted');
+    expect(link).not.toHaveBeenCalled();
+    expect(await ready(f.key)).toEqual([]);
+    expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: prepared.stagedPath });
+  });
+
+  it('T4-18 cancellation queued behind the final transaction reports already-published', async () => {
+    const f = await setup();
+    await prepare(f);
+    const entered = defer(),
+      finish = defer();
+    const publishing = f.repo.publish(f.key, async (value) => {
+      entered.resolve();
+      await finish.promise;
+      await linkFile(value);
+    });
+    let cancelling: ReturnType<typeof f.repo.cancel> | undefined;
+    try {
+      await waitForCallback(entered.promise, publishing);
+      cancelling = f.repo.cancel(f.key);
+    } finally {
+      finish.resolve();
+    }
+    const outcomes = await Promise.allSettled([publishing, cancelling!]);
+    for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
+    expect(outcomes[1]).toMatchObject({ status: 'fulfilled', value: { status: 'already-published' } });
+    expect(await ready(f.key)).toHaveLength(1);
+  });
+
+  it.each(['registered', 'preparing'] as const)(
+    'T4-19 fixed expiry of %s refuses preparation/publication without extending the receipt',
+    async (state) => {
+      const f = await setup();
+      await f.repo.register(f.key);
+      if (state === 'preparing') await f.repo.prepare(f.key, await file(f.key), removeScratch);
+      await expire(f.key);
+      const before = await journal(f.key);
+      const link = vi.fn(linkFile);
+      if (state === 'registered')
+        await expect(f.repo.prepare(f.key, await file(f.key), removeScratch)).rejects.toThrow(/expir/i);
+      else await expect(f.repo.publish(f.key, link)).rejects.toThrow(/expir/i);
+      expect(link).not.toHaveBeenCalled();
+      expect(await ready(f.key)).toEqual([]);
+      expect((await journal(f.key))!.expiresAt).toEqual(before!.expiresAt);
+    },
+  );
+
+  it('T4-20 registration reserves no bytes; concurrent preparing reservations count once per owner', async () => {
+    const f = await setup();
+    await db
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 4, quotaUsageInBytes: 0 })
+      .where('id', '=', f.user.id)
+      .execute();
+    const otherProject = await f.projects.create({ ownerId: f.user.id, name: 'Same-owner concurrent quota' });
+    const second = { ...f.key, projectId: otherProject.id, importId: randomUUID(), publicationId: randomUUID() };
+    await Promise.all([f.repo.register(f.key), f.repo.register(second)]);
+    const results = await Promise.allSettled([
+      f.repo.prepare(f.key, await file(f.key), removeScratch),
+      f.repo.prepare(second, await file(second), removeScratch),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const winner = results[0].status === 'fulfilled' ? f.key : second;
+    await expect(f.repo.prepare(winner, await file(winner), removeScratch)).resolves.toMatchObject({
+      status: 'prepared',
+    });
+  });
+
+  it('T4-21 publication atomically replaces its reservation instead of double charging', async () => {
+    const f = await setup();
+    await db
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 4, quotaUsageInBytes: 0 })
+      .where('id', '=', f.user.id)
+      .execute();
+    await prepare(f);
+    await expect(f.repo.publish(f.key, linkFile)).resolves.toMatchObject({ id: f.key.importId });
+    expect(await f.projects.getImportBytes(f.user.id)).toBe(4);
+    const second = { ...f.key, importId: randomUUID(), publicationId: randomUUID() };
+    await f.repo.register(second);
+    await expect(f.repo.prepare(second, await file(second), removeScratch)).rejects.toThrow(/quota/i);
+  });
+
+  it('T4-22 existing import and bundle writers cannot bypass a preparing reservation', async () => {
+    const f = await setup();
+    await db
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 7, quotaUsageInBytes: 0 })
+      .where('id', '=', f.user.id)
+      .execute();
+    const prepared = await prepare(f);
+    await expect(
+      f.projects.registerImport({
+        ownerId: f.user.id,
+        projectId: f.project.id,
+        id: randomUUID(),
+        path: join(root, 'legacy.mp4'),
+        ...prepared.declaration,
+      }),
+    ).rejects.toThrow(/quota/i);
+    await expect(
+      f.projects.createUpload({
+        ownerId: f.user.id,
+        path: join(root, 'bundle.zip'),
+        sizeBytes: 4,
+        digest: '',
+        originalFileName: 'bundle.zip',
+        manifest: {},
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow(/quota/i);
+  });
+
+  it('T4-23 the existing per-project import cap also bounds new preparing reservations', async () => {
+    const f = await setup();
+    // Bulk fixture rows exercise admission at the real boundary; no journal transition is synthesized.
+    await sql`INSERT INTO public.studio_project_import (id,"ownerId","projectId",checksum,"contentType","sizeBytes",path,"fileName")
+      SELECT gen_random_uuid(),${f.user.id}::uuid,${f.project.id}::uuid,${'e'.repeat(64)},'video/mp4',4,
+        ${root} || '/fixture-' || n::text,'fixture.mp4' FROM generate_series(1,${STUDIO_IMPORT_MAX_PER_PROJECT}) n`.execute(
+      db,
+    );
+    await f.repo.register(f.key);
+    await expect(f.repo.prepare(f.key, await file(f.key), removeScratch)).rejects.toThrow(/imports|limit/i);
+  });
+
+  it('T4-24 journal state owns exact path roles but never appears as readable import or declaration', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    const references = (path: string) => db.transaction().execute((tx) => countPathReferences(tx, path));
+    expect(await references(prepared.stagedPath)).toBe(1);
+    expect(await references(prepared.targetPath)).toBe(1);
+    expect(await f.projects.listImports(f.project.id)).toEqual([]);
+    expect(await f.projects.listImportDeclarations(f.project.id)).toEqual([]);
+    await f.repo.publish(f.key, linkFile);
+    expect(await references(prepared.stagedPath)).toBe(1);
+    expect(await references(prepared.targetPath)).toBe(1); // Ready row owns target; published journal owns only stage.
+    await f.repo.release(f.key, removeFile);
+    expect(await references(prepared.stagedPath)).toBe(0);
+    expect(await references(prepared.targetPath)).toBe(1);
+  });
+
+  it.each(['published', 'aborted'] as const)(
+    'T4-25 %s cleanup compacts only after acknowledged removal and barrier',
+    async (state) => {
+      const f = await setup();
+      const prepared = await prepare(f);
+      if (state === 'published') await f.repo.publish(f.key, linkFile);
+      else await f.repo.cancel(f.key);
+      await expect(
+        f.repo.release(f.key, async () => {
+          throw new Error('cleanup-barrier-failed');
+        }),
+      ).rejects.toThrow('cleanup-barrier-failed');
+      expect(await journal(f.key)).toMatchObject({
+        state,
+        stagedPath: prepared.stagedPath,
+        targetPath: prepared.targetPath,
+        stagedIdentity: prepared.identity,
+      });
+      await f.repo.release(f.key, async (value, role) => {
+        expect(value).toEqual(prepared);
+        expect(role).toBe(state === 'published' ? 'stage' : 'aborted');
+        expect((await journal(f.key))!.stagedPath).toBe(prepared.stagedPath);
+        await removeFile(value, role);
+      });
+      expect(await journal(f.key)).toMatchObject({
+        state,
+        stagedPath: null,
+        targetPath: null,
+        declaration: null,
+        stagedIdentity: null,
+      });
+      expect((await f.repo.get(f.key))!.cleanupPending).toBe(false);
+      if (state === 'published') expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+      else expect(await ready(f.key)).toEqual([]);
+    },
+  );
+
+  it('T4-26 lost cleanup acknowledgement can retry compact terminal receipt without deleting ready bytes', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    await expect(
+      (async () => {
+        await f.repo.release(f.key, removeFile);
+        throw new Error('cleanup-ack-lost');
+      })(),
+    ).rejects.toThrow('cleanup-ack-lost');
+    const remove = vi.fn(removeFile);
+    await f.repo.release(f.key, remove);
+    expect(remove).not.toHaveBeenCalled();
+    expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+    expect((await f.repo.get(f.key))!.state).toBe('published');
+  });
+
+  it.each(['asset', 'buddy'] as const)(
+    'T4-27 another %s reference prevents abort cleanup and preserves handles',
+    async (reference) => {
+      const f = await setup();
+      const prepared = await prepare(f);
+      await f.repo.cancel(f.key);
+      if (reference === 'asset') await f.ctx.newAsset({ ownerId: f.user.id, originalPath: prepared.stagedPath });
+      else
+        await sql`INSERT INTO public.buddy_backup_reference ("runId",path) VALUES (${randomUUID()}::uuid,${prepared.targetPath})`.execute(
+          db,
+        );
+      const remove = vi.fn(removeFile);
+      await f.repo.release(f.key, remove).catch(() => {});
+      expect(remove).not.toHaveBeenCalled();
+      expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: prepared.stagedPath });
+    },
+  );
+
+  it('T4-28 a referenced target refuses publication before callback and keeps preparing evidence', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await f.ctx.newAsset({ ownerId: f.user.id, originalPath: prepared.targetPath });
+    const link = vi.fn(linkFile);
+    await expect(f.repo.publish(f.key, link)).rejects.toThrow();
+    expect(link).not.toHaveBeenCalled();
+    expect(await ready(f.key)).toEqual([]);
+    expect(await journal(f.key)).toMatchObject({ state: 'preparing', stagedPath: prepared.stagedPath });
+  });
+
+  it('T4-29 publication takes the existing project advisory lock before proceeding', async () => {
+    const f = await setup();
+    await prepare(f);
+    await blockedOperation(
+      (tx) => sql`SELECT pg_advisory_xact_lock(hashtextextended(${`buddy-studio:${f.project.id}`},0))`.execute(tx),
+      () => f.repo.publish(f.key, linkFile),
+    );
+    expect(await ready(f.key)).toHaveLength(1);
+  });
+
+  it('T4-30 project row waiting already holds the common advisory lock', async () => {
+    const f = await setup();
+    await f.repo.register(f.key);
+    await blockedOperation(
+      (tx) => tx.selectFrom('studio_project').select('id').where('id', '=', f.project.id).forUpdate().execute(),
+      () => f.repo.cancel(f.key),
+      (tx) => projectLockHeld(tx, f.project.id),
+    );
+    expect((await journal(f.key))!.state).toBe('aborted');
+  });
+
+  it('T4-31 exact journal row waiting already holds the project lock', async () => {
+    const f = await setup();
+    await f.repo.register(f.key);
+    await blockedOperation(
+      (tx) =>
+        sql`SELECT id FROM public.studio_import_publication WHERE id=${f.key.publicationId}::uuid FOR UPDATE`.execute(
+          tx,
+        ),
+      () => f.repo.cancel(f.key),
+      (tx) => projectLockHeld(tx, f.project.id),
+    );
+  });
+
+  it('T4-32 Buddy barrier precedes owner quota locking during final publication', async () => {
+    const f = await setup();
+    await prepare(f);
+    await blockedOperation(
+      async (tx) => {
+        await sql`SELECT pg_advisory_xact_lock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(tx);
+        await tx.selectFrom('user').select('id').where('id', '=', f.user.id).forUpdate().execute();
+      },
+      () => f.repo.publish(f.key, linkFile),
+      async (tx, pid) => {
+        await projectLockHeld(tx, f.project.id);
+        const { rows } = await sql<{
+          count: number;
+        }>`SELECT count(*)::int AS count FROM pg_locks WHERE pid=${pid} AND NOT granted AND locktype='advisory'`.execute(
+          tx,
+        );
+        expect(rows[0].count).toBe(1);
+      },
+    );
+  });
+
+  it('T4-33 path locks use sorted order before the owner quota row', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    const [first, last] = [prepared.stagedPath, prepared.targetPath].sort();
+    await blockedOperation(
+      (tx) => sql`SELECT pg_advisory_xact_lock(${pathKey(last)}::bigint)`.execute(tx),
+      () => f.repo.publish(f.key, linkFile),
+      async (tx) => {
+        const { rows } = await sql<{
+          available: boolean;
+        }>`SELECT pg_try_advisory_xact_lock(${pathKey(first)}::bigint) AS available`.execute(tx);
+        expect(rows[0].available).toBe(false);
+        await tx.selectFrom('user').select('id').where('id', '=', f.user.id).forUpdate().noWait().execute();
+      },
+    );
+  });
+
+  it('T4-34 owner quota waiting retains project and both path locks', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await blockedOperation(
+      (tx) => tx.selectFrom('user').select('id').where('id', '=', f.user.id).forUpdate().execute(),
+      () => f.repo.publish(f.key, linkFile),
+      async (tx) => {
+        await projectLockHeld(tx, f.project.id);
+        for (const path of [prepared.stagedPath, prepared.targetPath]) {
+          const { rows } = await sql<{
+            available: boolean;
+          }>`SELECT pg_try_advisory_xact_lock(${pathKey(path)}::bigint) AS available`.execute(tx);
+          expect(rows[0].available).toBe(false);
+        }
+      },
+    );
+  });
+
+  it('T4-35 discovery pages over 100 equal-timestamp receipts without duplicates or private file fields', async () => {
+    const f = await setup();
+    const keys = Array.from({ length: 105 }, () => ({ ...f.key, publicationId: randomUUID() }));
+    for (const key of keys) await f.repo.register(key);
+    const at = new Date('2026-10-11T00:00:00Z');
+    await sql`UPDATE public.studio_import_publication SET "createdAt"=${at},"expiresAt"=${new Date(at.getTime() + 6 * 60 * 60 * 1000)} WHERE "projectId"=${f.project.id}::uuid`.execute(
+      db,
+    );
+    const one = await f.repo.discover(f.user.id, f.project.id);
+    expect(one.items).toHaveLength(100);
+    expect(one.nextCursor).not.toBeNull();
+    const two = await f.repo.discover(f.user.id, f.project.id, one.nextCursor!);
+    expect(two.items).toHaveLength(5);
+    expect(two.nextCursor).toBeNull();
+    const all = [...one.items, ...two.items];
+    expect(new Set(all.map((item) => item.publicationId)).size).toBe(105);
+    expect(all.map((item) => item.publicationId)).toEqual(keys.map((key) => key.publicationId).sort());
+    for (const item of all)
+      expect(Object.keys(item).sort()).toEqual(
+        ['cleanupPending', 'createdAt', 'expiresAt', 'importId', 'publicationId', 'state'].sort(),
+      );
+    await f.repo.cancel(keys[0]);
+    expect(
+      (await f.repo.discover(f.user.id, f.project.id, undefined, 'aborted')).items.map((r) => r.publicationId),
+    ).toEqual([keys[0].publicationId]);
+  });
+
+  it('T4-36 strict cursor/state validation and owner-scoped cursors never disclose another project', async () => {
+    const f = await setup(),
+      other = await setup();
+    await f.repo.register(f.key);
+    await expect(f.repo.discover(f.user.id, f.project.id, 'not-a-valid-cursor')).rejects.toThrow();
+    await expect(f.repo.discover(f.user.id, f.project.id, undefined, 'unknown' as never)).rejects.toThrow();
+    const keys = Array.from({ length: 101 }, () => ({ ...f.key, publicationId: randomUUID() }));
+    for (const key of keys) await f.repo.register(key);
+    const cursor = (await f.repo.discover(f.user.id, f.project.id)).nextCursor!;
+    await expect(f.repo.discover(other.user.id, f.project.id, cursor)).rejects.toThrow();
+    expect((await f.repo.discover(other.user.id, other.project.id)).items).toEqual([]);
+  });
+
+  it.each(['delete', 'sweep', 'account'] as const)(
+    'T4-37 %s purge cannot erase pending handles, and cleanup does not restore edit authority',
+    async (kind) => {
+      const f = await setup();
+      const prepared = await prepare(f);
+      await f.repo.cancel(f.key);
+      if (kind === 'sweep') await f.projects.trash(f.project.id, new Date(Date.now() - 1000));
+      // Either deferring deletion or retaining an orphan journal is safe; losing full handles is never safe.
+      const deletion =
+        kind === 'delete'
+          ? f.projects.delete(f.project.id)
+          : kind === 'sweep'
+            ? f.projects.deletePurgeable(new Date())
+            : f.ctx.get(UserRepository).delete({ id: f.user.id }, true);
+      await deletion.catch(() => {});
+      expect(await journal(f.key)).toMatchObject({
+        state: 'aborted',
+        ownerId: f.user.id,
+        projectId: f.project.id,
+        stagedPath: prepared.stagedPath,
+        targetPath: prepared.targetPath,
+        stagedIdentity: prepared.identity,
+      });
+      await expect(f.repo.prepare(f.key, await file(f.key), removeScratch)).rejects.toThrow('publication_aborted');
+      await f.repo.release(f.key, removeFile);
+      expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: null, targetPath: null });
+    },
+  );
+  it.each(['matching', 'conflicting'] as const)(
+    'T4-38 an actual ready row dominates an older preparing journal only when %s',
+    async (kind) => {
+      const f = await setup();
+      const prepared = await prepare(f);
+      await linkFile(prepared);
+      // Seed a real preexisting ready row, as from another committed writer; never fake journal publication.
+      await sql`INSERT INTO public.studio_project_import
+      (id,"ownerId","projectId",checksum,"contentType","sizeBytes",path,"fileName","processingProvenance")
+      VALUES (${f.key.importId}::uuid,${f.user.id}::uuid,${f.project.id}::uuid,
+        ${kind === 'matching' ? prepared.declaration.checksum : 'f'.repeat(64)},
+        ${prepared.declaration.contentType},${prepared.declaration.sizeBytes},${prepared.targetPath},
+        ${prepared.declaration.fileName},${JSON.stringify(prepared.declaration.processingProvenance)}::jsonb)`.execute(
+        db,
+      );
+      const before = await ready(f.key),
+        link = vi.fn(linkFile);
+      if (kind === 'matching') {
+        await expect(f.repo.publish(f.key, link)).resolves.toMatchObject({ id: f.key.importId });
+        expect((await journal(f.key))!.state).toBe('published');
+      } else {
+        await expect(f.repo.publish(f.key, link)).rejects.toThrow();
+        expect(await journal(f.key)).toMatchObject({ state: 'preparing', stagedPath: prepared.stagedPath });
+      }
+      expect(link).not.toHaveBeenCalled();
+      expect(await ready(f.key)).toEqual(before);
+    },
+  );
+
+  it('T4-39 expiry committed while publication waits for the project lock wins before its callback', async () => {
+    const f = await setup();
+    await prepare(f);
+    const link = vi.fn(linkFile);
+    await expect(
+      blockedOperation(
+        (tx) => sql`SELECT pg_advisory_xact_lock(hashtextextended(${`buddy-studio:${f.project.id}`},0))`.execute(tx),
+        () => f.repo.publish(f.key, link),
+        async (tx) => {
+          await sql`WITH stamp AS (SELECT clock_timestamp()-interval '1 second' AS expired)
+          UPDATE public.studio_import_publication SET "createdAt"=stamp.expired-interval '6 hours',
+          "expiresAt"=stamp.expired FROM stamp WHERE id=${f.key.publicationId}::uuid`.execute(tx);
+        },
+      ),
+    ).rejects.toThrow(/expir/i);
+    expect(link).not.toHaveBeenCalled();
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it('T4-40 racing a global publication ID across two valid owner projects retains exactly one binding', async () => {
+    const f = await setup(),
+      other = await setup();
+    const second = { ...other.key, publicationId: f.key.publicationId };
+    const attempts = await Promise.allSettled([f.repo.register(f.key), other.repo.register(second)]);
+    expect(attempts.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const winner = attempts[0].status === 'fulfilled' ? f.key : second;
+    expect(await journal(winner)).toMatchObject({
+      ownerId: winner.ownerId,
+      projectId: winner.projectId,
+      importId: winner.importId,
+    });
+  });
+
+  it('T4-41 release uses the common project lock and preserves terminal receipt identity', async () => {
+    const f = await setup();
+    await prepare(f);
+    await f.repo.cancel(f.key);
+    await blockedOperation(
+      (tx) => sql`SELECT pg_advisory_xact_lock(hashtextextended(${`buddy-studio:${f.project.id}`},0))`.execute(tx),
+      () => f.repo.release(f.key, removeFile),
+    );
+    expect(await journal(f.key)).toMatchObject({ id: f.key.publicationId, state: 'aborted', stagedPath: null });
+  });
+
+  it('T4-42 cancelling a different attempt never cancels an existing retained import', async () => {
+    const f = await setup();
+    await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    const second = { ...f.key, publicationId: randomUUID() };
+    await f.repo.register(second);
+    expect((await f.repo.cancel(second)).status).toBe('cancelled');
+    expect((await journal(f.key))!.state).toBe('published');
+    expect(await ready(f.key)).toHaveLength(1);
+  });
+
+  it('T4-43 published get/discovery expose retained identity without operational paths or inode facts', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    const exact = await f.repo.get(f.key);
+    const discovered = (await f.repo.discover(f.user.id, f.project.id)).items[0];
+    for (const receipt of [exact, discovered]) {
+      expect(receipt).toMatchObject({ state: 'published', imported: { id: f.key.importId } });
+      expect(JSON.stringify(receipt)).not.toContain(prepared.stagedPath);
+      expect(JSON.stringify(receipt)).not.toContain(prepared.targetPath);
+      expect(receipt).not.toHaveProperty('stagedIdentity');
+      expect(receipt).not.toHaveProperty('declaration');
+    }
+  });
+
+  it('T4-44 a same-hash foreign target inode is not adopted after exclusive linking refuses', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await writeFile(prepared.targetPath, 'test', { flag: 'wx', mode: 0o600 });
+    const foreign = await lstat(prepared.targetPath, { bigint: true });
+    expect(String(foreign.ino)).not.toBe(prepared.identity.ino);
+    await expect(f.repo.publish(f.key, linkFile)).rejects.toMatchObject({ code: 'EEXIST' });
+    expect(await ready(f.key)).toEqual([]);
+    expect(await journal(f.key)).toMatchObject({ state: 'preparing', stagedPath: prepared.stagedPath });
+    expect(String((await lstat(prepared.targetPath, { bigint: true })).ino)).toBe(String(foreign.ino));
+    expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+  });
+
+  it('T4-45 duplicate scratch with another reference is never discarded or substituted for original handles', async () => {
+    const f = await setup();
+    const original = await prepare(f),
+      duplicate = await file(f.key);
+    await f.ctx.newAsset({ ownerId: f.user.id, originalPath: duplicate.stagedPath });
+    const discard = vi.fn(removeScratch);
+    await f.repo.prepare(f.key, duplicate, discard).catch(() => {});
+    expect(discard).not.toHaveBeenCalled();
+    expect(await lstat(duplicate.stagedPath)).toBeDefined();
+    expect(await journal(f.key)).toMatchObject({
+      state: 'preparing',
+      stagedPath: original.stagedPath,
+      stagedIdentity: original.identity,
+    });
+  });
+
+  it('T4-46 a retry presenting the original prepared handle cannot discard that owned stage', async () => {
+    const f = await setup();
+    const original = await prepare(f),
+      discard = vi.fn(removeScratch);
+    await expect(f.repo.prepare(f.key, original, discard)).resolves.toEqual({ status: 'prepared', file: original });
+    expect(discard).not.toHaveBeenCalled();
+    expect(await lstat(original.stagedPath)).toBeDefined();
+  });
+});
