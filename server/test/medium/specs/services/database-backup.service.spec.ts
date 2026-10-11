@@ -101,7 +101,6 @@ describe('routine database backup with a real dump (FL-298)', { timeout: 120_000
       {} as never,
       undefined as never,
       undefined as never,
-      undefined as never,
     );
   });
 

@@ -41,7 +41,6 @@ describe('Buddy database recovery fence', () => {
       database as never,
       { hasAdmin: () => Promise.resolve(healthy) } as never,
       undefined as never,
-      undefined as never,
       { checkApiHealth: vi.fn() } as never,
     );
     vi.spyOn(service, 'createDatabaseBackup').mockResolvedValue('/tmp/restore-point.sql.gz');

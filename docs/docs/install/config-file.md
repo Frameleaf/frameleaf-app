@@ -36,6 +36,9 @@ The default configuration looks like this:
       "cronExpression": "0 02 * * *",
       "enabled": true,
       "keepLastAmount": 14
+    },
+    "schedule": {
+      "cronExpression": ""
     }
   },
   "ffmpeg": {

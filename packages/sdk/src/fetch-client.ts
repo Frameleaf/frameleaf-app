@@ -1146,8 +1146,13 @@ export type AdminConfigDatabaseBackupDto = {
     /** Keep last amount */
     keepLastAmount: number;
 };
+export type AdminConfigBackupScheduleDto = {
+    /** When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used */
+    cronExpression: string | "";
+};
 export type AdminConfigBackupsDto = {
     database: AdminConfigDatabaseBackupDto;
+    schedule: AdminConfigBackupScheduleDto;
 };
 export type AdminConfigFFmpegRealtimeDto = {
     /** Enable real-time HLS transcoding (alpha) */
@@ -1902,6 +1907,29 @@ export type BackupRestoreVerificationRecordDto = {
     metadata: boolean;
     /** Original files restored and their checksums were verified */
     originals: boolean;
+};
+export type BackupScheduleResponseDto = {
+    /** Whether the schedule was chosen in Backup settings; false while it is the one stored before */
+    chosen: boolean;
+    /** The schedule in force, in the server time zone */
+    cronExpression: string;
+    /** When the last run ended */
+    lastFinishedAt: string | null;
+    /** When the next run starts */
+    nextRunAt: string | null;
+    /** The places a run visits, in order */
+    places: {
+        id: BackupSequencePlace;
+        /** Whether a run backs up to this place */
+        on: boolean;
+    }[];
+    /** The run in progress */
+    run: {
+        place: BackupSequencePlace;
+        startedAt: string;
+    } | null;
+    /** The server time zone the schedule runs in */
+    timezone: string;
 };
 export type FrameleafSetupCodeDto = {
     /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
@@ -17261,6 +17289,17 @@ export function recordBackupRestoreVerification({ backupRestoreVerificationRecor
     })));
 }
 /**
+ * Get the backup schedule
+ */
+export function getBackupSchedule(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupScheduleResponseDto;
+    }>("/admin/database-backups/schedule", {
+        ...opts
+    }));
+}
+/**
  * Start database backup restore flow
  */
 export function startDatabaseRestoreFlow({ frameleafSetupCodeDto }: {
@@ -29008,6 +29047,11 @@ export enum SystemConfigHistorySource {
     ServerCli = "server-cli",
     FrameleafCloud = "frameleaf-cloud"
 }
+export enum BackupSequencePlace {
+    Local = "local",
+    Buddy = "buddy",
+    Cloud = "cloud"
+}
 export enum HardwareRunsOn {
     Gpu = "gpu",
     Cpu = "cpu"
@@ -31300,6 +31344,7 @@ export enum JobName {
     FrameleafLicenseRefresh = "FrameleafLicenseRefresh",
     CloudMlDescriptionBatch = "CloudMlDescriptionBatch",
     CloudBackupSchedule = "CloudBackupSchedule",
+    BackupSequence = "BackupSequence",
     CloudBackupVerify = "CloudBackupVerify",
     PushDeliver = "PushDeliver",
     PushBackupStaleCheck = "PushBackupStaleCheck",

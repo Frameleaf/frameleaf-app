@@ -534,6 +534,7 @@ export type JobItem =
 
   // Backups
   | { name: JobName.DatabaseBackup; data?: IBaseJob }
+  | { name: JobName.BackupSequence; data?: IBaseJob }
 
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
@@ -1464,6 +1465,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.BackupRestoreVerification]: BackupRestoreVerification;
+  [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.FrameleafSetup]: FrameleafSetupState;
 }
 
@@ -1478,6 +1480,9 @@ export type FrameleafSetupState = {
   progress: Record<string, unknown> | null;
   updatedAt: string | null;
 };
+
+/** FL-362: see `src/utils/backup-sequence.ts`. */
+export type BackupSequenceState = import('src/utils/backup-sequence.js').BackupSequenceState;
 
 /** FL-71: the last recorded restore test of each part of a backup (ISO date-times), and who recorded it. */
 export type BackupRestoreVerification = {
