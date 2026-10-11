@@ -272,8 +272,9 @@ export const AlbumResponseSchema = z
       .meta({ format: 'double' })
       .nullable()
       .describe('Sibling display position. Lower values appear first.'),
+    // FL-326
     origin: PartnerOriginSchema.optional().describe(
-      'FL-326: present on your own album when partner sharing copied it from another library',
+      'Present on your own album when partner sharing copied it from another library',
     ),
   })
   .meta({ id: 'AlbumResponseDto' });
