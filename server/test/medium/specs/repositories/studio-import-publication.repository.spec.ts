@@ -877,7 +877,7 @@ describe('Studio import publication — real journal SQL acceptance', () => {
       VALUES (${f.key.importId}::uuid,${f.user.id}::uuid,${f.project.id}::uuid,
         ${kind === 'matching' ? prepared.declaration.checksum : 'f'.repeat(64)},
         ${prepared.declaration.contentType},${prepared.declaration.sizeBytes},${prepared.targetPath},
-        ${prepared.declaration.fileName},${JSON.stringify(prepared.declaration.processingProvenance)}::jsonb)`.execute(
+        ${prepared.declaration.fileName},${JSON.stringify(prepared.declaration.processingProvenance)}::text::jsonb)`.execute(
         db,
       );
       const before = await ready(f.key),
