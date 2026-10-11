@@ -115,11 +115,12 @@ The transparent margin and any letterboxing stay transparent, so the circle's co
 
 `node pack.mjs` writes `out/landmark-icons.ndjson.gz` from `out/icons.json` and `out/icons/`: one icon a
 line, `{"id","background","tile","png"}`, the PNG in base64. It prints the icon count, the size and the
-SHA-256.
+SHA-256. It also writes `out/NOTICE.txt`, which is published beside the pack: whose the marks are, and
+for each picture taken from Wikimedia Commons the page that gives its author and licence.
 
-1. Upload the file to `static.frameleaf.cloud` under a new folder, `landmark-icons/<date>/`, with its entry
-   in the cloud repository's static manifest. A published folder is never changed; a new pack gets a new
-   folder.
+1. Upload both files to `static.frameleaf.cloud` under a new folder, `landmark-icons/<date>/`, with their
+   entries in the cloud repository's static manifest (the pack as a `bucketOnly` object, the notice as a
+   seed file). A published folder is never changed; a new pack gets a new folder.
 2. Put the address and the SHA-256 in `LANDMARK_ICON_PACK` in `server/src/constants.ts`.
 
 A production server with reverse geocoding on fetches the pinned file when it starts and does not have it
