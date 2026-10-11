@@ -37,19 +37,19 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   {
     pattern: 'backup.database.cronExpression',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/BackupSettings.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
     evidence: 'database.cronExpression',
   },
   {
     pattern: 'backup.database.enabled',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/BackupSettings.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
     evidence: 'database.enabled',
   },
   {
     pattern: 'backup.database.keepLastAmount',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/BackupSettings.svelte',
+    file: 'src/lib/components/frameleaf/backup/BackupLocalPage.svelte',
     evidence: 'database.keepLastAmount',
   },
   {
