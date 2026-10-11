@@ -33,7 +33,7 @@
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { ConfigCredential, sendTestEmailAdmin } from '@frameleaf/sdk';
   import { mdiEmailCheckOutline, mdiEmailOffOutline } from '@mdi/js';
-  import { t, type Translations } from 'svelte-i18n';
+  import { t } from 'svelte-i18n';
   import TemplateSettings from './TemplateSettings.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);

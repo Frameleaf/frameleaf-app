@@ -21,7 +21,7 @@ const base = {
   pageTitle: ({ area, section }: { area: string; section?: string }) => [area, section].filter(Boolean).join(' › '),
 };
 const titles = () =>
-  screen.getAllByRole('listitem').flatMap((item) => item.querySelector('.main > strong')?.textContent ?? []);
+  screen.getAllByRole('listitem').flatMap((item) => item.querySelector(':scope > .main > strong')?.textContent ?? []);
 
 describe('SettingsChangeHistory', () => {
   it('writes a change in the words on its page, never the setting name or the stored value', () => {
