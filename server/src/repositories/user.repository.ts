@@ -666,6 +666,14 @@ export class UserRepository {
     });
   }
 
+  async hasPendingImportCleanup(ownerId: string): Promise<boolean> {
+    const { rows } = await sql`SELECT id FROM public.studio_import_publication
+      WHERE "ownerId"=${ownerId}::uuid AND ("stagedPath" IS NOT NULL OR "targetPath" IS NOT NULL)
+      UNION ALL SELECT id FROM public.studio_bundle_upload WHERE "ownerId"=${ownerId}::uuid AND digest=''
+      LIMIT 1`.execute(this.db);
+    return rows.length > 0;
+  }
+
   @GenerateSql()
   getUserStats() {
     return this.db

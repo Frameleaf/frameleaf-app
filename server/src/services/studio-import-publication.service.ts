@@ -38,6 +38,7 @@ export async function retainImport(
 
 @Injectable()
 export class StudioImportPublicationService {
+  private recoveryAfter?: string;
   constructor(
     private readonly journal: StudioImportPublicationRepository,
     private readonly files: StudioImportFileRepository,
@@ -77,6 +78,33 @@ export class StudioImportPublicationService {
   async retain(auth: AuthDto, upload: RetentionUpload): Promise<StudioProjectImport> {
     const key = await this.authorize(auth, upload.key);
     return retainImport(this.journal, this.files, { ...upload, key });
+  }
+
+  async recover(): Promise<{ attempted: number; deferred: number }> {
+    let candidates = await this.journal.listRecovery(200, this.recoveryAfter);
+    if (candidates.length === 0 && this.recoveryAfter) {
+      this.recoveryAfter = undefined;
+      candidates = await this.journal.listRecovery(200);
+    }
+    this.recoveryAfter = candidates.at(-1)?.publicationId;
+    let deferred = 0;
+    for (const key of candidates) {
+      try {
+        await this.release(key);
+      } catch {
+        deferred++;
+      }
+    }
+    return { attempted: candidates.length, deferred };
+  }
+
+  async cleanupIncoming(
+    ownerId: string,
+    path: string,
+    cutoff: Date,
+    removeExact: (identity: string | null) => Promise<void>,
+  ): Promise<boolean> {
+    return this.journal.cleanupIncoming(ownerId, path, cutoff, removeExact);
   }
 
   /** Internal recovery entry point: the repository rechecks the exact retained cleanup binding. */

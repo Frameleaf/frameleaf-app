@@ -161,3 +161,18 @@ describe('publication owner facade', () => {
     expect(journal.discover).toHaveBeenCalledWith(KEY.ownerId, KEY.projectId, 'cursor', 'published');
   });
 });
+
+describe('bounded recovery never publishes or abandons failed cleanup', () => {
+  it('continues after a deferred entry and never invokes prepare or publish', async () => {
+    const { files, journal } = ports();
+    const second = { ...KEY, publicationId: KEY.importId };
+    const repository = { ...journal, listRecovery: vi.fn().mockResolvedValue([KEY, second]) };
+    repository.release.mockRejectedValueOnce(new Error('cleanup_namespace_barrier_failed'));
+    const sut = new StudioImportPublicationService(repository as never, files as never, {} as never);
+    await expect(sut.recover()).resolves.toEqual({ attempted: 2, deferred: 1 });
+    expect(repository.release).toHaveBeenCalledTimes(2);
+    expect(repository.prepare).not.toHaveBeenCalled();
+    expect(repository.publish).not.toHaveBeenCalled();
+    expect(files.publish).not.toHaveBeenCalled();
+  });
+});

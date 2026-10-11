@@ -1,3 +1,5 @@
+import { StorageCore } from 'src/cores/storage.core.js';
+import { mkdir, rename, symlink, utimes } from 'node:fs/promises';
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
@@ -23,6 +25,7 @@ import { getLibraryQueueDB as createRetentionTestDatabase } from 'test/medium/li
 let db: Kysely<DB>;
 let root: string;
 const ownedFiles = new Set<string>();
+const ownedDirectories = new Set<string>();
 
 beforeAll(async () => {
   db = await createRetentionTestDatabase();
@@ -36,6 +39,7 @@ afterAll(async () => {
         if (error.code !== 'ENOENT') throw error;
       });
     }
+    for (const directory of [...ownedDirectories].sort((a, b) => b.length - a.length)) await rmdir(directory);
     if (root) await rmdir(root);
   } finally {
     // The existing helper closes its bounded pool and drops only its own generated clone.
@@ -808,6 +812,242 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     );
     await f.repo.register(f.key);
     await expect(f.repo.prepare(f.key, await file(f.key), removeScratch)).rejects.toThrow(/imports|limit/i);
+  });
+
+  it('T6-01 restart retries absent stage namespace barriers before compaction', async () => {
+    const f = await setup(),
+      prepared = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    await expect(
+      f.repo.release(f.key, async (file, role) => {
+        await removeFile(file, role);
+        throw new Error('cleanup_namespace_barrier_failed');
+      }),
+    ).rejects.toThrow('cleanup_namespace_barrier_failed');
+    await expect(lstat(prepared.stagedPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await journal(f.key)).toMatchObject({ stagedPath: prepared.stagedPath, stagedIdentity: prepared.identity });
+    const restarted = new StudioImportPublicationRepository(db),
+      barriers = vi.fn(async (file: PreparedImport, role: 'stage' | 'aborted') => {
+        await expect(lstat(file.stagedPath)).rejects.toMatchObject({ code: 'ENOENT' });
+        await removeFile(file, role); // Modelled adapter must still acknowledge namespace barriers for absence.
+      });
+    await restarted.release(f.key, barriers);
+    expect(barriers).toHaveBeenCalledOnce();
+    expect(await journal(f.key)).toMatchObject({ state: 'published', stagedPath: null, targetPath: null });
+    expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+  });
+
+  it('T6-02 expiry remains committed when a Buddy pin defers cleanup', async () => {
+    const f = await setup(),
+      prepared = await prepare(f);
+    await expire(f.key);
+    const runId = randomUUID();
+    await sql`INSERT INTO public.buddy_backup_reference ("runId",path) VALUES (${runId}::uuid,${prepared.stagedPath})`.execute(
+      db,
+    );
+    expect(await f.repo.listRecovery()).toContainEqual(f.key);
+    const remove = vi.fn(removeFile);
+    await expect(f.repo.release(f.key, remove)).rejects.toThrow('publication_path_referenced');
+    expect(remove).not.toHaveBeenCalled();
+    expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: prepared.stagedPath });
+    await sql`DELETE FROM public.buddy_backup_reference WHERE "runId"=${runId}::uuid`.execute(db);
+    await new StudioImportPublicationRepository(db).release(f.key, removeFile);
+    expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: null });
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it('T6-03 registered expiry aborts without filesystem publication or cleanup', async () => {
+    const f = await setup();
+    await f.repo.register(f.key);
+    await expire(f.key);
+    const remove = vi.fn(removeFile);
+    await f.repo.release(f.key, remove);
+    expect(remove).not.toHaveBeenCalled();
+    expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: null, targetPath: null });
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it.each(['replacement', 'symlink'] as const)('T6-04 changed stage %s retains recovery ownership', async (kind) => {
+    const f = await setup(),
+      prepared = await prepare(f);
+    await f.repo.cancel(f.key);
+    const foreign = prepared.stagedPath + '.foreign';
+    ownedFiles.add(foreign);
+    if (kind === 'replacement') {
+      await writeFile(foreign, 'test', { flag: 'wx' });
+      await rename(foreign, prepared.stagedPath);
+    } else {
+      await unlink(prepared.stagedPath);
+      await symlink(foreign, prepared.stagedPath);
+    }
+    const remove = vi.fn(removeFile);
+    await expect(f.repo.release(f.key, remove)).rejects.toThrow();
+    expect(remove).not.toHaveBeenCalled();
+    expect(await journal(f.key)).toMatchObject({
+      state: 'aborted',
+      stagedPath: prepared.stagedPath,
+      stagedIdentity: prepared.identity,
+    });
+  });
+
+  it.each(['EACCES', 'ENODEV'] as const)('T6-05 adapter %s is not acknowledged absence', async (code) => {
+    const f = await setup(),
+      prepared = await prepare(f);
+    await f.repo.cancel(f.key);
+    await expect(
+      f.repo.release(f.key, async () => {
+        throw Object.assign(new Error(code), { code });
+      }),
+    ).rejects.toThrow(code);
+    expect(await journal(f.key)).toMatchObject({
+      state: 'aborted',
+      stagedPath: prepared.stagedPath,
+      stagedIdentity: prepared.identity,
+    });
+  });
+
+  it('T6-06 published stage pin survives project purge until exact stage cleanup, target handoff is untouched', async () => {
+    const f = await setup(),
+      prepared = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    const runId = randomUUID();
+    await sql`INSERT INTO public.buddy_backup_reference ("runId",path) VALUES (${runId}::uuid,${prepared.stagedPath})`.execute(
+      db,
+    );
+    await expect(f.projects.delete(f.project.id)).rejects.toThrow(/cleanup is pending/i);
+    await expect(f.repo.release(f.key, removeFile)).rejects.toThrow('publication_path_referenced');
+    expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+    await sql`DELETE FROM public.buddy_backup_reference WHERE "runId"=${runId}::uuid`.execute(db);
+    await f.repo.release(f.key, removeFile);
+    await f.projects.delete(f.project.id);
+    expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+    expect(await ready(f.key)).toHaveLength(1); // Orphan ready-import release is a separate existing reference-aware path.
+  });
+
+  it('T6-07 another import protects an aborted target while exact own roles alone are excluded', async () => {
+    const f = await setup(),
+      prepared = await prepare(f);
+    await f.repo.cancel(f.key);
+    await sql`INSERT INTO public.studio_project_import (id,"ownerId","projectId",checksum,"contentType","sizeBytes",path,"fileName")
+      VALUES (${randomUUID()}::uuid,${f.user.id}::uuid,${f.project.id}::uuid,${prepared.declaration.checksum},'video/mp4',4,${prepared.targetPath},'other.mp4')`.execute(
+      db,
+    );
+    const remove = vi.fn(removeFile);
+    await expect(f.repo.release(f.key, remove)).rejects.toThrow('publication_path_referenced');
+    expect(remove).not.toHaveBeenCalled();
+    expect(await journal(f.key)).toMatchObject({ stagedPath: prepared.stagedPath, targetPath: prepared.targetPath });
+  });
+
+  it('T6-08 incoming TTL refuses journal stage and live reservation before any unlink', async () => {
+    const f = await setup();
+    StorageCore.setMediaLocation(root);
+    const exports = join(root, 'exports'),
+      owner = join(exports, f.user.id),
+      imports = join(owner, 'studio-imports'),
+      incoming = join(imports, 'incoming');
+    for (const directory of [exports, owner, imports, incoming]) {
+      await mkdir(directory, { recursive: true });
+      ownedDirectories.add(directory);
+    }
+    const prepared = await file(f.key),
+      incomingPath = join(incoming, randomUUID() + '.upload');
+    await rename(prepared.stagedPath, incomingPath);
+    ownedFiles.add(incomingPath);
+    prepared.stagedPath = incomingPath;
+    const old = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await utimes(incomingPath, old, old);
+    const reservation = await f.projects.createUpload({
+      ownerId: f.user.id,
+      path: incomingPath,
+      sizeBytes: 4,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    const remove = vi.fn(async () => {
+      await unlink(incomingPath);
+    });
+    expect(await f.repo.cleanupIncoming(f.user.id, incomingPath, new Date(), remove)).toBe(false);
+    expect(remove).not.toHaveBeenCalled();
+    await f.repo.register(f.key);
+    await f.repo.prepare(f.key, prepared, removeScratch, reservation.id);
+    await expect(f.repo.cleanupIncoming(f.user.id, incomingPath, new Date(), remove)).rejects.toThrow(
+      'publication_path_referenced',
+    );
+    expect(remove).not.toHaveBeenCalled();
+    expect(await lstat(incomingPath)).toBeDefined();
+    await expire(f.key);
+    await f.repo.release(f.key, removeFile);
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it('T6-09 six-hour expiry winning before an uploading prepare keeps request ownership and never publishes', async () => {
+    const f = await setup(),
+      scratch = await file(f.key);
+    await f.repo.register(f.key);
+    const reservation = await f.projects.createUpload({
+      ownerId: f.user.id,
+      path: scratch.stagedPath,
+      sizeBytes: 4,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    await expect(
+      blockedOperation(
+        (tx) => sql`SELECT pg_advisory_xact_lock(hashtextextended(${`buddy-studio:${f.project.id}`},0))`.execute(tx),
+        () => f.repo.prepare(f.key, scratch, removeScratch, reservation.id),
+        async (tx) => {
+          await sql`WITH stamp AS (SELECT clock_timestamp()-interval '1 second' AS expired)
+        UPDATE public.studio_import_publication SET "createdAt"=stamp.expired-interval '6 hours',"expiresAt"=stamp.expired
+        FROM stamp WHERE id=${f.key.publicationId}::uuid`.execute(tx);
+        },
+      ),
+    ).rejects.toThrow('publication_expired');
+    expect(await journal(f.key)).toMatchObject({ state: 'aborted', stagedPath: null, targetPath: null });
+    expect(await lstat(scratch.stagedPath)).toBeDefined();
+    expect(await f.projects.getUpload(reservation.id, f.user.id)).toBeDefined();
+    expect(await ready(f.key)).toEqual([]);
+  });
+
+  it('T6-10 incoming cleanup rechecks the captured version and consumes only expired request reservations', async () => {
+    const f = await setup();
+    StorageCore.setMediaLocation(root);
+    const exports = join(root, 'exports'),
+      owner = join(exports, f.user.id),
+      imports = join(owner, 'studio-imports'),
+      incoming = join(imports, 'incoming');
+    for (const directory of [exports, owner, imports, incoming]) {
+      await mkdir(directory, { recursive: true });
+      ownedDirectories.add(directory);
+    }
+    const path = join(incoming, randomUUID() + '.upload');
+    await writeFile(path, 'test', { flag: 'wx' });
+    ownedFiles.add(path);
+    const old = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await utimes(path, old, old);
+    const reservation = await f.projects.createUpload({
+      ownerId: f.user.id,
+      path,
+      sizeBytes: 4,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() - 60000),
+    });
+    const removed = vi.fn(async (identity: string | null) => {
+      const stat = await lstat(path, { bigint: true });
+      expect(identity).toBe([stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':'));
+      await unlink(path);
+    });
+    expect(await f.repo.cleanupIncoming(f.user.id, path, new Date(Date.now() - 6 * 60 * 60 * 1000), removed)).toBe(
+      true,
+    );
+    expect(removed).toHaveBeenCalledOnce();
+    expect(await f.projects.getUpload(reservation.id, f.user.id)).toBeUndefined();
+    await expect(lstat(path)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('T4-24 journal state owns exact path roles but never appears as readable import or declaration', async () => {

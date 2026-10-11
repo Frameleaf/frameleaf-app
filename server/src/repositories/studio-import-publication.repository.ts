@@ -1,3 +1,7 @@
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageFolder } from 'src/enum.js';
+import { basename, join } from 'node:path';
+import { journalOwnsPath, type ReleasingPublicationRole } from 'src/utils/studio-import-reference-roles.js';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { type Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
@@ -283,11 +287,16 @@ export class StudioImportPublicationRepository implements JournalPort {
     }>`SELECT ${row.expiresAt}::timestamptz <= clock_timestamp() AS expired`.execute(tx);
     return rows[0].expired;
   }
-  private async references(tx: Transaction<DB>, path: string, ownRole = 0) {
+  private async references(tx: Transaction<DB>, path: string, ownRole: number | ReleasingPublicationRole = 0) {
     const { rows } = await sql<{
       count: number;
     }>`SELECT count(*)::int AS count FROM public.physical_file WHERE path=${path}`.execute(tx);
-    if ((await countPathReferences(tx, path)) - ownRole + rows[0].count > 0)
+    if (
+      (await countPathReferences(tx, path, undefined, typeof ownRole === 'number' ? undefined : ownRole)) -
+        (typeof ownRole === 'number' ? ownRole : 0) +
+        rows[0].count >
+      0
+    )
       throw new ConflictException('publication_path_referenced');
   }
   private async discard(
@@ -567,21 +576,101 @@ export class StudioImportPublicationRepository implements JournalPort {
     });
   }
 
+  /** Internal bounded scan; release rechecks every candidate under project/path/Buddy/owner locks. */
+  async listRecovery(limit = 200, after?: string): Promise<PublicationKey[]> {
+    if (after !== undefined && !isStudioUuid(after)) throw new BadRequestException('invalid_recovery_cursor');
+    const { rows } =
+      await sql<PublicationKey>`SELECT journal."ownerId",journal."projectId",journal."importId",journal.id AS "publicationId"
+      FROM public.studio_import_publication journal
+      LEFT JOIN public.studio_project project ON project.id=journal."projectId"
+      LEFT JOIN public."user" owner ON owner.id=journal."ownerId"
+      WHERE ((journal.state IN ('registered','preparing') AND
+        (journal."expiresAt"<=clock_timestamp() OR project.id IS NULL OR project."deletedAt" IS NOT NULL
+          OR owner.id IS NULL OR owner."deletedAt" IS NOT NULL))
+        OR (journal.state IN ('published','aborted') AND journal."stagedPath" IS NOT NULL))
+        AND (${after ?? null}::uuid IS NULL OR journal.id>${after ?? null}::uuid)
+      ORDER BY journal.id LIMIT ${Math.max(1, Math.min(500, limit))}`.execute(this.db);
+    return rows;
+  }
+
+  /** Request TTL cleanup cannot race a journal transition or an authenticated reservation admission. */
+  async cleanupIncoming(
+    ownerId: string,
+    path: string,
+    cutoff: Date,
+    removeExact: (identity: string | null) => Promise<void>,
+  ): Promise<boolean> {
+    const name = basename(path);
+    if (
+      !isStudioUuid(ownerId) ||
+      !name.endsWith('.upload') ||
+      !isStudioUuid(name.slice(0, -7)) ||
+      path !== join(StorageCore.getBaseFolder(StorageFolder.Exports), ownerId, 'studio-imports', 'incoming', name)
+    )
+      throw new BadRequestException('invalid_publication_stage');
+    return this.db.transaction().execute(async (tx) => {
+      await lockFilePath(tx, path);
+      await tx.selectFrom('user').select('id').where('id', '=', ownerId).forUpdate().execute();
+      const { rows: reservations } = await sql<{ id: string; ownerId: string; digest: string; expired: boolean }>`
+        SELECT id,"ownerId",digest,"expiresAt"<=clock_timestamp() AS expired
+        FROM public.studio_bundle_upload WHERE path=${path} FOR UPDATE`.execute(tx);
+      if (reservations.some((row) => row.ownerId !== ownerId || row.digest !== '' || !row.expired)) return false;
+      await this.references(tx, path);
+      let identity: string | null = null;
+      try {
+        const stat = await lstat(path, { bigint: true });
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n)
+          throw new ConflictException('publication_identity_changed');
+        if (stat.mtimeMs >= BigInt(cutoff.getTime())) return false;
+        identity = [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+      } catch (error) {
+        if (!absent(error)) throw error;
+      }
+      await removeExact(identity);
+      try {
+        await lstat(path);
+        throw new ConflictException('publication_cleanup_incomplete');
+      } catch (error) {
+        if (!absent(error)) throw error;
+      }
+      for (const reservation of reservations)
+        await tx
+          .deleteFrom('studio_bundle_upload')
+          .where('id', '=', reservation.id)
+          .where('ownerId', '=', ownerId)
+          .execute();
+      return true;
+    });
+  }
+
+  /** Commit expiry separately so a pin, unavailable mount or cleanup failure cannot undo abortion. */
+  private async expireForRecovery(key: PublicationKey): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      const { project, row } = await this.lock(tx, key);
+      if (!row || (row.state !== 'registered' && row.state !== 'preparing')) return;
+      const file = fileOf(row);
+      await lockPaths(tx, file ? [file.stagedPath, file.targetPath] : []);
+      await tx.selectFrom('user').select('id').where('id', '=', key.ownerId).forUpdate().execute();
+      if (!project || project.deletedAt || project.ownerDeletedAt || (await this.expired(tx, row)))
+        await this.state(tx, row, 'aborted');
+    });
+  }
+
   async release(
     key: PublicationKey,
     removeAndSync: (file: PreparedImport, role: 'stage' | 'aborted') => Promise<void>,
   ): Promise<void> {
     key = validateKey(key);
+    await this.expireForRecovery(key);
     await this.db.transaction().execute(async (tx) => {
-      const { project, row } = await this.lock(tx, key);
+      const { row } = await this.lock(tx, key);
       if (!row) throw new ConflictException('publication_registration_required');
       const file = fileOf(row);
-      if (!file) return;
       const ready = await readStudioImport(tx, key.projectId, key.importId, true);
-      await lockPaths(tx, [file.stagedPath, file.targetPath, ...(ready ? [ready.path] : [])]);
-      let current = row;
-      if (current.state === 'preparing' && (!project || (await this.expired(tx, current))))
-        current = await this.state(tx, current, 'aborted');
+      await lockPaths(tx, [...(file ? [file.stagedPath, file.targetPath] : []), ...(ready ? [ready.path] : [])]);
+      await tx.selectFrom('user').select('id').where('id', '=', key.ownerId).forUpdate().execute();
+      const current = row;
+      if (!file) return;
       if (current.state !== 'aborted' && current.state !== 'published')
         throw new ConflictException('publication_cleanup_not_terminal');
       if (current.state === 'published') {
@@ -592,7 +681,17 @@ export class StudioImportPublicationRepository implements JournalPort {
       }
       const paths = current.state === 'published' ? [file.stagedPath] : [file.stagedPath, file.targetPath];
       for (const path of paths) {
-        await this.references(tx, path, 1);
+        if (
+          !journalOwnsPath(
+            { ...key, state: current.state, createdAt: current.createdAt, expiresAt: current.expiresAt, file },
+            path,
+          )
+        )
+          throw new ConflictException('publication_cleanup_role_invalid');
+        await this.references(tx, path, {
+          publicationId: current.id,
+          role: path === file.stagedPath ? 'stage' : 'target',
+        });
         try {
           await verifyBytes(path, file.declaration, file.identity);
         } catch (error) {
@@ -600,7 +699,6 @@ export class StudioImportPublicationRepository implements JournalPort {
         }
       }
       // Cleanup authority is the exact retained binding, even when its project/account no longer exists.
-      await tx.selectFrom('user').select('id').where('id', '=', key.ownerId).forUpdate().execute();
       await removeAndSync(file, current.state === 'published' ? 'stage' : 'aborted');
       for (const path of paths) {
         try {
