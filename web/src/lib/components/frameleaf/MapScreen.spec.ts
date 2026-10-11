@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
-import { CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
+import { BUBBLE_NAME_LAYER, CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
 import { mapSettings } from '$lib/stores/preferences.store';
 import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
@@ -72,6 +72,8 @@ describe('MapScreen (FL-193)', () => {
 
     const { onerror } = getMapLibreStubProps();
     onerror?.({ error: new Error('boom'), sourceId: 'geojson' });
+    // …nor is one from the names drawn beside the bubbles
+    onerror?.({ error: new Error('boom'), sourceId: BUBBLE_NAME_LAYER });
 
     await Promise.resolve();
     expect(screen.queryByText(en.frameleaf_map_tiles_failed_title)).not.toBeInTheDocument();
@@ -249,5 +251,25 @@ describe('MapScreen (FL-193)', () => {
 
     await Promise.resolve();
     expect(addLayer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: CLUSTER_OBSTACLE_LAYER }));
+  });
+
+  it('names the bubbles when the map comes to rest, and is quiet until the names layer is there', async () => {
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    const listeners: Record<string, () => void> = {};
+    const getSource = vi.fn();
+    getMapLibreStubProps().onload?.({
+      on: (type: string, listener: () => void) => (listeners[type] = listener),
+      getLayer: () => ({}),
+      getSource,
+    });
+    await Promise.resolve();
+    getSource.mockClear();
+
+    listeners.idle();
+    expect(getSource).toHaveBeenCalledWith(BUBBLE_NAME_LAYER);
+    // while it moves, a name only ever goes: nothing to do before one is drawn
+    listeners.move();
+    await Promise.resolve();
+    expect(getSource).toHaveBeenCalledTimes(2);
   });
 });
