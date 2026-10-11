@@ -1,3 +1,4 @@
+import z from 'zod';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 import {
   StudioImportPublicationRegisterDto,
@@ -6,9 +7,41 @@ import {
   StudioImportPublicationPageDto,
   StudioProjectImportDto,
 } from './studio-project-import.dto.js';
-import { ProcessingProvenanceSchema } from 'src/utils/studio-import-provenance.js';
+import { ProcessingProvenanceSchema, RetainedProcessingProvenanceSchema } from 'src/utils/studio-import-provenance.js';
 
 describe('canonical import/publication schemas', () => {
+  it('exports canonical provenance numeric types without widening the version literal', () => {
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== 'object') return;
+      const node = value as Record<string, unknown>;
+      if (node.type === 'number') expect(node.format).toBe('double');
+      for (const child of Object.values(node)) visit(child);
+    };
+    for (const schema of [ProcessingProvenanceSchema, RetainedProcessingProvenanceSchema]) {
+      const exported = z.toJSONSchema(schema, { target: 'openapi-3.0', io: 'output' });
+      visit(exported);
+      expect(exported.properties?.version).toEqual({ $ref: '#/definitions/ProcessingProvenanceVersion' });
+      expect(exported.definitions).toMatchObject({
+        ProcessingProvenanceVersion: {
+          type: 'integer',
+          format: 'int32',
+          enum: [1],
+        },
+      });
+      expect(exported.properties?.output).toMatchObject({
+        properties: {
+          width: { type: 'integer', maximum: 32_768 },
+          height: { type: 'integer', maximum: 32_768 },
+          fps: { type: 'number', format: 'double', maximum: 1000 },
+          frameCount: { type: 'integer', maximum: Number.MAX_SAFE_INTEGER },
+        },
+      });
+      const value = schema === ProcessingProvenanceSchema ? LINEAGE : { ...LINEAGE, outputSha256: 'ab'.repeat(32) };
+      expect(schema.safeParse(value).success).toBe(true);
+      for (const version of [0, 1.5, 2, '1', null]) expect(schema.safeParse({ ...value, version }).success).toBe(false);
+    }
+    visit(z.toJSONSchema(StudioProjectImportDto.schema, { target: 'openapi-3.0', io: 'output' }));
+  });
   it('keeps strict UUIDv7 project / UUID publication binding and registration body', () => {
     expect(
       StudioImportPublicationParamDto.schema.safeParse({ id: KEY.projectId, publicationId: KEY.publicationId }).success,

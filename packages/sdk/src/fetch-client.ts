@@ -13718,6 +13718,33 @@ export type StudioExportCreateResponseDto = {
     operation: MediaOperationDto;
     version: StudioExportVersionDto;
 };
+export type RetainedProcessingProvenance = {
+    evidence: ProcessingProvenanceEvidence;
+    family: ProcessingProvenanceFamily;
+    input: {
+        height: number;
+        width: number;
+    };
+    modelBinding?: {
+        resourceId: string;
+        sha256: string;
+    };
+    output: {
+        codec: string;
+        fps: number;
+        frameCount: number;
+        height: number;
+        width: number;
+    };
+    outputSha256: string;
+    source: {
+        id: string;
+        "namespace": ProcessingProvenanceSourceNamespace;
+        projectId: string;
+    };
+    variant: "animation" | "liveAction" | "threeD";
+    version: ProcessingProvenanceVersion;
+};
 export type StudioProjectImportDto = {
     /** SHA-256 of the bytes, hex */
     checksum: string;
@@ -13732,6 +13759,7 @@ export type StudioProjectImportDto = {
     /** Import id; clips reference it as `importId` */
     id: string;
     kind: StudioProjectImportKind;
+    processingProvenance?: RetainedProcessingProvenance;
     /** Size in bytes */
     sizeBytes: number;
 };
@@ -13740,6 +13768,31 @@ export type StudioProjectImportCreateDto = {
     file: Blob;
     /** The media id the editor gave this file; retrying the same file with it is idempotent */
     id: string;
+    /** Processing provenance JSON, encoded exactly once; outputSha256 is server-only */
+    processingProvenance?: string;
+    /** Already registered publication id; required with provenance */
+    publicationId?: string;
+};
+export type StudioImportPublicationDto = {
+    cleanupPending: boolean;
+    createdAt: string;
+    expiresAt: string;
+    importId: string;
+    imported?: StudioProjectImportDto;
+    publicationId: string;
+    state: StudioImportPublicationState;
+};
+export type StudioImportPublicationPageDto = {
+    items: StudioImportPublicationDto[];
+    nextCursor: string | null;
+};
+export type StudioImportPublicationRegisterDto = {
+    importId: string;
+    publicationId: string;
+};
+export type StudioImportPublicationCancelDto = {
+    receipt: StudioImportPublicationDto;
+    status: StudioImportPublicationCancelStatus;
 };
 export type StudioProjectResourceUseDto = {
     /** Whether it may run on this server */
@@ -26711,6 +26764,54 @@ export function importStudioProjectFile({ id, studioProjectImportCreateDto }: {
     })));
 }
 /**
+ * Discover Studio import publications
+ */
+export function getStudioImportPublications({ cursor, id, state }: {
+    cursor?: string;
+    id: string;
+    state?: StudioImportPublicationState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioImportPublicationPageDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports/publications${QS.query(QS.explode({
+        cursor,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Register a Studio import publication
+ */
+export function registerStudioImportPublication({ id, studioImportPublicationRegisterDto }: {
+    id: string;
+    studioImportPublicationRegisterDto: StudioImportPublicationRegisterDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioImportPublicationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports/publications`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioImportPublicationRegisterDto
+    })));
+}
+/**
+ * Read a Studio import publication
+ */
+export function getStudioImportPublication({ id, publicationId }: {
+    id: string;
+    publicationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioImportPublicationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports/publications/${encodeURIComponent(publicationId)}`, {
+        ...opts
+    }));
+}
+/**
  * Read a file imported into a Studio project
  */
 export function getStudioProjectImportFile({ id, importId }: {
@@ -26722,6 +26823,22 @@ export function getStudioProjectImportFile({ id, importId }: {
         data: Blob;
     }>(`/studio/projects/${encodeURIComponent(id)}/imports/${encodeURIComponent(importId)}/file`, {
         ...opts
+    }));
+}
+/**
+ * Cancel a Studio import publication
+ */
+export function cancelStudioImportPublication({ id, importId, publicationId }: {
+    id: string;
+    importId: string;
+    publicationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioImportPublicationCancelDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/imports/${encodeURIComponent(importId)}/publications/${encodeURIComponent(publicationId)}/cancel`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -31786,6 +31903,28 @@ export enum StudioProjectImportKind {
     Vector = "vector",
     Captions = "captions",
     Lut = "lut"
+}
+export enum ProcessingProvenanceEvidence {
+    ClientReported = "client-reported"
+}
+export enum ProcessingProvenanceFamily {
+    Anime4K = "anime4k"
+}
+export enum ProcessingProvenanceSourceNamespace {
+    FreecutMedia = "freecut-media"
+}
+export enum ProcessingProvenanceVersion {
+    $1 = 1
+}
+export enum StudioImportPublicationState {
+    Registered = "registered",
+    Preparing = "preparing",
+    Published = "published",
+    Aborted = "aborted"
+}
+export enum StudioImportPublicationCancelStatus {
+    Cancelled = "cancelled",
+    AlreadyPublished = "already-published"
 }
 export enum StudioProjectResourceKind {
     Font = "font",

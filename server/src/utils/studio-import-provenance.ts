@@ -2,13 +2,13 @@ import z from 'zod';
 
 const dimension = z.number().int().min(1).max(32_768);
 const fields = {
-  version: z.literal(1),
-  family: z.literal('anime4k'),
-  evidence: z.literal('client-reported'),
+  version: z.literal(1).meta({ id: 'ProcessingProvenanceVersion', type: 'integer', format: 'int32' }),
+  family: z.literal('anime4k').meta({ id: 'ProcessingProvenanceFamily' }),
+  evidence: z.literal('client-reported').meta({ id: 'ProcessingProvenanceEvidence' }),
   // Literal union keeps the canonical SDK structurally assignable to the pure host contract.
   variant: z.union([z.literal('animation'), z.literal('liveAction'), z.literal('threeD')]),
   source: z.strictObject({
-    namespace: z.literal('freecut-media'),
+    namespace: z.literal('freecut-media').meta({ id: 'ProcessingProvenanceSourceNamespace' }),
     id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
     projectId: z.uuid(),
   }),
@@ -16,7 +16,7 @@ const fields = {
   output: z.strictObject({
     width: dimension,
     height: dimension,
-    fps: z.number().finite().positive().max(1000),
+    fps: z.number().finite().positive().max(1000).meta({ format: 'double' }),
     frameCount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
     codec: z.string().regex(/^[\u{20}-\u{7E}]{1,128}$/u),
   }),
