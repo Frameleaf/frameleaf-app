@@ -18,6 +18,8 @@
     container: kit / inline-size;
     display: grid;
     gap: var(--fl-space-6);
+    /* Stated, so the page keeps its width inside a form that lays its children out in a column. */
+    width: 100%;
     min-width: 0;
     max-width: 1120px;
     /* The shell centres wide pages; these start on the heading's edge, as the other settings pages do. */

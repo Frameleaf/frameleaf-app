@@ -1,42 +1,47 @@
 <script lang="ts">
   /**
-   * Versions & compatibility (FL-71), the template's `updates` section (`settings-catalog.mjs`
-   * "Versions & compatibility", `CommandCenter.jsx` release panel ~2220-2250). Release
-   * infrastructure belongs to the Frameleaf build and server: there is no editable release address
-   * and no external fallback feed.
+   * Server & updates › Updates (FL-368, after the approved prototype
+   * `settings-v2/server/server-updates.jsx`): the installed version and the answer first (up to
+   * date, a newer version, not looking, couldn't check), one "Check now", and the switch and the
+   * frequency as one choice: "Look for updates: Never / Every day / Every week".
    *
-   * - "Check for updates" is the saved `newVersionCheck.enabled`: the server asks Frameleaf's own
-   *   GitHub releases on the chosen schedule (FL-80 S-4 / O-8; owner decision on FL-146, 2026-09-25 — the privacy
-   *   direction applied to Immich-origin calls only). The release panel shows the last check and
-   *   offers "Check for updates" now (`CommandCenter.jsx:2253-2287` `ReleaseConnection`).
-   * - "Check frequency" is the saved `newVersionCheck.frequency` (the prototype's Daily or Weekly;
-   *   FL-71, owner decision 2026-09-27 "Build a real setting"): the server's hourly tick asks only
-   *   once that interval has passed since the last check.
-   * - "Update channel" is the saved `newVersionCheck.channel` (Stable or Release candidate, the
-   *   server's channels), kept for when checks are allowed.
-   * - "Third-party release checks" is the template's locked privacy boundary.
-   * - "Installed build channel" is read from the running version.
+   * The saved values are unchanged: `newVersionCheck.enabled`, `.frequency` and `.channel`. The
+   * server asks only Frameleaf's own release list (FL-80 S-4 / O-8), so the two controls that could
+   * never be changed are sentences.
+   *
+   * Left for later (server work): how to install for this kind of installation, and a line on what
+   * is new in a release. The release notes link is offered instead.
    */
-  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
-  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { installedReleaseChannel } from '$lib/frameleaf/release-channel';
-  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Links from '$lib/components/frameleaf/settings/kit/Links.svelte';
+  import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { updateState } from '$lib/components/frameleaf/settings/server/update-status';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { installedReleaseChannel } from '$lib/frameleaf/release-channel';
+  import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { releaseNotesUrl } from '$lib/frameleaf/version-check';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { websocketStore } from '$lib/stores/websocket';
   import { semverToName } from '$lib/utils';
+  import { checkVersionNow, getVersionCheck, ReleaseChannel, VersionCheckFrequency } from '@frameleaf/sdk';
   import {
-    checkVersionNow,
-    getVersionCheck,
-    ReleaseChannel,
-    VersionCheckFrequency,
-    type ReleaseEventV1,
-  } from '@frameleaf/sdk';
-  import { Icon } from '@frameleaf/ui';
-  import { mdiMagnify, mdiServerOutline, mdiShieldCheckOutline } from '@mdi/js';
+    mdiAlertCircleOutline,
+    mdiBackupRestore,
+    mdiCheckDecagramOutline,
+    mdiHandBackRightOutline,
+    mdiLifebuoy,
+    mdiShieldCheckOutline,
+    mdiUpdate,
+  } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -45,209 +50,238 @@
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
-  const configToEdit = $derived(settingsDraft.draft);
-  const config = $derived(settingsDraft.baseline);
+  const check = $derived(settingsDraft.draft.newVersionCheck);
 
-  const channelOptions = $derived([
-    { value: ReleaseChannel.Stable, text: $t('admin.release_channel_stable') },
-    { value: ReleaseChannel.ReleaseCandidate, text: $t('admin.release_channel_release_candidate') },
-  ]);
-
-  const frequencyOptions = $derived([
-    { value: VersionCheckFrequency.Daily, text: $t('frameleaf_versions_frequency_daily') },
-    { value: VersionCheckFrequency.Weekly, text: $t('frameleaf_versions_frequency_weekly') },
-  ]);
-
-  // The last check the server recorded, and the result of "Check for updates" on this page.
-  let lastCheckedAt = $state<string | null>(null);
+  // What the server last recorded, and the result of "Check now" on this page.
+  let checkedAt = $state<string | null>(null);
+  let newest = $state<string | null>(null);
   let checking = $state(false);
-  let release = $state<ReleaseEventV1 | 'failed' | undefined>();
+  let failed = $state(false);
+  let justChecked = $state(false);
+
   onMount(async () => {
     try {
-      lastCheckedAt = (await getVersionCheck()).checkedAt;
+      const recorded = await getVersionCheck();
+      checkedAt = recorded.checkedAt;
+      newest = recorded.releaseVersion;
     } catch {
-      lastCheckedAt = null;
+      // The page still says what is installed; "Check now" asks again.
     }
   });
+
   const checkNow = async () => {
     checking = true;
+    failed = false;
     try {
-      release = await checkVersionNow();
-      lastCheckedAt = release.checkedAt;
+      const release = await checkVersionNow();
+      checkedAt = release.checkedAt;
+      newest = semverToName(release.releaseVersion);
+      justChecked = true;
     } catch {
-      release = 'failed';
+      failed = true;
     } finally {
       checking = false;
     }
   };
-  const badge = $derived(
-    release === 'failed'
-      ? $t('frameleaf_versions_panel_unavailable')
-      : release
-        ? release.isAvailable
-          ? $t('frameleaf_versions_panel_available')
-          : $t('frameleaf_versions_panel_current')
-        : configToEdit.newVersionCheck.enabled
-          ? lastCheckedAt
-            ? $t('frameleaf_versions_panel_checked', {
-                values: { when: DateTime.fromISO(lastCheckedAt).toRelative({ locale: $locale }) ?? '' },
-              })
-            : $t('frameleaf_versions_panel_not_checked')
-          : $t('frameleaf_versions_panel_off'),
+
+  const installed = $derived($serverVersion ? semverToName($serverVersion) : undefined);
+  const version = (name?: string | null) => (name ?? '').replace(/^v/, '');
+  const answer = $derived(
+    updateState({
+      looking: settingsDraft.baseline.newVersionCheck.enabled,
+      installed,
+      newest,
+      checkedAt,
+      failed,
+      justChecked,
+    }),
+  );
+  const when = $derived(checkedAt ? (DateTime.fromISO(checkedAt).toRelative({ locale: $locale }) ?? '') : '');
+
+  const hero = $derived.by(() => {
+    const values = { installed: version(installed), newest: version(newest), when };
+    switch (answer) {
+      case 'available': {
+        return {
+          tone: 'warn' as const,
+          icon: mdiUpdate,
+          title: $t('frameleaf_server_updates_available', { values }),
+          body: $t('frameleaf_server_updates_available_body', { values }),
+        };
+      }
+      case 'current': {
+        return {
+          tone: 'good' as const,
+          icon: mdiCheckDecagramOutline,
+          title: $t('frameleaf_server_updates_current', { values }),
+          body: $t('frameleaf_server_updates_current_body', { values }),
+        };
+      }
+      case 'failed': {
+        return {
+          tone: 'warn' as const,
+          icon: mdiAlertCircleOutline,
+          title: $t('frameleaf_server_updates_failed'),
+          body: $t('frameleaf_server_updates_failed_body'),
+        };
+      }
+      default: {
+        return {
+          tone: 'quiet' as const,
+          icon: mdiUpdate,
+          title: installed
+            ? $t('frameleaf_server_updates_running', { values })
+            : $t('frameleaf_server_updates_running_unknown'),
+          body:
+            answer === 'off' ? $t('frameleaf_server_updates_off_body') : $t('frameleaf_server_updates_waiting_body'),
+        };
+      }
+    }
+  });
+
+  const facts = $derived([
+    { label: $t('frameleaf_server_updates_fact_installed'), value: version(installed) || $t('unknown') },
+    ...(newest
+      ? [
+          {
+            label: $t('frameleaf_server_updates_fact_newest'),
+            value: version(newest),
+            detail: when ? $t('frameleaf_server_updates_fact_checked', { values: { when } }) : undefined,
+          },
+        ]
+      : []),
+  ]);
+
+  const look = $derived(check.enabled ? check.frequency : 'never');
+  const setLook = (value: string) => {
+    if (value === 'never') {
+      check.enabled = false;
+      return;
+    }
+    check.enabled = true;
+    check.frequency = value as VersionCheckFrequency;
+  };
+  const lookHelp = $derived(
+    look === 'never'
+      ? $t('frameleaf_server_updates_look_never_help')
+      : look === VersionCheckFrequency.Weekly
+        ? $t('frameleaf_server_updates_look_weekly_help')
+        : $t('frameleaf_server_updates_look_daily_help'),
   );
 
-  const installed = $derived(installedReleaseChannel($serverVersion));
-  const installedOptions = $derived([
-    {
-      value: installed ?? 'unknown',
-      text:
-        installed === ReleaseChannel.ReleaseCandidate
-          ? $t('admin.release_channel_release_candidate')
-          : installed === ReleaseChannel.Stable
-            ? $t('admin.release_channel_stable')
-            : $t('unknown'),
-    },
-  ]);
+  const build = $derived(installedReleaseChannel($serverVersion));
 </script>
 
-<form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-  <div class="release-connection">
-    <div class="release-status">
-      <Icon icon={mdiServerOutline} size="22" aria-hidden={true} />
-      <div>
-        <strong>{$t('frameleaf_versions_panel_title')}</strong>
-        <p>{$t('frameleaf_versions_panel_body')}</p>
-      </div>
-      <span class="release-badge">{badge}</span>
-    </div>
-    <div class="release-policy">
-      <span
-        ><Icon icon={mdiShieldCheckOutline} size="14" aria-hidden={true} />
-        {$t('frameleaf_versions_panel_service')}</span
-      >
-      <span>{$t('frameleaf_versions_panel_install')}</span>
-    </div>
-    <div>
-      <Button type="button" disabled={checking} onclick={checkNow}>
-        <Icon icon={mdiMagnify} size="16" aria-hidden={true} />
-        {release ? $t('frameleaf_versions_try_again') : $t('frameleaf_about_check_for_updates')}
+<KitPage>
+  <Hero
+    tone={hero.tone}
+    icon={hero.icon}
+    title={hero.title}
+    body={hero.body}
+    label={$t('frameleaf_server_updates_label')}
+  >
+    {#snippet actions()}
+      <Button disabled={checking} onclick={checkNow}>
+        {checking ? $t('frameleaf_server_updates_checking') : $t('frameleaf_server_updates_check')}
       </Button>
-    </div>
-    {#if release === 'failed'}
-      <p class="update-result" role="status">{$t('frameleaf_about_update_failed')}</p>
-    {:else if release}
-      <p class="update-result" role="status">
-        {#if release.isAvailable}
-          {$t('frameleaf_about_update_available', {
-            values: { version: semverToName(release.releaseVersion), when: $t('frameleaf_about_update_just_now') },
-          })}
-          <a href={releaseNotesUrl(semverToName(release.releaseVersion))} target="_blank" rel="noopener noreferrer"
-            >{$t('frameleaf_about_update_release_notes')}</a
-          >
-        {:else}
-          {$t('frameleaf_about_update_current', { values: { when: $t('frameleaf_about_update_just_now') } })}
-        {/if}
-      </p>
-    {/if}
-  </div>
+    {/snippet}
+  </Hero>
 
-  <SettingToggle
-    title={$t('frameleaf_versions_check_title')}
-    subtitle={$t('frameleaf_versions_check_body')}
-    bind:checked={configToEdit.newVersionCheck.enabled}
-    isEdited={configToEdit.newVersionCheck.enabled !== config.newVersionCheck.enabled}
-    {disabled}
-  />
-  <SettingSelect
-    label={$t('frameleaf_versions_frequency_title')}
-    desc={$t('frameleaf_versions_frequency_body')}
-    bind:value={configToEdit.newVersionCheck.frequency}
-    options={frequencyOptions}
-    name="release-check-frequency"
-    isEdited={configToEdit.newVersionCheck.frequency !== config.newVersionCheck.frequency}
-    {disabled}
-  />
-  <SettingSelect
-    label={$t('frameleaf_versions_channel_title')}
-    desc={$t('frameleaf_versions_channel_body')}
-    bind:value={configToEdit.newVersionCheck.channel}
-    options={channelOptions}
-    name="release-channel"
-    isEdited={configToEdit.newVersionCheck.channel !== config.newVersionCheck.channel}
-    {disabled}
-  />
-  <SettingToggle
-    title={$t('frameleaf_versions_external_title')}
-    subtitle={$t('frameleaf_versions_external_body')}
-    policy={$t('frameleaf_versions_external_policy')}
-    checked={false}
-    disabled
-  />
-  <SettingSelect
-    label={$t('frameleaf_versions_installed_title')}
-    desc={$t('frameleaf_versions_installed_body')}
-    value={installedOptions[0].value}
-    options={installedOptions}
-    name="installed-channel"
-    policy={$t('frameleaf_versions_installed_policy')}
-    disabled
-  />
+  <Section title={$t('frameleaf_server_updates_versions')}>
+    <Facts rows={facts} />
+    {#if answer === 'available' && newest}
+      <Links
+        rows={[
+          {
+            icon: mdiUpdate,
+            title: $t('frameleaf_server_updates_notes'),
+            body: $t('frameleaf_server_updates_notes_body', { values: { newest: version(newest) } }),
+            href: releaseNotesUrl(newest),
+          },
+          {
+            icon: mdiBackupRestore,
+            title: $t('frameleaf_server_updates_before'),
+            body: $t('frameleaf_server_updates_before_body'),
+            href: backupPageUrl(),
+          },
+        ]}
+      />
+    {/if}
+  </Section>
+
+  <Section title={$t('frameleaf_server_updates_looking')}>
+    <Row label={$t('frameleaf_server_updates_look')} help={lookHelp}>
+      <SegmentedControl
+        label={$t('frameleaf_server_updates_look')}
+        options={[
+          { value: 'never', label: $t('frameleaf_server_updates_look_never') },
+          { value: VersionCheckFrequency.Daily, label: $t('frameleaf_server_updates_look_daily') },
+          { value: VersionCheckFrequency.Weekly, label: $t('frameleaf_server_updates_look_weekly') },
+        ]}
+        value={look}
+        {disabled}
+        onChange={setLook}
+      />
+    </Row>
+    <Promises
+      rows={[
+        {
+          icon: mdiShieldCheckOutline,
+          text: $t('frameleaf_server_updates_promise_source'),
+          detail: $t('frameleaf_server_updates_promise_source_detail'),
+        },
+        {
+          icon: mdiHandBackRightOutline,
+          text: $t('frameleaf_server_updates_promise_install'),
+          detail: $t('frameleaf_server_updates_promise_install_detail'),
+        },
+      ]}
+    />
+    <Advanced>
+      <Row label={$t('frameleaf_server_updates_early')} help={$t('frameleaf_server_updates_early_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_server_updates_early')}
+          options={[
+            { value: ReleaseChannel.Stable, label: $t('frameleaf_server_updates_early_off') },
+            { value: ReleaseChannel.ReleaseCandidate, label: $t('frameleaf_kit_on') },
+          ]}
+          value={check.channel}
+          {disabled}
+          onChange={(value) => (settingsDraft.draft.newVersionCheck.channel = value as ReleaseChannel)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_server_updates_build')}>
+        <span class="value">
+          {build === ReleaseChannel.ReleaseCandidate
+            ? $t('frameleaf_server_updates_build_early')
+            : build === ReleaseChannel.Stable
+              ? $t('frameleaf_server_updates_build_stable')
+              : $t('unknown')}
+        </span>
+      </Row>
+    </Advanced>
+  </Section>
+
+  <Section title={$t('frameleaf_server_updates_help')}>
+    <Links
+      stacked
+      rows={[
+        {
+          icon: mdiLifebuoy,
+          title: $t('frameleaf_server_updates_problem'),
+          body: $t('frameleaf_server_updates_problem_body'),
+          href: commandCenterUrl('server', 'logging'),
+        },
+      ]}
+    />
+  </Section>
 
   <SettingActions keys={['newVersionCheck']} {disabled} />
-</form>
+</KitPage>
 
 <style>
-  /* command-center.css `.cc-release-connection` / `.cc-release-status` / `.cc-release-policy` */
-  .release-connection {
-    display: grid;
-    gap: 10px;
-    margin-bottom: 8px;
-    padding: 14px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-raised);
-  }
-  .release-status {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    color: var(--fl-text);
-  }
-  .release-status > div {
-    flex: 1;
-    min-width: 0;
-  }
-  .release-status p {
-    margin: 4px 0 0;
-    color: var(--fl-muted);
-    font-size: 12.5px;
-  }
-  .release-badge {
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--fl-text), transparent 90%);
-    color: var(--fl-muted);
-    font-size: 11px;
+  .value {
+    font-size: var(--fl-font-callout);
     font-weight: 600;
-  }
-  .release-policy {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 16px;
-    color: var(--fl-muted);
-    font-size: 12px;
-  }
-  .update-result {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: 12.5px;
-  }
-  .update-result a {
-    color: var(--fl-text);
-  }
-  .release-policy span {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
   }
 </style>

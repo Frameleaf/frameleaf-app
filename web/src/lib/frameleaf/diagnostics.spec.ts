@@ -38,6 +38,35 @@ describe('buildDiagnostics (FL-71)', () => {
     expect(diagnostics.settings.oauth.clientSecretConfigured).toBe(true);
   });
 
+  it('leaves out the mail account and any sign-in inside an address (FL-368)', () => {
+    const report = buildDiagnostics({
+      generatedAt,
+      about: {} as ServerAboutResponseDto,
+      version: { major: 3, minor: 2, patch: 0, prerelease: null },
+      features: {} as ServerFeaturesDto,
+      storage: {} as never,
+      queues: [],
+      config: {
+        notifications: {
+          smtp: {
+            from: 'Rivera family <rivera@example.test>',
+            replyTo: 'rivera@example.test',
+            transport: { host: 'smtp.example.test', username: 'rivera@example.test', port: 465 },
+          },
+        },
+        machineLearning: { urls: ['http://helper:secret@192.168.1.20:3003'] },
+        map: { lightStyle: 'https://user:pass@tiles.example.test/style.json' },
+      } as unknown as AdminConfigDto,
+    });
+    const text = JSON.stringify(report);
+    for (const piece of ['rivera', 'smtp.example.test', 'secret', 'user:pass']) {
+      expect(text).not.toContain(piece);
+    }
+    expect(report.settings.notifications.smtp.transport.port).toBe(465);
+    expect(report.settings.map.lightStyle).toBe('https://tiles.example.test/style.json');
+    expect(report.settings.machineLearning.urls).toEqual(['http://192.168.1.20:3003']);
+  });
+
   it('describes the build, storage totals and queues', () => {
     expect(diagnostics).toMatchObject({
       kind: 'frameleaf-diagnostics',
