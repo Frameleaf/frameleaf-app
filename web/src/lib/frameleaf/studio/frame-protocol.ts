@@ -17,6 +17,7 @@
  */
 import type { StudioCommandEnvelope, StudioCommandResult } from './commands';
 import type {
+  StudioCancelResult,
   StudioDraftResult,
   StudioEditorScope,
   StudioEditorCommitResult,
@@ -30,7 +31,7 @@ import type {
 } from './host-contract';
 
 /** Bumped when a message changes shape; a frame built for another version is refused. */
-export const STUDIO_FRAME_PROTOCOL_VERSION = 7;
+export const STUDIO_FRAME_PROTOCOL_VERSION = 8;
 
 /** The engine build publishes this next to its documents (`/studio-engine/manifest.json`). */
 export interface StudioFrameManifest {
@@ -62,6 +63,10 @@ export interface StudioFrameServiceCalls {
   saveWorkspace: { args: [layout: unknown]; result: StudioWorkspaceSaveResult };
   /** Protocol 5 (FL-103 / FL-105): keep a file imported in the editor with the project. */
   uploadProjectImport: { args: [upload: StudioProjectImportUpload]; result: StudioProjectImportRef };
+  cancelProjectImportPublication: {
+    args: [importId: string, publicationId: string, scope: StudioEditorScope];
+    result: StudioCancelResult;
+  };
 }
 
 export type StudioFrameServiceName = keyof StudioFrameServiceCalls;
@@ -149,6 +154,23 @@ const isBlobLike = (value: unknown): value is Blob =>
   typeof (value as Blob).arrayBuffer === 'function' &&
   typeof (value as Blob).slice === 'function';
 
+export const isStudioEditorScope = (value: unknown): value is StudioEditorScope => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const scope = value as StudioEditorScope;
+  return (
+    typeof scope.projectId === 'string' &&
+    UUID.test(scope.projectId) &&
+    typeof scope.userId === 'string' &&
+    UUID.test(scope.userId) &&
+    Number.isSafeInteger(scope.graphVersion) &&
+    scope.graphVersion >= 0
+  );
+};
+
+export const isStudioPublicationId = (value: unknown): value is string => typeof value === 'string' && UUID.test(value);
+
 /** Check what the editor sent before it reaches the server: an id, a name and bytes. */
 export const isStudioProjectImportUpload = (value: unknown): value is StudioProjectImportUpload => {
   if (!value || typeof value !== 'object') {
@@ -162,7 +184,11 @@ export const isStudioProjectImportUpload = (value: unknown): value is StudioProj
     upload.fileName.length > 0 &&
     upload.fileName.length <= 255 &&
     isBlobLike(upload.file) &&
-    upload.file.size > 0
+    upload.file.size > 0 &&
+    (upload.scope === undefined || isStudioEditorScope(upload.scope)) &&
+    (upload.publicationId === undefined || isStudioPublicationId(upload.publicationId)) &&
+    (upload.processingProvenance === undefined ||
+      (upload.publicationId !== undefined && isStudioEditorScope(upload.scope)))
   );
 };
 

@@ -19,6 +19,7 @@ import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repo
 import { ConfigRepository, clearEnvCache } from 'src/repositories/config.repository.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { createBuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
+import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
@@ -42,6 +43,9 @@ describe('Buddy effective configuration file capture', () => {
   let dumpPath: string;
   let referencePaths: unknown[];
   let environment: NodeJS.ProcessEnv;
+  let studioProject: Record<string, unknown> | undefined;
+  let studioImport: Record<string, unknown> | undefined;
+  let queries: string[];
   const plaintext = Buffer.from('{"oauth":{"clientSecret":"synthetic-config-secret"}}');
   const ring = createBuddyKeyring(randomUUID());
 
@@ -60,13 +64,23 @@ describe('Buddy effective configuration file capture', () => {
     vi.stubEnv('IMMICH_CONFIG_FILE', undefined);
     vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(directory, 'media'));
     referencePaths = [];
+    studioProject = undefined;
+    studioImport = undefined;
+    queries = [];
     class CaptureDriver extends DummyDriver {
       override async acquireConnection(): Promise<DatabaseConnection> {
         const connection = await super.acquireConnection();
         return {
           ...connection,
           executeQuery: <R>(query: CompiledQuery) => {
+            queries.push(query.sql);
             if (query.sql.includes('buddy_backup_reference')) referencePaths.push(...query.parameters);
+            if (studioProject && query.sql.startsWith('SELECT to_jsonb(project)'))
+              return Promise.resolve({ rows: [{ record: studioProject } as R] });
+            if (studioImport && query.sql.includes('FROM "public"."studio_project_import" item'))
+              return Promise.resolve({ rows: [{ record: studioImport } as R] });
+            if (studioImport && query.sql.startsWith('SELECT path FROM public.studio_project_import'))
+              return Promise.resolve({ rows: [{ path: studioImport.path } as R] });
             return Promise.resolve({
               rows: query.sql.includes('pg_export_snapshot') ? [{ snapshot: 'synthetic-snapshot' } as R] : [],
             });
@@ -116,6 +130,45 @@ describe('Buddy effective configuration file capture', () => {
     clearEnvCache();
     await db.destroy();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('captures ready import lineage and its pinned bytes without operational journal records', async () => {
+    const path = join(directory, 'retained.mp4');
+    const bytes = Buffer.from('synthetic ready media');
+    await writeFile(path, bytes);
+    const checksum = createHash('sha256').update(bytes).digest('hex');
+    studioProject = {
+      id: KEY.projectId,
+      ownerId: KEY.ownerId,
+      name: 'Retained project',
+      currentRevision: 0,
+      createdAt: new Date(0).toISOString(),
+      archivedAt: null,
+      thumbnailAssetId: null,
+      duplicatedFromId: null,
+      importedFromDigest: null,
+    };
+    studioImport = {
+      id: KEY.importId,
+      projectId: KEY.projectId,
+      ownerId: KEY.ownerId,
+      createdAt: new Date(0).toISOString(),
+      contentType: 'video/mp4',
+      checksum,
+      sizeBytes: bytes.length,
+      path,
+      fileName: 'retained.mp4',
+      externalReferences: null,
+      processingProvenance: { ...LINEAGE, outputSha256: checksum },
+    };
+    const captured = await capture(randomUUID());
+    expect(captured.manifest.studio?.projects[KEY.projectId].imports).toEqual([studioImport]);
+    expect(referencePaths).toContainEqual([path]);
+    expect(captured.manifest.studio?.projects[KEY.projectId].files).toEqual([
+      expect.objectContaining({ path, sha256: checksum, size: bytes.length }),
+    ]);
+    expect(queries.some((query) => query.includes('studio_import_publication'))).toBe(false);
+    expect(JSON.stringify(captured.manifest.studio)).not.toMatch(/publicationId|stagedPath|stagedIdentity/);
   });
 
   it.each([

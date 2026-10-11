@@ -43581,6 +43581,209 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/imports/publications": {
+      "get": {
+        "description": "Owner-only receipts, at most100 per page; pass nextCursor explicitly to continue.",
+        "operationId": "getStudioImportPublications",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/StudioImportPublicationState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioImportPublicationPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discover Studio import publications",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "operationId": "registerStudioImportPublication",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioImportPublicationRegisterDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioImportPublicationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Register a Studio import publication",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/imports/publications/{publicationId}": {
+      "get": {
+        "operationId": "getStudioImportPublication",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "publicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioImportPublicationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read a Studio import publication",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/imports/{importId}/file": {
       "get": {
         "description": "The bytes of a file kept with one of your projects, for the editor to play or show.",
@@ -43634,6 +43837,82 @@
           }
         ],
         "summary": "Read a file imported into a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/imports/{importId}/publications/{publicationId}/cancel": {
+      "post": {
+        "description": "A committed import remains published; cleanupPending reports deferred private cleanup.",
+        "operationId": "cancelStudioImportPublication",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "importId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "publicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioImportPublicationCancelDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a Studio import publication",
         "tags": [
           "Studio projects"
         ],
@@ -103289,6 +103568,31 @@
         },
         "type": "object"
       },
+      "ProcessingProvenanceEvidence": {
+        "enum": [
+          "client-reported"
+        ],
+        "type": "string"
+      },
+      "ProcessingProvenanceFamily": {
+        "enum": [
+          "anime4k"
+        ],
+        "type": "string"
+      },
+      "ProcessingProvenanceSourceNamespace": {
+        "enum": [
+          "freecut-media"
+        ],
+        "type": "string"
+      },
+      "ProcessingProvenanceVersion": {
+        "enum": [
+          1
+        ],
+        "format": "int32",
+        "type": "integer"
+      },
       "PublicConfigDto": {
         "properties": {
           "frameleaf": {
@@ -107437,6 +107741,157 @@
           "insufficient-vram"
         ],
         "type": "string"
+      },
+      "RetainedProcessingProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/ProcessingProvenanceEvidence"
+          },
+          "family": {
+            "$ref": "#/components/schemas/ProcessingProvenanceFamily"
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "height": {
+                "maximum": 32768,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 32768,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "modelBinding": {
+            "additionalProperties": false,
+            "properties": {
+              "resourceId": {
+                "pattern": "^[A-Za-z0-9:._-]{1,128}$",
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "resourceId",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "additionalProperties": false,
+            "properties": {
+              "codec": {
+                "pattern": "^[\\u{20}-\\u{7E}]{1,128}$",
+                "type": "string"
+              },
+              "fps": {
+                "exclusiveMinimum": true,
+                "format": "double",
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "number"
+              },
+              "frameCount": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "height": {
+                "maximum": 32768,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 32768,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height",
+              "fps",
+              "frameCount",
+              "codec"
+            ],
+            "type": "object"
+          },
+          "outputSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                "type": "string"
+              },
+              "namespace": {
+                "$ref": "#/components/schemas/ProcessingProvenanceSourceNamespace"
+              },
+              "projectId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "namespace",
+              "id",
+              "projectId"
+            ],
+            "type": "object"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "animation"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "liveAction"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "threeD"
+                ]
+              }
+            ]
+          },
+          "version": {
+            "$ref": "#/components/schemas/ProcessingProvenanceVersion"
+          }
+        },
+        "required": [
+          "evidence",
+          "family",
+          "input",
+          "output",
+          "outputSha256",
+          "source",
+          "variant",
+          "version"
+        ],
+        "type": "object"
       },
       "ReverseGeocodingStateResponseDto": {
         "properties": {
@@ -114588,6 +115043,123 @@
         ],
         "type": "string"
       },
+      "StudioImportPublicationCancelDto": {
+        "additionalProperties": false,
+        "properties": {
+          "receipt": {
+            "$ref": "#/components/schemas/StudioImportPublicationDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudioImportPublicationCancelStatus"
+          }
+        },
+        "required": [
+          "receipt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioImportPublicationCancelStatus": {
+        "enum": [
+          "cancelled",
+          "already-published"
+        ],
+        "type": "string"
+      },
+      "StudioImportPublicationDto": {
+        "additionalProperties": false,
+        "properties": {
+          "cleanupPending": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "importId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "imported": {
+            "$ref": "#/components/schemas/StudioProjectImportDto"
+          },
+          "publicationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StudioImportPublicationState"
+          }
+        },
+        "required": [
+          "cleanupPending",
+          "createdAt",
+          "expiresAt",
+          "importId",
+          "publicationId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "StudioImportPublicationPageDto": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudioImportPublicationDto"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "nullable": true,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "StudioImportPublicationRegisterDto": {
+        "additionalProperties": false,
+        "properties": {
+          "importId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "publicationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "importId",
+          "publicationId"
+        ],
+        "type": "object"
+      },
+      "StudioImportPublicationState": {
+        "enum": [
+          "registered",
+          "preparing",
+          "published",
+          "aborted"
+        ],
+        "type": "string"
+      },
       "StudioMediaFactsDto": {
         "properties": {
           "assetId": {
@@ -115597,6 +116169,17 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
+          },
+          "processingProvenance": {
+            "description": "Processing provenance JSON, encoded exactly once; outputSha256 is server-only",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "publicationId": {
+            "description": "Already registered publication id; required with provenance",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           }
         },
         "required": [
@@ -115639,6 +116222,9 @@
           },
           "kind": {
             "$ref": "#/components/schemas/StudioProjectImportKind"
+          },
+          "processingProvenance": {
+            "$ref": "#/components/schemas/RetainedProcessingProvenance"
           },
           "sizeBytes": {
             "description": "Size in bytes",

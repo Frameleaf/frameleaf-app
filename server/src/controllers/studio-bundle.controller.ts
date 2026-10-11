@@ -20,9 +20,9 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { mkdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, unlink } from 'node:fs';
 import { basename, dirname } from 'node:path';
+import { pipeline } from 'node:stream';
 import { type Observable, catchError, from, mergeMap, throwError } from 'rxjs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -46,6 +46,7 @@ export type BundleUploadRequest = AuthRequest & { studioBundleUploadId?: string 
 @Injectable()
 export class StudioBundleUploadInterceptor implements NestInterceptor {
   protected readonly maxBytes = STUDIO_BUNDLE_MAX_BYTES;
+  protected readonly importUpload: boolean = false;
 
   constructor(private service: StudioBundleService) {}
 
@@ -57,19 +58,47 @@ export class StudioBundleUploadInterceptor implements NestInterceptor {
     if (!Number.isSafeInteger(length) || length < 1 || length > this.maxBytes + 1024 ** 2)
       throw new PayloadTooLargeException('Studio bundle is too large');
     const reserved = Math.min(length, this.maxBytes);
-    const upload = await this.service.reserveUpload(auth, reserved);
+    const upload = this.importUpload
+      ? await this.service.reserveUpload(auth, reserved, 'import')
+      : await this.service.reserveUpload(auth, reserved);
     request.studioBundleUploadId = upload.id;
-    const storage = diskStorage({
-      destination: (_request, _file, callback) => {
+    let created = false;
+    const storage = {
+      _handleFile: (
+        _request: unknown,
+        file: Express.Multer.File,
+        callback: (error: Error | null, info?: Partial<Express.Multer.File>) => void,
+      ) => {
         try {
-          mkdirSync(dirname(upload.path), { recursive: true });
-          callback(null, dirname(upload.path));
+          mkdirSync(dirname(upload.path), { recursive: true, mode: 0o700 });
+          const output = createWriteStream(upload.path, { flags: 'wx', mode: 0o600, flush: true });
+          output.once('open', () => {
+            created = true;
+          });
+          pipeline(file.stream, output, (error) =>
+            callback(
+              error,
+              error
+                ? undefined
+                : {
+                    destination: dirname(upload.path),
+                    filename: basename(upload.path),
+                    path: upload.path,
+                    size: output.bytesWritten,
+                  },
+            ),
+          );
         } catch (error) {
-          callback(error as Error, '');
+          callback(error as Error);
         }
       },
-      filename: (_request, _file, callback) => callback(null, basename(upload.path)),
-    });
+      _removeFile: (
+        _request: unknown,
+        _file: Express.Multer.File,
+        callback: (error: NodeJS.ErrnoException | null) => void,
+      ) =>
+        created ? unlink(upload.path, (error) => callback(error?.code === 'ENOENT' ? null : error)) : callback(null),
+    };
     // A live body cannot outlast its reservation's 24-hour retention.
     const timer = setTimeout(() => request.destroy(new Error('Studio bundle upload timed out')), 30 * 60_000);
     timer.unref();
@@ -78,11 +107,13 @@ export class StudioBundleUploadInterceptor implements NestInterceptor {
       const response = await interceptor.intercept(context, next);
       return response.pipe(
         catchError((error: unknown) =>
-          from(this.service.abortUpload(auth, upload.id)).pipe(mergeMap(() => throwError(() => error))),
+          this.importUpload
+            ? throwError(() => error)
+            : from(this.service.abortUpload(auth, upload.id, created)).pipe(mergeMap(() => throwError(() => error))),
         ),
       );
     } catch (error) {
-      await this.service.abortUpload(auth, upload.id);
+      await this.service.abortUpload(auth, upload.id, created);
       throw error;
     } finally {
       clearTimeout(timer);

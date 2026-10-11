@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ApiCustomExtension } from 'src/enum.js';
+import { RetainedProcessingProvenanceSchema } from 'src/utils/studio-import-provenance.js';
 
 /**
  * Files uploaded into a Studio project rather than the library (FL-103, FL-105): microphone
@@ -14,6 +15,12 @@ import { ApiCustomExtension } from 'src/enum.js';
 const StudioProjectImportCreateSchema = z
   .object({
     id: z.uuid().describe('The media id the editor gave this file; retrying the same file with it is idempotent'),
+    publicationId: z.uuid().optional().describe('Already registered publication id; required with provenance'),
+    processingProvenance: z
+      .string()
+      .max(4096)
+      .optional()
+      .describe('Processing provenance JSON, encoded exactly once; outputSha256 is server-only'),
     // File parts never reach the request body; this documents the field and the controller checks it.
     file: z
       .any()
@@ -42,6 +49,7 @@ export const StudioProjectImportSchema = z
       .nullable()
       .describe('External subresources an SVG or Lottie graphic names; a graphic with any cannot be rendered'),
     createdAt: z.string().meta({ format: 'date-time' }).describe('When it was uploaded'),
+    processingProvenance: RetainedProcessingProvenanceSchema.meta({ id: 'RetainedProcessingProvenance' }).optional(),
   })
   .meta({ id: 'StudioProjectImportDto' });
 
@@ -53,3 +61,54 @@ const StudioProjectImportParamSchema = z.object({
 });
 
 export class StudioProjectImportParamDto extends createZodDto(StudioProjectImportParamSchema) {}
+
+const StudioImportPublicationRegisterSchema = z
+  .strictObject({ publicationId: z.uuid(), importId: z.uuid() })
+  .meta({ id: 'StudioImportPublicationRegisterDto' });
+export class StudioImportPublicationRegisterDto extends createZodDto(StudioImportPublicationRegisterSchema) {}
+
+const StudioImportPublicationParamSchema = z.strictObject({ id: z.uuidv7(), publicationId: z.uuid() });
+export class StudioImportPublicationParamDto extends createZodDto(StudioImportPublicationParamSchema) {}
+export class StudioImportPublicationCancelParamDto extends createZodDto(
+  StudioImportPublicationParamSchema.extend({ importId: z.uuid() }),
+) {}
+
+const PublicationStateSchema = z
+  .enum(['registered', 'preparing', 'published', 'aborted'])
+  .meta({ id: 'StudioImportPublicationState' });
+const OpaqueCursorSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .regex(/^[A-Za-z0-9_-]+$/);
+const StudioImportPublicationQuerySchema = z.strictObject({
+  state: PublicationStateSchema.optional(),
+  cursor: OpaqueCursorSchema.optional(),
+});
+export class StudioImportPublicationQueryDto extends createZodDto(StudioImportPublicationQuerySchema) {}
+
+const StudioImportPublicationSchema = z
+  .strictObject({
+    publicationId: z.uuid(),
+    importId: z.uuid(),
+    state: PublicationStateSchema,
+    createdAt: z.string().meta({ format: 'date-time' }),
+    expiresAt: z.string().meta({ format: 'date-time' }),
+    cleanupPending: z.boolean(),
+    imported: StudioProjectImportSchema.optional(),
+  })
+  .meta({ id: 'StudioImportPublicationDto' });
+export class StudioImportPublicationDto extends createZodDto(StudioImportPublicationSchema) {}
+export class StudioImportPublicationPageDto extends createZodDto(
+  z
+    .strictObject({ items: z.array(StudioImportPublicationSchema).max(100), nextCursor: OpaqueCursorSchema.nullable() })
+    .meta({ id: 'StudioImportPublicationPageDto' }),
+) {}
+export class StudioImportPublicationCancelDto extends createZodDto(
+  z
+    .strictObject({
+      status: z.enum(['cancelled', 'already-published']).meta({ id: 'StudioImportPublicationCancelStatus' }),
+      receipt: StudioImportPublicationSchema,
+    })
+    .meta({ id: 'StudioImportPublicationCancelDto' }),
+) {}
