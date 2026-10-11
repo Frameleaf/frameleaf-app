@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -56,7 +56,7 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     render(AppSettings);
 
     const dates = screen.getByRole('group', { name: 'Dates and numbers' });
-    expect(screen.getByRole('button', { name: 'Match this device', pressed: true })).toBeInTheDocument();
+    expect(within(dates).getByRole('button', { name: 'Match this device', pressed: true })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Region' })).not.toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Choose a region' }));

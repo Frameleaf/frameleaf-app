@@ -22,7 +22,7 @@
   import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
-  import { updateState } from '$lib/components/frameleaf/settings/server/update-status';
+  import { askInstalledVersion, updateState } from '$lib/components/frameleaf/settings/server/update-status';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { installedReleaseChannel } from '$lib/frameleaf/release-channel';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -84,7 +84,9 @@
     }
   };
 
-  const installed = $derived($serverVersion ? semverToName($serverVersion) : undefined);
+  let asked = $state<string>();
+  onMount(() => void askInstalledVersion().then((name) => (asked = name)));
+  const installed = $derived($serverVersion ? semverToName($serverVersion) : asked);
   const version = (name?: string | null) => (name ?? '').replace(/^v/, '');
   const answer = $derived(
     updateState({
