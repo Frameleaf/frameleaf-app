@@ -65,6 +65,21 @@ describe(CloudBackupMaintenance.name, () => {
   let sut: CloudBackupMaintenance;
   const carryOn = () => Promise.resolve(true);
 
+  it('refuses retention when the locally anchored current head is hidden by a listing or delete marker', async () => {
+    const trusted = {
+      ...bucket,
+      connection: {
+        ...bucket.connection,
+        trustedManifestHead: 'm/v1/f0000000-0000-4000-8000-000000000001/1/20261011T000001Z.json.gz',
+      },
+    };
+    objects.set('m/20260926T030000Z.json.gz', manifest([hex('legacy')]));
+    await expect(sut.prune(trusted, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, false, carryOn)).rejects.toThrow(
+      'anchored backup head',
+    );
+    expect(store.delete).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     objects = new Map();
     store = {

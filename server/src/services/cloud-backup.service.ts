@@ -6,8 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CronTime } from 'cron';
-import { randomUUID } from 'node:crypto';
-import { basename, join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
@@ -131,6 +132,15 @@ import {
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
+import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import {
+  type ClientBackupKeys,
+  clientBackupContext,
+  clientBackupManifestKey,
+  clientBackupObjectKey,
+  clientBackupWritesEnabled,
+  parseClientBackupKeys,
+} from 'src/utils/cloud-backup-crypto.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import {
   assertOwnerRestoreFile,
@@ -139,6 +149,19 @@ import {
 } from 'src/utils/cloud-backup-owner-path.js';
 import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
+import {
+  type BackupRecoveryHistory,
+  appendBackupSnapshot,
+  backupRecoveryHistorySchema,
+  backupRecoveryPackageSchema,
+  mergeBackupHistory,
+  readBackupHistory,
+  selectBackupSnapshot,
+  signBackupSnapshot,
+  unwrapBackupRecoveryKit,
+  wrapBackupRecoveryKit,
+  writeBackupHistory,
+} from 'src/utils/cloud-backup-recovery.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
   CLOUD_BACKUP_BATCH,
@@ -159,6 +182,7 @@ import {
   emptyRunResult,
   isSha256Hex,
   keyFingerprint,
+  manifestFileObjectKey,
   manifestKey,
   objectKey,
   parseBackupKey,
@@ -247,6 +271,7 @@ export type CloudBackupBareMetalRestore = {
   manifestKey?: string;
   scope: Extract<CloudBackupRestoreScope, 'files' | 'database' | 'library'>;
   restoreDatabase: boolean;
+  offlineDirectory?: string;
 };
 
 /** FL-164: what a `cloud_backup` operation does; a row from before FL-164 has no task and is a backup run. */
@@ -357,7 +382,9 @@ type HashedFile = FileToBackUp & { sha256: string; size: number; mtime: Date };
  */
 @Injectable()
 export class CloudBackupService {
-  private memoryKey?: { fingerprint: string; key: Buffer };
+  private memoryKey?: { fingerprint: string; key: Buffer; file?: string };
+  private clientKeys = new Map<string, ClientBackupKeys>();
+  private importedHistory = new Map<string, BackupRecoveryHistory>();
   /** Callers waiting for another worker to share the own-memory key. */
   private keyWaiters = new Set<() => void>();
   private lastKeyAskAt = 0;
@@ -685,13 +712,18 @@ export class CloudBackupService {
     const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
     const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
     const identity = await loadInstanceIdentity(this.gatewayDeps());
+    this.readClientKeys(dto.key, key, identity.instanceId, false);
 
     // The stored key modes write and read back the key file first, so a bucket is never claimed with a
     // key this server could not keep; a claim that then fails takes away only a file this setup created.
     const keyFile =
       dto.keyMode === 'own-memory'
         ? null
-        : await this.storeKey(dto.keyMode, key, { instanceId: identity.instanceId, bucket: connection.bucket });
+        : await this.storeKey(dto.keyMode, key, {
+            instanceId: identity.instanceId,
+            bucket: connection.bucket,
+            keyFile: dto.key,
+          });
 
     let claim: { existing: boolean; claimedAt: string };
     try {
@@ -794,8 +826,9 @@ export class CloudBackupService {
 
     // Own-memory: held here, and shared once the claim is saved so the other workers accept it.
     if (dto.keyMode === 'own-memory') {
-      this.memoryKey = { fingerprint, key };
-      this.websocketRepository.serverSend('CloudBackupKeyShare', { key: key.toString('base64') });
+      this.readClientKeys(dto.key, key, identity.instanceId);
+      this.memoryKey = { fingerprint, key, file: dto.key };
+      this.websocketRepository.serverSend('CloudBackupKeyShare', { key: dto.key });
     }
     // Frameleaf Cloud keeps escrow for the server key mode only, and warns when a schedule stops running
     await this.reportAgentSettings(dto.keyMode, true);
@@ -874,7 +907,8 @@ export class CloudBackupService {
       return;
     }
     try {
-      await this.cloudBackup.deleteEscrow(await this.managedApi());
+      const metadata = await this.requireClaim();
+      await this.deleteCloudEscrow(metadata.instanceId);
     } catch (error) {
       if (!(error instanceof FrameleafCloudError && error.status === 404)) {
         this.logger.warn(
@@ -958,8 +992,9 @@ export class CloudBackupService {
     if (keyFingerprint(key) !== metadata.keyFingerprint) {
       throw new BadRequestException('This key is for a different bucket.');
     }
-    this.memoryKey = { fingerprint: metadata.keyFingerprint, key };
-    this.websocketRepository.serverSend('CloudBackupKeyShare', { key: key.toString('base64') });
+    this.readClientKeys(dto.key, key, metadata.instanceId);
+    this.memoryKey = { fingerprint: metadata.keyFingerprint, key, file: dto.key };
+    this.websocketRepository.serverSend('CloudBackupKeyShare', { key: dto.key });
     this.logger.log(`Cloud backup key ${metadata.keyFingerprint} loaded into memory`);
     return this.getStatus();
   }
@@ -1314,11 +1349,15 @@ export class CloudBackupService {
     if (metadata?.keyMode !== 'own-memory') {
       return;
     }
-    const bytes = Buffer.from(key, 'base64');
-    if (keyFingerprint(bytes) !== metadata.keyFingerprint) {
+    let bytes: Buffer;
+    try {
+      bytes = parseBackupKey(key);
+      if (keyFingerprint(bytes) !== metadata.keyFingerprint) return;
+      this.readClientKeys(key, bytes, metadata.instanceId);
+    } catch {
       return;
     }
-    this.memoryKey = { fingerprint: metadata.keyFingerprint, key: bytes };
+    this.memoryKey = { fingerprint: metadata.keyFingerprint, key: bytes, file: key };
     for (const wake of this.keyWaiters) {
       wake();
     }
@@ -1328,7 +1367,15 @@ export class CloudBackupService {
   @OnEvent({ name: 'CloudBackupKeyRequest', server: true })
   onKeyRequest() {
     if (this.memoryKey) {
-      this.websocketRepository.serverSend('CloudBackupKeyShare', { key: this.memoryKey.key.toString('base64') });
+      const ring = this.clientKeys.get(this.memoryKey.fingerprint);
+      const original = this.memoryKey.file?.trimStart().startsWith('{')
+        ? JSON.parse(this.memoryKey.file)
+        : { key: this.memoryKey.key.toString('base64') };
+      this.websocketRepository.serverSend('CloudBackupKeyShare', {
+        key: ring
+          ? JSON.stringify({ ...original, client: ring })
+          : (this.memoryKey.file ?? this.memoryKey.key.toString('base64')),
+      });
     }
   }
 
@@ -1496,6 +1543,14 @@ export class CloudBackupService {
       return;
     }
 
+    if (
+      (run.progress.result.manifestKey?.startsWith('m/v1/') ?? clientBackupWritesEnabled()) &&
+      run.metadata.target === 'managed' &&
+      !run.connection.clientFormatSupported
+    )
+      throw new Error(
+        'Client-encrypted managed writes require a qualified opaque-storage grant; use legacy writes until that contract is available.',
+      );
     await this.openManifest(run);
     await this.recordRun(operation, progress.result, 'running');
 
@@ -1589,6 +1644,7 @@ export class CloudBackupService {
     if (marker.instanceId !== metadata.instanceId) {
       throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
     }
+    await this.attachClientHistory(connection, metadata);
     return { bucketRef: metadata.bucketRef, metadata: current, settings, connection, bucketKey, readOnly };
   }
 
@@ -1607,6 +1663,9 @@ export class CloudBackupService {
       throw new Error('The bucket’s secret access key is not stored on this server.');
     }
     return {
+      vaultId: metadata.instanceId,
+      recoveryKeys: this.clientKeys.get(metadata.keyFingerprint)?.keys,
+      stagingDirectory: join(identityDirectory(this.configRepository), 'cloud-backup-staging'),
       endpoint: settings.s3.endpoint,
       region: signingRegion(settings.s3.endpoint, settings.s3.region),
       bucket: settings.s3.bucket,
@@ -1696,6 +1755,13 @@ export class CloudBackupService {
       }
     }
     return {
+      clientFormatSupported:
+        (grant as { objectFormats?: { write: Array<{ format: string; version: number }> } }).objectFormats?.write.some(
+          (format) => format.format === 'frameleaf-client-backup' && format.version === 1,
+        ) ?? false,
+      vaultId: metadata?.instanceId,
+      recoveryKeys: metadata ? this.clientKeys.get(metadata.keyFingerprint)?.keys : undefined,
+      stagingDirectory: join(identityDirectory(this.configRepository), 'cloud-backup-staging'),
       endpoint: grant.endpoint.replace(/\/+$/, ''),
       region: grant.region,
       bucket: grant.bucket,
@@ -1796,7 +1862,9 @@ export class CloudBackupService {
     }
     const manifest = await this.index.createManifest({
       bucket: run.metadata.bucketRef,
-      key: manifestKey(new Date()),
+      key: clientBackupWritesEnabled()
+        ? clientBackupManifestKey(run.metadata.instanceId, this.clientWriteVersion(run), manifestKey(new Date()))
+        : manifestKey(new Date()),
       operationId: run.id,
     });
     run.progress.result = { ...result, manifestId: manifest.id, manifestKey: manifest.key };
@@ -1814,7 +1882,15 @@ export class CloudBackupService {
     });
     try {
       const sha256 = (await this.cryptoRepository.hashFile(path, 'sha256')).toString('hex');
-      const key = `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
+      const key = run.progress.result.manifestKey!.startsWith('m/v1/')
+        ? clientBackupObjectKey(
+            this.clientWriteRoot(run),
+            run.metadata.instanceId,
+            this.clientWriteVersion(run),
+            sha256,
+            basename(path),
+          )
+        : `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
       const { size } = await this.store.uploadFile(run.connection, key, path, run.bucketKey, sha256);
       run.progress.result = {
         ...run.progress.result,
@@ -2000,6 +2076,28 @@ export class CloudBackupService {
       run.metadata.bucketRef,
       hashed.map(({ sha256 }) => sha256),
     );
+    if (run.progress.result.manifestKey!.startsWith('m/v1/')) {
+      // The legacy index cannot prove that a client-format copy exists. Check the opaque address.
+      existing.clear();
+      for (const file of hashed) {
+        const stored = await this.store.head(
+          run.connection,
+          clientBackupObjectKey(
+            this.clientWriteRoot(run),
+            run.metadata.instanceId,
+            this.clientWriteVersion(run),
+            file.sha256,
+          ),
+          run.bucketKey,
+        );
+        if (stored?.size === file.size) {
+          existing.add(file.sha256);
+          await this.index.record(run.metadata.bucketRef, [
+            { sha256: file.sha256, size: file.size, etag: stored.etag },
+          ]);
+        }
+      }
+    }
     const recorded: CloudBackupEntry[] = [];
     const skipped: string[] = [];
     for (const file of hashed) {
@@ -2056,7 +2154,14 @@ export class CloudBackupService {
       try {
         const { etag, size } = await this.store.uploadFile(
           run.connection,
-          objectKey(current.sha256),
+          run.progress.result.manifestKey!.startsWith('m/v1/')
+            ? clientBackupObjectKey(
+                this.clientWriteRoot(run),
+                run.metadata.instanceId,
+                this.clientWriteVersion(run),
+                current.sha256,
+              )
+            : objectKey(current.sha256),
           current.path,
           run.bucketKey,
           current.sha256,
@@ -2111,14 +2216,22 @@ export class CloudBackupService {
     const row = await this.index.getManifest(manifestId);
     if (row?.status !== 'complete') {
       const counts = { assets: 0, files: 0, bytes: 0 };
+      let uploaded: Awaited<ReturnType<CloudBackupStoreRepository['uploadStream']>> | undefined;
       await pipeline(
         Readable.from(this.manifestChunks(run, manifestId, counts)),
         createGzip(),
         async (source: AsyncIterable<Buffer>) => {
-          await this.store.uploadStream(run.connection, result.manifestKey!, source, run.bucketKey, 'application/gzip');
+          uploaded = await this.store.uploadStream(
+            run.connection,
+            result.manifestKey!,
+            source,
+            run.bucketKey,
+            'application/gzip',
+          );
         },
         { signal: executionSignal() },
       );
+      if (result.manifestKey!.startsWith('m/v1/')) await this.recordClientSnapshot(run, uploaded!);
       await this.index.finishManifest(manifestId, {
         status: 'complete',
         assetCount: counts.assets,
@@ -2126,6 +2239,8 @@ export class CloudBackupService {
         bytes: counts.bytes,
       });
     }
+    if (result.manifestKey!.startsWith('m/v1/'))
+      await this.store.finishClientUpload(run.connection, result.manifestKey!);
 
     run.progress.result = { ...run.progress.result, phase: 'done' };
     // Written whatever a pause or cancel asks: the backup is complete, and `finish` settles either.
@@ -2154,7 +2269,7 @@ export class CloudBackupService {
   ): AsyncGenerator<string> {
     const header = {
       format: CLOUD_BACKUP_MANIFEST_FORMAT,
-      version: CLOUD_BACKUP_MANIFEST_VERSION,
+      version: run.progress.result.manifestKey!.startsWith('m/v1/') ? 3 : CLOUD_BACKUP_MANIFEST_VERSION,
       instanceId: run.metadata.instanceId,
       createdAt: new Date().toISOString(),
       database: run.progress.result.database,
@@ -2210,6 +2325,14 @@ export class CloudBackupService {
           role: entry.role,
           path: entry.path,
           sha256: entry.sha256,
+          ...(run.progress.result.manifestKey!.startsWith('m/v1/') && {
+            objectKey: clientBackupObjectKey(
+              this.clientWriteRoot(run),
+              run.metadata.instanceId,
+              this.clientWriteVersion(run),
+              entry.sha256,
+            ),
+          }),
           size: entry.size,
           mtime: asIso(entry.mtime),
         };
@@ -2947,7 +3070,7 @@ export class CloudBackupService {
       throw new NotFoundException('Backup preview unavailable');
     const key = await this.requireKeyForRequest(found.metadata);
     const read = async (connection: CloudBackupConnection) =>
-      this.store.getPreview(connection, objectKey(file.sha256), key, file.sha256, file.size);
+      this.store.getPreview(connection, manifestFileObjectKey(file), key, file.sha256, file.size);
     let bytes: Buffer;
     try {
       bytes =
@@ -3438,6 +3561,7 @@ export class CloudBackupService {
     const bucketKey = await this.requireKeyForRequest(metadata);
     const read = async (connection: CloudBackupConnection) => {
       try {
+        await this.attachClientHistory(connection, metadata);
         return readManifest(await this.store.get(connection, key, bucketKey));
       } catch (error) {
         throw this.asRequestError(error);
@@ -3489,22 +3613,88 @@ export class CloudBackupService {
     report: (line: string) => void,
   ): Promise<CloudBackupRestoreResult & { manifestKey: string; databaseRestored: boolean }> {
     const key = parseBackupKey(options.key);
-    const connection = await this.connectionFor(options.s3);
-    const marker = await this.store.readMarker(connection, key);
-    report(`The key opens bucket ${connection.bucket}, claimed by server ${marker.instanceId} on ${marker.claimedAt}.`);
-
-    const listed: string[] = [];
-    await this.store.listAll(connection, CLOUD_BACKUP_MANIFEST_PREFIX, (page) => {
-      listed.push(...page.map(({ key: name }) => name).filter((name) => manifestTime(name)));
-      return Promise.resolve();
-    });
-    const manifestKey = options.manifestKey ?? listed.toSorted((a, b) => compareCodeUnits(b, a))[0];
-    if (!manifestKey || !listed.includes(manifestKey)) {
-      throw new Error(
-        manifestKey ? `This bucket holds no backup named ${manifestKey}.` : 'This bucket holds no complete backup yet.',
+    const file = options.key.trimStart().startsWith('{')
+      ? (JSON.parse(options.key) as {
+          instanceId?: string;
+          bucket?: string;
+          client?: unknown;
+          recovery?: unknown;
+          offlineManifest?: { key: string; sha256: string };
+        })
+      : {};
+    const connection: CloudBackupConnection = options.offlineDirectory
+      ? {
+          endpoint: 'https://offline.invalid',
+          region: '',
+          bucket: options.s3.bucket,
+          accessKeyId: '',
+          secretAccessKey: '',
+          offlineDirectory: join(options.offlineDirectory, 'objects'),
+        }
+      : await this.connectionFor(options.s3);
+    if (file.bucket && file.bucket !== connection.bucket)
+      throw new Error('Recovery key file belongs to another bucket');
+    if (file.client) {
+      const ring = parseClientBackupKeys(file.client, key, file.instanceId ?? '');
+      connection.recoveryKeys = ring!.keys;
+      connection.vaultId = ring!.vaultId;
+    }
+    const history = file.recovery
+      ? backupRecoveryHistorySchema.parse(file.recovery)
+      : await readBackupHistory(this.clientHistoryPath(bucketRef(connection.endpoint, connection.bucket)));
+    if (history) {
+      selectBackupSnapshot(history);
+      if (connection.vaultId && connection.vaultId !== history.anchor.vaultId)
+        throw new Error('Recovery history belongs to another vault');
+      connection.vaultId = history.anchor.vaultId;
+      connection.trustedManifests = Object.fromEntries(
+        history.snapshots.map(({ descriptor }) => [descriptor.manifest.objectKey, descriptor.manifest]),
       );
     }
-    const manifest = readManifest(await this.store.get(connection, manifestKey, key));
+    if (!options.offlineDirectory) {
+      const marker = await this.store.readMarker(connection, key);
+      if (connection.vaultId && marker.instanceId !== connection.vaultId)
+        throw new Error('Recovery vault does not match the claimed bucket');
+      connection.vaultId = marker.instanceId;
+      report(
+        `The key opens bucket ${connection.bucket}, claimed by server ${marker.instanceId} on ${marker.claimedAt}.`,
+      );
+    }
+    const listed: string[] = [];
+    if (!options.offlineDirectory && !history)
+      await this.store.listAll(connection, CLOUD_BACKUP_MANIFEST_PREFIX, (page) => {
+        listed.push(...page.map(({ key: name }) => name).filter((name) => manifestTime(name)));
+        return Promise.resolve();
+      });
+    const manifestKey =
+      options.manifestKey ??
+      (history
+        ? selectBackupSnapshot(history).record.descriptor.manifest.objectKey
+        : (file.offlineManifest?.key ?? listed.toSorted((a, b) => compareCodeUnits(b, a))[0]));
+    if (!manifestKey) throw new Error('No trusted backup snapshot is available. Import its exported recovery kit.');
+    if (manifestKey.startsWith('m/v1/')) {
+      if (!history) throw new Error('Encrypted recovery requires the exported pinned snapshot history');
+      const selected = selectBackupSnapshot(history, manifestKey);
+      report(
+        selected.historical
+          ? 'Restoring the explicitly selected historical snapshot.'
+          : 'Restoring the locally anchored latest snapshot.',
+      );
+      if (selected.newerUnanchoredHistory)
+        report('Newer unanchored history exists; it has not been selected as current.');
+    } else if (options.offlineDirectory && (!file.offlineManifest || file.offlineManifest.key !== manifestKey)) {
+      throw new Error('This offline export does not pin the selected legacy manifest');
+    }
+    const manifest = readManifest(
+      await this.store.get(
+        connection,
+        manifestKey,
+        key,
+        options.offlineDirectory && !manifestKey.startsWith('m/v1/') ? file.offlineManifest?.sha256 : undefined,
+      ),
+    );
+    if (connection.vaultId && manifest.instanceId !== connection.vaultId)
+      throw new Error('Backup manifest belongs to another vault');
     report(
       `Restoring ${manifestKey}: ${Object.keys(manifest.assets).length} items${manifest.database ? ' and the database' : ''}.`,
     );
@@ -3556,6 +3746,71 @@ export class CloudBackupService {
     return { ...result, manifestKey, databaseRestored };
   }
 
+  /** Export one selected snapshot and its independent recovery authority, without modifying remote storage. */
+  async exportFromBucket(options: CloudBackupBareMetalRestore, destination: string) {
+    if (options.offlineDirectory) throw new Error('Export requires the source storage bucket');
+    const root = parseBackupKey(options.key);
+    const original = JSON.parse(options.key) as {
+      format: string;
+      instanceId: string;
+      bucket: string;
+      client?: unknown;
+      recovery?: unknown;
+    };
+    const ring = parseClientBackupKeys(original.client, root, original.instanceId);
+    const connection = await this.connectionFor(options.s3);
+    const marker = await this.store.readMarker(connection, root);
+    if (marker.instanceId !== original.instanceId || original.bucket !== connection.bucket)
+      throw new Error('Export key file does not match this vault');
+    connection.vaultId = marker.instanceId;
+    connection.recoveryKeys = ring?.keys;
+    const history = original.recovery
+      ? backupRecoveryHistorySchema.parse(original.recovery)
+      : await readBackupHistory(this.clientHistoryPath(bucketRef(connection.endpoint, connection.bucket)));
+    let key = options.manifestKey;
+    if (!key && history) key = selectBackupSnapshot(history).record.descriptor.manifest.objectKey;
+    if (!key) throw new Error('Choose a legacy manifest explicitly, or supply the pinned client recovery history');
+    if (key.startsWith('m/v1/')) {
+      if (!history || !ring) throw new Error('Encrypted export requires client keys and pinned history');
+      const record = selectBackupSnapshot(history, key).record;
+      connection.trustedManifests = { [key]: record.descriptor.manifest };
+    }
+    const bytes = await this.store.get(connection, key, root);
+    const manifest = readManifest(bytes);
+    if (manifest.instanceId !== marker.instanceId) throw new Error('Exported manifest vault mismatch');
+    const expected = new Map<string, { sha256: string; size: number }>([
+      [key, { sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length }],
+    ]);
+    for (const file of [
+      ...Object.values(manifest.assets).flatMap((asset) => asset.files),
+      ...Object.values(manifest.profiles),
+    ]) {
+      const object = manifestFileObjectKey(file);
+      const prior = expected.get(object);
+      if (prior && (prior.sha256 !== file.sha256 || prior.size !== file.size))
+        throw new Error('Conflicting export object references');
+      expected.set(object, { sha256: file.sha256, size: file.size });
+    }
+    if (manifest.database)
+      expected.set(manifest.database.key, { sha256: manifest.database.sha256, size: manifest.database.size });
+    await mkdir(destination, { mode: 0o700 });
+    await flushBuddyDirectory(dirname(destination));
+    const offline = { ...connection, offlineDirectory: join(destination, 'objects') };
+    for (const [object, reference] of expected) {
+      await this.store.exportObject(connection, object, root, offline.offlineDirectory);
+      const checked = await this.store.hashObject(offline, object, root);
+      if (checked.sha256 !== reference.sha256 || checked.size !== reference.size)
+        throw new Error('Exported backup reference failed its integrity check');
+    }
+    const kit = {
+      ...original,
+      ...(history && { recovery: history }),
+      offlineManifest: { key, sha256: createHash('sha256').update(bytes).digest('hex') },
+    };
+    await writeBuddyFile(join(destination, 'key-file.json'), JSON.stringify(kit, null, 2), true);
+    return { manifestKey: key, objects: expected.size };
+  }
+
   /* ------------------------------------------------------------------ */
   /* FL-164: key escrow                                                  */
   /* ------------------------------------------------------------------ */
@@ -3581,8 +3836,27 @@ export class CloudBackupService {
         'The backup key file is missing from this server. Restore it from the key file or recovery kit first.',
       );
     }
-    const blob = await wrapBucketKey(key, dto.passphrase);
-    if (!(await unwrapBucketKey(blob, dto.passphrase)).equals(key)) {
+    const ring = this.clientKeys.get(metadata.keyFingerprint);
+    const content = ring
+      ? await this.keys.read(identityDirectory(this.configRepository), metadata.keyFingerprint)
+      : null;
+    if (ring && !content)
+      throw new ConflictException('The complete recovery key file is missing, so no incomplete escrow was sent.');
+    const history = ring
+      ? mergeBackupHistory(
+          await readBackupHistory(this.clientHistoryPath(metadata.bucketRef)),
+          this.importedHistory.get(metadata.keyFingerprint),
+        )
+      : null;
+    const kit = content ? JSON.stringify({ ...JSON.parse(content), ...(history && { recovery: history }) }) : null;
+    const blob = kit
+      ? await wrapBackupRecoveryKit(kit, dto.passphrase, metadata.keyMode)
+      : await wrapBucketKey(key, dto.passphrase);
+    if (
+      kit
+        ? (await unwrapBackupRecoveryKit(blob, dto.passphrase)) !== kit
+        : !(await unwrapBucketKey(blob, dto.passphrase)).equals(key)
+    ) {
       throw new ConflictException('The key copy could not be checked, so it was not sent.');
     }
     const { frameleafCloud } = await this.readSettings();
@@ -3592,7 +3866,8 @@ export class CloudBackupService {
         keyMode: 'server',
         scheduleEnabled: frameleafCloud.cloudBackup.enabled,
       });
-      await this.cloudBackup.putEscrow(api, blob);
+      if (kit) await this.cloudBackup.putRecoveryPackage(api, backupRecoveryPackageSchema.parse(blob));
+      else await this.cloudBackup.putEscrow(api, blob);
     } catch (error) {
       throw new ConflictException(this.refusalOf(error).message);
     }
@@ -3605,9 +3880,9 @@ export class CloudBackupService {
   /** Remove the key copy from Frameleaf Cloud. A copy that is already gone counts as removed. */
   async removeEscrow(auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
     this.requireEditableConfig();
-    await this.requireClaim();
+    const metadata = await this.requireClaim();
     try {
-      await this.cloudBackup.deleteEscrow(await this.managedApi());
+      await this.deleteCloudEscrow(metadata.instanceId);
     } catch (error) {
       if (!(error instanceof FrameleafCloudError && error.status === 404)) {
         throw new ConflictException(this.refusalOf(error).message);
@@ -3617,6 +3892,20 @@ export class CloudBackupService {
     await this.updateMetadata(({ escrow: _escrow, ...current }) => current);
     this.logger.log(`Cloud backup key escrow removed from Frameleaf Cloud by ${auth.user.id}`);
     return this.getStatus();
+  }
+
+  private async deleteCloudEscrow(vaultId: string) {
+    const api = await this.managedApi();
+    for (const remove of [
+      () => this.cloudBackup.deleteEscrow(api),
+      () => this.cloudBackup.deleteRecoveryPackages(api, vaultId),
+    ]) {
+      try {
+        await remove();
+      } catch (error) {
+        if (!(error instanceof FrameleafCloudError && error.status === 404)) throw error;
+      }
+    }
   }
 
   private async setEscrowConfig(escrow: boolean) {
@@ -3711,6 +4000,7 @@ export class CloudBackupService {
       return null;
     }
     const key = parseBackupKey(content);
+    this.readClientKeys(content, key, metadata.instanceId);
     return keyFingerprint(key) === metadata.keyFingerprint ? key : null;
   }
 
@@ -3743,11 +4033,133 @@ export class CloudBackupService {
     return this.loadKey(metadata);
   }
 
+  private clientHistoryPath(bucket: string) {
+    return join(
+      identityDirectory(this.configRepository),
+      `cloud-backup-history-${createHash('sha256').update(bucket).digest('hex')}.json`,
+    );
+  }
+
+  private async attachClientHistory(connection: CloudBackupConnection, metadata: FrameleafCloudBackup) {
+    const local = await readBackupHistory(this.clientHistoryPath(metadata.bucketRef));
+    const imported = this.importedHistory.get(metadata.keyFingerprint);
+    const history = mergeBackupHistory(local, imported);
+    if (history) {
+      if (history.anchor.instanceId !== metadata.instanceId || history.anchor.vaultId !== metadata.instanceId)
+        throw new Error('Backup history belongs to another server');
+      connection.trustedManifests = Object.fromEntries(
+        history.snapshots.map(({ descriptor }) => [descriptor.manifest.objectKey, descriptor.manifest]),
+      );
+      connection.trustedManifestHead = selectBackupSnapshot(history).record.descriptor.manifest.objectKey;
+      if (history !== local) await writeBackupHistory(this.clientHistoryPath(metadata.bucketRef), history);
+    }
+  }
+
+  private async recordClientSnapshot(
+    run: Run,
+    uploaded: Awaited<ReturnType<CloudBackupStoreRepository['uploadStream']>>,
+  ) {
+    if (!uploaded.versionId || uploaded.versionId === 'null' || !uploaded.ciphertextSha256)
+      throw new Error('Client-encrypted backups require storage versioning and an exact manifest version receipt.');
+    const path = this.clientHistoryPath(run.metadata.bucketRef);
+    const history = mergeBackupHistory(
+      await readBackupHistory(path),
+      this.importedHistory.get(run.metadata.keyFingerprint),
+    );
+    const existing = history?.snapshots.find(
+      (record) => record.descriptor.snapshotId === run.progress.result.manifestId,
+    );
+    if (existing) {
+      if (
+        existing.descriptor.manifest.objectKey !== run.progress.result.manifestKey ||
+        existing.descriptor.manifest.versionId !== uploaded.versionId ||
+        existing.descriptor.manifest.ciphertextSha256 !== uploaded.ciphertextSha256
+      )
+        throw new Error('Completed snapshot differs from its trusted receipt');
+      if (run.metadata.target === 'managed') await this.cloudBackup.reportSnapshot(await this.managedApi(), existing);
+      return;
+    }
+    const prior = history && selectBackupSnapshot(history).record;
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    if (identity.instanceId !== run.metadata.instanceId)
+      throw new Error('Backup signing identity belongs to another server');
+    const signer = this.instanceIdentityRepository.currentSigner();
+    const record = signBackupSnapshot(
+      {
+        version: 2,
+        instanceId: run.metadata.instanceId,
+        vaultId: run.metadata.instanceId,
+        snapshotId: run.progress.result.manifestId!,
+        sequence: (prior?.descriptor.sequence ?? 0) + 1,
+        previousDigest: prior?.digest ?? null,
+        createdAt: new Date().toISOString(),
+        manifest: {
+          format: 'frameleaf-client-backup',
+          formatVersion: 1,
+          keyVersion: this.clientWriteVersion(run),
+          objectKey: run.progress.result.manifestKey!,
+          versionId: uploaded.versionId,
+          ciphertextSha256: uploaded.ciphertextSha256,
+        },
+        signerKid: signer.kid,
+      },
+      signer,
+    );
+    await writeBackupHistory(path, appendBackupSnapshot(history, record));
+    if (run.metadata.target === 'managed') await this.cloudBackup.reportSnapshot(await this.managedApi(), record);
+  }
+
+  private readClientKeys(file: string, legacyKey: Buffer, vaultId: string, cache = true) {
+    const parsed = file.trimStart().startsWith('{')
+      ? (JSON.parse(file) as { client?: unknown; recovery?: unknown })
+      : {};
+    const ring = parseClientBackupKeys(parsed.client, legacyKey, vaultId);
+    const previous = this.clientKeys.get(keyFingerprint(legacyKey));
+    if (
+      ring &&
+      previous &&
+      (ring.current < previous.current ||
+        Object.entries(previous.keys).some(([version, key]) => ring.keys[version] !== key))
+    )
+      throw new Error('The recovery keyring must retain every loaded historical root');
+    let history;
+    if (parsed.recovery) {
+      history = backupRecoveryHistorySchema.parse(parsed.recovery);
+      selectBackupSnapshot(history);
+      if (history.anchor.vaultId !== vaultId) throw new Error('Recovery history vault mismatch');
+      history = mergeBackupHistory(this.importedHistory.get(keyFingerprint(legacyKey)) ?? null, history);
+    }
+    if (cache) {
+      if (ring) this.clientKeys.set(keyFingerprint(legacyKey), ring);
+      if (history) this.importedHistory.set(keyFingerprint(legacyKey), history);
+    }
+    return ring;
+  }
+
+  private clientWriteVersion(run: Run) {
+    const ring = this.clientKeys.get(run.metadata.keyFingerprint);
+    if (!ring || ring.vaultId !== run.metadata.instanceId)
+      throw new Error(
+        'Load a client backup recovery keyring with fresh independent roots before enabling client-encrypted writes.',
+      );
+    const version = run.progress.result.manifestKey
+      ? clientBackupContext(run.connection.bucket, run.progress.result.manifestKey, ring.vaultId)?.keyVersion
+      : ring.current;
+    if (!version || !ring.keys[version])
+      throw new Error('The recovery keyring is missing this run’s historical write root');
+    return version;
+  }
+
+  private clientWriteRoot(run: Run) {
+    const version = this.clientWriteVersion(run);
+    return Buffer.from(this.clientKeys.get(run.metadata.keyFingerprint)!.keys[version], 'base64');
+  }
+
   /** Write and read back the key file of a stored key mode (0600). */
   private async storeKey(
     mode: Exclude<CloudBackupKeyMode, 'own-memory'>,
     key: Buffer,
-    options: { instanceId: string; bucket: string },
+    options: { instanceId: string; bucket: string; keyFile?: string },
   ): Promise<{ created: boolean }> {
     const file = backupKeyFile({
       key,
@@ -3757,11 +4169,14 @@ export class CloudBackupService {
       createdAt: new Date(),
     });
     try {
-      return await this.keys.write(
+      const ring = this.readClientKeys(options.keyFile ?? '', key, options.instanceId, false);
+      const result = await this.keys.write(
         identityDirectory(this.configRepository),
         keyFingerprint(key),
-        JSON.stringify(file, null, 2),
+        ring ? JSON.stringify({ ...file, client: ring }, null, 2) : JSON.stringify(file, null, 2),
       );
+      this.readClientKeys(options.keyFile ?? '', key, options.instanceId);
+      return result;
     } catch (error) {
       throw new BadRequestException(`The backup key could not be stored on this server: ${errorMessage(error)}`);
     }

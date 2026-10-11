@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { type FileHandle, open, rename, rm } from 'node:fs/promises';
+import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { type FileHandle, open, readFile, rename, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import {
+  clientBackupContext,
+  clientBackupPlainSize,
+  decryptClientBackup,
+  encryptClientBackup,
+} from 'src/utils/cloud-backup-crypto.js';
 import {
   CLOUD_BACKUP_MARKER,
   CLOUD_BACKUP_MARKER_FORMAT,
@@ -31,10 +39,8 @@ import {
  * needs the S3 API directly, and every provider the agent supports (Wasabi, and any SSE-C-capable S3
  * store for your own bucket) speaks it.
  *
- * - **SSE-C on every object call.** PUT, GET, HEAD, UploadPart and CompleteMultipartUpload (and
- *   CreateMultipartUpload) carry the customer-key headers; only LIST, DELETE and AbortMultipartUpload,
- *   which never touch an object's contents, go without. The key is never logged: requests are logged by
- *   method and object name only, and a provider's error is reported by its status and code.
+ * - Legacy objects retain SSE-C customer-key headers. Versioned client objects carry locally encrypted
+ *   bodies and never those headers. Requests log method and object name, never keys or payloads.
  * - **Integrity.** Every body is signed with its SHA-256 (`x-amz-content-sha256`) and sent with
  *   `Content-MD5`, so the provider refuses a body that changed in flight. A file is read once while it
  *   uploads and hashed as it goes: an object named `o/<sha256>` is completed only when what was sent
@@ -56,6 +62,14 @@ export type CloudBackupConnection = {
    * until this time (epoch ms) a `403 InvalidAccessKeyId` is waited out and retried rather than reported.
    */
   freshKeyUntil?: number;
+  /** Local encryption/recovery authority; never serialized into a storage request. */
+  vaultId?: string;
+  stagingDirectory?: string;
+  recoveryKeys?: Record<string, string>;
+  trustedManifests?: Record<string, { versionId: string; ciphertextSha256: string }>;
+  trustedManifestHead?: string;
+  offlineDirectory?: string;
+  clientFormatSupported?: boolean;
 };
 
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
@@ -302,6 +316,16 @@ type SignedRequest = {
   timeoutMs?: number;
 };
 
+type ClientUploadState = {
+  key: string;
+  sha256: string;
+  size: number;
+  ciphertextSha256: string;
+  completed?: { etag: string; versionId?: string };
+  uploadId: string | null;
+  parts: Part[];
+};
+
 type Part = { partNumber: number; etag: string };
 
 @Injectable()
@@ -366,7 +390,7 @@ export class CloudBackupStoreRepository {
     const response = await this.send(connection, {
       method: 'HEAD',
       key,
-      headers: sseCustomerHeaders(bucketKey),
+      headers: this.objectHeaders(connection, key, bucketKey),
     }).catch((error: unknown) => {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
         return null;
@@ -376,7 +400,12 @@ export class CloudBackupStoreRepository {
     if (!response) {
       return null;
     }
-    return { key, size: Number(response.headers.get('content-length') ?? 0), etag: response.headers.get('etag') };
+    const stored = Number(response.headers.get('content-length') ?? 0);
+    return {
+      key,
+      size: clientBackupContext(connection.bucket, key, connection.vaultId) ? clientBackupPlainSize(stored) : stored,
+      etag: response.headers.get('etag'),
+    };
   }
 
   /**
@@ -389,8 +418,14 @@ export class CloudBackupStoreRepository {
     bucketKey: Buffer,
     expectedSha256?: string,
   ): Promise<Buffer> {
-    const response = await this.send(connection, { method: 'GET', key, headers: sseCustomerHeaders(bucketKey) });
-    const body = Buffer.from(await response.arrayBuffer());
+    const response = await this.send(connection, {
+      method: 'GET',
+      key,
+      headers: this.objectHeaders(connection, key, bucketKey),
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of this.objectBody(response, connection, key, bucketKey)) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
     if (expectedSha256 && sha256Hex(body) !== expectedSha256) {
       throw new CloudBackupStoreError(
         `The backup copy of ${key} does not match its checksum`,
@@ -411,10 +446,12 @@ export class CloudBackupStoreRepository {
   ): Promise<Buffer> {
     if (!Number.isSafeInteger(expectedSize) || expectedSize < 1 || expectedSize > 8 * 1024 * 1024)
       throw new CloudBackupStoreError('Backup preview exceeds its limit', null, 'PreviewLimit');
-    const response = await this.send(connection, { method: 'GET', key, headers: sseCustomerHeaders(bucketKey) });
-    const body = response.body
-      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>)
-      : Readable.from([]);
+    const response = await this.send(connection, {
+      method: 'GET',
+      key,
+      headers: this.objectHeaders(connection, key, bucketKey),
+    });
+    const body = Readable.from(this.objectBody(response, connection, key, bucketKey));
     const chunks: Buffer[] = [];
     let size = 0;
     const digest = createHash('sha256');
@@ -449,12 +486,18 @@ export class CloudBackupStoreRepository {
     const response = await this.send(connection, {
       method: 'GET',
       key,
-      headers: sseCustomerHeaders(bucketKey),
+      headers: this.objectHeaders(connection, key, bucketKey),
       timeoutMs: DOWNLOAD_TIMEOUT_MS,
     });
     const partial = `${destination}.part-${randomUUID().slice(0, 8)}`;
     try {
-      const { size, sha256 } = await this.hashBody(response, createWriteStream(partial, { flags: 'wx' }));
+      const { size, sha256 } = await this.hashBody(
+        response,
+        createWriteStream(partial, { flags: 'wx', mode: 0o600 }),
+        connection,
+        key,
+        bucketKey,
+      );
       if (expectedSha256 && sha256 !== expectedSha256) {
         throw new CloudBackupStoreError(
           `The backup copy of ${key} does not match its checksum`,
@@ -480,18 +523,22 @@ export class CloudBackupStoreRepository {
     const response = await this.send(connection, {
       method: 'GET',
       key,
-      headers: sseCustomerHeaders(bucketKey),
+      headers: this.objectHeaders(connection, key, bucketKey),
       timeoutMs: DOWNLOAD_TIMEOUT_MS,
     });
-    return this.hashBody(response, null);
+    return this.hashBody(response, null, connection, key, bucketKey);
   }
 
-  private async hashBody(response: Response, sink: Writable | null) {
+  private async hashBody(
+    response: Response,
+    sink: Writable | null,
+    connection: CloudBackupConnection,
+    key: string,
+    bucketKey: Buffer,
+  ) {
     const digest = createHash('sha256');
     let size = 0;
-    const body = response.body
-      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>)
-      : Readable.from([]);
+    const body = Readable.from(this.objectBody(response, connection, key, bucketKey));
     const hasher = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         digest.update(chunk);
@@ -517,6 +564,10 @@ export class CloudBackupStoreRepository {
     bucketKey: Buffer,
     contentType = 'application/octet-stream',
   ): Promise<{ etag: string; encrypted: boolean }> {
+    if (clientBackupContext(connection.bucket, key, connection.vaultId)) {
+      const result = await this.uploadClientStream(connection, key, Readable.from([body]), bucketKey);
+      return { etag: result.etag, encrypted: true };
+    }
     const response = await this.send(connection, {
       method: 'PUT',
       key,
@@ -557,7 +608,9 @@ export class CloudBackupStoreRepository {
     path: string,
     bucketKey: Buffer,
     expectedSha256: string,
-  ): Promise<{ etag: string; size: number }> {
+  ): Promise<{ etag: string; size: number; versionId?: string; ciphertextSha256?: string }> {
+    if (clientBackupContext(connection.bucket, key, connection.vaultId))
+      return this.uploadClientFile(connection, key, path, bucketKey, expectedSha256);
     const handle = await open(path, 'r');
     try {
       const { size } = await handle.stat();
@@ -599,7 +652,9 @@ export class CloudBackupStoreRepository {
     source: AsyncIterable<Buffer | Uint8Array | string> | Iterable<Buffer | Uint8Array>,
     bucketKey: Buffer,
     contentType: string,
-  ): Promise<{ etag: string; size: number }> {
+  ): Promise<{ etag: string; size: number; versionId?: string; ciphertextSha256?: string }> {
+    if (clientBackupContext(connection.bucket, key, connection.vaultId))
+      return this.uploadClientStream(connection, key, source, bucketKey);
     const iterator = this.partsOf(source)[Symbol.asyncIterator]();
     const first = await iterator.next();
     const firstPart = first.done ? Buffer.alloc(0) : first.value;
@@ -622,6 +677,401 @@ export class CloudBackupStoreRepository {
     };
     const etag = await this.multipart(connection, key, bucketKey, contentType, all());
     return { etag, size };
+  }
+
+  private objectHeaders(connection: CloudBackupConnection, key: string, root: Buffer) {
+    return clientBackupContext(connection.bucket, key, connection.vaultId) ? {} : sseCustomerHeaders(root);
+  }
+
+  private objectRoot(connection: CloudBackupConnection, key: string, root: Buffer) {
+    const context = clientBackupContext(connection.bucket, key, connection.vaultId);
+    const historical = context && connection.recoveryKeys?.[context.keyVersion];
+    if (context && !historical) throw new Error('Missing historical backup key');
+    const selected = historical ? Buffer.from(historical, 'base64') : root;
+    if (selected.length !== 32) throw new Error('Invalid backup root key');
+    return selected;
+  }
+
+  private async *objectBody(
+    response: Response,
+    connection: CloudBackupConnection,
+    key: string,
+    root: Buffer,
+  ): AsyncGenerator<Buffer> {
+    const source = response.body
+      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>, { signal: executionSignal() })
+      : Readable.from([]);
+    const context = clientBackupContext(connection.bucket, key, connection.vaultId);
+    if (!context) {
+      for await (const part of source) yield Buffer.from(part);
+      return;
+    }
+    const trusted = connection.trustedManifests?.[key];
+    if (context.kind === 'manifest' && !trusted) {
+      source.destroy();
+      throw new CloudBackupStoreError(
+        'Encrypted manifest needs a trusted local recovery receipt',
+        null,
+        'ChecksumMismatch',
+      );
+    }
+    const ciphertext = async function* () {
+      const digest = createHash('sha256');
+      for await (const part of source) {
+        digest.update(part);
+        yield part as Buffer;
+      }
+      if (trusted && digest.digest('hex') !== trusted.ciphertextSha256) throw new Error('Snapshot ciphertext mismatch');
+    };
+    try {
+      yield* decryptClientBackup(ciphertext(), this.objectRoot(connection, key, root), context);
+    } catch {
+      assertExecutionActive();
+      throw new CloudBackupStoreError('Encrypted backup authentication failed', null, 'ChecksumMismatch');
+    } finally {
+      source.destroy();
+    }
+  }
+
+  /** Raw ciphertext (legacy exports are locally decrypted by SSE-C); no cloud account is needed to read the export. */
+  async exportObject(connection: CloudBackupConnection, key: string, root: Buffer, directory: string) {
+    await createBuddyDirectory(directory);
+    const path = join(directory, sha256Hex(key));
+    const response = await this.send(connection, {
+      method: 'GET',
+      key,
+      headers: this.objectHeaders(connection, key, root),
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    });
+    const hash = createHash('sha256');
+    const body = response.body
+      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>, { signal: executionSignal() })
+      : Readable.from([]);
+    const file = await open(path, 'wx', 0o600).catch((error: unknown) => {
+      body.destroy();
+      throw error;
+    });
+    try {
+      for await (const bytes of body) {
+        hash.update(bytes);
+        await file.writeFile(bytes);
+      }
+      const digest = hash.digest('hex');
+      const trusted = connection.trustedManifests?.[key];
+      if (trusted && trusted.ciphertextSha256 !== digest)
+        throw new CloudBackupStoreError('Export snapshot ciphertext mismatch', null, 'ChecksumMismatch');
+      await file.sync();
+      await flushBuddyDirectory(directory);
+    } catch (error) {
+      await rm(path, { force: true });
+      throw error;
+    } finally {
+      body.destroy();
+      await file.close();
+    }
+  }
+
+  private async offlineResponse(connection: CloudBackupConnection, request: SignedRequest) {
+    if (!request.key || !['GET', 'HEAD'].includes(request.method))
+      throw new Error('Offline backup exports are read-only');
+    let file: FileHandle;
+    try {
+      file = await open(
+        join(connection.offlineDirectory!, sha256Hex(request.key)),
+        constants.O_RDONLY | constants.O_NOFOLLOW,
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+        throw new CloudBackupStoreError('Exported backup object is missing', 404, 'NoSuchKey');
+      throw error;
+    }
+    const stat = await file.stat();
+    if (!stat.isFile()) {
+      await file.close();
+      throw new Error('Invalid exported backup object');
+    }
+    if (request.method === 'HEAD') {
+      await file.close();
+      return new Response(null, { headers: { 'content-length': String(stat.size) } });
+    }
+    const stream = file.createReadStream({ autoClose: true });
+    return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, {
+      headers: { 'content-length': String(stat.size) },
+    });
+  }
+
+  private async saveUpload(path: string, state: ClientUploadState) {
+    await writeBuddyFile(path, JSON.stringify(state));
+  }
+
+  /** A manifest's completed transport receipt stays durable until its signed history/index commit. */
+  async finishClientUpload(connection: CloudBackupConnection, key: string) {
+    const stage = this.clientStage(connection, key);
+    await rm(`${stage}.json`, { force: true });
+    await rm(`${stage}.ciphertext`, { force: true });
+    await flushBuddyDirectory(connection.stagingDirectory!);
+  }
+
+  private async completedClientObject(connection: CloudBackupConnection, key: string, state: ClientUploadState) {
+    const raw = { ...connection, trustedManifests: undefined };
+    let head: Response;
+    try {
+      head = await this.send(raw, { method: 'HEAD', key });
+    } catch (error) {
+      if (error instanceof CloudBackupStoreError && error.status === 404) return null;
+      throw error;
+    }
+    const versionId = head.headers.get('x-amz-version-id');
+    if (key.startsWith('m/v1/') && (!versionId || versionId === 'null')) return null;
+    const response = await this.send(raw, {
+      method: 'GET',
+      key,
+      ...(versionId && { query: { versionId } }),
+      timeoutMs: DOWNLOAD_TIMEOUT_MS,
+    });
+    const hash = createHash('sha256');
+    const source = response.body
+      ? Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>)
+      : Readable.from([]);
+    for await (const bytes of source) hash.update(bytes);
+    return hash.digest('hex') === state.ciphertextSha256 ? head : null;
+  }
+
+  private clientStage(connection: CloudBackupConnection, key: string) {
+    if (!connection.stagingDirectory) throw new Error('Client encryption requires durable local staging');
+    return join(connection.stagingDirectory, sha256Hex(`${connection.bucket}/${key}`));
+  }
+
+  /** Unknown-length manifests are first staged locally (0600); only encrypted bytes leave this server. */
+  private async uploadClientStream(
+    connection: CloudBackupConnection,
+    key: string,
+    source: AsyncIterable<Buffer | Uint8Array | string> | Iterable<Buffer | Uint8Array>,
+    root: Buffer,
+  ) {
+    const stage = this.clientStage(connection, key);
+    await createBuddyDirectory(connection.stagingDirectory!);
+    const plain = `${stage}.${randomUUID()}.plain`;
+    try {
+      await pipeline(Readable.from(source), createWriteStream(plain, { flags: 'wx', mode: 0o600 }), {
+        signal: executionSignal(),
+      });
+      const hash = createHash('sha256');
+      for await (const part of createReadStream(plain)) hash.update(part);
+      // A resumed manifest uses its already staged immutable bytes, even if its generated timestamp changed.
+      return await this.uploadClientFile(connection, key, plain, root, hash.digest('hex'));
+    } finally {
+      await rm(plain, { force: true });
+    }
+  }
+
+  private async uploadClientFile(
+    connection: CloudBackupConnection,
+    key: string,
+    path: string,
+    root: Buffer,
+    expectedSha256: string,
+  ) {
+    const context = clientBackupContext(connection.bucket, key, connection.vaultId)!;
+    const selected = this.objectRoot(connection, key, root);
+    const stage = this.clientStage(connection, key);
+    const bytesFile = `${stage}.ciphertext`;
+    const stateFile = `${stage}.json`;
+    await createBuddyDirectory(connection.stagingDirectory!);
+    let state: ClientUploadState | null = await readFile(stateFile, 'utf8')
+      .then((value) => {
+        if (Buffer.byteLength(value) > 2_000_000) throw new Error('Encrypted upload state is too large');
+        return JSON.parse(value) as ClientUploadState;
+      })
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return null;
+      });
+    if (
+      state &&
+      (state.key !== key ||
+        !/^[\da-f]{64}$/.test(state.sha256) ||
+        !/^[\da-f]{64}$/.test(state.ciphertextSha256) ||
+        !Number.isSafeInteger(state.size) ||
+        // eslint-disable-next-line unicorn/no-impossible-length-comparison -- Serialized state is untrusted input.
+        state.size < 0 ||
+        !Array.isArray(state.parts) ||
+        state.parts.length > 10_000 ||
+        state.parts.some(
+          (part, index) => part.partNumber !== index + 1 || typeof part.etag !== 'string' || part.etag.length > 1024,
+        ) ||
+        (state.uploadId !== null && (typeof state.uploadId !== 'string' || state.uploadId.length > 1024)) ||
+        (context.kind !== 'manifest' && state.sha256 !== expectedSha256))
+    )
+      throw new Error('Encrypted upload staging identity mismatch');
+    if (state?.completed) return { ...state.completed, size: state.size, ciphertextSha256: state.ciphertextSha256 };
+    if (!state) {
+      const input = await open(path, 'r');
+      const temporary = `${stage}.${randomUUID()}.tmp`;
+      try {
+        const before = await input.stat();
+        const digest = createHash('sha256');
+        const source = async function* (store: CloudBackupStoreRepository) {
+          for (let offset = 0; offset < before.size; offset += CLOUD_BACKUP_PART_BYTES) {
+            const part = await store.readExactly(
+              input,
+              path,
+              offset,
+              Math.min(CLOUD_BACKUP_PART_BYTES, before.size - offset),
+            );
+            digest.update(part);
+            yield part;
+          }
+        };
+        await pipeline(
+          Readable.from(encryptClientBackup(source(this), before.size, selected, context)),
+          createWriteStream(temporary, { flags: 'wx', mode: 0o600 }),
+          { signal: executionSignal() },
+        );
+        const after = await input.stat();
+        if (
+          digest.digest('hex') !== expectedSha256 ||
+          before.size !== after.size ||
+          before.mtimeMs !== after.mtimeMs ||
+          before.ctimeMs !== after.ctimeMs
+        )
+          throw new CloudBackupFileChangedError(path);
+        const output = await open(temporary, 'r');
+        try {
+          await output.sync();
+        } finally {
+          await output.close();
+        }
+        await rename(temporary, bytesFile);
+        const hash = createHash('sha256');
+        for await (const part of createReadStream(bytesFile)) hash.update(part);
+        state = {
+          key,
+          sha256: expectedSha256,
+          size: before.size,
+          ciphertextSha256: hash.digest('hex'),
+          uploadId: null,
+          parts: [],
+        };
+        await this.saveUpload(stateFile, state);
+      } finally {
+        await input.close();
+        await rm(temporary, { force: true });
+      }
+    }
+    const ciphertext = await open(bytesFile, 'r');
+    try {
+      // Verify durable staging on each restart; altered local bytes must not be retried under the saved context.
+      const hash = createHash('sha256');
+      for await (const part of createReadStream(bytesFile)) hash.update(part);
+      if (hash.digest('hex') !== state.ciphertextSha256) throw new Error('Encrypted upload staging is damaged');
+      const { size } = await ciphertext.stat();
+      let response: Response | undefined;
+      for (let attempt = 0; attempt < 2 && !response; attempt++) {
+        try {
+          if (size <= CLOUD_BACKUP_PART_BYTES) {
+            const body = await this.readExactly(ciphertext, bytesFile, 0, size);
+            response = await this.send(connection, {
+              method: 'PUT',
+              key,
+              body,
+              headers: {
+                'content-type': 'application/octet-stream',
+                'content-md5': md5Base64(body),
+                ...(context.kind === 'manifest' && { 'if-none-match': '*' }),
+              },
+            });
+          } else {
+            if (!state.uploadId) {
+              const created = await this.send(connection, {
+                method: 'POST',
+                key,
+                query: { uploads: '' },
+                headers: { 'content-type': 'application/octet-stream' },
+              });
+              state.uploadId = xmlValue(await created.text(), 'UploadId');
+              if (!state.uploadId)
+                throw new CloudBackupStoreError('Provider did not start encrypted upload', created.status, null);
+              await this.saveUpload(stateFile, state);
+            }
+            for (
+              let offset = state.parts.length * CLOUD_BACKUP_PART_BYTES;
+              offset < size;
+              offset += CLOUD_BACKUP_PART_BYTES
+            ) {
+              const body = await this.readExactly(
+                ciphertext,
+                bytesFile,
+                offset,
+                Math.min(CLOUD_BACKUP_PART_BYTES, size - offset),
+              );
+              const partNumber = state.parts.length + 1;
+              const part = await this.send(connection, {
+                method: 'PUT',
+                key,
+                query: { partNumber: String(partNumber), uploadId: state.uploadId },
+                body,
+                headers: { 'content-md5': md5Base64(body) },
+                timeoutMs: PART_TIMEOUT_MS,
+              });
+              const etag = part.headers.get('etag');
+              if (!etag)
+                throw new CloudBackupStoreError(
+                  'Provider did not confirm encrypted upload part',
+                  part.status,
+                  'MissingETag',
+                );
+              state.parts.push({ partNumber, etag });
+              await this.saveUpload(stateFile, state);
+            }
+            const body = Buffer.from(
+              `<CompleteMultipartUpload>${state.parts.map(({ partNumber, etag }) => `<Part><PartNumber>${partNumber}</PartNumber><ETag>${escapeXml(etag)}</ETag></Part>`).join('')}</CompleteMultipartUpload>`,
+            );
+            response = await this.send(connection, {
+              method: 'POST',
+              key,
+              query: { uploadId: state.uploadId },
+              body,
+              headers: {
+                'content-type': 'application/xml',
+                'content-md5': md5Base64(body),
+                ...(context.kind === 'manifest' && { 'if-none-match': '*' }),
+              },
+              timeoutMs: PART_TIMEOUT_MS,
+            });
+          }
+        } catch (error) {
+          if (!(error instanceof CloudBackupStoreError) || (error.code !== 'NoSuchUpload' && error.status !== 412))
+            throw error;
+          response = (await this.completedClientObject(connection, key, state)) ?? undefined;
+          if (!response) {
+            if (error.code !== 'NoSuchUpload' || attempt > 0) throw error;
+            state.uploadId = null;
+            state.parts = [];
+            await this.saveUpload(stateFile, state);
+          }
+        }
+      }
+      if (!response) throw new Error('Encrypted upload did not complete');
+      const answer = await response.text();
+      const code = providerErrorCode(xmlValue(answer, 'Code'));
+      if (code) throw new CloudBackupStoreError('Provider refused encrypted upload completion', response.status, code);
+      const etag = response.headers.get('etag') ?? xmlValue(answer, 'ETag');
+      if (!etag)
+        throw new CloudBackupStoreError('Provider did not confirm encrypted object', response.status, 'MissingETag');
+      const result = {
+        etag,
+        size: state.size,
+        ciphertextSha256: state.ciphertextSha256,
+        versionId: response.headers.get('x-amz-version-id') ?? undefined,
+      };
+      state.completed = { etag: result.etag, ...(result.versionId && { versionId: result.versionId }) };
+      await this.saveUpload(stateFile, state);
+      if (context.kind !== 'manifest') await this.finishClientUpload(connection, key);
+      return result;
+    } finally {
+      await ciphertext.close();
+    }
   }
 
   /**
@@ -958,6 +1408,10 @@ export class CloudBackupStoreRepository {
    * `freshKeyUntil` passes.
    */
   private async send(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
+    if (connection.offlineDirectory) return this.offlineResponse(connection, request);
+    const trusted = request.key && connection.trustedManifests?.[request.key];
+    if (trusted && ['GET', 'HEAD'].includes(request.method))
+      request = { ...request, query: { ...request.query, versionId: trusted.versionId } };
     while (true) {
       try {
         return await this.sendWithRetries(connection, request);

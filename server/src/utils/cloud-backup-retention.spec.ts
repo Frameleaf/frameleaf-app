@@ -87,6 +87,36 @@ describe('cloud backup retention (FL-164)', () => {
   });
 
   describe(unreferencedObjects.name, () => {
+    it('protects every stored key for identical plaintext across legacy snapshots and rotated roots', () => {
+      const vaultId = 'f0000000-0000-4000-8000-000000000001';
+      const first = `o/v1/${vaultId}/1/${hex('first identity')}`;
+      const second = `o/v1/${vaultId}/2/${hex('second identity')}`;
+      const file = { role: 'original', path: '/data/a.jpg', sha256: hex('a'), size: 100, mtime: null };
+      const manifest = readManifest(
+        manifestBody({
+          version: 3,
+          instanceId: vaultId,
+          database: null,
+          assets: {
+            'asset-1': {
+              owner: 'owner-1',
+              files: [
+                { ...file, objectKey: first },
+                { ...file, objectKey: second },
+              ],
+            },
+          },
+          profiles: {},
+        }),
+      );
+      const references = manifestReferences(manifest);
+      expect(references.storageKeys.get(hex('a'))).toEqual(new Set([first, second]));
+      const protectedKeys = new Set([hex('a'), ...references.storageKeys.get(hex('a'))!]);
+      const garbage = { key: `o/v1/${vaultId}/3/${hex('unreferenced')}` };
+      expect(
+        unreferencedObjects([{ key: `o/${hex('a')}` }, { key: first }, { key: second }, garbage], protectedKeys),
+      ).toEqual([garbage]);
+    });
     it('offers only content-addressed objects no kept manifest names', () => {
       const objects = [
         { key: `o/${hex('a')}`, size: 1 },
@@ -238,7 +268,7 @@ describe('cloud backup retention (FL-164)', () => {
     it('refuses anything it could not read in full', () => {
       expect(() => readManifest(Buffer.from('not gzip'))).toThrow('could not be read');
       expect(() => readManifest(manifestBody({ format: 'other' }))).toThrow('not a Frameleaf backup manifest');
-      expect(() => readManifest(manifestBody({ version: 3 }))).toThrow('not a Frameleaf backup manifest');
+      expect(() => readManifest(manifestBody({ version: 4 }))).toThrow('not a Frameleaf backup manifest');
       expect(() =>
         readManifest(
           manifestBody({

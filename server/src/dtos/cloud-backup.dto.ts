@@ -84,7 +84,7 @@ const CloudBackupSetupSchema = z
     key: z
       .string()
       .min(1)
-      .max(4096)
+      .max(16_384)
       .describe('The bucket key: the key file, the base64 key or the recovery code. Never returned'),
     acknowledgement: z
       .string()
@@ -96,7 +96,11 @@ const CloudBackupSetupSchema = z
 
 const CloudBackupUnlockSchema = z
   .object({
-    key: z.string().min(1).max(4096).describe('The key file, the base64 key or the recovery code. Kept in memory only'),
+    key: z
+      .string()
+      .min(1)
+      .max(16_384)
+      .describe('The key file, the base64 key or the recovery code. Kept in memory only'),
   })
   .meta({ id: 'CloudBackupUnlockDto' });
 
@@ -143,9 +147,10 @@ const CloudBackupItemFilterSchema = z
   .meta({ id: 'CloudBackupItemFilter' });
 
 /** A manifest key as runs write it: `m/20260926T030000Z.json.gz`. */
-const ManifestKeySchema = z
+export const ManifestKeySchema = z
   .string()
-  .regex(/^m\/\d{8}T\d{6}Z\.json\.gz$/)
+  .max(160)
+  .regex(/^m\/(?:v1\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/[1-9]\d{0,8}\/)?\d{8}T\d{6}Z\.json\.gz$/)
   .describe('The backup run’s manifest in the bucket');
 
 const CloudBackupVerifySchema = z.object({ depth: CloudBackupVerifyDepthSchema }).meta({ id: 'CloudBackupVerifyDto' });

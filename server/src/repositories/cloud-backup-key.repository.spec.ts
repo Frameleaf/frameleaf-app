@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { addClientBackupKeys, rotateClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 
 const linkFailure = vi.hoisted(() => ({ code: null as string | null }));
 const changes = vi.hoisted(() => ({
@@ -179,6 +180,35 @@ describe(CloudBackupKeyRepository.name, () => {
     await expect(sut.write(directory, 'ABCD-1234', content('k1'))).resolves.toMatchObject({ created: false });
     await expect(sut.write(directory, 'ABCD-1234', content('k2'))).rejects.toThrow('different backup key');
     expect(await readFile(join(directory, 'cloud-backup-ABCD-1234.key'), 'utf8')).toBe(content('k1'));
+  });
+
+  it('atomically adds independent client roots and rotates without losing the legacy key or prior roots', async () => {
+    const legacy = Buffer.alloc(32, 7);
+    const original = {
+      format: 'frameleaf-backup-key',
+      key: legacy.toString('base64'),
+      instanceId: 'f0000000-0000-4000-8000-000000000001',
+      bucket: 'family-backup',
+      mode: 'server',
+    };
+    const prepared = addClientBackupKeys(original);
+    await sut.write(directory, 'ABCD-1234', JSON.stringify(original));
+    await sut.write(directory, 'ABCD-1234', JSON.stringify(prepared));
+    const rotated = { ...prepared, client: rotateClientBackupKeys(prepared.client, legacy) };
+    await sut.write(directory, 'ABCD-1234', JSON.stringify(rotated));
+    const stored = JSON.parse((await sut.read(directory, 'ABCD-1234'))!);
+    expect(stored.key).toBe(original.key);
+    expect(stored.client).toEqual(rotated.client);
+    await expect(sut.write(directory, 'ABCD-1234', JSON.stringify(prepared))).rejects.toThrow('historical root');
+    await expect(
+      sut.write(
+        directory,
+        'ABCD-1234',
+        JSON.stringify({ ...rotated, client: { ...rotated.client, keys: { 2: rotated.client.keys[2] } } }),
+      ),
+    ).rejects.toThrow('historical root');
+    expect(JSON.parse((await sut.read(directory, 'ABCD-1234'))!).client).toEqual(rotated.client);
+    expect(await readdir(directory)).toEqual(['cloud-backup-ABCD-1234.key']);
   });
 
   it('falls back to a rename on a mount that cannot hard-link (SMB/CIFS, FUSE), without replacing a file', async () => {

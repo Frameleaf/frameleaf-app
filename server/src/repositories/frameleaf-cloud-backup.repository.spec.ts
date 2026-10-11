@@ -1,5 +1,7 @@
+import type { BackupSnapshotRecord } from 'src/utils/cloud-backup-recovery.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
+import { backupRecoveryPackageSchema } from 'src/utils/cloud-backup-recovery.js';
 import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
@@ -83,5 +85,54 @@ describe(FrameleafCloudBackupRepository.name, () => {
 
     await sut.reportRun(target, report);
     expect(requestJson).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ body: report }));
+  });
+
+  it('sends only the v2 signed descriptor and wrapped package, and deletes every package for that vault', async () => {
+    const vaultId = 'f0000000-0000-4000-8000-000000000001';
+    const record: BackupSnapshotRecord = {
+      descriptor: {
+        version: 2,
+        instanceId: vaultId,
+        vaultId,
+        snapshotId: 'f0000000-0000-4000-8000-000000000002',
+        sequence: 1,
+        previousDigest: null,
+        createdAt: '2026-10-11T00:00:00.000Z',
+        signerKid: 'A'.repeat(43),
+        manifest: {
+          format: 'frameleaf-client-backup',
+          formatVersion: 1,
+          keyVersion: 1,
+          objectKey: `m/v1/${vaultId}/1/20261011T000001Z.json.gz`,
+          versionId: 'exact-version',
+          ciphertextSha256: 'b'.repeat(64),
+        },
+      },
+      signature: 'A'.repeat(86),
+      digest: 'c'.repeat(64),
+      signerJwk: { kty: 'OKP', crv: 'Ed25519', x: 'A'.repeat(43), kid: 'A'.repeat(43) },
+      receivedAt: '2026-10-11T00:00:00.000Z',
+    };
+    await sut.reportSnapshot(target, record);
+    expect(requestJson.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      url: 'https://api.frameleaf.test/v2/backup/snapshots',
+      body: { descriptor: record.descriptor, signature: record.signature },
+    });
+    expect(Object.keys(requestJson.mock.calls[0][1].body)).toEqual(['descriptor', 'signature']);
+    const blob = backupRecoveryPackageSchema.parse({
+      ...cloudContractFixture<Record<string, unknown>>('backup/escrow-blob.json'),
+      version: 2,
+      vaultId,
+      keyVersion: 1,
+    });
+    await sut.putRecoveryPackage(target, blob);
+    await expect(sut.putRecoveryPackage(target, { ...blob, plaintextKey: 'secret' } as never)).rejects.toThrow();
+    requestJson.mockResolvedValueOnce({ packages: [{ ...blob, updatedAt: '2026-10-11T00:00:00.000Z' }] });
+    await sut.deleteRecoveryPackages(target, vaultId);
+    expect(requestJson.mock.calls.at(-1)![1]).toMatchObject({
+      method: 'DELETE',
+      url: `https://api.frameleaf.test/v2/backup/escrow?vaultId=${vaultId}&keyVersion=1`,
+    });
   });
 });

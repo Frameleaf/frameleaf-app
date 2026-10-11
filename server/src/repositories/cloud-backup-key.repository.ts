@@ -4,6 +4,9 @@ import { type Stats, constants } from 'node:fs';
 import { chmod, link, lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { parseClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
+import { parseBackupKey } from 'src/utils/cloud-backup.js';
 
 const FINGERPRINT = /^[\dA-F]{4}-[\dA-F]{4}$/;
 const MAX_KEY_BYTES = 16_384;
@@ -34,7 +37,8 @@ const keyOf = (text: string): unknown => {
  * A key file is written once, atomically: a new file opened exclusively with 0600, synced, then linked
  * into place, which never replaces an existing file. On a mount that cannot hard-link (SMB/CIFS, FUSE),
  * it is renamed into place only when no file is there, as the identity key is. It is read back before
- * it counts as written. It is never overwritten here, and removed only by the setup that just created
+ * it counts as written. An explicit client keyring upgrade retains all prior roots atomically under
+ * the setup's bucket lock. Otherwise it is never overwritten, and removed only by the setup that just created
  * it when the claim that needed it fails. Contents are never logged.
  */
 @Injectable()
@@ -137,6 +141,12 @@ export class CloudBackupKeyRepository {
    * fingerprint is refused rather than written over it.
    */
   async write(directory: string, fingerprint: string, content: string): Promise<{ path: string; created: boolean }> {
+    const incoming = JSON.parse(content) as { instanceId: string; bucket?: string; client?: unknown };
+    const ring =
+      incoming.client === undefined
+        ? null
+        : parseClientBackupKeys(incoming.client, parseBackupKey(content), incoming.instanceId);
+    if (Buffer.byteLength(content) > 16_384) throw new Error('Backup key file is too large');
     const target = join(directory, this.fileName(fingerprint));
     if (Buffer.byteLength(content, 'utf8') > MAX_KEY_BYTES || typeof keyOf(content) !== 'string')
       throw new Error('Invalid stored backup key');
@@ -168,6 +178,21 @@ export class CloudBackupKeyRepository {
           ? 'The backup key file could not be read back as written'
           : 'A different backup key with the same fingerprint is already stored on this server',
       );
+    }
+    if (!created && ring) {
+      const prior = JSON.parse(stored) as typeof incoming;
+      const previous = parseClientBackupKeys(prior.client, parseBackupKey(stored), incoming.instanceId);
+      if (
+        prior.instanceId !== incoming.instanceId ||
+        prior.bucket !== incoming.bucket ||
+        (previous &&
+          (ring.current < previous.current ||
+            Object.entries(previous.keys).some(([version, key]) => ring.keys[version] !== key)))
+      )
+        throw new Error('A client keyring update must retain the vault and every historical root');
+      const updated = JSON.stringify({ ...JSON.parse(stored), client: ring }, null, 2);
+      await writeBuddyFile(target, updated);
+      if ((await readFile(target, 'utf8')) !== updated) throw new Error('The upgraded key file could not be read back');
     }
     return { path: target, created };
   }
