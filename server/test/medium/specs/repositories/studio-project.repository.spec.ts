@@ -21,7 +21,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { StudioRevocationService } from 'src/services/studio-revocation.service.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getLibraryQueueDB as getKyselyDB } from 'test/medium/library-queue-database.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -57,6 +57,10 @@ const append = (
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+});
+
+afterAll(async () => {
+  await defaultDatabase?.destroy();
 });
 
 afterEach(async () => {

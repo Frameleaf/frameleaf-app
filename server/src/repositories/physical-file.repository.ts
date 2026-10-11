@@ -116,6 +116,10 @@ export const countPathReferences = async (
     UNION ALL SELECT 1 FROM public.media_operation_checkpoint checkpoint WHERE checkpoint."outputPath" = ${path}
     UNION ALL SELECT 1 FROM public.media_operation_checkpoint checkpoint WHERE checkpoint."subtitlePath" = ${path}
     UNION ALL SELECT 1 FROM public.studio_project_import imported WHERE imported.path = ${path}
+    UNION ALL SELECT 1 FROM public.studio_import_publication journal
+    WHERE journal."stagedPath"=${path} AND journal.state IN ('preparing','aborted','published')
+    UNION ALL SELECT 1 FROM public.studio_import_publication journal
+    WHERE journal."targetPath"=${path} AND journal.state IN ('preparing','aborted')
     UNION ALL SELECT 1 FROM public.studio_generated_resource generated WHERE generated.path = ${path}
     UNION ALL SELECT 1 FROM public.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
     UNION ALL SELECT 1 FROM public.asset_develop_artifact artifact WHERE artifact.path = ${path}

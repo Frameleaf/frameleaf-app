@@ -20,6 +20,7 @@ export default defineConfig({
     include: [
       'test/medium/specs/schema/studio-import-publication.spec.ts',
       'test/medium/specs/repositories/studio-import-publication.repository.spec.ts',
+      'test/medium/specs/repositories/studio-project.repository.spec.ts',
       'test/medium/specs/services/studio-import-retention.service.spec.ts',
       'test/medium/specs/repositories/buddy-backup-studio-retention.spec.ts',
     ],

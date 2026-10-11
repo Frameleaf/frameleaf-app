@@ -4,10 +4,13 @@ import { link, lstat, mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { BUDDY_CAPTURE_LOCK, countPathReferences } from 'src/repositories/physical-file.repository.js';
+import { BUDDY_CAPTURE_LOCK, countPathReferences, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
+import { assertStudioStorageAdmission } from 'src/repositories/studio-storage-admission.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -1000,5 +1003,158 @@ describe('Studio import publication — real journal SQL acceptance', () => {
     await expect(f.repo.prepare(f.key, original, discard)).resolves.toEqual({ status: 'prepared', file: original });
     expect(discard).not.toHaveBeenCalled();
     expect(await lstat(original.stagedPath)).toBeDefined();
+  });
+});
+
+// Supplemental coverage for the participating account-delete guard; accepted T4-01..46 stay unchanged.
+describe('Studio import publication — participating callers and precise keysets', () => {
+  it('A4-01 hard account deletion waits for published stage cleanup and succeeds after release', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await f.repo.publish(f.key, linkFile);
+    const users = f.ctx.get(UserRepository);
+    await expect(users.delete({ id: f.user.id }, true)).rejects.toThrow(/cleanup is pending/i);
+    expect(await db.selectFrom('user').select('id').where('id', '=', f.user.id).executeTakeFirst()).toBeDefined();
+    expect(await journal(f.key)).toMatchObject({ state: 'published', stagedPath: prepared.stagedPath });
+    await f.repo.release(f.key, removeFile);
+    await users.delete({ id: f.user.id }, true);
+    expect(await db.selectFrom('user').select('id').where('id', '=', f.user.id).executeTakeFirst()).toBeUndefined();
+    expect(await journal(f.key)).toBeUndefined();
+    // Account deletion never compensates by deleting the ready target; orphan cleanup owns that work.
+    expect(await readFile(prepared.targetPath, 'utf8')).toBe('test');
+  });
+
+  it('A4-02 a project committed while hard deletion waits forces retry without deleting the account', async () => {
+    const f = await setup();
+    let createdId: string | undefined;
+    await expect(
+      blockedOperation(
+        (tx) => tx.selectFrom('studio_project').select('id').where('id', '=', f.project.id).forUpdate().execute(),
+        () => f.ctx.get(UserRepository).delete({ id: f.user.id }, true),
+        async (tx) => {
+          // An actual lock wait proves deletion already scanned and selected the original project.
+          const created = await tx
+            .insertInto('studio_project')
+            .values({ ownerId: f.user.id, name: 'Concurrent project' })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          createdId = created.id;
+        },
+      ),
+    ).rejects.toThrow('Studio projects changed');
+    expect(createdId).toBeDefined();
+    expect(await db.selectFrom('user').select('id').where('id', '=', f.user.id).executeTakeFirst()).toBeDefined();
+    expect(
+      await db.selectFrom('studio_project').select('id').where('id', '=', createdId!).executeTakeFirst(),
+    ).toBeDefined();
+  });
+
+  it('A4-03 soft account deletion remains available and retains full pending cleanup handles', async () => {
+    const f = await setup();
+    const prepared = await prepare(f);
+    await f.ctx.get(UserRepository).delete({ id: f.user.id });
+    const owner = await db.selectFrom('user').select('deletedAt').where('id', '=', f.user.id).executeTakeFirstOrThrow();
+    expect(owner.deletedAt).not.toBeNull();
+    expect(await journal(f.key)).toMatchObject({
+      state: 'preparing',
+      stagedPath: prepared.stagedPath,
+      targetPath: prepared.targetPath,
+      stagedIdentity: prepared.identity,
+    });
+    const link = vi.fn(linkFile);
+    await expect(f.repo.publish(f.key, link)).rejects.toThrow();
+    expect(link).not.toHaveBeenCalled();
+  });
+
+  it('A4-04 discovery keeps PostgreSQL microsecond precision across a page boundary', async () => {
+    const f = await setup();
+    const keys = Array.from({ length: 105 }, () => ({ ...f.key, publicationId: randomUUID() }));
+    for (const key of keys) await f.repo.register(key);
+    await sql`WITH ordered AS (
+      SELECT id,row_number() OVER (ORDER BY id)-1 AS n FROM public.studio_import_publication
+      WHERE "projectId"=${f.project.id}::uuid
+    ), stamp AS (
+      SELECT id,timestamptz '2026-10-11T00:00:00Z'+n*interval '1 microsecond' AS at FROM ordered
+    ) UPDATE public.studio_import_publication journal SET "createdAt"=stamp.at,"expiresAt"=stamp.at+interval '6 hours'
+      FROM stamp WHERE journal.id=stamp.id`.execute(db);
+    const first = await f.repo.discover(f.user.id, f.project.id);
+    expect(first.items).toHaveLength(100);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await f.repo.discover(f.user.id, f.project.id, first.nextCursor!);
+    expect(second.items).toHaveLength(5);
+    expect(second.nextCursor).toBeNull();
+    const all = [...first.items, ...second.items].map((row) => row.publicationId);
+    expect(all).toEqual(keys.map((key) => key.publicationId).sort());
+    expect(new Set(all).size).toBe(105);
+  });
+
+  it('A4-05 an administrator restoring their own project takes paths before the aliased quota row', async () => {
+    const f = await setup();
+    await db.updateTable('user').set({ isAdmin: true }).where('id', '=', f.user.id).execute();
+    const { session } = await f.ctx.newSession({ userId: f.user.id, pinExpiresAt: new Date(Date.now() + 300_000) });
+    const token = randomUUID();
+    const operation = await db
+      .insertInto('media_operation')
+      .values({
+        ownerId: f.user.id,
+        kind: MediaOperationKind.BuddyRestore,
+        destination: MediaOperationDestination.Local,
+        label: 'Owned restore lock acceptance',
+        snapshot: {},
+        settings: {},
+        status: MediaOperationStatus.Rendering,
+        claimToken: token,
+        claimExpiresAt: new Date(Date.now() + 300_000),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const path = join(root, 'alias-lock-' + randomUUID());
+    await blockedOperation(
+      (tx) => lockFilePath(tx, path),
+      () =>
+        new BuddyBackupStudioRepository(db).guarded(
+          {
+            project: {
+              version: 1,
+              id: f.project.id,
+              ownerId: f.user.id,
+              name: f.project.name,
+              currentRevision: 0,
+              createdAt: new Date().toISOString(),
+              archivedAt: null,
+              thumbnailAssetId: null,
+              duplicatedFromId: null,
+              importedFromDigest: null,
+              revisions: [],
+              comments: [],
+              imports: [],
+              generated: [],
+              exports: [],
+              files: [],
+            },
+            actorId: f.user.id,
+            sessionId: session.id,
+            operationId: operation.id,
+            claimToken: token,
+            authorize: async () => {},
+          },
+          async (tx) => {
+            await lockFilePath(tx, path);
+            await assertStudioStorageAdmission(tx, f.user.id, 0);
+          },
+        ),
+      async (tx) => {
+        await projectLockHeld(tx, f.project.id);
+        // Causal path contention is already established. Taking quota NOWAIT here must
+        // succeed: an early actor FOR SHARE would create path->owner->path deadlock.
+        await tx
+          .selectFrom('user')
+          .select('id')
+          .where('id', '=', f.user.id)
+          .forUpdate()
+          .noWait()
+          .executeTakeFirstOrThrow();
+      },
+    );
   });
 });
