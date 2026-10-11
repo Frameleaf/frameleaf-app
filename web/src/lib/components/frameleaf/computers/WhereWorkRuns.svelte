@@ -187,7 +187,7 @@
   const list = (names: string[]) => new Intl.ListFormat($locale, { style: 'long', type: 'conjunction' }).format(names);
   /** Feature names can hold a comma, so a list of three or more of them uses semicolons. */
   const named = (names: string[]) =>
-    names.length < 3 || !names.some((name) => name.includes(',')) ? list(names) : names.join('; ');
+    names.length < 3 || names.every((name) => !name.includes(',')) ? list(names) : names.join('; ');
   const workName = (kind: WorkKind) => $t(workKindNameKey(kind));
   const place = (id: string) => destinations?.find((destination) => destination.id === id);
   const isServer = (id: string) => place(id)?.kind === MlDestinationKind.Local;

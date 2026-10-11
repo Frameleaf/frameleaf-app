@@ -226,11 +226,12 @@
   let studioDetails = $state<HTMLDetailsElement>();
   let addSection = $state<HTMLElement>();
   const open = async (details: HTMLDetailsElement | undefined) => {
-    if (details) {
-      details.open = true;
-      await tick();
-      details.scrollIntoView({ block: 'start' });
+    if (!details) {
+      return;
     }
+    details.open = true;
+    await tick();
+    details.scrollIntoView({ block: 'start' });
   };
   const connectByAddress = async () => {
     await open(aiDetails);
