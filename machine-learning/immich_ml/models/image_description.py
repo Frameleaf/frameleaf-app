@@ -15,7 +15,7 @@ import orjson
 from huggingface_hub import snapshot_download
 from PIL import Image
 
-from immich_ml.config import HUGGING_FACE_HOST, log, model_source, settings
+from immich_ml.config import HUGGING_FACE_HOST, log, model_repository_url, model_source, model_source_token, settings
 from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.florence_manifest import florence_manifest, verify_florence_snapshot
 from immich_ml.schemas import ImageDescriptionAcceleration, ModelTask, ModelType
@@ -268,12 +268,19 @@ class ImageDescriptionModel(InferenceModel):
                 cache_dir=self.cache_dir,
                 local_dir=self.model_path,
                 endpoint=endpoint,
-                token=False,
+                token=model_source_token(endpoint),
             )
             verify_florence_snapshot(self.model_path, manifest)
             return
         self._check_custom_florence_trust()
-        snapshot_download(self.hf_model_name, cache_dir=self.cache_dir, local_dir=self.cache_dir)
+        endpoint = model_repository_url()
+        snapshot_download(
+            self.hf_model_name,
+            cache_dir=self.cache_dir,
+            local_dir=self.cache_dir,
+            endpoint=endpoint,
+            token=model_source_token(endpoint),
+        )
 
     def _load(self) -> Any:
         if self.acceleration == ImageDescriptionAcceleration.CUDA or florence_manifest(self.hf_model_name):
