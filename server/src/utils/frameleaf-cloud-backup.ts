@@ -8,10 +8,9 @@ import { FrameleafCloudError, cloudErrorCode, pausedMessageOf } from 'src/utils/
  * should not have, fails to parse. The bucket key never appears in any of them: the cloud never receives it.
  *
  * Routes (instance token, DPoP-bound; `{api}` from discovery):
- * - `GET {api}/v2/backup/locations`: enabled cities and unauthenticated probe URLs.
- * - `POST {api}/v2/backup/grant`: a selected location ID; rotation uses an empty body. The answer carries a
- *   bucket-scoped access key once. The backup agent rotates at the start of every operation and keeps
- *   the secret in memory for that operation only.
+ * - `GET {api}/v4/backup/locations`: enabled cities and unauthenticated probe URLs.
+ * - `POST {api}/v4/backup/grant`: selected location ID and upload/restore/prune operation; renewal at
+ *   `/grant/rotate` takes that operation. Expiring provider sessions remain in memory only.
  * - `GET {api}/v1/backup/usage`: the latest hourly measurement.
  * - `POST {api}/v1/backup/runs`: run telemetry (counts, bytes, times, never a path).
  * - `PUT {api}/v1/backup/settings`: the key mode and whether a schedule is on.
@@ -21,7 +20,7 @@ import { FrameleafCloudError, cloudErrorCode, pausedMessageOf } from 'src/utils/
 /** `fl-<region>-<instanceId>`: the account's data region (`eu` or `na`) and this server's UUIDv7. */
 const BackupBucketName = z
   .string()
-  .regex(/^fl-(eu|na)-[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+  .regex(/^fl-(?:sbx-)?(eu|na)-[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
 
 const Timestamp = z.iso.datetime({ offset: true });
 
@@ -50,36 +49,50 @@ export const backupLocationsSchema = z.strictObject({
   version: z.literal(2),
   locations: z.array(backupLocationSchema).max(16),
 });
-export const backupGrantRequestSchema = z.strictObject({ locationId: backupCitySchema.shape.locationId });
+export const backupOperationSchema = z.enum(['upload', 'restore', 'prune']);
+export type BackupOperation = z.infer<typeof backupOperationSchema>;
+export const backupCapabilityRequestSchema = z.strictObject({ operation: backupOperationSchema });
+export const backupGrantRequestSchema = backupCapabilityRequestSchema.extend({
+  locationId: backupCitySchema.shape.locationId,
+});
 export const managedStorageRef = (storageId: string): string => `frameleaf-storage:${storageId}`;
-
+const objectFormats = [
+  z.strictObject({ format: z.literal('frameleaf-client-backup'), version: z.literal(1) }),
+  z.strictObject({ format: z.literal('legacy-sse-c'), version: z.literal(1) }),
+] as const;
 export const backupGrantMetadataSchema = z.strictObject({
-  version: z.literal(2),
+  version: z.literal(4),
   provider: z.literal('frameleaf'),
   storageId: z.uuid(),
   location: backupCitySchema,
-  // This is the explicit SigV4 signing region, independent of the connection hostname.
   region: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/),
   endpoint: brandedEndpoint,
   bucket: BackupBucketName,
-  accessKeyId: z.string().min(16).max(128).nullable(),
-  expiresAt: Timestamp.nullable(),
-  rotateAfterSec: z.int().min(0),
   quotaBytes: z.int().min(0),
   readOnly: z.boolean(),
-  // FL-301: the cloud may name why the grant is read-only (`plan_full`); the usage answer always does
   readOnlyReason: BackupReadOnlyReasonSchema.nullable().optional(),
   versioning: z.literal(true),
   sseC: z.strictObject({ required: z.literal(true), algorithm: z.literal('AES256') }),
   policy: z.strictObject({ denies: z.array(z.string().regex(/^s3:[A-Za-z]+$/)).min(1) }),
-  previousKeyExpiresAt: Timestamp.nullable(),
+  coverage: z.discriminatedUnion('scope', [
+    z.strictObject({ scope: z.literal('none') }),
+    z.strictObject({ scope: z.literal('all') }),
+    z.strictObject({ scope: z.literal('users'), userFingerprints: z.array(z.string().regex(/^[a-f0-9]{64}$/)).min(1) }),
+  ]),
+  objectFormats: z.strictObject({ read: z.tuple(objectFormats), write: z.tuple(objectFormats) }),
 });
 export type BackupGrantMetadata = z.infer<typeof backupGrantMetadataSchema>;
-
 export const backupGrantResponseSchema = backupGrantMetadataSchema.extend({
-  credentials: z.strictObject({
-    accessKeyId: z.string().min(16).max(128),
-    secretAccessKey: z.string().min(16).max(128),
+  capability: z.strictObject({
+    version: z.literal(1),
+    operation: backupOperationSchema,
+    expiresAt: Timestamp,
+    refreshAfterSec: z.int().min(1).max(600),
+    credentials: z.strictObject({
+      accessKeyId: z.string().min(16).max(128),
+      secretAccessKey: z.string().min(16).max(128),
+      sessionToken: z.string().min(16).max(16_384),
+    }),
   }),
 });
 export type BackupGrantResponse = z.infer<typeof backupGrantResponseSchema>;
@@ -174,9 +187,9 @@ const grantRevokedDataSchema = z.object({ reason: z.enum(['unlinked', 'suspended
 export const backupEndpoints = (document: { api: string }) => {
   const api = document.api.replace(/\/+$/, '');
   return {
-    locations: `${api}/v2/backup/locations`,
-    grant: `${api}/v2/backup/grant`,
-    rotate: `${api}/v2/backup/grant/rotate`,
+    locations: `${api}/v4/backup/locations`,
+    grant: `${api}/v4/backup/grant`,
+    rotate: `${api}/v4/backup/grant/rotate`,
     usage: `${api}/v1/backup/usage`,
     runs: `${api}/v1/backup/runs`,
     settings: `${api}/v1/backup/settings`,
@@ -222,6 +235,22 @@ export const managedBackupRefusal = (
         retry: false,
         retryAfterSeconds: null,
         cloneSuspected: true,
+      };
+    }
+    case 'backup-protocol-required': {
+      return {
+        message: 'Frameleaf Cloud requires an updated backup protocol.',
+        retry: false,
+        retryAfterSeconds: null,
+        cloneSuspected: false,
+      };
+    }
+    case 'backup-read-only': {
+      return {
+        message: 'Managed backup storage is read-only. Retained backups remain available to restore.',
+        retry: false,
+        retryAfterSeconds: null,
+        cloneSuspected: false,
       };
     }
     case 'entitlement-missing': {
