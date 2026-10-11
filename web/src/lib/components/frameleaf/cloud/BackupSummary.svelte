@@ -1,7 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
-  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -32,7 +32,6 @@
   );
   const when = (value: string | null | undefined) =>
     value ? new Date(value).toLocaleString($locale) : $t('frameleaf_buddy_not_yet');
-  const href = (view: string) => commandCenterUrl('backups', undefined, { backupView: view });
   const load = async () => {
     busy = true;
     const [buddyResult, cloudResult] = await Promise.allSettled([getBuddyBackupStatus(), getCloudBackupStatus()]);
@@ -64,11 +63,11 @@
         <h2>{$t('frameleaf_backup_summary')}</h2>
         <p>{$t(analytics ? 'frameleaf_backup_server_snapshot' : 'frameleaf_backup_summary_description')}</p>
       </div>
-      <a href={href('status')}>{$t('frameleaf_backup_open')}<Icon icon={mdiChevronRight} size="16" /></a>
+      <a href={backupPageUrl()}>{$t('frameleaf_backup_open')}<Icon icon={mdiChevronRight} size="16" /></a>
     </header>
     {#if failed}<p role="alert">{$t('frameleaf_backup_status_failed')}</p>{/if}
     <div class="cards">
-      <a class="destination" href={href('cloud')}>
+      <a class="destination" href={backupPageUrl('cloud')}>
         <Icon icon={mdiCloudOutline} size="22" /><span
           ><strong>{$t('frameleaf_buddy_cloud_backup')}</strong>
           <small
@@ -79,14 +78,14 @@
           <b>{cloud?.usage ? getByteUnitString(cloud.usage.bytes) : '—'}</b></span
         ><Icon icon={mdiChevronRight} size="16" />
       </a>
-      <a class="destination" href={href('status')}>
+      <a class="destination" href={backupPageUrl('buddy')}>
         <Icon icon={mdiArrowTopRight} size="22" /><span
           ><strong>{$t('frameleaf_backup_outgoing')}</strong>
           <small>{buddy ? $t(presentation.outgoing) : $t(busy ? 'loading' : 'frameleaf_cc_unmeasured')}</small>
           <b>{buddy ? when(buddy.lastCompleteAt) : '—'}</b></span
         ><Icon icon={mdiChevronRight} size="16" />
       </a>
-      <a class="destination" href={href('controls')}>
+      <a class="destination" href={backupPageUrl('buddy')}>
         <Icon icon={mdiArrowBottomLeft} size="22" /><span
           ><strong>{$t('frameleaf_backup_incoming')}</strong>
           <small>{buddy ? $t(presentation.incoming) : $t(busy ? 'loading' : 'frameleaf_cc_unmeasured')}</small>

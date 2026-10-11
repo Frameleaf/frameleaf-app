@@ -39,8 +39,8 @@ vi.mock('$lib/components/frameleaf/analytics/AnalyticsArea.svelte', async () => 
 vi.mock('$lib/components/frameleaf/settings/CommandCenterOverview.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
-vi.mock('$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte', async () => ({
-  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+vi.mock('$lib/components/frameleaf/backup/BackupArea.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockBackupArea.svelte')).default,
 }));
 vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
@@ -123,11 +123,8 @@ const areaButton = (name: string) =>
     ...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll<HTMLElement>('button.area'),
   ].find((button) => button.getAttribute('aria-label') === name)!;
 
-/** The pages listed under Backup in the navigation. */
-const backupPages = () =>
-  within(screen.getByRole('navigation', { name: 'Settings navigation' }))
-    .getByLabelText('Backup pages')
-    .querySelectorAll('button');
+/** The Backup page the area is showing. */
+const backupPage = () => screen.getByTestId('backup-area').textContent;
 
 describe('the Command Center (FL-71)', () => {
   beforeAll(() => addMessages('dev', en));
@@ -433,55 +430,65 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=backups');
     const { container } = render(SettingsHost, { sections });
     expect(container.querySelector('.pending')).toBeNull();
-    expect(backupPages()[0]).not.toHaveClass('has-pending');
 
     const release = ownPreferencesPending.hold();
     try {
-      await waitFor(() => expect(backupPages()[0]).toHaveClass('has-pending'));
-      expect(container.querySelector(':scope .area.selected .pending')).not.toBeNull();
-      expect(backupPages()[1]).not.toHaveClass('has-pending');
+      await waitFor(() => expect(container.querySelector(':scope .area.selected .pending')).not.toBeNull());
+      expect(container.querySelectorAll('.pending')).toHaveLength(1);
     } finally {
       release();
     }
     await waitFor(() => expect(container.querySelector('.pending')).toBeNull());
   });
 
-  describe('one Backup area (design review finding 66)', () => {
-    it('lists off-site copies, the schedule and restore as pages of Backup', () => {
+  describe('one Backup area (FL-362, after design review finding 66)', () => {
+    const backupHeading = () => screen.getByRole('heading', { level: 1, name: 'Backup' });
+
+    it('opens on the Overview, under the one Backup heading and with no pages in the navigation', () => {
       open('/user-settings?area=backups');
       render(SettingsHost, { sections });
-      expect([...backupPages()].map((page) => page.textContent)).toEqual([
-        'Off-site copies',
-        'Backup schedule',
-        'Backups & restore',
-      ]);
-      expect(backupPages()[0]).toHaveAttribute('aria-current', 'page');
+      expect(backupHeading()).toBeInTheDocument();
+      expect(backupPage()).toBe('overview');
+      const navigation = within(screen.getByRole('navigation', { name: 'Settings navigation' }));
+      expect(navigation.queryByLabelText('Backup pages')).toBeNull();
     });
 
-    it('shows the schedule under Backup at the address it always had', () => {
-      open('/user-settings?area=backup&section=backup');
+    it.each([
+      ['restore', 'restore'],
+      ['cloud', 'cloud'],
+      ['buddy', 'buddy'],
+      ['local', 'local'],
+      ['nonsense', 'overview'],
+    ])('opens the %s page from its address', (section, shown) => {
+      open(`/user-settings?area=backups&section=${section}`);
+      render(SettingsHost, { sections });
+      expect(backupPage()).toBe(shown);
+    });
+
+    it.each([
+      ['/user-settings?area=backup&section=backup', 'local', 'Import & protection'],
+      ['/user-settings?area=maintenance&section=backups', 'local', 'Maintenance'],
+      ['/user-settings?area=cloud&section=cloud-backup', 'cloud', 'Frameleaf Cloud'],
+    ])('shows %s under Backup, at the address it always had', (address, shown, formerArea) => {
+      open(address);
       render(SettingsHost, { sections });
       expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('button', { name: 'Import & protection' })).not.toHaveAttribute('aria-current');
-      const heading = screen.getByRole('heading', { level: 1, name: 'Backup schedule' }).parentElement!;
-      expect(within(heading).getByRole('button', { name: 'Backup' })).toBeInTheDocument();
-      expect(backupPages()[1]).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('button', { name: formerArea })).not.toHaveAttribute('aria-current');
+      // One screen, one heading: the older page's own title is not a breadcrumb any more.
+      expect(backupHeading()).toBeInTheDocument();
+      expect(backupPage()).toBe(shown);
     });
 
-    it('shows the backups manager under Backup at its Maintenance address', () => {
-      open('/user-settings?area=maintenance&section=backups');
-      const { container } = render(SettingsHost, { sections });
-      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('heading', { level: 1, name: 'Backups & restore' })).toBeInTheDocument();
-      expect(container.querySelector('#setting-backups')).toHaveClass('cc-manager');
-    });
-
-    it('shows Cloud backup under Backup, with off-site copies current', () => {
-      open('/user-settings?area=cloud&section=cloud-backup');
+    it.each([
+      ['status', 'overview'],
+      ['cloud', 'cloud'],
+      ['controls', 'buddy'],
+      ['restore', 'restore'],
+      ['compare', 'overview'],
+    ])('opens the page that replaced the "%s" view', (view, shown) => {
+      open(`/user-settings?area=backups&backupView=${view}`);
       render(SettingsHost, { sections });
-      expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('button', { name: 'Frameleaf Cloud' })).not.toHaveAttribute('aria-current');
-      expect(backupPages()[0]).toHaveAttribute('aria-current', 'page');
+      expect(backupPage()).toBe(shown);
     });
 
     it('no longer lists a backup page under Import & protection, Maintenance or Frameleaf Cloud', () => {
