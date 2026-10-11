@@ -142,6 +142,8 @@ export class CloudBackupKeyRepository {
    * fingerprint is refused rather than written over it.
    */
   async write(directory: string, fingerprint: string, content: string): Promise<{ path: string; created: boolean }> {
+    if (Buffer.byteLength(content, 'utf8') > MAX_KEY_BYTES || typeof keyOf(content) !== 'string')
+      throw new Error('Invalid stored backup key');
     const incoming = JSON.parse(content) as {
       instanceId: string;
       bucket?: string;
@@ -161,10 +163,7 @@ export class CloudBackupKeyRepository {
       (history.anchor.vaultId !== incoming.instanceId || history.anchor.instanceId !== incoming.instanceId)
     )
       throw new Error('Recovery history belongs to another vault');
-    if (Buffer.byteLength(content) > 16_384) throw new Error('Backup key file is too large');
     const target = join(directory, this.fileName(fingerprint));
-    if (Buffer.byteLength(content, 'utf8') > MAX_KEY_BYTES || typeof keyOf(content) !== 'string')
-      throw new Error('Invalid stored backup key');
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await this.privateDirectory(directory);
     const temporary = join(directory, `.${this.fileName(fingerprint)}.${randomUUID()}.tmp`);
@@ -215,9 +214,10 @@ export class CloudBackupKeyRepository {
         null,
         2,
       );
-      if (Buffer.byteLength(updated) > 16_384) throw new Error('Backup key file is too large');
+      if (Buffer.byteLength(updated) > MAX_KEY_BYTES) throw new Error('Backup key file is too large');
       await writeBuddyFile(target, updated);
-      if ((await readFile(target, 'utf8')) !== updated) throw new Error('The upgraded key file could not be read back');
+      if ((await this.read(directory, fingerprint)) !== updated)
+        throw new Error('The upgraded key file could not be read back');
     }
     return { path: target, created };
   }
