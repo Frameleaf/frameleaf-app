@@ -39,7 +39,12 @@ def test_private_credentials_are_bound_to_exact_https_origin(source: None, url: 
 
 
 @pytest.mark.parametrize("redirect", ["https://cdn.example/file", "http://private-models.example/file"])
-def test_hub_redirect_and_range_download_strip_private_credentials(source: None, tmp_path: Path, redirect: str) -> None:
+@pytest.mark.parametrize("private_source", [True, False])
+def test_hub_redirect_and_range_download_strip_private_credentials(
+    source: None, tmp_path: Path, redirect: str, private_source: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not private_source:
+        monkeypatch.setattr(settings, "model_source_token", None)
     captured = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -54,6 +59,8 @@ def test_hub_redirect_and_range_download_strip_private_credentials(source: None,
                     "X-Linked-Size": "2",
                 },
             )
+        if "range" in request.headers:
+            return httpx.Response(206, content=b"{}", headers={"Content-Range": "bytes 6-7/8"})
         return httpx.Response(200, content=b"{}")
 
     set_client_factory(
@@ -72,12 +79,16 @@ def test_hub_redirect_and_range_download_strip_private_credentials(source: None,
             cache_dir=tmp_path,
         )
         assert Path(path).read_bytes() == b"{}"
-        assert captured[0].headers["authorization"] == "Bearer fake-private-model-token"
+        if private_source:
+            assert captured[0].headers["authorization"] == "Bearer fake-private-model-token"
+        else:
+            assert "authorization" not in captured[0].headers
         assert all("authorization" not in request.headers for request in captured[1:])
         captured.clear()
         with (tmp_path / "range.bin").open("w+b") as output:
             output.write(b"prefix")
             http_get(redirect, output, resume_size=6, headers={"Authorization": "Bearer fake-private-model-token"})
+        assert (tmp_path / "range.bin").read_bytes() == b"prefix{}"
         assert captured[0].headers["range"] == "bytes=6-"
         assert "authorization" not in captured[0].headers
     finally:
