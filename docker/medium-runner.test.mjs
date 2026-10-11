@@ -58,7 +58,12 @@ test("normal medium job supplies only owned fixture paths and cleans its contain
     .split("  e2e-tests-server-cli:\n")[0];
   assert.match(job, /target: medium-test/);
   assert.match(job, /load: true/);
-  assert.match(job, /cache-from: type=gha,scope=server-medium/);
+  // FL-380: the integration branch's registry cache, read only; the Actions cache evicted itself.
+  assert.match(
+    job,
+    /cache-from: type=registry,ref=ghcr\.io\/frameleaf\/frameleaf-server-build-cache:ci-linux-amd64/,
+  );
+  assert.doesNotMatch(job, /cache-to:|type=gha/);
   assert.match(job, /bash scripts\/checkout-test-assets.sh/);
   assert.match(job, /docker_cli=\$\(readlink -f "\$\(command -v docker\)"\)/);
   assert.match(
