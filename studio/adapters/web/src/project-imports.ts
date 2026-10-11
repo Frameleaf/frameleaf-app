@@ -18,15 +18,15 @@ import type { VirtualWorkspace } from './virtual-workspace'
 
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
 /** Workspace files beside a media source that are not the source itself. */
-const SIDE_FILES = new Set(['metadata.json', 'thumbnail.jpg'])
+const SIDE_FILES = new Set(['metadata.json', 'thumbnail.jpg', 'retention.json'])
 
 /** The media id of a source file write, or null when the write is anything else. */
 export const importedSourceId = (path: readonly string[]): string | null =>
-  path.length === 3 && path[0] === 'media' && UUID.test(path[1]!) && !SIDE_FILES.has(path[2]!)
-    ? path[1]!
-    : null
+  path.length === 3 && path[0] === 'media' && UUID.test(path[1]!) && !SIDE_FILES.has(path[2]!) ? path[1]! : null
 
 export interface LocalImportWatch {
+  /** Suppress generic submission for an explicitly completed generated import. */
+  hold(id: string): void
   /** Stop watching. */
   stop(): void
   /**
@@ -45,10 +45,20 @@ export function watchLocalImports(options: {
 }): LocalImportWatch {
   const { workspace, media, upload, refused } = options
   const sending = new Set<string>()
+  const held = new Set<string>()
+  let stopped = false
+  // Any marker blocks, including malformed records: it can never confer upload authority.
+  const canSend = (id: string) =>
+    !stopped &&
+    !held.has(id.toLowerCase()) &&
+    !media.known(id) &&
+    !sending.has(id.toLowerCase()) &&
+    !workspace.list(['media', id]).some((entry) => entry.name === 'retention.json')
   /** Refused by the host once; a retry sends it again but does not report it twice. */
   const reported = new Set<string>()
   const send = (id: string, fileName: string, file: File) => {
-    if (media.known(id) || sending.has(id)) return Promise.resolve()
+    if (!canSend(id)) return Promise.resolve()
+    id = id.toLowerCase()
     sending.add(id)
     return upload({ id: id.toLowerCase(), fileName, file })
       .then(() => {
@@ -67,10 +77,17 @@ export function watchLocalImports(options: {
     if (id) void send(id, file.name || path[2]!, file)
   })
   return {
-    stop,
+    hold: (id) => {
+      held.add(id.toLowerCase())
+    },
+    stop() {
+      stopped = true
+      stop()
+      held.clear()
+    },
     async retry() {
       for (const entry of workspace.list(['media'])) {
-        if (entry.kind !== 'directory' || media.known(entry.name) || sending.has(entry.name)) continue
+        if (entry.kind !== 'directory' || !canSend(entry.name)) continue
         const source = workspace
           .list(['media', entry.name])
           .find((child) => child.kind === 'file' && importedSourceId(['media', entry.name, child.name]))

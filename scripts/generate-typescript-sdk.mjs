@@ -14,8 +14,51 @@ if (resolve(source) === resolve(output))
   throw new Error("SDK output must not overwrite the canonical checkpoint");
 const document = JSON.parse(await readFile(source));
 const projections = [];
+const literalProjections = [];
+// The host passes plain structured-clone values; keep enum exports, but use literal types at these new seams.
+const structuralEnums = {
+  ProcessingProvenanceVersion: [1],
+  ProcessingProvenanceFamily: ["anime4k"],
+  ProcessingProvenanceEvidence: ["client-reported"],
+  ProcessingProvenanceSourceNamespace: ["freecut-media"],
+  StudioImportPublicationState: [
+    "registered",
+    "preparing",
+    "published",
+    "aborted",
+  ],
+  StudioImportPublicationCancelStatus: ["cancelled", "already-published"],
+};
 function schema(value, pointer) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const prefix = "#/components/schemas/";
+  const name =
+    typeof value.$ref === "string" ? value.$ref.slice(prefix.length) : "";
+  if (value.$ref === prefix + name && Object.hasOwn(structuralEnums, name)) {
+    const target = document.components?.schemas?.[name];
+    const expected = structuralEnums[name];
+    if (
+      target?.type !==
+        (typeof expected[0] === "number" ? "integer" : "string") ||
+      JSON.stringify(target.enum) !== JSON.stringify(expected) ||
+      target.nullable ||
+      target.$ref ||
+      target.anyOf ||
+      target.oneOf ||
+      target.allOf ||
+      value.anyOf ||
+      value.oneOf ||
+      value.allOf
+    )
+      throw new Error(`Structural enum requires generator review: ${pointer}`);
+    const { enum: values, ...constraints } = target;
+    const { $ref, ...siblings } = value;
+    delete value.$ref;
+    Object.assign(value, constraints, siblings, {
+      anyOf: values.map((literal) => ({ type: target.type, enum: [literal] })),
+    });
+    literalProjections.push(pointer);
+  }
   if (
     value.nullable === true &&
     Array.isArray(value.enum) &&
@@ -72,6 +115,7 @@ try {
       source,
       output,
       nullableEnumGeneratorProjections: projections,
+      structuralEnumGeneratorProjections: literalProjections,
     }),
   );
   const result = spawnSync(

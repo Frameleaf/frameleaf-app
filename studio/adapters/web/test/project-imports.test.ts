@@ -56,6 +56,7 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
     expect(importedSourceId(['media', TAKE, 'Voiceover 1.webm'])).toBe(TAKE)
     expect(importedSourceId(['media', TAKE, 'metadata.json'])).toBeNull()
     expect(importedSourceId(['media', TAKE, 'thumbnail.jpg'])).toBeNull()
+    expect(importedSourceId(['media', TAKE, 'retention.json'])).toBeNull()
     expect(importedSourceId(['media', TAKE, 'cache', 'waveform.bin'])).toBeNull()
     expect(importedSourceId(['media', 'restored-x', 'a.mp4'])).toBeNull()
     expect(importedSourceId(['projects', TAKE, 'project.json'])).toBeNull()
@@ -73,7 +74,9 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
       media,
       upload: (upload) => {
         uploads.push(upload)
-        return upload.id === SVG ? Promise.reject(new Error('An SVG with scripts cannot be imported')) : Promise.resolve(keptRef(upload))
+        return upload.id === SVG
+          ? Promise.reject(new Error('An SVG with scripts cannot be imported'))
+          : Promise.resolve(keptRef(upload))
       },
       refused,
     })
@@ -108,6 +111,49 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
     expect(uploads).toHaveLength(3)
   })
 
+  it('holds generated source writes and generic retry until explicit full completion', async () => {
+    const workspace = new VirtualWorkspace()
+    const upload = vi.fn()
+    const watch = watchLocalImports({
+      workspace,
+      media: { known: () => false, kept: vi.fn() },
+      upload,
+      refused: vi.fn(),
+    })
+    watch.hold(TAKE.toUpperCase())
+    await writeBlob(
+      workspace.handle(),
+      ['media', TAKE, 'retention.json'],
+      new TextEncoder().encode('{"version":1,"state":"held"}'),
+    )
+    await writeBlob(workspace.handle(), ['media', TAKE, 'upscaled.mp4'], new Uint8Array([1, 2, 3, 4]))
+    await watch.retry()
+    expect(upload).not.toHaveBeenCalled()
+    workspace.dispose()
+    expect(await workspace.readFile(['media', TAKE, 'upscaled.mp4'])).toBeNull()
+    watch.stop()
+  })
+
+  it.each(['{"version":1,"state":"held"}', '{malformed', '', '{"state":"published"}'])(
+    'fails closed on any suppression record across watcher replacement: %s',
+    async (marker) => {
+      const workspace = new VirtualWorkspace()
+      const upload = vi.fn()
+      await writeBlob(workspace.handle(), ['media', TAKE, 'retention.json'], new TextEncoder().encode(marker))
+      const watch = watchLocalImports({
+        workspace,
+        media: { known: () => false, kept: vi.fn() },
+        upload,
+        refused: vi.fn(),
+      })
+      await writeBlob(workspace.handle(), ['media', TAKE, 'upscaled.mp4'], new Uint8Array([1]))
+      await watch.retry()
+      expect(upload).not.toHaveBeenCalled()
+      watch.stop()
+      workspace.dispose()
+    },
+  )
+
   it('offers a kept file back under its media id, without replacing one this document holds', async () => {
     const workspace = new VirtualWorkspace()
     setWorkspaceRoot(workspace.handle())
@@ -122,7 +168,10 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
       )
       const seeder = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-p', onChange: () => {} })
       // Already imported here: the editor's own record stays as Freecut made it.
-      await createMedia({ ...projectImportRecord(keptRef({ id: SVG, fileName: 'x.svg', file: new Blob(['x']) }), 0), duration: 9 })
+      await createMedia({
+        ...projectImportRecord(keptRef({ id: SVG, fileName: 'x.svg', file: new Blob(['x']) }), 0),
+        duration: 9,
+      })
 
       const take: StudioProjectImportRef = {
         id: TAKE,
@@ -160,4 +209,40 @@ describe('project imports in the editor (FL-103 / FL-105)', () => {
       setWorkspaceRoot(null)
     }
   })
+})
+
+it('canonical reload restores retained provenance over stale workspace metadata', async () => {
+  const workspace = new VirtualWorkspace()
+  setWorkspaceRoot(workspace.handle())
+  const seeder = createLibraryMediaSeeder({ workspace, projectId: () => 'reload', onChange: vi.fn() })
+  const processingProvenance = {
+    version: 1 as const,
+    family: 'anime4k' as const,
+    evidence: 'client-reported' as const,
+    variant: 'animation' as const,
+    source: { namespace: 'freecut-media' as const, id: TAKE, projectId: LIBRARY },
+    input: { width: 640, height: 360 },
+    output: { width: 1280, height: 720, fps: 30, frameCount: 30, codec: 'avc1' },
+    outputSha256: 'ab'.repeat(32),
+  }
+  const ref = {
+    ...keptRef({ id: TAKE, fileName: 'out.webm', file: new Blob(['bytes']) }),
+    checksum: processingProvenance.outputSha256,
+    processingProvenance,
+  }
+  try {
+    await createMedia({
+      ...projectImportRecord(ref, 0),
+      duration: 9,
+      processingProvenance: { ...processingProvenance, outputSha256: 'cd'.repeat(32) },
+    })
+    await seeder.seedImports([ref])
+    expect(await getMedia(TAKE)).toMatchObject({ duration: 9, contentHash: ref.checksum, processingProvenance })
+    await seeder.seedImports([ref])
+    expect(await getMedia(TAKE)).toMatchObject({ processingProvenance })
+  } finally {
+    seeder.dispose()
+    workspace.dispose()
+    setWorkspaceRoot(null)
+  }
 })

@@ -5,17 +5,31 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
+import type {
+  PublicationReceipt,
+  PublishedImportReceipt,
+  RawOptionalLineage,
+} from 'src/utils/studio-import-publication.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { StudioProjectImportDto } from 'src/dtos/studio-project-import.dto.js';
+import {
+  StudioImportPublicationCancelDto,
+  StudioImportPublicationDto,
+  StudioImportPublicationPageDto,
+  StudioImportPublicationQueryDto,
+  StudioImportPublicationRegisterDto,
+  StudioProjectImportDto,
+} from 'src/dtos/studio-project-import.dto.js';
 import { CacheControl, StorageFolder } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import {
   assertOwnerRestoreFile,
@@ -23,6 +37,7 @@ import {
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_TEXT_LIMITS,
@@ -36,6 +51,7 @@ import { studioProjectResourceUses } from 'src/utils/studio-inventory.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 import { parseStudioLottieDependencies } from 'src/utils/studio-vector-dependencies.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 
 const IMPORT_FOLDER = 'studio-imports';
 /** An upload older than this in the incoming folder belongs to a request that never finished. */
@@ -50,7 +66,7 @@ export const studioImportIncomingFolder = (ownerId: string) =>
 export const studioImportProjectFolder = (ownerId: string, projectId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), IMPORT_FOLDER, projectId);
 
-export const mapStudioProjectImport = (item: StudioProjectImport): StudioProjectImportDto => ({
+export const mapStudioProjectImport = (item: StudioProjectImport | PublishedImportReceipt): StudioProjectImportDto => ({
   id: item.id,
   kind: studioImportKind(item.contentType),
   contentType: item.contentType,
@@ -59,6 +75,18 @@ export const mapStudioProjectImport = (item: StudioProjectImport): StudioProject
   checksum: item.checksum,
   externalReferences: item.externalReferences,
   createdAt: new Date(item.createdAt).toISOString(),
+  ...(item.processingProvenance && { processingProvenance: item.processingProvenance }),
+});
+
+/** Explicit projection: operational paths, identities and declarations never enter public receipts. */
+export const mapStudioImportPublication = (item: PublicationReceipt): StudioImportPublicationDto => ({
+  publicationId: item.publicationId,
+  importId: item.importId,
+  state: item.state,
+  createdAt: item.createdAt,
+  expiresAt: item.expiresAt,
+  cleanupPending: item.cleanupPending,
+  ...(item.imported && { imported: mapStudioProjectImport(item.imported) }),
 });
 
 /**
@@ -79,6 +107,7 @@ export class StudioProjectImportService {
     private crypto: CryptoRepository,
     private users: UserRepository,
     private studio: StudioProjectService,
+    private publications: StudioImportPublicationService,
   ) {
     this.logger.setContext(StudioProjectImportService.name);
   }
@@ -89,7 +118,9 @@ export class StudioProjectImportService {
     rawId: string | undefined,
     file: Express.Multer.File | undefined,
     reservationId?: string,
+    options: RawOptionalLineage = {},
   ): Promise<StudioProjectImportDto> {
+    let retentionStarted = false;
     let textLabel = 'The file';
     try {
       if (!file?.path) {
@@ -137,34 +168,58 @@ export class StudioProjectImportService {
       }
 
       const checksum = (await this.crypto.hashFile(file.path, 'sha256')).toString('hex');
-      const folder = studioImportProjectFolder(project.ownerId, project.id);
-      const path = join(folder, `${id}${type.extension}`);
-      const stored = await this.projects.registerImport({
-        ...(reservationId && { reservationId }),
-        projectId: project.id,
-        id,
-        ownerId: project.ownerId,
-        contentType: type.contentType,
-        checksum,
-        sizeBytes: file.size,
-        path,
-        fileName: basename(file.originalname || `import${type.extension}`).slice(0, 255) || `import${type.extension}`,
-        externalReferences,
-      });
-
-      if (stored.path === path && !(await this.storage.checkFileExists(path))) {
-        this.storage.mkdirSync(folder);
-        await this.storage.rename(file.path, path);
-      } else {
-        // A retry of a file already kept: the stored copy is the same bytes.
-        await this.storage.unlink(file.path);
+      let provenance;
+      try {
+        if (options.processingProvenance !== undefined) {
+          if (!isStudioUuid(options.publicationId)) throw new Error('provenance_publication_required');
+          if (
+            typeof options.processingProvenance !== 'string' ||
+            Buffer.byteLength(options.processingProvenance, 'utf8') > 4096
+          )
+            throw new Error('invalid_provenance_part');
+          provenance = parseProcessingProvenance(JSON.parse(options.processingProvenance));
+        }
+        if (options.publicationId !== undefined && !isStudioUuid(options.publicationId))
+          throw new Error('invalid_publication_id');
+      } catch {
+        throw new BadRequestException('Invalid Studio import provenance or publication id');
       }
+      const key = {
+        ownerId: project.ownerId,
+        projectId: project.id,
+        importId: id,
+        publicationId: typeof options.publicationId === 'string' ? options.publicationId.toLowerCase() : randomUUID(),
+      };
+      if (options.publicationId === undefined) {
+        await this.publications.register(auth, project.id, key);
+      } else {
+        const receipt = await this.publications.getPublication(auth, key);
+        if (!receipt) throw new ConflictException('publication_registration_required');
+        if (receipt.state === 'aborted') throw new ConflictException('publication_aborted');
+      }
+      // After prepare starts, a lost acknowledgement may hide journal ownership of these bytes.
+      retentionStarted = true;
+      const stored = await this.publications.retain(auth, {
+        key,
+        incoming: file.path,
+        reservationId,
+        declaration: {
+          contentType: type.contentType,
+          extension: type.extension,
+          checksum,
+          sizeBytes: file.size,
+          fileName: basename(file.originalname || `import${type.extension}`).slice(0, 255) || `import${type.extension}`,
+          externalReferences,
+          processingProvenance: provenance ? bindProcessingProvenance(provenance, checksum) : null,
+        },
+      });
       this.studio.forgetResolutions([project.id]);
       this.logger.log(`Studio project ${project.id} import ${stored.id} registered (${stored.contentType})`);
       return mapStudioProjectImport(stored);
     } catch (error) {
-      if (file?.path) {
-        await this.storage.unlink(file.path).catch(() => {});
+      if (!retentionStarted) {
+        if (file?.path) await this.storage.unlink(file.path);
+        if (reservationId) await this.projects.deleteUpload(reservationId, auth.user.id);
       }
       if (error instanceof StudioImportRefusal) {
         throw new BadRequestException(error.message);
@@ -179,6 +234,39 @@ export class StudioProjectImportService {
   async list(auth: AuthDto, projectId: string): Promise<StudioProjectImportDto[]> {
     const project = await this.requireOwnedProject(auth, projectId);
     return (await this.projects.listImports(project.id)).map((item) => mapStudioProjectImport(item));
+  }
+
+  async register(
+    auth: AuthDto,
+    projectId: string,
+    body: StudioImportPublicationRegisterDto,
+  ): Promise<StudioImportPublicationDto> {
+    return mapStudioImportPublication(await this.publications.register(auth, projectId, body));
+  }
+
+  async discover(
+    auth: AuthDto,
+    projectId: string,
+    query: StudioImportPublicationQueryDto,
+  ): Promise<StudioImportPublicationPageDto> {
+    const page = await this.publications.discover(auth, projectId, query.cursor, query.state);
+    return { items: page.items.map((receipt) => mapStudioImportPublication(receipt)), nextCursor: page.nextCursor };
+  }
+
+  async getPublication(auth: AuthDto, projectId: string, publicationId: string): Promise<StudioImportPublicationDto> {
+    const receipt = await this.publications.findPublication(auth, projectId, publicationId);
+    if (!receipt) throw new NotFoundException('Studio import publication not found');
+    return mapStudioImportPublication(receipt);
+  }
+
+  async cancel(
+    auth: AuthDto,
+    projectId: string,
+    importId: string,
+    publicationId: string,
+  ): Promise<StudioImportPublicationCancelDto> {
+    const result = await this.publications.cancel(auth, { ownerId: auth.user.id, projectId, importId, publicationId });
+    return { status: result.status, receipt: mapStudioImportPublication(result.receipt) };
   }
 
   /**
@@ -225,6 +313,8 @@ export class StudioProjectImportService {
    * Studio lifecycle sweep.
    */
   async sweep(now: Date = new Date()): Promise<void> {
+    const recovery = await this.publications.recover();
+    if (recovery.deferred) this.logger.warn(`Deferred ${recovery.deferred} Studio publication cleanup attempts`);
     // Each registered path is guarded separately. Never remove an entire folder: it can hold
     // capture-pinned bytes or unknown files, and restored imports live outside studio-imports.
     for (const orphan of await this.projects.listOrphanImportProjects()) {
@@ -254,12 +344,28 @@ export class StudioProjectImportService {
       const incoming = studioImportIncomingFolder(ownerId);
       for (const name of await this.storage.readdir(incoming).catch(() => [] as string[])) {
         const path = join(incoming, name);
-        const stat = await this.storage.stat(path).catch(() => null);
-        if (stat && now.getTime() - stat.mtime.getTime() > STUDIO_IMPORT_INCOMING_TTL_MS) {
-          await this.storage.unlink(path).catch(() => {});
+        if (!name.endsWith('.upload') || !isStudioUuid(name.slice(0, -7))) continue;
+        try {
+          await this.releaseIncoming(ownerId, path, now);
+        } catch (error) {
+          this.logger.warn(`Deferred Studio incoming cleanup: ${error}`);
         }
       }
     }
+  }
+
+  /** Internal lifecycle entry point, also used by expired request reservation cleanup. */
+  async releaseIncoming(ownerId: string, path: string, now: Date): Promise<boolean> {
+    return this.publications.cleanupIncoming(
+      ownerId,
+      path,
+      new Date(now.getTime() - STUDIO_IMPORT_INCOMING_TTL_MS),
+      async (identity) => {
+        await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Exports)], path);
+        await assertOwnerRestoreFile(path, identity);
+        await this.storage.unlink(path);
+      },
+    );
   }
 
   /** New imports count against the owner's storage quota with their library, when one is set. */
@@ -279,7 +385,7 @@ export class StudioProjectImportService {
    * a project that does not exist; a reviewer, who can see it, gets `403` (FL-112 ruling, 2026-09-30).
    */
   private async requireOwnedProject(auth: AuthDto, projectId: string) {
-    if (auth.sharedLink || !isStudioUuid(projectId)) {
+    if (auth.sharedLink || !UUIDv7ParamDto.schema.safeParse({ id: projectId }).success) {
       throw new NotFoundException('Studio project not found');
     }
     return this.studio.requireOwnedProject(auth, projectId, 'Only the owner can import into a Studio project');

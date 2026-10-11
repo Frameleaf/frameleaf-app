@@ -11,6 +11,10 @@ import { readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { studioBundleSourceKeys } from 'src/utils/studio-bundle.js';
 import { embeddedSubtitleSealOf, sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import {
+  RetainedProcessingProvenanceSchema,
+  validateBundleImportProvenance,
+} from 'src/utils/studio-import-provenance.js';
+import {
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_MAX_PER_PROJECT,
   STUDIO_IMPORT_TEXT_LIMITS,
@@ -69,16 +73,31 @@ export const buddyStudioCommentSchema = z.object({
   resolvedById: uuid.nullable(),
   updatedAt: date,
 });
-export const buddyStudioImportSchema = z.object({
-  ...identity,
-  ownerId: uuid,
-  contentType: z.string().max(255),
-  checksum: sha,
-  sizeBytes: bytes.refine((value) => value > 0 && value <= STUDIO_IMPORT_MAX_BYTES),
-  path,
-  fileName: z.string().min(1).max(255),
-  externalReferences: z.number().int().nonnegative().nullable(),
-});
+export const buddyStudioImportSchema = z
+  .object({
+    ...identity,
+    ownerId: uuid,
+    contentType: z.string().max(255),
+    checksum: sha,
+    sizeBytes: bytes.refine((value) => value > 0 && value <= STUDIO_IMPORT_MAX_BYTES),
+    path,
+    fileName: z.string().min(1).max(255),
+    externalReferences: z.number().int().nonnegative().nullable(),
+    processingProvenance: RetainedProcessingProvenanceSchema.nullable().default(null),
+  })
+  .superRefine((row, context) => {
+    if (row.processingProvenance !== null) {
+      try {
+        validateBundleImportProvenance(row.processingProvenance, row.checksum);
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          path: ['processingProvenance'],
+          message: 'Buddy Studio import provenance checksum changed',
+        });
+      }
+    }
+  });
 export const buddyStudioGeneratedSchema = z.object({
   projectId: uuid,
   id: identifier,

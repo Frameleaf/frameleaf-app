@@ -7,6 +7,7 @@ import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { AssetLockReason, MediaOperationKind, MediaOperationStatus, StudioExportScope } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { assertStudioStorageAdmission } from 'src/repositories/studio-storage-admission.js';
 import {
   type BuddyStudioProject,
   type BuddyStudioSnapshot,
@@ -28,6 +29,7 @@ import {
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
 import { canonicalJson } from 'src/utils/object.js';
+import { assertReadyRetry } from 'src/utils/studio-import-provenance.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 
 type Row = Record<string, unknown>;
@@ -47,7 +49,7 @@ const tables = {
   source: 'public.studio_export_version_source',
 } as const;
 type Table = (typeof tables)[keyof typeof tables];
-const jsonColumns = new Set(['envelope', 'summary', 'derivedFrom', 'settings', 'privacy']);
+const jsonColumns = new Set(['envelope', 'summary', 'derivedFrom', 'settings', 'privacy', 'processingProvenance']);
 // JSON numbers cannot represent every PostgreSQL bigint used for exact rational frame positions.
 const recordJson = (table: Table) =>
   table === tables.comment
@@ -86,6 +88,7 @@ export class BuddyBackupStudioRepository {
         version: 1,
         revisions: await this.rows(tables.revision, 'projectId', id),
         comments: await this.rows(tables.comment, 'projectId', id),
+        // This table contains ready imports only; operational publication journals are never portable data.
         imports: await this.rows(tables.imported, 'projectId', id),
         generated: await this.rows(tables.generated, 'projectId', id),
         exports,
@@ -120,8 +123,8 @@ export class BuddyBackupStudioRepository {
         .where('id', '=', options.actorId)
         .where('isAdmin', '=', true)
         .where('deletedAt', 'is', null)
-        .forShare()
-        .noWait()
+        // An actor restoring their own project aliases the final quota row.
+        .$if(options.actorId !== options.project.ownerId, (query) => query.forShare().noWait())
         .executeTakeFirst();
       const session = await trx
         .selectFrom('session')
@@ -168,12 +171,20 @@ export class BuddyBackupStudioRepository {
         .select(['id', 'name', 'email', 'isAdmin', 'quotaSizeInBytes', 'quotaUsageInBytes'])
         .where('id', '=', options.project.ownerId)
         .where('deletedAt', 'is', null)
-        .forUpdate()
-        .noWait()
         .executeTakeFirstOrThrow();
       await options.authorize();
       // Internal owned-input validation after an authorized administrator recovery; never an issued read grant.
       const result = await action(trx, { user: owner, session: { id: session.id, hasElevatedPermission: true } });
+      // Recheck account authority after the action's project/path locks, never take quota first.
+      await trx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', options.project.ownerId)
+        .where('deletedAt', 'is', null)
+        .$if(options.actorId === options.project.ownerId, (query) => query.where('isAdmin', '=', true))
+        .forShare()
+        .noWait()
+        .executeTakeFirstOrThrow();
       await options.authorize();
       // Locks prevent revocation from racing publication; time can still pass while validators
       // verify retained text/files. Never commit after the PIN or operation lease has expired.
@@ -218,6 +229,19 @@ export class BuddyBackupStudioRepository {
       record: Row;
     }>`SELECT to_jsonb(item) AS record FROM public.studio_export_version item
       WHERE id = ANY(${exportIds}::uuid[]) ORDER BY id`.execute(trx);
+    // Exact journal/import rows precede paths. A restore may not rebind a target still
+    // owned by an unfinished publication/cleanup, even if its ready bytes match.
+    const { rows: pending } = await sql<{
+      id: string;
+      stagedPath: string | null;
+      targetPath: string | null;
+    }>`SELECT id,"stagedPath","targetPath" FROM public.studio_import_publication
+      WHERE "projectId"=${project.id}::uuid ORDER BY id FOR UPDATE`.execute(trx);
+    if (pending.some((row) => row.stagedPath !== null || row.targetPath !== null))
+      throw new Error('Studio import cleanup is pending; retry restore after cleanup');
+    await sql`SELECT id FROM public.studio_project_import WHERE "projectId"=${project.id}::uuid ORDER BY id FOR UPDATE`.execute(
+      trx,
+    );
     const previousFiles = [
       ...(await this.rows(tables.imported, 'projectId', project.id)),
       ...(await this.rows(tables.generated, 'projectId', project.id)),
@@ -228,6 +252,7 @@ export class BuddyBackupStudioRepository {
     );
     const lockedPaths = new Set([...options.paths.values(), ...previousPaths]);
     for (const path of [...lockedPaths].sort()) await lockFilePath(trx, path);
+    await assertStudioStorageAdmission(trx, project.ownerId, 0);
     // Export cleanup takes its path before its row. Re-read under the same order so cleanup
     // can finish while we wait, then validate only the current, locked publication identity.
     const previousExports = await sql<{
@@ -335,7 +360,7 @@ export class BuddyBackupStudioRepository {
         tables.imported,
         { ...imported, path: target(imported.path) },
         ['projectId', 'id'],
-        ['ownerId', 'contentType', 'checksum', 'sizeBytes', 'fileName', 'externalReferences'],
+        ['ownerId', 'contentType', 'checksum', 'sizeBytes', 'fileName', 'externalReferences', 'processingProvenance'],
         (row) => buddyStudioImportSchema.parse(row),
         ['path'],
         retireFile,
@@ -477,6 +502,7 @@ export class BuddyBackupStudioRepository {
     );
     if (totals.rows[0].count > STUDIO_IMPORT_MAX_PER_PROJECT) throw new Error('Buddy Studio has too many imports');
     if (importBytes) {
+      await assertStudioStorageAdmission(trx, project.ownerId, 0, undefined, { checkExisting: true });
       const quota = await trx
         .selectFrom('user')
         .select('id')
@@ -584,11 +610,13 @@ export class BuddyBackupStudioRepository {
   ) {
     const columns = Object.keys(row);
     const value = (column: string) =>
-      jsonColumns.has(column)
-        ? sql`${JSON.stringify(row[column])}::text::jsonb`
-        : ['outputChecksum', 'subtitleChecksum'].includes(column) && row[column] !== null
-          ? sql`${Buffer.from(String(row[column]), 'hex')}`
-          : sql`${row[column]}`;
+      column === 'processingProvenance' && row[column] === null
+        ? sql`NULL`
+        : jsonColumns.has(column)
+          ? sql`${JSON.stringify(row[column])}::text::jsonb`
+          : ['outputChecksum', 'subtitleChecksum'].includes(column) && row[column] !== null
+            ? sql`${Buffer.from(String(row[column]), 'hex')}`
+            : sql`${row[column]}`;
     const where = sql.join(
       keys.map((key) => sql`${sql.ref(key)}=${row[key]}`),
       sql` AND `,
@@ -603,6 +631,11 @@ export class BuddyBackupStudioRepository {
       WHERE ${where} FOR UPDATE`.execute(this.db);
     if (!stored.rows[0]) throw new Error('Buddy Studio revision identity conflicts with existing history');
     const current = normalize(stored.rows[0].record);
+    if (table === tables.imported) {
+      const stored = buddyStudioImportSchema.parse(current);
+      const supplied = buddyStudioImportSchema.parse(row);
+      assertReadyRetry(stored.processingProvenance, supplied.processingProvenance ?? undefined);
+    }
     if (immutable.some((key) => canonicalJson(current[key]) !== canonicalJson(row[key])))
       throw new Error('Buddy Studio immutable identity changed');
     for (const pathColumn of table === tables.exported ? ['outputPath', 'subtitlePath'] : ['path']) {

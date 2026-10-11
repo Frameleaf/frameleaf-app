@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import { join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
+import type { ReleasingPublicationRole } from 'src/utils/studio-import-reference-roles.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
@@ -50,6 +51,7 @@ export const countPathReferences = async (
   trx: Transaction<DB>,
   path: string,
   physicalFileId?: string,
+  releasing?: ReleasingPublicationRole,
 ): Promise<number> => {
   // A path can be the live original of an asset that has no `physical_file`
   // link at all — both upload-time dedup and the dedup migration point
@@ -117,6 +119,12 @@ export const countPathReferences = async (
     UNION ALL SELECT 1 FROM public.media_operation_checkpoint checkpoint WHERE checkpoint."outputPath" = ${path}
     UNION ALL SELECT 1 FROM public.media_operation_checkpoint checkpoint WHERE checkpoint."subtitlePath" = ${path}
     UNION ALL SELECT 1 FROM public.studio_project_import imported WHERE imported.path = ${path}
+    UNION ALL SELECT 1 FROM public.studio_import_publication journal
+    WHERE journal."stagedPath"=${path} AND journal.state IN ('preparing','aborted','published')
+      AND NOT ((journal.id=${releasing?.publicationId ?? null}::uuid AND ${releasing?.role === 'stage'}) IS TRUE)
+    UNION ALL SELECT 1 FROM public.studio_import_publication journal
+    WHERE journal."targetPath"=${path} AND journal.state IN ('preparing','aborted')
+      AND NOT ((journal.id=${releasing?.publicationId ?? null}::uuid AND ${releasing?.role === 'target'}) IS TRUE)
     UNION ALL SELECT 1 FROM public.studio_generated_resource generated WHERE generated.path = ${path}
     UNION ALL SELECT 1 FROM public.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
     UNION ALL SELECT 1 FROM public.asset_develop_artifact artifact WHERE artifact.path = ${path}

@@ -8,6 +8,7 @@ import {
   Next,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UploadedFile,
@@ -21,6 +22,13 @@ import { StudioBundleUploadInterceptor } from 'src/controllers/studio-bundle.con
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { StudioProjectInventoryDto } from 'src/dtos/studio-inventory.dto.js';
 import {
+  StudioImportPublicationCancelDto,
+  StudioImportPublicationCancelParamDto,
+  StudioImportPublicationDto,
+  StudioImportPublicationPageDto,
+  StudioImportPublicationParamDto,
+  StudioImportPublicationQueryDto,
+  StudioImportPublicationRegisterDto,
   StudioProjectImportCreateDto,
   StudioProjectImportDto,
   StudioProjectImportParamDto,
@@ -38,6 +46,7 @@ import { UUIDv7ParamDto } from 'src/validation.js';
 @Injectable()
 export class StudioProjectImportUploadInterceptor extends StudioBundleUploadInterceptor {
   protected readonly maxBytes = STUDIO_IMPORT_MAX_BYTES;
+  protected readonly importUpload = true;
 
   constructor(service: StudioBundleService) {
     super(service);
@@ -56,6 +65,64 @@ export class StudioProjectImportController {
     private logger: LoggingRepository,
   ) {}
 
+  @Post(':id/imports/publications')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Register a Studio import publication',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  registerStudioImportPublication(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() body: StudioImportPublicationRegisterDto,
+  ): Promise<StudioImportPublicationDto> {
+    return this.service.register(auth, id, body);
+  }
+
+  @Get(':id/imports/publications')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Discover Studio import publications',
+    description: 'Owner-only receipts, at most100 per page; pass nextCursor explicitly to continue.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioImportPublications(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() query: StudioImportPublicationQueryDto,
+  ): Promise<StudioImportPublicationPageDto> {
+    return this.service.discover(auth, id, query);
+  }
+
+  @Get(':id/imports/publications/:publicationId')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Read a Studio import publication',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioImportPublication(
+    @Auth() auth: AuthDto,
+    @Param() { id, publicationId }: StudioImportPublicationParamDto,
+  ): Promise<StudioImportPublicationDto> {
+    return this.service.getPublication(auth, id, publicationId);
+  }
+
+  @Post(':id/imports/:importId/publications/:publicationId/cancel')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Cancel a Studio import publication',
+    description: 'A committed import remains published; cleanupPending reports deferred private cleanup.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  cancelStudioImportPublication(
+    @Auth() auth: AuthDto,
+    @Param() { id, importId, publicationId }: StudioImportPublicationCancelParamDto,
+  ): Promise<StudioImportPublicationCancelDto> {
+    return this.service.cancel(auth, id, importId, publicationId);
+  }
+
   @Post(':id/imports')
   @HttpCode(HttpStatus.CREATED)
   @Authenticated()
@@ -73,7 +140,7 @@ export class StudioProjectImportController {
     // Checked by the service, not a pipe, for the same reason as the body below.
     @Param('id') id: string,
     // Checked by the service, not a pipe: a refused request must still remove the file multer wrote.
-    @Body() body: { id?: unknown },
+    @Body() body: { id?: unknown; publicationId?: unknown; processingProvenance?: unknown },
     @UploadedFile() file: Express.Multer.File | undefined,
     @Req() request: BundleUploadRequest,
   ): Promise<StudioProjectImportDto> {
@@ -83,6 +150,7 @@ export class StudioProjectImportController {
       typeof body?.id === 'string' ? body.id : undefined,
       file,
       request.studioBundleUploadId,
+      { publicationId: body?.publicationId, processingProvenance: body?.processingProvenance },
     );
   }
 
