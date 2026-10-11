@@ -21,7 +21,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
-  import BackupDestinationsSection from '$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte';
+  import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
@@ -35,7 +35,6 @@
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
     AREA_TILE_COLORS,
-    BACKUP_PAGES,
     backupPageFor,
     commandCenterUrl,
     honoursScope,
@@ -296,7 +295,14 @@
    * of Backup (design review finding 66) and a repair tool opened from Library care stays there.
    */
   const area = $derived(careTool ? 'care' : presentedArea(addressArea, selected?.key));
-  const backupPage = $derived(area === 'backups' ? backupPageFor(addressArea, selected?.key) : undefined);
+  const backupPage = $derived(
+    area === 'backups'
+      ? backupPageFor(addressArea, selected?.key, {
+          section: page.url.searchParams.get('section'),
+          backupView: page.url.searchParams.get('backupView'),
+        })
+      : undefined,
+  );
   const areaDefinition = $derived(SETTINGS_AREAS.find((item) => item.id === area));
   /** The sections listed under the shown area: Backup's pages are listed only under Backup. */
   const areaSections = $derived(
@@ -332,32 +338,22 @@
     'repair',
   ];
   // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
-  // the overline names the area's group instead.
-  const breadcrumb = $derived(selected !== undefined && selected.title !== areaCopy[area].title);
+  // the overline names the area's group instead. Backup is one screen under one heading, whichever
+  // of its pages (or older addresses) is open.
+  const titled = $derived(area === 'backups' ? undefined : selected);
+  const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
   // As in the template, the Users manager and the Job manager carry their own headings.
   const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
 
   /** The navigation's pages under the current area: its sections, or the utility tools. */
   const utilityTools = $derived(utilityToolsFor(isAdmin));
   type NavPage = { key: string; title: string; area: SettingsAreaId; section?: string };
-  /** Backup's pages: off-site copies, then the schedule and the backups this account is offered. */
-  const backupPages = $derived(
-    BACKUP_PAGES.flatMap((item): NavPage[] => {
-      if (!item.section) {
-        return [{ key: item.id, title: $t('frameleaf_cc_backup_page_destinations'), area: item.area }];
-      }
-      const section = sections.find((candidate) => candidate.admin && candidate.key === item.section);
-      return section ? [{ key: item.id, title: section.title, area: item.area, section: item.section }] : [];
-    }),
-  );
   const children = $derived.by((): NavPage[] => {
     if (area === 'utilities') {
       return utilityTools.map((tool) => ({ key: tool.id, title: $t(tool.titleKey), area, section: tool.id }));
     }
-    if (area === 'backups') {
-      return backupPages;
-    }
-    if (area === 'libraries' || area === 'trash') {
+    // Backup's pages are side by side in the page itself, as in the prototype.
+    if (['libraries', 'trash', 'backups'].includes(area)) {
       return [];
     }
     return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
@@ -394,13 +390,7 @@
     return rows;
   });
   const activeChild = $derived(
-    area === 'utilities'
-      ? utilityTool(page.url.searchParams.get('section'))?.id
-      : area === 'backups'
-        ? backupPage
-        : careTool
-          ? undefined
-          : selected?.key,
+    area === 'utilities' ? utilityTool(page.url.searchParams.get('section'))?.id : careTool ? undefined : selected?.key,
   );
 
   let query = $state('');
@@ -629,7 +619,9 @@
   // The page scrolls inside `.cc-main`, which the router does not reset: a new page starts at its top
   // (design review finding 71). Also covers Back and Forward.
   const pageKey = $derived(`${addressArea}:${selectedKey ?? ''}`);
-  const scrollKey = $derived(`${pageKey}:${addressArea === 'utilities' ? page.url.searchParams.get('section') : ''}`);
+  const scrollKey = $derived(
+    `${pageKey}:${addressArea === 'utilities' || addressArea === 'backups' ? page.url.searchParams.get('section') : ''}`,
+  );
   $effect(() => {
     void scrollKey;
     if (main) {
@@ -877,16 +869,16 @@
               {#if !ownHeading}
                 <header class="cc-page-heading">
                   <SettingsOverline>
-                    {#if selected && breadcrumb}
+                    {#if titled && breadcrumb}
                       <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
                       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
-                      {selected.title}
+                      {titled.title}
                     {:else}
                       {groupCopy[areaDefinition?.group ?? 'library']}
                     {/if}
                   </SettingsOverline>
-                  <h1>{selected?.title ?? areaCopy[area].title}</h1>
-                  <p>{selected?.subtitle ?? areaCopy[area].description}</p>
+                  <h1>{titled?.title ?? areaCopy[area].title}</h1>
+                  <p>{titled?.subtitle ?? areaCopy[area].description}</p>
                 </header>
               {/if}
               {#if tourNotice}
@@ -901,24 +893,10 @@
                   </button>
                 </div>
               {/if}
-              {#if area === 'backups' && backupPages.length > 1}
-                <!-- One Backup area: its pages side by side, wherever the rail is collapsed or closed. -->
-                <nav
-                  class="cc-subnav"
-                  aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy.backups.title } })}
-                >
-                  {#each backupPages as item (item.key)}
-                    <a
-                      href={commandCenterUrl(item.area, item.section)}
-                      aria-current={backupPage === item.key ? 'page' : undefined}>{item.title}</a
-                    >
-                  {/each}
-                </nav>
-              {/if}
               {#if area === 'overview'}
                 <CommandCenterOverview />
-              {:else if area === 'backups' && !selected}
-                <BackupDestinationsSection />
+              {:else if area === 'backups' && backupPage}
+                <BackupArea page={backupPage} />
               {:else if area === 'history'}
                 <SettingsChangeHistory
                   entries={settingsDraft ? history : undefined}
@@ -1256,39 +1234,6 @@
   .cc-scope-fixed {
     margin: 0;
   }
-  /* Backup's pages, as one row of links under its heading. */
-  .cc-subnav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--fl-space-1);
-    margin: 0 0 var(--fl-space-5);
-    padding: var(--fl-space-1);
-    width: fit-content;
-    max-width: 100%;
-    background: var(--fl-raised);
-    border-radius: var(--fl-radius-control);
-  }
-  .cc-subnav a {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--fl-control-height-compact);
-    padding: 0 var(--fl-space-3);
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    text-decoration: none;
-    border-radius: var(--fl-radius-sm);
-    transition:
-      background-color var(--fl-motion-fast) var(--fl-ease),
-      color var(--fl-motion-fast) var(--fl-ease);
-  }
-  .cc-subnav a:hover {
-    color: var(--fl-text);
-  }
-  .cc-subnav a[aria-current='page'] {
-    color: var(--fl-text);
-    background: var(--fl-panel);
-    box-shadow: var(--fl-shadow-1);
-  }
   /* The heading takes focus when the page changes so it is announced; it is not a control. */
   .cc-main :global(h1[tabindex='-1']:focus) {
     outline: none;
@@ -1571,14 +1516,6 @@
       z-index: 59;
       background: var(--fl-scrim);
       border: 0;
-    }
-    .cc-subnav {
-      width: 100%;
-    }
-    .cc-subnav a {
-      flex: 1;
-      justify-content: center;
-      min-height: var(--fl-control-height);
     }
     .area {
       min-height: 44px;

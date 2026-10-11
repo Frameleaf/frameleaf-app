@@ -47,15 +47,12 @@ test('Command Center status links and failed-refresh recovery', async ({ context
   await expect(summary).toBeVisible({ timeout: 30_000 });
   await expect(summary).toHaveAttribute('aria-busy', 'false');
   for (const [name, view] of [
-    [/Open Backup/, 'status'],
-    [/My backup · outgoing/, 'status'],
-    [/Hosting for my buddy · incoming/, 'controls'],
-    [/Cloud Backup/, 'cloud'],
+    [/Open Backup/, ''],
+    [/My backup · outgoing/, '&section=buddy'],
+    [/Hosting for my buddy · incoming/, '&section=buddy'],
+    [/Cloud Backup/, '&section=cloud'],
   ] as const) {
-    await expect(summary.getByRole('link', { name })).toHaveAttribute(
-      'href',
-      `/user-settings?area=backups&backupView=${view}`,
-    );
+    await expect(summary.getByRole('link', { name })).toHaveAttribute('href', `/user-settings?area=backups${view}`);
   }
   await expect(summary.getByRole('link', { name: /Hosting for my buddy · incoming/ })).toContainText(/1(?:\.0)? KiB/);
   await expect(summary.getByRole('link', { name: /Cloud Backup/ })).toContainText(/2(?:\.0)? KiB/);

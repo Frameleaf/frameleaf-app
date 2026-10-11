@@ -628,6 +628,8 @@ export enum SystemMetadataKey {
    * the original files, each recorded separately, and who recorded it.
    */
   BackupRestoreVerification = 'backup-restore-verification',
+  /** FL-362: the backup run in progress: which place it has reached, and a start that is still due. */
+  BackupSequence = 'backup-sequence',
   /**
    * FL-176: Frameleaf first-run setup — whether it is complete, which flow it runs (a new server or
    * the first Frameleaf launch on an existing library) and the saved per-step progress. Never a
@@ -2296,6 +2298,8 @@ export enum JobName {
   CloudMlDescriptionBatch = 'CloudMlDescriptionBatch',
   /** FL-164: the cloud backup schedule's tick: queue a backup run unless an operation is in progress. */
   CloudBackupSchedule = 'CloudBackupSchedule',
+  /** FL-362: the one backup schedule's tick: back up each place that is on, one after another. */
+  BackupSequence = 'BackupSequence',
   /** FL-164: the hourly check that queues the weekly sample or the monthly full verification when due. */
   CloudBackupVerify = 'CloudBackupVerify',
   /** FL-228: one push notice, encrypted per device and handed to the Frameleaf push gateway. */
@@ -2456,6 +2460,8 @@ export enum DatabaseLock {
   /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
   FrameleafServerClaim = 971,
   BuddyBackup = 972,
+  /** FL-362: one server runs the backup schedule and moves a run from one place to the next. */
+  BackupSequence = 973,
   /** FL-218: Cloud authority replacement/revocation and account-link confirmation cannot overlap. */
   FrameleafLinkAuthority = 974,
   /**

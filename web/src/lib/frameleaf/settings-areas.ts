@@ -230,31 +230,61 @@ export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.fr
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
 /**
- * The one Backup area's pages (design review finding 66). Backups used to be reached from four
- * places: the Backup screen, a "Database backups" form under Import & protection, a second
- * "Database backups" manager under Maintenance, and Cloud backup under Frameleaf Cloud. They are
- * now shown as pages of Backup. Every page keeps the address it always had, so older links, the
- * old administration redirects and the command palette still open it; only where it is listed and
- * which area is highlighted changed.
+ * The one Backup area's pages (FL-362, after design review finding 66). Backup is one screen with
+ * three pages side by side (Overview, Schedule, Restore) and a page for each place a backup is kept
+ * (Cloud Backup, Buddy Backup, On this server), opened from the Overview. Each is addressed as
+ * `?area=backups&section=<page>`.
+ *
+ * Backups used to be reached from four places: the Backup screen, a "Database backups" form under
+ * Import & protection, a second manager under Maintenance, and Cloud backup under Frameleaf Cloud.
+ * Those addresses still open, on the Backup page that took their place, so older links, the old
+ * administration redirects and the command palette keep working.
  */
-export type BackupPageId = 'destinations' | 'schedule' | 'restore';
-export const BACKUP_PAGES: readonly { id: BackupPageId; area: SettingsAreaId; section?: string }[] = Object.freeze([
-  { id: 'destinations', area: 'backups' },
-  { id: 'schedule', area: 'backup', section: 'backup' },
-  { id: 'restore', area: 'maintenance', section: 'backups' },
-]);
+export const BACKUP_TABS = Object.freeze(['overview', 'schedule', 'restore'] as const);
+export const BACKUP_PLACE_PAGES = Object.freeze(['cloud', 'buddy', 'local'] as const);
+export type BackupPageId = (typeof BACKUP_TABS)[number] | (typeof BACKUP_PLACE_PAGES)[number];
+
+const isBackupPageId = (value: string | null | undefined): value is BackupPageId =>
+  [...BACKUP_TABS, ...BACKUP_PLACE_PAGES].includes(value as BackupPageId);
 
 /** Addresses in other areas that are shown as part of Backup, as `<area>:<section>`. */
 const BACKUP_ADDRESSES: Readonly<Record<string, BackupPageId>> = Object.freeze({
+  // The old schedule form, and the saved snapshots with their restore.
   'backup:backup': 'schedule',
-  'maintenance:backups': 'restore',
-  // Cloud backup is one of the off-site destinations.
-  'cloud:cloud-backup': 'destinations',
+  'maintenance:backups': 'local',
+  'cloud:cloud-backup': 'cloud',
 });
 
-/** The Backup page an address shows, if it is one. */
-export const backupPageFor = (area: SettingsAreaId, section?: string | null): BackupPageId | undefined =>
-  area === 'backups' && !section ? 'destinations' : BACKUP_ADDRESSES[`${area}:${section ?? ''}`];
+/** The views of the Backup screen this one replaced (`?backupView=`), for links written to them. */
+const BACKUP_VIEWS: Readonly<Record<string, BackupPageId>> = Object.freeze({
+  status: 'overview',
+  compare: 'overview',
+  cloud: 'cloud',
+  controls: 'buddy',
+  restore: 'restore',
+});
+
+/**
+ * The Backup page an address shows, if it is one. `params` are the address's own: the page inside
+ * Backup (`section`), or the view an older link names (`backupView`).
+ */
+export const backupPageFor = (
+  area: SettingsAreaId,
+  section?: string | null,
+  params: { section?: string | null; backupView?: string | null } = {},
+): BackupPageId | undefined => {
+  if (area !== 'backups') {
+    return BACKUP_ADDRESSES[`${area}:${section ?? ''}`];
+  }
+  if (isBackupPageId(params.section)) {
+    return params.section;
+  }
+  return BACKUP_VIEWS[params.backupView ?? ''] ?? 'overview';
+};
+
+/** The address of a Backup page. */
+export const backupPageUrl = (page: BackupPageId = 'overview', params: Record<string, string | undefined> = {}) =>
+  commandCenterUrl('backups', page === 'overview' ? undefined : page, params);
 
 /** Whether a section is listed under Backup instead of the area its address names. */
 export const isBackupSection = (area: SettingsAreaId, section: string) =>

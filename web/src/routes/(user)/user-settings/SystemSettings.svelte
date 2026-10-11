@@ -13,7 +13,6 @@
    * without secrets, and imports a settings file into the draft for review instead of saving it.
    */
   import AuthSettings from '../../admin/system-settings/AuthSettings.svelte';
-  import BackupSettings from '../../admin/system-settings/BackupSettings.svelte';
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
   import CareHealthSection from './sections/CareHealthSection.svelte';
@@ -183,7 +182,7 @@
     },
     {
       admin: true,
-      component: BackupSettings,
+      // Drawn by the Backup area (FL-362); listed here so search and older links still find it.
       title: $t('frameleaf_cc_section_database_backup'),
       subtitle: $t('frameleaf_cc_section_database_backup_description'),
       key: 'backup',

@@ -4775,6 +4775,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/database-backups/schedule": {
+      "get": {
+        "description": "The schedule backups start on, the places a run visits one after another, and the run in progress",
+        "operationId": "getBackupSchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupScheduleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the backup schedule",
+        "tags": [
+          "Database Backups (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/database-backups/start-restore": {
       "post": {
         "description": "Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)",
@@ -52345,14 +52392,41 @@
         ],
         "type": "object"
       },
+      "AdminConfigBackupScheduleDto": {
+        "properties": {
+          "cronExpression": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Cron expression"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  ""
+                ]
+              }
+            ],
+            "description": "When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used"
+          }
+        },
+        "required": [
+          "cronExpression"
+        ],
+        "type": "object"
+      },
       "AdminConfigBackupsDto": {
         "properties": {
           "database": {
             "$ref": "#/components/schemas/AdminConfigDatabaseBackupDto"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/AdminConfigBackupScheduleDto"
           }
         },
         "required": [
-          "database"
+          "database",
+          "schedule"
         ],
         "type": "object"
       },
@@ -62437,6 +62511,90 @@
           "verifiedBy"
         ],
         "type": "object"
+      },
+      "BackupScheduleResponseDto": {
+        "properties": {
+          "chosen": {
+            "description": "Whether the schedule was chosen in Backup settings; false while it is the one stored before",
+            "type": "boolean"
+          },
+          "cronExpression": {
+            "description": "The schedule in force, in the server time zone",
+            "type": "string"
+          },
+          "lastFinishedAt": {
+            "description": "When the last run ended",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nextRunAt": {
+            "description": "When the next run starts",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "places": {
+            "description": "The places a run visits, in order",
+            "items": {
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/BackupSequencePlace"
+                },
+                "on": {
+                  "description": "Whether a run backs up to this place",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "on"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "run": {
+            "description": "The run in progress",
+            "nullable": true,
+            "properties": {
+              "place": {
+                "$ref": "#/components/schemas/BackupSequencePlace"
+              },
+              "startedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "startedAt",
+              "place"
+            ],
+            "type": "object"
+          },
+          "timezone": {
+            "description": "The server time zone the schedule runs in",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chosen",
+          "cronExpression",
+          "lastFinishedAt",
+          "nextRunAt",
+          "places",
+          "run",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "BackupSequencePlace": {
+        "enum": [
+          "local",
+          "buddy",
+          "cloud"
+        ],
+        "type": "string"
       },
       "BestPhotoAssetResponseDto": {
         "properties": {
@@ -77405,6 +77563,7 @@
           "FrameleafLicenseRefresh",
           "CloudMlDescriptionBatch",
           "CloudBackupSchedule",
+          "BackupSequence",
           "CloudBackupVerify",
           "PushDeliver",
           "PushBackupStaleCheck",

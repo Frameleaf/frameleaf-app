@@ -69,6 +69,9 @@ const updatedConfig = Object.freeze<SystemConfig>({
       cronExpression: '0 02 * * *',
       keepLastAmount: 14,
     },
+    schedule: {
+      cronExpression: '',
+    },
   },
   analytics: {
     enabled: true,

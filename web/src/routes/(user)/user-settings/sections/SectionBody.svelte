@@ -5,7 +5,6 @@
    * Trash and repair queues, and the account settings (`UserSettingsList`).
    */
   import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
-  import BackupDestinationsSection from '$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
@@ -28,7 +27,8 @@
 
   let { section }: { section: SettingsHostSection } = $props();
 
-  const MAINTENANCE = ['mode', 'backups', 'integrity'] as const;
+  // 'backups' is drawn by the Backup area (FL-362).
+  const MAINTENANCE = ['mode', 'integrity'] as const;
   const maintenanceSection = $derived(MAINTENANCE.find((key) => key === section.key));
 </script>
 
@@ -56,8 +56,6 @@
     <LicenseSection />
   {:else if section.key === 'cloud-remote'}
     <RemoteAccessSection />
-  {:else if section.key === 'cloud-backup'}
-    <BackupDestinationsSection />
   {:else if section.key === 'frameleaf-signin'}
     <FrameleafSignInSection />
   {:else if section.key === 'render-workers'}

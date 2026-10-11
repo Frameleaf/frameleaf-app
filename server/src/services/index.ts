@@ -14,6 +14,7 @@ import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BackupDeviceService } from 'src/services/backup-device.service.js';
+import { BackupSequenceService } from 'src/services/backup-sequence.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
@@ -166,6 +167,7 @@ export const services = [
   CloudBackupDetailsService,
   CloudBackupService,
   BuddyBackupService,
+  BackupSequenceService,
   CastService,
   BuddyBackupPeerService,
   BuddyBackupCaptureService,
