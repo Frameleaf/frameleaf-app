@@ -8,7 +8,7 @@ export const OwnerBackupPageSchema = z.object({
 });
 export class OwnerBackupPageDto extends createZodDto(OwnerBackupPageSchema.meta({ id: 'OwnerBackupPageDto' })) {}
 export const OwnerBackupHistorySchema = OwnerBackupPageSchema.extend({
-  manifestKey: ManifestKeySchema,
+  manifestKey: ManifestKeySchema.max(300),
   query: z.string().max(200).optional(),
 }).meta({ id: 'OwnerBackupHistoryDto' });
 export class OwnerBackupHistoryDto extends createZodDto(OwnerBackupHistorySchema) {}
