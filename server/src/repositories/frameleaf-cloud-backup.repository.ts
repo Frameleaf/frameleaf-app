@@ -3,6 +3,12 @@ import z from 'zod';
 import type { FrameleafInstanceToken } from 'src/utils/frameleaf-dpop.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import {
+  BackupRecoveryPackage,
+  BackupSnapshotRecord,
+  backupRecoveryPackageSchema,
+  backupSnapshotRecordSchema,
+} from 'src/utils/cloud-backup-recovery.js';
+import {
   BackupAgentSettings,
   BackupGrantMetadata,
   BackupGrantResponse,
@@ -126,5 +132,44 @@ export class FrameleafCloudBackupRepository {
       url: backupEndpoints(target).escrow,
       dpop: target.token,
     });
+  }
+
+  /** Additive v2 opaque metadata. Root keys and recovery passphrases remain local. */
+  async reportSnapshot(target: ManagedBackupApi, snapshot: BackupSnapshotRecord): Promise<void> {
+    const { descriptor, signature } = backupSnapshotRecordSchema.parse(snapshot);
+    await this.cloud.requestJson(backupSnapshotRecordSchema, {
+      method: 'POST',
+      url: `${target.api.replace(/\/+$/, '')}/v2/backup/snapshots`,
+      dpop: target.token,
+      body: { descriptor, signature },
+    });
+  }
+
+  async putRecoveryPackage(target: ManagedBackupApi, value: BackupRecoveryPackage): Promise<void> {
+    await this.cloud.requestJson(z.unknown(), {
+      method: 'PUT',
+      url: `${target.api.replace(/\/+$/, '')}/v2/backup/escrow`,
+      dpop: target.token,
+      body: backupRecoveryPackageSchema.parse(value),
+    });
+  }
+
+  async deleteRecoveryPackages(target: ManagedBackupApi, vaultId: string): Promise<void> {
+    z.uuid().parse(vaultId);
+    const url = `${target.api.replace(/\/+$/, '')}/v2/backup/escrow?vaultId=${encodeURIComponent(vaultId)}`;
+    const list = await this.cloud.requestJson(
+      z.strictObject({
+        packages: z.array(backupRecoveryPackageSchema.extend({ updatedAt: z.iso.datetime() })).max(100),
+      }),
+      { url, dpop: target.token },
+    );
+    for (const blob of list.packages) {
+      if (blob.vaultId !== vaultId) throw new Error('Recovery package belongs to another vault');
+      await this.cloud.requestJson(z.unknown(), {
+        method: 'DELETE',
+        url: `${url}&keyVersion=${blob.keyVersion}`,
+        dpop: target.token,
+      });
+    }
   }
 }

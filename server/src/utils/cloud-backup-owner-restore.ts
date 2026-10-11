@@ -50,7 +50,12 @@ export const checkOwnerRestoreItems = async (
   motionParent?: string,
 ) => {
   const owner = snapshot.owner;
-  if (!owner || auth.user.id !== owner.ownerId || !auth.session?.hasElevatedPermission || manifest.version !== 2)
+  if (
+    !owner ||
+    auth.user.id !== owner.ownerId ||
+    !auth.session?.hasElevatedPermission ||
+    (manifest.version !== 2 && manifest.version !== 3)
+  )
     throw new ForbiddenException('Owner restore unavailable');
   if (motionParent) {
     if (ids.includes(motionParent) || !snapshot.assetIds?.includes(motionParent))
