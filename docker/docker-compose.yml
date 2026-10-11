@@ -44,8 +44,10 @@ services:
     #   service: cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
     volumes:
       - model-cache:/cache
+    # Keep server credentials out of the inference worker.
     env_file:
-      - .env
+      - path: .env.ml
+        required: false
     restart: always
     healthcheck:
       disable: false
