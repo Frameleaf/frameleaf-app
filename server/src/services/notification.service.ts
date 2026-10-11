@@ -29,6 +29,12 @@ import { EmailTemplate } from 'src/repositories/email.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getFilenameExtension } from 'src/utils/file.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import {
+  MailAccountNotConnectedError,
+  readMailConnection,
+  sendConnectedEmail,
+  signInProviderOf,
+} from 'src/utils/mail-connection.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import {
   type NotificationText,
@@ -145,9 +151,21 @@ export class NotificationService extends BaseService {
         newConfig.notifications.smtp.enabled &&
         !isEqualObject(oldConfig.notifications.smtp, newConfig.notifications.smtp)
       ) {
-        await this.emailRepository.verifySmtp(newConfig.notifications.smtp.transport);
+        // FL-379: a connected account has no mail server to check; it must be connected instead
+        const provider = signInProviderOf(newConfig.notifications.smtp.transport.type);
+        if (provider) {
+          const connection = await readMailConnection(this.mailDeps);
+          if (connection?.provider !== provider) {
+            throw new MailAccountNotConnectedError(provider);
+          }
+        } else {
+          await this.emailRepository.verifySmtp(newConfig.notifications.smtp.transport);
+        }
       }
     } catch (error: Error | any) {
+      if (error instanceof MailAccountNotConnectedError) {
+        throw error;
+      }
       this.logger.error(`Failed to validate SMTP configuration: ${error}`, error?.stack);
       throw new Error('Invalid SMTP configuration', { cause: error });
     }
@@ -700,16 +718,22 @@ export class NotificationService extends BaseService {
     }
     // Current authority was checked immediately before transport; no transaction spans SMTP I/O.
     const { to, subject, html, text: plain } = mail;
-    const response = await this.emailRepository.sendEmail({
+    const message = {
       to,
       subject,
       html,
       text: plain,
       from: notifications.smtp.from,
       replyTo: notifications.smtp.replyTo || notifications.smtp.from,
-      smtp: notifications.smtp.transport,
       imageAttachments: mail.imageAttachments,
-    });
+    };
+    // FL-379: a connected Gmail or Microsoft account sends through its own service. A refused
+    // renewal marks the account as needing sign-in, tells the administrators and fails this job, so
+    // the email is never dropped without a trace.
+    const provider = signInProviderOf(notifications.smtp.transport.type);
+    const response = provider
+      ? await sendConnectedEmail(this.mailDeps, provider, message)
+      : await this.emailRepository.sendEmail({ ...message, smtp: notifications.smtp.transport });
 
     this.logger.log(`Sent mail with id: ${response.messageId} status: ${response.response}`);
 

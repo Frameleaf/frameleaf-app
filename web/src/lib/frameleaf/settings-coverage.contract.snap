@@ -932,6 +932,14 @@
   "notifications.smtp.transport.secure": {
     "type": "boolean"
   },
+  "notifications.smtp.transport.type": {
+    "type": "string",
+    "enum": [
+      "smtp",
+      "gmail",
+      "microsoft"
+    ]
+  },
   "notifications.smtp.transport.username": {
     "type": "string"
   },

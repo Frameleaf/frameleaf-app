@@ -373,6 +373,7 @@ export const adminConfigDefaults = {
       from: '',
       replyTo: '',
       transport: {
+        type: 'smtp',
         ignoreCert: false,
         host: '',
         port: 587,

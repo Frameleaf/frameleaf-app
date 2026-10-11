@@ -234,3 +234,15 @@ registration parser, endpoint, or application registration flow. This remains a 
 gap, as does Cloud's quarterly key publication fix. No production auth weakening or generated API
 changes. These are authored source tests pending hosted execution, not deployed identity/provider,
 quarterly rotation, native/store or complete product acceptance.
+
+## FL-379 mail sign-in broker fixtures
+
+`mail/` (every file, 18) is byte-identical to `packages/contracts/fixtures/mail/` on
+`Frameleaf/frameleaf-cloud` branch `aj/FC-160-mail-broker` at
+`6c7656d01d39ccbd7ab8d0634985d3da92ce6196` (FC-160, contract v1.2: the wire field is `service`, and
+availability is `GET /v1/instance/mail/services`). That branch is not merged yet: these are a pending
+candidate, to be compared again with `origin/main` once FC-160 lands. One exchange per file, in the form
+`push/` uses. `src/utils/frameleaf-mail.spec.ts` checks that every request this server builds is the
+published request, reads every published answer, and classifies every published refusal; only
+`error-grant-invalid.json` marks a connected account as needing sign-in. Every token, code and address in
+them is a fixture value (`FIXTURE-ONLY`); no real Google or Microsoft app exists for them.

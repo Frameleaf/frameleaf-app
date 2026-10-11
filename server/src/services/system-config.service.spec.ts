@@ -13,6 +13,7 @@ import {
   ImageFormat,
   LogLevel,
   MachineLearningHardwareAcceleration,
+  MailTransportType,
   OAuthTokenEndpointAuthMethod,
   QueueName,
   ReleaseChannel,
@@ -357,6 +358,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       from: '',
       replyTo: '',
       transport: {
+        type: MailTransportType.Smtp,
         host: '',
         port: 587,
         secure: false,
