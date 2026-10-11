@@ -25,6 +25,7 @@ test.describe('performance report (FL-139)', () => {
       await utils.createAsset(admin.accessToken);
     }
     await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    await utils.waitForQueueFinish(admin.accessToken, 'storageTemplateMigration');
     await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
   });
 
