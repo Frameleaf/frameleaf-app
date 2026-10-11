@@ -505,6 +505,10 @@
             layoutLabels();
           }
         });
+        // The markers source goes on at "style.load", so on a first load both events are over before
+        // "load" attaches the listeners above, and nothing would lay the labels out until the view
+        // crossed a zoom level. "load" itself is fired after the frame has been drawn.
+        layoutLabels();
       }}
       bind:map
     >
