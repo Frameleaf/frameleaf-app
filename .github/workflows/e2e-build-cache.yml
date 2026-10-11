@@ -65,6 +65,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           CACHE_REF: ghcr.io/frameleaf/frameleaf-server-build-cache:ci-${{ matrix.platform }}
         run: |
-          docker buildx bake -f docker-compose.yml frameleaf-server \
+          # The build context is the repository root, one level above this Compose file; Bake refuses
+          # to read outside its own directory unless that is allowed.
+          docker buildx bake --allow=fs.read=.. -f docker-compose.yml frameleaf-server \
             --set "frameleaf-server.cache-to=type=registry,ref=${CACHE_REF},mode=max,compression=zstd" \
             --set frameleaf-server.output=type=cacheonly
