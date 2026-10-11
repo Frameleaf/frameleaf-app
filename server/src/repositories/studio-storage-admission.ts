@@ -19,7 +19,7 @@ export async function assertStudioStorageAdmission(
   ownerId: string,
   bytes: number,
   kind?: 'upload' | 'export',
-  options: { excludePublicationId?: string; checkExisting?: boolean } = {},
+  options: { excludePublicationId?: string; excludeUploadId?: string; checkExisting?: boolean } = {},
 ): Promise<void> {
   if (!db.isTransaction) throw new Error('studio_storage_transaction_required');
   if (!Number.isSafeInteger(bytes) || bytes < 0) throw new PayloadTooLargeException('Invalid Studio storage size');
@@ -31,12 +31,14 @@ export async function assertStudioStorageAdmission(
     .forUpdate()
     .executeTakeFirst();
   if (!owner) throw new NotFoundException('Studio owner not found');
-  if (bytes === 0 && !kind && !options.excludePublicationId && !options.checkExisting) return;
+  if (bytes === 0 && !kind && !options.excludePublicationId && !options.excludeUploadId && !options.checkExisting)
+    return;
   const {
     rows: [used],
   } = await sql<{ uploads: number; exports: number; bundles: number; imports: number; revisions: number }>`
     WITH uploads AS (SELECT count(*)::int AS count, coalesce(sum("sizeBytes"),0)::float8 AS bytes
-      FROM studio_bundle_upload WHERE "ownerId"=${ownerId}::uuid),
+      FROM studio_bundle_upload WHERE "ownerId"=${ownerId}::uuid
+        AND id IS DISTINCT FROM ${options.excludeUploadId ?? null}::uuid),
     exports AS (SELECT count(*)::int AS count,
       coalesce(sum(CASE WHEN status='completed' AND result->>'sizeBytes' ~ '^[0-9]+$' THEN (result->>'sizeBytes')::bigint
         ELSE coalesce((settings->>'storageReservationBytes')::bigint, ${STUDIO_BUNDLE_EXPORT_RESERVATION}) END),0)::float8 AS bytes

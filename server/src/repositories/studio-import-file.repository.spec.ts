@@ -256,6 +256,28 @@ describe('FilePort and Linux primitives with synthetic checked handles', () => {
     expect(native.open).not.toHaveBeenCalled();
     expect(native.mkdir).not.toHaveBeenCalled();
   });
+  it('accepts a distinct generated request UUID while preserving the publication key', async () => {
+    const fake = syntheticLinux();
+    const requestStage = join(incoming, `${KEY.importId}.upload`);
+    fake.entries.set(requestStage, fake.entries.get(stage)!);
+    fake.entries.delete(stage);
+    const prepared = await fake.repository.prepare(KEY, requestStage, declaration);
+    expect(prepared.stagedPath).toBe(requestStage);
+    expect(prepared.targetPath).toBe(target);
+    expect(native.link).not.toHaveBeenCalled();
+  });
+  it.each([
+    join(root, KEY.importId, 'studio-imports/incoming', `${KEY.publicationId}.upload`),
+    join(owner, 'studio-imports', KEY.projectId, `${KEY.publicationId}.upload`),
+    join(incoming, 'client-controlled.upload'),
+    join(incoming, `${KEY.publicationId}.zip`),
+    `${incoming}/${KEY.publicationId}.upload/../${KEY.importId}.upload`,
+  ])('refuses foreign owner/project, non-UUID or noncanonical request stage %s', async (path) => {
+    const fake = syntheticLinux();
+    await expect(fake.repository.prepare(KEY, path, declaration)).rejects.toThrow('invalid_publication_stage');
+    expect(native.open).not.toHaveBeenCalled();
+    expect(native.unlink).not.toHaveBeenCalled();
+  });
   it('refuses an outside-root prepared path before mutation', async () => {
     const fake = syntheticLinux();
     const prepared = await fake.repository.prepare(KEY, stage, declaration);

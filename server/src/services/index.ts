@@ -122,6 +122,7 @@ import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
@@ -276,6 +277,7 @@ export const services = [
   StudioMediaService,
   StudioBundleService,
   StudioProjectImportService,
+  StudioImportPublicationService,
   StudioProjectService,
   StudioReverseConformService,
   StudioReverseConformCommandService,

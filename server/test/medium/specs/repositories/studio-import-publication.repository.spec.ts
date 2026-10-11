@@ -185,6 +185,131 @@ const projectLockHeld = async (tx: Transaction<DB>, projectId: string) => {
 
 // No journal transitions are emulated with SQL. Every register/prepare/publish/cancel/release calls the real repository.
 describe('Studio import publication — real journal SQL acceptance', () => {
+  it('atomically transfers the exact request reservation without double-counting its quota', async () => {
+    const f = await setup();
+    const scratch = await file(f.key);
+    await db
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 4, quotaUsageInBytes: 0 })
+      .where('id', '=', f.user.id)
+      .execute();
+    const reservation = await f.projects.createUpload({
+      ownerId: f.user.id,
+      path: scratch.stagedPath,
+      sizeBytes: 4,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await f.repo.register(f.key);
+    const outcomes = await Promise.allSettled([
+      f.repo.prepare(f.key, scratch, removeScratch, reservation.id),
+      f.projects.createUpload({
+        ownerId: f.user.id,
+        path: `${scratch.stagedPath}.other`,
+        sizeBytes: 1,
+        digest: '',
+        originalFileName: '',
+        manifest: {},
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ]);
+    expect(outcomes[0]).toMatchObject({ status: 'fulfilled', value: { status: 'prepared' } });
+    expect(outcomes[1]).toMatchObject({ status: 'rejected' });
+    expect(await f.projects.getUpload(reservation.id, f.user.id)).toBeUndefined();
+    expect((await journal(f.key)).stagedPath).toBe(scratch.stagedPath);
+    // Models a positively reconciled committed-but-lost prepare acknowledgement, not transport qualification.
+    await expect(f.repo.prepare(f.key, scratch, removeScratch, reservation.id)).resolves.toMatchObject({
+      status: 'prepared',
+    });
+    await expect(
+      f.projects.createUpload({
+        ownerId: f.user.id,
+        path: `${scratch.stagedPath}.other`,
+        sizeBytes: 1,
+        digest: '',
+        originalFileName: '',
+        manifest: {},
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow(/quota/i);
+  });
+  it.each(['foreign-owner', 'foreign-path', 'small', 'expired', 'nonempty-digest'] as const)(
+    'rolls back an invalid request reservation transfer: %s',
+    async (change) => {
+      const f = await setup();
+      const scratch = await file(f.key);
+      const foreign = change === 'foreign-owner' ? await setup() : f;
+      const reservation = await foreign.projects.createUpload({
+        ownerId: foreign.user.id,
+        path: change === 'foreign-path' ? `${scratch.stagedPath}.foreign` : scratch.stagedPath,
+        sizeBytes: change === 'small' ? 1 : 4,
+        digest: change === 'nonempty-digest' ? 'ab' : '',
+        originalFileName: '',
+        manifest: {},
+        expiresAt: new Date(Date.now() + (change === 'expired' ? -60_000 : 60_000)),
+      });
+      await f.repo.register(f.key);
+      await expect(f.repo.prepare(f.key, scratch, removeScratch, reservation.id)).rejects.toThrow(
+        'publication_reservation_conflict',
+      );
+      expect(await foreign.projects.getUpload(reservation.id, foreign.user.id)).toBeDefined();
+      expect((await journal(f.key)).state).toBe('registered');
+      expect(await readFile(scratch.stagedPath, 'utf8')).toBe('test');
+    },
+  );
+  it('keeps the request reservation and scratch when receipt expiry aborts before ownership transfer', async () => {
+    const f = await setup();
+    const scratch = await file(f.key);
+    const reservation = await f.projects.createUpload({
+      ownerId: f.user.id,
+      path: scratch.stagedPath,
+      sizeBytes: 4,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await f.repo.register(f.key);
+    await expire(f.key);
+    await expect(f.repo.prepare(f.key, scratch, removeScratch, reservation.id)).rejects.toThrow('publication_expired');
+    expect(await f.projects.getUpload(reservation.id, f.user.id)).toBeDefined();
+    expect((await journal(f.key)).state).toBe('aborted');
+    expect((await journal(f.key)).stagedPath).toBeNull();
+    expect(await readFile(scratch.stagedPath, 'utf8')).toBe('test');
+  });
+  it('refuses a different live reservation when reconciling an existing prepared stage', async () => {
+    const f = await setup(),
+      foreign = await setup();
+    const scratch = await prepare(f);
+    const reservation = await foreign.projects.createUpload({
+      ownerId: foreign.user.id,
+      path: scratch.stagedPath,
+      sizeBytes: 4,
+      digest: '',
+      originalFileName: '',
+      manifest: {},
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await expect(f.repo.prepare(f.key, scratch, removeScratch, reservation.id)).rejects.toThrow(
+      'publication_reservation_conflict',
+    );
+    expect(await foreign.projects.getUpload(reservation.id, foreign.user.id)).toBeDefined();
+    expect(await readFile(scratch.stagedPath, 'utf8')).toBe('test');
+  });
+  it('refuses reusing another publication request stage after ownership transfer', async () => {
+    const f = await setup();
+    const original = await prepare(f);
+    const second = { ...f.key, importId: randomUUID(), publicationId: randomUUID() };
+    await f.repo.register(second);
+    await expect(
+      f.repo.prepare(second, { ...original, targetPath: `${original.targetPath}.other` }, removeScratch),
+    ).rejects.toThrow(/referenced/i);
+    expect(await readFile(original.stagedPath, 'utf8')).toBe('test');
+    expect((await journal(f.key)).stagedPath).toBe(original.stagedPath);
+  });
+
   it('T4-01 cancellation before registration commits an irreversible compact tombstone', async () => {
     const f = await setup();
     expect((await f.repo.cancel(f.key)).status).toBe('cancelled');
