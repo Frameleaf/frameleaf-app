@@ -35,6 +35,8 @@ Back up the database and originals before changing releases. Frameleaf uses Post
 
 Cloud processing is Frameleaf Cloud, added and consented to by an administrator in the app; no image setting or Compose change enables it.
 
+For local inference with internet access denied, use the release's `docker-compose.ml-isolated.yml` overlay and the [model-staging procedure](../docs/docs/administration/model-staging.md). Acquisition runs separately, without media or backup mounts; the worker loads the verified cache offline. Keep the existing cache/project and follow the documented runtime/source environment split before enabling the overlay.
+
 ## Local builds
 
 `docker-compose.prod.yml` and `docker-compose.dev.yml` build local `frameleaf-*:local` images, including the database from `docker/postgres`. They use a fresh `postgres19` directory beneath the upload location for the database and are not interchangeable with the release installation file. The server image builds its own media libraries from the sources in `server/base-image`, so a first build takes longer. ML builds explicitly use the `prod` stage. Neither a local image name nor successful compilation establishes release, hardware or model qualification.

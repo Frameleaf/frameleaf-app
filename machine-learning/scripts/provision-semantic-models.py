@@ -12,6 +12,7 @@ def main() -> None:
     args = parser.parse_args()
     if not args.download:
         os.environ['HF_HUB_OFFLINE'] = '1'
+    import immich_ml  # Privacy initialization precedes the Hub import.
     from huggingface_hub import snapshot_download
     from immich_ml.models.semantic_mask import MANIFEST, MODEL_NAME
     from immich_ml.models.semantic_mask_manifest import verify_snapshot
@@ -19,7 +20,7 @@ def main() -> None:
     receipt = []
     for model in MANIFEST:
         path = Path(snapshot_download(model['repository'], revision=model['revision'], cache_dir=cache,
-                     allow_patterns=list(model['files']), local_files_only=not args.download))
+                     allow_patterns=list(model['files']), local_files_only=not args.download, token=False))
         verify_snapshot(path, model['files'])
         receipt.append({'repository': model['repository'], 'revision': model['revision'], 'files': model['files']})
     # Only fully verified snapshots produce the receipt. Inference independently repeats verification.
