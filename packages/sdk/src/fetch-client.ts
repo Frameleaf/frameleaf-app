@@ -2257,6 +2257,8 @@ export type MailConnectionStateDto = {
     providers: MailSignInProvider[];
     /** `pending` while a sign-in this server started is waiting, else `none` */
     signIn: MailSignInState;
+    /** The provider of the sign-in that is waiting */
+    signInProvider?: MailSignInProvider;
     unavailableReason?: MailSignInUnavailableReason;
 };
 export type MailSignInCompleteResponseDto = {

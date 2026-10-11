@@ -28,6 +28,7 @@ const MailConnectionStateSchema = z
     providers: z.array(MailSignInProviderSchema).describe('The providers Frameleaf Cloud offers sign-in for'),
     connection: MailConnectionSchema.nullable().describe('The connected account, or null'),
     signIn: MailSignInStateSchema.describe('`pending` while a sign-in this server started is waiting, else `none`'),
+    signInProvider: MailSignInProviderSchema.optional().describe('The provider of the sign-in that is waiting'),
   })
   .meta({ id: 'MailConnectionStateDto' });
 

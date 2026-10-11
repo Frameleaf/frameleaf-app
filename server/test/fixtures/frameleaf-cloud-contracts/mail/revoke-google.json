@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://api.frameleaf.cloud/v1/instance/mail/revoke",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://api.frameleaf.cloud/v1/instance/mail/revoke, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Revoked at Google. A token that was already dead gets the same answer.",
+    "body": {
+      "service": "google",
+      "refreshToken": "1//0FIXTURE-ONLY-not-a-real-google-refresh-token"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "revoked"
+  }
+}
