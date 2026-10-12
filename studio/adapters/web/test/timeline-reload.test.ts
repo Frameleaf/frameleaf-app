@@ -4,7 +4,7 @@ import type { TimelineTrack } from '@/types/timeline'
 import { setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
 import { createProject, getProject } from '@/infrastructure/storage'
 import { CURRENT_SCHEMA_VERSION } from '@/shared/projects/migrations/types'
-import { loadTimeline, saveTimeline } from '@/features/timeline/stores/timeline-persistence'
+import { buildTimelineFromStores, loadTimeline, saveTimeline } from '@/features/timeline/stores/timeline-persistence'
 import { useItemsStore } from '@/features/timeline/stores/items-store'
 import { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
 import { useSequencesStore } from '@/features/timeline/stores/sequences-store'
@@ -12,6 +12,9 @@ import {
   getActiveTabId,
   useCompositionNavigationStore,
 } from '@/features/timeline/stores/composition-navigation-store'
+import { rollingTrimItems } from '@/features/timeline/stores/actions/item-actions'
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
+import { useEditorStore } from '@/shared/state/editor'
 import { VirtualWorkspace } from '../src/virtual-workspace'
 
 // jsdom's Blob predates `text()` and `arrayBuffer()`; browsers have both.
@@ -228,4 +231,88 @@ describe('FL-94 timeline state across save and reload', () => {
     expect(useItemsStore.getState().items.map((item) => item.id)).toEqual(['title'])
     expect(trackFlags(useItemsStore.getState().tracks)[0]).toMatchObject({ locked: true, muted: true })
   })
+
+  it.each([false, true])('rolls inside a nested sequence with exact history/reload (audio locked: %s)', async (locked) => {
+    const initial = graph(`fl-nested-roll-${locked}`)
+    const parent = initial.timeline!.compositions![0]!
+    parent.items.push({
+      id: 'inner-wrapper', trackId: 'b1', type: 'composition', compositionId: 'inner',
+      compositionWidth: 1920, compositionHeight: 1080, from: 60, durationInFrames: 240,
+      sourceStart: 0, sourceEnd: 240, label: 'Inner sequence',
+    } as never)
+    parent.durationInFrames = 300
+    initial.timeline!.compositions!.push({
+      id: 'inner', name: 'Inner sequence', editorKind: 'sequence',
+      tracks: [track('inner-v', 'video', 0), track('inner-a', 'audio', 1, { locked })],
+      items: [
+        clip('left-v', 'inner-v', 'video', { from: 0, durationInFrames: 120, sourceEnd: 120, linkedGroupId: 'left' }),
+        clip('left-a', 'inner-a', 'audio', { from: 0, durationInFrames: 120, sourceEnd: 120, linkedGroupId: 'left' }),
+        clip('right-v', 'inner-v', 'video', { from: 120, durationInFrames: 120, sourceStart: 30, sourceEnd: 150, linkedGroupId: 'right' }),
+        clip('right-a', 'inner-a', 'audio', { from: 120, durationInFrames: 120, sourceStart: 30, sourceEnd: 150, linkedGroupId: 'right' }),
+      ],
+      transitions: [], keyframes: [], fps: 30, width: 1920, height: 1080,
+      durationInFrames: 240, markers: [{ id: 'inner-marker', frame: 210, color: '#fff' }],
+    } as never)
+    await createProject(initial)
+    await loadTimeline(initial.id)
+    useCompositionNavigationStore.getState().switchToSequence('seq-b')
+    useCompositionNavigationStore.getState().enterComposition('inner', 'Inner sequence', 'inner-wrapper')
+    expect(useCompositionNavigationStore.getState().activeCompositionId).toBe('inner')
+    expect(useCompositionNavigationStore.getState().breadcrumbs.map(({ compositionId }) => compositionId)).toEqual(['seq-b', 'inner'])
+    const previousLinked = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: true })
+    try {
+      const before = structuredClone(buildTimelineFromStores())
+      const expected = structuredClone(before)
+      if (!locked) {
+        const inner = expected.compositions!.find(({ id }) => id === 'inner')!
+        // Fixed oracle: move the cut from frame 120 to 150, preserving source handles and the 240-frame span.
+        inner.items = inner.items.map((item) => ['left-v', 'left-a'].includes(item.id)
+          ? { ...item, durationInFrames: 150, sourceEnd: 150 }
+          : { ...item, from: 150, durationInFrames: 90, sourceStart: 60 })
+      }
+      const history = useTimelineCommandStore.getState()
+      const undoBefore = [...history.undoStack]
+      const redoBefore = [...history.redoStack]
+      rollingTrimItems('left-v', 'right-v', 30)
+      // Full persisted graph equality also protects the main timeline, parent wrapper, markers and tracks.
+      expect(buildTimelineFromStores()).toEqual(expected)
+      if (locked) {
+        expect(useTimelineCommandStore.getState().undoStack).toEqual(undoBefore)
+        expect(useTimelineCommandStore.getState().redoStack).toEqual(redoBefore)
+      } else {
+        expect(useTimelineCommandStore.getState().undoStack).toHaveLength(undoBefore.length + 1)
+        useTimelineCommandStore.getState().undo()
+        expect(buildTimelineFromStores()).toEqual(before)
+        useTimelineCommandStore.getState().redo()
+        expect(buildTimelineFromStores()).toEqual(expected)
+      }
+      await saveTimeline(initial.id)
+      const saved = (await getProject(initial.id))!
+      const reopenedId = `${initial.id}-reopened`
+      workspace.putFile(['projects', reopenedId, 'project.json'], JSON.stringify({ ...saved, id: reopenedId }))
+      useCompositionNavigationStore.getState().resetToRoot()
+      useItemsStore.getState().setItems([])
+      useItemsStore.getState().setTracks([])
+      useCompositionsStore.getState().setCompositions([])
+      await loadTimeline(reopenedId)
+      // Persistence rebuilds redundant track.items from authoritative composition.items.
+      // Compare every stored field except that cache and JSON-omitted undefined keys.
+      const documentGraph = (timeline: ProjectTimeline) => JSON.parse(JSON.stringify({
+        ...timeline,
+        tracks: timeline.tracks.map(({ items: _items, ...metadata }) => metadata),
+        compositions: timeline.compositions?.map((composition) => ({
+          ...composition,
+          tracks: composition.tracks.map(({ items: _items, ...metadata }) => metadata),
+        })),
+      }))
+      expect(documentGraph(buildTimelineFromStores())).toEqual(documentGraph(expected))
+      useCompositionNavigationStore.getState().switchToSequence('seq-b')
+      useCompositionNavigationStore.getState().enterComposition('inner', 'Inner sequence', 'inner-wrapper')
+      expect(useItemsStore.getState().items).toEqual(expected.compositions!.find(({ id }) => id === 'inner')!.items)
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previousLinked })
+    }
+  })
+
 })
