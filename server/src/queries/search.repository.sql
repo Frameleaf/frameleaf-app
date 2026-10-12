@@ -516,7 +516,11 @@ select
     array_agg(
       asset.id
       order by
-        asset."localDateTime" desc
+        asset_best_photo_score.score is not null desc,
+        coalesce(asset.width::float / nullif(asset.height, 0), 1.5) >= 0.9 desc,
+        asset_best_photo_score.score desc nulls last,
+        asset."localDateTime" desc,
+        asset.id
     )
   ) [1] as "coverAssetId",
   mode() within group (
@@ -536,6 +540,7 @@ from
   inner join "landmark" on "landmark"."id" = "matched"."landmarkId"
   inner join "asset" on "asset"."id" = "matched"."assetId"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+  left join "asset_best_photo_score" on "asset_best_photo_score"."assetId" = "asset"."id"
 group by
   "landmark"."id"
 having

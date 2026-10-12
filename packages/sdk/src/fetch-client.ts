@@ -12146,7 +12146,7 @@ export type SearchLandmarkResponseDto = {
     city: string | null;
     /** Country most of these photos and videos were taken in */
     country: string | null;
-    /** The latest photo or video here, for use as a cover */
+    /** The best photo or video here (by the Best Photos score, landscape preferred), for use as a cover */
     coverAssetId: string;
     /** Local capture time of the earliest photo or video here */
     firstTakenAt: string;
