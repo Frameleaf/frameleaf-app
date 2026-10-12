@@ -22,6 +22,7 @@ import {
   RenderWorkerSessionTable,
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
+import type { GpuWorkingBudgetDecision } from 'src/utils/gpu-working-budget.js';
 import { notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import { CLAIMED_MEDIA_OPERATION_STATUSES, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import {
@@ -200,7 +201,12 @@ export class RenderWorkerRepository {
     token: Buffer;
     ttlMs: number;
   }): Promise<
-    { admitted: true; session: RenderWorkerSession } | { admitted: false; reason: RenderWorkerRefusalReason }
+    | { admitted: true; session: RenderWorkerSession }
+    | {
+        admitted: false;
+        reason: RenderWorkerRefusalReason;
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'];
+      }
   > {
     const { report } = input;
     try {
@@ -215,7 +221,12 @@ export class RenderWorkerRepository {
           .executeTakeFirst();
         if (!worker) return { admitted: false, reason: RenderWorkerRefusalReason.InvalidCredential };
         const approval = GpuWorkingBudgetApprovalSchema.safeParse(worker.gpuWorkingBudgetApproval);
-        if (!approval.success) return { admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient };
+        if (!approval.success)
+          return {
+            admitted: false,
+            reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+            budgetReason: 'profile-unapproved',
+          };
         const lifetime = approval.data.evidence.deviceLifetimeId;
         // Claim must use this same lifetime lock before taking a session or operation lock.
         await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'gpu-working-budget:' + lifetime}, 0))`.execute(db);
@@ -263,7 +274,12 @@ export class RenderWorkerRepository {
           conformanceExpiresAt: new Date(conformanceReportedAt.getTime() + worker.conformanceMaxAgeMs),
           credentialExpiresAt: expiresAt,
         });
-        if (!budget.valid) return { admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient };
+        if (!budget.valid)
+          return {
+            admitted: false,
+            reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+            budgetReason: budget.reason,
+          };
         const workerIds = [...new Set([worker.id, ...previous.map((session) => session.workerId)])];
         const active = await db
           .selectFrom('media_operation')
@@ -645,11 +661,17 @@ export class RenderWorkerRepository {
         engineDigest: string;
         limits: RenderLimits;
       }
-    | { refused: RenderWorkerRefusalReason }
+    | {
+        refused: RenderWorkerRefusalReason;
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'];
+      }
     | undefined
   > {
     return this.write(async (db) => {
-      const refuse = (refused: RenderWorkerRefusalReason) => ({ refused });
+      const refuse = (
+        refused: RenderWorkerRefusalReason,
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'],
+      ) => ({ refused, ...(budgetReason ? { budgetReason } : {}) });
       const worker = await db
         .selectFrom('render_worker')
         .selectAll()
@@ -659,7 +681,7 @@ export class RenderWorkerRepository {
         .executeTakeFirst();
       if (!worker) return refuse(RenderWorkerRefusalReason.InvalidCredential);
       const approval = GpuWorkingBudgetApprovalSchema.safeParse(worker.gpuWorkingBudgetApproval);
-      if (!approval.success) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient);
+      if (!approval.success) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, 'profile-unapproved');
       const lifetime = approval.data.evidence.deviceLifetimeId;
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'gpu-working-budget:' + lifetime}, 0))`.execute(db);
       const session = await db
@@ -734,7 +756,7 @@ export class RenderWorkerRepository {
           return refuse(RenderWorkerRefusalReason.ManifestIncomplete);
       }
       const budget = evaluateApprovedRenderSession({ worker, session, capabilities, now });
-      if (!budget.valid) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient);
+      if (!budget.valid) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, budget.reason);
       const health = options.destinationHealth;
       const completedAt = Date.parse(approval.data.evidence.completedAt);
       // Destination health has an independent 30-second deadline, shorter than measurement freshness.

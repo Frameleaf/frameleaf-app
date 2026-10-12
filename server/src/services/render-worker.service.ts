@@ -552,6 +552,7 @@ export class RenderWorkerService {
         workerId: dto.workerId,
         event: RenderWorkerAuditEvent.Refused,
         reason: result.reason,
+        ...(result.budgetReason ? { detail: { gpuWorkingBudgetReason: result.budgetReason } } : {}),
       });
       throw new UnauthorizedException('Worker admission refused');
     }
@@ -562,6 +563,7 @@ export class RenderWorkerService {
       expiresAt: new Date(session.expiresAt).toISOString(),
       scopes: session.scopes,
       gpuMemoryBytes: session.gpuMemoryBytes,
+      gpuWorkingBudgetEvidence: session.gpuWorkingBudgetEvidence,
       leaseMs: RENDER_WORKER_LEASE_MS,
       heartbeatIntervalMs: RENDER_WORKER_HEARTBEAT_INTERVAL_MS,
     };
@@ -751,6 +753,7 @@ export class RenderWorkerService {
             workerId: worker.id,
             event: RenderWorkerAuditEvent.ClaimRefused,
             reason: claimed.refused,
+            ...(claimed.budgetReason ? { detail: { gpuWorkingBudgetReason: claimed.budgetReason } } : {}),
             operationId: candidate.id,
           });
           await this.repository.recordRefusal(candidate.id, claimed.refused);
