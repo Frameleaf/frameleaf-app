@@ -3276,7 +3276,7 @@ export enum MailSignInProvider {
 
 export const MailSignInProviderSchema = z
   .enum(MailSignInProvider)
-  .describe('FL-379: a mail provider connected by signing in')
+  .describe('A mail provider connected by signing in')
   .meta({ id: 'MailSignInProvider' });
 
 /** FL-379: whether the connected mail account can still send. */
@@ -3288,7 +3288,7 @@ export enum MailConnectionStatus {
 
 export const MailConnectionStatusSchema = z
   .enum(MailConnectionStatus)
-  .describe('FL-379: whether the connected mail account can still send')
+  .describe('Whether the connected mail account can still send')
   .meta({ id: 'MailConnectionStatus' });
 
 /** FL-379: why one-click mail sign-in is not offered on this server. */
@@ -3303,7 +3303,7 @@ export enum MailSignInUnavailableReason {
 
 export const MailSignInUnavailableReasonSchema = z
   .enum(MailSignInUnavailableReason)
-  .describe('FL-379: why one-click mail sign-in is not offered on this server')
+  .describe('Why one-click mail sign-in is not offered on this server')
   .meta({ id: 'MailSignInUnavailableReason' });
 
 /** FL-379: where a mail sign-in an administrator started stands. */
@@ -3322,7 +3322,7 @@ export enum MailSignInState {
 
 export const MailSignInStateSchema = z
   .enum(MailSignInState)
-  .describe('FL-379: where a mail sign-in an administrator started stands')
+  .describe('Where a mail sign-in an administrator started stands')
   .meta({ id: 'MailSignInState' });
 
 export const ConfigCredentialSchema = z
@@ -3350,7 +3350,7 @@ export enum DecodeRefusal {
 
 export const DecodeRefusalSchema = z
   .enum(DecodeRefusal)
-  .describe('FL-101: why this server cannot decode a video source')
+  .describe('Why this server cannot decode a video source')
   .meta({ id: 'DecodeRefusal' });
 
 /** FL-228: the push service a registered device receives notifications through. */
@@ -3363,7 +3363,7 @@ export enum PushPlatform {
 
 export const PushPlatformSchema = z
   .enum(PushPlatform)
-  .describe('FL-228: the push service a device receives notifications through')
+  .describe('The push service a device receives notifications through')
   .meta({ id: 'PushPlatform' });
 
 /** FL-228: the events this server delivers as push notifications. */
@@ -3388,7 +3388,7 @@ export enum PushEventType {
 
 export const PushEventTypeSchema = z
   .enum(PushEventType)
-  .describe('FL-228: an event this server delivers as a push notification')
+  .describe('An event this server delivers as a push notification')
   .meta({ id: 'PushEventType' });
 
 /** FL-228: why push notifications are unavailable on this server. */
@@ -3403,5 +3403,5 @@ export enum PushUnavailableReason {
 
 export const PushUnavailableReasonSchema = z
   .enum(PushUnavailableReason)
-  .describe('FL-228: why push notifications are unavailable on this server')
+  .describe('Why push notifications are unavailable on this server')
   .meta({ id: 'PushUnavailableReason' });

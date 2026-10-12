@@ -7947,7 +7947,7 @@
             "api_key": []
           }
         ],
-        "summary": "FL-76: the account detail's Activity tab. What administrators did to this account and its\nlibraries, newest first, recorded by the services that made each change.",
+        "summary": "Retrieve user history",
         "tags": [
           "Users (admin)"
         ],
@@ -8332,7 +8332,7 @@
             "api_key": []
           }
         ],
-        "summary": "FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's\nown sessions, so an administrator could never revoke a foreign session through it. This is\nthe explicit, audited admin path the account detail's Security tab needs instead.",
+        "summary": "Delete a user session",
         "tags": [
           "Users (admin)"
         ],
@@ -12788,7 +12788,7 @@
     },
     "/assets/{id}/develop/artifacts": {
       "post": {
-        "description": "FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.",
+        "description": "Keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.",
         "operationId": "uploadAssetDevelopArtifact",
         "parameters": [
           {
@@ -15995,7 +15995,7 @@
     },
     "/assets/{id}/video/studio-hdr": {
       "get": {
-        "description": "FL-97: streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.",
+        "description": "Streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.",
         "operationId": "playStudioHdrVideo",
         "parameters": [
           {
@@ -35353,7 +35353,7 @@
     },
     "/render-workers/operations/{id}/stream": {
       "post": {
-        "description": "FL-96. What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
+        "description": "What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
         "operationId": "getRenderStreamSignal",
         "parameters": [
           {
@@ -35417,7 +35417,7 @@
     },
     "/render-workers/operations/{id}/stream/offer": {
       "post": {
-        "description": "FL-96. The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.",
+        "description": "The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.",
         "operationId": "offerRenderStream",
         "parameters": [
           {
@@ -55640,7 +55640,7 @@
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
-            "description": "FL-326: present on your own album when partner sharing copied it from another library"
+            "description": "Present on your own album when partner sharing copied it from another library"
           },
           "parentId": {
             "description": "Collection this album belongs to (null = top-level)",
@@ -60505,7 +60505,7 @@
         "properties": {
           "colorPolicy": {
             "$ref": "#/components/schemas/AssetEditsColorPolicy",
-            "description": "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged"
+            "description": "What an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged"
           },
           "colorReason": {
             "description": "Why, in plain words, for the person editing",
@@ -60513,7 +60513,7 @@
           },
           "decodeRefusal": {
             "$ref": "#/components/schemas/DecodeRefusal",
-            "description": "FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing"
+            "description": "Set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing"
           },
           "durationMs": {
             "description": "Duration of the original in milliseconds",
@@ -61771,7 +61771,7 @@
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
-            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+            "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
           },
           "originalFileName": {
             "description": "Original file name",
@@ -63335,7 +63335,7 @@
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
-            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+            "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
           },
           "originalFileName": {
             "description": "Original file name",
@@ -69043,7 +69043,7 @@
             "$ref": "#/components/schemas/CloudPermissionsDto"
           },
           "regionMismatch": {
-            "description": "FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message",
+            "description": "Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message",
             "nullable": true,
             "properties": {
               "accountRegion": {
@@ -70186,7 +70186,7 @@
         "type": "object"
       },
       "DecodeRefusal": {
-        "description": "FL-101: why this server cannot decode a video source",
+        "description": "Why this server cannot decode a video source",
         "enum": [
           "dolbyVisionProfile5",
           "dolbyVisionEnhancementLayer",
@@ -70428,7 +70428,7 @@
           },
           "brilliance": {
             "default": 0,
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -70590,7 +70590,7 @@
             "type": "number"
           },
           "brilliance": {
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -74187,7 +74187,7 @@
           },
           "brilliance": {
             "default": 0,
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -74203,7 +74203,7 @@
           },
           "cleanup": {
             "default": [],
-            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "description": "Clean Up operations, applied in order to the original before every other step",
             "items": {
               "$ref": "#/components/schemas/AssetDevelopCleanup"
             },
@@ -74450,7 +74450,7 @@
           },
           "brilliance": {
             "default": 0,
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -74466,7 +74466,7 @@
           },
           "cleanup": {
             "default": [],
-            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "description": "Clean Up operations, applied in order to the original before every other step",
             "items": {
               "$ref": "#/components/schemas/AssetDevelopCleanup"
             },
@@ -74713,7 +74713,7 @@
           },
           "brilliance": {
             "default": 0,
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -74729,7 +74729,7 @@
           },
           "cleanup": {
             "default": [],
-            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "description": "Clean Up operations, applied in order to the original before every other step",
             "items": {
               "$ref": "#/components/schemas/AssetDevelopCleanup"
             },
@@ -74976,7 +74976,7 @@
           },
           "brilliance": {
             "default": 0,
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -74992,7 +74992,7 @@
           },
           "cleanup": {
             "default": [],
-            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "description": "Clean Up operations, applied in order to the original before every other step",
             "items": {
               "$ref": "#/components/schemas/AssetDevelopCleanup"
             },
@@ -78657,7 +78657,7 @@
           },
           "brilliance": {
             "default": 0,
-            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -78673,7 +78673,7 @@
           },
           "cleanup": {
             "default": [],
-            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "description": "Clean Up operations, applied in order to the original before every other step",
             "items": {
               "$ref": "#/components/schemas/AssetDevelopCleanup"
             },
@@ -80336,7 +80336,7 @@
         "type": "object"
       },
       "MailConnectionStatus": {
-        "description": "FL-379: whether the connected mail account can still send",
+        "description": "Whether the connected mail account can still send",
         "enum": [
           "connected",
           "needs-sign-in"
@@ -80381,7 +80381,7 @@
         "type": "object"
       },
       "MailSignInProvider": {
-        "description": "FL-379: a mail provider connected by signing in",
+        "description": "A mail provider connected by signing in",
         "enum": [
           "gmail",
           "microsoft"
@@ -80419,7 +80419,7 @@
         "type": "object"
       },
       "MailSignInState": {
-        "description": "FL-379: where a mail sign-in an administrator started stands",
+        "description": "Where a mail sign-in an administrator started stands",
         "enum": [
           "none",
           "pending",
@@ -80430,7 +80430,7 @@
         "type": "string"
       },
       "MailSignInUnavailableReason": {
-        "description": "FL-379: why one-click mail sign-in is not offered on this server",
+        "description": "Why one-click mail sign-in is not offered on this server",
         "enum": [
           "not-configured",
           "not-linked",
@@ -85969,7 +85969,7 @@
                 "$ref": "#/components/schemas/PartnerBackfillDto"
               }
             ],
-            "description": "FL-326: copy progress of the library shared this way; null when it was never copied",
+            "description": "Copy progress of the library shared this way; null when it was never copied",
             "nullable": true
           },
           "email": {
@@ -103976,7 +103976,7 @@
         "type": "object"
       },
       "PushEventType": {
-        "description": "FL-228: an event this server delivers as a push notification",
+        "description": "An event this server delivers as a push notification",
         "enum": [
           "backup-needs-attention",
           "backup-stale",
@@ -104004,7 +104004,7 @@
         "type": "object"
       },
       "PushPlatform": {
-        "description": "FL-228: the push service a device receives notifications through",
+        "description": "The push service a device receives notifications through",
         "enum": [
           "ios",
           "android"
@@ -104153,7 +104153,7 @@
         "type": "object"
       },
       "PushUnavailableReason": {
-        "description": "FL-228: why push notifications are unavailable on this server",
+        "description": "Why push notifications are unavailable on this server",
         "enum": [
           "not-configured",
           "not-linked",
@@ -107094,7 +107094,7 @@
             "type": "string"
           },
           "inputId": {
-            "description": "FL-90 resource key, or `source` for a single-asset workload",
+            "description": "Resource key, or `source` for a single-asset workload",
             "type": "string"
           },
           "kind": {
@@ -114190,7 +114190,7 @@
             "type": "boolean"
           },
           "render": {
-            "description": "FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)",
+            "description": "Per destination, what qualified render sessions verified (memory, codecs, colour precision)",
             "items": {
               "$ref": "#/components/schemas/StudioRenderEvidenceDto"
             },
@@ -114668,7 +114668,7 @@
         "type": "object"
       },
       "StudioExportSmoothMotionDto": {
-        "description": "FL-162: Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
+        "description": "Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
         "properties": {
           "destinationId": {
             "description": "Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately",
@@ -116450,7 +116450,7 @@
             "type": "boolean"
           },
           "hdrProxySources": {
-            "description": "FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made",
+            "description": "The hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -116459,7 +116459,7 @@
             "type": "array"
           },
           "hdrSources": {
-            "description": "FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
+            "description": "Placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -116468,7 +116468,7 @@
             "type": "array"
           },
           "hiddenSources": {
-            "description": "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
+            "description": "The owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -116483,7 +116483,7 @@
             "type": "integer"
           },
           "unsupportedSources": {
-            "description": "FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
+            "description": "Placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
             "items": {
               "$ref": "#/components/schemas/StudioUnsupportedSourceDto"
             },
@@ -116726,7 +116726,7 @@
                 "$ref": "#/components/schemas/StudioProjectResourcesDto"
               }
             ],
-            "description": "FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run",
+            "description": "How the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run",
             "nullable": true
           },
           "revision": {

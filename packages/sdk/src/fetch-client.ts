@@ -640,7 +640,7 @@ export type CloudStatusResponseDto = {
     manageUrl: string | null;
     pending: (CloudLinkPendingDto) | null;
     permissions: CloudPermissionsDto;
-    /** FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message */
+    /** Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message */
     regionMismatch: {
         /** The data region the Frameleaf account keeps its data in (eu, na) */
         accountRegion: string;
@@ -3369,7 +3369,7 @@ export type AlbumResponseDto = {
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
-    /** FL-326: present on your own album when partner sharing copied it from another library */
+    /** Present on your own album when partner sharing copied it from another library */
     origin?: PartnerOriginDto;
     /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
@@ -4354,7 +4354,7 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
-    /** FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
+    /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
     originalFileName: string;
@@ -4769,11 +4769,11 @@ export type AssetEditActionItemResponseDto = {
     parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | StabilizeParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsOriginalVideoDto = {
-    /** FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged */
+    /** What an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged */
     colorPolicy?: AssetEditsColorPolicy;
     /** Why, in plain words, for the person editing */
     colorReason?: string;
-    /** FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing */
+    /** Set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing */
     decodeRefusal?: DecodeRefusal;
     /** Duration of the original in milliseconds */
     durationMs: number;
@@ -5253,7 +5253,7 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
-    /** FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
+    /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
     originalFileName: string;
@@ -5921,7 +5921,7 @@ export type DarktableDevelopRecipe = {
 export type DevelopPresetSettingsDto = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
@@ -5980,7 +5980,7 @@ export type DevelopPresetCreateDto = {
 export type DevelopPresetSettingsUpdateDto = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
@@ -8093,7 +8093,7 @@ export type StudioRenderEvidenceDto = {
 export type StudioCapabilitiesDto = {
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     gpuWorker: boolean;
-    /** FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision) */
+    /** Per destination, what qualified render sessions verified (memory, codecs, colour precision) */
     render: StudioRenderEvidenceDto[];
     /** False until the Studio render worker admission (FL-95, FL-104) reports one */
     renderWorker: boolean;
@@ -8403,7 +8403,7 @@ export type PartnerBackfillDto = {
 };
 export type PartnerResponseDto = {
     avatarColor: UserAvatarColor;
-    /** FL-326: copy progress of the library shared this way; null when it was never copied */
+    /** Copy progress of the library shared this way; null when it was never copied */
     backfill?: (PartnerBackfillDto) | null;
     /** User email */
     email: string;
@@ -11644,7 +11644,7 @@ export type RenderWorkerInputGrantDto = {
     /** Digest the manifest was resolved against, when known */
     checksum: string | null;
     expiresAt: string;
-    /** FL-90 resource key, or `source` for a single-asset workload */
+    /** Resource key, or `source` for a single-asset workload */
     inputId: string;
     /** Resource class: library-asset, edited-master, font, lut, … */
     kind: string;
@@ -13629,15 +13629,15 @@ export type StudioProjectResourcesDto = {
     checkedAt: string;
     /** Every referenced source resolved for the acting account */
     complete: boolean;
-    /** FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made */
+    /** The hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made */
     hdrProxySources: string[];
-    /** FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named */
+    /** Placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named */
     hdrSources: string[];
-    /** FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer */
+    /** The owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer */
     hiddenSources: string[];
     /** References that were refused for the acting account */
     refusedCount: number;
-    /** FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer */
+    /** Placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer */
     unsupportedSources: StudioUnsupportedSourceDto[];
 };
 export type StudioProjectDetailDto = {
@@ -13899,7 +13899,7 @@ export type StudioProjectSaveResponseDto = {
     lease: StudioProjectLeaseDto;
     /** This request key was already accepted; the earlier result is returned */
     replayed: boolean;
-    /** FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run */
+    /** How the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run */
     resources?: (StudioProjectResourcesDto) | null;
     /** The head after this request */
     revision: number;
@@ -15277,11 +15277,11 @@ export type KnownAssetDevelopCrop = {
 export type HdrAssetDevelopRecipe = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
-    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    /** Clean Up operations, applied in order to the original before every other step */
     cleanup?: AssetDevelopCleanup[];
     /** Contrast around middle grey */
     contrast?: number;
@@ -15339,11 +15339,11 @@ export type HdrAssetDevelopRecipe = {
 export type HdrAssetDevelopRecipeV4 = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
-    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    /** Clean Up operations, applied in order to the original before every other step */
     cleanup?: AssetDevelopCleanup[];
     /** Contrast around middle grey */
     contrast?: number;
@@ -15401,11 +15401,11 @@ export type HdrAssetDevelopRecipeV4 = {
 export type HdrAssetDevelopRecipeV5 = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
-    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    /** Clean Up operations, applied in order to the original before every other step */
     cleanup?: AssetDevelopCleanup[];
     /** Contrast around middle grey */
     contrast?: number;
@@ -15463,11 +15463,11 @@ export type HdrAssetDevelopRecipeV5 = {
 export type HdrAssetDevelopRecipeV6 = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
-    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    /** Clean Up operations, applied in order to the original before every other step */
     cleanup?: AssetDevelopCleanup[];
     /** Contrast around middle grey */
     contrast?: number;
@@ -15525,11 +15525,11 @@ export type HdrAssetDevelopRecipeV6 = {
 export type KnownAssetDevelopRecipe = {
     /** Black point */
     blacks?: number;
-    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    /** Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
     brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
-    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    /** Clean Up operations, applied in order to the original before every other step */
     cleanup?: AssetDevelopCleanup[];
     /** Contrast around middle grey */
     contrast?: number;
@@ -18238,8 +18238,7 @@ export function getUserCalendarHeatmapAdmin({ $from, id, to, $type }: {
     }));
 }
 /**
- * FL-76: the account detail's Activity tab. What administrators did to this account and its
- * libraries, newest first, recorded by the services that made each change.
+ * Retrieve user history
  */
 export function getUserHistoryAdmin({ before, id, take }: {
     before?: string;
@@ -18326,9 +18325,7 @@ export function getUserSessionsAdmin({ id }: {
     }));
 }
 /**
- * FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
- * own sessions, so an administrator could never revoke a foreign session through it. This is
- * the explicit, audited admin path the account detail's Security tab needs instead.
+ * Delete a user session
  */
 export function deleteUserSessionAdmin({ id, sessionId }: {
     id: string;
