@@ -1,3 +1,4 @@
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -131,6 +132,41 @@ const fixture = async () => {
   return { operations, binding, folder, upload, worker };
 };
 describe('paired whole-export authority under canonical migrations', () => {
+  it('allows already-started artifact staging after measurement expiry while its credential and claim remain live', async () => {
+    const f = await fixture();
+    const session = await db
+      .selectFrom('render_worker_session')
+      .selectAll()
+      .where('id', '=', f.binding.sessionId)
+      .executeTakeFirstOrThrow();
+    const synthetic = withSyntheticGpuBudget({ worker: f.worker, session } as never, {
+      codecs: ['webcodecs-avc'],
+      formats: ['mp4'],
+    });
+    const expired = Date.now() - 1000;
+    const completedAt = new Date(expired - 60_000).toISOString();
+    const validUntil = new Date(expired).toISOString();
+    synthetic.worker.gpuWorkingBudgetApproval!.evidence.completedAt = completedAt;
+    synthetic.worker.gpuWorkingBudgetApproval!.evidence.validUntil = validUntil;
+    synthetic.session.gpuWorkingBudgetEvidence!.completedAt = completedAt;
+    synthetic.session.gpuWorkingBudgetEvidence!.validUntil = validUntil;
+    await db
+      .updateTable('render_worker')
+      .set({ gpuWorkingBudgetApproval: synthetic.worker.gpuWorkingBudgetApproval })
+      .where('id', '=', f.binding.workerId)
+      .execute();
+    await db
+      .updateTable('render_worker_session')
+      .set({ gpuWorkingBudgetEvidence: synthetic.session.gpuWorkingBudgetEvidence, gpuMemoryBytes: '2147483648' })
+      .where('id', '=', f.binding.sessionId)
+      .execute();
+    expect(await f.upload('media', Buffer.from('bounded finished bytes'))).toBe(true);
+    expect(await f.upload('subtitle', Buffer.alloc(0))).toBe(true);
+    expect((await f.operations.getCheckpoints(f.binding.operationId))[0].state).toBe(
+      MediaOperationCheckpointState.Complete,
+    );
+  });
+
   it('empty sealed subtitle stays pending until separately streamed media; both stored files rehash', async () => {
     const f = await fixture();
     expect(await f.upload('subtitle', Buffer.alloc(0))).toBe(true);

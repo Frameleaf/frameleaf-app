@@ -89,7 +89,7 @@ import {
   canReuseChunk,
   isRenderWorkerMediaOperationKind,
 } from 'src/utils/media-operation.js';
-import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
+import { GpuMemoryBytesSchema, evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -625,6 +625,9 @@ export class RenderWorkerService {
     }
 
     const sessionCapabilities = await this.repository.getSessionCapabilities(session.id);
+    const memory = GpuMemoryBytesSchema.safeParse(session.gpuMemoryBytes);
+    const precheckedMemory =
+      memory.success && BigInt(memory.data) <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(memory.data) : null;
     const [workerActive, instanceLimit, destinationHealth] = await Promise.all([
       this.repository.countActiveForWorker(worker.id),
       this.repository.getLimit(RENDER_WORKER_LIMIT_INSTANCE_SUBJECT),
@@ -662,7 +665,7 @@ export class RenderWorkerService {
             destination: worker.destination as MediaOperationDestination,
             revoked: worker.status === RenderWorkerStatus.Revoked,
             kinds: worker.kinds as MediaOperationKind[],
-            gpuMemoryBytes: asNumberOrNull(worker.gpuMemoryBytes),
+            gpuMemoryBytes: null,
             activeOperations: workerActive,
             limits: workerLimits,
             engineDigest: worker.engineDigest,
@@ -672,7 +675,7 @@ export class RenderWorkerService {
             expiresAt: new Date(session.expiresAt),
             revoked: session.revokedAt !== null,
             scopes,
-            gpuMemoryBytes: asNumberOrNull(session.gpuMemoryBytes),
+            gpuMemoryBytes: precheckedMemory,
             engineDigest: session.engineDigest,
             conformanceReportedAt: new Date(session.conformanceReportedAt),
             capabilities: sessionCapabilities ?? null,
@@ -727,6 +730,14 @@ export class RenderWorkerService {
         const claimed = await this.repository.claimQueued({
           id: candidate.id,
           workerId: worker.id,
+          sessionId: session.id,
+          sessionTokenHash: session.token,
+          expected: candidate,
+          destinationHealth: await this.destinationHealth.check(
+            worker.destination as MediaOperationDestination,
+            candidate.destinationDetail,
+          ),
+          defaultInstanceLimits: DEFAULT_INSTANCE_LIMITS,
           leaseMs: RENDER_WORKER_LEASE_MS,
         });
         if (!claimed) {
@@ -735,13 +746,25 @@ export class RenderWorkerService {
           continue;
         }
 
+        if ('refused' in claimed) {
+          await this.repository.recordAudit({
+            workerId: worker.id,
+            event: RenderWorkerAuditEvent.ClaimRefused,
+            reason: claimed.refused,
+            operationId: candidate.id,
+          });
+          await this.repository.recordRefusal(candidate.id, claimed.refused);
+          if (isWorkerRefusal(claimed.refused)) return undefined;
+          skipped.push(candidate.id);
+          continue;
+        }
         const operation = claimed.operation as unknown as MediaOperation;
         if (operation.kind === MediaOperationKind.StudioExport && resolved.studio) {
           // FL-106: what this claim may read is the provenance publication checks against, and a
           // remote render is an obligation to stop it until the worker confirms, from now on.
           await this.studioExports.onRenderClaimed(operation, {
             workerId: worker.id,
-            engineDigest: session.engineDigest,
+            engineDigest: claimed.engineDigest,
             entries: resolved.studio.entries,
           });
           // native apps: the render started (a Live Activity on iOS, a progress notification on Android)
@@ -753,10 +776,10 @@ export class RenderWorkerService {
         }
         const checkpoints = await this.operations.getCheckpoints(operation.id);
         const manifest = resolved.studio
-          ? this.studioInputs(operation, resolved.studio, worker.id, now)
+          ? this.studioInputs(operation, resolved.studio, worker.id, claimed.claimedAt)
           : resolved.manifest;
         // Locked and sensitive sources are rendered like any other: the owner submitted this job.
-        const effective = tightestLimits(workerLimits, ownerLimits.get(candidate.ownerId));
+        const effective = claimed.limits;
 
         this.logger.log(`Render worker ${worker.id} claimed media operation ${operation.id} (${operation.kind})`);
 

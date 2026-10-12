@@ -137,6 +137,7 @@ const claimInput = (
     destinationDetail: null,
     snapshot: { engineDigest: 'engine-1' },
     ...overrides.operation,
+    settings: { resolution: '720p', ...overrides.operation?.settings },
   },
   owner: {
     activeOperations: 0,
@@ -154,6 +155,65 @@ const claimInput = (
 });
 
 describe(evaluateClaimAdmission.name, () => {
+  it.each([Number.POSITIVE_INFINITY, Number.NaN, Number.MAX_SAFE_INTEGER + 1, 2147483648.5, -1])(
+    'refuses unsafe or non-integer memory %s',
+    (gpuMemoryBytes) => {
+      expect(evaluateClaimAdmission(claimInput({ session: { gpuMemoryBytes } }))).toEqual({
+        admitted: false,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+      });
+      expect(
+        evaluateRenderOutput([{ gpuMemoryBytes, codecs: ['webcodecs-avc'], formats: ['mp4'], colorPrecision: null }], {
+          format: 'mp4-h264',
+          color: 'preserve',
+          resolution: '720p',
+        }),
+      ).toEqual({ supported: false, refusal: 'insufficient-memory' });
+    },
+  );
+  it.each(['unknown', 'constructor', 'toString', '__proto__', '', undefined])(
+    'refuses unknown preflight resolution %s instead of assuming zero memory',
+    (resolution) => {
+      expect(
+        evaluateRenderOutput(
+          [{ gpuMemoryBytes: 2147483648, codecs: ['webcodecs-avc'], formats: ['mp4'], colorPrecision: null }],
+          { format: 'mp4-h264', color: 'preserve', resolution } as never,
+        ),
+      ).toEqual({ supported: false, refusal: 'insufficient-memory' });
+    },
+  );
+  it.each(['1080p', '1440p', '2160p', 'original', 'unknown', 'constructor', '__proto__', undefined])(
+    'refuses resolution %s without an optional memory hint on a 2 GiB session',
+    (resolution) => {
+      expect(
+        evaluateClaimAdmission(
+          claimInput({ session: { gpuMemoryBytes: 2147483648 }, operation: { settings: { resolution } } }),
+        ),
+      ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+    },
+  );
+  it('does not substitute administrator memory for missing session Q', () => {
+    expect(
+      evaluateClaimAdmission(
+        claimInput({ session: { gpuMemoryBytes: null }, operation: { snapshot: { gpuMemoryHintBytes: 1 } } }),
+      ),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+  });
+  it('memory hints can tighten but never lower the known output requirement', () => {
+    expect(
+      evaluateClaimAdmission(
+        claimInput({ session: { gpuMemoryBytes: 1073741824 }, operation: { snapshot: { gpuMemoryHintBytes: 1 } } }),
+      ),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+    expect(
+      evaluateClaimAdmission(
+        claimInput({
+          session: { gpuMemoryBytes: 2147483648 },
+          operation: { snapshot: { gpuMemoryHintBytes: 2147483649 } },
+        }),
+      ),
+    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+  });
   it('admits a scoped, in-budget claim on the right destination', () => {
     expect(evaluateClaimAdmission(claimInput())).toEqual({ admitted: true });
   });

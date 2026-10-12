@@ -100,7 +100,7 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     projectId: 'project-1',
     revisionId: 'revision-7',
     snapshot: { engineDigest: 'engine-1' },
-    settings: { resolution: '3840×2160' },
+    settings: { resolution: '720p' },
     estimate: null,
     progress: 0,
     processedUnits: '0',
@@ -492,6 +492,9 @@ describe(RenderWorkerService.name, () => {
             attempt: 1,
           }) as never,
           claimToken: 'claim-1',
+          claimedAt: new Date(),
+          engineDigest: 'engine-1',
+          limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: 1000 },
         }),
       );
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([queued.assetId!]));
@@ -655,6 +658,9 @@ describe(RenderWorkerService.name, () => {
               attempt: 1,
             }) as never,
             claimToken: 'claim-1',
+            claimedAt: new Date(),
+            engineDigest: 'engine-1',
+            limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: 1000 },
           }),
         );
         const manifest = studioManifestStub();
@@ -847,6 +853,9 @@ describe(RenderWorkerService.name, () => {
               attempt: 1,
             },
             claimToken: 'claim-1',
+            claimedAt: new Date(),
+            engineDigest: 'engine-1',
+            limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: 1000 },
           } as never);
           const claim = await sut.claim(SESSION_A, {} as never);
           expect(claim!.snapshot).toMatchObject({ contract: { video: { mastering } } });
@@ -1155,7 +1164,7 @@ describe(RenderWorkerService.name, () => {
       });
     });
 
-    it('applies the tightest of worker, instance and account limits to the claim', async () => {
+    it('returns current transaction limits rather than reusing prechecked limits', async () => {
       vi.mocked(workers.getLimit).mockImplementation((subject) =>
         Promise.resolve(
           subject === 'instance'
@@ -1164,9 +1173,16 @@ describe(RenderWorkerService.name, () => {
         ),
       );
 
+      vi.mocked(workers.claimQueued).mockResolvedValue({
+        operation: operationStub({ status: MediaOperationStatus.Preparing }),
+        claimToken: 'claim-1',
+        claimedAt: new Date(),
+        engineDigest: 'engine-1',
+        limits: { maxConcurrentOperations: 1, maxWallClockMs: 300000, maxOutputBytes: 1000 },
+      } as never);
       const claim = await sut.claim(SESSION_A, {} as never);
 
-      // Worker: no wall clock, 1000 output bytes. Instance: 600 s. Account: 300 s, 5000 bytes.
+      // The transaction re-reads all current ceilings after manifest resolution.
       expect(claim!.limits).toEqual({ maxWallClockMs: '300000', maxOutputBytes: '1000' });
     });
 
@@ -1256,6 +1272,27 @@ describe(RenderWorkerService.name, () => {
       expect(claim).toBeUndefined();
       expect(workers.recordRefusal).toHaveBeenCalledWith(queued.id, RenderWorkerRefusalReason.GpuMemoryInsufficient);
       expect(workers.claimQueued).not.toHaveBeenCalled();
+    });
+
+    it('audits a final transaction refusal after manifest resolution without issuing a claim', async () => {
+      vi.mocked(workers.claimQueued).mockResolvedValue({ refused: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+      expect(await sut.claim(SESSION_A, {} as never)).toBeUndefined();
+      expect(workers.claimQueued).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: sessionA.id,
+          sessionTokenHash: sessionA.token,
+          expected: queued,
+          destinationHealth: expect.objectContaining({ state: 'unknown' }),
+        }),
+      );
+      expect(workers.recordRefusal).toHaveBeenCalledWith(queued.id, RenderWorkerRefusalReason.GpuMemoryInsufficient);
+      expect(workers.recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: RenderWorkerAuditEvent.ClaimRefused,
+          reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        }),
+      );
+      expect(studioExports.onRenderClaimed).not.toHaveBeenCalled();
     });
 
     it('moves on when another worker took the candidate first', async () => {
