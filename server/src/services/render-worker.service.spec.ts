@@ -1,3 +1,4 @@
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -2688,7 +2689,17 @@ describe(RenderWorkerService.name, () => {
   });
 
   describe('getCompatibility (FL-71 CC-9)', () => {
-    const live = (worker: RenderWorker, session: RenderWorkerSession) => ({ worker, session });
+    const live = (worker: RenderWorker, session: RenderWorkerSession) =>
+      withSyntheticGpuBudget(
+        {
+          worker: { ...worker, maxConcurrentOperations: 1 },
+          session: { ...session, gpuMemoryBytes: '2147483648', codecs: ['webcodecs-avc'], colorPrecision: null },
+        },
+        { codecs: ['webcodecs-avc'], formats: ['mp4'] },
+      );
+    beforeEach(() =>
+      vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] }),
+    );
 
     it('lists the render kinds a qualified worker can take, and the rest as unavailable', async () => {
       (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
@@ -2704,6 +2715,21 @@ describe(RenderWorkerService.name, () => {
           MediaOperationKind.QuickEdit,
         ],
       });
+    });
+
+    it.each(['legacy', 'policy', 'expired', 'caps', 'scope'])('does not advertise %s evidence', async (mode) => {
+      const value = live(workerA, sessionA);
+      if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
+      if (mode === 'policy') value.worker.gpuWorkingBudgetApproval = null;
+      if (mode === 'expired')
+        value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+      if (mode === 'scope') value.worker.kinds = [];
+      if (mode === 'caps')
+        vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+      (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
+        .fn()
+        .mockResolvedValue([value]);
+      expect((await sut.getCompatibility()).qualified).toEqual([]);
     });
 
     it('does not count a session whose conformance is stale', async () => {

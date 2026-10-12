@@ -1,4 +1,6 @@
 import z from 'zod';
+import { MediaOperationKind, RenderWorkerStatus } from 'src/enum.js';
+import { RenderColorPrecision, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
   GpuWorkingBudgetContext,
   GpuWorkingBudgetDecision,
@@ -114,5 +116,58 @@ export const evaluateApprovedGpuWorkingBudget = (input: ApprovedBudgetInput): Gp
     now: input.now,
     conformanceExpiresAt: input.conformanceExpiresAt,
     credentialExpiresAt: input.credentialExpiresAt,
+  });
+};
+
+/** A live credential alone is not fresh GPU evidence for another render start. */
+export const evaluateApprovedRenderSession = (input: {
+  worker: ApprovedBudgetInput['worker'] & {
+    status: RenderWorkerStatus;
+    kinds: readonly MediaOperationKind[];
+    conformanceMaxAgeMs: number;
+  };
+  session: {
+    workerId: string;
+    revokedAt: Date | null;
+    expiresAt: Date;
+    engineDigest: string | null;
+    conformanceReportedAt: Date;
+    scopes: readonly MediaOperationKind[];
+    gpuMemoryBytes: string | null;
+    gpuWorkingBudgetEvidence: unknown;
+    codecs: readonly string[] | null;
+    colorPrecision: RenderColorPrecision | null;
+  };
+  capabilities: { codecs: readonly string[]; formats: readonly string[] } | null | undefined;
+  now: Date;
+}): GpuWorkingBudgetDecision => {
+  const { worker, session, capabilities, now } = input;
+  if (
+    session.workerId !== worker.id ||
+    session.engineDigest !== worker.engineDigest ||
+    !capabilities ||
+    JSON.stringify(session.codecs) !== JSON.stringify(capabilities.codecs) ||
+    !isQualifiedRenderSession({
+      worker: { ...worker, revoked: worker.status !== RenderWorkerStatus.Active },
+      session: {
+        ...session,
+        revoked: session.revokedAt !== null,
+        scopes: session.scopes.filter((kind) => worker.kinds.includes(kind)),
+      },
+      now,
+    })
+  )
+    return { valid: false, reason: 'session-unqualified' };
+  const evidence = GpuWorkingBudgetEvidenceSchema.safeParse(session.gpuWorkingBudgetEvidence);
+  if (!evidence.success) return { valid: false, reason: 'evidence-invalid' };
+  return evaluateApprovedGpuWorkingBudget({
+    worker,
+    evidence: evidence.data,
+    capabilities: { ...capabilities, colorPrecision: session.colorPrecision },
+    reportedBytes: evidence.data.measuredBytes,
+    phase: { kind: 'session', admittedBudgetBytes: session.gpuMemoryBytes },
+    now,
+    conformanceExpiresAt: new Date(session.conformanceReportedAt.getTime() + worker.conformanceMaxAgeMs),
+    credentialExpiresAt: session.expiresAt,
   });
 };

@@ -9,7 +9,9 @@ import {
   GpuWorkingBudgetApprovalSchema,
   GpuWorkingBudgetEvidenceSchema,
   evaluateApprovedGpuWorkingBudget,
+  evaluateApprovedRenderSession,
 } from 'src/utils/gpu-working-budget-policy.js';
+import { MediaOperationKind, RenderWorkerStatus } from 'src/enum.js';
 
 // Synthetic policy fixtures are not reviewed native receipts or actual GPU qualification.
 const evidence = {
@@ -59,6 +61,75 @@ const success = (qualifiedBytes = '2147483648') => ({
   measuredBytes: '2147483648',
   qualifiedBytes,
   expiresAt: '2026-10-12T00:01:00.000Z',
+});
+
+const liveSessionInput = () => ({
+  worker: {
+    ...input().worker,
+    status: RenderWorkerStatus.Active,
+    kinds: [MediaOperationKind.StudioExport],
+    conformanceMaxAgeMs: 120_000,
+  },
+  session: {
+    workerId,
+    revokedAt: null as Date | null,
+    expiresAt: input().credentialExpiresAt,
+    engineDigest: evidence.engineDigest as string | null,
+    conformanceReportedAt: new Date(evidence.completedAt),
+    scopes: [MediaOperationKind.StudioExport],
+    gpuMemoryBytes: '2147483648' as string | null,
+    gpuWorkingBudgetEvidence: evidence as unknown,
+    codecs: capabilities.codecs as string[] | null,
+    colorPrecision: null,
+  },
+  capabilities: { codecs: capabilities.codecs, formats: capabilities.formats } as {
+    codecs: string[];
+    formats: string[];
+  } | null,
+  now: input().now,
+});
+
+describe('current approved render session', () => {
+  it('preserves raw M while tightening persisted Q with current A', () => {
+    const value = liveSessionInput();
+    value.session.gpuMemoryBytes = '1073741824';
+    expect(evaluateApprovedRenderSession(value)).toEqual(success('1073741824'));
+    value.worker.gpuMemoryBytes = '536870912';
+    expect(evaluateApprovedRenderSession(value)).toEqual(success('536870912'));
+    value.worker.gpuMemoryBytes = '9223372036854775807';
+    expect(evaluateApprovedRenderSession(value)).toEqual(success('1073741824'));
+  });
+  it.each([
+    'legacy',
+    'approval',
+    'budget',
+    'capabilities',
+    'codecs',
+    'binding',
+    'engine',
+    'revoked-worker',
+    'revoked-session',
+    'scope',
+    'credential',
+    'conformance',
+    'measurement',
+  ])('refuses %s', (mode) => {
+    const value = liveSessionInput();
+    if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
+    if (mode === 'approval') value.worker.gpuWorkingBudgetApproval = null;
+    if (mode === 'budget') value.session.gpuMemoryBytes = null;
+    if (mode === 'capabilities') value.capabilities = null;
+    if (mode === 'codecs') value.session.codecs = ['av1'];
+    if (mode === 'binding') value.session.workerId = '33333333-3333-4333-8333-333333333333';
+    if (mode === 'engine') value.session.engineDigest = 'other-engine';
+    if (mode === 'revoked-worker') value.worker.status = RenderWorkerStatus.Revoked;
+    if (mode === 'revoked-session') value.session.revokedAt = value.now;
+    if (mode === 'scope') value.worker.kinds = [];
+    if (mode === 'credential') value.session.expiresAt = value.now;
+    if (mode === 'conformance') value.worker.conformanceMaxAgeMs = 1;
+    if (mode === 'measurement') value.now = new Date(evidence.validUntil);
+    expect(evaluateApprovedRenderSession(value).valid).toBe(false);
+  });
 });
 
 describe('reviewed approval binding', () => {

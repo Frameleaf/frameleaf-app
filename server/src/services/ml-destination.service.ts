@@ -1,3 +1,4 @@
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -31,7 +32,6 @@ import {
   MlWorkerRole,
   MlWorkload,
   RESTORATION_ML_WORKLOADS,
-  RenderWorkerStatus,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { CloudConnectionState, CloudMlGatewayDeps, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
@@ -61,7 +61,7 @@ import {
   unresolvedEndpointSummary,
   workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
-import { SDR_ONLY, isQualifiedRenderSession, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
+import { SDR_ONLY, provesOutput, requiredOutput } from 'src/utils/render-admission.js';
 import { STUDIO_EXPORT_FORMATS } from 'src/utils/studio-export.js';
 
 /**
@@ -670,23 +670,16 @@ export class MlDestinationService extends BaseService {
       this.renderWorkerRepository.listLiveSessions(),
     ]);
     const now = new Date();
-    const qualified = sessions.filter(({ worker, session }) =>
-      isQualifiedRenderSession({
-        worker: {
-          revoked: worker.status !== RenderWorkerStatus.Active,
-          engineDigest: worker.engineDigest,
-          conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
-        },
-        session: {
-          revoked: session.revokedAt !== null,
-          expiresAt: new Date(session.expiresAt),
-          engineDigest: session.engineDigest,
-          conformanceReportedAt: new Date(session.conformanceReportedAt),
-          scopes: session.scopes,
-        },
-        now,
+    const evaluated = await Promise.all(
+      sessions.map(async (entry) => {
+        const capabilities = await this.renderWorkerRepository.getSessionCapabilities(entry.session.id);
+        const budget = evaluateApprovedRenderSession({ ...entry, capabilities, now: new Date() });
+        return budget.valid && capabilities
+          ? [{ ...entry, capabilities, gpuMemoryBytes: Number(budget.qualifiedBytes) }]
+          : [];
       }),
     );
+    const qualified = evaluated.flat();
     const qualifiedRenderer = qualified.length > 0;
     const routed = new Map(routes.map((route) => [route.workload, route.destinationId]));
     // FL-186: Frameleaf Cloud counts as available only when the work has a model to send, the one an
@@ -769,7 +762,7 @@ export class MlDestinationService extends BaseService {
     const render = await Promise.all(
       [...byDestination].map(async ([destination, entries]) => {
         const memories = entries
-          .map(({ session }) => (session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes)))
+          .map(({ gpuMemoryBytes }) => gpuMemoryBytes)
           .filter((value): value is number => value !== null);
         const precisions = entries.map(({ session }) => session.colorPrecision ?? SDR_ONLY);
         return {
@@ -782,11 +775,14 @@ export class MlDestinationService extends BaseService {
           sessions: entries.length,
           candidates: await Promise.all(
             entries
-              .filter(({ session }) => session.scopes.includes(MediaOperationKind.StudioExport))
-              .map(async ({ worker, session }) => {
-                const capabilities = await this.renderWorkerRepository.getSessionCapabilities(session.id);
+              .filter(
+                ({ worker, session }) =>
+                  worker.kinds.includes(MediaOperationKind.StudioExport) &&
+                  session.scopes.includes(MediaOperationKind.StudioExport),
+              )
+              .map(({ worker, session, capabilities, gpuMemoryBytes }) => {
                 return {
-                  gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
+                  gpuMemoryBytes,
                   outputFormats: STUDIO_EXPORT_FORMATS.filter((format) =>
                     provesOutput(capabilities ?? null, requiredOutput({ format })!),
                   ),

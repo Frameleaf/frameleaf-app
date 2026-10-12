@@ -1,3 +1,4 @@
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   BadRequestException,
   ConflictException,
@@ -33,7 +34,6 @@ import {
   MediaOperationStatus,
   MlWorkload,
   PushEventType,
-  RenderWorkerStatus,
   StorageFolder,
   StudioExportRemoteReason,
   StudioExportScope,
@@ -84,7 +84,7 @@ import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
-import { RenderOutputRequest, evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
+import { RenderOutputRequest, evaluateRenderOutput } from 'src/utils/render-admission.js';
 import { openRenderArtifact } from 'src/utils/render-artifact.js';
 import {
   embeddedSubtitleSealOf,
@@ -539,43 +539,32 @@ export class StudioExportService {
    * waiting in the queue for a worker that can never take it.
    */
   private async requireRenderableOutput(destination: MediaOperationDestination, settings: RenderOutputRequest) {
-    const now = new Date();
     const sessions = await this.renderWorkers.listLiveSessions();
-    const qualified = sessions.filter(
-      ({ worker, session }) =>
-        worker.destination === destination &&
-        session.scopes.includes(MediaOperationKind.StudioExport) &&
-        isQualifiedRenderSession({
-          worker: {
-            revoked: worker.status !== RenderWorkerStatus.Active,
-            engineDigest: worker.engineDigest,
-            conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
-          },
-          session: {
-            revoked: session.revokedAt !== null,
-            expiresAt: new Date(session.expiresAt),
-            engineDigest: session.engineDigest,
-            conformanceReportedAt: new Date(session.conformanceReportedAt),
-            scopes: session.scopes,
-          },
-          now,
+    const evaluated = await Promise.all(
+      sessions
+        .filter(
+          ({ worker, session }) =>
+            worker.destination === destination &&
+            worker.kinds.includes(MediaOperationKind.StudioExport) &&
+            session.scopes.includes(MediaOperationKind.StudioExport),
+        )
+        .map(async (entry) => {
+          const capabilities = await this.renderWorkers.getSessionCapabilities(entry.session.id);
+          const budget = evaluateApprovedRenderSession({ ...entry, capabilities, now: new Date() });
+          return budget.valid && capabilities
+            ? [
+                {
+                  gpuMemoryBytes: Number(budget.qualifiedBytes),
+                  codecs: capabilities.codecs,
+                  formats: capabilities.formats,
+                  colorPrecision: entry.session.colorPrecision,
+                  engineDigest: entry.session.engineDigest,
+                },
+              ]
+            : [];
         }),
     );
-    const candidates = await Promise.all(
-      qualified.map(async ({ worker, session }) => {
-        // FL-95 stores writer/container proof beside the session, keyed by its admitted id.
-        // Read the same record as claim admission; never infer a muxer from the session's codecs.
-        const capabilities = await this.renderWorkers.getSessionCapabilities(session.id);
-        return {
-          gpuMemoryBytes: session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes),
-          codecs: capabilities?.codecs ?? [],
-          formats: capabilities?.formats ?? [],
-          colorPrecision: session.colorPrecision,
-          engineDigest:
-            worker.engineDigest && worker.engineDigest === session.engineDigest ? session.engineDigest : null,
-        };
-      }),
-    );
+    const candidates = evaluated.flat();
     const verdict = evaluateRenderOutput(candidates, settings);
     if (!verdict.supported) {
       throw new ConflictException({

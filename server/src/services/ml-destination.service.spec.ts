@@ -1,3 +1,4 @@
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
@@ -957,30 +958,48 @@ describe(MlDestinationService.name, () => {
       const liveSession = (
         worker: Record<string, unknown> = {},
         session: Record<string, unknown> = {},
-      ): AuthenticatedRenderWorker =>
-        ({
-          worker: {
-            id: 'worker-1',
-            name: 'Studio GPU',
-            status: RenderWorkerStatus.Active,
-            engineDigest: 'sha256:engine',
-            conformanceMaxAgeMs: 24 * hour,
-            ...worker,
-          },
-          session: {
-            id: 'session-1',
-            workerId: 'worker-1',
-            scopes: [MediaOperationKind.StudioExport],
-            engineDigest: 'sha256:engine',
-            conformanceReportedAt: new Date(Date.now() - hour),
-            expiresAt: new Date(Date.now() + hour),
-            revokedAt: null,
-            gpuMemoryBytes: null,
-            codecs: [],
-            colorPrecision: null,
-            ...session,
-          },
-        }) as unknown as AuthenticatedRenderWorker;
+      ): AuthenticatedRenderWorker => {
+        const caps = {
+          codecs: (session.codecs ?? ['webcodecs-avc']) as string[],
+          formats: (session.formats ?? ['mp4']) as string[],
+        };
+        return withSyntheticGpuBudget(
+          {
+            worker: {
+              id: '0195e2a0-0000-7000-8000-00000000aaa1',
+              name: 'Studio GPU',
+              status: RenderWorkerStatus.Active,
+              kinds: [
+                MediaOperationKind.StudioExport,
+                MediaOperationKind.StudioPreview,
+                MediaOperationKind.Restoration,
+              ],
+              gpuMemoryBytes: null,
+              maxConcurrentOperations: 1,
+              engineDigest: 'sha256:engine',
+              conformanceMaxAgeMs: 24 * hour,
+              ...worker,
+            },
+            session: {
+              id: 'session-1',
+              workerId: '0195e2a0-0000-7000-8000-00000000aaa1',
+              scopes: [MediaOperationKind.StudioExport],
+              engineDigest: 'sha256:engine',
+              conformanceReportedAt: new Date(Date.now() - hour),
+              expiresAt: new Date(Date.now() + hour),
+              revokedAt: null,
+              gpuMemoryBytes: '2147483648',
+              codecs: caps.codecs,
+              colorPrecision: null,
+              ...session,
+            },
+          } as never,
+          caps,
+        );
+      };
+      beforeEach(() =>
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] }),
+      );
 
       const studioOf = async (...sessions: AuthenticatedRenderWorker[]) => {
         mocks.renderWorker.listLiveSessions.mockResolvedValue(sessions);
@@ -991,11 +1010,11 @@ describe(MlDestinationService.name, () => {
       it('projects Sidecar only from one fresh engine-bound session, preserving ordinary output proof', async () => {
         const profile = 'mp4-h264+srt-sidecar-v1';
         mocks.renderWorker.listLiveSessions.mockResolvedValue([
-          liveSession({}, { id: 'paired' }),
+          liveSession({}, { id: 'paired', formats: ['mp4', profile] }),
           liveSession({}, { id: 'media' }),
-          liveSession({}, { id: 'marker' }),
+          liveSession({}, { id: 'marker', formats: [profile] }),
           liveSession({ engineDigest: null }, { id: 'unbound' }),
-          liveSession({}, { id: 'near' }),
+          liveSession({}, { id: 'near', formats: ['mp4', `${profile}-extra`] }),
           liveSession({}, { id: 'expired', expiresAt: new Date(Date.now() - hour) }),
           liveSession({}, { id: 'revoked', revokedAt: new Date() }),
           liveSession({}, { id: 'stale', conformanceReportedAt: new Date(Date.now() - 25 * hour) }),
@@ -1029,7 +1048,6 @@ describe(MlDestinationService.name, () => {
           expect.objectContaining({ outputFormats: ['mp4-h264'] }),
           expect.objectContaining({ outputFormats: [] }),
           expect.objectContaining({ outputFormats: ['mp4-h264'] }),
-          expect.objectContaining({ outputFormats: ['mp4-h264'] }),
         ]);
         for (const candidate of studio.render[0].candidates!.slice(1))
           expect(candidate).not.toHaveProperty('sidecarOutputFormats');
@@ -1039,6 +1057,11 @@ describe(MlDestinationService.name, () => {
           'marker',
           'unbound',
           'near',
+          'expired',
+          'revoked',
+          'stale',
+          'wrong-engine',
+          'wrong-scope',
         ]);
         expect(JSON.stringify(studio)).not.toContain(profile);
         expect(JSON.stringify(studio)).not.toContain('sha256:engine');
@@ -1051,7 +1074,7 @@ describe(MlDestinationService.name, () => {
             { destination: MediaOperationDestination.Lan },
             {
               id: 'h264',
-              gpuMemoryBytes: String(8 * gib),
+              gpuMemoryBytes: String(2 * gib),
               codecs: ['h264_nvenc'],
               colorPrecision: { maxBitDepth: 8, hdr10: false, dolbyVision: false },
             },
@@ -1077,11 +1100,11 @@ describe(MlDestinationService.name, () => {
           expect.objectContaining({
             destination: MediaOperationDestination.Lan,
             sessions: 2,
-            gpuMemoryBytes: 8 * gib,
+            gpuMemoryBytes: 2 * gib,
             hdr10: true,
             candidates: [
               {
-                gpuMemoryBytes: 8 * gib,
+                gpuMemoryBytes: 2 * gib,
                 outputFormats: ['mp4-h264'],
                 maxBitDepth: 8,
                 hdr10: false,
@@ -1099,20 +1122,26 @@ describe(MlDestinationService.name, () => {
         ]);
       });
 
-      it('does not publish output proof from decoder-only, missing-container or legacy capability records', async () => {
-        mocks.renderWorker.listLiveSessions.mockResolvedValue([
-          liveSession({ destination: MediaOperationDestination.Local }, { gpuMemoryBytes: '8589934592' }),
-        ]);
+      it('does not publish output proof from decoder-only, missing-container or mismatched capability records', async () => {
         for (const capabilities of [
           { codecs: ['hevc_cuvid'], formats: ['mp4'] },
           { codecs: ['hevc_nvenc'], formats: [] },
           { codecs: ['hevc_nvenc'], formats: ['webm'] },
-          undefined,
         ]) {
+          mocks.renderWorker.listLiveSessions.mockResolvedValue([
+            liveSession({ destination: MediaOperationDestination.Local }, capabilities),
+          ]);
           mocks.renderWorker.getSessionCapabilities.mockResolvedValue(capabilities);
           const { studio } = await sut.getCapabilities();
           expect(studio.render[0].candidates).toEqual([expect.objectContaining({ outputFormats: [] })]);
         }
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([
+          liveSession({ destination: MediaOperationDestination.Local }),
+        ]);
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue(undefined);
+        expect((await sut.getCapabilities()).studio.render).toEqual([]);
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['hevc_nvenc'], formats: ['mp4'] });
+        expect((await sut.getCapabilities()).studio.render).toEqual([]);
       });
 
       it('uses the same exact writer/container proof as API admission for every output family', async () => {
@@ -1125,6 +1154,9 @@ describe(MlDestinationService.name, () => {
           ['libaom-av1', 'webm', 'webm-av1'],
           ['prores_ks', 'mov', 'prores-422-hq'],
         ]) {
+          mocks.renderWorker.listLiveSessions.mockResolvedValue([
+            liveSession({ destination: MediaOperationDestination.Local }, { codecs: [codec], formats: [container] }),
+          ]);
           mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: [codec], formats: [container] });
           const { studio } = await sut.getCapabilities();
           expect(studio.render[0].candidates?.[0].outputFormats).toEqual([outputFormat]);
@@ -1133,7 +1165,10 @@ describe(MlDestinationService.name, () => {
 
       it('publishes export candidates only for live, unrevoked, fresh StudioExport scopes', async () => {
         mocks.renderWorker.listLiveSessions.mockResolvedValue([
-          liveSession({ destination: MediaOperationDestination.Local }, { id: 'live' }),
+          liveSession(
+            { destination: MediaOperationDestination.Local },
+            { id: 'live', codecs: ['HEVC_NVENC'], formats: ['MP4'] },
+          ),
           liveSession(
             { destination: MediaOperationDestination.Local },
             { id: 'expired', expiresAt: new Date(Date.now() - 1000) },
@@ -1155,17 +1190,47 @@ describe(MlDestinationService.name, () => {
         mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['HEVC_NVENC'], formats: ['MP4'] });
         const { studio } = await sut.getCapabilities();
         expect(studio.render[0].candidates).toEqual([expect.objectContaining({ outputFormats: ['mp4-hevc-main10'] })]);
-        expect(mocks.renderWorker.getSessionCapabilities.mock.calls).toEqual([['live']]);
+        expect(mocks.renderWorker.getSessionCapabilities.mock.calls.map(([id]) => id)).toEqual([
+          'live',
+          'expired',
+          'revoked',
+          'worker-revoked',
+          'stale',
+          'other-scope',
+        ]);
+      });
+
+      it.each(['legacy', 'policy', 'expired', 'caps', 'budget'])('does not advertise %s evidence', async (mode) => {
+        const value = liveSession();
+        if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
+        if (mode === 'policy') value.worker.gpuWorkingBudgetApproval = null;
+        if (mode === 'expired')
+          value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+        if (mode === 'budget') value.session.gpuMemoryBytes = null;
+        if (mode === 'caps')
+          mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([value]);
+        const result = await sut.getCapabilities();
+        expect(result.studio).toMatchObject({ gpuWorker: false, renderWorker: false, render: [] });
+      });
+
+      it('never offers Studio export candidates after the current worker loses that scope', async () => {
+        const value = liveSession(
+          { kinds: [MediaOperationKind.StudioPreview] },
+          { scopes: [MediaOperationKind.StudioExport, MediaOperationKind.StudioPreview] },
+        );
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([value]);
+        expect((await sut.getCapabilities()).studio.render[0].candidates).toEqual([]);
       });
 
       it('reports a GPU render worker while a qualified session is admitted', async () => {
         await expect(studioOf(liveSession())).resolves.toEqual({ gpuWorker: true, renderWorker: true });
       });
 
-      it('accepts a worker that is not pinned to an engine digest', async () => {
+      it('refuses a worker that is not pinned to an engine digest', async () => {
         await expect(studioOf(liveSession({ engineDigest: null }))).resolves.toEqual({
-          gpuWorker: true,
-          renderWorker: true,
+          gpuWorker: false,
+          renderWorker: false,
         });
       });
 
