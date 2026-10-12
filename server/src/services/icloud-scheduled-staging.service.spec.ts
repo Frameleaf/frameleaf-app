@@ -4,6 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
+import {
+  ValidationInputEnvelope,
+  ValidationInputPayload,
+  ValidationInputState,
+  validationInputScope,
+  validationInputsScope,
+} from 'src/utils/icloud-private-copy.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 
 vi.mock('node:fs/promises', { spy: true });
 
@@ -412,4 +420,168 @@ describe('validation input accounting baseline', () => {
       await rm(f.directory, { recursive: true, force: true });
     }
   });
+});
+
+const ownerId = randomUUID();
+const resourceId = randomUUID();
+const connectionId = randomUUID();
+const auditRequestId = randomUUID();
+const operationId = randomUUID();
+const seals = new Map<string, { scope: string; payload: string }>();
+const seal = (scope: string, payload: unknown) => {
+  const token = randomUUID();
+  seals.set(token, { scope, payload: canonicalJson(payload) });
+  return token;
+};
+function inputEnvelope(
+  state: ValidationInputState,
+  overrides: Partial<ValidationInputPayload> = {},
+): ValidationInputEnvelope {
+  const pathNonce = randomUUID();
+  const identity = { dev: 1, ino: 2, uid: 501, size: 10 };
+  const stagingDirectory = `/private/staging/${resourceId}`;
+  const payload: ValidationInputPayload = {
+    version: 1,
+    purpose: 'scheduled-weekly-validation-input',
+    ownerId,
+    resourceId,
+    connectionId,
+    auditRequestId,
+    operationId,
+    operationClaimToken: randomUUID(),
+    resourceLeaseToken: randomUUID(),
+    itemClaimId: randomUUID(),
+    sourceAssetId: 'canonical-item',
+    sequence: '1',
+    pathNonce,
+    stage: 'source',
+    validationPath: `${stagingDirectory}/complete`,
+    sourceIdentity: identity,
+    copyGeneration: null,
+    stagingDirectory,
+    directoryPath: `${stagingDirectory}/.validation-${pathNonce}`,
+    inputPath: `${stagingDirectory}/.validation-${pathNonce}/input`,
+    directoryIdentity: identity,
+    inputIdentity: identity,
+    reservedInputBytes: 10,
+    state,
+    pending: [],
+    fresh: {
+      payload: {
+        version: 1,
+        basis: 'audit-fresh-download',
+        binding: {
+          ownerId,
+          resourceId,
+          connectionId,
+          auditRequestId,
+          operationId,
+          sourceAssetId: 'canonical-item',
+          cohortId: randomUUID(),
+          memberOrdinal: '0',
+          batchOrdinal: 0,
+          grantId: randomUUID(),
+          grantGeneration: 1,
+          configFingerprint: 'config',
+          privacyFingerprint: 'privacy',
+          sourceResourceId: randomUUID(),
+          identityId: randomUUID(),
+          libraryKey: 'library',
+          library: { area: 'private', zoneID: { zoneName: 'PrimarySync' } },
+          sourceRevision: 'source',
+          masterRevision: 'master',
+          expectedSha256: 'a'.repeat(64),
+          originalAssetId: randomUUID(),
+          originalUpdateId: randomUUID(),
+          originalPath: '/private/original',
+          physicalId: randomUUID(),
+          recordId: 'record',
+          resourceKey: 'key',
+          role: 'original',
+          fingerprint: 'fingerprint',
+          sizeInBytes: 10,
+        },
+        path: `${stagingDirectory}/complete`,
+        identity: { ...identity, mtimeMs: 1, ctimeMs: 1 },
+        sha1: 'b'.repeat(40),
+        sha256: 'a'.repeat(64),
+        appleFingerprint: 'fingerprint',
+      },
+      seal: 'fresh-seal',
+    },
+    ...overrides,
+  };
+  const envelope = {
+    version: 1 as const,
+    purpose: 'scheduled-weekly-validation-inputs' as const,
+    ownerId,
+    resourceId,
+    highWater: payload.sequence,
+    current: { payload, seal: seal(validationInputScope(payload), payload) },
+    previousDisposed: null,
+  };
+  return { payload: envelope, seal: seal(validationInputsScope(envelope), envelope) };
+}
+
+describe('validation input restart discovery', () => {
+  it.each(['unproven', 'pending-settlement'] as const)(
+    'retains source-only %s work independently of recovery receipts',
+    async (reason) => {
+      const envelope =
+        reason === 'unproven' ? { unknown: true } : inputEnvelope('running', { pending: [randomUUID()] });
+      const resource = { id: resourceId, ownerId, verification: { auditValidationInputs: envelope } };
+      const repository = {
+        retainedValidationInputs: vi.fn().mockResolvedValue([resource]),
+        retainValidationInput: vi.fn(),
+        retiredPrivateCopies: vi.fn().mockResolvedValue([]),
+        disposeValidationInput: vi.fn(),
+      };
+      const sut = new ICloudScheduledStagingService(
+        repository as never,
+        {} as never,
+        { enabled: () => false } as never,
+        {} as never,
+      );
+      await sut.housekeeping();
+      expect(repository.retainValidationInput).toHaveBeenCalledWith(resource, reason);
+      expect(repository.disposeValidationInput).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['match', 'mismatch', 'failed', 'cancelled'])(
+    'discovers settled source-only %s input after restart with provider disabled',
+    async (result) => {
+      const envelope = inputEnvelope('settled');
+      const resource = {
+        id: resourceId,
+        ownerId,
+        status: result === 'match' || result === 'mismatch' ? 'committed' : 'failed',
+        verification: { auditValidationInputs: envelope },
+      };
+      const repository = {
+        retainedValidationInputs: vi.fn().mockResolvedValue([resource]),
+        validationInputs: vi.fn().mockResolvedValue(envelope),
+        retainValidationInput: vi.fn(),
+        retiredPrivateCopies: vi.fn().mockResolvedValue([]),
+        disposeValidationInput: vi.fn().mockResolvedValue(true),
+      };
+      const sut = new ICloudScheduledStagingService(
+        repository as never,
+        {} as never,
+        { enabled: () => false } as never,
+        {} as never,
+      );
+      await sut.housekeeping();
+      expect(repository.disposeValidationInput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId,
+          authority: expect.objectContaining({
+            operationClaimToken: envelope.payload.current.payload.operationClaimToken,
+          }),
+        }),
+        envelope,
+      );
+      expect(repository.retainValidationInput).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -50,8 +50,8 @@ describe(ICloudAuditRepository.name, () => {
     db = await getKyselyDB();
     await expectCanonicalTables(db, ['icloud_identity_audit']);
 
-    sut = new ICloudAuditRepository(db);
-    sync = new ICloudSyncRepository(db);
+    sut = new ICloudAuditRepository(db, new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()));
+    sync = new ICloudSyncRepository(db, new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()));
     identities = new ICloudIdentityRepository(db);
     operations = new MediaOperationRepository(db);
   });
@@ -344,7 +344,12 @@ describe(ICloudAuditRepository.name, () => {
           );
           expect(busy).toMatchObject({ id: fixture.claim.id, holder: oldHolder });
         } else
-          expect(await new ICloudAuditRepository(connection).allocate(authority, fixture.auth.user.id)).toBeUndefined();
+          expect(
+            await new ICloudAuditRepository(
+              connection,
+              new ICloudScheduledStagingRepository(connection, new ICloudTransportRepository()),
+            ).allocate(authority, fixture.auth.user.id),
+          ).toBeUndefined();
       });
       try {
         let blocked = false;
@@ -1140,7 +1145,10 @@ describe(ICloudAuditRepository.name, () => {
     await sut.housekeeping(outbox);
     expect(await sync.resource(fixture.resource.id)).toMatchObject({ status: 'committed', assetId: committed.assetId });
     await sql`UPDATE public.icloud_resource SET "nextAttemptAt"=NULL WHERE id=${fixture.resource.id}::uuid`.execute(db);
-    await new ICloudAuditRepository(db).housekeeping(outbox);
+    await new ICloudAuditRepository(
+      db,
+      new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+    ).housekeeping(outbox);
     expect(outbox).toHaveBeenCalledTimes(2);
     expect(await sync.resource(fixture.resource.id)).toMatchObject({
       status: 'finalized',
@@ -1161,7 +1169,10 @@ describe(ICloudAuditRepository.name, () => {
     await db.deleteFrom('session').where('id', '=', fixture.auth.session!.id).execute();
     await sync.update(fixture.connection.id, fixture.auth.user.id, { state: 'disconnected', encryptedSession: null });
     await sql`UPDATE public.icloud_resource SET "nextAttemptAt"=NULL WHERE id=${fixture.resource.id}::uuid`.execute(db);
-    await new ICloudAuditRepository(db).housekeeping(cleanup);
+    await new ICloudAuditRepository(
+      db,
+      new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+    ).housekeeping(cleanup);
     expect(cleanup).toHaveBeenCalledTimes(2);
     expect(await sync.resource(fixture.resource.id)).toMatchObject({ status: 'finalized', reservedBytes: 0 });
     expect((await identities.identities(fixture.auth.user.id, [ASSET]))[0]).toEqual(before);

@@ -103,7 +103,10 @@ describe('scheduled validation input durable accounting baseline', () => {
       checksum: sha256,
       checksumAlgorithm: ChecksumAlgorithm.sha256File,
     });
-    const sync = new ICloudSyncRepository(db);
+    const sync = new ICloudSyncRepository(
+      db,
+      new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+    );
     const identities = new ICloudIdentityRepository(db);
     const operations = new MediaOperationRepository(db);
     const weekly = new ICloudWeeklyRepository(db);

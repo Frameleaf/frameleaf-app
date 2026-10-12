@@ -1000,6 +1000,27 @@ export class ICloudScheduledStagingRepository {
     }
   }
 
+  async retainedValidationInputs(): Promise<ICloudResource[]> {
+    return (
+      await sql<ICloudResource>`SELECT * FROM public.icloud_resource
+      WHERE verification ? 'auditValidationInputs' AND status NOT IN ('finalized','removed')
+        AND ("nextAttemptAt" IS NULL OR "nextAttemptAt"<=clock_timestamp())
+      ORDER BY "updatedAt",id LIMIT 10`.execute(this.db)
+    ).rows;
+  }
+
+  async retainValidationInput(
+    resource: ICloudResource,
+    reason: 'unproven' | 'pending-settlement' | 'fence-or-unlink',
+  ): Promise<void> {
+    await sql`UPDATE public.icloud_resource SET "lastError"=${`scheduled_validation_input_retained_${reason}`},
+      "nextAttemptAt"=clock_timestamp()+interval '5 minutes',"updatedAt"=clock_timestamp()
+      WHERE id=${resource.id}::uuid AND "ownerId"=${resource.ownerId}::uuid
+        AND status NOT IN ('finalized','removed') AND verification=${JSON.stringify(resource.verification)}::text::jsonb`.execute(
+      this.db,
+    );
+  }
+
   async retiredPrivateCopies() {
     return (
       await sql<ICloudResource>`SELECT r.* FROM public.icloud_resource r
@@ -1457,6 +1478,7 @@ export class ICloudScheduledStagingRepository {
         return false;
       }
       await lockFilePath(db, stagingPath);
+      if (!(await this.authenticateDisposedValidationInputs(db, resource))) return false;
       if (await scheduledPrivatePathReferences(db, stagingPath, resource.id, this.transport)) {
         return false;
       }
@@ -1492,6 +1514,11 @@ export class ICloudScheduledStagingRepository {
 
   releaseRefusedBytes(input: ScheduledStagingInput) {
     return this.db.transaction().execute(async (db) => {
+      const resource = (
+        await sql<ICloudResource>`SELECT * FROM public.icloud_resource
+        WHERE id=${input.resource.id}::uuid AND "ownerId"=${input.ownerId}::uuid FOR UPDATE`.execute(db)
+      ).rows[0];
+      if (!resource || !(await this.authenticateDisposedValidationInputs(db, resource))) return;
       await sql`UPDATE public.icloud_resource r SET status='removed',"reservedBytes"=0,"updatedAt"=clock_timestamp()
         WHERE r.id=${input.resource.id}::uuid AND r."ownerId"=${input.ownerId}::uuid AND r."auditRequestId"=${input.authority.auditRequestId}::uuid
           AND r.status='failed' AND r."assetId" IS NULL AND r."promotedPath" IS NULL AND r."pendingJobs"='[]'::jsonb
@@ -1623,7 +1650,7 @@ export class ICloudScheduledStagingRepository {
         return false;
       }
       const { rows } = await sql`UPDATE public.icloud_resource SET
-        verification=jsonb_build_object('auditFreshDownload',${JSON.stringify(receipt)}::text::jsonb),
+        verification=coalesce(verification,'{}'::jsonb)||jsonb_build_object('auditFreshDownload',${JSON.stringify(receipt)}::text::jsonb),
         sha1=${Buffer.from(payload.sha1, 'hex')},sha256=${Buffer.from(payload.sha256, 'hex')},"updatedAt"=clock_timestamp()
         WHERE id=${resource.id}::uuid AND ${scheduledAuditFinalFence(input.authority, guarded, input.resource)}
         RETURNING id`.execute(db);
