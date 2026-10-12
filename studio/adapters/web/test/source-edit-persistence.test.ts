@@ -1,10 +1,10 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { Project } from '@/types/project';
+import type { Project, ProjectTimeline } from '@/types/project';
 import type { MediaMetadata } from '@/types/storage';
 import type { TimelineItem } from '@/types/timeline';
 import { createProject, getProject } from '@/infrastructure/storage';
 import { setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root';
-import { loadTimeline, saveTimeline } from '@/features/timeline/stores/timeline-persistence';
+import { buildTimelineFromStores, loadTimeline, saveTimeline } from '@/features/timeline/stores/timeline-persistence';
 import { VirtualWorkspace } from '../src/virtual-workspace';
 import { applyCanonicalCommands, canonicalJson } from '../src/canonical-commands';
 import {
@@ -21,6 +21,17 @@ import {
   performInsertEdit,
   performOverwriteEdit,
 } from '@/features/timeline/stores/actions/source-edit-actions';
+
+import { useItemsStore } from '@/features/timeline/stores/items-store';
+import { useCompositionsStore, type SubComposition } from '@/features/timeline/stores/compositions-store';
+import { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store';
+import { useSequencesStore } from '@/features/timeline/stores/sequences-store';
+import { useSelectionStore } from '@/shared/state/selection';
+import { useMarkersStore } from '@/features/timeline/stores/markers-store';
+import { useTransitionsStore } from '@/features/timeline/stores/transitions-store';
+import { useKeyframesStore } from '@/features/timeline/stores/keyframes-store';
+import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store';
+import { useZoomStore, useSettledZoomStore } from '@/features/timeline/stores/zoom-store';
 
 import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store';
 vi.mock('@/features/timeline/deps/projects', () => ({
@@ -299,6 +310,220 @@ describe('FL94 source edits through host history and real engine persistence', (
       }
     },
   );
+
+  it.each([
+    { locked: false, failAfterAssertions: false },
+    { locked: true, failAfterAssertions: false },
+    { locked: false, failAfterAssertions: true },
+  ])(
+    'native marked insert preserves nested ownership/history/reload (audio locked: $locked, cleanup failure: $failAfterAssertions)',
+    async ({ locked, failAfterAssertions }) => {
+      const workspace = new VirtualWorkspace();
+      const original = {
+        markers: useMarkersStore.getState(), transitions: useTransitionsStore.getState(),
+        keyframes: useKeyframesStore.getState(), settings: useTimelineSettingsStore.getState(),
+        zoom: useZoomStore.getState(), settledZoom: useSettledZoomStore.getState(),
+      };
+      // Distinct preexisting state makes incomplete cleanup observable on success and failure.
+      useMarkersStore.setState({ markers: [{ id: 'prior-marker', frame: 7, color: '#123456' }], inPoint: 3, outPoint: 17 });
+      useTransitionsStore.getState().setTransitions([{
+        id: 'prior-transition', type: 'crossfade', presentation: 'fade', timing: 'linear',
+        leftClipId: 'prior-left', rightClipId: 'prior-right', trackId: 'prior-video', durationInFrames: 9,
+      }]);
+      useKeyframesStore.getState().setKeyframes([{ itemId: 'prior-left', properties: [] }]);
+      useTimelineSettingsStore.setState({ fps: 24, scrollPosition: 137, snapEnabled: false, isDirty: true, isTimelineLoading: true });
+      useZoomStore.getState().setZoomLevelSynchronized(2.5);
+      const deliberateFailure = new Error('intentional nested fixture cleanup control');
+      const previous = {
+        editor: useEditorStore.getState(), source: useSourcePlayerStore.getState(),
+        playback: usePlaybackStore.getState(), selection: useSelectionStore.getState(),
+        items: useItemsStore.getState(), compositions: useCompositionsStore.getState(),
+        navigation: useCompositionNavigationStore.getState(), sequences: useSequencesStore.getState(),
+        history: useTimelineCommandStore.getState(), media: useMediaLibraryStore.getState(),
+        markers: useMarkersStore.getState(), transitions: useTransitionsStore.getState(),
+        keyframes: useKeyframesStore.getState(), settings: useTimelineSettingsStore.getState(),
+        zoom: useZoomStore.getState(), settledZoom: useSettledZoomStore.getState(),
+      };
+      const runFixture = async () => {
+        setWorkspaceRoot(workspace.handle());
+        try {
+          const initial = fresh();
+          initial.id = `nested-source-insert-${locked}`;
+          const tracks = fresh().timeline!.tracks;
+          const sentinel = (id: string, trackId: string) => ({
+            id, trackId, type: 'text', from: 0, durationInFrames: 30,
+            text: id, label: id, color: '#ffffff',
+          }) as TimelineItem;
+          const wrapper = (id: string, compositionId: string, trackId: string) => ({
+            id, compositionId, trackId, type: 'composition', from: 60,
+            durationInFrames: 240, sourceStart: 0, sourceEnd: 240, sourceFps: 30,
+            compositionWidth: 1920, compositionHeight: 1080, label: id,
+          }) as TimelineItem;
+          const inner = {
+            id: 'inner', name: 'Inner', editorKind: 'sequence', fps: 30,
+            width: 1920, height: 1080, durationInFrames: 240,
+            tracks: tracks.map((track) => ({
+              ...track, id: `inner-${track.id}`, solo: false,
+              locked: track.kind === 'audio' && locked,
+              ...(track.kind === 'audio' ? { syncLock: false } : {}),
+            })),
+            items: ['video', 'audio'].map((kind) => ({
+              id: `original-${kind}`, trackId: `inner-${kind}`, type: kind,
+              from: 0, durationInFrames: 240, sourceStart: 0, sourceEnd: 240,
+              sourceDuration: 240, sourceFps: 30, mediaId: 'linked-media',
+              src: '', label: 'linked.mp4', linkedGroupId: 'original-pair',
+            })),
+            transitions: [], keyframes: [],
+            markers: [{ id: 'inner-marker', frame: 210, color: '#ffffff' }],
+          } as SubComposition;
+          initial.timeline!.items = [sentinel('main-sentinel', 'video'), wrapper('outer-wrapper', 'seq-b', 'video')];
+          initial.timeline!.markers = [{ id: 'main-marker', frame: 20, color: '#ffffff' }];
+          initial.timeline!.topLevelSequenceIds = ['seq-b'];
+          initial.timeline!.compositions = [
+            {
+              ...structuredClone(inner), id: 'seq-b', name: 'Sequence B', durationInFrames: 300,
+              tracks: structuredClone(tracks),
+              items: [sentinel('parent-sentinel', 'video'), wrapper('inner-wrapper', 'inner', 'video')],
+              markers: [{ id: 'parent-marker', frame: 30, color: '#ffffff' }],
+            },
+            inner,
+            {
+              ...structuredClone(inner), id: 'sibling', name: 'Sibling', durationInFrames: 30,
+              tracks: structuredClone(tracks), items: [sentinel('sibling-sentinel', 'video')],
+            },
+          ];
+          await createProject(initial);
+          await loadTimeline(initial.id);
+          // Hydration uses throttled visual zoom; settle it before recording graph oracles.
+          useZoomStore.getState().setZoomLevelSynchronized(initial.timeline!.zoomLevel ?? 1);
+          useTimelineCommandStore.getState().clearHistory();
+          useCompositionNavigationStore.getState().switchToSequence('seq-b');
+          useCompositionNavigationStore.getState().enterComposition('inner', 'Inner', 'inner-wrapper');
+          expect(useCompositionNavigationStore.getState().breadcrumbs.map(({ compositionId }) => compositionId))
+            .toEqual(['seq-b', 'inner']);
+          expect(useTimelineCommandStore.getState().activeContextKey).toBe('inner');
+          useEditorStore.setState({
+            linkedSelectionEnabled: true, sourcePreviewMediaId: 'linked-media',
+            sourcePatchVideoEnabled: true, sourcePatchAudioEnabled: true,
+            sourcePatchVideoTrackId: 'inner-video', sourcePatchAudioTrackId: 'inner-audio',
+          });
+          useSourcePlayerStore.setState({ inPoint: 150, outPoint: 180 });
+          usePlaybackStore.setState({ currentFrame: 60 });
+          useSelectionStore.getState().selectItems(['original-video']);
+          const selectionBefore = useSelectionStore.getState();
+          const before = structuredClone(buildTimelineFromStores());
+          const historyBefore = useTimelineCommandStore.getState();
+          const parkedBefore = structuredClone(historyBefore.stacksByContext);
+          await performInsertEdit();
+          const edited = structuredClone(buildTimelineFromStores());
+          expect(useTimelineCommandStore.getState().activeContextKey).toBe('inner');
+          expect(useTimelineCommandStore.getState().stacksByContext).toEqual(parkedBefore);
+          if (locked) {
+            // A resolver fallback must not publish a track or partially split the original linked pair.
+            expect(edited).toEqual(before);
+            expect(useSelectionStore.getState()).toEqual(selectionBefore);
+            expect(useTimelineCommandStore.getState().undoStack).toEqual(historyBefore.undoStack);
+            expect(useTimelineCommandStore.getState().redoStack).toEqual(historyBefore.redoStack);
+          } else {
+            const child = edited.compositions!.find(({ id }) => id === 'inner')!;
+            const paired = ['inner-video', 'inner-audio'].map((trackId) => child.items
+              .filter((item) => item.trackId === trackId).sort((a, b) => a.from - b.from));
+            // Hand-derived oracle, independent of the production partition/insert calculations.
+            for (const items of paired) {
+              expect(items.map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd]))
+                .toEqual([[0, 60, 0, 60], [60, 30, 150, 180], [90, 180, 60, 240]]);
+              expect(items.every((item) => item.mediaId === 'linked-media' && item.sourceFps === 30 && item.sourceDuration === 240)).toBe(true);
+            }
+            expect(child.items).toHaveLength(6);
+            expect(paired[0]!.map((item) => item.linkedGroupId)).toEqual(paired[1]!.map((item) => item.linkedGroupId));
+            expect(new Set(paired[0]!.map((item) => item.linkedGroupId)).size).toBe(3);
+            expect(paired[0]!.every((item) => Boolean(item.linkedGroupId))).toBe(true);
+            expect(child.durationInFrames).toBe(270);
+            const outer = (timeline: ProjectTimeline) => ({
+              ...timeline, compositions: timeline.compositions!.filter(({ id }) => id !== 'inner'),
+            });
+            expect(outer(edited)).toEqual(outer(before));
+            const childBefore = before.compositions!.find(({ id }) => id === 'inner')!;
+            expect({ ...child, items: [], durationInFrames: 0 }).toEqual({ ...childBefore, items: [], durationInFrames: 0 });
+            expect(useTimelineCommandStore.getState().undoStack).toHaveLength(historyBefore.undoStack.length + 1);
+            useTimelineCommandStore.getState().undo();
+            expect(buildTimelineFromStores()).toEqual(before);
+            useTimelineCommandStore.getState().redo();
+            expect(buildTimelineFromStores()).toEqual(edited);
+          }
+          // Save the live inner context, then discard every loaded domain store before reopening.
+          await saveTimeline(initial.id);
+          expect(useCompositionNavigationStore.getState().activeCompositionId).toBe('inner');
+          const saved = (await getProject(initial.id))!;
+          const documentGraph = (timeline: ProjectTimeline) => JSON.parse(JSON.stringify({
+            ...timeline,
+            tracks: timeline.tracks.map(({ items: _items, ...metadata }) => metadata),
+            compositions: timeline.compositions?.map((composition) => ({
+              ...composition, tracks: composition.tracks.map(({ items: _items, ...metadata }) => metadata),
+            })),
+          }));
+          expect(documentGraph(saved.timeline!)).toEqual(documentGraph(edited));
+          const reopenedId = `${initial.id}-reopened`;
+          workspace.putFile(['projects', reopenedId, 'project.json'], JSON.stringify({ ...saved, id: reopenedId }));
+          useCompositionNavigationStore.getState().resetToRoot();
+          useItemsStore.getState().setItems([]);
+          useItemsStore.getState().setTracks([]);
+          useCompositionsStore.getState().setCompositions([]);
+          await loadTimeline(reopenedId);
+          expect(documentGraph(buildTimelineFromStores())).toEqual(documentGraph(edited));
+          useCompositionNavigationStore.getState().switchToSequence('seq-b');
+          useCompositionNavigationStore.getState().enterComposition('inner', 'Inner', 'inner-wrapper');
+          expect(useCompositionNavigationStore.getState().breadcrumbs.map(({ compositionId }) => compositionId)).toEqual(['seq-b', 'inner']);
+          expect(useItemsStore.getState().items).toEqual(edited.compositions!.find(({ id }) => id === 'inner')!.items);
+          expect(documentGraph(buildTimelineFromStores())).toEqual(documentGraph(edited));
+          if (failAfterAssertions) throw deliberateFailure;
+        } finally {
+          useCompositionNavigationStore.getState().resetToRoot();
+          useItemsStore.setState(previous.items);
+          useCompositionsStore.setState(previous.compositions);
+          useSequencesStore.setState(previous.sequences);
+          useCompositionNavigationStore.setState(previous.navigation);
+          useTimelineCommandStore.setState(previous.history);
+          useEditorStore.setState(previous.editor);
+          useSourcePlayerStore.setState(previous.source);
+          usePlaybackStore.setState(previous.playback);
+          useSelectionStore.setState(previous.selection);
+          useMarkersStore.setState(previous.markers);
+          useTransitionsStore.setState(previous.transitions);
+          useKeyframesStore.setState(previous.keyframes);
+          useTimelineSettingsStore.setState(previous.settings);
+          // Cancel hydration/navigation's delayed zoom work before restoring both zoom channels.
+          useZoomStore.getState().setZoomLevelSynchronized(previous.zoom.level);
+          useZoomStore.setState(previous.zoom);
+          useSettledZoomStore.setState(previous.settledZoom);
+          useMediaLibraryStore.setState(previous.media);
+          setWorkspaceRoot(null);
+          workspace.dispose();
+        }
+      };
+      try {
+        if (failAfterAssertions) await expect(runFixture()).rejects.toBe(deliberateFailure);
+        else await runFixture();
+        expect(useMarkersStore.getState()).toEqual(previous.markers);
+        expect(useTransitionsStore.getState()).toEqual(previous.transitions);
+        expect(useKeyframesStore.getState()).toEqual(previous.keyframes);
+        expect(useTimelineSettingsStore.getState()).toEqual(previous.settings);
+        expect(useZoomStore.getState()).toEqual(previous.zoom);
+        expect(useSettledZoomStore.getState()).toEqual(previous.settledZoom);
+        expect(useMediaLibraryStore.getState()).toEqual(previous.media);
+      } finally {
+        // The control itself must not leak its sentinel state, even when cleanup is broken.
+        useMarkersStore.setState(original.markers);
+        useTransitionsStore.setState(original.transitions);
+        useKeyframesStore.setState(original.keyframes);
+        useTimelineSettingsStore.setState(original.settings);
+        useZoomStore.getState().setZoomLevelSynchronized(original.zoom.level);
+        useZoomStore.setState(original.zoom);
+        useSettledZoomStore.setState(original.settledZoom);
+      }
+    },
+  );
+
 });
 
 describe('FL103 track curve host history and native persistence',()=>{
