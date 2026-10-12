@@ -639,7 +639,12 @@
       "path": "patches/0133-anime4k-retention-cancellation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "f9b862cf9c139e9758c29e46b50a4cb51f27eea85f6d109047bc2f4d8d846a67"
+    },
+    {
+      "path": "patches/0134-project-colour-policy-disclosure.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3a7c337bc1de01ff4c9af6f2255d661ebcad0403cca75df917830fe941dbeb79"
     }
   ],
-  "sourceSha256": "1a5fb80a4729b569646bc258c4815fbcabd79d0bc13f0910ad0cdc43ce29ed7e"
+  "sourceSha256": "2be3c9aace8167be04a94878541a2fb5cb874d69274e9b05465596801a6d95e9"
 }
