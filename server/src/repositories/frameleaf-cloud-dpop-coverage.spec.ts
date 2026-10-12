@@ -50,6 +50,8 @@ const RAW_FETCH = {
   'repositories/email.repository.ts': 'Gmail API and Microsoft Graph send',
   // local and self-hosted ML workers
   'repositories/machine-learning.repository.ts': 'ML workers',
+  // FL-355: fixed public icon pack, anonymous whole-pack download with a pinned checksum; no instance token.
+  'repositories/map.repository.ts': 'public landmark icon pack',
   // generic OIDC profile pictures
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)
@@ -95,6 +97,12 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
   });
 
   describe('source', () => {
+    it('keeps the landmark pack request anonymous and bounded by its timeout', () => {
+      const source = readFileSync(join(SRC, 'repositories/map.repository.ts'), 'utf8');
+      expect(source.match(/\bfetch\(/g)).toHaveLength(1);
+      expect(source).toContain('fetch(pack.url, { signal: AbortSignal.timeout(LANDMARK_ICON_DOWNLOAD_TIMEOUT_MS) })');
+    });
+
     it('has no raw fetch outside the reviewed list', () => {
       expect(filesMatching(/\bfetch\(/)).toEqual(Object.keys(RAW_FETCH).toSorted());
     });

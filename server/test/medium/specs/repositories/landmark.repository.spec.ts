@@ -1,8 +1,12 @@
 import { Kysely } from 'kysely';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { type Server, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import type { AddressInfo } from 'node:net';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
@@ -207,6 +211,71 @@ describe('landmark matching', () => {
     const { sut: bare } = setup('/nonexistent/landmarks.ndjson.gz');
     expect(bare.getLandmarkIcons().size).toBe(0);
     expect(bare.getLandmarkIconPath('Q243')).toBeUndefined();
+  });
+
+  // FL-355: the pack a server downloads for itself, whole and checked, into a hidden folder beside the thumbnails
+  describe('the downloaded icon pack', () => {
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+    const line = (id: string) =>
+      JSON.stringify({ id, background: '#102030', tile: id === 'Q243', png: png.toString('base64') });
+    const sha256 = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+    const good = gzipSync([line('Q243'), line('Q181185')].join('\n') + '\n');
+    let served = good;
+    let requests = 0;
+    let server: Server;
+    let url: string;
+    let media: string;
+
+    beforeAll(async () => {
+      server = createServer((request, response) => {
+        requests++;
+        response.end(served);
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/landmark-icons.ndjson.gz`;
+    });
+    afterAll(() => server.close());
+    beforeEach(() => {
+      media = mkdtempSync(join(tmpdir(), 'landmark-media-'));
+      StorageCore.setMediaLocation(media);
+      served = good;
+      requests = 0;
+    });
+    afterEach(() => StorageCore.reset());
+
+    it('is fetched once, unpacked, and read in place of a bundled pack', async () => {
+      const { sut } = setup('/nonexistent/landmarks.ndjson.gz');
+      const folder = join(media, 'thumbs', '.landmark-icons', sha256(good));
+
+      await expect(sut.installLandmarkIcons({ url, sha256: sha256(good) })).resolves.toBe(true);
+
+      expect(sut.getLandmarkIcons()).toEqual(
+        new Map([
+          ['Q243', { background: '#102030', tile: true }],
+          ['Q181185', { background: '#102030', tile: false }],
+        ]),
+      );
+      expect(sut.getLandmarkIconPath('Q243')).toBe(join(folder, 'Q243.png'));
+      expect(readFileSync(join(folder, 'Q181185.png'))).toEqual(png);
+      expect(readdirSync(join(media, 'thumbs'))).toEqual(['.landmark-icons']);
+
+      // the same pack again asks nothing of the network
+      await expect(sut.installLandmarkIcons({ url, sha256: sha256(good) })).resolves.toBe(false);
+      expect(requests).toBe(1);
+    });
+
+    it('keeps what it has when the file is not the one that was pinned, or names a file it should not', async () => {
+      const { sut } = setup('/nonexistent/landmarks.ndjson.gz');
+      await sut.installLandmarkIcons({ url, sha256: sha256(good) });
+
+      await expect(sut.installLandmarkIcons({ url, sha256: 'f'.repeat(64) })).rejects.toThrow('checksum');
+      served = gzipSync(line('../../escape') + '\n');
+      await expect(sut.installLandmarkIcons({ url, sha256: sha256(served) })).rejects.toThrow('malformed');
+
+      expect(sut.getLandmarkIcons().size).toBe(2);
+      expect(readdirSync(join(media, 'thumbs'))).toEqual(['.landmark-icons']);
+      expect(existsSync(join(media, 'escape.png'))).toBe(false);
+    });
   });
 
   it('lists the landmarks of story candidates, and the ones an owner is at often (FL-356)', async () => {
