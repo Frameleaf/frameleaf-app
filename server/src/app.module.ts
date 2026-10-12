@@ -157,7 +157,7 @@ export class MicroservicesModule extends BaseModule {}
 
 @Module({
   imports: [...commonImports],
-  providers: [...common, ...commandsAndQuestions, SchedulerRegistry],
+  providers: [...common, ...commandsAndQuestions, MaintenanceHealthRepository, SchedulerRegistry],
 })
 export class ImmichAdminModule implements OnModuleInit, OnModuleDestroy {
   constructor(
