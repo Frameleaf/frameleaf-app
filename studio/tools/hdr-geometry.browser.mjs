@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { probeBaseRaster, validateBaseRaster } from './geometry-raster-calibration.mjs';
 import { probeGeometryCoordinates, validateGeometryCalibration } from './geometry-device-calibration.mjs';
 import { geometryReference, HDR_GEOMETRY } from './geometry-reference.mjs';
-import { COMPOSITION_SOURCES, compositionInputSha, observeGeometryComposition, geometryCompositionReference } from './geometry-composition-reference.mjs';
+import { compositionSourcesFor, compositionInputSha, observeGeometryComposition, geometryCompositionReference } from './geometry-composition-reference.mjs';
 import { testedSource } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
 
@@ -18,8 +18,9 @@ const envelopes=JSON.parse(envelopeBytes);
 const quadText=await readFile(new URL('../engine/src/infrastructure/gpu-shared/fullscreen-quad.ts',import.meta.url),'utf8');
 const quad=quadText.slice(quadText.indexOf('`',quadText.indexOf('export const FULLSCREEN_QUAD_WGSL'))+1,quadText.lastIndexOf('`'));
 const quadSha256=createHash('sha256').update(quadText).digest('hex');
-const sourceHashes=Object.fromEntries(await Promise.all(Object.keys(COMPOSITION_SOURCES).map(async path=>[path,createHash('sha256').update(await readFile(new URL('../engine/'+path,import.meta.url))).digest('hex')])));
-assert.deepEqual(sourceHashes,COMPOSITION_SOURCES);
+const expectedSourceHashes=compositionSourcesFor(source.sourceSha256);
+const sourceHashes=Object.fromEntries(await Promise.all(Object.keys(expectedSourceHashes).map(async path=>[path,createHash('sha256').update(await readFile(new URL('../engine/'+path,import.meta.url))).digest('hex')])));
+assert.deepEqual(sourceHashes,expectedSourceHashes);
 const W = 8, H = 6;
 const input = Array.from({ length: W * H }, (_, i) => {
   const x = i % W, y = Math.floor(i / W), alpha = [0,.25,.5,1][(x+y)%4];
@@ -192,7 +193,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
     for(const [name,mutate]of [
       ['omitted-media',c=>c.audit.operations.splice(1,1)],['omitted-compositor',c=>c.audit.operations.splice(3,1)],
       ['stage-order',c=>c.audit.operations.reverse()],['swapped-source-output',c=>{const o=c.audit.operations[1];[o.input,o.output]=[o.output,o.input];}],
-      ['authored-params',c=>{c.entry.params={};}],['source-hash',c=>c.sourceHashes[Object.keys(COMPOSITION_SOURCES)[0]]='0'.repeat(64)],
+      ['authored-params',c=>{c.entry.params={};}],['source-hash',c=>c.sourceHashes[Object.keys(expectedSourceHashes)[0]]='0'.repeat(64)],
       ['raster-state',c=>c.audit.draws[0].pipeline.alphaToCoverageEnabled=true],['input-checksum',c=>c.inputSha256='0'.repeat(64)],
     ]) { const forged=structuredClone(contract);mutate(forged);assert.throws(()=>geometryCompositionReference(input,W,H,cases[index],report.rasterCapture,report.calibration[index],forged));report.compositionNegativeControls.push({index,control:name,refused:true}); }
 

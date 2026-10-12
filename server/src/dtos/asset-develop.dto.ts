@@ -469,8 +469,9 @@ export const KnownAssetDevelopRecipeFields = z.object({
     .default(0)
     .describe('Exposure in EV; each whole stop doubles the light'),
   contrast: bipolar('Contrast around middle grey'),
+  // FL-233
   brilliance: bipolar(
-    'FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol',
+    'Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol',
   ),
   highlights: bipolar('Highlight recovery (negative) or lift (positive)'),
   shadows: bipolar('Shadow lift (positive) or deepening (negative)'),
@@ -521,6 +522,7 @@ export const KnownAssetDevelopRecipeFields = z.object({
       error: 'Mask identifiers must be unique',
     })
     .describe('Selective adjustments, applied in order after the global develop'),
+  // FL-233
   cleanup: z
     .array(AssetDevelopCleanupSchema)
     .max(ASSET_DEVELOP_MAX_CLEANUP)
@@ -528,7 +530,7 @@ export const KnownAssetDevelopRecipeFields = z.object({
     .refine((ops) => new Set(ops.map((op) => op.id)).size === ops.length, {
       error: 'Clean Up identifiers must be unique',
     })
-    .describe('FL-233: Clean Up operations, applied in order to the original before every other step'),
+    .describe('Clean Up operations, applied in order to the original before every other step'),
 });
 
 export const KnownAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.refine(

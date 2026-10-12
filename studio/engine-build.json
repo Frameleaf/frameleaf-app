@@ -631,6 +631,11 @@
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
     },
     {
+      "path": "patches/0131-canonical-dotlottie-owned-source.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "05a68434165bed0f943c5ed61515ccb1ac87d3dc28e67f28c13f54fd01da56c3"
+    },
+    {
       "path": "patches/0132-anime4k-retained-provenance.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0beba4ba12bdab8010432c1245f82699c2c71621a1e513be32a7ed0faeca45dd"
@@ -639,7 +644,32 @@
       "path": "patches/0133-anime4k-retention-cancellation.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "f9b862cf9c139e9758c29e46b50a4cb51f27eea85f6d109047bc2f4d8d846a67"
+    },
+    {
+      "path": "patches/0134-shared-edit-effective-lock-refusal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "73c40127074800a2fa47e93440e03254689bb3e78a27275afa6e771d0ce3758d"
+    },
+    {
+      "path": "patches/0135-shared-speed-gap-effective-lock-refusal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1f577b1f3ec660b17b1aeab0c5eea3954b70f1eea667f53626b0b88ae1fccc10"
+    },
+    {
+      "path": "patches/0136-project-colour-policy-disclosure.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3a7c337bc1de01ff4c9af6f2255d661ebcad0403cca75df917830fe941dbeb79"
+    },
+    {
+      "path": "patches/0137-scoped-media-static-contracts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c8bb4ab9035dd1220f4001a4516b9f6dbc43efb0300a91e6f482f6070eac99b5"
+    },
+    {
+      "path": "patches/0138-number-input-text-commit-lifecycle.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
     }
   ],
-  "sourceSha256": "1a5fb80a4729b569646bc258c4815fbcabd79d0bc13f0910ad0cdc43ce29ed7e"
+  "sourceSha256": "1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80"
 }

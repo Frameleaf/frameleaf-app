@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { cp, mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,29 @@ import { admitAdaptedSource, inventory, licenses, sourceRecoveryContext, verifyS
 import { assertPinnedSource } from '../../scripts/frameleaf-studio-contracts.mjs';
 import { writeResourcePolicy } from './resource-policy.mjs';
 import { approvalRowDigest, ownerApproval } from '../../scripts/frameleaf-studio-rights.mjs';
+
+test('owned dotLottie new files apply under the normal producer directory and missing Git metadata fails causally', async () => {
+  const patch = await readFile(new URL('../patches/0131-canonical-dotlottie-owned-source.patch', import.meta.url), 'utf8');
+  const additions = patch.split(/(?=^diff --git )/m).filter((section) => section.includes('\n--- /dev/null\n'));
+  assert.equal(additions.length, 4);
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-owned-patch-'));
+  const prefix = 'studio/.prepare-fixture/engine';
+  try {
+    await mkdir(path.join(directory, prefix), { recursive: true });
+    const original = path.join(directory, 'missing-metadata.patch');
+    const corrected = path.join(directory, 'registered.patch');
+    await writeFile(original, additions.join('').replace(/^new file mode 100644\n/gm, ''));
+    await writeFile(corrected, additions.join(''));
+    const check = (file) => execFileSync('git', ['apply', '--check', `--directory=${prefix}`, file], {
+      cwd: directory, timeout: 5000, stdio: 'pipe',
+    });
+    assert.throws(() => check(original), (error) => {
+      assert.match(error.stderr.toString(), /engine\/dev\/null: No such file or directory/);
+      return true;
+    });
+    assert.doesNotThrow(() => check(corrected));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test('engine source pin rejects a changed archive without local planning files', async () => {
   const provenance = JSON.parse(await readFile(new URL('../freecut-provenance.json', import.meta.url), 'utf8'));
