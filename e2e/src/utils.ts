@@ -82,7 +82,7 @@ import { loginDto, signupDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { ownedWait, settlePendingWaits } from 'src/harness-context.js';
 import { assertResetExecutionsStopped, drainAfterExecutorStop } from 'src/harness-reset-executions.mjs';
-import { resetWhilePaused, type QueuePauseSnapshot } from 'src/harness-reset.js';
+import { resetLockSettings, resetWhilePaused, type QueuePauseSnapshot } from 'src/harness-reset.js';
 import {
   EventJournal,
   pollRequest,
@@ -676,9 +676,8 @@ export const utils = {
         const timeout = Math.min(1000, context.remaining());
         await db.query('BEGIN');
         try {
-          await db.query(`SELECT set_config('statement_timeout', $1, true), set_config('lock_timeout', $1, true)`, [
-            `${timeout}ms`,
-          ]);
+          const settings = resetLockSettings(timeout);
+          await db.query(settings.text, settings.values);
           if (selected.includes('system_metadata')) {
             // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
             // stable server identity and future operational metadata survive ordinary test resets.
