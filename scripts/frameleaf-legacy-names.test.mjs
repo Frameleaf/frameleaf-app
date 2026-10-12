@@ -93,6 +93,34 @@ test("the allowlist is narrow: an exception in one file does not cover another",
   );
 });
 
+test("the health worker's alias scrub does not allow other legacy uses", () => {
+  const file = "server/src/maintenance/maintenance-health.repository.ts";
+  const scrub =
+    "const { IMMICH_HOST: _host, IMMICH_PORT: _port, IMMICH_LOG_LEVEL: _logLevel, ...rest } = env;";
+  assert.deepEqual(scanLegacyText(scrub, { file }), []);
+  for (const text of [
+    "process.env.IMMICH_LOG_LEVEL",
+    "IMMICH_LOG_LEVEL=debug",
+    "const { IMMICH_LOG_LEVEL: level } = env;",
+    "IMMICH_MEDIA_LOCATION",
+    "immich-admin list-users",
+  ]) {
+    assert.equal(scanLegacyText(text, { file }).length, 1, text);
+  }
+  assert.deepEqual(
+    scanLegacyText(`${scrub} console.log('IMMICH_LOG_LEVEL');`, { file }).map(
+      ({ match }) => match,
+    ),
+    ["IMMICH_LOG_LEVEL"],
+  );
+  for (const other of ["server/src/app.module.ts", "docs/docs/example.md"]) {
+    assert.deepEqual(
+      scanLegacyText(scrub, { file: other }).map(({ match }) => match),
+      ["IMMICH_HOST", "IMMICH_PORT", "IMMICH_LOG_LEVEL"],
+    );
+  }
+});
+
 test("every allowlist entry gives its reason and a pattern", () => {
   for (const entry of LEGACY_ALLOWLIST) {
     assert.ok(entry.reason.length > 20, entry.reason);
