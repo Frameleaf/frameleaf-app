@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdtemp, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, open, readdir, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
@@ -112,10 +112,21 @@ describe('validation input accounting baseline', () => {
     };
     const input = { ownerId: 'owner', resource: { id: 'resource', leaseToken: 'lease' }, authority: {} } as never;
     const repository = {
-      beginPrivateWork: vi.fn().mockResolvedValue('owned-work'),
+      beginPrivateWork: vi.fn(() => Promise.resolve(randomUUID())),
+      validationInputs: vi.fn().mockResolvedValue(undefined),
       planValidationInput: vi.fn().mockResolvedValue(undefined),
+      storeValidationInput: vi.fn((_input, expected, payload) =>
+        Promise.resolve({
+          ...expected,
+          payload: { ...expected.payload, current: { payload, seal: 'input' } },
+        }),
+      ),
       finishPrivateWork: vi.fn(),
-      disposeValidationInput: vi.fn().mockResolvedValue(true),
+      disposeValidationInput: vi.fn(async (_input, envelope) => {
+        await unlink(envelope.payload.current.payload.inputPath);
+        await rmdir(envelope.payload.current.payload.directoryPath);
+        return true;
+      }),
       storeDeepValidation: vi.fn().mockResolvedValue(true),
     };
     const decoderDone = Promise.withResolvers<void>();
@@ -147,7 +158,32 @@ describe('validation input accounting baseline', () => {
     vi.spyOn(admission, 'checkpoint').mockResolvedValue({
       resource: { id: 'resource', expectedSize: 5, source: { type: AssetType.Image, originalFileName: 'input.jpg' } },
     });
-    return { directory, destination, input, repository, integrity, decoderDone, sut, cached, receipt };
+    const admit = () =>
+      repository.planValidationInput.mockImplementation((_input, plan) =>
+        Promise.resolve({
+          payload: {
+            highWater: '1',
+            current: {
+              payload: {
+                ...plan,
+                sequence: '1',
+                pathNonce: plan.pathNonce,
+                directoryPath: join(directory, '.validation-' + plan.pathNonce),
+                inputPath: join(directory, '.validation-' + plan.pathNonce, 'input'),
+                state: 'reserved',
+                pending: [],
+                directoryIdentity: null,
+                inputIdentity: null,
+                reservedInputBytes: 5,
+              },
+              seal: 'input',
+            },
+            previousDisposed: null,
+          },
+          seal: 'envelope',
+        }),
+      );
+    return { directory, destination, input, repository, integrity, decoderDone, sut, cached, receipt, admit };
   }
 
   it.each([
@@ -180,6 +216,7 @@ describe('validation input accounting baseline', () => {
 
   it('validation input remains present while final readonly work is unsettled', async () => {
     const f = await fixture();
+    f.admit();
     const readonlyDone = Promise.withResolvers<void>();
     const readonlyStarted = Promise.withResolvers<void>();
     f.cached
@@ -203,7 +240,7 @@ describe('validation input accounting baseline', () => {
       expect(await validation.result).toEqual({ status: 'unavailable' });
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(settled).toBe(false);
-      expect(f.repository.finishPrivateWork).not.toHaveBeenCalled();
+      expect(f.repository.finishPrivateWork).toHaveBeenCalledTimes(1);
       expect(
         await stat(join(f.directory, copyDirectory, 'input'))
           .then(() => true)
@@ -213,6 +250,163 @@ describe('validation input accounting baseline', () => {
       readonlyDone.resolve();
       f.decoderDone.resolve();
       await validation.settled;
+      await f.sut.onShutdown();
+      vi.restoreAllMocks();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
+  it.each(['preparing', 'running', 'settled', 'disposal'] as const)(
+    'validation input retains custody when %s persistence refuses',
+    async (failure) => {
+      const f = await fixture();
+      f.admit();
+      f.decoderDone.resolve();
+      const store = f.repository.storeValidationInput.getMockImplementation()!;
+      f.repository.storeValidationInput.mockImplementation(async (...args) =>
+        args[2].state === failure ? undefined : store(...args),
+      );
+      if (failure === 'disposal') f.repository.disposeValidationInput.mockResolvedValue(false);
+      let validation;
+      try {
+        if (failure === 'preparing' || failure === 'running') {
+          await expect(f.sut.validate(f.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(f.integrity.validateWithSettlement).not.toHaveBeenCalled();
+        } else {
+          validation = await f.sut.validate(f.input);
+          await expect(validation.settled).rejects.toThrow();
+        }
+        expect(f.repository.finishPrivateWork).toHaveBeenCalledTimes(1);
+        const entries = (await readdir(f.directory)).filter((name) => name.startsWith('.validation-'));
+        expect(entries).toHaveLength(1);
+        expect(await stat(join(f.directory, entries[0], 'input'))).toBeDefined();
+      } finally {
+        f.decoderDone.resolve();
+        await validation?.settled.catch(() => {});
+        await f.sut.onShutdown();
+        vi.restoreAllMocks();
+        await rm(f.directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('validation input shutdown started during preparation waits for the later decoder settlement', async () => {
+    const f = await fixture();
+    f.admit();
+    const readonlyStarted = Promise.withResolvers<void>();
+    const readonlyDone = Promise.withResolvers<void>();
+    f.cached.mockImplementationOnce(async () => {
+      readonlyStarted.resolve();
+      await readonlyDone.promise;
+      return f.receipt;
+    });
+    const preparing = f.sut.validate(f.input);
+    await readonlyStarted.promise;
+    let shutdownSettled = false;
+    const shutdown = f.sut.onShutdown().then(() => {
+      shutdownSettled = true;
+    });
+    try {
+      readonlyDone.resolve();
+      await preparing;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(shutdownSettled).toBe(false);
+      f.decoderDone.resolve();
+      await shutdown;
+      expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+    } finally {
+      readonlyDone.resolve();
+      f.decoderDone.resolve();
+      await (
+        await preparing
+      ).settled;
+      await shutdown;
+      vi.restoreAllMocks();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('validation input refuses reservation when preliminary settlement cannot persist', async () => {
+    const f = await fixture();
+    f.admit();
+    f.repository.finishPrivateWork.mockRejectedValueOnce(new Error('preliminary settlement refused'));
+    try {
+      await expect(f.sut.validate(f.input)).rejects.toThrow('scheduled_audit_unavailable');
+      expect(f.repository.planValidationInput).not.toHaveBeenCalled();
+      expect(f.integrity.validateWithSettlement).not.toHaveBeenCalled();
+      expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+    } finally {
+      f.decoderDone.resolve();
+      await f.sut.onShutdown();
+      vi.restoreAllMocks();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['mkdir', 'open', 'sync', 'close'] as const)(
+    'validation input retains its reservation after owned %s failure',
+    async (failure) => {
+      const f = await fixture();
+      f.admit();
+      switch (failure) {
+        case 'mkdir': {
+          vi.mocked(mkdir).mockRejectedValueOnce(new Error('exclusive directory conflict'));
+          break;
+        }
+        case 'open': {
+          vi.mocked(open).mockRejectedValueOnce(new Error('exclusive input conflict'));
+          break;
+        }
+        default: {
+          const store = f.repository.storeValidationInput.getMockImplementation()!;
+          f.repository.storeValidationInput.mockImplementation(async (...args) => {
+            if (args[2].state === 'preparing') {
+              const file = (await vi.mocked(open).mock.results.at(-1)!.value) as {
+                close: () => Promise<void>;
+                sync: () => Promise<void>;
+              };
+              if (failure === 'sync') vi.spyOn(file, 'sync').mockRejectedValueOnce(new Error('sync failure'));
+              else {
+                const close = file.close.bind(file);
+                vi.spyOn(file, 'close').mockImplementationOnce(async () => {
+                  await close();
+                  throw new Error('close failure');
+                });
+              }
+            }
+            return store(...args);
+          });
+        }
+      }
+      try {
+        await expect(f.sut.validate(f.input)).rejects.toThrow('scheduled_audit_unavailable');
+        expect(f.integrity.validateWithSettlement).not.toHaveBeenCalled();
+        expect(f.repository.disposeValidationInput).not.toHaveBeenCalled();
+        expect(f.repository.finishPrivateWork).toHaveBeenCalledTimes(1);
+      } finally {
+        f.decoderDone.resolve();
+        await f.sut.onShutdown();
+        vi.restoreAllMocks();
+        await rm(f.directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('validation input disposes before finishing its token on twelve successive passes', async () => {
+    const f = await fixture();
+    f.admit();
+    f.decoderDone.resolve();
+    try {
+      for (let pass = 0; pass < 12; pass++) {
+        const validation = await f.sut.validate(f.input);
+        expect((await validation.result).status).toBe('validated');
+        await validation.settled;
+        expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+        const disposed = f.repository.disposeValidationInput.mock.invocationCallOrder[pass];
+        expect(disposed).toBeLessThan(f.repository.finishPrivateWork.mock.invocationCallOrder[pass * 2 + 1]);
+        expect(f.repository.disposeValidationInput.mock.calls[pass][1].payload.current.payload.state).toBe('settled');
+      }
+      expect(f.integrity.validateWithSettlement).toHaveBeenCalledTimes(12);
+    } finally {
       await f.sut.onShutdown();
       vi.restoreAllMocks();
       await rm(f.directory, { recursive: true, force: true });

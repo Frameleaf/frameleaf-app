@@ -298,7 +298,15 @@ describe('scheduled validation input durable accounting baseline', () => {
       let validation: ScheduledFreshValidation | undefined;
       try {
         expect(await sut.download(f.input)).toEqual(f.fresh);
-        // Baseline only: preparation errors must fail setup, never masquerade as quota refusal.
+        expect((await f.sync.resource(f.input.resource.id))?.verification?.auditOwnedWork).toBeUndefined();
+        if (_budget !== 'sufficient') {
+          await expect(sut.validate(f.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(decoderPath).toBeUndefined();
+          expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+          expect(Number((await f.sync.resource(f.input.resource.id))!.reservedBytes)).toBe(size);
+          expect(await readFile(f.fresh.payload.path)).toEqual(f.bytes);
+          return;
+        }
         validation = await sut.validate(f.input);
         if (!decoderPath) throw new Error('fixture_decoder_submission_missing');
         const resource = await f.sync.resource(f.input.resource.id);
