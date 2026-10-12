@@ -8,6 +8,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto, ICloudVerifyResponseDto } from 'src/dtos/icloud-identity.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
 import { AuditExecutionAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -374,6 +375,7 @@ export class ICloudAuditRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
+    private staging: ICloudScheduledStagingRepository,
   ) {}
   async submit(
     auth: AuthDto,
@@ -805,6 +807,11 @@ export class ICloudAuditRepository {
           ) {
             return;
           }
+        }
+        if (!(await this.staging.authenticateDisposedValidationInputs(db, resource))) {
+          await sql`UPDATE public.icloud_resource SET "lastError"='scheduled_validation_input_retained_unproven',
+            "nextAttemptAt"=clock_timestamp()+interval '5 minutes' WHERE id=${resource.id}::uuid`.execute(db);
+          return;
         }
         try {
           await process(resource, db);

@@ -31,6 +31,7 @@ import {
   privateCopyIdentity,
   privateCopyScope,
   validPrivateCopy,
+  validValidationInputs,
 } from 'src/utils/icloud-private-copy.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -123,6 +124,8 @@ export class ICloudScheduledStagingService {
   cleanupRetired(input: ScheduledStagingInput) {
     const cleanup = (async () => {
       await Promise.allSettled(this.ownedWork.get(input.resource.id) ?? new Set<Promise<void>>());
+      const envelope = await this.repository.validationInputs(input);
+      if (envelope && !(await this.repository.disposeValidationInput(input, envelope))) return;
       await this.repository.disposePrivateCopy(input);
       await this.repository.disposeRefusedStaging(input);
     })()
@@ -134,6 +137,39 @@ export class ICloudScheduledStagingService {
 
   /** Restart can resume sealed settled copies; unknown/pending generations remain charged. */
   async housekeeping() {
+    for (const resource of await this.repository.retainedValidationInputs()) {
+      const record = resource.verification?.auditValidationInputs;
+      if (!validValidationInputs(record)) {
+        await this.repository.retainValidationInput(resource, 'unproven');
+        continue;
+      }
+      const payload = record.payload.current.payload;
+      if (!['settled', 'disposed'].includes(payload.state) || payload.pending.length > 0) {
+        await this.repository.retainValidationInput(resource, 'pending-settlement');
+        continue;
+      }
+      const input: ScheduledStagingInput = {
+        ownerId: resource.ownerId,
+        resource: { id: resource.id, leaseToken: payload.resourceLeaseToken },
+        authority: {
+          purpose: 'scheduled-weekly',
+          auditRequestId: payload.auditRequestId,
+          operationId: payload.operationId,
+          operationClaimToken: payload.operationClaimToken,
+        },
+      };
+      try {
+        await Promise.allSettled(this.ownedWork.get(resource.id) ?? new Set<Promise<void>>());
+        const authenticated = await this.repository.validationInputs(input);
+        if (!authenticated) {
+          await this.repository.retainValidationInput(resource, 'unproven');
+        } else if (!(await this.repository.disposeValidationInput(input, authenticated))) {
+          await this.repository.retainValidationInput(resource, 'fence-or-unlink');
+        }
+      } catch {
+        await this.repository.retainValidationInput(resource, 'fence-or-unlink');
+      }
+    }
     for (const resource of await this.repository.retiredPrivateCopies()) {
       const record = resource.verification?.auditPrivateCopy;
       if (!validPrivateCopy(record) || !record.payload.identity) {

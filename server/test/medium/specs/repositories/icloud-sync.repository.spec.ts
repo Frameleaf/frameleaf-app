@@ -1,7 +1,9 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
@@ -53,7 +55,10 @@ describe(ICloudSyncRepository.name, () => {
 
     // FL-296: finalize records the source identity
 
-    repository = new ICloudSyncRepository(db);
+    repository = new ICloudSyncRepository(
+      db,
+      new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+    );
   });
   afterAll(async () => {
     await db.destroy();

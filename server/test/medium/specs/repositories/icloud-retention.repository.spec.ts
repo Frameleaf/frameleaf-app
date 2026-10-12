@@ -1,7 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudConnection, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
 import * as claimAccessPaths from 'src/schema/migrations/1791101770001-ICloudClaimAccessPaths.js';
 import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
@@ -14,7 +16,10 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   beforeAll(async () => {
     db = await getKyselyDB();
 
-    repository = new ICloudSyncRepository(db);
+    repository = new ICloudSyncRepository(
+      db,
+      new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+    );
   });
   afterAll(async () => {
     await db?.destroy();
