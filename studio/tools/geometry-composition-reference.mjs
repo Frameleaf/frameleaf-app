@@ -30,6 +30,47 @@ export const COMPOSITION_SOURCES = {
   'src/infrastructure/gpu-shared/fullscreen-quad.ts':
     '225ac84918c7188feb887cd5da4cd6823e463a677c497d61da2062b2afd41b30',
 }
+// Preserve historical bindings; the reviewed static repair changes only renderer type/imports.
+const legacyCompositionSources = new Set([
+  'e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689',
+  '614abe7d7fb4b1b17442b32dbab1f90e31c9297bf4c6657a2fa9bec3a9c3e711',
+  'a90bde5db2117561f3cbce4e23e7b118660741eb7adb6a39ea12eb5bbeab559f',
+  '01983a71b49ed5721ed9692b6bfd92b3122c651b7f48d1a5c7e675007f410156',
+  '5615c48d57f39c36dbdf19754bca16813990fb47060832b1394f1be9e97ac6ad',
+  '680d0070383b0b7d5721a9cd874325abc19b3d635490b90d0f0d90b72b67d5c0',
+  'c212cc40fde85a70a9054489b2da1a15dec75cea6bd9e9333230875d68a2d470',
+  '6a94f497df2b949fe43059094ed7cdaff656b06dd47422021fc55b079c7f7889',
+  '86795b1fd91eca8d7804ce35c00930b36f507d6675287ffce9d621ac5c28b959',
+  '7c83bc88923abb5e8995544567d437d260461569ef5dfaf14b893a4d664d9481',
+  '5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec',
+  'e7e93f672603b71a38a9500439ae7e44353405f4ddc707482bf539f87d5b9f8d',
+  '38fe01f4393ad7c6c10462fbb03fffc545215e9da745e5d37f9f15a70fcaa904',
+  '723f55c7faae8dc989406bbf7df7a1f795ef1d2053b17379fb71beb87005fcca',
+  '6718da5bc961bc4ad4eb5a96f4e4d158bfce331fc8087f16729a09da1ac0e4a3',
+  '19daa0b620454002022c6eac56b13537c232fe5270104021e5c9c6b63f884c4c',
+  'cb8c9b6ec30597c44a26cead6dc11fba3770870192b156c68c8ddfe7e032a54f',
+  '85ef9a025dba470a1cb73d0a1ee6616a0e8d428602567fe7d9930959215dd302',
+  '2f020b4240175b0ee7e4d75110582b0015c981171761d1021a15fce38b98418e',
+  '6d1edf68bb2d67195f3cfa5a58b78fe1c36148069934efef3060962d199e645d',
+  '1a5fb80a4729b569646bc258c4815fbcabd79d0bc13f0910ad0cdc43ce29ed7e',
+  'f0fb723b695efa8d1ea5af4a9ab5e7523f112f6bad76a582ae964e02152e65d9',
+  '365ce48c4403f764bb77fee14b78fd0b154dd7906106748ee5790e0c3b8af424',
+  '1d91e981316146386b98192d087f140b9752e391476a8805a1bce302c546bdee',
+  '86c3c5b8cab095d45df4c18601185de27b9f3a5b5ca64dc393f2b80c54e3a07d',
+  '2be3c9aace8167be04a94878541a2fb5cb874d69274e9b05465596801a6d95e9',
+  '2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7',
+])
+export function compositionSourcesFor(sourceSha256) {
+  if (sourceSha256 === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578')
+    return {
+      ...COMPOSITION_SOURCES,
+      'src/features/export/utils/client-render-engine.ts':
+        'd5f6521f92e7ee51eae38ad6a9903dcba5bfc0c2960c2d67973ab00f8ae40874',
+    }
+  assert(legacyCompositionSources.has(sourceSha256), 'COMPOSITION_SOURCE_UNREGISTERED')
+  return COMPOSITION_SOURCES
+}
+
 const envelopeBytes = readFileSync(new URL('./geometry-raster-envelopes.json', import.meta.url))
 assert.equal(
   createHash('sha256').update(envelopeBytes).digest('hex'),
@@ -219,7 +260,11 @@ export function validateCompositionContract(values, width, height, entry, captur
     'canonical Float32 source bytes',
   )
   assert.equal(contract.inputSha256, compositionInputSha(values), 'composition input checksum')
-  assert.deepEqual(contract.sourceHashes, COMPOSITION_SOURCES, 'composition pass source hashes')
+  assert.deepEqual(
+    contract.sourceHashes,
+    compositionSourcesFor(contract.binding.sourceSha256),
+    'composition pass source hashes',
+  )
   assert.deepEqual(contract.entry, entry, 'authored parameters')
   const d = contract.declaration
   assert.deepEqual(

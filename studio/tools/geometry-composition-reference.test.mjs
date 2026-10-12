@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { geometryReference } from './geometry-reference.mjs'
 import {
   compositionInputSha,
+  compositionSourcesFor,
   COMPOSITION_SOURCES,
   geometryCompositionReference,
   geometryCompositionStages,
@@ -243,6 +245,69 @@ function fixture(e = entry) {
 }
 const render = (a, e = entry) =>
   geometryCompositionReference(a.input, W, H, e, a.capture, a.row, a.contract)
+test('current prepared composition sources match their exact adapted-source binding', () => {
+  const a = fixture()
+  const build = JSON.parse(readFileSync(new URL('../engine-build.json', import.meta.url)))
+  a.contract.binding.sourceSha256 = build.sourceSha256
+  a.contract.sourceHashes = Object.fromEntries(
+    Object.keys(COMPOSITION_SOURCES).map((path) => [
+      path,
+      createHash('sha256')
+        .update(readFileSync(new URL('../engine/' + path, import.meta.url)))
+        .digest('hex'),
+    ]),
+  )
+  assert.doesNotThrow(() => render(a))
+})
+
+test('composition source bindings preserve every admitted legacy row and refuse unknown identities', () => {
+  const current = JSON.parse(
+    readFileSync(new URL('../engine-build.json', import.meta.url)),
+  ).sourceSha256
+  const raster = readFileSync(new URL('./geometry-raster-calibration.mjs', import.meta.url), 'utf8')
+  const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
+    (row) => row[1],
+  )
+  assert.equal(admitted.length, 28)
+  assert.equal(new Set(admitted).size, 28)
+  for (const source of admitted) {
+    const a = fixture()
+    a.contract.binding.sourceSha256 = source
+    a.contract.sourceHashes = compositionSourcesFor(source)
+    if (source !== current) assert.equal(a.contract.sourceHashes, COMPOSITION_SOURCES)
+    assert.doesNotThrow(() => render(a))
+  }
+  for (const unknown of [undefined, '', '0'.repeat(64), 'f'.repeat(64)])
+    assert.throws(() => compositionSourcesFor(unknown), /COMPOSITION_SOURCE_UNREGISTERED/)
+})
+
+test('composition source bindings reject stale/current cross-binding and every tampered producer', () => {
+  const current = JSON.parse(
+    readFileSync(new URL('../engine-build.json', import.meta.url)),
+  ).sourceSha256
+  const actual = compositionSourcesFor(current)
+  const a = fixture()
+  a.contract.binding.sourceSha256 = current
+  assert.throws(() => render(a), /composition pass source hashes/)
+  a.contract.sourceHashes = actual
+  a.contract.binding.sourceSha256 =
+    '5b29142999ca0f06d8d9f151ad0bfeae95b6b75892b70c38a9532b2152de32ec'
+  assert.throws(() => render(a), /composition pass source hashes/)
+  a.contract.binding.sourceSha256 = current
+  for (const path of Object.keys(actual)) {
+    a.contract.sourceHashes = { ...actual, [path]: '0'.repeat(64) }
+    assert.throws(() => render(a), /composition pass source hashes/)
+    a.contract.sourceHashes = { ...actual }
+    delete a.contract.sourceHashes[path]
+    assert.throws(() => render(a), /composition pass source hashes/)
+  }
+  a.contract.sourceHashes = { ...actual, foreign: '0'.repeat(64) }
+  assert.throws(() => render(a), /composition pass source hashes/)
+  a.contract.sourceHashes = actual
+  a.contract.binding.sourceSha256 = '0'.repeat(64)
+  assert.throws(() => render(a), /COMPOSITION_SOURCE_UNREGISTERED/)
+})
+
 test('composition includes independent media, geometry and final layer placement', () => {
   const a = fixture(),
     out = render(a)
