@@ -36,6 +36,7 @@ import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { appleFingerprintHash } from 'src/utils/icloud-identity.js';
 import {
+  ScheduledPrivateCopyRecord,
   ValidationInputEnvelope,
   privateCopyIdentity,
   privateCopyScope,
@@ -343,6 +344,223 @@ describe('scheduled validation input durable accounting baseline', () => {
       }
     },
     60_000,
+  );
+
+  it.each([false, true])(
+    'executes twelve real allocation and validation renewals with disposed recovery history: %s',
+    async (withCopy) => {
+      const f = await arrangeScheduledInput();
+      const healthy: MediaIntegrityResult = {
+        status: 'healthy',
+        reason: 'verified',
+        identity: f.fresh.payload.identity,
+        sha1: Buffer.from(f.fresh.payload.sha1, 'hex'),
+        sha256: Buffer.from(f.fresh.payload.sha256, 'hex'),
+        sizeInBytes: f.bytes.length,
+      };
+      const decoders: {
+        path: string;
+        result: ReturnType<typeof Promise.withResolvers<MediaIntegrityResult>>;
+        settled: ReturnType<typeof Promise.withResolvers<void>>;
+      }[] = [];
+      const decoder = vi.fn(({ path }: { path: string }) => {
+        const result = Promise.withResolvers<MediaIntegrityResult>();
+        const settled = Promise.withResolvers<void>();
+        decoders.push({ path, result, settled });
+        return { result: result.promise, settled: settled.promise, cancel: () => {} };
+      });
+      const releaseDecoder = async () => {
+        const last = decoders.at(-1)!;
+        last.result.resolve({ ...healthy, identity: await stat(last.path) });
+        last.settled.resolve();
+      };
+      const sut = new ICloudScheduledStagingService(
+        f.staging,
+        { root: () => Promise.resolve(f.root) } as ICloudStagingService,
+        f.transport,
+        { validateWithSettlement: decoder } as unknown as MediaIntegrityService,
+      );
+      let input = f.input;
+      let validation: ScheduledFreshValidation | undefined;
+      let historicalCopy: ScheduledPrivateCopyRecord | undefined;
+      try {
+        validation = await sut.validate(input);
+        await releaseDecoder();
+        expect((await validation.result).status).toBe('validated');
+        await validation.settled;
+        if (withCopy) {
+          // Historical disposed recovery receipt fixture only; production disposal has separate SQL qualification.
+          const work = (await f.sync.resource(input.resource.id))!.verification!.auditOwnedWork;
+          if (!validPrivateWork(work)) throw new Error('fixture_settled_work_missing');
+          const generation = randomUUID();
+          const recoveryDirectory = join(f.directory, '.icloud-recovery');
+          await mkdir(recoveryDirectory, { mode: 0o700 });
+          const promotedPath = join(recoveryDirectory, 'old-recovery');
+          await writeFile(promotedPath, f.bytes, { mode: 0o600, flag: 'wx' });
+          const payload: ScheduledPrivateCopyRecord['payload'] = {
+            version: 1,
+            purpose: 'scheduled-weekly-private-copy',
+            generation,
+            ownerId: input.ownerId,
+            resourceId: input.resource.id,
+            connectionId: f.connection.id,
+            auditRequestId: input.authority.auditRequestId,
+            operationId: input.authority.operationId!,
+            operationClaimToken: input.authority.operationClaimToken!,
+            resourceLeaseToken: input.resource.leaseToken,
+            itemClaimId: work.payload.itemClaimId,
+            sourceAssetId: NAME,
+            stagingPath: f.fresh.payload.path,
+            promotedPath,
+            temporaryPath: `${promotedPath}.${generation}.partial`,
+            reservedCopyBytes: 10,
+            identity: privateCopyIdentity(await stat(promotedPath)),
+            promoted: true,
+            settled: true,
+            disposed: true,
+          };
+          await rm(promotedPath);
+          historicalCopy = {
+            payload,
+            pending: [],
+            seal: await f.transport.encodeSession(privateCopyScope(payload), payload),
+          };
+          const workPayload = { ...work.payload, copyGeneration: generation };
+          const historicalWork = {
+            payload: workPayload,
+            seal: await f.transport.encodeSession(privateWorkScope(workPayload), workPayload),
+          };
+          await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${JSON.stringify(historicalCopy)}::text::jsonb,'auditOwnedWork',${JSON.stringify(historicalWork)}::text::jsonb)
+          WHERE id=${input.resource.id}::uuid`.execute(db);
+        }
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const priorInput = structuredClone(input);
+          const prior = (await f.staging.validationInputs(input))!;
+          const oldWork = (await f.sync.resource(input.resource.id))!.verification!.auditOwnedWork;
+          if (!validPrivateWork(oldWork)) throw new Error('fixture_settled_work_missing');
+          const authority = { ...input.authority, operationClaimToken: randomUUID() };
+          await sql`UPDATE public.media_operation SET "claimToken"=${authority.operationClaimToken}::uuid,
+          "claimExpiresAt"=clock_timestamp()+interval '1 hour' WHERE id=${authority.operationId}::uuid`.execute(db);
+          await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE id=${oldWork.payload.itemClaimId}::uuid`.execute(
+            db,
+          );
+          const [claim] = await new ICloudIdentityRepository(db).claim(
+            input.ownerId,
+            [NAME],
+            `icloud-sync:audit:${authority.operationId}`,
+            1800,
+          );
+          expect(claim.id).not.toBe(oldWork.payload.itemClaimId);
+          expect(await f.worker.bindClaim(authority, input.ownerId, claim.id)).toBe(true);
+          await sql`UPDATE public.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second',"nextAttemptAt"=NULL WHERE id=${input.resource.id}::uuid`.execute(
+            db,
+          );
+          const allocation = await f.worker.allocate(authority, input.ownerId);
+          expect(allocation?.leaseToken).toBeDefined();
+          expect(allocation?.leaseToken).not.toBe(priorInput.resource.leaseToken);
+          input = {
+            ownerId: input.ownerId,
+            authority,
+            resource: { id: input.resource.id, leaseToken: allocation!.leaseToken! },
+          };
+          await expect(f.staging.beginPrivateWork(priorInput)).rejects.toThrow();
+          expect(await f.staging.validationInputs(input)).toEqual(prior);
+          validation = await sut.validate(input);
+          const running = (await f.sync.resource(input.resource.id))!;
+          expect(Number(running.reservedBytes)).toBe(20);
+          expect(await readFile(decoders.at(-1)!.path)).toEqual(f.bytes);
+          expect((await stat(f.fresh.payload.path)).size + (await stat(decoders.at(-1)!.path)).size).toBe(20);
+          await releaseDecoder();
+          expect((await validation.result).status).toBe('validated');
+          await validation.settled;
+          const next = (await f.staging.validationInputs(input))!;
+          expect(next.payload.highWater).toBe(String(attempt + 2));
+          expect(next.payload.previousDisposed).toEqual(prior.payload.current);
+          expect(next.payload.current.payload.state).toBe('disposed');
+          const settled = (await f.sync.resource(input.resource.id))!;
+          expect(Number(settled.reservedBytes)).toBe(10);
+          expect(settled.verification!.auditPrivateCopy).toEqual(historicalCopy);
+          expect(validPrivateWork(settled.verification!.auditOwnedWork)).toBe(true);
+          expect(settled.verification!.auditOwnedWork).toMatchObject({
+            payload: {
+              settled: true,
+              pending: [],
+              resourceLeaseToken: input.resource.leaseToken,
+              operationClaimToken: authority.operationClaimToken,
+              itemClaimId: claim.id,
+            },
+          });
+          expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+        }
+        expect(decoder).toHaveBeenCalledTimes(13);
+        expect(await readFile(f.fresh.payload.path)).toEqual(f.bytes);
+      } finally {
+        for (const decoder of decoders) {
+          decoder.result.resolve(healthy);
+          decoder.settled.resolve();
+        }
+        await validation?.settled.catch(() => {});
+        await sut.onShutdown();
+      }
+    },
+    120_000,
+  );
+
+  it.each(['pending', 'malformed', 'unknown-seal', 'unknown-copy'] as const)(
+    'refuses renewed service validation with %s predecessor evidence',
+    async (reason) => {
+      const f = await settledPlan();
+      const { settled, token } = await settleInput(f);
+      expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+      await f.staging.finishPrivateWork(f.input, token);
+      const before = (await f.sync.resource(f.input.resource.id))!;
+      const work = before.verification!.auditOwnedWork;
+      if (!validPrivateWork(work)) throw new Error('fixture_settled_work_missing');
+      await sql`UPDATE public.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${f.input.resource.id}::uuid`.execute(
+        db,
+      );
+      const renewed = await f.worker.allocate(f.input.authority, f.input.ownerId);
+      expect(renewed?.leaseToken).toBeDefined();
+      const payload = { ...work.payload, ...(reason === 'pending' && { settled: false, pending: [randomUUID()] }) };
+      const changed =
+        reason === 'malformed'
+          ? { unknown: true }
+          : {
+              payload,
+              seal:
+                reason === 'unknown-seal'
+                  ? 'unknown'
+                  : await f.transport.encodeSession(privateWorkScope(payload), payload),
+            };
+      const verification = {
+        ...before.verification,
+        auditOwnedWork: changed,
+        ...(reason === 'unknown-copy' && { auditPrivateCopy: { unknown: true } }),
+      };
+      await sql`UPDATE public.icloud_resource SET verification=${JSON.stringify(verification)}::text::jsonb WHERE id=${f.input.resource.id}::uuid`.execute(
+        db,
+      );
+      const decoder = vi.fn();
+      const sut = new ICloudScheduledStagingService(
+        f.staging,
+        { root: () => Promise.resolve(f.root) } as ICloudStagingService,
+        f.transport,
+        { validateWithSettlement: decoder } as unknown as MediaIntegrityService,
+      );
+      try {
+        await expect(
+          sut.validate({ ...f.input, resource: { id: f.input.resource.id, leaseToken: renewed!.leaseToken! } }),
+        ).rejects.toThrow('scheduled_audit_unavailable');
+        expect(decoder).not.toHaveBeenCalled();
+        const after = (await f.sync.resource(f.input.resource.id))!;
+        expect(after.verification).toEqual(verification);
+        expect(Number(after.reservedBytes)).toBe(10);
+        expect(await readFile(f.fresh.payload.path)).toEqual(f.bytes);
+        expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+      } finally {
+        await sut.onShutdown();
+      }
+    },
   );
 
   // New reservation/CAS cases are source-authored only until Root executes this exact candidate in SQL.

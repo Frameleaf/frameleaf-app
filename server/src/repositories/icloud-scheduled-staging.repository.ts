@@ -1111,6 +1111,35 @@ export class ICloudScheduledStagingRepository {
     });
   }
 
+  /** A disposed recovery receipt remains historical custody, never current-executor work. */
+  private async disposedCopyForWork(resource: ICloudResource, work: ScheduledPrivateWorkRecord['payload']) {
+    const copy = resource.verification?.auditPrivateCopy;
+    if (copy === undefined) return work.copyGeneration === null;
+    if (
+      !validPrivateCopy(copy) ||
+      !copy.payload.disposed ||
+      !copy.payload.settled ||
+      copy.pending.length > 0 ||
+      !copy.payload.identity ||
+      !copy.seal ||
+      copy.payload.generation !== work.copyGeneration ||
+      copy.payload.ownerId !== resource.ownerId ||
+      copy.payload.resourceId !== resource.id ||
+      copy.payload.connectionId !== resource.connectionId ||
+      copy.payload.auditRequestId !== resource.auditRequestId ||
+      copy.payload.operationId !== work.operationId ||
+      copy.payload.sourceAssetId !== resource.sourceAssetId ||
+      copy.payload.stagingPath !== resource.stagingPath ||
+      !Number.isSafeInteger(Number(resource.expectedSize)) ||
+      copy.payload.reservedCopyBytes !== Number(resource.expectedSize)
+    )
+      return false;
+    return (
+      canonicalJson(await this.transport.decodeSession(privateCopyScope(copy.payload), copy.seal)) ===
+      canonicalJson(copy.payload)
+    );
+  }
+
   async beginPrivateWork(input: ScheduledStagingInput) {
     const token = randomUUID();
     const created = await this.admitted(input, async (db, { guarded, resource }) => {
@@ -1118,15 +1147,7 @@ export class ICloudScheduledStagingRepository {
         return false;
       }
       const existing = resource.verification?.auditOwnedWork;
-      if (
-        existing !== undefined &&
-        (!validPrivateWork(existing) ||
-          existing.payload.resourceLeaseToken !== input.resource.leaseToken ||
-          existing.payload.operationClaimToken !== input.authority.operationClaimToken ||
-          existing.payload.itemClaimId !== guarded.request.itemClaimId)
-      ) {
-        return false;
-      }
+      if (existing !== undefined && !validPrivateWork(existing)) return false;
       if (
         validPrivateWork(existing) &&
         (!existing.seal ||
@@ -1137,6 +1158,39 @@ export class ICloudScheduledStagingRepository {
       }
       const copy = resource.verification?.auditPrivateCopy;
       const copyGeneration = validPrivateCopy(copy) ? copy.payload.generation : null;
+      const renewed =
+        validPrivateWork(existing) &&
+        (existing.payload.resourceLeaseToken !== input.resource.leaseToken ||
+          existing.payload.operationClaimToken !== input.authority.operationClaimToken ||
+          existing.payload.itemClaimId !== guarded.request.itemClaimId);
+      if (renewed && validPrivateWork(existing)) {
+        const prior = existing.payload;
+        if (
+          !prior.settled ||
+          prior.pending.length > 0 ||
+          prior.ownerId !== input.ownerId ||
+          prior.resourceId !== resource.id ||
+          prior.auditRequestId !== input.authority.auditRequestId ||
+          prior.operationId !== input.authority.operationId ||
+          !(await this.disposedCopyForWork(resource, prior))
+        )
+          return false;
+        const inputs = await this.authenticateValidationInputs(
+          resource,
+          undefined,
+          input.authority.operationId ?? undefined,
+        );
+        if (inputs) {
+          const predecessor = inputs.payload.current.payload;
+          if (
+            !validationInputsDisposed(inputs) ||
+            predecessor.resourceLeaseToken !== prior.resourceLeaseToken ||
+            predecessor.operationClaimToken !== prior.operationClaimToken ||
+            predecessor.itemClaimId !== prior.itemClaimId
+          )
+            return false;
+        }
+      }
       if (
         validPrivateWork(existing) &&
         existing.payload.pending.length > 0 &&
@@ -1144,26 +1198,27 @@ export class ICloudScheduledStagingRepository {
       ) {
         return false;
       }
-      const record: ScheduledPrivateWorkRecord = validPrivateWork(existing)
-        ? existing
-        : {
-            payload: {
-              version: 1,
-              purpose: 'scheduled-weekly-private-work',
-              generation: randomUUID(),
-              ownerId: input.ownerId,
-              resourceId: resource.id,
-              auditRequestId: input.authority.auditRequestId,
-              operationId: input.authority.operationId!,
-              operationClaimToken: input.authority.operationClaimToken!,
-              resourceLeaseToken: input.resource.leaseToken,
-              itemClaimId: guarded.request.itemClaimId,
-              copyGeneration,
-              pending: [],
-              settled: false,
-            },
-            seal: null,
-          };
+      const record: ScheduledPrivateWorkRecord =
+        validPrivateWork(existing) && !renewed
+          ? existing
+          : {
+              payload: {
+                version: 1,
+                purpose: 'scheduled-weekly-private-work',
+                generation: randomUUID(),
+                ownerId: input.ownerId,
+                resourceId: resource.id,
+                auditRequestId: input.authority.auditRequestId,
+                operationId: input.authority.operationId!,
+                operationClaimToken: input.authority.operationClaimToken!,
+                resourceLeaseToken: input.resource.leaseToken,
+                itemClaimId: guarded.request.itemClaimId,
+                copyGeneration,
+                pending: [],
+                settled: false,
+              },
+              seal: null,
+            };
       const workPayload = {
         ...record.payload,
         copyGeneration,
@@ -1183,7 +1238,8 @@ export class ICloudScheduledStagingRepository {
       ) {
         return false;
       }
-      const copyPayload = validPrivateCopy(copy) ? { ...copy.payload, settled: false } : undefined;
+      const copyPayload =
+        validPrivateCopy(copy) && !copy.payload.disposed ? { ...copy.payload, settled: false } : undefined;
       const fields = {
         auditOwnedWork: work,
         ...(copyPayload && {
@@ -1244,7 +1300,13 @@ export class ICloudScheduledStagingRepository {
         auditOwnedWork: { payload, seal: await this.transport.encodeSession(privateWorkScope(payload), payload) },
       };
       const copy = resource!.verification?.auditPrivateCopy;
-      if (validPrivateCopy(copy)) {
+      if (validPrivateCopy(copy) && copy.payload.disposed) {
+        try {
+          if (!(await this.disposedCopyForWork(resource!, record.payload))) return;
+        } catch {
+          return;
+        }
+      } else if (validPrivateCopy(copy)) {
         if (
           record.payload.copyGeneration !== copy.payload.generation ||
           copy.payload.resourceLeaseToken !== input.resource.leaseToken ||
