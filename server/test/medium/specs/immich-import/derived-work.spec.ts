@@ -2,6 +2,7 @@ import { Kysely, KyselyPlugin, RawNode, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { onTestFailed } from 'vitest';
 import { JobName, QueueName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
 import { IMPORT_DERIVED_STAGES, importDerivedRunId } from 'src/immich-import/derived-work.js';
@@ -13,6 +14,7 @@ import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_BATCH, QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { createImportScaleDiagnostics } from 'test/medium/import-scale-diagnostics.js';
 import { SCALE_ITEMS, scaleIt } from 'test/medium/scale.js';
 import { PostgresImportFixture } from 'test/medium/specs/immich-import/postgres-transport.fixture.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -546,12 +548,20 @@ describe('offline import derived-work durable ownership', () => {
   );
 
   scaleIt('transfers %i roots and four stages each in bounded pages, then caps each queue at 1000', 0.6, async () => {
-    await seed(SCALE_ITEMS);
+    const diagnostics = createImportScaleDiagnostics(process.env.FRAMELEAF_MEDIUM_DIAGNOSTICS === '1');
+    onTestFailed(() => diagnostics.snapshot());
+    const diagnosticDb = db.withPlugin(diagnostics.plugin);
+    const diagnosticStore = new SqlQueueStore(diagnosticDb);
+    const feed = (store: SqlQueueStore, queue: QueueName) =>
+      diagnostics.run('share-feed', () => store.feedManifest(queue));
+    await diagnostics.run('seed', () => seed(SCALE_ITEMS));
     const observed = observe();
     const started = performance.now();
-    await repositoryFor(db.withPlugin(observed.plugin)).dispatchImportedWork();
+    await diagnostics.run('dispatch', () =>
+      repositoryFor(diagnosticDb.withPlugin(observed.plugin)).dispatchImportedWork(),
+    );
     const transferredMs = performance.now() - started;
-    expect(await counts()).toEqual({
+    expect(await diagnostics.run('counts', counts)).toEqual({
       runs: 1,
       stages: 5,
       roots: SCALE_ITEMS,
@@ -563,22 +573,26 @@ describe('offline import derived-work durable ownership', () => {
     expect(observed.maximumRows()).toBe(QUEUE_BATCH);
     for (const queue of queues) {
       for (let admitted = 0; admitted < QUEUE_HIGH_WATER; admitted += QUEUE_BATCH) {
-        expect(await store.feedManifest(queue)).toBe(QUEUE_BATCH);
+        expect(await feed(diagnosticStore, queue)).toBe(QUEUE_BATCH);
       }
-      expect(await new SqlQueueStore(db).feedManifest(queue)).toBe(0);
+      expect(await feed(new SqlQueueStore(diagnosticDb), queue)).toBe(0);
     }
     // Exercise the coordinator's low-water policy with deterministic completed fixture executions.
     const queue = queues[0];
-    await sql`update job set state = 'completed' where id in (
+    await diagnostics.run('low-water-update', () =>
+      sql`update job set state = 'completed' where id in (
       select id from job where queue = ${queue} order by id limit ${QUEUE_HIGH_WATER - QUEUE_LOW_WATER - 1})`.execute(
-      db,
+        db,
+      ),
     );
-    expect(await store.feedManifest(queue)).toBe(0);
-    await sql`update job set state = 'completed' where id = (
-      select id from job where queue = ${queue} and state = 'pending' order by id limit 1)`.execute(db);
-    expect(await store.feedManifest(queue)).toBe(QUEUE_BATCH);
-    expect(await store.feedManifest(queue)).toBe(QUEUE_BATCH);
-    expect(await store.feedManifest(queue)).toBe(0);
+    expect(await feed(diagnosticStore, queue)).toBe(0);
+    await diagnostics.run('low-water-update', () =>
+      sql`update job set state = 'completed' where id = (
+      select id from job where queue = ${queue} and state = 'pending' order by id limit 1)`.execute(db),
+    );
+    expect(await feed(diagnosticStore, queue)).toBe(QUEUE_BATCH);
+    expect(await feed(diagnosticStore, queue)).toBe(QUEUE_BATCH);
+    expect(await feed(diagnosticStore, queue)).toBe(0);
     process.stdout.write(
       `Import manifest: roots=${SCALE_ITEMS} stages=${4 * SCALE_ITEMS} transferMs=${Math.round(transferredMs)} maxRows=${observed.maximumRows()} queueCap=${QUEUE_HIGH_WATER}\n`,
     );
