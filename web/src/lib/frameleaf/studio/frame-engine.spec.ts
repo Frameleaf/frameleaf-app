@@ -27,7 +27,16 @@ const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'content-type': 'application/json' } });
 
 const context = (): StudioHostContext => ({
-  project: { id: 'p', name: 'Surf', revision: 2, graph: { id: 'g' }, hasLease: true },
+  project: {
+    id: 'p',
+    name: 'Surf',
+    revision: 2,
+    graph: { id: 'g' },
+    hasLease: true,
+    graphDigest: null,
+    leaseEpoch: 0,
+    leaseExpiresAt: null,
+  },
   assets: [],
   handoffAssetIds: [],
   auth: { userId: 'u', name: 'Ada', avatarUrl: null, locale: 'en' },
@@ -60,6 +69,7 @@ const fakeFrame = (
   options: {
     kind?: 'editor' | 'commands';
     revision?: string;
+    protocolVersion?: number;
     respond?: (port: MessagePort, message: { type: string }) => void;
   } = {},
 ) => {
@@ -85,7 +95,7 @@ const fakeFrame = (
           data: {
             source: 'frameleaf-studio-frame',
             kind: options.kind ?? 'editor',
-            protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION,
+            protocolVersion: options.protocolVersion ?? STUDIO_FRAME_PROTOCOL_VERSION,
             engineRevision: options.revision ?? pinnedFreecutRevision,
           },
         }),
@@ -173,7 +183,11 @@ describe('studio editor frame (FL-88)', () => {
 
     instance.update({ ...context(), online: false });
     await tick();
-    expect(received[1]).toMatchObject({ type: 'update', context: { online: false } });
+    expect(received).toContainEqual({ type: 'revoke-sources' });
+    expect(received.find((message) => (message as { type: string }).type === 'update')).toMatchObject({
+      type: 'update',
+      context: { online: false },
+    });
 
     await instance.dispose();
     await instance.dispose();
@@ -599,5 +613,103 @@ it.each(['disconnect', 'project'] as const)('rejects an in-flight command on %s 
   } finally {
     listen.mockRestore();
     vi.unstubAllGlobals();
+  }
+});
+
+describe('explicit protocol8 source publication fence', () => {
+  it('refuses a protocol7 manifest and protocol7 hello rather than downgrade', async () => {
+    const frame = fakeFrame({ protocolVersion: 7 });
+    await expect(
+      createFrameStudioEngine({ manifest: { ...manifest, protocolVersion: 7 }, createFrame: frame.createFrame }).mount(
+        newStage(),
+        context(),
+        services(),
+      ),
+    ).rejects.toThrow('protocol');
+    await expect(
+      createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(newStage(), context(), services()),
+    ).rejects.toThrow('another engine');
+  });
+  for (const change of ['offline', 'revision', 'digest', 'account', 'lease', 'epoch', 'expiry'] as const) {
+    it(`${change} after SDK validation but before port publication sends no source bytes`, async () => {
+      const frame = fakeFrame();
+      const origin = context();
+      origin.project.graphDigest = 'a'.repeat(64);
+      origin.project.leaseExpiresAt = new Date(Date.now() + 90_000).toISOString();
+      let settle!: (value: unknown) => void;
+      const ready = new Promise<unknown>((resolve) => {
+        settle = resolve;
+      });
+      const resolve = vi.fn(() => ready);
+      const host = { ...services(), resolveStudioProjectSource: resolve } as StudioHostServices;
+      const instance = await createFrameStudioEngine({ manifest, createFrame: frame.createFrame }).mount(
+        newStage(),
+        origin,
+        host,
+      );
+      const results: Array<{ type: string; ok?: boolean; value?: unknown; callId?: number }> = [];
+      frame.port()!.addEventListener('message', (event) => {
+        results.push(event.data);
+      });
+      const request = {
+        revision: origin.project.revision,
+        graphDigest: origin.project.graphDigest,
+        parent: { kind: 'project-import', id: '11111111-1111-4111-8111-111111111111', checksum: 'b'.repeat(64) },
+        selection: {},
+      };
+      frame.port()!.postMessage({
+        type: 'service',
+        callId: 321,
+        name: 'resolveStudioProjectSource',
+        args: [request, { projectId: origin.project.id, userId: origin.auth.userId, graphVersion: 0 }],
+      });
+      await tick();
+      expect(resolve).toHaveBeenCalledTimes(1);
+      const next = { ...origin, project: { ...origin.project }, auth: { ...origin.auth } };
+      switch (change) {
+        case 'offline': {
+          next.online = false;
+          break;
+        }
+        case 'revision': {
+          next.project.revision += 1;
+          break;
+        }
+        case 'digest': {
+          next.project.graphDigest = 'c'.repeat(64);
+          break;
+        }
+        case 'account': {
+          next.auth.userId = 'other';
+          break;
+        }
+        case 'lease': {
+          next.project.hasLease = false;
+          break;
+        }
+        case 'epoch': {
+          next.sourceEpoch = 99;
+          break;
+        }
+        case 'expiry': {
+          break;
+        }
+      }
+      if (change !== 'expiry') {
+        instance.update(next);
+      }
+      settle({
+        projectId: origin.project.id,
+        ...request,
+        files: [{ base64: 'AQ==', path: 'animation.json', sha256: 'd'.repeat(64) }],
+        archive: false,
+        manifestDigest: 'e'.repeat(64),
+        expiresAt: new Date(Date.now() + (change === 'expiry' ? -1 : 4000)).toISOString(),
+      });
+      await tick();
+      expect(results.filter((result) => result.callId === 321 && result.ok)).toHaveLength(0);
+      expect(results).toContainEqual(expect.objectContaining({ type: 'service-result', callId: 321, ok: false }));
+      await instance.dispose();
+    });
   }
 });

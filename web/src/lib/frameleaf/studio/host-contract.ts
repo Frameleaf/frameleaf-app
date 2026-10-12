@@ -26,6 +26,7 @@
  * The adapters that satisfy this contract live outside `studio/vendor/freecut`, which is a
  * provenance-checked snapshot that no story edits.
  */
+import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioGeneratedMedia } from './generated-media';
@@ -160,6 +161,10 @@ export interface StudioProjectHandle {
   id: string;
   name: string;
   revision: number;
+  /** Server acknowledgement of this exact saved envelope; never a local graph hash. */
+  graphDigest: string | null;
+  leaseEpoch: number;
+  leaseExpiresAt: string | null;
   /** Opaque Freecut graph. `null` while a project has been created but never saved. */
   graph: unknown;
   /** True when this session holds the write lease; false means read-only review. */
@@ -215,7 +220,8 @@ export interface StudioEditorScope {
   graphVersion: number;
 }
 
-export type StudioEditorCommitResult = { status: 'saved'; revision: number } | { status: 'rejected'; reason: string };
+export type StudioEditorCommitResult =
+  { status: 'saved'; revision: number; graphDigest: string | null } | { status: 'rejected'; reason: string };
 
 export interface StudioProjectImportUpload {
   id: string;
@@ -241,6 +247,8 @@ export type StudioCancelResult = { status: 'cancelled' | 'already-published'; re
 
 export interface StudioHostContext {
   project: StudioProjectHandle;
+  /** Changes whenever acknowledged sources or host authority change. */
+  sourceEpoch?: number;
   /**
    * Library media offered in the bin, including the selection a "make a movie" handoff
    * carried in. Ordering is the host's: the handoff selection first, in the order the
@@ -429,6 +437,10 @@ export interface StudioHostServices {
   commitEditorDraft?(graph: unknown, baseRevision: number, scope: StudioEditorScope): Promise<StudioEditorCommitResult>;
   /** Re-read the project, for reconciling after a `stale-revision` rejection. */
   reloadProject(): Promise<StudioProjectHandle>;
+  resolveStudioProjectSource?(
+    request: StudioSourceResolutionRequestDto,
+    scope: StudioEditorScope,
+  ): Promise<StudioSourceResolutionDto>;
   /** Resolve one asset the engine knows only by id. */
   resolveAsset(assetId: string): StudioAssetRef | undefined;
   /** Show a message in the host's own notification surface. */

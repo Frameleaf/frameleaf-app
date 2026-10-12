@@ -3,6 +3,9 @@ import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TimelineItem, TextItem } from '@/types/timeline'
 import { useEditorStore } from '@/shared/state/editor'
+import { useSelectionStore } from '@/shared/state/selection'
+import { addMarker } from '@/features/timeline/stores/actions/marker-actions'
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { buildTimelineFromStores } from '@/features/timeline/stores/timeline-persistence'
 import { applyCanonicalCommands, canonicalJson, type CanonicalEnvelope } from '../src/canonical-commands'
 import {
@@ -1180,4 +1183,96 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
     // The main timeline keeps its own rate; the wrapper reads the same seconds of the sequence.
     expect(itemsOf(next)[0]).toMatchObject({ from: 0, durationInFrames: 60, sourceStart: 60, sourceEnd: 180 })
   })
+
+})
+
+describe('FL-94 canonical linked lock refusal', () => {
+  it.each(['split', 'ripple delete'])('canonically refuses locked linked %s without graph/history/selection changes', async (tool) => {
+    const initial = await fourParts()
+    initial.timeline!.tracks.find(({ id }) => id === 'a1')!.locked = true
+    const middle = onTrack(initial, 'v1')[1]!
+    const normalized = await applied(initial, [])
+    const before = canonicalJson(normalized)
+    const graphBefore = buildTimelineFromStores()
+    const undoBefore = [...useTimelineCommandStore.getState().undoStack]
+    const redoBefore = [...useTimelineCommandStore.getState().redoStack]
+    useSelectionStore.getState().selectItems([middle.id])
+    const selection = useSelectionStore.getState()
+    const command = tool === 'split'
+      ? envelope('clip.split', { clipIds: [middle.id], at: seconds(3) })
+      : envelope('clip.delete', { clipIds: [middle.id], ripple: true })
+    await expect(applyCanonicalCommands(normalized, [command], media)).resolves.toMatchObject({ status: 'rejected' })
+    expect(canonicalJson(normalized)).toBe(before)
+    expect(buildTimelineFromStores()).toEqual(graphBefore)
+    expect(useTimelineCommandStore.getState().undoStack).toEqual(undoBefore)
+    expect(useTimelineCommandStore.getState().redoStack).toEqual(redoBefore)
+    expect(useSelectionStore.getState()).toEqual(selection)
+  })
+
+})
+
+describe('FL-94 public canonical gap inherited locks', () => {
+  it.each(['linked', 'unrelated', 'unlocked', 'sync-off'] as const)(
+    'retains canonical gap refusal and exclusions (%s)', async (mode) => {
+      const { graph, moving } = await singleLinkedGap(false)
+      const lane = mode === 'linked' ? 'a1' : 'music'
+      graph.timeline!.tracks.push(track('gap-group', 'audio', 4, {
+        isGroup: true, locked: mode === 'linked' || mode === 'unrelated',
+      }))
+      Object.assign(graph.timeline!.tracks.find((candidate) => candidate.id === lane)!, {
+        parentTrackId: 'gap-group', locked: false,
+        ...(mode === 'sync-off' ? { syncLock: false } : {}),
+      })
+      // A real stored nested graph is retained; this command only targets the owning root.
+      graph.timeline!.compositions = [{
+        id: 'gap-nested', name: 'Nested', editorKind: 'sequence', fps: 30,
+        width: 1920, height: 1080, durationInFrames: 60,
+        tracks: [track('nested-a', 'audio', 0, { parentTrackId: 'nested-group' }),
+          track('nested-group', 'audio', 1, { isGroup: true, locked: true })],
+        items: [{...onTrack(graph, 'a1')[0]!, id: 'nested-sound', trackId: 'nested-a',
+          linkedGroupId: undefined, from: 0, durationInFrames: 60, sourceStart: 0, sourceEnd: 60}],
+        transitions: [], keyframes: [], markers: [],
+      } as never]
+      const inputBefore = canonicalJson(graph)
+      // The public route migrates/normalizes before dispatch, including inherited group locks.
+      const baseline = await applied(graph, [])
+      expect(baseline.timeline!.tracks.find((candidate) => candidate.id === lane)!.locked)
+        .toBe(mode === 'linked' || mode === 'unrelated')
+      expect(baseline.timeline!.tracks.some(candidate => candidate.isGroup || candidate.parentTrackId)).toBe(false)
+      expect(baseline.timeline!.compositions![0]!.tracks[0]!.locked).toBe(true)
+      addMarker(10, '#fff', 'Retain redo')
+      const markedStores = canonicalJson(buildTimelineFromStores())
+      useTimelineCommandStore.getState().undo()
+      expect(useTimelineCommandStore.getState().redoStack).toHaveLength(1)
+      const beforeStores = canonicalJson(buildTimelineFromStores())
+      const historyBefore = useTimelineCommandStore.getState()
+      useSelectionStore.getState().selectItems([onTrack(baseline, 'v1')[1]!.id])
+      const selectionBefore = useSelectionStore.getState()
+      const outcome = await applyCanonicalCommands(graph, [envelope('track.closeGap', {
+        trackId: 'v1', at: seconds(9, 2),
+      })], media)
+      expect(canonicalJson(graph)).toBe(inputBefore)
+      if (mode === 'linked') {
+        expect(outcome).toMatchObject({status: 'rejected', index: 0, reason: 'failed',
+          detail: 'track.closeGap: a clip it would change is on a locked track'})
+        expect(canonicalJson(buildTimelineFromStores())).toBe(beforeStores)
+        expect(useTimelineCommandStore.getState().undoStack).toEqual(historyBefore.undoStack)
+        expect(useTimelineCommandStore.getState().redoStack).toEqual(historyBefore.redoStack)
+        expect(useSelectionStore.getState()).toEqual(selectionBefore)
+        useTimelineCommandStore.getState().redo()
+        expect(canonicalJson(buildTimelineFromStores())).toBe(markedStores)
+      } else {
+        expect(outcome.status).toBe('applied')
+        if (outcome.status !== 'applied') throw new Error(outcome.detail)
+        const expected = structuredClone(baseline)
+        for (const item of itemsOf(expected)) if (moving.includes(item.id)) item.from -= 30
+        if (mode === 'unlocked') expected.timeline!.items = expected.timeline!.items
+          .filter(item => item.id !== 'interval-music')
+        expect(canonicalJson(outcome.project)).toBe(canonicalJson(expected))
+        expect(onTrack(outcome.project, 'v1').map(item => item.from)).toEqual([0, 120])
+        expect(onTrack(outcome.project, 'a1').map(item => item.from)).toEqual([0, 120])
+        expect(outcome.project.timeline!.compositions).toEqual(baseline.timeline!.compositions)
+      }
+    },
+  )
 })
