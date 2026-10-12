@@ -1,5 +1,5 @@
-"""Pure source/filesystem checks. Never executes intake subprocesses or kernel controls."""
-import errno,ast,hashlib,importlib.util,json,os,tempfile,unittest
+"""Pure source/filesystem checks, including import-only Python and temporary Git fixtures. Never runs intake main or kernel controls."""
+import errno,ast,hashlib,importlib.util,json,os,subprocess,sys,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from release import publish_release
@@ -11,10 +11,10 @@ ROOT=HERE.parents[3]
 class SourceChecks(unittest.TestCase):
  def test_syntax(self):
   for path in HERE.glob('*.py'):ast.parse(path.read_text())
- def test_exact_125_recipe_and_lock(self):
+ def test_exact_current_recipe_and_lock(self):
   data=json.loads((ROOT/'studio/engine-build.json').read_text())
-  self.assertEqual(len(data['patches']),125)
-  self.assertEqual(data['sourceSha256'],'6d1edf68bb2d67195f3cfa5a58b78fe1c36148069934efef3060962d199e645d')
+  self.assertEqual(len(data['patches']),133)
+  self.assertEqual(data['sourceSha256'],'1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80')
   self.assertEqual(intake.digest(ROOT/'studio/engine-package-lock.json'),data['lockfileSha256'])
   for item in data['patches']:self.assertEqual(intake.digest(ROOT/'studio'/item['path']),item['sha256'])
  def test_unit_scopes_and_limits(self):
@@ -146,6 +146,24 @@ class PreflightChecks(unittest.TestCase):
   for name in ['control','evidence','storage']:(base/name).mkdir()
   publish_release(base/'control/setup-owner.json',{'kind':'before-resources','base':str(base),'identity':intake.stat_identity(base),'storageIdentity':intake.stat_identity(base/'storage')})
   return base
+ def test_startup_import_preserves_clean_git_checkout(self):
+  env={key:value for key,value in os.environ.items() if key not in ['PYTHONDONTWRITEBYTECODE','PYTHONPYCACHEPREFIX','GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE']}
+  with tempfile.TemporaryDirectory() as temp:
+   base=Path(temp)
+   entry=base/HERE.relative_to(ROOT);entry.mkdir(parents=True)
+   for name in ['intake.py','release.py']:(entry/name).write_bytes((HERE/name).read_bytes())
+   for parent in [HERE,*HERE.parents[:4]]:
+    ignore=parent/'.gitignore'
+    if ignore.is_file():
+     target=base/ignore.relative_to(ROOT);target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(ignore.read_bytes())
+   subprocess.run(['git','init','-q',temp],check=True,env=env)
+   subprocess.run(['git','-C',temp,'add','.'],check=True,env=env)
+   subprocess.run(['git','-C',temp,'-c','user.name=Source fixture','-c','user.email=fixture@invalid','-c','commit.gpgsign=false','commit','-qm','temporary import-only fixture'],check=True,env=env)
+   status=lambda:subprocess.check_output(['git','-C',temp,'status','--porcelain'],text=True,env=env)
+   self.assertEqual(status(),'')
+   subprocess.run([sys.executable,'-c',"import runpy; runpy.run_path('intake.py',run_name='__import_only__')"],cwd=entry,check=True,env=env)
+   self.assertEqual(status(),'')
+   self.assertFalse((entry/'__pycache__').exists())
  def test_system_state_exact_pairs_and_receipt(self):
   self.assertTrue(callable(getattr(intake,'system_state',None)))
   for state,status in [('running',0),('degraded',1)]:
@@ -153,8 +171,19 @@ class PreflightChecks(unittest.TestCase):
     base=self.setup(temp)
     with patch('intake.subprocess.run',return_value=intake.subprocess.CompletedProcess([],status,state+'\n','')) as run:
      intake.system_state(base)
-    run.assert_called_once_with(['/usr/bin/systemctl','is-system-running'],text=True,stdout=intake.subprocess.PIPE,stderr=intake.subprocess.PIPE,timeout=10)
+    run.assert_called_once_with(['/usr/bin/systemctl','is-system-running','--wait'],text=True,stdout=intake.subprocess.PIPE,stderr=intake.subprocess.PIPE,timeout=10)
     self.assertEqual(json.loads((base/'evidence/systemd-state.json').read_text()),{'state':state,'status':status,'stderr':''})
+ def test_boot_starting_waits_once_for_terminal_state_with_existing_deadline(self):
+  for state,status in [('running',0),('degraded',1)]:
+   with self.subTest(state=state),tempfile.TemporaryDirectory() as temp:
+    base=self.setup(temp)
+    def boot(argv,**options):
+     self.assertEqual(options['timeout'],10)
+     return intake.subprocess.CompletedProcess(argv,status,state,'') if '--wait' in argv else intake.subprocess.CompletedProcess(argv,1,'starting','')
+    with patch('intake.subprocess.run',side_effect=boot) as run,patch('intake.command') as command:
+     intake.system_state(base)
+    self.assertEqual(run.call_count,1);command.assert_not_called()
+    self.assertEqual(json.loads((base/'evidence/systemd-state.json').read_text())['state'],state)
  def test_system_state_mismatch_unknown_and_unexpected_errors_fail_closed(self):
   self.assertTrue(callable(getattr(intake,'system_state',None)))
   for state,status,stderr in [('running',1,''),('degraded',0,''),('unknown',1,''),('starting',1,''),('degraded',2,''),('running',0,'diagnostic'),('',1,'')]:

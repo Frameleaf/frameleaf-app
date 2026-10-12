@@ -1,13 +1,14 @@
 """Root-only fresh ephemeral GitHub VM intake. No audio render or browser execution."""
 import errno,hashlib,json,os,platform,stat,shutil,signal,subprocess,sys,sysconfig,time
 from pathlib import Path
+sys.dont_write_bytecode=True  # Keep startup imports from dirtying the reviewed checkout.
 from release import publish_release
 
 PREFIX='fl103-intake-'
 LIMITS={'cpu.max':'200000 100000','memory.max':'2147483648','memory.swap.max':'0','pids.max':'128'}
 def command(argv,timeout=10):return subprocess.check_output(argv,text=True,stderr=subprocess.STDOUT,timeout=timeout).strip()
 def system_state(base):
- result=subprocess.run(['/usr/bin/systemctl','is-system-running'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
+ result=subprocess.run(['/usr/bin/systemctl','is-system-running','--wait'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
  publish_release(base/'evidence/systemd-state.json',{'state':result.stdout.strip()[:200],'status':result.returncode,'stderr':result.stderr[:200]})
  assert not result.stderr and (result.stdout.strip(),result.returncode) in [('running',0),('degraded',1)],'unexpected systemd state/exit status'
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -214,9 +215,10 @@ def main():
  assert node.is_file() and npm.is_file()
  assert Path('/sys/fs/cgroup/cgroup.controllers').is_file() and 'memory' in Path('/sys/fs/cgroup/cgroup.controllers').read_text()
  system_state(base)
- assert command(['/usr/bin/git','-C',str(checkout),'status','--porcelain'])==''
+ checkout_status=command(['/usr/bin/git','-C',str(checkout),'status','--porcelain'])
+ assert checkout_status=='','dirty reviewed checkout (first 4096 characters): '+checkout_status[:4096]
  head=command(['/usr/bin/git','-C',str(checkout),'rev-parse','HEAD'])
- recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']=='6d1edf68bb2d67195f3cfa5a58b78fe1c36148069934efef3060962d199e645d' and len(recipe['patches'])==125
+ recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']=='1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' and len(recipe['patches'])==133
  assert digest(checkout/'studio/engine-package-lock.json')==recipe['lockfileSha256']
  for patch in recipe['patches']:assert digest(checkout/'studio'/patch['path'])==patch['sha256']
  source=Path(__file__).resolve().parent
