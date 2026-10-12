@@ -649,7 +649,12 @@
       "path": "patches/0134-shared-edit-effective-lock-refusal.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "73c40127074800a2fa47e93440e03254689bb3e78a27275afa6e771d0ce3758d"
+    },
+    {
+      "path": "patches/0135-shared-speed-gap-effective-lock-refusal.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1f577b1f3ec660b17b1aeab0c5eea3954b70f1eea667f53626b0b88ae1fccc10"
     }
   ],
-  "sourceSha256": "1d91e981316146386b98192d087f140b9752e391476a8805a1bce302c546bdee"
+  "sourceSha256": "86c3c5b8cab095d45df4c18601185de27b9f3a5b5ca64dc393f2b80c54e3a07d"
 }
