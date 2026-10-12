@@ -175,6 +175,7 @@ export class PhotoToolsController {
     return this.developService.importRendition(auth, id, dto, file);
   }
 
+  // FL-233
   @Post(`${RouteKey.Asset}/:id/develop/artifacts`)
   @Authenticated({ permission: Permission.AssetEditCreate })
   @ApiConsumes('multipart/form-data')
@@ -185,7 +186,7 @@ export class PhotoToolsController {
   @Endpoint({
     summary: 'Upload a develop artifact',
     description:
-      'FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.',
+      'Keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.',
     history: history(),
   })
   uploadAssetDevelopArtifact(

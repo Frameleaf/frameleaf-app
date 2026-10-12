@@ -193,7 +193,8 @@ const RenderWorkerClaimRequestSchema = z
 
 const RenderWorkerInputGrantSchema = z
   .object({
-    inputId: z.string().describe('FL-90 resource key, or `source` for a single-asset workload'),
+    // FL-90 resource key
+    inputId: z.string().describe('Resource key, or `source` for a single-asset workload'),
     kind: z.string().describe('Resource class: library-asset, edited-master, font, lut, …'),
     resourceId: z.string().describe('Asset or resource id. Never a path'),
     checksum: z.string().nullable().describe('Digest the manifest was resolved against, when known'),

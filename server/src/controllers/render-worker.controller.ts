@@ -417,6 +417,7 @@ export class RenderWorkerController {
     return this.service.acknowledgeCancel(session, id, dto);
   }
 
+  // FL-96
   @Post('operations/:id/stream')
   @HttpCode(HttpStatus.OK)
   @WorkerSessionHeader()
@@ -424,7 +425,7 @@ export class RenderWorkerController {
   @Endpoint({
     summary: 'Read the signalling of a claimed preview stream',
     description:
-      "FL-96. What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
+      "What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
     history: history(),
   })
   getRenderStreamSignal(
@@ -435,6 +436,7 @@ export class RenderWorkerController {
     return this.service.streamSignal(session, id, dto);
   }
 
+  // FL-96
   @Post('operations/:id/stream/offer')
   @HttpCode(HttpStatus.OK)
   @WorkerSessionHeader()
@@ -442,7 +444,7 @@ export class RenderWorkerController {
   @Endpoint({
     summary: 'Offer a claimed preview stream',
     description:
-      'FL-96. The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.',
+      'The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.',
     history: history(),
   })
   offerRenderStream(
