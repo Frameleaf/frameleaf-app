@@ -10,6 +10,11 @@ import {
   RenderWorkerStatusSchema,
   StudioExportRemoteReasonSchema,
 } from 'src/enum.js';
+import {
+  GpuMemoryBytesSchema,
+  GpuWorkingBudgetApprovalSchema,
+  GpuWorkingBudgetEvidenceSchema,
+} from 'src/utils/gpu-working-budget-policy.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
@@ -39,7 +44,8 @@ const RenderWorkerSchema = z
     maxConcurrentOperations: z.int().describe('Operations this worker may hold at once'),
     maxWallClockMs: z.string().nullable().describe('Longest one operation may run here, in milliseconds'),
     maxOutputBytes: z.string().nullable().describe('Most output bytes one operation may produce here'),
-    gpuMemoryBytes: z.string().nullable().describe('GPU memory the worker was qualified with, in bytes'),
+    gpuMemoryBytes: GpuMemoryBytesSchema.nullable().describe('Administrator ceiling A in bytes; never a measurement'),
+    gpuWorkingBudgetApproval: GpuWorkingBudgetApprovalSchema.nullable().optional(),
     activeOperations: z.int().describe('Operations the worker currently holds'),
     lastAdmittedAt: z.string().meta({ format: 'date-time' }).nullable(),
     lastSeenAt: z.string().meta({ format: 'date-time' }).nullable(),
@@ -62,7 +68,8 @@ const RenderWorkerCreateSchema = z
     kinds: z.array(MediaOperationKindSchema).min(1).describe('Operation kinds this worker may claim'),
     engineDigest: z.string().trim().min(1).max(200).nullable().optional(),
     conformanceMaxAgeMs: z.int().min(60_000).optional(),
-    gpuMemoryBytes: BigIntString.nullable().optional(),
+    gpuMemoryBytes: GpuMemoryBytesSchema.nullable().optional(),
+    gpuWorkingBudgetApproval: GpuWorkingBudgetApprovalSchema.nullable().optional(),
     ...RenderWorkerLimitFieldsSchema,
   })
   .meta({ id: 'RenderWorkerCreateDto' });
@@ -81,7 +88,8 @@ const RenderWorkerUpdateSchema = z
     kinds: z.array(MediaOperationKindSchema).min(1).optional(),
     engineDigest: z.string().trim().min(1).max(200).nullable().optional(),
     conformanceMaxAgeMs: z.int().min(60_000).optional(),
-    gpuMemoryBytes: BigIntString.nullable().optional(),
+    gpuMemoryBytes: GpuMemoryBytesSchema.nullable().optional(),
+    gpuWorkingBudgetApproval: GpuWorkingBudgetApprovalSchema.nullable().optional(),
     ...RenderWorkerLimitFieldsSchema,
   })
   .meta({ id: 'RenderWorkerUpdateDto' });
@@ -152,7 +160,8 @@ const RenderWorkerAdmissionSchema = z
     engineDigest: z.string().trim().min(1).max(200).describe('Digest of the engine and patches actually loaded'),
     conformanceReportedAt: z.string().meta({ format: 'date-time' }).describe('When the conformance check ran'),
     softwareRenderer: z.boolean().describe('True when the renderer is a software or fallback device'),
-    gpuMemoryBytes: BigIntString.nullable().describe('GPU memory measured by the conformance check'),
+    gpuMemoryBytes: GpuMemoryBytesSchema.nullable().describe('Raw measured usable GPU working budget M, in bytes'),
+    gpuWorkingBudgetEvidence: GpuWorkingBudgetEvidenceSchema.nullable().optional(),
     codecs: z.array(z.string().max(60)).max(64).optional().describe('Encoder and decoder names the check verified'),
     colorPrecision: z
       .object({
@@ -175,6 +184,8 @@ const RenderWorkerSessionSchema = z
     workerId: z.uuidv7(),
     sessionToken: z.string().describe('Present as the x-frameleaf-worker-session header on every worker call'),
     expiresAt: z.string().meta({ format: 'date-time' }),
+    gpuMemoryBytes: GpuMemoryBytesSchema.nullable().optional().describe('Qualified session budget Q, in bytes'),
+    gpuWorkingBudgetEvidence: GpuWorkingBudgetEvidenceSchema.nullable().optional(),
     scopes: z.array(MediaOperationKindSchema),
     leaseMs: z.int().describe('How long a claim lasts without a heartbeat'),
     heartbeatIntervalMs: z.int().describe('How often the worker should heartbeat a held claim'),
