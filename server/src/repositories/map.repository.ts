@@ -584,9 +584,16 @@ export class MapRepository {
     return adminMap;
   }
 
-  private createGeodataIndices() {
-    return Promise.all([
-      sql`ALTER TABLE geodata_places ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(this.db),
+  /**
+   * The primary key comes first, on its own: adding it takes an ACCESS EXCLUSIVE lock, which conflicts
+   * with the SHARE lock each index build holds. Started together, the key waited for the slower GIN
+   * builds and the builds queued behind it waited for the key, until the connection's lock timeout
+   * cancelled them and the microservices worker failed to start. The index builds share their lock, so
+   * they still run together once the key is in place.
+   */
+  private async createGeodataIndices() {
+    await sql`ALTER TABLE geodata_places ADD PRIMARY KEY (id) WITH (FILLFACTOR = 100)`.execute(this.db);
+    await Promise.all([
       this.db.schema
         .createIndex(`idx_geodata_places_alternate_names`)
         .on('geodata_places')
