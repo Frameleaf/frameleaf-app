@@ -87,6 +87,9 @@ import {
   retireProject,
   type LibraryMediaSeeder,
 } from './library-media'
+import { createClosedVectorSources } from './closed-vector-sources'
+import { studioSourceJson } from '@frameleaf/host/source-resolution'
+import { nativeVectorScope } from './native-vector-scope'
 import { canonicalJson } from './canonical-commands'
 import { hideFileSystemPickers, installBrowserShims } from './browser-shims'
 import { installTimelineTouchEditing } from './timeline-touch'
@@ -177,6 +180,7 @@ interface Session extends DraftSendState {
   context: StudioHostContext
   workspace: VirtualWorkspace
   media: LibraryMediaSeeder
+  vectors: ReturnType<typeof createClosedVectorSources>
   root: Root
   /** The Freecut project id the host's graph carries; every draft is sent under it. */
   engineProjectId: string
@@ -201,6 +205,19 @@ interface Session extends DraftSendState {
 }
 
 let session: Session | null = null
+
+const vectorIdentity = (context: StudioHostContext) => studioSourceJson({
+  project: context.project, sourceEpoch: context.sourceEpoch, userId: context.auth.userId,
+  online: context.online, draftHeld: context.draftHeld, imports: context.projectImports, assets: context.assets,
+})
+function reconcileVectors(state: Session): void {
+  const context = state.context
+  const identity = vectorIdentity(context)
+  const mount = state.mount
+  state.vectors.reconcile(nativeVectorScope(context, mount.projectId, mount.generation,
+    () => !state.disposed && vectorIdentity(state.context) === identity && state.mount === mount &&
+      !state.writePending && !state.pendingSend && !useTimelineSettingsStore.getState().isDirty))
+}
 
 /**
  * A new project for an empty handle: the host's name, a 1080p canvas, the handoff on V1. The grid
@@ -384,6 +401,7 @@ function watchDrafts(state: Session) {
       // Work the host has not taken yet; a remount before it is taken reports it lost (FL-174).
       state.writeVersion = (state.writeVersion ?? 0) + 1
       state.writePending = true
+      state.vectors.invalidate()
       post({ type: 'dirty', dirty: true })
       // A burst of writes debounces into one send; the timer a later write supersedes is dropped
       // from `mountTimers` too, not only cleared, so it does not sit there for the rest of the
@@ -617,6 +635,7 @@ function installMediaRelink(state: Session) {
       const priorMedia = useMediaLibraryStore.getState()
       const before = captured.graph
       try {
+        state.vectors.invalidate()
         publishRelinkSources(before, graph)
         captured.graph = graph
         state.workspace.putFile(
@@ -703,6 +722,7 @@ function watchDirty(state: Session) {
   state.unsubscribe.push(
     useTimelineSettingsStore.subscribe((settings, previous) => {
       if (settings.isDirty === previous.isDirty && !settings.isDirty) return
+      if (settings.isDirty || state.writePending || state.pendingSend) state.vectors.invalidate()
       post({ type: 'dirty', dirty: settings.isDirty || state.writePending || state.pendingSend })
       const mount = state.mount
       if (!settings.isDirty || settings.isTimelineLoading || !acceptsWrite(state, mount)) return
@@ -758,6 +778,7 @@ function onLoadFinished(state: Session, projectId: string, error: unknown) {
  * own project file and are never sent.
  */
 async function remount(state: Session, context: StudioHostContext, incoming: string) {
+  state.vectors.invalidate()
   state.relinkController?.abort()
   usePreviewBridgeStore.setState({ scopeOwner: null })
   const replaced = state.mount
@@ -796,6 +817,7 @@ async function remount(state: Session, context: StudioHostContext, incoming: str
   )
     notifySuperseded(state)
   state.renderedGeneration = mount.generation
+  reconcileVectors(state)
   state.render()
 }
 
@@ -916,10 +938,12 @@ async function mount(context: StudioHostContext): Promise<void> {
   const state: Session = {
     context,
     workspace,
+    vectors: createClosedVectorSources(),
     media: createLibraryMediaSeeder({
       workspace,
       projectId: () => state.mount.projectId,
       onChange: () => void useMediaLibraryStore.getState().loadMediaItems(),
+      onAvailabilityChange: (mediaId, available) => state.vectors.availability(mediaId, available),
     }),
     root: createRoot(container),
     engineProjectId,
@@ -941,6 +965,7 @@ async function mount(context: StudioHostContext): Promise<void> {
     disposed: false,
   }
   session = state
+  reconcileVectors(state)
   usePreviewBridgeStore.setState({ scopeOwner: null })
   const first = state.mount
   // Every Freecut save is judged when it starts (see `shims/timeline-persistence.ts`).
@@ -978,6 +1003,7 @@ async function mount(context: StudioHostContext): Promise<void> {
 async function update(context: StudioHostContext): Promise<void> {
   const state = session
   if (!state || state.disposed) return
+  if (vectorIdentity(state.context) !== vectorIdentity(context)) state.vectors.invalidate()
   const previous = state.context
   const changedOrigin = context.auth.userId !== previous.auth.userId || context.project.id !== previous.project.id ||
     graphVersionOf(context) !== graphVersionOf(previous) || context.project.hasLease !== previous.project.hasLease ||
@@ -1006,6 +1032,7 @@ async function update(context: StudioHostContext): Promise<void> {
         graphVersion: graphVersionOf(context),
       })
     : 'hold'
+  if (outcome !== 'remount' && !context.draftHeld) reconcileVectors(state)
   if (outcome === 'remount') {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. A fresh editor instance loads it.
@@ -1058,12 +1085,14 @@ async function dispose(): Promise<void> {
   session = null
   if (!state || state.disposed) return
   state.disposed = true
+  state.vectors.dispose()
   state.relinkController?.abort()
   setPersistenceGate({ mayStartSave: () => false, loadFinished: () => undefined })
   releaseMountTimers(state.mountTimers)
   for (const stop of state.unsubscribe.splice(0)) stop()
   usePlaybackStore.getState().pause()
   state.root.unmount()
+  state.vectors.unmount()
   state.media.dispose()
   blobUrlManager.releaseAll()
   state.workspace.dispose()
@@ -1142,6 +1171,10 @@ async function onHostMessage(message: StudioHostToFrameMessage) {
       await update(message.context).catch((error: unknown) =>
         post({ type: 'fatal', error: error instanceof Error ? error.message : String(error) }),
       )
+      return
+    }
+    case 'revoke-sources': {
+      session?.vectors.invalidate()
       return
     }
     case 'revoke-generated': {

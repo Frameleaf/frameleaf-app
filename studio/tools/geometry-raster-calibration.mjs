@@ -152,7 +152,23 @@ export function validateBaseRaster(capture, envelope, binding) {
         binding.sourceSha256 ===
           '6d1edf68bb2d67195f3cfa5a58b78fe1c36148069934efef3060962d199e645d' ||
         binding.sourceSha256 ===
-          '1a5fb80a4729b569646bc258c4815fbcabd79d0bc13f0910ad0cdc43ce29ed7e'),
+          '1a5fb80a4729b569646bc258c4815fbcabd79d0bc13f0910ad0cdc43ce29ed7e' ||
+        binding.sourceSha256 ===
+          'f0fb723b695efa8d1ea5af4a9ab5e7523f112f6bad76a582ae964e02152e65d9' ||
+        binding.sourceSha256 ===
+          '365ce48c4403f764bb77fee14b78fd0b154dd7906106748ee5790e0c3b8af424' ||
+        binding.sourceSha256 ===
+          '1d91e981316146386b98192d087f140b9752e391476a8805a1bce302c546bdee' ||
+        binding.sourceSha256 ===
+          '86c3c5b8cab095d45df4c18601185de27b9f3a5b5ca64dc393f2b80c54e3a07d' ||
+        binding.sourceSha256 ===
+          '2be3c9aace8167be04a94878541a2fb5cb874d69274e9b05465596801a6d95e9' ||
+        binding.sourceSha256 ===
+          '2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7' ||
+        binding.sourceSha256 ===
+          'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578' ||
+        binding.sourceSha256 ===
+          '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80'),
     'SOURCE_BROWSER',
   )
   check(

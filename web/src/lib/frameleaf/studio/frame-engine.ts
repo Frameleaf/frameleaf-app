@@ -30,9 +30,11 @@ import {
   type StudioCommandFrameMessage,
   type StudioFrameManifest,
   type StudioFrameServiceName,
+  type StudioFrameServiceCalls,
   type StudioFrameToHostMessage,
   type StudioHostToFrameMessage,
 } from './frame-protocol';
+import { STUDIO_FRAME_SERVICE_SCHEMA_V8, isStudioFrameServiceName } from './frame-service-schema';
 import { storeGeneratedMedia } from './generated-media';
 import { createStudioGeneratedAccess } from './generated-media-client';
 import type {
@@ -45,6 +47,7 @@ import type {
   StudioProjectImportRef,
   StudioNavigationTarget,
 } from './host-contract';
+import { studioSourceJson } from './source-resolution';
 
 export const STUDIO_ENGINE_BASE = '/studio-engine/';
 
@@ -196,11 +199,39 @@ export const toNavigationTarget = (value: unknown): StudioNavigationTarget | nul
 };
 
 type ServiceCall = (services: StudioHostServices, args: unknown[]) => Promise<unknown>;
+type ServiceHandlers = {
+  [Name in StudioFrameServiceName]: (
+    services: StudioHostServices,
+    args: StudioFrameServiceCalls[Name]['args'],
+  ) => Promise<StudioFrameServiceCalls[Name]['result']>;
+};
+const sourceIdentity = (context: StudioHostContext) =>
+  studioSourceJson({
+    project: context.project,
+    sourceEpoch: context.sourceEpoch,
+    userId: context.auth.userId,
+    online: context.online,
+    draftHeld: context.draftHeld,
+    imports: context.projectImports,
+    assets: context.assets,
+  });
 
 const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
 /** The services a frame may call, each checked for shape before it reaches the host. */
-const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
+const serviceCalls: ServiceHandlers = {
+  resolveStudioProjectSource: (services, [request, scope]) => {
+    if (
+      !services.resolveStudioProjectSource ||
+      !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource([request, scope])
+    ) {
+      return Promise.reject(new Error('SOURCE_RESOLUTION_REFUSED'));
+    }
+    return services.resolveStudioProjectSource(
+      request as Parameters<NonNullable<StudioHostServices['resolveStudioProjectSource']>>[0],
+      scope as Parameters<NonNullable<StudioHostServices['resolveStudioProjectSource']>>[1],
+    );
+  },
   authorizeGeneratedMedia: () => Promise.resolve(false),
   submitCommands: (services, [envelopes]) =>
     services.submitCommands(Array.isArray(envelopes) ? (envelopes as StudioCommandEnvelope[]) : []),
@@ -219,11 +250,11 @@ const serviceCalls: Record<StudioFrameServiceName, ServiceCall> = {
   },
   commitEditorDraft: (services, [graph, baseRevision, scope]) => {
     if (!services.commitEditorDraft || !isCount(baseRevision) || !scope || typeof scope !== 'object') {
-      return Promise.resolve({ status: 'rejected', reason: 'Invalid relink save origin' });
+      return Promise.resolve({ status: 'rejected', reason: 'Invalid relink save origin' } as const);
     }
     const origin = scope as { projectId?: unknown; userId?: unknown; graphVersion?: unknown };
     if (typeof origin.projectId !== 'string' || typeof origin.userId !== 'string' || !isCount(origin.graphVersion)) {
-      return Promise.resolve({ status: 'rejected', reason: 'Invalid relink save origin' });
+      return Promise.resolve({ status: 'rejected', reason: 'Invalid relink save origin' } as const);
     }
     return services.commitEditorDraft(graph, baseRevision, {
       projectId: origin.projectId,
@@ -271,6 +302,9 @@ export const createFrameStudioEngine = ({
   features: [...manifest.features],
 
   async mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices) {
+    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) {
+      throw new Error('The Studio frame manifest protocol changed');
+    }
     let revoke: (error: Error) => void = () => {};
     let pendingRevocation: Error | null = null;
     const access = createStudioGeneratedAccess((error) => {
@@ -298,6 +332,8 @@ export const createFrameStudioEngine = ({
     }
 
     let disposed = false;
+    let sourceGeneration = 0;
+    let latest = current;
     let disposing: Promise<void> | null = null;
     let settleMount: { resolve: () => void; reject: (error: Error) => void } | null = null;
     let settleDispose: (() => void) | null = null;
@@ -340,26 +376,74 @@ export const createFrameStudioEngine = ({
             break;
           }
           // Own properties only: `constructor` or `__proto__` must not reach a handler lookup.
-          const handler =
-            typeof message.name === 'string' && Object.hasOwn(serviceCalls, message.name)
-              ? serviceCalls[message.name]
-              : undefined;
+          const handler = isStudioFrameServiceName(message.name) ? serviceCalls[message.name] : undefined;
           const args = Array.isArray(message.args) ? message.args : [];
+          const sourceCall = message.name === 'resolveStudioProjectSource';
+          const token = sourceGeneration;
+          const authority = latest;
+          const identity = sourceIdentity(authority);
+          const request = args[0] as StudioFrameServiceCalls['resolveStudioProjectSource']['args'][0] | undefined;
+          const origin = args[1] as StudioFrameServiceCalls['resolveStudioProjectSource']['args'][1] | undefined;
+          const sourceCurrent = () =>
+            !disposed &&
+            !disposing &&
+            !revoking &&
+            token === sourceGeneration &&
+            sourceIdentity(latest) === identity &&
+            latest.online &&
+            latest.project.hasLease &&
+            latest.project.graphDigest === request?.graphDigest &&
+            latest.project.revision === request?.revision &&
+            origin?.projectId === latest.project.id &&
+            origin?.userId === latest.auth.userId &&
+            origin?.graphVersion === (latest.project.graphVersion ?? 0);
           const run = (async () => {
             await Promise.resolve();
+            if (sourceCall && !sourceCurrent()) {
+              throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
+            }
+            if (sourceCall && !STUDIO_FRAME_SERVICE_SCHEMA_V8.resolveStudioProjectSource(args)) {
+              throw new Error('Invalid service arguments');
+            }
             return message.name === 'authorizeGeneratedMedia'
               ? access.recheck()
               : handler
-                ? handler(
+                ? (handler as ServiceCall)(
                     services,
                     message.name === 'stageDraft' ? [storeGeneratedMedia(args[0]), ...args.slice(1)] : args,
                   )
                 : Promise.reject(new Error(`Unknown service ${String((message as { name: unknown }).name)}`));
           })();
           void run
-            .then((value) =>
-              send({ type: 'service-result', callId: message.callId, ok: true, value: toFrameData(value) }),
-            )
+            .then((value) => {
+              if (sourceCall) {
+                const result = value as StudioFrameServiceCalls['resolveStudioProjectSource']['result'];
+                if (
+                  !sourceCurrent() ||
+                  result.projectId !== authority.project.id ||
+                  result.revision !== request?.revision ||
+                  result.graphDigest !== request?.graphDigest ||
+                  studioSourceJson(result.parent) !== studioSourceJson(request?.parent) ||
+                  studioSourceJson(result.selection) !== studioSourceJson(request?.selection) ||
+                  !result.expiresAt ||
+                  Date.parse(result.expiresAt) <= Date.now() ||
+                  !Number.isFinite(Date.parse(result.expiresAt)) ||
+                  !authority.project.leaseExpiresAt ||
+                  Date.parse(authority.project.leaseExpiresAt) <= Date.now()
+                ) {
+                  if (Array.isArray(result.files)) {
+                    result.files.length = 0;
+                  }
+                  throw new Error('SOURCE_RESOLUTION_SUPERSEDED');
+                }
+              }
+              send({
+                type: 'service-result',
+                callId: message.callId,
+                ok: true,
+                value: sourceCall ? value : toFrameData(value),
+              });
+            })
             .catch((error: unknown) =>
               send({
                 type: 'service-result',
@@ -432,6 +516,7 @@ export const createFrameStudioEngine = ({
         return;
       }
       revoking = true;
+      sourceGeneration += 1;
       frame.style.visibility = 'hidden';
       access.dispose();
       void (async () => {
@@ -467,6 +552,11 @@ export const createFrameStudioEngine = ({
     let updating: Promise<void> = Promise.resolve();
     const instance: StudioEngineInstance = {
       update(next) {
+        if (sourceIdentity(latest) !== sourceIdentity(next)) {
+          sourceGeneration += 1;
+          send({ type: 'revoke-sources' });
+        }
+        latest = next;
         updating = updating
           .then(async () => {
             if (disposed || revoking || disposing) {
@@ -485,6 +575,7 @@ export const createFrameStudioEngine = ({
         if (disposed) {
           return Promise.resolve();
         }
+        sourceGeneration += 1;
         access.dispose();
         disposing ??= (async () => {
           await new Promise<void>((resolve) => {
@@ -504,6 +595,9 @@ export const createFrameStudioEngine = ({
   },
 
   async createCommandEngine(): Promise<StudioCommandEngine> {
+    if (manifest.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) {
+      throw new Error('The Studio frame manifest protocol changed');
+    }
     const frame = createFrame(document.body, documentUrl(base, manifest.commands), true);
     let port: MessagePort;
     try {

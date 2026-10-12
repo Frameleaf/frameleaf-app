@@ -4,6 +4,10 @@ This page specifies the Studio project graph. The native Frameleaf apps for iPad
 
 It is a clean-room specification. It was written by reading the engine, and it describes behaviour only: it contains no engine source text. The engine is an adapted build of Freecut (MIT, see `studio/notices/freecut.txt`), pinned at revision `4d62e8082c5eb387a96275bcbd323d28f6e41a62`. The protocol is versioned with that pin. A change of engine revision is a new protocol version unless the conformance fixtures still pass unchanged.
 
+**Compatibility correction (October 12, 2026).** Accepted adaptation patch `0134-shared-edit-effective-lock-refusal.patch` (SHA-256 `73c40127074800a2fa47e93440e03254689bb3e78a27275afa6e771d0ce3758d`), in prepared source `1d91e981316146386b98192d087f140b9752e391476a8805a1bce302c546bdee`, repairs three previously forbidden locked-input fixtures: two ripple deletes and an all-track split. Their old applied answers encoded a lock bypass. They now record the engine's actual atomic refusals. The upstream revision, graph schema, command payloads, API and unified SDK are unchanged; the remaining 1,384 fixture answers at that checkpoint were unchanged. A native client was already forbidden to issue these inputs (12.2.2). Non-ripple delete and the other documented implementation-defined paths retain their existing rules.
+
+**Speed ripple correction (October 12, 2026).** Adaptation `0135-shared-speed-gap-effective-lock-refusal.patch` (SHA-256 `1f577b1f3ec660b17b1aeab0c5eea3954b70f1eea667f53626b0b88ae1fccc10`), in prepared source `86c3c5b8cab095d45df4c18601185de27b9f3a5b5ca64dc393f2b80c54e3a07d`, also refuses the previously forbidden `clip.setSpeed/ripple-moves-clips-on-locked-tracks` input. Its original envelopes and idempotency keys are retained; the actual result is `failed` at index 2, `clip.setSpeed: the clip cannot take that speed here`. The other 1,386 answers from the preceding three-case correction are unchanged. This is an atomic lock-bypass correction within v1, with no upstream revision, schema, payload, API or unified SDK change.
+
 Machine-readable files sit beside the other Studio contracts:
 
 | File                                    | What it is                                                                                                                                                       |
@@ -604,13 +608,13 @@ Every command has fixtures named `<command>/<case>` in `studio/graph-conformance
 
 A track with `locked: true` is locked. Lock checking is **per command and is not uniform**:
 
-| Lock checking                                     | Commands                                                                                                                                                 |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`                     |
-| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`                                                                                                              |
-| Check nothing                                     | `clip.add`, `clip.delete`, `clip.split`, `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent` |
+| Lock checking                                     | Commands                                                                                                                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`, `clip.split` (12.3.4) |
+| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`, `clip.delete` (ripple only)                                                                                    |
+| Check nothing                                     | `clip.add`, `clip.delete` (non-ripple), `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent`     |
 
-The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph.
+The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph. The October 12 correction records actual refusals for the four repaired forbidden inputs; it does not add a blanket lock guard to every command.
 
 `track.closeGap` checks the lock of every **attached caption** in its affected linked set (12.7.5). Other commands' caption lock behaviour remains as recorded by their own sections and fixtures.
 
@@ -784,6 +788,7 @@ Removes clips, optionally closing the space they leave. Payload: `clipId` or `cl
 
 1. Neither field names a clip: `clipIds` is absent and `clipId` is absent, or `clipIds` is empty, or a named id is not a string: `invalid`. When `clipIds` is an array, `clipId` is ignored.
 2. A named clip does not exist: `invalid`.
+3. With `ripple: true`, an effectively locked participant would be removed, covered or shifted (including linked companions and downstream propagation): `failed`, before any edit or identity draw.
 
 **Effect.** The clips removed are the **linked set** of the named clips (12.2.1): the clips, their linked groups, and the attached captions of all of them. Call them `D`. Their transitions and keyframes are removed with them.
 
@@ -797,7 +802,7 @@ With `ripple: true`, further:
 **Consequences**
 
 - **Linked:** linked clips and attached captions are deleted with the clip. With ripple, linked clips of shifted clips move with them.
-- **Locks:** not checked. A ripple removes and moves clips on locked edited tracks too (`clip.delete/locked-track-is-not-checked`, `clip.delete/ripple-locked-track-is-not-checked`). A locked track that is not edited is never rippled by sync lock, but a linked clip on it still moves by step 2 (`clip.delete/ripple-moves-linked-clips-on-locked-track`).
+- **Locks:** non-ripple deletion still does not check (`clip.delete/locked-track-is-not-checked`). Ripple deletion atomically refuses effectively locked participants, including an edited linked track (`clip.delete/ripple-refuses-locked-linked-track`) or a downstream linked companion (`clip.delete/ripple-refuses-locked-downstream-companion`). An unrelated locked track is excluded from sync propagation and does not by itself refuse the edit (`clip.delete/ripple-locked-track-untouched`).
 - **Sync lock:** with ripple, step 4. Without ripple, none.
 - **Overlap:** without ripple, none can arise. With ripple, step 3 removes what would be overlapped. That is **implementation-defined**: it deletes a clip the person did not name (`clip.delete/ripple-unsynced-companion-covers`). **Native rule:** reproduce it.
 - **Transitions:** transitions of removed clips are removed. With ripple, the changed clips are the moved clips and the clips step 4 cut or moved. The clips that now meet are **not** joined by the removed clip's transition (`clip.delete/ripple-removes-transition`).
@@ -851,7 +856,7 @@ Cuts clips at a time. Payload: `at`, optional `clipIds`.
 **Consequences**
 
 - **Linked:** a linked group is split together or not at all. Its halves form two new linked groups. A clip that is alone in its linked group loses the group (`clip.split/unlinked-clip-loses-own-group`). Attached captions are not split and stay attached to the left half, which keeps the id.
-- **Locks:** not checked (`clip.split/locked-track-is-not-checked`).
+- **Locks:** an effectively locked member prevents the whole linked split. With named `clipIds` this is refusal 3 (`invalid`); without `clipIds`, any locked candidate or linked participant prevents the all-track split and yields refusal 4, with detail `clip.split: nothing spans that time` (`clip.split/refuses-locked-tracks`). No graph/history change or identity draw is made. The refusal retains its existing classification rather than adding a new protocol reason.
 - **Sync lock:** none.
 - **Overlap:** none can arise.
 - **Transitions:** remapped as 12.2.5 says. No repair runs.
@@ -1010,7 +1015,7 @@ Sets a clip's playback speed by changing its length. Payload: `clipId`, `speed` 
 **Consequences**
 
 - **Linked:** synchronised linked clips are retimed together. Linked clips of the clips that move follow them (`clip.setSpeed/linked-clips-of-moved-clips-follow`). The clip's own attached captions are neither retimed nor moved (`clip.setSpeed/attached-captions-stay`), and one with exactly the clip's start and length refuses the command by refusal 8 (`clip.setSpeed/rejects-caption-of-the-same-extent`).
-- **Locks:** refusal 7 covers the clip's linked set. The clips the ripple moves are **not** checked (`clip.setSpeed/ripple-moves-clips-on-locked-tracks`).
+- **Locks:** refusal 7 covers the clip's linked set. Before any retime, keyframe or ripple write, an effective lock on a retimed or ripple-moved participant also refuses as `failed`, with `clip.setSpeed: the clip cannot take that speed here` (`clip.setSpeed/ripple-moves-clips-on-locked-tracks`). Include linked companions of downstream clips and incoming transition neighbours; inherited group locks bind too. Unrelated sync-lock tracks do not participate.
 - **Sync lock:** none. Sync-locked tracks do **not** follow this ripple (`clip.setSpeed/sync-locked-tracks-do-not-ripple`).
 - **Overlap:** refusal 8, on the tracks of the clip's linked set only.
 - **Transitions:** the retimed clips and the clips that moved are changed.

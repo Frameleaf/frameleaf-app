@@ -42,6 +42,9 @@ const project: StudioProjectHandle = {
   revision: 0,
   graph: null,
   hasLease: true,
+  graphDigest: null,
+  leaseEpoch: 0,
+  leaseExpiresAt: null,
 };
 
 const services = (): StudioHostServices => ({
@@ -567,12 +570,15 @@ describe('Studio route, engine present', () => {
       'renderEvidence',
       // FL-96: whether the host shows the server preview itself; a boolean, never the stream.
       'serverPreviewOpen',
+      // FL-105: invalidates saved source grants; a numeric declaration epoch, never a credential.
+      'sourceEpoch',
       // FL-96: the adapter's own chrome speaks the host's language; words only.
       'strings',
       'theme',
       // FL-91: the stored workspace layout, as data; saving it goes through services only.
       'workspace',
     ]);
+    expect(context.sourceEpoch).toBe(0);
     expect(Object.values(context.strings ?? {}).every((value) => typeof value === 'string')).toBe(true);
     expect(context.projectImports).toHaveLength(1);
     for (const item of context.projectImports ?? []) {

@@ -12,9 +12,10 @@ import {
   getActiveTabId,
   useCompositionNavigationStore,
 } from '@/features/timeline/stores/composition-navigation-store'
-import { rollingTrimItems } from '@/features/timeline/stores/actions/item-actions'
+import { closeAllGapsOnTrack, closeGapAtPosition, joinItems, rateStretchItem, rateStretchItemWithoutHistory, rippleDeleteItems, rollingTrimItems, slideItem, slipItem, splitItem, trackPushItems } from '@/features/timeline/stores/actions/item-actions'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { useEditorStore } from '@/shared/state/editor'
+import { useSelectionStore } from '@/shared/state/selection'
 import { VirtualWorkspace } from '../src/virtual-workspace'
 
 // jsdom's Blob predates `text()` and `arrayBuffer()`; browsers have both.
@@ -43,7 +44,7 @@ vi.mock('@/infrastructure/storage/handles-db', () => ({
 /**
  * FL-94: track controls, linked clips and compound sequence tabs survive a save and a reload through
  * Freecut's own persistence on the adapter's workspace — including a save made while a sequence tab
- * is open, and a reload the way a remount does it (the saved document under a new mount id).
+ * is open, and a reload under a new project ID in the same VirtualWorkspace.
  */
 
 const track = (id: string, kind: 'video' | 'audio', order: number, flags: Partial<TimelineTrack> = {}) => ({
@@ -199,7 +200,7 @@ describe('FL-94 timeline state across save and reload', () => {
     useItemsStore.getState().setTracks([{ ...b1!, muted: true }])
     await saveTimeline('fl-reload')
 
-    // A remount reloads the saved document under its own id.
+    // Reload the saved document under a new project ID in the same VirtualWorkspace.
     const saved = (await getProject('fl-reload'))!
     workspace.putFile(
       ['projects', 'fl-reload-m1', 'project.json'],
@@ -314,5 +315,141 @@ describe('FL-94 timeline state across save and reload', () => {
       useEditorStore.setState({ linkedSelectionEnabled: previousLinked })
     }
   })
+
+
+  const nestedEdits = [
+    { tool: 'speed', run: () => rateStretchItem('middle-v', 60, 30, 2), ranges: [[0, 60, 0, 60], [60, 30, 60, 120], [90, 60, 120, 180]] },
+    { tool: 'push', run: () => trackPushItems('middle-v', 15), ranges: [[0, 60, 0, 60], [75, 60, 60, 120], [135, 60, 120, 180]] },
+    { tool: 'close all gaps', run: () => closeAllGapsOnTrack('inner-v'), ranges: [[0, 60, 0, 60], [60, 60, 60, 120], [120, 60, 120, 180]] },
+    { tool: 'close gap', run: () => closeGapAtPosition('inner-v', 65), ranges: [[0, 60, 0, 60], [60, 60, 60, 120], [120, 60, 120, 180]] },
+    { tool: 'split', run: () => splitItem('middle-v', 90), ranges: [[0, 60, 0, 60], [60, 30, 60, 90], [90, 30, 90, 120], [120, 60, 120, 180]] },
+    { tool: 'join', run: () => joinItems(['middle-v', 'left-v']), ranges: [[0, 120, 0, 120], [120, 60, 120, 180]] },
+    { tool: 'ripple delete', run: () => rippleDeleteItems(['middle-v']), ranges: [[0, 60, 0, 60], [60, 60, 120, 180]] },
+    { tool: 'slip', run: () => slipItem('middle-v', 15), ranges: [[0, 60, 0, 60], [60, 60, 75, 135], [120, 60, 120, 180]] },
+    { tool: 'slide', run: () => slideItem('middle-v', 15, 'left-v', 'right-v'), ranges: [[0, 75, 0, 75], [75, 60, 75, 135], [135, 45, 135, 180]] },
+  ]
+  it.each(nestedEdits.flatMap((edit) => ['none', 'direct', 'inherited', ...(['ripple delete', 'speed', 'push', 'close gap', 'close all gaps'].includes(edit.tool) ? ['downstream', 'downstream-inherited'] : []), ...(edit.tool === 'ripple delete' ? ['unaffected', 'sync-off'] : [])].map((lockMode) => ({ ...edit, lockMode }))))(
+    'preserves nested linked $tool history and reload (lock: $lockMode)',
+    async ({ tool, run, ranges, lockMode }) => {
+      const locked = ['direct', 'inherited', 'downstream', 'downstream-inherited'].includes(lockMode)
+      const initial = graph(`fl-nested-${tool.replaceAll(' ', '-')}-${lockMode}`)
+      const parent = initial.timeline!.compositions![0]!
+      parent.items.push({
+        id: 'inner-wrapper', trackId: 'b1', type: 'composition', compositionId: 'inner',
+        compositionWidth: 1920, compositionHeight: 1080, from: 60, durationInFrames: 180,
+        sourceStart: 0, sourceEnd: 180, label: 'Inner sequence',
+      } as never)
+      parent.durationInFrames = 240
+      initial.timeline!.compositions!.push({
+        id: 'inner', name: 'Inner sequence', editorKind: 'sequence',
+        tracks: [track('inner-v', 'video', 0), track('inner-a', 'audio', 1, { locked: lockMode === 'direct', ...(lockMode === 'inherited' ? { parentTrackId: 'locked-group' } : {}) }), ...(lockMode === 'inherited' ? [track('locked-group', 'audio', 2, { isGroup: true, locked: true })] : [])],
+        items: ['v', 'a'].flatMap((kind) => ['left', 'middle', 'right'].map((part, index) =>
+          clip(`${part}-${kind}`, `inner-${kind}`, kind === 'v' ? 'video' : 'audio', {
+            from: index * 60 + (['close gap', 'close all gaps'].includes(tool) && index > 0 ? 15 : 0), durationInFrames: 60, sourceStart: index * 60,
+            sourceEnd: (index + 1) * 60, linkedGroupId: part,
+          }))),
+        transitions: [], keyframes: [], fps: 30, width: 1920, height: 1080,
+        durationInFrames: ['close gap', 'close all gaps'].includes(tool) ? 195 : 180, markers: [{ id: 'inner-marker', frame: 30, color: '#fff' }],
+      } as never)
+      if (['downstream', 'downstream-inherited', 'unaffected', 'sync-off'].includes(lockMode)) {
+        const inner = initial.timeline!.compositions!.find(({ id }) => id === 'inner')!
+        inner.tracks.push(track('extra-a', 'audio', 2, {
+          locked: lockMode !== 'downstream-inherited', syncLock: lockMode !== 'sync-off',
+          ...(lockMode === 'downstream-inherited' ? { parentTrackId: 'extra-group' } : {}),
+        }))
+        if (lockMode.startsWith('downstream')) {
+          // The action shifts the right A/V pair; its audio lives on a locked lane.
+          inner.items.find(({ id }) => id === 'right-a')!.trackId = 'extra-a'
+          if (lockMode === 'downstream-inherited') inner.tracks.push(track('extra-group', 'audio', 3, { isGroup: true, locked: true }))
+        } else {
+          // Existing policy excludes unrelated locked/sync-disabled lanes from propagation.
+          inner.items.push(clip('extra', 'extra-a', 'audio', {
+            from: lockMode === 'unaffected' ? 0 : 180,
+            durationInFrames: lockMode === 'unaffected' ? 30 : 60,
+            sourceStart: 0, sourceEnd: lockMode === 'unaffected' ? 30 : 60, linkedGroupId: undefined,
+          }) as never)
+          if (lockMode === 'sync-off') inner.durationInFrames = 240
+        }
+      }
+      await createProject(initial)
+      await loadTimeline(initial.id)
+      useCompositionNavigationStore.getState().switchToSequence('seq-b')
+      useCompositionNavigationStore.getState().enterComposition('inner', 'Inner sequence', 'inner-wrapper')
+      expect(useCompositionNavigationStore.getState().breadcrumbs.map(({ compositionId }) => compositionId)).toEqual(['seq-b', 'inner'])
+      const previousLinked = useEditorStore.getState().linkedSelectionEnabled
+      useEditorStore.setState({ linkedSelectionEnabled: true })
+      try {
+        const before = structuredClone(buildTimelineFromStores())
+        const history = useTimelineCommandStore.getState()
+        const undoBefore = [...history.undoStack]
+        const redoBefore = [...history.redoStack]
+        useSelectionStore.getState().selectItems(['middle-v'])
+        const selectionBefore = useSelectionStore.getState()
+        run()
+        // Properties panels also use the shared action without recording their own nested history.
+        if (locked && tool === 'speed') rateStretchItemWithoutHistory('middle-v', 60, 30, 2)
+        const edited = structuredClone(buildTimelineFromStores())
+        if (locked) {
+          expect(edited).toEqual(before)
+          expect(useSelectionStore.getState()).toEqual(selectionBefore)
+          expect(useTimelineCommandStore.getState().undoStack).toEqual(undoBefore)
+          expect(useTimelineCommandStore.getState().redoStack).toEqual(redoBefore)
+        } else {
+          const inner = edited.compositions!.find(({ id }) => id === 'inner')!
+          const tracks = ['inner-v', 'inner-a'].map((trackId) => inner.items
+            .filter((item) => item.trackId === trackId).sort((a, b) => a.from - b.from))
+          // Explicit frame oracles above are independent of the action's range calculations.
+          for (const items of tracks) {
+            expect(items.map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd])).toEqual(ranges)
+            expect(items.every((item) => item.mediaId === 'media-1' && item.sourceDuration === 240 && item.sourceFps === 30)).toBe(true)
+          }
+          if (tool === 'speed') {
+            // Retiming preserves the full 60-frame source window while playing it in 30 timeline frames.
+            for (const items of tracks) expect(items.map((item) => item.speed ?? 1)).toEqual([1, 2, 1])
+          }
+          expect(tracks[0]!.map((item) => item.linkedGroupId)).toEqual(tracks[1]!.map((item) => item.linkedGroupId))
+          expect(new Set(tracks[0]!.map((item) => item.linkedGroupId)).size).toBe(ranges.length)
+          expect(tracks[0]!.every((item) => Boolean(item.linkedGroupId))).toBe(true)
+          expect(inner.durationInFrames).toBe(lockMode === 'sync-off' ? 240 : tool === 'ripple delete' ? 120 : tool === 'speed' ? 150 : tool === 'push' ? 195 : 180)
+          const outer = (timeline: ProjectTimeline) => ({
+            ...timeline, compositions: timeline.compositions!.filter(({ id }) => id !== 'inner'),
+          })
+          expect(outer(edited)).toEqual(outer(before))
+          const innerBefore = before.compositions!.find(({ id }) => id === 'inner')!
+          expect({ ...inner, items: [], durationInFrames: 0 }).toEqual({ ...innerBefore, items: [], durationInFrames: 0 })
+          expect(useTimelineCommandStore.getState().undoStack).toHaveLength(undoBefore.length + 1)
+          useTimelineCommandStore.getState().undo()
+          expect(buildTimelineFromStores()).toEqual(before)
+          useTimelineCommandStore.getState().redo()
+          expect(buildTimelineFromStores()).toEqual(edited)
+        }
+        await saveTimeline(initial.id)
+        const saved = (await getProject(initial.id))!
+        const reopenedId = `${initial.id}-reopened`
+        // New project ID in the same VirtualWorkspace; this is not a filesystem/browser remount.
+        workspace.putFile(['projects', reopenedId, 'project.json'], JSON.stringify({ ...saved, id: reopenedId }))
+        useCompositionNavigationStore.getState().resetToRoot()
+        useItemsStore.getState().setItems([])
+        useItemsStore.getState().setTracks([])
+        useCompositionsStore.getState().setCompositions([])
+        await loadTimeline(reopenedId)
+        const documentGraph = (timeline: ProjectTimeline) => JSON.parse(JSON.stringify({
+          ...timeline,
+          tracks: timeline.tracks.map(({ items: _items, ...metadata }) => metadata),
+          compositions: timeline.compositions?.map((composition) => ({
+            ...composition,
+            tracks: composition.tracks.map(({ items: _items, ...metadata }) => metadata),
+          })),
+        }))
+        // All authoritative ranges and metadata survive; only derived track.items caches are omitted.
+        expect(documentGraph(buildTimelineFromStores())).toEqual(documentGraph(edited))
+        useCompositionNavigationStore.getState().switchToSequence('seq-b')
+        useCompositionNavigationStore.getState().enterComposition('inner', 'Inner sequence', 'inner-wrapper')
+        expect(useItemsStore.getState().items).toEqual(edited.compositions!.find(({ id }) => id === 'inner')!.items)
+      } finally {
+        useEditorStore.setState({ linkedSelectionEnabled: previousLinked })
+      }
+    },
+  )
 
 })

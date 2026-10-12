@@ -1,17 +1,37 @@
 {
   "compilerOptions": {
     "paths": {
-      "@/*": ["../../../engine/src/*"],
-      "@frameleaf/host/*": ["../../../../web/src/lib/frameleaf/studio/*"],
-      "fflate": ["../../../engine/node_modules/fflate"],
-      "react": ["../../../engine/node_modules/@types/react"],
-      "react-dom": ["../../../engine/node_modules/@types/react-dom"],
-      "react-dom/*": ["../../../engine/node_modules/@types/react-dom/*"],
-      "react/*": ["../../../engine/node_modules/@types/react/*"]
+      "@frameleaf/sdk": [
+        "../../../../packages/sdk/src/index.ts"
+      ],
+      "@/*": [
+        "../../../engine/src/*"
+      ],
+      "@frameleaf/host/*": [
+        "../../../../web/src/lib/frameleaf/studio/*"
+      ],
+      "fflate": [
+        "../../../engine/node_modules/fflate"
+      ],
+      "react": [
+        "../../../engine/node_modules/@types/react"
+      ],
+      "react-dom": [
+        "../../../engine/node_modules/@types/react-dom"
+      ],
+      "react-dom/*": [
+        "../../../engine/node_modules/@types/react-dom/*"
+      ],
+      "react/*": [
+        "../../../engine/node_modules/@types/react/*"
+      ]
     }
   },
   "extends": "./keyframe-browser.tsconfig.json",
   "include": [
+    "../src/editor-frame.tsx",
+    "../src/native-vector-scope.ts",
+    "../src/closed-vector-sources.ts",
     "lottie-owned.browser.tsx",
     "persisted-lottie.types.ts",
     "persisted-subtitle.types.ts",

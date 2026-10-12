@@ -13,6 +13,7 @@ import type {
   StudioFrameToHostMessage,
   StudioHostToFrameMessage,
 } from '@frameleaf/host/frame-protocol'
+import { isStudioFrameServiceName } from '@frameleaf/host/frame-service-schema'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioCommandEnvelope, StudioCommandPayloads } from '@frameleaf/host/commands'
 import { useEditorStore } from '@/shared/state/editor'
@@ -20,12 +21,22 @@ import { ENGINE_REVISION } from './engine-revision'
 
 let port: MessagePort | null = null
 let nextCallId = 1
+let generation = 0
+
+export function revokeHostCalls(sourcesOnly = false): void {
+  if (!sourcesOnly) generation += 1
+  for (const [id, request] of pending) {
+    if (sourcesOnly && request.name !== 'resolveStudioProjectSource') continue
+    request.reject(new Error('The Studio source origin changed'))
+    pending.delete(id)
+  }
+}
 // Like the host's settled commands, this lives for the editor document's lifetime. A retry keeps
 // the first intent even if the person changes linked selection before resending the same key.
 const linkedEdits = new Map<string, boolean>()
 const pending = new Map<
   number,
-  { resolve: (value: unknown) => void; reject: (error: Error) => void }
+  { generation: number; name: StudioFrameServiceName; resolve: (value: unknown) => void; reject: (error: Error) => void }
 >()
 
 export const post = (message: StudioFrameToHostMessage): void => port?.postMessage(message)
@@ -34,6 +45,7 @@ export function call<Name extends StudioFrameServiceName>(
   name: Name,
   ...args: StudioFrameServiceCalls[Name]['args']
 ): Promise<StudioFrameServiceCalls[Name]['result']> {
+  if (!isStudioFrameServiceName(name)) return Promise.reject(new Error('Unknown Studio service'))
   let serviceArgs: unknown[] = args
   if (name === 'submitCommands') {
     serviceArgs = [(args[0] as StudioCommandEnvelope[]).map((envelope) => {
@@ -48,7 +60,7 @@ export function call<Name extends StudioFrameServiceName>(
   if (!port) return Promise.reject(new Error('The Studio host is not connected'))
   const callId = nextCallId++
   return new Promise((resolve, reject) => {
-    pending.set(callId, { resolve: resolve as (value: unknown) => void, reject })
+    pending.set(callId, { generation, name, resolve: resolve as (value: unknown) => void, reject })
     post({ type: 'service', callId, name, args: serviceArgs })
   })
 }
@@ -67,10 +79,17 @@ export function connectToHost(
       const message = portEvent.data as StudioHostToFrameMessage
       if (message?.type === 'service-result') {
         const waiting = pending.get(message.callId)
-        if (!waiting) return
+        if (!waiting || waiting.generation !== generation) return
         pending.delete(message.callId)
         if (message.ok) waiting.resolve(message.value)
         else waiting.reject(new Error(message.error))
+        return
+      }
+      if (message.type === 'dispose' || message.type === 'revoke-generated') revokeHostCalls()
+      if (message.type === 'revoke-sources') revokeHostCalls(true)
+      if (message.type === 'mount' && message.protocolVersion !== STUDIO_FRAME_PROTOCOL_VERSION) {
+        revokeHostCalls()
+        post({ type: 'mount-failed', error: 'The Studio frame protocol changed' })
         return
       }
       onMessage(message)
