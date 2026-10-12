@@ -12,7 +12,7 @@ import {
   getActiveTabId,
   useCompositionNavigationStore,
 } from '@/features/timeline/stores/composition-navigation-store'
-import { joinItems, rippleDeleteItems, rollingTrimItems, slideItem, slipItem, splitItem } from '@/features/timeline/stores/actions/item-actions'
+import { closeGapAtPosition, joinItems, rateStretchItem, rippleDeleteItems, rollingTrimItems, slideItem, slipItem, splitItem, trackPushItems } from '@/features/timeline/stores/actions/item-actions'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { useEditorStore } from '@/shared/state/editor'
 import { useSelectionStore } from '@/shared/state/selection'
@@ -318,6 +318,9 @@ describe('FL-94 timeline state across save and reload', () => {
 
 
   const nestedEdits = [
+    { tool: 'speed', run: () => rateStretchItem('middle-v', 60, 30, 2), ranges: [[0, 60, 0, 60], [60, 30, 60, 120], [90, 60, 120, 180]] },
+    { tool: 'push', run: () => trackPushItems('middle-v', 15), ranges: [[0, 60, 0, 60], [75, 60, 60, 120], [135, 60, 120, 180]] },
+    { tool: 'close gap', run: () => closeGapAtPosition('inner-v', 65), ranges: [[0, 60, 0, 60], [60, 60, 60, 120], [120, 60, 120, 180]] },
     { tool: 'split', run: () => splitItem('middle-v', 90), ranges: [[0, 60, 0, 60], [60, 30, 60, 90], [90, 30, 90, 120], [120, 60, 120, 180]] },
     { tool: 'join', run: () => joinItems(['middle-v', 'left-v']), ranges: [[0, 120, 0, 120], [120, 60, 120, 180]] },
     { tool: 'ripple delete', run: () => rippleDeleteItems(['middle-v']), ranges: [[0, 60, 0, 60], [60, 60, 120, 180]] },
@@ -341,11 +344,11 @@ describe('FL-94 timeline state across save and reload', () => {
         tracks: [track('inner-v', 'video', 0), track('inner-a', 'audio', 1, { locked: lockMode === 'direct', ...(lockMode === 'inherited' ? { parentTrackId: 'locked-group' } : {}) }), ...(lockMode === 'inherited' ? [track('locked-group', 'audio', 2, { isGroup: true, locked: true })] : [])],
         items: ['v', 'a'].flatMap((kind) => ['left', 'middle', 'right'].map((part, index) =>
           clip(`${part}-${kind}`, `inner-${kind}`, kind === 'v' ? 'video' : 'audio', {
-            from: index * 60, durationInFrames: 60, sourceStart: index * 60,
+            from: index * 60 + (tool === 'close gap' && index > 0 ? 15 : 0), durationInFrames: 60, sourceStart: index * 60,
             sourceEnd: (index + 1) * 60, linkedGroupId: part,
           }))),
         transitions: [], keyframes: [], fps: 30, width: 1920, height: 1080,
-        durationInFrames: 180, markers: [{ id: 'inner-marker', frame: 30, color: '#fff' }],
+        durationInFrames: tool === 'close gap' ? 195 : 180, markers: [{ id: 'inner-marker', frame: 30, color: '#fff' }],
       } as never)
       if (['downstream', 'downstream-inherited', 'unaffected', 'sync-off'].includes(lockMode)) {
         const inner = initial.timeline!.compositions!.find(({ id }) => id === 'inner')!
@@ -397,10 +400,14 @@ describe('FL-94 timeline state across save and reload', () => {
             expect(items.map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd])).toEqual(ranges)
             expect(items.every((item) => item.mediaId === 'media-1' && item.sourceDuration === 240 && item.sourceFps === 30)).toBe(true)
           }
+          if (tool === 'speed') {
+            // Retiming preserves the full 60-frame source window while playing it in 30 timeline frames.
+            for (const items of tracks) expect(items.map((item) => item.speed ?? 1)).toEqual([1, 2, 1])
+          }
           expect(tracks[0]!.map((item) => item.linkedGroupId)).toEqual(tracks[1]!.map((item) => item.linkedGroupId))
           expect(new Set(tracks[0]!.map((item) => item.linkedGroupId)).size).toBe(ranges.length)
           expect(tracks[0]!.every((item) => Boolean(item.linkedGroupId))).toBe(true)
-          expect(inner.durationInFrames).toBe(lockMode === 'sync-off' ? 240 : tool === 'ripple delete' ? 120 : 180)
+          expect(inner.durationInFrames).toBe(lockMode === 'sync-off' ? 240 : tool === 'ripple delete' ? 120 : tool === 'speed' ? 150 : tool === 'push' ? 195 : 180)
           const outer = (timeline: ProjectTimeline) => ({
             ...timeline, compositions: timeline.compositions!.filter(({ id }) => id !== 'inner'),
           })
