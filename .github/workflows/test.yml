@@ -515,25 +515,36 @@ jobs:
           MEDIUM_CONTAINER: frameleaf-medium-scale-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          report_dir="$RUNNER_TEMP/frameleaf-medium-scale-reports"
-          mkdir -p "$report_dir"
+          artifact_dir="$RUNNER_TEMP/frameleaf-medium-scale-artifacts"
+          mkdir -p "$artifact_dir"
+          chmod 700 "$artifact_dir"
           state_format='{"ExitCode":{{.State.ExitCode}},"OOMKilled":{{.State.OOMKilled}},"Error":{{json .State.Error}},"StartedAt":{{json .State.StartedAt}},"FinishedAt":{{json .State.FinishedAt}},"Status":{{json .State.Status}},"Running":{{.State.Running}}}'
-          if ! docker inspect --format "$state_format" "$MEDIUM_CONTAINER" > "$report_dir/container-state.raw.json" 2>/dev/null; then
-            printf '{"status":"unavailable"}\n' > "$report_dir/container-state.raw.json"
+          if ! docker inspect --format "$state_format" "$MEDIUM_CONTAINER" > "$artifact_dir/container-state.raw.json" 2>/dev/null; then
+            printf '{"status":"unavailable"}\n' > "$artifact_dir/container-state.raw.json"
           fi
           python3 - <<'PYTHON'
           import json, os
           from pathlib import Path
-          directory = Path(os.environ['RUNNER_TEMP']) / 'frameleaf-medium-scale-reports'
+          root = Path(os.environ['RUNNER_TEMP'])
+          directory = root / 'frameleaf-medium-scale-artifacts'
           raw = directory / 'container-state.raw.json'
           state = json.loads(raw.read_text())
-          report = directory / 'vitest.xml'
-          report_status = {'status': 'missing'}
-          if report.is_file():
-              size = report.stat().st_size
-              report_status = {'status': 'present' if size <= 8 * 1024 * 1024 else 'oversize', 'bytes': size}
-              if report_status['status'] == 'oversize':
-                  report.unlink()
+          report = root / 'frameleaf-medium-scale-reports' / 'vitest.xml'
+          snapshot = directory / 'vitest.xml'
+          snapshot.unlink(missing_ok=True)
+          limit = 8 * 1024 * 1024
+          report_status = {'status': 'missing', 'snapshot': 'not-admitted'}
+          try:
+              with report.open('rb') as source:
+                  content = source.read(limit + 1)
+          except FileNotFoundError:
+              pass
+          else:
+              if len(content) > limit:
+                  report_status = {'status': 'oversize', 'snapshot': 'not-admitted', 'bytesAtLeast': len(content)}
+              else:
+                  snapshot.write_bytes(content)
+                  report_status = {'status': 'present', 'snapshot': 'captured', 'bytes': len(content)}
           (directory / 'container-state.json').write_text(json.dumps({'container': state, 'testReport': report_status}) + '\n')
           raw.unlink()
           PYTHON
@@ -543,8 +554,8 @@ jobs:
         with:
           name: medium-scale-diagnostics
           path: |
-            ${{ runner.temp }}/frameleaf-medium-scale-reports/container-state.json
-            ${{ runner.temp }}/frameleaf-medium-scale-reports/vitest.xml
+            ${{ runner.temp }}/frameleaf-medium-scale-artifacts/container-state.json
+            ${{ runner.temp }}/frameleaf-medium-scale-artifacts/vitest.xml
           if-no-files-found: warn
           retention-days: 3
       - name: Remove medium runner after failure or cancellation
