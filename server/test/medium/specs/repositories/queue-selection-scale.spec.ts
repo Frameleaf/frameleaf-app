@@ -76,7 +76,12 @@ describe('real large producer selection capture', () => {
         const probeStarted = performance.now();
         await store.heartbeat(worker, [producer]);
         await store.enqueue([intent(otherQueue, 'unrelated')]);
-        const [other] = await store.claim(otherQueue, worker);
+        let [other] = await store.claim(otherQueue, worker);
+        // A short catalogue lock can make SKIP LOCKED return no claim; retries share the probe's budget.
+        while (!other && performance.now() - probeStarted < 1000) {
+          await sleep(10);
+          [other] = await store.claim(otherQueue, worker);
+        }
         expect(other).toBeDefined();
         expect(await store.complete(other, [])).toBe(true);
         maxProbeMs = Math.max(maxProbeMs, performance.now() - probeStarted);
