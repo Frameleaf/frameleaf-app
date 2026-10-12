@@ -380,16 +380,18 @@ const AssetEditsResponseSchema = z
         width: z.number().int().positive().describe('Displayed width of the original, after its rotation'),
         height: z.number().int().positive().describe('Displayed height of the original, after its rotation'),
         durationMs: z.number().int().positive().describe('Duration of the original in milliseconds'),
+        // FL-113
         colorPolicy: z
           .enum(['preserve', 'tone-map', 'unsupported'])
           .meta({ id: 'AssetEditsColorPolicy' })
           .optional()
           .describe(
-            "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged",
+            "What an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged",
           ),
         colorReason: z.string().optional().describe('Why, in plain words, for the person editing'),
+        // FL-101
         decodeRefusal: DecodeRefusalSchema.optional().describe(
-          "FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing",
+          "Set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing",
         ),
       })
       .meta({ id: 'AssetEditsOriginalVideoDto' })

@@ -68,6 +68,7 @@ const CloudStatusResponseSchema = z
     linkRefusal: CloudLinkRefusalSchema.nullable().describe(
       'Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason',
     ),
+    // FC-18
     regionMismatch: z
       .object({
         accountRegion: z.string().describe('The data region the Frameleaf account keeps its data in (eu, na)'),
@@ -78,7 +79,7 @@ const CloudStatusResponseSchema = z
       })
       .nullable()
       .describe(
-        'FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message',
+        'Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message',
       ),
     permissions: CloudPermissionsSchema,
     revoked: z.object({ at: z.string(), reason: z.string() }).nullable(),

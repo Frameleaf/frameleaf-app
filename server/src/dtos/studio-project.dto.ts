@@ -63,6 +63,7 @@ const StudioProjectResourcesSchema = z
   .object({
     complete: z.boolean().describe('Every referenced source resolved for the acting account'),
     refusedCount: z.int().min(0).describe('References that were refused for the acting account'),
+    // FL-101
     unsupportedSources: z
       .array(
         z
@@ -74,22 +75,25 @@ const StudioProjectResourcesSchema = z
           .meta({ id: 'StudioUnsupportedSourceDto' }),
       )
       .describe(
-        "FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
+        "Placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
       ),
+    // FL-195 follow-up
     hiddenSources: z
       .array(z.uuidv4())
       .describe(
-        "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
+        "The owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
       ),
+    // FL-97 owner decision
     hdrSources: z
       .array(z.uuidv4())
       .describe(
-        'FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named',
+        'Placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named',
       ),
+    // FL-97
     hdrProxySources: z
       .array(z.uuidv4())
       .describe(
-        'FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made',
+        'The hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made',
       ),
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the resolution ran'),
   })
@@ -285,8 +289,9 @@ const StudioProjectSaveResponseSchema = z
     replayed: z.boolean().describe('This request key was already accepted; the earlier result is returned'),
     unchanged: z.boolean().describe('The document equals the head, so no revision was written'),
     lease: StudioProjectLeaseSchema,
+    // FL-101
     resources: StudioProjectResourcesSchema.nullish().describe(
-      'FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run',
+      'How the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run',
     ),
   })
   .meta({ id: 'StudioProjectSaveResponseDto' });
