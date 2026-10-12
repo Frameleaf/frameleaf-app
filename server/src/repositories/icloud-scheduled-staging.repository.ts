@@ -706,6 +706,18 @@ export class ICloudScheduledStagingRepository {
       const envelope = await this.authenticateValidationInputs(resource);
       if (envelope) return validationInputsDisposed(envelope);
       if (!resource.auditRequestId) return true;
+      const request = (
+        await sql<{
+          purpose: string;
+          sessionId: string | null;
+          operationId: string;
+          itemClaimId: string | null;
+        }>`SELECT purpose,"sessionId","operationId","itemClaimId"
+        FROM public.icloud_identity_audit WHERE id=${resource.auditRequestId}::uuid AND "ownerId"=${resource.ownerId}::uuid
+          AND "connectionId"=${resource.connectionId}::uuid`.execute(db)
+      ).rows[0];
+      if (request?.purpose === 'manual-session') return true;
+      if (request?.purpose !== 'scheduled-weekly' || request.sessionId !== null) return false;
       const work = resource.verification?.auditOwnedWork;
       if (
         !validPrivateWork(work) ||
@@ -720,18 +732,7 @@ export class ICloudScheduledStagingRepository {
           canonicalJson(work.payload)
       )
         return false;
-      const request = (
-        await sql<{ operationId: string; itemClaimId: string }>`SELECT "operationId","itemClaimId"
-        FROM public.icloud_identity_audit WHERE id=${resource.auditRequestId}::uuid AND "ownerId"=${resource.ownerId}::uuid
-          AND "connectionId"=${resource.connectionId}::uuid AND purpose='scheduled-weekly' AND "sessionId" IS NULL`.execute(
-          db,
-        )
-      ).rows[0];
-      if (
-        !request ||
-        request.operationId !== work.payload.operationId ||
-        request.itemClaimId !== work.payload.itemClaimId
-      )
+      if (request.operationId !== work.payload.operationId || request.itemClaimId !== work.payload.itemClaimId)
         return false;
       const copy = resource.verification?.auditPrivateCopy;
       if (copy === undefined) return work.payload.copyGeneration === null;

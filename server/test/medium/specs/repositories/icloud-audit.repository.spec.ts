@@ -13,7 +13,9 @@ import {
 } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudIdentityRepository, recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRecoveryRepository, VerifiedMedia } from 'src/repositories/media-recovery.repository.js';
@@ -165,6 +167,52 @@ describe(ICloudAuditRepository.name, () => {
     resource.stagingPath = `/private-stage/${resource.id}/complete`;
     return { ...fixture, authority, resource, claim };
   }
+
+  it('preserves absent-envelope release for an actually allocated manual-session audit and refuses malformed input evidence', async () => {
+    const fixture = await claimed();
+    const decodeSession = vi.fn().mockRejectedValue(new Error('unexpected_manual_transport'));
+    const staging = new ICloudScheduledStagingRepository(db, { decodeSession } as unknown as ICloudTransportRepository);
+    expect(fixture.resource.auditRequestId).toBe(fixture.authority.auditRequestId);
+    expect(fixture.resource.verification?.auditOwnedWork).toBeUndefined();
+    expect(fixture.resource.verification?.auditValidationInputs).toBeUndefined();
+    await db.transaction().execute(async (trx) => {
+      const request = (
+        await sql<{
+          purpose: string;
+          sessionId: string | null;
+        }>`SELECT purpose,"sessionId" FROM public.icloud_identity_audit WHERE id=${fixture.authority.auditRequestId}::uuid`.execute(
+          trx,
+        )
+      ).rows[0];
+      expect(request.purpose).toBe('manual-session');
+      expect(request.sessionId).toBe(fixture.auth.session!.id);
+      const resource = (
+        await sql<ICloudResource>`SELECT * FROM public.icloud_resource WHERE id=${fixture.resource.id}::uuid FOR UPDATE`.execute(
+          trx,
+        )
+      ).rows[0];
+      expect(await staging.authenticateDisposedValidationInputs(trx, resource)).toBe(true);
+      expect(
+        await staging.authenticateDisposedValidationInputs(trx, { ...resource, auditRequestId: randomUUID() }),
+      ).toBe(false);
+      expect(await staging.authenticateDisposedValidationInputs(trx, { ...resource, connectionId: randomUUID() })).toBe(
+        false,
+      );
+      expect(await staging.authenticateDisposedValidationInputs(trx, { ...resource, ownerId: randomUUID() })).toBe(
+        false,
+      );
+      await sql`UPDATE public.icloud_resource SET verification=coalesce(verification,'{}'::jsonb)||'{"auditValidationInputs":{"version":99}}'::jsonb WHERE id=${resource.id}::uuid`.execute(
+        trx,
+      );
+      const malformed = (
+        await sql<ICloudResource>`SELECT * FROM public.icloud_resource WHERE id=${resource.id}::uuid`.execute(trx)
+      ).rows[0];
+      expect(await staging.authenticateDisposedValidationInputs(trx, malformed)).toBe(false);
+      expect(Number(malformed.reservedBytes)).toBe(Number(resource.reservedBytes));
+      expect(malformed.status).toBe(resource.status);
+    });
+    expect(decodeSession).not.toHaveBeenCalled();
+  });
 
   it('does not let an obsolete audit worker release the replacement worker live item claim', async () => {
     const fixture = await claimed();
