@@ -664,7 +664,12 @@
       "path": "patches/0137-scoped-media-static-contracts.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c8bb4ab9035dd1220f4001a4516b9f6dbc43efb0300a91e6f482f6070eac99b5"
+    },
+    {
+      "path": "patches/0138-number-input-text-commit-lifecycle.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
     }
   ],
-  "sourceSha256": "fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578"
+  "sourceSha256": "1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80"
 }
