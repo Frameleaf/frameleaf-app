@@ -120,10 +120,9 @@ export class UserAdminController {
     return this.service.getCalendarHeatmap(auth, id, dto);
   }
 
-  /**
-   * FL-76: the account detail's Activity tab. What administrators did to this account and its
-   * libraries, newest first, recorded by the services that made each change.
-   */
+  // FL-76: the account detail's Activity tab. What administrators did to this account and its
+  // libraries, newest first, recorded by the services that made each change.
+  // (A line comment: a JSDoc block here is published as the endpoint summary.)
   @Get(':id/history')
   @Authenticated({ permission: Permission.AdminUserRead, admin: true })
   @Endpoint({
@@ -151,11 +150,10 @@ export class UserAdminController {
     return this.service.getSessions(auth, id);
   }
 
-  /**
-   * FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
-   * own sessions, so an administrator could never revoke a foreign session through it. This is
-   * the explicit, audited admin path the account detail's Security tab needs instead.
-   */
+  // FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
+  // own sessions, so an administrator could never revoke a foreign session through it. This is
+  // the explicit, audited admin path the account detail's Security tab needs instead.
+  // (A line comment: a JSDoc block here is published as the endpoint summary.)
   @Delete(':id/sessions/:sessionId')
   @Authenticated({ permission: Permission.AdminSessionDelete, admin: true })
   @HttpCode(HttpStatus.NO_CONTENT)

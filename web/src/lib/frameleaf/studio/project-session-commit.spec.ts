@@ -28,6 +28,8 @@ const detail = (graph = graphA, revision = 3) => ({
   ownerId: 'owner',
   access: 'owner',
   revision,
+  digest: 'b'.repeat(64),
+  withheld: false,
   envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph },
   lease,
   resources: { hiddenSources: [] },
@@ -67,7 +69,7 @@ const fixture = async () => {
 describe('waitable editor relink commit', () => {
   it('publishes only after the real leased save accepts the complete graph', async () => {
     const { session, api } = await fixture();
-    const save = deferred<{ revision: number; lease: typeof lease }>();
+    const save = deferred<{ revision: number; digest: string; lease: typeof lease }>();
     api.save.mockReturnValue(save.promise);
     const commit = session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!);
     expect(session.state.project.graph).toEqual(graphA);
@@ -80,8 +82,8 @@ describe('waitable editor relink commit', () => {
         envelope: expect.objectContaining({ graph: graphB }),
       }),
     );
-    save.resolve({ revision: 4, lease });
-    await expect(commit).resolves.toEqual({ status: 'saved', revision: 4 });
+    save.resolve({ revision: 4, digest: 'c'.repeat(64), lease });
+    await expect(commit).resolves.toEqual({ status: 'saved', revision: 4, graphDigest: 'c'.repeat(64) });
     expect(session.state.project.graph).toEqual(graphB);
     await session.dispose();
   });
@@ -108,6 +110,7 @@ describe('waitable editor relink commit', () => {
     await expect(session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!)).resolves.toEqual({
       status: 'saved',
       revision: 4,
+      graphDigest: 'b'.repeat(64),
     });
     expect(api.save).toHaveBeenCalledTimes(1);
     expect(api.get).toHaveBeenCalledTimes(2);
@@ -121,6 +124,7 @@ describe('waitable editor relink commit', () => {
     await expect(session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!)).resolves.toEqual({
       status: 'saved',
       revision: 4,
+      graphDigest: 'b'.repeat(64),
     });
     expect(api.save).toHaveBeenCalledTimes(1);
     await session.dispose();
@@ -146,11 +150,11 @@ describe('waitable editor relink commit', () => {
     session.stage(graphA);
     await expect(session.commitEditorDraft(graphB, 3, version)).resolves.toMatchObject({ status: 'rejected' });
     expect(api.save).not.toHaveBeenCalled();
-    const save = deferred<{ revision: number; lease: typeof lease }>();
+    const save = deferred<{ revision: number; digest: string; lease: typeof lease }>();
     api.save.mockReturnValue(save.promise);
     const commit = session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!);
     await session.dispose();
-    save.resolve({ revision: 4, lease });
+    save.resolve({ revision: 4, digest: 'c'.repeat(64), lease });
     await expect(commit).resolves.toMatchObject({ status: 'rejected' });
     expect(session.state.project.graph).toEqual(graphA);
   });
@@ -160,10 +164,11 @@ describe('waitable editor relink commit', () => {
     const editedA = { ...graphA, localEdit: { text: 'unsubmitted title', keyframes: [1, 2] } };
     session.stageEditor(editedA, ['clip.move'], 3, session.state.project.graphVersion!);
     const completeB = { ...editedA, timeline: graphB.timeline };
-    api.save.mockResolvedValue({ revision: 4, lease });
+    api.save.mockResolvedValue({ revision: 4, digest: 'c'.repeat(64), lease });
     await expect(session.commitEditorDraft(completeB, 3, session.state.project.graphVersion!)).resolves.toEqual({
       status: 'saved',
       revision: 4,
+      graphDigest: 'c'.repeat(64),
     });
     expect(api.save.mock.calls[0]![1].envelope.graph).toEqual(completeB);
     expect(pending).toHaveLength(leaseTimers);
@@ -176,16 +181,51 @@ describe('waitable editor relink commit', () => {
 
   it('fences an A-B-A captured scope even when the original project is current again', async () => {
     const { session, api } = await fixture();
-    const save = deferred<{ revision: number; lease: typeof lease }>();
+    const save = deferred<{ revision: number; digest: string; lease: typeof lease }>();
     let epoch = 0;
     api.save.mockReturnValue(save.promise);
     const captured = epoch;
     const commit = session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!, () => epoch === captured);
     epoch += 2;
-    save.resolve({ revision: 4, lease });
+    save.resolve({ revision: 4, digest: 'c'.repeat(64), lease });
     await expect(commit).resolves.toMatchObject({ status: 'rejected' });
     expect(session.state.project.graph).toEqual(graphA);
     expect(api.save).toHaveBeenCalledTimes(1);
+    await session.dispose();
+  });
+});
+
+describe('saved source acknowledgement provenance', () => {
+  it('keeps the actual head digest for an exact-envelope lost-response reconciliation', async () => {
+    const { session, api } = await fixture();
+    api.save.mockRejectedValue(new Error('lost response'));
+    api.get.mockResolvedValue({ ...detail(graphB, 4), digest: 'd'.repeat(64) });
+    const result = await session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!);
+    expect(result).toEqual({ status: 'saved', revision: 4, graphDigest: 'd'.repeat(64) });
+    expect(session.state.project.graphDigest).toBe('d'.repeat(64));
+    await session.dispose();
+  });
+  it('does not authorize a successful late save after a lease authority change', async () => {
+    const { session, api } = await fixture();
+    const save = deferred<{ revision: number; digest: string; lease: typeof lease }>();
+    api.save.mockReturnValue(save.promise);
+    let current = true;
+    const result = session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!, () => current);
+    current = false;
+    save.resolve({ revision: 4, digest: 'c'.repeat(64), lease });
+    await expect(result).resolves.toMatchObject({ status: 'rejected' });
+    expect(session.state.project.graphDigest).toBeNull();
+    expect(session.state.project.graph).toEqual(graphA);
+    await session.dispose();
+  });
+  it('a saved response without an envelope digest cannot authorize bytes', async () => {
+    const { session, api } = await fixture();
+    api.save.mockResolvedValue({ revision: 4, digest: null, lease });
+    await expect(session.commitEditorDraft(graphB, 3, session.state.project.graphVersion!)).resolves.toMatchObject({
+      status: 'saved',
+      graphDigest: null,
+    });
+    expect(session.state.project.graphDigest).toBeNull();
     await session.dispose();
   });
 });

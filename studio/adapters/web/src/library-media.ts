@@ -278,6 +278,7 @@ export function createLibraryMediaSeeder(options: {
   projectId: () => string
   /** Called after a record changes, so the bin can re-read it. */
   onChange: () => void
+  onAvailabilityChange?: (mediaId: string, available: boolean) => void
 }): LibraryMediaSeeder {
   const { workspace, projectId, onChange } = options
   const seeded = new Set<string>()
@@ -451,12 +452,15 @@ export function createLibraryMediaSeeder(options: {
     },
     kept(mediaId) {
       seeded.add(mediaId)
+      options.onAvailabilityChange?.(mediaId, true)
     },
     forget(mediaId) {
       removed.add(mediaId)
+      options.onAvailabilityChange?.(mediaId, false)
     },
     remember(mediaId) {
       removed.delete(mediaId)
+      options.onAvailabilityChange?.(mediaId, true)
     },
     linked(projectId) {
       return linkedTo.get(projectId) ?? new Set()

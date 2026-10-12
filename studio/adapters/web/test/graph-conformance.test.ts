@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import type { MediaMetadata } from '@/types/storage'
+import { buildTimelineFromStores } from '@/features/timeline/stores/timeline-persistence'
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { useEditorStore } from '@/shared/state/editor'
 import {
   applyCanonicalCommands,
@@ -416,6 +418,55 @@ describe('Studio graph protocol v1 conformance (FL-306 to FL-309)', () => {
       }
     }
     generated.history.forEach((script, index) => expect(script.expect, script.id).toEqual(stored.history[index]!.expect))
+  })
+
+  // FL-94 / 0134: these forbidden locked inputs must refuse, not regenerate an applied golden.
+  for (const [id, index, reason, detail] of [
+    ['clip.setSpeed/ripple-moves-clips-on-locked-tracks', 2, 'failed', 'clip.setSpeed: the clip cannot take that speed here'],
+    ['clip.delete/ripple-refuses-locked-linked-track', 1, 'failed', 'clip.delete: a clip it would change is on a locked track'],
+    ['clip.delete/ripple-refuses-locked-downstream-companion', 2, 'failed', 'clip.delete: a clip it would change is on a locked track'],
+    ['clip.split/refuses-locked-tracks', 2, 'invalid', 'clip.split: nothing spans that time'],
+  ] as const) it(`${id} refuses without graph, history or identity draws`, async () => {
+    const fixtures = load()
+    const entry = fixtures.cases.find((entry) => entry.id === id)!
+    const base = fixtures.bases[entry.base]!
+    const media = mediaOf(fixtures, entry.media, base.media)
+    await apply(base.graph, [], media)
+    const graphBefore = canonicalJson(base.graph)
+    const timelineBefore = structuredClone(buildTimelineFromStores())
+    const historyBefore = useTimelineCommandStore.getState()
+    const undoBefore = [...historyBefore.undoStack]
+    const redoBefore = [...historyBefore.redoStack]
+    const draws: string[] = []
+    // withDeterminism installs its own UUID stream; observe that actual stream, not a replaced spy.
+    const defineProperty = Object.defineProperty
+    const observer = vi.spyOn(Object, 'defineProperty').mockImplementation((object, key, descriptor) => {
+      if (object === globalThis.crypto && key === 'randomUUID' && typeof descriptor.value === 'function') {
+        const draw = descriptor.value as () => string
+        return defineProperty(object, key, { ...descriptor, value: () => {
+          const id = draw(); draws.push(id); return id
+        } })
+      }
+      return defineProperty(object, key, descriptor)
+    })
+    try {
+      expect(await apply(base.graph, entry.envelopes, media)).toEqual({ status: 'rejected', index, reason, detail })
+    } finally { observer.mockRestore() }
+    expect(draws).toEqual([])
+    expect(canonicalJson(base.graph)).toBe(graphBefore)
+    expect(buildTimelineFromStores()).toEqual(timelineBefore)
+    expect(useTimelineCommandStore.getState().undoStack).toEqual(undoBefore)
+    expect(useTimelineCommandStore.getState().redoStack).toEqual(redoBefore)
+    // In a real host session each preceding lock command is accepted, but refusal stages no revision.
+    const outcomes = await runHistory(fixtures, {
+      id: `${id}/history`, story: 'FL-94', summary: 'Refusal preserves prior accepted history',
+      base: entry.base, steps: entry.envelopes.map((command) => ({ command })), expect: null,
+    })
+    const previous = outcomes.at(-2)!
+    expect(outcomes.at(-1)).toEqual({ outcome: 'rejected', reason,
+      digest: previous.digest, sameAs: previous.sameAs, depth: previous.depth })
+    expect(previous.outcome).toBe('accepted')
+    expect(previous.depth).toEqual({ undo: index, redo: 0 })
   })
 
   it('is deterministic: a second run gives the same answers', { timeout: REPLAY_TIMEOUT }, async () => {
