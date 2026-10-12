@@ -10,6 +10,7 @@ import {
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
 import type { RenderColorPrecision } from 'src/utils/render-admission.js';
+import type { GpuWorkingBudgetApproval } from 'src/utils/gpu-working-budget-policy.js';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -88,9 +89,12 @@ export class RenderWorkerTable {
   @Column({ type: 'bigint', nullable: true })
   maxOutputBytes!: Int8Writable | null;
 
-  /** GPU memory the worker was qualified with, in bytes. An operation asking for more is refused. */
+  /** Administrator ceiling A in bytes; it cannot supply or increase measured evidence. */
   @Column({ type: 'bigint', nullable: true })
   gpuMemoryBytes!: Int8Writable | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  gpuWorkingBudgetApproval!: GpuWorkingBudgetApproval | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   lastAdmittedAt!: Timestamp | null;
@@ -132,9 +136,12 @@ export class RenderWorkerSessionTable {
   @Column({ array: true, type: 'character varying' })
   scopes!: MediaOperationKind[];
 
-  /** What the worker reported at admission. This — not a later claim — is what it may use. */
+  /** Persisted Q=min(M,A); later reads may only tighten this session budget. */
   @Column({ type: 'bigint', nullable: true })
   gpuMemoryBytes!: Int8Writable | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  gpuWorkingBudgetEvidence!: (GpuWorkingBudgetApproval['evidence'] & { workerId: string }) | null;
 
   @Column({ nullable: true })
   engineDigest!: string | null;

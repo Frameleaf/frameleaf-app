@@ -98,7 +98,6 @@ import {
   UnknownDestinationHealthProvider,
   evaluateClaimAdmission,
   evaluateRunningLimits,
-  evaluateSessionAdmission,
   isQualifiedRenderSession,
   isWorkerRefusal,
   signInputGrant,
@@ -183,6 +182,7 @@ const mapWorker = (worker: RenderWorker, activeOperations: number): RenderWorker
   maxWallClockMs: asBigIntString(worker.maxWallClockMs),
   maxOutputBytes: asBigIntString(worker.maxOutputBytes),
   gpuMemoryBytes: asBigIntString(worker.gpuMemoryBytes),
+  gpuWorkingBudgetApproval: worker.gpuWorkingBudgetApproval,
   activeOperations,
   lastAdmittedAt: asIso(worker.lastAdmittedAt),
   lastSeenAt: asIso(worker.lastSeenAt),
@@ -408,6 +408,7 @@ export class RenderWorkerService {
       maxWallClockMs: dto.maxWallClockMs ?? null,
       maxOutputBytes: dto.maxOutputBytes ?? null,
       gpuMemoryBytes: dto.gpuMemoryBytes ?? null,
+      gpuWorkingBudgetApproval: dto.gpuWorkingBudgetApproval ?? null,
       createdBy: auth.user.id,
     });
 
@@ -437,6 +438,7 @@ export class RenderWorkerService {
       maxWallClockMs: dto.maxWallClockMs,
       maxOutputBytes: dto.maxOutputBytes,
       gpuMemoryBytes: dto.gpuMemoryBytes,
+      gpuWorkingBudgetApproval: dto.gpuWorkingBudgetApproval,
     });
     if (!updated) {
       throw new BadRequestException('A revoked worker cannot be changed');
@@ -544,102 +546,29 @@ export class RenderWorkerService {
    * learns nothing about which check failed.
    */
   async admit(dto: RenderWorkerAdmissionDto): Promise<RenderWorkerSessionDto> {
-    const now = new Date();
-    const worker = await this.repository.getWorkerBySecret(this.cryptoRepository.hashSha256(dto.enrolmentSecret));
-
-    if (!worker || worker.id !== dto.workerId) {
-      await this.repository.recordAudit({
-        workerId: worker?.id ?? dto.workerId,
-        event: RenderWorkerAuditEvent.Refused,
-        reason: RenderWorkerRefusalReason.InvalidCredential,
-        detail: { presentedWorkerId: dto.workerId },
-      });
-      throw new UnauthorizedException('Worker admission refused');
-    }
-
-    const reportedAt = new Date(dto.conformanceReportedAt);
-    const decision = evaluateSessionAdmission({
-      worker: {
-        revoked: worker.status === RenderWorkerStatus.Revoked,
-        engineDigest: worker.engineDigest,
-        conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
-        lastConformanceReportedAt: worker.lastConformanceReportedAt ? new Date(worker.lastConformanceReportedAt) : null,
-      },
-      report: {
-        engineDigest: dto.engineDigest,
-        conformanceReportedAt: reportedAt,
-        softwareRenderer: dto.softwareRenderer,
-      },
-      now,
-    });
-
-    if (!decision.admitted) {
-      await this.repository.recordAudit({
-        workerId: worker.id,
-        event: RenderWorkerAuditEvent.Refused,
-        reason: decision.reason,
-        detail: {
-          engineDigest: dto.engineDigest,
-          conformanceReportedAt: dto.conformanceReportedAt,
-          softwareRenderer: dto.softwareRenderer,
-          gpuMemoryBytes: dto.gpuMemoryBytes,
-        },
-      });
-      this.logger.warn(`Render worker ${worker.id} refused admission: ${decision.reason}`);
-      throw new UnauthorizedException('Worker admission refused');
-    }
-
     const sessionToken = this.cryptoRepository.randomBytesAsText(32);
-    const expiresAt = new Date(now.getTime() + RENDER_WORKER_SESSION_TTL_MS);
-
-    // The GPU memory admitted is the lesser of what the check measured and what the administrator
-    // qualified. A worker cannot talk its way into a bigger budget than it was enrolled with.
-    const reported = asNumberOrNull(dto.gpuMemoryBytes);
-    const qualified = asNumberOrNull(worker.gpuMemoryBytes);
-    const gpuMemoryBytes =
-      reported === null ? qualified : qualified === null ? reported : Math.min(reported, qualified);
-
-    // FL-73: a scope saved before the render-only rule keeps only its renders in the session.
-    const scopes = (worker.kinds as MediaOperationKind[]).filter((kind) => isRenderWorkerMediaOperationKind(kind));
-
-    const created = await this.repository.createSession({
-      workerId: worker.id,
+    const { enrolmentSecret, ...report } = dto;
+    const result = await this.repository.admitSession({
+      report,
+      enrolmentSecret: this.cryptoRepository.hashSha256(enrolmentSecret),
       token: this.cryptoRepository.hashSha256(sessionToken),
-      scopes,
-      gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
-      engineDigest: dto.engineDigest,
-      conformanceReportedAt: reportedAt,
-      // FL-42: what this session may render is what its conformance check verified, nothing more.
-      codecs: dto.codecs ?? [],
-      colorPrecision: dto.colorPrecision ?? null,
-      expiresAt,
+      ttlMs: RENDER_WORKER_SESSION_TTL_MS,
     });
-    // FL-95: what the check verified travels with the session, so claims are measured against it.
-    await this.repository.recordSessionCapabilities(created.id, {
-      codecs: dto.codecs ?? [],
-      formats: dto.formats ?? [],
-    });
-    await this.repository.markAdmitted(worker.id, reportedAt);
-    await this.repository.recordAudit({
-      workerId: worker.id,
-      event: RenderWorkerAuditEvent.Admitted,
-      detail: {
-        engineDigest: dto.engineDigest,
-        conformanceReportedAt: dto.conformanceReportedAt,
-        gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
-        codecs: dto.codecs ?? [],
-        colorPrecision: dto.colorPrecision ?? null,
-        formats: dto.formats ?? [],
-        expiresAt: expiresAt.toISOString(),
-      },
-    });
-    this.logger.log(`Render worker ${worker.id} (${worker.name}) admitted until ${expiresAt.toISOString()}`);
-
+    if (!result.admitted) {
+      await this.repository.recordAudit({
+        workerId: dto.workerId,
+        event: RenderWorkerAuditEvent.Refused,
+        reason: result.reason,
+      });
+      throw new UnauthorizedException('Worker admission refused');
+    }
+    const { session } = result;
     return {
-      workerId: worker.id,
+      workerId: session.workerId,
       sessionToken,
-      expiresAt: expiresAt.toISOString(),
-      scopes,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      scopes: session.scopes,
+      gpuMemoryBytes: session.gpuMemoryBytes,
       leaseMs: RENDER_WORKER_LEASE_MS,
       heartbeatIntervalMs: RENDER_WORKER_HEARTBEAT_INTERVAL_MS,
     };

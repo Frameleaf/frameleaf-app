@@ -252,6 +252,7 @@ describe(RenderWorkerService.name, () => {
       markSeen: vi.fn().mockResolvedValue(undefined),
       revokeWorker: vi.fn(),
       createSession: vi.fn(),
+      admitSession: vi.fn(),
       getSessionByToken: vi.fn().mockResolvedValue(undefined),
       touchSession: vi.fn().mockResolvedValue(undefined),
       revokeSessions: vi.fn().mockResolvedValue(0),
@@ -403,115 +404,57 @@ describe(RenderWorkerService.name, () => {
       engineDigest: 'engine-1',
       conformanceReportedAt: new Date(Date.now() - 60_000).toISOString(),
       softwareRenderer: false,
-      gpuMemoryBytes: String(8 * 1024 ** 3),
+      gpuMemoryBytes: '2147483648',
     };
-
-    it('refuses an unknown secret generically and audits the refusal', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(undefined);
-
+    it.each([
+      RenderWorkerRefusalReason.InvalidCredential,
+      RenderWorkerRefusalReason.WorkerRevoked,
+      RenderWorkerRefusalReason.ConformanceReplayed,
+      RenderWorkerRefusalReason.SoftwareRenderer,
+      RenderWorkerRefusalReason.EngineDigestMismatch,
+      RenderWorkerRefusalReason.GpuMemoryInsufficient,
+      RenderWorkerRefusalReason.WorkerConcurrency,
+    ])('returns a generic refusal and audits the transactional decision %s', async (reason) => {
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: false, reason });
       await expect(sut.admit(admission as never)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(workers.createSession).not.toHaveBeenCalled();
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: RenderWorkerAuditEvent.Refused,
-          reason: RenderWorkerRefusalReason.InvalidCredential,
-        }),
-      );
-    });
-
-    it('refuses a valid secret presented under another worker’s id', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-
-      await expect(sut.admit({ ...admission, workerId: workerB.id } as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-      expect(workers.createSession).not.toHaveBeenCalled();
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ workerId: workerA.id, reason: RenderWorkerRefusalReason.InvalidCredential }),
-      );
-    });
-
-    it('refuses a revoked worker with a still-valid secret', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(
-        workerStub({ status: RenderWorkerStatus.Revoked, revokedAt: new Date() }),
-      );
-
-      await expect(sut.admit(admission as never)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: RenderWorkerRefusalReason.WorkerRevoked }),
-      );
-    });
-
-    it('refuses a replayed conformance report', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(
-        workerStub({ lastConformanceReportedAt: new Date(admission.conformanceReportedAt) }),
-      );
-
-      await expect(sut.admit(admission as never)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: RenderWorkerRefusalReason.ConformanceReplayed }),
-      );
-    });
-
-    it('refuses a software renderer and a mismatched engine digest', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-
-      await expect(sut.admit({ ...admission, softwareRenderer: true } as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-      await expect(sut.admit({ ...admission, engineDigest: 'engine-2' } as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-      expect(workers.createSession).not.toHaveBeenCalled();
-    });
-
-    it('issues a scoped session stored by digest, capped to the qualified GPU memory', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-      vi.mocked(workers.createSession).mockImplementation((dto) => Promise.resolve(dto as never));
-
-      const session = await sut.admit(admission as never);
-
-      expect(session.sessionToken).toBe(mocks.crypto.randomBytesAsText(32));
-      expect(session.scopes).toEqual(workerA.kinds);
-      expect(workers.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workerId: workerA.id,
-          token: hashed(session.sessionToken),
-          scopes: workerA.kinds,
-          gpuMemoryBytes: String(8 * 1024 ** 3),
-        }),
-      );
-      expect(workers.markAdmitted).toHaveBeenCalledWith(workerA.id, new Date(admission.conformanceReportedAt));
-      const audits = vi.mocked(workers.recordAudit).mock.calls.map(([entry]) => JSON.stringify(entry));
-      expect(audits.some((entry) => entry.includes(session.sessionToken))).toBe(false);
-      expect(audits.some((entry) => entry.includes('secret-a'))).toBe(false);
-    });
-
-    it('binds the codecs and containers the check verified to the new session (FL-95)', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-      vi.mocked(workers.createSession).mockImplementation((dto) =>
-        Promise.resolve({ ...dto, id: 'session-new' } as never),
-      );
-
-      await sut.admit({ ...admission, codecs: ['hevc_nvenc'], formats: ['mp4'] } as never);
-
-      expect(workers.recordSessionCapabilities).toHaveBeenCalledWith('session-new', {
-        codecs: ['hevc_nvenc'],
-        formats: ['mp4'],
+      expect(workers.recordAudit).toHaveBeenCalledWith({
+        workerId: workerA.id,
+        event: RenderWorkerAuditEvent.Refused,
+        reason,
       });
+      expect(workers.createSession).not.toHaveBeenCalled();
     });
-
-    it('scopes the session to renders only, even for a worker enrolled with a server-side kind (FL-73)', async () => {
-      const legacy = workerStub({ kinds: [MediaOperationKind.QuickEdit, MediaOperationKind.Bulk] as never });
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(legacy);
-      vi.mocked(workers.createSession).mockImplementation((dto) => Promise.resolve(dto as never));
-
-      const session = await sut.admit(admission as never);
-
-      expect(session.scopes).toEqual([MediaOperationKind.QuickEdit]);
-      expect(workers.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ scopes: [MediaOperationKind.QuickEdit] }),
+    it('delegates the complete report and hashed credentials to atomic admission, returning only its committed scopes and Q', async () => {
+      const committed = sessionStub(workerA, SESSION_A, {
+        scopes: [MediaOperationKind.StudioExport],
+        gpuMemoryBytes: '1073741824',
+      });
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: true, session: committed });
+      const dto = { ...admission, codecs: ['h264'], formats: ['mp4'] };
+      const result = await sut.admit(dto as never);
+      const { enrolmentSecret, ...report } = dto;
+      expect(workers.admitSession).toHaveBeenCalledWith({
+        report,
+        enrolmentSecret: hashed(enrolmentSecret),
+        token: hashed(result.sessionToken),
+        ttlMs: 12 * 60 * 60 * 1000,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          workerId: committed.workerId,
+          scopes: committed.scopes,
+          gpuMemoryBytes: committed.gpuMemoryBytes,
+          expiresAt: new Date(committed.expiresAt).toISOString(),
+        }),
       );
+      expect(workers.recordSessionCapabilities).not.toHaveBeenCalled();
+      expect(workers.markAdmitted).not.toHaveBeenCalled();
+      expect(workers.recordAudit).not.toHaveBeenCalled();
+    });
+    it('does not issue a credential when the transaction fails', async () => {
+      vi.mocked(workers.admitSession).mockRejectedValue(new Error('database rollback'));
+      await expect(sut.admit(admission as never)).rejects.toThrow('database rollback');
+      expect(workers.recordAudit).not.toHaveBeenCalled();
     });
   });
 
