@@ -674,3 +674,9 @@ approval or license grant; existing Freecut MIT attribution and resource-rights 
 Source composition does not qualify inference, WebGPU, HDR, browser hardware, durable storage or
 release delivery. The publication writer remains unexposed and storage remains UNQUALIFIED until
 the complete coupled acceptance and deployment gates pass.
+
+Patch `0134-project-colour-policy-disclosure.patch` shows the fixed colour policy
+beside project templates, canvas settings and first-media matching. Canvas/FPS
+changes retain stored colour settings; placing PQ/HLG media, including nested
+compositions, makes the project HDR. Import alone does not, and export colour is
+chosen separately. The existing MIT notice covers the adapted UI and tests.
