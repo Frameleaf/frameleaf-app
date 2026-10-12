@@ -1,5 +1,5 @@
-import type { KyselyPlugin, QueryId, RawNode } from 'kysely';
 import { performance } from 'node:perf_hooks';
+import type { KyselyPlugin, QueryId, RawNode } from 'kysely';
 
 type Phase = 'seed' | 'dispatch' | 'counts' | 'share-feed' | 'low-water-update';
 type QueryPhase = 'capture' | 'acknowledgement' | 'retained-audit' | 'finish-enumeration' | 'other';
@@ -28,10 +28,13 @@ export const createImportScaleDiagnostics = (
         visit,
         truncated: events > 256,
         queries,
-        unmatchedTransforms: [...unmatchedTransforms.values()].map((query) => ({
-          phase: query.phase,
-          elapsedMs: Math.round(time - query.started),
-        })),
+        unmatchedTransforms: unmatchedTransforms
+          .values()
+          .map((query) => ({
+            phase: query.phase,
+            elapsedMs: Math.round(time - query.started),
+          }))
+          .toArray(),
       })}\n`,
     );
   };
@@ -60,21 +63,23 @@ export const createImportScaleDiagnostics = (
       if (phase !== 'other' && (phase !== 'acknowledgement' || completed % 50 === 0)) report('query-start');
       return node;
     },
-    transformResult: async ({ queryId, result }) => {
-      const query = unmatchedTransforms.get(queryId);
-      if (query) {
-        const duration = now() - query.started;
-        const metric = (queries[query.phase] ??= { completed: 0, totalMs: 0, maxMs: 0 });
-        metric.completed++;
-        metric.totalMs += duration;
-        metric.maxMs = Math.max(metric.maxMs, duration);
-        unmatchedTransforms.delete(queryId);
-        if (query.phase !== 'other' && (query.phase !== 'acknowledgement' || metric.completed % 50 === 0)) {
-          report('query-progress');
+    transformResult: (args) =>
+      Promise.try(() => {
+        const { queryId, result } = args;
+        const query = unmatchedTransforms.get(queryId);
+        if (query) {
+          const duration = now() - query.started;
+          const metric = (queries[query.phase] ??= { completed: 0, totalMs: 0, maxMs: 0 });
+          metric.completed++;
+          metric.totalMs += duration;
+          metric.maxMs = Math.max(metric.maxMs, duration);
+          unmatchedTransforms.delete(queryId);
+          if (query.phase !== 'other' && (query.phase !== 'acknowledgement' || metric.completed % 50 === 0)) {
+            report('query-progress');
+          }
         }
-      }
-      return result;
-    },
+        return result;
+      }),
   };
   return {
     plugin,

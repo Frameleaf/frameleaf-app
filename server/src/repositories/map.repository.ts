@@ -2,16 +2,20 @@ import { Injectable } from '@nestjs/common';
 import isoCountries from 'i18n-iso-countries';
 import { type Expression, type Insertable, type Kysely, type NotNull, type SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { createReadStream, existsSync, readFileSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { createReadStream, createWriteStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import readLine from 'node:readline';
-import { gunzipSync } from 'node:zlib';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createGunzip, gunzipSync } from 'node:zlib';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LANDMARK_MAX_RADIUS_M, citiesFile, reverseGeocodeMaxDistance } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility, SystemMetadataKey } from 'src/enum.js';
+import { AssetVisibility, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -30,6 +34,13 @@ export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   /** FL-54: owners who hide their locations from the viewer; their assets contribute no markers */
   locationHiddenOwnerIds?: string[];
 }
+
+/** How a landmark's brand icon is drawn: the colour of the circle around it, and whether it fills its frame. */
+type LandmarkIcon = { background: string; tile: boolean };
+const LANDMARK_ID = /^Q\d{1,18}$/;
+const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
+/** The icon pack is one file of some tens of megabytes; a slow link gets half an hour for it. */
+const LANDMARK_ICON_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
 /** A timestamptz column as an ISO-8601 UTC string, the shape the JSON API returns for dates. */
 const isoTimestamp = (column: 'asset.fileCreatedAt' | 'asset.localDateTime') =>
@@ -78,29 +89,144 @@ export class MapRepository {
     this.logger.setContext(MapRepository.name);
   }
 
-  private landmarkIcons?: Map<string, { background: string; tile: boolean }>;
+  private landmarkIcons?: { file: string; mtimeMs: number; icons: Map<string, LandmarkIcon> };
 
   /**
-   * The brand icons that ship for landmarks, by landmark id: how to draw each (FL-355). Read once. The icon
-   * pack is optional, so without it every landmark simply shows the icon for its kind.
+   * Where a server keeps the icon pack it downloaded (FL-355): beside the thumbnails, which are also made
+   * rather than kept, and hidden like their other caches so the untracked-file scan never reports it.
    */
-  getLandmarkIcons(): Map<string, { background: string; tile: boolean }> {
-    if (!this.landmarkIcons) {
-      const { resourcePaths } = this.configRepository.getEnv();
-      try {
-        const index = JSON.parse(readFileSync(join(resourcePaths.geodata.landmarkIcons, 'icons.json'), 'utf8'));
-        this.landmarkIcons = new Map(Object.entries(index));
-      } catch {
-        this.landmarkIcons = new Map();
-      }
+  private installedLandmarkIcons(): string | undefined {
+    try {
+      return join(StorageCore.getBaseFolder(StorageFolder.Thumbnails), '.landmark-icons', 'current');
+    } catch {
+      // no media location yet
+      return undefined;
     }
-    return this.landmarkIcons;
+  }
+
+  /** The folder brand icons are read from: the downloaded pack, else one shipped beside the geodata. */
+  private landmarkIconFolder(): string {
+    const installed = this.installedLandmarkIcons();
+    return installed && existsSync(join(installed, 'icons.json'))
+      ? realpathSync(installed)
+      : this.configRepository.getEnv().resourcePaths.geodata.landmarkIcons;
+  }
+
+  /**
+   * The brand icons this server has for landmarks, by landmark id: how to draw each (FL-355). The pack is
+   * optional, so without it every landmark simply shows the icon for its kind. The index is read again
+   * when its file changes, which is how the API worker sees a pack the microservices worker installed.
+   */
+  getLandmarkIcons(): Map<string, LandmarkIcon> {
+    const file = join(this.landmarkIconFolder(), 'icons.json');
+    try {
+      const { mtimeMs } = statSync(file);
+      if (this.landmarkIcons?.file !== file || this.landmarkIcons.mtimeMs !== mtimeMs) {
+        const icons = new Map<string, LandmarkIcon>(Object.entries(JSON.parse(readFileSync(file, 'utf8'))));
+        this.landmarkIcons = { file, mtimeMs, icons };
+      }
+      return this.landmarkIcons.icons;
+    } catch {
+      return new Map();
+    }
   }
 
   /** Where a landmark's brand icon is on disk, if it has one. `id` must already be a checked landmark id. */
   getLandmarkIconPath(id: string): string | undefined {
-    const { resourcePaths } = this.configRepository.getEnv();
-    return this.getLandmarkIcons().has(id) ? join(resourcePaths.geodata.landmarkIcons, `${id}.png`) : undefined;
+    const icons = this.getLandmarkIcons();
+    const file = this.landmarkIcons?.file;
+    return icons.has(id) && file ? join(dirname(file), `${id}.png`) : undefined;
+  }
+
+  /**
+   * Downloads the brand icon pack and unpacks it beside the thumbnails, unless that very pack is already
+   * there. The file is taken whole and checked against its SHA-256 before anything in it is used: one
+   * icon a line, `{"id","background","tile","png"}` with the PNG in base64 (see icons/pack.mjs). Resolves
+   * to whether a pack was installed.
+   */
+  async installLandmarkIcons(pack: { url: string; sha256: string }): Promise<boolean> {
+    const folder = this.installedLandmarkIcons();
+    if (!folder || (await readFile(join(folder, 'pack.sha256'), 'utf8').catch(() => '')) === pack.sha256) {
+      return false;
+    }
+
+    if (!/^[a-f0-9]{64}$/.test(pack.sha256)) {
+      throw new Error('The icon pack checksum is malformed');
+    }
+    const root = dirname(folder);
+    await mkdir(root, { recursive: true });
+    const staging = await mkdtemp(join(root, '.tmp-'));
+    const version = join(root, pack.sha256);
+    const pointer = `${staging}.link`;
+    try {
+      const download = join(staging, 'pack.ndjson.gz');
+      const response = await fetch(pack.url, { signal: AbortSignal.timeout(LANDMARK_ICON_DOWNLOAD_TIMEOUT_MS) });
+      if (!response.ok || !response.body) {
+        throw new Error(`${pack.url} answered ${response.status}`);
+      }
+      const hash = createHash('sha256');
+      await pipeline(
+        Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
+        async function* (source: AsyncIterable<Buffer>) {
+          for await (const chunk of source) {
+            hash.update(chunk);
+            yield chunk;
+          }
+        },
+        createWriteStream(download),
+      );
+      if (hash.digest('hex') !== pack.sha256) {
+        throw new Error(`${pack.url} does not match its checksum`);
+      }
+
+      const index: Record<string, LandmarkIcon> = {};
+      const unpack = async (line: string) => {
+        if (!line) {
+          return;
+        }
+        const { id, background, tile, png } = JSON.parse(line);
+        // The id becomes a file name, so it is checked even though the whole file already was.
+        if (!LANDMARK_ID.test(id) || !HEX_COLOUR.test(background) || typeof tile !== 'boolean') {
+          throw new Error('The icon pack has a malformed line');
+        }
+        await writeFile(join(staging, `${id}.png`), Buffer.from(png, 'base64'));
+        index[id] = { background, tile };
+      };
+      await pipeline(createReadStream(download), createGunzip(), async (source: AsyncIterable<Buffer>) => {
+        let rest = '';
+        for await (const chunk of source) {
+          // the pack is ASCII throughout, so a chunk never ends inside a character
+          const lines = (rest + chunk.toString('ascii')).split('\n');
+          rest = lines.pop() ?? '';
+          for (const line of lines) {
+            await unpack(line);
+          }
+        }
+        await unpack(rest);
+      });
+
+      await rm(download);
+      await writeFile(join(staging, 'icons.json'), JSON.stringify(index));
+      await writeFile(join(staging, 'pack.sha256'), pack.sha256);
+      try {
+        await rename(staging, version);
+      } catch (error) {
+        // Another worker may have published this exact pack while we downloaded it.
+        if (
+          !['EEXIST', 'ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code ?? '') ||
+          (await readFile(join(version, 'pack.sha256'), 'utf8').catch(() => '')) !== pack.sha256
+        ) {
+          throw error;
+        }
+      }
+      // shortcut: retain old versions for active readers; add cache pruning when pack updates need it.
+      await symlink(basename(version), pointer);
+      await rename(pointer, folder);
+      return true;
+    } finally {
+      await rm(pointer, { force: true });
+      await rm(staging, { recursive: true, force: true });
+    }
   }
 
   /** Imports the bundled geodata when it is newer than the last import. Resolves to whether an import ran. */
