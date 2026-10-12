@@ -79,9 +79,10 @@ export const LEGACY_ALLOWLIST = [
   },
   {
     reason:
-      "The health check's throwaway server drops the deprecated IMMICH_HOST and IMMICH_PORT so they cannot conflict with its own address",
+      "The health check's throwaway server drops deprecated host, port and log-level aliases so they cannot override its address or readiness logging",
     files: /^server\/src\/maintenance\/maintenance-health\.repository\.ts$/,
-    allow: /IMMICH_HOST: _host, IMMICH_PORT: _port/g,
+    allow:
+      /IMMICH_HOST: _host, IMMICH_PORT: _port, IMMICH_LOG_LEVEL: _logLevel/g,
   },
   {
     reason:
