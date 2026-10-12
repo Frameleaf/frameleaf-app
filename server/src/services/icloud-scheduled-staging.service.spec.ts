@@ -222,6 +222,104 @@ describe('validation input accounting baseline', () => {
     },
   );
 
+  it('keeps ordinary final readonly refusal unavailable with successful settlement', async () => {
+    const f = await fixture();
+    f.admit();
+    f.cached
+      .mockImplementationOnce(() => Promise.resolve(f.receipt))
+      .mockRejectedValueOnce(new Error('ordinary receipt refusal'));
+    const validation = await f.sut.validate(f.input);
+    try {
+      f.decoderDone.resolve();
+      expect(await validation.result).toEqual({ status: 'unavailable' });
+      await expect(validation.settled).resolves.toBeUndefined();
+      expect(f.repository.finishPrivateWork).toHaveBeenCalledTimes(2);
+    } finally {
+      f.decoderDone.resolve();
+      await validation.settled;
+      await f.sut.onShutdown();
+      vi.restoreAllMocks();
+      await rm(f.directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['cached', 'destination'] as const)(
+    'retains final %s readonly close failure through abort, shutdown and cleanup',
+    async (stage) => {
+      const f = await fixture(stage === 'destination');
+      f.admit();
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      const read = f.sut as unknown as { readOwned: (...args: unknown[]) => Promise<unknown> };
+      if (stage === 'cached') {
+        f.cached
+          .mockImplementationOnce(() => Promise.resolve(f.receipt))
+          .mockImplementationOnce(async () => {
+            await read.readOwned(f.input, f.receipt.payload.path);
+            return f.receipt;
+          });
+      }
+      const controller = new AbortController();
+      const validation = await f.sut.validate(f.input, controller.signal, f.destination);
+      const inputState = f.repository.storeValidationInput.mock.results.at(-1)!.value;
+      f.repository.validationInputs.mockImplementation(async () => {
+        const latest = f.repository.storeValidationInput.mock.results.at(-1)?.value;
+        return latest ? await latest : await inputState;
+      });
+      f.repository.disposeValidationInput.mockImplementation((_input, envelope) =>
+        Promise.resolve(envelope.payload.current.payload.state === 'settled'),
+      );
+      const disposePrivateCopy = vi.fn();
+      const disposeRefusedStaging = vi.fn();
+      Object.assign(f.repository, { disposePrivateCopy, disposeRefusedStaging });
+      const closeStarted = Promise.withResolvers<void>();
+      const releaseClose = Promise.withResolvers<void>();
+      vi.mocked(open).mockImplementationOnce(async (...args) => {
+        const handle = await actual.open(...args);
+        const close = handle.close.bind(handle);
+        vi.spyOn(handle, 'close').mockImplementationOnce(async () => {
+          closeStarted.resolve();
+          await releaseClose.promise;
+          await close();
+          throw new Error('controlled final readonly close failure');
+        });
+        return handle;
+      });
+      const settlement = validation.settled.catch((error: unknown) => error);
+      let stopped = false;
+      let shutdown: Promise<void> | undefined;
+      try {
+        f.decoderDone.resolve();
+        await closeStarted.promise;
+        controller.abort();
+        expect(await validation.result).toEqual({ status: 'unavailable' });
+        shutdown = f.sut.onShutdown().then(() => {
+          stopped = true;
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped).toBe(false);
+        expect(f.repository.finishPrivateWork).toHaveBeenCalledTimes(1);
+        releaseClose.resolve();
+        expect(await settlement).toBeInstanceOf(Error);
+        await shutdown;
+        expect(f.repository.storeValidationInput.mock.calls.some((call) => call[2].state === 'settled')).toBe(false);
+        expect(f.repository.disposeValidationInput).not.toHaveBeenCalled();
+        expect(f.repository.finishPrivateWork).toHaveBeenCalledTimes(1);
+        await f.sut.cleanupRetired(f.input);
+        expect(disposePrivateCopy).not.toHaveBeenCalled();
+        expect(disposeRefusedStaging).not.toHaveBeenCalled();
+        expect((await readdir(f.directory)).some((name) => name.startsWith('.validation-'))).toBe(true);
+      } finally {
+        releaseClose.resolve();
+        f.decoderDone.resolve();
+        await settlement;
+        await shutdown;
+        await f.sut.onShutdown();
+        vi.restoreAllMocks();
+        await rm(f.directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('validation input remains present while final readonly work is unsettled', async () => {
     const f = await fixture();
     f.admit();
@@ -533,6 +631,7 @@ describe('validation input restart discovery', () => {
       const repository = {
         retainedValidationInputs: vi.fn().mockResolvedValue([resource]),
         retainValidationInput: vi.fn(),
+        deferDisposedValidationInput: vi.fn(),
         retiredPrivateCopies: vi.fn().mockResolvedValue([]),
         disposeValidationInput: vi.fn(),
       };
@@ -548,6 +647,51 @@ describe('validation input restart discovery', () => {
     },
   );
 
+  it('advances past ten authenticated disposed source-only rows without releasing unknown or source charges', async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      id: randomUUID(),
+      ownerId,
+      status: 'failed',
+      reservedBytes: 10,
+      nextAttemptAt: null as Date | null,
+      verification: {
+        auditValidationInputs: index === 10 ? { unknown: true } : inputEnvelope(index < 10 ? 'disposed' : 'settled'),
+      },
+    }));
+    const repository = {
+      retainedValidationInputs: vi.fn(() =>
+        Promise.resolve(rows.filter((row) => row.nextAttemptAt === null).slice(0, 10)),
+      ),
+      validationInputs: vi.fn((input) =>
+        Promise.resolve(rows.find((row) => row.id === input.resource.id)!.verification.auditValidationInputs),
+      ),
+      disposeValidationInput: vi.fn().mockResolvedValue(true),
+      deferDisposedValidationInput: vi.fn((input) => {
+        rows.find((row) => row.id === input.resource.id)!.nextAttemptAt = new Date(Date.now() + 300_000);
+        return Promise.resolve(true);
+      }),
+      retainValidationInput: vi.fn((resource) => {
+        resource.nextAttemptAt = new Date(Date.now() + 300_000);
+        return Promise.resolve();
+      }),
+      retiredPrivateCopies: vi.fn().mockResolvedValue([]),
+    };
+    const sut = new ICloudScheduledStagingService(
+      repository as never,
+      {} as never,
+      { enabled: () => false } as never,
+      {} as never,
+    );
+    await sut.housekeeping();
+    await sut.housekeeping();
+    expect(repository.disposeValidationInput).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: expect.objectContaining({ id: rows[11].id }) }),
+      rows[11].verification.auditValidationInputs,
+    );
+    expect(repository.retainValidationInput).toHaveBeenCalledWith(rows[10], 'unproven');
+    expect(rows.every((row) => row.reservedBytes === 10 && row.status === 'failed')).toBe(true);
+  });
+
   it.each(['match', 'mismatch', 'failed', 'cancelled'])(
     'discovers settled source-only %s input after restart with provider disabled',
     async (result) => {
@@ -562,6 +706,7 @@ describe('validation input restart discovery', () => {
         retainedValidationInputs: vi.fn().mockResolvedValue([resource]),
         validationInputs: vi.fn().mockResolvedValue(envelope),
         retainValidationInput: vi.fn(),
+        deferDisposedValidationInput: vi.fn(),
         retiredPrivateCopies: vi.fn().mockResolvedValue([]),
         disposeValidationInput: vi.fn().mockResolvedValue(true),
       };

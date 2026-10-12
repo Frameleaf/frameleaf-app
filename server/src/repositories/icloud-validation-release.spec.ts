@@ -41,6 +41,32 @@ const resource = {
 };
 
 describe('validation input release boundaries', () => {
+  it('restart progress rejects an unauthenticated disposed label without changing charge or scheduling', async () => {
+    const current = {
+      ...resource,
+      verification: { auditValidationInputs: { payload: { current: { payload: { state: 'disposed' } } } } },
+    };
+    const f = fixture(() => [current]);
+    const sut = new ICloudScheduledStagingRepository(f.db, {} as never);
+    try {
+      expect(
+        await sut.deferDisposedValidationInput({
+          ownerId: resource.ownerId,
+          resource: { id: resource.id, leaseToken: resource.leaseToken },
+          authority: {
+            purpose: 'scheduled-weekly',
+            auditRequestId: resource.auditRequestId,
+            operationId: resource.id,
+            operationClaimToken: resource.leaseToken,
+          },
+        }),
+      ).toBe(false);
+      expect(f.queries.some((query) => /UPDATE public.icloud_resource/.test(query))).toBe(false);
+    } finally {
+      await f.db.destroy();
+    }
+  });
+
   it('refuses direct terminal release when the input cannot authenticate as disposed', async () => {
     const f = fixture(() => [resource]);
     const sut = new ICloudScheduledStagingRepository(f.db, {} as never);

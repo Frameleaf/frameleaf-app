@@ -35,6 +35,15 @@ import {
 } from 'src/utils/icloud-private-copy.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
+class ScheduledReadonlyUnsettledError extends Error {}
+const closeReadonly = async (file: FileHandle) => {
+  try {
+    await file.close();
+  } catch (error) {
+    throw new ScheduledReadonlyUnsettledError('scheduled_audit_readonly_unsettled', { cause: error });
+  }
+};
+
 export type ScheduledValidationOutcome =
   | {
       status: 'validated';
@@ -163,7 +172,9 @@ export class ICloudScheduledStagingService {
         const authenticated = await this.repository.validationInputs(input);
         if (!authenticated) {
           await this.repository.retainValidationInput(resource, 'unproven');
-        } else if (!(await this.repository.disposeValidationInput(input, authenticated))) {
+        } else if (await this.repository.disposeValidationInput(input, authenticated)) {
+          await this.repository.deferDisposedValidationInput(input);
+        } else {
           await this.repository.retainValidationInput(resource, 'fence-or-unlink');
         }
       } catch {
@@ -331,7 +342,9 @@ export class ICloudScheduledStagingService {
       await this.checkpoint(input, signal);
       return value;
     } catch (error) {
-      await dispose?.(value).catch(() => {});
+      await dispose?.(value).catch((error_) => {
+        if (error_ instanceof ScheduledReadonlyUnsettledError) throw error_;
+      });
       throw error;
     }
   }
@@ -386,7 +399,7 @@ export class ICloudScheduledStagingService {
       input,
       () => open(path, constants.O_RDONLY | constants.O_NOFOLLOW),
       signal,
-      (file) => file.close(),
+      (file) => closeReadonly(file),
     );
     try {
       const before = await this.step(input, () => handle.stat(), signal);
@@ -422,7 +435,7 @@ export class ICloudScheduledStagingService {
       }
       return { ...result, identity: fileIdentity(final) };
     } finally {
-      await handle.close();
+      await closeReadonly(handle);
     }
   }
 
@@ -942,7 +955,8 @@ export class ICloudScheduledStagingService {
               return { status: 'unavailable' };
             }
             return { status: 'validated', receipt, validation: proof, verified };
-          } catch {
+          } catch (error) {
+            if (error instanceof ScheduledReadonlyUnsettledError) throw error;
             return { status: 'unavailable' };
           } finally {
             clearInterval(timer);
@@ -964,7 +978,10 @@ export class ICloudScheduledStagingService {
             throw new Error('scheduled_audit_input_retained');
           await this.repository.finishPrivateWork(input, privateWork);
         });
-        const result = Promise.race([work, refusal.promise]).finally(() => {
+        const result = Promise.race([
+          work.catch((): ScheduledValidationOutcome => ({ status: 'unavailable' })),
+          refusal.promise,
+        ]).finally(() => {
           clearInterval(timer);
           signal?.removeEventListener('abort', cancel);
         });
