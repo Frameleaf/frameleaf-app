@@ -3265,7 +3265,7 @@ export enum MailTransportType {
 
 export const MailTransportTypeSchema = z
   .enum(MailTransportType)
-  .describe('FL-379: how this server sends email: a mail server entered by hand, Gmail or Microsoft')
+  .describe('How this server sends email: a mail server entered by hand, Gmail or Microsoft')
   .meta({ id: 'MailTransportType' });
 
 /** FL-379: the mail providers an administrator can connect by signing in. */
