@@ -13,6 +13,20 @@ export default defineConfig({
   },
   test: {
     name: 'server:medium',
+    ...(process.env.FRAMELEAF_MEDIUM_SUITE === 'scale' && process.env.FRAMELEAF_MEDIUM_DIAGNOSTICS === '1'
+      ? {
+          reporters: [
+            'default',
+            [
+              'junit',
+              {
+                outputFile: '/tmp/frameleaf-medium-scale-reports/vitest.xml',
+                includeConsoleOutput: false,
+              },
+            ],
+          ],
+        }
+      : {}),
     fileParallelism: false,
     root: serverRoot,
     globals: true,
