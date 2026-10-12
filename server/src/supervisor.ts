@@ -45,6 +45,9 @@ class Workers {
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
   private databaseRestarts = new Set<ImmichWorker>();
+  private workerRestarts = new Map<ImmichWorker, NodeJS.Timeout>();
+  private lifecycle = {};
+  private maintenanceMode = false;
   private workerStopProofs = new WorkerStopProofRecorder(new ConfigRepository());
 
   private stopper = new SupervisorStop({
@@ -78,6 +81,7 @@ class Workers {
   async bootstrap() {
     setEdgeSecret();
     const isMaintenanceMode = await this.isMaintenanceMode();
+    this.maintenanceMode = isMaintenanceMode;
     const { workers } = new ConfigRepository().getEnv();
 
     if (this.stopper.stopping) {
@@ -111,6 +115,7 @@ class Workers {
     if (this.stopper.stopping) {
       return;
     }
+    this.invalidateWorkerRestarts();
     console.log(`Received ${signal}; stopping every worker`);
     clearTimeout(this.edgeRestartTimer);
     clearTimeout(this.edgeKillTimer);
@@ -171,6 +176,13 @@ class Workers {
     }
 
     await kysely.destroy();
+  }
+
+  /** A completed bootstrap must not revive local retries from an earlier worker group. */
+  private invalidateWorkerRestarts() {
+    this.lifecycle = {};
+    for (const timer of this.workerRestarts.values()) clearTimeout(timer);
+    this.workerRestarts.clear();
   }
 
   /**
@@ -250,6 +262,7 @@ class Workers {
 
     // restart immich server
     if (exitCode === ExitCode.AppRestart || this.restarting) {
+      if (!this.restarting) this.invalidateWorkerRestarts();
       this.restarting = true;
       // a pending edge restart would race the bootstrap that starts it again
       clearTimeout(this.edgeRestartTimer);
@@ -312,11 +325,22 @@ class Workers {
     // other API/edge/executor pools available. Safe queue publications remain token fenced.
     if (this.databaseRestarts.delete(name) || name === ImmichWorker.Microservices) {
       delete this.workers[name];
-      setTimeout(() => {
-        if (!this.stopper.stopping && !this.restarting && !this.workers[name]) {
+      const lifecycle = this.lifecycle;
+      clearTimeout(this.workerRestarts.get(name));
+      const timer = setTimeout(() => {
+        this.workerRestarts.delete(name);
+        const permitted = this.maintenanceMode ? name === ImmichWorker.Maintenance : name !== ImmichWorker.Maintenance;
+        if (
+          lifecycle === this.lifecycle &&
+          permitted &&
+          !this.stopper.stopping &&
+          !this.restarting &&
+          !this.workers[name]
+        ) {
           this.startWorker(name);
         }
       }, 1000);
+      this.workerRestarts.set(name, timer);
       return;
     }
 
