@@ -1,295 +1,7 @@
 {
-  "databaseName": "capture",
+  "databaseName": "frameleaf",
   "schemaName": "public",
   "tables": [
-    {
-      "name": "asset_user_share",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sharedWithId",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "default": "gen_random_uuid()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "asset_user_share",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_user_share_owner_idx",
-          "definition": "CREATE INDEX asset_user_share_owner_idx ON public.asset_user_share USING btree (\"ownerId\", \"assetId\")",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "ownerId",
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_user_share_recipient_idx",
-          "definition": "CREATE INDEX asset_user_share_recipient_idx ON public.asset_user_share USING btree (\"sharedWithId\", \"createdAt\")",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "sharedWithId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "asset_user_share_asset_recipient_key",
-          "definition": "UNIQUE (\"assetId\", \"sharedWithId\")",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "assetId",
-            "sharedWithId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "asset_user_share_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_user_share",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "buddy_backup_reference",
-      "columns": [
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "deleteRequested",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "path",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "released",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "runId",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "buddy_backup_reference",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "buddy_backup_reference_path_idx",
-          "definition": "CREATE INDEX buddy_backup_reference_path_idx ON public.buddy_backup_reference USING btree (path)",
-          "tableName": "buddy_backup_reference",
-          "columnNames": [
-            "path"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "buddy_backup_reference_pkey",
-          "definition": "PRIMARY KEY (\"runId\", path)",
-          "tableName": "buddy_backup_reference",
-          "columnNames": [
-            "runId",
-            "path"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "cloud_backup_manifest_entry",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "manifestId",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "mtime",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "role",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "path",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "fileKey",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "size",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "sha256",
-          "tableName": "cloud_backup_manifest_entry",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "cloud_backup_manifest_entry_pkey",
-          "definition": "PRIMARY KEY (\"manifestId\", \"fileKey\")",
-          "tableName": "cloud_backup_manifest_entry",
-          "columnNames": [
-            "manifestId",
-            "fileKey"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
     {
       "name": "album_audit",
       "columns": [
@@ -1655,6 +1367,294 @@
           "tableName": "asset_origin",
           "columnNames": [
             "assetId"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_user_share",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sharedWithId",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_user_share",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_user_share_owner_idx",
+          "definition": "CREATE INDEX asset_user_share_owner_idx ON public.asset_user_share USING btree (\"ownerId\", \"assetId\")",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "ownerId",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_user_share_recipient_idx",
+          "definition": "CREATE INDEX asset_user_share_recipient_idx ON public.asset_user_share USING btree (\"sharedWithId\", \"createdAt\")",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "sharedWithId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "unique",
+          "name": "asset_user_share_asset_recipient_key",
+          "definition": "UNIQUE (\"assetId\", \"sharedWithId\")",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "assetId",
+            "sharedWithId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_user_share_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_user_share",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "buddy_backup_reference",
+      "columns": [
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "deleteRequested",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "path",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "released",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "runId",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "buddy_backup_reference",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "buddy_backup_reference_path_idx",
+          "definition": "CREATE INDEX buddy_backup_reference_path_idx ON public.buddy_backup_reference USING btree (path)",
+          "tableName": "buddy_backup_reference",
+          "columnNames": [
+            "path"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "buddy_backup_reference_pkey",
+          "definition": "PRIMARY KEY (\"runId\", path)",
+          "tableName": "buddy_backup_reference",
+          "columnNames": [
+            "runId",
+            "path"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "cloud_backup_manifest_entry",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "manifestId",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "mtime",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "role",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "path",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "fileKey",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "size",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "sha256",
+          "tableName": "cloud_backup_manifest_entry",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "cloud_backup_manifest_entry_pkey",
+          "definition": "PRIMARY KEY (\"manifestId\", \"fileKey\")",
+          "tableName": "cloud_backup_manifest_entry",
+          "columnNames": [
+            "manifestId",
+            "fileKey"
           ],
           "synchronize": true
         }
@@ -16160,288 +16160,6 @@
       "synchronize": true
     },
     {
-      "name": "render_worker",
-      "columns": [
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "kinds",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "createdBy",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastSeenAt",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastConformanceReportedAt",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "maxWallClockMs",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "maxOutputBytes",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "enrolmentSecret",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "conformanceMaxAgeMs",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "604800000",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "engineDigest",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "maxConcurrentOperations",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "1",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "revokedAt",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "status",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "'active'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "destination",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastAdmittedAt",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "gpuMemoryBytes",
-          "tableName": "render_worker",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "render_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "render_worker_createdBy_idx",
-          "definition": "CREATE INDEX \"render_worker_createdBy_idx\" ON public.render_worker USING btree (\"createdBy\")",
-          "tableName": "render_worker",
-          "columnNames": [
-            "createdBy"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "render_worker_status_destination_idx",
-          "definition": "CREATE INDEX render_worker_status_destination_idx ON public.render_worker USING btree (status, destination)",
-          "tableName": "render_worker",
-          "columnNames": [
-            "status",
-            "destination"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "render_worker_enrolmentSecret_idx",
-          "definition": "CREATE INDEX \"render_worker_enrolmentSecret_idx\" ON public.render_worker USING btree (\"enrolmentSecret\")",
-          "tableName": "render_worker",
-          "columnNames": [
-            "enrolmentSecret"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "render_worker_updatedAt",
-          "definition": "CREATE TRIGGER \"render_worker_updatedAt\" BEFORE UPDATE ON public.render_worker FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "render_worker",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "render_worker_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "render_worker",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "render_worker_createdBy_fkey",
-          "definition": "FOREIGN KEY (\"createdBy\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "render_worker",
-          "columnNames": [
-            "createdBy"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "session_sync_checkpoint",
       "columns": [
         {
@@ -27618,198 +27336,6 @@
             "userId"
           ],
           "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "render_worker_session",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "colorPrecision",
-          "tableName": "render_worker_session",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastUsedAt",
-          "tableName": "render_worker_session",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "revokedAt",
-          "tableName": "render_worker_session",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "gpuMemoryBytes",
-          "tableName": "render_worker_session",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "engineDigest",
-          "tableName": "render_worker_session",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "scopes",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "token",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "workerId",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "codecs",
-          "tableName": "render_worker_session",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "conformanceReportedAt",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "expiresAt",
-          "tableName": "render_worker_session",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "render_worker_session_workerId_idx",
-          "definition": "CREATE INDEX \"render_worker_session_workerId_idx\" ON public.render_worker_session USING btree (\"workerId\")",
-          "tableName": "render_worker_session",
-          "columnNames": [
-            "workerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "render_worker_session_workerId_expiresAt_idx",
-          "definition": "CREATE INDEX \"render_worker_session_workerId_expiresAt_idx\" ON public.render_worker_session USING btree (\"workerId\", \"expiresAt\")",
-          "tableName": "render_worker_session",
-          "columnNames": [
-            "workerId",
-            "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "render_worker_session_token_idx",
-          "definition": "CREATE INDEX render_worker_session_token_idx ON public.render_worker_session USING btree (token)",
-          "tableName": "render_worker_session",
-          "columnNames": [
-            "token"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "render_worker_session_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "render_worker_session",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "render_worker_session_workerId_fkey",
-          "definition": "FOREIGN KEY (\"workerId\") REFERENCES render_worker(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "render_worker_session",
-          "columnNames": [
-            "workerId"
-          ],
-          "referenceTableName": "render_worker",
           "referenceColumnNames": [
             "id"
           ],
@@ -39246,6 +38772,516 @@
             "assetId"
           ],
           "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "render_worker",
+      "columns": [
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "kinds",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "createdBy",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastSeenAt",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "gpuWorkingBudgetApproval",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastConformanceReportedAt",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "maxWallClockMs",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "maxOutputBytes",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "enrolmentSecret",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "conformanceMaxAgeMs",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "604800000",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "engineDigest",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "maxConcurrentOperations",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "1",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "status",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "'active'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "destination",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastAdmittedAt",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "gpuMemoryBytes",
+          "tableName": "render_worker",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "render_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "render_worker_createdBy_idx",
+          "definition": "CREATE INDEX \"render_worker_createdBy_idx\" ON public.render_worker USING btree (\"createdBy\")",
+          "tableName": "render_worker",
+          "columnNames": [
+            "createdBy"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "render_worker_status_destination_idx",
+          "definition": "CREATE INDEX render_worker_status_destination_idx ON public.render_worker USING btree (status, destination)",
+          "tableName": "render_worker",
+          "columnNames": [
+            "status",
+            "destination"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "render_worker_enrolmentSecret_idx",
+          "definition": "CREATE INDEX \"render_worker_enrolmentSecret_idx\" ON public.render_worker USING btree (\"enrolmentSecret\")",
+          "tableName": "render_worker",
+          "columnNames": [
+            "enrolmentSecret"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "render_worker_updatedAt",
+          "definition": "CREATE TRIGGER \"render_worker_updatedAt\" BEFORE UPDATE ON public.render_worker FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "render_worker",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "render_worker_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "render_worker",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "render_worker_createdBy_fkey",
+          "definition": "FOREIGN KEY (\"createdBy\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "render_worker",
+          "columnNames": [
+            "createdBy"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "render_worker_session",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "colorPrecision",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastUsedAt",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "gpuMemoryBytes",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "engineDigest",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "token",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "gpuWorkingBudgetEvidence",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workerId",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "codecs",
+          "tableName": "render_worker_session",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "conformanceReportedAt",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "render_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "render_worker_session_budget_measurement_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_measurement_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)))",
+          "tableName": "render_worker_session",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'measurementId'::text)",
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "render_worker_session_workerId_idx",
+          "definition": "CREATE INDEX \"render_worker_session_workerId_idx\" ON public.render_worker_session USING btree (\"workerId\")",
+          "tableName": "render_worker_session",
+          "columnNames": [
+            "workerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "render_worker_session_workerId_expiresAt_idx",
+          "definition": "CREATE INDEX \"render_worker_session_workerId_expiresAt_idx\" ON public.render_worker_session USING btree (\"workerId\", \"expiresAt\")",
+          "tableName": "render_worker_session",
+          "columnNames": [
+            "workerId",
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "render_worker_session_token_idx",
+          "definition": "CREATE INDEX render_worker_session_token_idx ON public.render_worker_session USING btree (token)",
+          "tableName": "render_worker_session",
+          "columnNames": [
+            "token"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "render_worker_session_budget_receipt_key",
+          "definition": "CREATE UNIQUE INDEX render_worker_session_budget_receipt_key ON public.render_worker_session USING btree (((\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)))",
+          "tableName": "render_worker_session",
+          "expression": "(\"gpuWorkingBudgetEvidence\" ->> 'receiptDigest'::text)",
+          "using": "btree",
+          "unique": true,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "render_worker_session_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "render_worker_session",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "render_worker_session_workerId_fkey",
+          "definition": "FOREIGN KEY (\"workerId\") REFERENCES render_worker(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "render_worker_session",
+          "columnNames": [
+            "workerId"
+          ],
+          "referenceTableName": "render_worker",
           "referenceColumnNames": [
             "id"
           ],
