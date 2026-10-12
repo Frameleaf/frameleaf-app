@@ -17,8 +17,15 @@ and container-cache publication restrictions remain in place. Only the fork
 `Frameleaf/frameleaf-app` is in scope.
 
 Playwright installs both Chromium and its OS dependencies, then launches the
-browser before building the E2E stack. This catches missing shared libraries
-before the expensive Docker build and test retries.
+browser before E2E stack setup to provide early shared-library diagnostics.
+A preflight failure fails the job; existing explicit `!cancelled()` steps may
+still run afterward.
+
+On Namespace, `configure-dockerhub-mirror.sh` verifies the managed Docker daemon
+is ready instead of changing its configuration or restarting it with systemd.
+CI images retain their exact frozen `mirror.gcr.io` digests and BuildKit mirror
+settings. Other hosts retain the helper's daemon merge, restart and active-mirror
+checks. See https://namespace.so/docs/solutions/github-actions/docker-builds.
 
 Run `node .github/check-runners.cjs`, `node .github/check-release.cjs`, and
 `actionlint -shellcheck='' -pyflakes=''` after installing workspace dependencies.
