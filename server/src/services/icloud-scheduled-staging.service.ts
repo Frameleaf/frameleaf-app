@@ -82,7 +82,7 @@ const boundHashes = (maximum: number) => {
   };
 };
 
-/** Invoked only by a future reviewed worker. No dispatcher, allocation, recovery or proof publication. */
+/** Scheduled worker staging and validation; execution remains default-off and qualification-gated. */
 @Injectable()
 export class ICloudScheduledStagingService {
   private readonly cleanups = new Set<Promise<void>>();

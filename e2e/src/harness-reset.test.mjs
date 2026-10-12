@@ -641,3 +641,172 @@ test('fixture TRUNCATE checks for a blocking autovacuum well inside its statemen
   const settings = reset.indexOf('resetLockSettings(');
   assert.ok(settings > 0 && settings < reset.indexOf('TRUNCATE'), 'reset applies the lock settings before TRUNCATE');
 });
+
+test('active-job cancellation retries only confirmed statement-timeout row contention within reset ownership', async (t) => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const expression = source
+    .slice(source.indexOf('  drainQueues: async'), source.indexOf('\n\n  resetDatabase:'))
+    .trim()
+    .replace(/^drainQueues: /, '')
+    .replace(/,$/, '');
+  const contention = {
+    code: '57014',
+    message: 'canceling statement due to statement timeout',
+    where: 'waiting for ShareLock on transaction 42\nwhile updating tuple (1,2) in relation "job"',
+  };
+  const cases = [
+    {
+      name: 'single transient contention reaches stop proof before mutation',
+      behavior: 'transient',
+      error: contention,
+    },
+    { name: 'persistent contention expires and latches without mutation', behavior: 'persistent', error: contention },
+    { name: 'owner abort after contention never retries or mutates', behavior: 'abort', error: contention },
+    {
+      name: 'fatal SQL failure is immediate',
+      behavior: 'fatal',
+      error: { code: '40001', message: 'serialization failure' },
+    },
+    {
+      name: 'user cancellation is fatal',
+      behavior: 'fatal',
+      error: { ...contention, message: 'canceling statement due to user request' },
+    },
+    { name: 'timeout without row contention is fatal', behavior: 'fatal', error: { ...contention, where: undefined } },
+    {
+      name: 'other relation contention is fatal',
+      behavior: 'fatal',
+      error: { ...contention, where: contention.where.replace('"job"', '"asset"') },
+    },
+    { name: 'cleanup failure preserves the cancellation failure', behavior: 'cleanup', error: contention },
+  ];
+  for (const { name, behavior, error } of cases) {
+    await t.test(name, async () => {
+      const original = Object.assign(new Error(error.message), error);
+      const cleanupError = new Error('owned restoration failed');
+      const owner = new AbortController();
+      const order = [];
+      let cancellationAttempts = 0;
+      let connections = 0;
+      let mutationCount = 0;
+      let caughtWaitError;
+      const bindings = {
+        pg: {
+          Client: class {
+            on() {
+              return this;
+            }
+            async connect() {
+              connections++;
+            }
+            async query(text, values) {
+              if (text.startsWith('UPDATE job SET')) {
+                cancellationAttempts++;
+                order.push('cancel');
+                if (behavior !== 'transient' || cancellationAttempts === 1) {
+                  if (behavior === 'abort') queueMicrotask(() => owner.abort(new Error('owner cancelled reset')));
+                  throw original;
+                }
+              }
+              if (text === 'UPDATE job_queue SET paused = true') order.push('paused');
+              if (text.includes('UPDATE job_queue q SET paused')) {
+                order.push('restored');
+                assert.deepEqual(JSON.parse(values[0]), [{ name: 'metadata', paused: true }]);
+                if (behavior === 'cleanup') throw cleanupError;
+              }
+              if (text.includes("SELECT 'attempt' AS kind")) order.push('stop-proof');
+              if (text.includes('SELECT name, paused')) return { rows: [{ name: 'metadata', paused: true }] };
+              if (text.includes(' unfinished')) return { rows: [{ unfinished: false }] };
+              return { rows: [] };
+            }
+            async end() {
+              order.push('closed');
+            }
+          },
+        },
+        dbUrl: 'synthetic-owned-reset',
+        // Shorten only this fake reset's owner deadline, leaving real query, poll and cleanup code intact.
+        ownedWait: (description, timeout, operation, signal) => {
+          assert.equal(timeout, 8000);
+          return withDeadline(description, 300, operation, signal);
+        },
+        withDeadline,
+        waitUntil: async (...arguments_) => {
+          try {
+            return await waitUntil(...arguments_);
+          } catch (error) {
+            caughtWaitError = error;
+            throw error;
+          }
+        },
+        resetWhilePaused,
+        drainAfterExecutorStop,
+        assertResetExecutionsStopped,
+      };
+      const drain = new Function(
+        'bindings',
+        `const { ${Object.keys(bindings).join(', ')} } = bindings;
+         let resetting = false; let resetFailure; return (${stripTypeScriptTypes(expression)});`,
+      )(bindings);
+      const mutate = async () => {
+        mutationCount++;
+        order.push('mutated');
+      };
+      if (behavior === 'transient') {
+        await drain(mutate, owner.signal);
+        assert.equal(cancellationAttempts, 2);
+        assert.deepEqual(order, [
+          'paused',
+          'cancel',
+          'cancel',
+          'stop-proof',
+          'stop-proof',
+          'mutated',
+          'restored',
+          'closed',
+        ]);
+        assert.equal(mutationCount, 1);
+      } else {
+        let failure;
+        await assert.rejects(drain(mutate, owner.signal), (error) => {
+          failure = error;
+          return /Reset failed: lastControlPhase=request active-job cancellation/.test(error.message);
+        });
+        assert.equal(mutationCount, 0);
+        assert.equal(order.includes('stop-proof'), false);
+        assert.deepEqual(order.slice(-2), ['restored', 'closed']);
+        if (behavior === 'persistent') {
+          assert.ok(cancellationAttempts >= 2 && cancellationAttempts <= 3);
+          assert.ok(failure.cause instanceof AggregateError);
+          assert.equal(failure.cause.cause, caughtWaitError);
+          assert.deepEqual(failure.cause.errors, [caughtWaitError, original]);
+        } else {
+          if (behavior === 'cleanup') {
+            assert.ok(cancellationAttempts >= 2 && cancellationAttempts <= 3);
+          } else {
+            assert.equal(cancellationAttempts, 1);
+          }
+          if (behavior === 'abort') {
+            assert.equal(caughtWaitError, owner.signal.reason);
+            assert.equal(failure.cause.cause, caughtWaitError);
+            assert.deepEqual(failure.cause.errors, [caughtWaitError, original]);
+          } else if (behavior === 'cleanup') {
+            assert.ok(failure.cause instanceof AggregateError);
+            assert.equal(failure.cause.errors[0].cause, caughtWaitError);
+            assert.deepEqual(failure.cause.errors[0].errors, [caughtWaitError, original]);
+            assert.equal(failure.cause.errors[1], cleanupError);
+          } else {
+            assert.equal(failure.cause, original);
+          }
+        }
+        const attemptsAtFailure = cancellationAttempts;
+        await assert.rejects(
+          drain(mutate),
+          (error) => error.message === 'Previous database reset did not settle safely' && error.cause === failure,
+        );
+        assert.equal(connections, 1);
+        assert.equal(cancellationAttempts, attemptsAtFailure);
+      }
+    });
+  }
+});
