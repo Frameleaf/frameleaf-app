@@ -389,7 +389,9 @@ describe('scheduled validation input durable accounting baseline', () => {
 
   it('charges source plus a production-created recovery receipt plus the destination input', async () => {
     const f = await settledPlan();
-    const promotedPath = join(f.directory, 'recovery');
+    const recoveryDirectory = join(f.directory, '.icloud-recovery');
+    await mkdir(recoveryDirectory, { mode: 0o700 });
+    const promotedPath = join(recoveryDirectory, 'recovery');
     // Target metadata is test arrangement; the existing copy producer alone creates its reservation.
     await sql`UPDATE public.icloud_resource SET "promotedPath"=${promotedPath},"expectedTarget"='{"outcome":"imported"}'::jsonb
       WHERE id=${f.input.resource.id}::uuid`.execute(db);
@@ -428,7 +430,8 @@ describe('scheduled validation input durable accounting baseline', () => {
     expect(await f.staging.planValidationInput(f.input, plan)).toEqual(reserved);
     expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(30);
     expect(await readFile(promotedPath)).toEqual(f.bytes);
-    expect((await readdir(f.directory)).sort()).toEqual(['complete', 'recovery']);
+    expect((await readdir(f.directory)).sort()).toEqual(['.icloud-recovery', 'complete']);
+    expect(await readdir(recoveryDirectory)).toEqual(['recovery']);
   });
 
   it('retains a compacted exact decimal mark, replays its successor and preserves it across lease renewal', async () => {
