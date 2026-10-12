@@ -61,7 +61,10 @@ const legacyCompositionSources = new Set([
   '2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7',
 ])
 export function compositionSourcesFor(sourceSha256) {
-  if (sourceSha256 === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578')
+  if (
+    sourceSha256 === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578' ||
+    sourceSha256 === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80'
+  )
     return {
       ...COMPOSITION_SOURCES,
       'src/features/export/utils/client-render-engine.ts':
