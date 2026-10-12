@@ -957,12 +957,6 @@ const commands = {
     const before = linked.map((id) => clipOf(state, id));
     const retimed = synchronised(state, clip);
     const oldEnd = end(clip);
-    for (const member of retimed) {
-      rescaleKeyframes(state, member.id, member.durationInFrames, length);
-      const memberSpan = Math.max(1, (member.sourceEnd ?? member.sourceStart ?? 0) - (member.sourceStart ?? 0));
-      const derived = (memberSpan * state.fps) / (length * (member.sourceFps ?? state.fps));
-      replace(state, { ...member, durationInFrames: length, speed: Math.max(0.1, Math.min(16, derived)) });
-    }
     const delta = length - clip.durationInFrames;
     const retimedIds = new Set(retimed.map((member) => member.id));
     const moved = new Set();
@@ -971,7 +965,6 @@ const commands = {
         for (const member of linkedSet(state, [id])) {
           if (moved.has(member) || retimedIds.has(member)) continue;
           moved.add(member);
-          move(state, member, clipOf(state, member).from + delta);
         }
       };
       for (const trackId of new Set(retimed.map((member) => member.trackId))) {
@@ -985,6 +978,15 @@ const commands = {
           push(transition.rightClipId);
       }
     }
+    if (state.items.some((item) => (retimedIds.has(item.id) || moved.has(item.id)) && effectiveEditLock(state, item)))
+      failed('clip.setSpeed: the clip cannot take that speed here');
+    for (const member of retimed) {
+      rescaleKeyframes(state, member.id, member.durationInFrames, length);
+      const memberSpan = Math.max(1, (member.sourceEnd ?? member.sourceStart ?? 0) - (member.sourceStart ?? 0));
+      const derived = (memberSpan * state.fps) / (length * (member.sourceFps ?? state.fps));
+      replace(state, { ...member, durationInFrames: length, speed: Math.max(0.1, Math.min(16, derived)) });
+    }
+    for (const id of moved) move(state, id, clipOf(state, id).from + delta);
     repair(state, [...retimedIds, ...moved]);
     for (const previous of before) {
       if (previous.id === clip.id || previous.from !== clip.from || previous.durationInFrames !== clip.durationInFrames) continue;
