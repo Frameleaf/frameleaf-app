@@ -42,7 +42,7 @@ const setup = () => {
   const providers = new Map<unknown, unknown>([
     [DatabaseService, { initialize }],
     [LoggingRepository, logger],
-    [AppRepository, { setCloseFn: vi.fn(), stop: vi.fn() }],
+    [AppRepository, { setCloseFn: vi.fn(), stop: vi.fn(), isStopping: false }],
     [JobRepository, { stopWorkers: vi.fn() }],
     [ApiService, { ssr: vi.fn() }],
     [MaintenanceWorkerService, { ssr: vi.fn() }],
@@ -125,5 +125,31 @@ describe('PostgreSQL readiness before gateway startup', () => {
     expect(initialize).not.toHaveBeenCalled();
     expect(useWebSocketAdapter).toHaveBeenCalledOnce();
     expect(listen).toHaveBeenCalledOnce();
+  });
+});
+
+describe('microservices stopped during startup', () => {
+  const destroyed = new Error('driver has already been destroyed');
+
+  it('ends startup quietly when a restart closed the app while AppBootstrap work was running', async () => {
+    const { providers, listen } = setup();
+    const appRepository = providers.get(AppRepository) as { isStopping: boolean };
+    listen.mockImplementation(() => {
+      // maintenance began mid-startup: the restart closed the app, then a bootstrap handler hit the database
+      appRepository.isStopping = true;
+      return Promise.reject(destroyed);
+    });
+
+    await expect(bootstrap()).resolves.toBeUndefined();
+    const logger = providers.get(LoggingRepository) as { log: ReturnType<typeof vi.fn> };
+    expect(logger.log).toHaveBeenCalledWith(`Stopped during startup: ${destroyed}`);
+    expect(logger.log).not.toHaveBeenCalledWith(expect.stringContaining('Microservices is running'));
+  });
+
+  it('still fails startup when nothing asked the worker to stop', async () => {
+    const { listen } = setup();
+    listen.mockRejectedValue(destroyed);
+
+    await expect(bootstrap()).rejects.toThrow(destroyed);
   });
 });
