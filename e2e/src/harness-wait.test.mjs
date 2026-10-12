@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { test } from 'node:test';
@@ -719,26 +720,72 @@ for (const outcome of ['published', 'empty', 'wrong-kind', 'aborted']) {
 }
 
 const source = readFileSync(new URL('./specs/web/performance-report.e2e-spec.ts', import.meta.url), 'utf8');
-const setupPerformanceFixture = (candidate = source, thumbnailDuration = 5_000) => {
+const referenceEnvironment = {
+  model: 'Mac14,13',
+  cpu: 'Apple M2 Max',
+  memoryBytes: 34359738368,
+  osVersion: '27.2',
+  osBuild: '26B5101f',
+  nodeVersion: 'v24.21.0',
+  playwrightVersion: '1.62.1',
+  browserVersion: '151.0.7922.34',
+  power: 'AC',
+  lowPowerMode: 0,
+  viewportWidth: 1280,
+  viewportHeight: 720,
+  deviceScaleFactor: 1,
+  locale: 'en-US',
+  timezone: 'UTC',
+  colorScheme: 'light',
+  reducedMotion: 'no-preference',
+  cachePolicy: 'cold-context-warm-stack',
+  generatorSha256: 'a'.repeat(64),
+  fixturesSha256: 'b'.repeat(64),
+  runtimeConfigSha256: 'c'.repeat(64),
+  browserExecutableSha256: 'd'.repeat(64),
+  dockerVersion: '29.8.2',
+  dockerCpus: 12,
+  dockerMemoryBytes: 8214585344,
+};
+
+const setupPerformanceFixture = (
+  candidate = source,
+  thumbnailDuration = 5_000,
+  uniqueImages = true,
+  uniqueIds = true,
+  uploadDuration = 50,
+  progressCreateFailure = false,
+) => {
   let beforeAll;
   let hookTimeout;
   let elapsed = 0;
   let uploads = 0;
+  const uploaded = [];
+  const attachments = [];
+  const progressWrites = [];
+  const sdkDefaults = {};
+  let generated = 0;
   const queues = [];
   const budgets = [];
   const runner = {
     describe: (_name, register) => register(),
     beforeAll: (callback) => (beforeAll = callback),
     setTimeout: (timeout) => (hookTimeout = timeout),
+    info: () => ({
+      outputPath: () => 'fixture-dataset-progress.ndjson',
+      attach: async (name, options) => attachments.push({ name, body: JSON.parse(options.body) }),
+    }),
   };
   const registerTest = Object.assign(() => {}, runner);
   const fixture = {
     initSdk: () => {},
     resetDatabase: async () => {},
     adminSetup: async () => ({ accessToken: 'fixture-token' }),
-    createAsset: async () => {
+    createAsset: async (token, dto, options) => {
       uploads++;
-      elapsed += 50;
+      elapsed += uploadDuration;
+      uploaded.push({ token, dto, options });
+      return { id: `fixture-asset-${uniqueIds ? uploads : 1}`, status: 'created' };
     },
     waitForQueueFinish: async (token, queue, timeout = 60_000) => {
       assert.equal(token, 'fixture-token');
@@ -754,10 +801,51 @@ const setupPerformanceFixture = (candidate = source, thumbnailDuration = 5_000) 
     },
   };
   const script = stripTypeScriptTypes(candidate.replace(/^import .*;\n/gm, ''));
-  new Function('test', 'utils', 'expect', 'Date', script)(registerTest, fixture, () => {}, { now: () => elapsed });
+  const image = (width, height) => {
+    assert.equal(width, 32);
+    assert.equal(height, 32);
+    generated++;
+    return Buffer.from(`fixture-png-${uniqueImages ? generated : 1}`);
+  };
+  new Function(
+    'test',
+    'utils',
+    'expect',
+    'Date',
+    'createHash',
+    'makeRandomImage',
+    'defaults',
+    'writeFileSync',
+    'appendFileSync',
+    script,
+  )(
+    registerTest,
+    fixture,
+    () => {},
+    { now: () => elapsed },
+    createHash,
+    image,
+    sdkDefaults,
+    (_path, body) => {
+      if (progressCreateFailure) throw new Error('progress file exists');
+      progressWrites.push(JSON.parse(body));
+    },
+    (_path, body) => progressWrites.push(JSON.parse(body)),
+  );
   return {
-    run: () => beforeAll(),
-    result: () => ({ hookTimeout, elapsed, uploads, queues, budgets }),
+    run: () => beforeAll({}),
+    result: () => ({
+      hookTimeout,
+      elapsed,
+      uploads,
+      queues,
+      budgets,
+      uploaded,
+      attachments,
+      generated,
+      progressWrites,
+      sdkDefaults,
+    }),
   };
 };
 
@@ -772,6 +860,52 @@ test('200-image preparation has a finite caller budget for the measured healthy 
   assert.ok(result.hookTimeout >= result.elapsed && result.hookTimeout <= 600_000);
 });
 
+test('200-image preparation records reproducible bytes, dates and returned asset identities', async () => {
+  const fixture = setupPerformanceFixture();
+  await fixture.run();
+  const result = fixture.result();
+  assert.equal(result.generated, 200);
+  assert.equal(result.uploaded.length, 200);
+  for (const [index, upload] of result.uploaded.entries()) {
+    assert.equal(upload.token, 'fixture-token');
+    assert.equal(upload.dto.fileCreatedAt, '2026-10-01T00:00:00.000Z');
+    assert.equal(upload.dto.fileModifiedAt, '2026-10-01T00:00:00.000Z');
+    assert.equal(upload.dto.assetData.filename, 'example.png');
+    assert.deepEqual(upload.dto.assetData.bytes, Buffer.from(`fixture-png-${index + 1}`));
+  }
+  const dataset = result.attachments.find((entry) => entry.name === 'performance-dataset.json')?.body;
+  assert.ok(dataset, 'Missing prepared dataset evidence');
+  assert.equal(dataset.complete, true);
+  assert.equal(dataset.width, 32);
+  assert.equal(dataset.height, 32);
+  assert.equal(dataset.assets.length, 200);
+  for (const [index, asset] of dataset.assets.entries()) {
+    assert.equal(asset.assetId, `fixture-asset-${index + 1}`);
+    assert.equal(
+      asset.sourceSha256,
+      createHash('sha256')
+        .update(`fixture-png-${index + 1}`)
+        .digest('hex'),
+    );
+  }
+  assert.equal(new Set(dataset.assets.map((asset) => asset.sourceSha256)).size, 200);
+});
+
+test('200-image preparation rejects repeated source bytes', async () => {
+  const fixture = setupPerformanceFixture(source, 5_000, false);
+  await assert.rejects(fixture.run(), /Dataset has duplicate source bytes/);
+  const dataset = fixture.result().attachments.find((entry) => entry.name === 'performance-dataset.json')?.body;
+  assert.equal(dataset.complete, false);
+  assert.equal(dataset.assets.length, 200);
+});
+
+test('200-image preparation rejects repeated returned asset identities', async () => {
+  await assert.rejects(
+    setupPerformanceFixture(source, 5_000, true, false).run(),
+    /Dataset has duplicate asset identities/,
+  );
+});
+
 test('the performance fixture control reproduces both original deadline failures', async () => {
   const shortQueue = source.replace(/, deadline - Date.now\(\)\);/g, ');');
   await assert.rejects(setupPerformanceFixture(shortQueue).run(), /queue deadline/);
@@ -781,4 +915,674 @@ test('the performance fixture control reproduces both original deadline failures
 
 test('later performance preparation queues cannot extend the whole-hook deadline', async () => {
   await assert.rejects(setupPerformanceFixture(source, 250_000).run(), /queue deadline/);
+});
+
+test('performance measurement control rejects invalid timings and a workload that did not scroll', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const validate = new Function(
+    'test',
+    script + '\nreturn typeof validateMeasurements === "function" ? validateMeasurements : undefined;',
+  )(register);
+  assert.equal(typeof validate, 'function', 'Missing measurement validity check');
+  const valid = {
+    libraryItems: 200,
+    startup: { domContentLoadedMs: 12, loadMs: 20 },
+    firstThumbnailMs: 21,
+    scroll: {
+      frames: 59,
+      longFrames: 0,
+      medianFrameMs: 17,
+      worstFrameMs: 20,
+      diagnostics: { scrollHeight: 600, clientHeight: 100, start: 0, bottom: 500, back: 0 },
+    },
+  };
+  assert.doesNotThrow(() => validate(valid));
+  for (const path of [
+    'startup.domContentLoadedMs',
+    'startup.loadMs',
+    'firstThumbnailMs',
+    'scroll.longFrames',
+    'scroll.medianFrameMs',
+    'scroll.worstFrameMs',
+  ]) {
+    for (const value of [undefined, NaN, Infinity, -1]) {
+      const report = structuredClone(valid);
+      const keys = path.split('.');
+      (keys.length === 1 ? report : report[keys[0]])[keys.at(-1)] = value;
+      assert.throws(() => validate(report), /Invalid performance measurement/, `${path}: ${value}`);
+    }
+  }
+  for (const change of [
+    { libraryItems: 199 },
+    { firstThumbnailMs: 0 },
+    { scroll: { ...valid.scroll, frames: 0 } },
+    { scroll: { ...valid.scroll, longFrames: 60 } },
+    { scroll: { ...valid.scroll, diagnostics: undefined } },
+    { scroll: { ...valid.scroll, diagnostics: { ...valid.scroll.diagnostics, bottom: 0 } } },
+    { scroll: { ...valid.scroll, diagnostics: { ...valid.scroll.diagnostics, back: 100 } } },
+  ])
+    assert.throws(() => validate({ ...valid, ...change }), /Invalid performance measurement/);
+  for (const key of ['scrollHeight', 'clientHeight', 'start', 'bottom', 'back']) {
+    const diagnostics = { ...valid.scroll.diagnostics };
+    delete diagnostics[key];
+    assert.throws(
+      () => validate({ ...valid, scroll: { ...valid.scroll, diagnostics } }),
+      /Invalid performance measurement/,
+    );
+  }
+});
+
+test('performance sampling control fixes warmups, measured blocks and idle pauses', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const schedule = new Function(
+    'test',
+    script + '\nreturn typeof performanceSchedule === "function" ? performanceSchedule : undefined;',
+  )(register);
+  assert.equal(typeof schedule, 'function', 'Missing finite sampling schedule');
+  assert.deepEqual(schedule('report'), [{ index: 0, warmup: false, block: 0, pauseBeforeMs: 0 }]);
+  const baseline = schedule('calibrate');
+  assert.equal(baseline.length, 33);
+  assert.deepEqual(
+    baseline.filter((sample) => sample.warmup).map((sample) => sample.index),
+    [0, 1, 2],
+  );
+  assert.deepEqual(
+    baseline.filter((sample) => sample.pauseBeforeMs).map((sample) => [sample.index, sample.pauseBeforeMs]),
+    [
+      [13, 60000],
+      [23, 60000],
+    ],
+  );
+  for (const block of [0, 1, 2])
+    assert.equal(baseline.filter((sample) => !sample.warmup && sample.block === block).length, 10);
+  const validation = schedule('validate');
+  assert.equal(validation.length, 6);
+  assert.equal(validation.filter((sample) => sample.warmup).length, 3);
+  assert.equal(validation.filter((sample) => !sample.warmup).length, 3);
+  assert.ok(validation.every((sample) => sample.pauseBeforeMs === 0));
+  assert.throws(() => schedule('unknown'), /Invalid performance mode/);
+});
+
+test('performance sampling control prepares once and retains earlier thumbnail receipts on failure', async () => {
+  for (const thumbnailFailure of [false, true]) {
+    let inspected = 0;
+    let hook;
+    let measure;
+    let time = 0;
+    let uploads = 0;
+    let resets = 0;
+    let created = 0;
+    let closed = 0;
+    const attachments = [];
+    const pauses = [];
+    const info = {
+      annotations: [],
+      outputPath: () => 'fixture-dataset-progress.ndjson',
+      attach: async (name, options) => attachments.push({ name, body: JSON.parse(options.body) }),
+    };
+    const register = Object.assign(
+      (name, callback) => {
+        if (name.startsWith('records startup')) measure = callback;
+      },
+      {
+        describe: (_name, run) => run(),
+        beforeAll: (callback) => (hook = callback),
+        setTimeout: () => {},
+        info: () => info,
+      },
+    );
+    const context = () => {
+      let evaluations = 0;
+      return {
+        close: async () => {
+          closed++;
+        },
+        newPage: async () => ({
+          goto: async () => {
+            time += 20;
+          },
+          locator: () => ({
+            first: () => ({
+              waitFor: async () => {
+                time++;
+              },
+            }),
+          }),
+          evaluate: async (_callback, args) => {
+            if (args?.assetId && thumbnailFailure && ++inspected === 3) throw new Error('thumbnail control failure');
+            return args?.assetId
+              ? {
+                  assetId: args.assetId,
+                  width: 32,
+                  height: 32,
+                  bytes: 1024,
+                  contentType: 'image/jpeg',
+                  sha256: 'a'.repeat(64),
+                }
+              : ++evaluations % 2 === 1
+                ? { domContentLoadedMs: 12, loadMs: 20 }
+                : {
+                    frames: 59,
+                    longFrames: 0,
+                    medianFrameMs: 17,
+                    worstFrameMs: 20,
+                    diagnostics: { scrollHeight: 600, clientHeight: 100, start: 0, bottom: 500, back: 0 },
+                  };
+          },
+        }),
+      };
+    };
+    const browser = {
+      version: () => '151.0.7922.34',
+      newContext: async () => {
+        created++;
+        return context();
+      },
+    };
+    class Clock extends Date {
+      static now() {
+        return time;
+      }
+    }
+    const utils = {
+      initSdk: () => {},
+      resetDatabase: async () => {
+        resets++;
+      },
+      adminSetup: async () => ({ accessToken: 'fixture-token' }),
+      createAsset: async () => ({ id: `fixture-asset-${++uploads}`, status: 'created' }),
+      waitForQueueFinish: async () => {},
+      setAuthCookies: async () => {},
+    };
+    const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+    let generated = 0;
+    new Function(
+      'test',
+      'utils',
+      'expect',
+      'Date',
+      'createHash',
+      'makeRandomImage',
+      'process',
+      'lstatSync',
+      'readFileSync',
+      'setTimeout',
+      'clearTimeout',
+      'defaults',
+      'writeFileSync',
+      'appendFileSync',
+      script,
+    )(
+      register,
+      utils,
+      (value) => ({ toBeGreaterThan: (minimum) => assert.ok(value > minimum) }),
+      Clock,
+      createHash,
+      () => Buffer.from(`calibration-control-${++generated}`),
+      {
+        version: 'v24.21.0',
+        env: {
+          FL139_PERFORMANCE_MODE: 'calibrate',
+          FL139_PERFORMANCE_IDENTITY: 'fixture-identity',
+          FL139_PERFORMANCE_OBSERVED: 'fixture-observed',
+        },
+      },
+      () => ({ isFile: () => true, isSymbolicLink: () => false, size: 100 }),
+      (path) =>
+        JSON.stringify(
+          path === 'fixture-observed'
+            ? { observedAt: time, environment: referenceEnvironment }
+            : {
+                protocol: 'fl139-library32-cold-context-warm-stack-v1',
+                admitted: true,
+                environment: referenceEnvironment,
+                environmentSha256: createHash('sha256')
+                  .update(JSON.stringify(Object.entries(referenceEnvironment).sort(([a], [b]) => a.localeCompare(b))))
+                  .digest('hex'),
+                application: {
+                  imageSha256: 'e'.repeat(64),
+                  sourceCommit: 'f'.repeat(40),
+                  webManifestSha256: 'a'.repeat(64),
+                  webIdentity: 'control-only',
+                },
+              },
+        ),
+      (callback, delay) => {
+        if (delay === 60000) {
+          pauses.push(delay);
+          queueMicrotask(callback);
+        }
+        return 1;
+      },
+      () => {},
+      {},
+      () => {},
+      () => {},
+    );
+    if (thumbnailFailure) {
+      await assert.rejects(hook({ browser }), /thumbnail control failure/);
+      const dataset = attachments.find((entry) => entry.name === 'performance-dataset.json').body;
+      assert.equal(dataset.complete, false);
+      assert.equal(dataset.assets.length, 200);
+      assert.equal(dataset.thumbnails.length, 2);
+      assert.equal(created, 1);
+      assert.equal(closed, 1);
+      continue;
+    }
+    await hook({ browser });
+    const legacy = context();
+    await measure({ browser, baseURL: 'http://127.0.0.1:2285', context: legacy, page: await legacy.newPage() });
+    const samples = attachments.filter((entry) => entry.name.startsWith('performance-sample-'));
+    assert.equal(samples.length, 33);
+    assert.equal(samples.filter((entry) => entry.body.warmup).length, 3);
+    assert.equal(samples.filter((entry) => !entry.body.warmup).length, 30);
+    assert.equal(created, 34);
+    assert.equal(closed, 34);
+    const dataset = attachments.find((entry) => entry.name === 'performance-dataset.json').body;
+    assert.equal(dataset.thumbnails.length, 200);
+    assert.match(dataset.datasetSha256, /^[a-f0-9]{64}$/);
+    assert.equal(uploads, 200);
+    assert.equal(resets, 1);
+    assert.deepEqual(pauses, [60000, 60000]);
+  }
+});
+
+test('reference comparator control accepts equality and reports each ceiling exceeded', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const compare = new Function(
+    'test',
+    script + '\nreturn typeof compareMeasurements === "function" ? compareMeasurements : undefined;',
+  )(register);
+  assert.equal(typeof compare, 'function', 'Missing reference comparator');
+  const report = {
+    libraryItems: 200,
+    startup: { domContentLoadedMs: 12, loadMs: 20 },
+    firstThumbnailMs: 21,
+    scroll: {
+      frames: 59,
+      longFrames: 0,
+      medianFrameMs: 17,
+      worstFrameMs: 20,
+      diagnostics: { scrollHeight: 600, clientHeight: 100, start: 0, bottom: 500, back: 0 },
+    },
+  };
+  const limits = {
+    'startup.domContentLoadedMs': 12,
+    'startup.loadMs': 20,
+    firstThumbnailMs: 21,
+    'scroll.longFrames': 0,
+    'scroll.medianFrameMs': 17,
+    'scroll.worstFrameMs': 20,
+  };
+  const profile = {
+    schema: 1,
+    protocol: 'fl139-library32-cold-context-warm-stack-v1',
+    approved: true,
+    environmentSha256: 'a'.repeat(64),
+    limits,
+  };
+  assert.deepEqual(compare(report, profile), []);
+  for (const field of Object.keys(limits)) {
+    const candidate = structuredClone(report);
+    const keys = field.split('.');
+    (keys.length === 1 ? candidate : candidate[keys[0]])[keys.at(-1)]++;
+    assert.deepEqual(compare(candidate, profile), [field]);
+  }
+  for (const change of [
+    { approved: false },
+    { schema: 2 },
+    { protocol: 'old' },
+    { environmentSha256: '' },
+    { limits: {} },
+    { limits: { ...limits, firstThumbnailMs: -1 } },
+  ]) {
+    assert.throws(() => compare(report, { ...profile, ...change }), /Invalid performance profile/);
+  }
+});
+
+test('performance sampling control closes a context created after the iteration deadline', async () => {
+  let measure;
+  let closed = 0;
+  const pending = Promise.withResolvers();
+  const info = { annotations: [], attach: async () => {} };
+  const register = Object.assign(
+    (name, callback) => {
+      if (name.startsWith('records startup')) measure = callback;
+    },
+    {
+      describe: (_name, run) => run(),
+      beforeAll: () => {},
+      setTimeout: () => {},
+      info: () => info,
+    },
+  );
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  new Function('test', 'process', 'setTimeout', 'clearTimeout', script)(
+    register,
+    { env: {} },
+    (callback) => {
+      callback();
+      return 1;
+    },
+    () => {},
+  );
+  await assert.rejects(
+    measure({ browser: { newContext: () => pending.promise }, baseURL: 'http://127.0.0.1:2285' }),
+    /Performance iteration deadline/,
+  );
+  pending.resolve({
+    close: async () => {
+      closed++;
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, 1, 'Late context must close even after the outer finally has finished');
+});
+
+test('reference admission control rejects a bare flag, missing provenance and environment drift', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const validate = new Function(
+    'test',
+    'createHash',
+    script + '\nreturn typeof validateReferenceIdentity === "function" ? validateReferenceIdentity : undefined;',
+  )(register, createHash);
+  assert.equal(typeof validate, 'function', 'Missing reference admission validation');
+  const observed = referenceEnvironment;
+  const environmentSha256 = createHash('sha256')
+    .update(JSON.stringify(Object.entries(observed).sort(([a], [b]) => a.localeCompare(b))))
+    .digest('hex');
+  const identity = {
+    protocol: 'fl139-library32-cold-context-warm-stack-v1',
+    admitted: true,
+    environment: observed,
+    environmentSha256,
+    application: {
+      imageSha256: 'e'.repeat(64),
+      sourceCommit: 'f'.repeat(40),
+      webManifestSha256: 'a'.repeat(64),
+      webIdentity: 'web75e-sdk75e-adapter-cdd544ab34a7',
+    },
+  };
+  assert.doesNotThrow(() => validate(identity, observed));
+  assert.throws(() => validate({ admitted: true }, observed), /Invalid reference identity/);
+  for (const field of Object.keys(observed)) {
+    const environment = { ...observed };
+    delete environment[field];
+    assert.throws(() => validate({ ...identity, environment }, observed), /Invalid reference identity/);
+    assert.throws(() => validate(identity, { ...observed, [field]: 'drift' }), /Reference environment mismatch/);
+  }
+  for (const change of [{ application: {} }, { environmentSha256: '0'.repeat(64) }, { admitted: false }]) {
+    assert.throws(() => validate({ ...identity, ...change }, observed), /Invalid reference identity/);
+  }
+  for (const value of [-1, NaN, Infinity, 'not-memory']) {
+    const environment = { ...observed, memoryBytes: value };
+    const environmentSha256 = createHash('sha256')
+      .update(JSON.stringify(Object.entries(environment).sort(([a], [b]) => a.localeCompare(b))))
+      .digest('hex');
+    assert.throws(
+      () => validate({ ...identity, environment, environmentSha256 }, environment),
+      /Invalid reference identity/,
+    );
+  }
+});
+
+test('reference admission control refuses stale or incomplete evidence before SDK initialization', async () => {
+  const environmentSha256 = createHash('sha256')
+    .update(JSON.stringify(Object.entries(referenceEnvironment).sort(([a], [b]) => a.localeCompare(b))))
+    .digest('hex');
+  const valid = {
+    protocol: 'fl139-library32-cold-context-warm-stack-v1',
+    admitted: true,
+    environment: referenceEnvironment,
+    environmentSha256,
+    application: {
+      imageSha256: 'e'.repeat(64),
+      sourceCommit: 'f'.repeat(40),
+      webManifestSha256: 'a'.repeat(64),
+      webIdentity: 'control-only',
+    },
+  };
+  for (const scenario of ['bare-flag', 'stale', 'node-drift', 'browser-drift']) {
+    let hook;
+    let initialized = false;
+    const register = Object.assign(() => {}, {
+      describe: (_name, run) => run(),
+      beforeAll: (callback) => (hook = callback),
+      setTimeout: () => {},
+    });
+    const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+    new Function('test', 'utils', 'process', 'Date', 'lstatSync', 'readFileSync', 'createHash', script)(
+      register,
+      {
+        initSdk: () => {
+          initialized = true;
+        },
+      },
+      {
+        version: scenario === 'node-drift' ? 'v25.0.0' : 'v24.21.0',
+        env: {
+          FL139_PERFORMANCE_MODE: 'calibrate',
+          FL139_PERFORMANCE_IDENTITY: 'identity',
+          FL139_PERFORMANCE_OBSERVED: 'observed',
+        },
+      },
+      { now: () => 0 },
+      () => ({ isFile: () => true, isSymbolicLink: () => false, size: 100 }),
+      (path) =>
+        JSON.stringify(
+          path === 'observed'
+            ? { observedAt: scenario === 'stale' ? -60000 : 0, environment: referenceEnvironment }
+            : scenario === 'bare-flag'
+              ? { admitted: true }
+              : valid,
+        ),
+      createHash,
+    );
+    await assert.rejects(
+      hook({ browser: { version: () => (scenario === 'browser-drift' ? 'other-browser' : '151.0.7922.34') } }),
+      /Invalid reference identity|Stale reference observations|Reference environment mismatch/,
+    );
+    assert.equal(initialized, false, scenario);
+  }
+});
+
+test('prepared thumbnail control requires every asset, decoded dimensions and content evidence', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const validate = new Function(
+    'test',
+    script + '\nreturn typeof validatePreparedThumbnails === "function" ? validatePreparedThumbnails : undefined;',
+  )(register);
+  assert.equal(typeof validate, 'function', 'Missing prepared thumbnail validation');
+  const ids = Array.from({ length: 200 }, (_, index) => `fixture-asset-${index + 1}`);
+  const thumbnails = ids.map((assetId) => ({
+    assetId,
+    width: 32,
+    height: 32,
+    bytes: 1024,
+    contentType: 'image/jpeg',
+    sha256: 'a'.repeat(64),
+  }));
+  assert.doesNotThrow(() => validate(thumbnails, ids));
+  assert.throws(() => validate(thumbnails.slice(1), ids), /Invalid prepared thumbnails/);
+  for (const change of [
+    { assetId: 'other' },
+    { width: 0 },
+    { height: NaN },
+    { bytes: 0 },
+    { contentType: 'text/html' },
+    { sha256: '' },
+  ]) {
+    const candidate = structuredClone(thumbnails);
+    candidate[0] = { ...candidate[0], ...change };
+    assert.throws(() => validate(candidate, ids), /Invalid prepared thumbnails/);
+  }
+});
+
+test('reference admission binds matching metadata to the actual context protocol', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const validate = new Function('test', 'createHash', script + '\nreturn validateReferenceIdentity;')(
+    register,
+    createHash,
+  );
+  for (const [key, value] of Object.entries({
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    deviceScaleFactor: 2,
+    locale: 'fr-FR',
+    timezone: 'America/Edmonton',
+    colorScheme: 'dark',
+    reducedMotion: 'reduce',
+    cachePolicy: 'warm-context',
+  })) {
+    const environment = { ...referenceEnvironment, [key]: value };
+    const identity = {
+      protocol: 'fl139-library32-cold-context-warm-stack-v1',
+      admitted: true,
+      environment,
+      environmentSha256: createHash('sha256')
+        .update(JSON.stringify(Object.entries(environment).sort(([a], [b]) => a.localeCompare(b))))
+        .digest('hex'),
+      application: {
+        imageSha256: 'e'.repeat(64),
+        sourceCommit: 'f'.repeat(40),
+        webManifestSha256: 'a'.repeat(64),
+        webIdentity: 'control',
+      },
+    };
+    assert.throws(() => validate(identity, environment), /Reference context mismatch/, key);
+  }
+});
+
+test('thumbnail evidence cancels an oversized streamed body before decoding', async () => {
+  const start = source.indexOf('async ({ assetId, deadline }) =>');
+  const boundary = /\n\s*\{ assetId, deadline \},/.exec(source.slice(start));
+  const end = boundary ? start + boundary.index : -1;
+  assert.ok(start >= 0 && end > start, 'Missing per-asset streamed thumbnail evidence');
+  const callback = stripTypeScriptTypes('const inspect = ' + source.slice(start, end).trim().replace(/,$/, '') + ';');
+  let reads = 0;
+  let cancelled = false;
+  let decoded = false;
+  const inspect = new Function('fetch', 'createImageBitmap', 'crypto', callback + '\nreturn inspect;')(
+    async () => ({
+      ok: true,
+      headers: { get: () => 'image/jpeg' },
+      body: {
+        getReader: () => ({
+          read: async () => ({ done: false, value: new Uint8Array(700000 + ++reads) }),
+          cancel: async () => {
+            cancelled = true;
+          },
+          releaseLock: () => {},
+        }),
+      },
+    }),
+    async () => {
+      decoded = true;
+    },
+    {},
+    () => {},
+    () => {},
+  );
+  await assert.rejects(inspect({ assetId: 'control', deadline: Date.now() + 1000 }), /Thumbnail evidence size/);
+  assert.equal(reads, 2);
+  assert.equal(cancelled, true);
+  assert.equal(decoded, false);
+});
+
+test('validation profile requires baseline provenance, thirty samples and Root approval binding', () => {
+  const register = Object.assign(() => {}, { describe: (_name, run) => run(), beforeAll: () => {} });
+  const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+  const validate = new Function(
+    'test',
+    script + '\nreturn typeof validateProfileAdmission === "function" ? validateProfileAdmission : undefined;',
+  )(register);
+  assert.equal(typeof validate, 'function', 'Missing baseline evidence admission');
+  const profile = {
+    schema: 1,
+    protocol: 'fl139-library32-cold-context-warm-stack-v1',
+    approved: true,
+    environmentSha256: 'a'.repeat(64),
+    datasetSha256: 'b'.repeat(64),
+    limits: {
+      'startup.domContentLoadedMs': 12,
+      'startup.loadMs': 20,
+      firstThumbnailMs: 21,
+      'scroll.longFrames': 0,
+      'scroll.medianFrameMs': 17,
+      'scroll.worstFrameMs': 20,
+    },
+    baselineApplication: {
+      sourceCommit: 'c'.repeat(40),
+      imageSha256: 'd'.repeat(64),
+      webManifestSha256: 'e'.repeat(64),
+      webIdentity: 'control-only',
+    },
+    sampleSha256: Array.from({ length: 30 }, (_, i) => createHash('sha256').update(`control-${i}`).digest('hex')),
+    measuredAt: '2026-10-12T12:00:00.000Z',
+    rootApprovalReceiptSha256: 'f'.repeat(64),
+  };
+  assert.doesNotThrow(() => validate(profile));
+  for (const key of [
+    'baselineApplication',
+    'sampleSha256',
+    'measuredAt',
+    'rootApprovalReceiptSha256',
+    'datasetSha256',
+  ]) {
+    const candidate = { ...profile };
+    delete candidate[key];
+    assert.throws(() => validate(candidate), /Invalid baseline evidence/, key);
+  }
+  for (const change of [
+    { sampleSha256: profile.sampleSha256.slice(1) },
+    { sampleSha256: Array(30).fill('a'.repeat(64)) },
+    { baselineApplication: {} },
+    { measuredAt: 'not-date' },
+    { rootApprovalReceiptSha256: 'flag' },
+  ])
+    assert.throws(() => validate({ ...profile, ...change }), /Invalid baseline evidence/);
+});
+
+test('200-image preparation stops uploads at the shared deadline and passes cancellation', async () => {
+  const fixture = setupPerformanceFixture(source, 5000, true, true, 600000);
+  await assert.rejects(fixture.run(), /Preparation deadline/);
+  const result = fixture.result();
+  assert.equal(result.uploads, 1);
+  assert.equal(result.queues.length, 0);
+  assert.equal(result.uploaded[0].options.timeout, 600000);
+  assert.ok(result.uploaded[0].options.signal instanceof AbortSignal);
+  assert.equal(result.attachments.find((entry) => entry.name === 'performance-dataset.json').body.complete, false);
+});
+
+test('preparation retains each acknowledged asset before a hook timeout can discard attachments', async () => {
+  const fixture = setupPerformanceFixture(source, 250000);
+  await assert.rejects(fixture.run(), /queue deadline/);
+  const progress = fixture.result().progressWrites;
+  assert.equal(progress.filter((row) => row.kind === 'asset').length, 200);
+  assert.equal(progress[0].kind, 'dataset');
+  assert.equal(progress[0].fileDate, '2026-10-01T00:00:00.000Z');
+  for (const [index, row] of progress.filter((row) => row.kind === 'asset').entries()) {
+    assert.equal(row.assetId, `fixture-asset-${index + 1}`);
+    assert.equal(
+      row.sourceSha256,
+      createHash('sha256')
+        .update(`fixture-png-${index + 1}`)
+        .digest('hex'),
+    );
+  }
+  assert.equal(progress.at(-1).kind, 'status');
+  assert.equal(progress.at(-1).complete, false);
+});
+
+test('preparation refuses an existing checkpoint without appending to it and restores SDK cancellation', async () => {
+  const fixture = setupPerformanceFixture(source, 5000, true, true, 50, true);
+  await assert.rejects(fixture.run(), /progress file exists/);
+  assert.equal(fixture.result().progressWrites.length, 0);
+  assert.equal(fixture.result().sdkDefaults.signal, undefined);
 });
