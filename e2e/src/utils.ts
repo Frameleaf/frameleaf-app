@@ -430,10 +430,48 @@ export const utils = {
                 Math.min(6000, total.remaining()),
                 async (context) => {
                   phase = 'request active-job cancellation';
-                  await query(
-                    context,
-                    `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
-                  );
+                  let lastCancellationContention: unknown;
+                  try {
+                    await waitUntil(
+                      context,
+                      async () => {
+                        try {
+                          await query(
+                            context,
+                            `UPDATE job SET "cancelRequestedAt" = coalesce("cancelRequestedAt", now()), "cancelReason" = 'request' WHERE state = 'active'`,
+                          );
+                          return true;
+                        } catch (error) {
+                          const failure = error as { code?: string; message?: string; where?: string };
+                          // Only this idempotent request may retry a confirmed cancelled row-lock wait.
+                          // Success still requires the unchanged executor-stop proof below.
+                          if (
+                            failure?.code !== '57014' ||
+                            failure.message !== 'canceling statement due to statement timeout' ||
+                            !/^waiting for ShareLock on transaction \d+\nwhile updating tuple \(\d+,\d+\) in relation "job"$/.test(
+                              failure.where ?? '',
+                            )
+                          ) {
+                            throw error;
+                          }
+                          lastCancellationContention = error;
+                          context.remaining();
+                          return false;
+                        }
+                      },
+                      (cancelled) => cancelled,
+                      100,
+                    );
+                  } catch (error) {
+                    if (lastCancellationContention && context.signal.aborted) {
+                      throw new AggregateError(
+                        [error, lastCancellationContention],
+                        'Active-job cancellation did not settle within reset ownership',
+                        { cause: error },
+                      );
+                    }
+                    throw error;
+                  }
                   await waitUntil(
                     context,
                     async () => {
