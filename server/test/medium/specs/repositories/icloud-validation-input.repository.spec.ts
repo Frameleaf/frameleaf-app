@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
@@ -284,16 +284,10 @@ describe('scheduled validation input durable accounting baseline', () => {
       );
       let validation: ScheduledFreshValidation | undefined;
       try {
-        // Exercise real cached-file admission first so quota refusal cannot hide a stale receipt/path.
         expect(await sut.download(f.input)).toEqual(f.fresh);
-        try {
-          validation = await sut.validate(f.input);
-        } catch (error) {
-          // Only a genuine quota refusal is admissible; sufficient quota must reach the held decoder.
-          if (_budget === 'sufficient') throw error;
-          expect(error).toBeInstanceOf(Error);
-          expect((error as Error).message).toBe('scheduled_audit_unavailable');
-        }
+        // Baseline only: preparation errors must fail setup, never masquerade as quota refusal.
+        validation = await sut.validate(f.input);
+        if (!decoderPath) throw new Error('fixture_decoder_submission_missing');
         const resource = await f.sync.resource(f.input.resource.id);
         expect(resource).toBeDefined();
         const durable = Number(resource!.reservedBytes);
@@ -306,21 +300,15 @@ describe('scheduled validation input durable accounting baseline', () => {
         expect(totals.global).toBe(durable);
         expect(totals.connection).toBe(durable);
         expect(await readFile(f.fresh.payload.path)).toEqual(f.bytes);
-        let physical = (await stat(f.fresh.payload.path)).size;
-        if (decoderPath) {
-          // Actual copied bytes and SQL ledger are observed while decoder result/settlement are held.
-          expect(await readFile(decoderPath)).toEqual(f.bytes);
-          physical += (await stat(decoderPath)).size;
-        }
+        // Actual copied bytes and SQL ledger are observed while decoder result/settlement are held.
+        expect(await readFile(decoderPath)).toEqual(f.bytes);
+        const physical = (await stat(f.fresh.payload.path)).size + (await stat(decoderPath)).size;
         if (_budget === 'sufficient') {
-          expect(decoderPath).toBeDefined();
           expect(physical).toBe(20);
           expect(durable).toBe(physical);
         } else {
           expect(durable).toBe(size);
           expect(physical).toBeLessThanOrEqual(Math.min(f.connection.config.stagingBytes, globalLimit));
-          expect(decoderPath).toBeUndefined();
-          expect((await readdir(f.directory)).filter((name) => name.startsWith('.validation-'))).toEqual([]);
         }
       } finally {
         decoderResult.resolve({ status: 'transient', reason: 'decoder_unavailable' });
