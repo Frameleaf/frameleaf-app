@@ -425,6 +425,23 @@ describe(RenderWorkerService.name, () => {
       });
       expect(workers.createSession).not.toHaveBeenCalled();
     });
+    it('keeps the budget failure classifier in the private audit while returning a generic admission error', async () => {
+      vi.mocked(workers.admitSession).mockResolvedValue({
+        admitted: false,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        budgetReason: 'expired',
+      } as never);
+      await expect(sut.admit(admission as never)).rejects.toMatchObject({
+        response: { message: 'Worker admission refused' },
+      });
+      expect(workers.recordAudit).toHaveBeenCalledWith({
+        workerId: workerA.id,
+        event: RenderWorkerAuditEvent.Refused,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        detail: { gpuWorkingBudgetReason: 'expired' },
+      });
+    });
+
     it('delegates the complete report and hashed credentials to atomic admission, returning only its committed scopes and Q', async () => {
       const committed = sessionStub(workerA, SESSION_A, {
         scopes: [MediaOperationKind.StudioExport],
@@ -452,6 +469,25 @@ describe(RenderWorkerService.name, () => {
       expect(workers.markAdmitted).not.toHaveBeenCalled();
       expect(workers.recordAudit).not.toHaveBeenCalled();
     });
+    it('returns the committed receipt with raw M and the independently capped Q', async () => {
+      const committed = withSyntheticGpuBudget(
+        {
+          worker: workerA,
+          session: sessionStub(workerA, SESSION_A, {
+            gpuMemoryBytes: '1073741824',
+            codecs: ['webcodecs-avc'],
+            colorPrecision: null,
+          }),
+        },
+        { codecs: ['webcodecs-avc'], formats: ['mp4'] },
+      ).session;
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: true, session: committed });
+      const result = await sut.admit(admission as never);
+      expect(result.gpuWorkingBudgetEvidence).toEqual(committed.gpuWorkingBudgetEvidence);
+      expect(result.gpuWorkingBudgetEvidence!.measuredBytes).toBe('2147483648');
+      expect(result.gpuMemoryBytes).toBe('1073741824');
+    });
+
     it('does not issue a credential when the transaction fails', async () => {
       vi.mocked(workers.admitSession).mockRejectedValue(new Error('database rollback'));
       await expect(sut.admit(admission as never)).rejects.toThrow('database rollback');
@@ -1272,6 +1308,21 @@ describe(RenderWorkerService.name, () => {
       expect(claim).toBeUndefined();
       expect(workers.recordRefusal).toHaveBeenCalledWith(queued.id, RenderWorkerRefusalReason.GpuMemoryInsufficient);
       expect(workers.claimQueued).not.toHaveBeenCalled();
+    });
+
+    it('retains a final budget failure classifier only in the private claim audit', async () => {
+      vi.mocked(workers.claimQueued).mockResolvedValue({
+        refused: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        budgetReason: 'profile-unapproved',
+      } as never);
+      expect(await sut.claim(SESSION_A, {} as never)).toBeUndefined();
+      expect(workers.recordAudit).toHaveBeenCalledWith({
+        workerId: workerA.id,
+        event: RenderWorkerAuditEvent.ClaimRefused,
+        operationId: queued.id,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        detail: { gpuWorkingBudgetReason: 'profile-unapproved' },
+      });
     });
 
     it('audits a final transaction refusal after manifest resolution without issuing a claim', async () => {

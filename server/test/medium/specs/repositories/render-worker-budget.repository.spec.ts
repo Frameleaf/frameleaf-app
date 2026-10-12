@@ -413,7 +413,7 @@ describe('final measured claim transaction', () => {
     if (mode === 'health') value.options.destinationHealth.state = 'unknown' as never;
     if (mode === 'old-health') value.options.destinationHealth.checkedAt = new Date(0);
     const result = await sut.claimQueued(value.options);
-    expect(result).toEqual({ refused: expect.any(String) });
+    expect(result).toMatchObject({ refused: expect.any(String) });
     expect(
       (
         await db
@@ -603,7 +603,10 @@ describe('final measured claim transaction', () => {
         release();
         await lock;
       }
-      expect(await pending).toEqual({ refused: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+      expect(await pending).toMatchObject({
+        refused: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        budgetReason: 'expired',
+      });
     },
   );
 
@@ -635,6 +638,9 @@ describe('final measured claim transaction', () => {
       release();
       await lock;
     }
-    expect(await pending).toEqual({ refused: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+    expect(await pending).toEqual({
+      refused: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+      budgetReason: 'session-unqualified',
+    });
   });
 });

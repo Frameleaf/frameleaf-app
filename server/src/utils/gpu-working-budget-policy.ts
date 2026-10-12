@@ -28,7 +28,7 @@ const timestamp = z
   });
 
 const EvidenceShape = z.strictObject({
-  metric: z.literal('measured-usable-gpu-working-budget-v1'),
+  metric: z.literal('measured-usable-gpu-working-budget-v1').meta({ id: 'GpuWorkingBudgetMetric' }),
   profileDigest: digest,
   measurementId: uuid,
   receiptDigest: digest,
@@ -37,18 +37,18 @@ const EvidenceShape = z.strictObject({
   buildDigest: digest,
   browserIdentity: identity,
   deviceLifetimeId: uuid,
-  bindingMethod: z.literal('same-export-device'),
-  topology: z.enum(['unified', 'dedicated', 'unknown']),
+  bindingMethod: z.literal('same-export-device').meta({ id: 'GpuWorkingBudgetBindingMethod' }),
+  topology: z.enum(['unified', 'dedicated', 'unknown']).meta({ id: 'GpuWorkingBudgetTopology' }),
   topologyEvidenceDigest: digest.nullable(),
-  hardwareBackend: z.literal('hardware'),
+  hardwareBackend: z.literal('hardware').meta({ id: 'GpuWorkingBudgetBackend' }),
   encoderEvidenceDigest: digest,
   pressureEnvelopeDigest: digest,
   outputReceiptDigest: digest,
-  measuredBytes: z.literal('2147483648'),
-  headroomBytes: z.literal('536870912'),
+  measuredBytes: z.literal('2147483648').meta({ id: 'GpuWorkingBudgetMeasuredBytes' }),
+  headroomBytes: z.literal('536870912').meta({ id: 'GpuWorkingBudgetHeadroomBytes' }),
   completedAt: timestamp,
   validUntil: timestamp,
-  status: z.literal('passed'),
+  status: z.literal('passed').meta({ id: 'GpuWorkingBudgetStatus' }),
 });
 
 const consistentEvidence = (value: z.infer<typeof EvidenceShape> | Omit<z.infer<typeof EvidenceShape>, 'workerId'>) =>
