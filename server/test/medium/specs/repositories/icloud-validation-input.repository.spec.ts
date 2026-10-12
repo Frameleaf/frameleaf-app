@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import { AssetType, ChecksumAlgorithm } from 'src/enum.js';
+import { AssetType, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
 import { ICloudIdentityAdoptionRepository } from 'src/repositories/icloud-identity-adoption.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
@@ -17,6 +17,7 @@ import {
   ValidationInputPlan,
   scheduledFreshBinding,
   scheduledFreshReceiptScope,
+  scheduledPrivatePathReferences,
 } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-scheduled-worker.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
@@ -24,6 +25,7 @@ import { ICloudTransportRepository } from 'src/repositories/icloud-transport.rep
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -432,6 +434,11 @@ describe('scheduled validation input durable accounting baseline', () => {
     expect(await readFile(promotedPath)).toEqual(f.bytes);
     expect((await readdir(f.directory)).sort()).toEqual(['.icloud-recovery', 'complete']);
     expect(await readdir(recoveryDirectory)).toEqual(['recovery']);
+    const { settled } = await settleInput(f, plan);
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+    expect(await readFile(f.fresh.payload.path)).toEqual(f.bytes);
+    expect(await readFile(promotedPath)).toEqual(f.bytes);
   });
 
   it('retains a compacted exact decimal mark, replays its successor and preserves it across lease renewal', async () => {
@@ -614,6 +621,283 @@ describe('scheduled validation input durable accounting baseline', () => {
     expect(await readFile(payload.inputPath)).toEqual(f.bytes);
     await f.staging.finishPrivateWork(f.input, token);
   });
+
+  async function settleInput(f: Awaited<ReturnType<typeof settledPlan>>, plan = f.plan) {
+    const reserved = (await f.staging.planValidationInput(f.input, plan))!;
+    expect(reserved).toBeDefined();
+    const token = await f.staging.beginPrivateWork(f.input);
+    const payload = reserved.payload.current.payload;
+    await mkdir(payload.directoryPath, { mode: 0o700 });
+    await writeFile(payload.inputPath, Buffer.alloc(0), { mode: 0o600, flag: 'wx' });
+    const preparing = (await f.staging.storeValidationInput(f.input, reserved, {
+      ...payload,
+      state: 'preparing',
+      pending: [token],
+      directoryIdentity: privateCopyIdentity(await stat(payload.directoryPath)),
+      inputIdentity: privateCopyIdentity(await stat(payload.inputPath)),
+    }))!;
+    expect(preparing).toBeDefined();
+    await writeFile(payload.inputPath, f.bytes);
+    const running = (await f.staging.storeValidationInput(f.input, preparing, {
+      ...preparing.payload.current.payload,
+      state: 'running',
+      inputIdentity: privateCopyIdentity(await stat(payload.inputPath)),
+    }))!;
+    expect(running).toBeDefined();
+    const settled = (await f.staging.storeValidationInput(f.input, running, {
+      ...running.payload.current.payload,
+      state: 'settled',
+      pending: [],
+    }))!;
+    expect(settled).toBeDefined();
+    return { settled, token, payload: settled.payload.current.payload };
+  }
+
+  it('disposes only the settled input charge and acknowledges retained replay without touching a successor', async () => {
+    const f = await settledPlan();
+    const { settled, token, payload } = await settleInput(f);
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(10);
+    expect(await readFile(f.fresh.payload.path)).toEqual(f.bytes);
+    await expect(stat(payload.inputPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    await f.staging.finishPrivateWork(f.input, token);
+    const disposed = (await f.staging.validationInputs(f.input))!;
+    expect(disposed.payload.current.payload.state).toBe('disposed');
+    const successor = await f.staging.planValidationInput(f.input, {
+      ...f.plan,
+      expected: disposed,
+      pathNonce: randomUUID(),
+    });
+    expect(successor?.payload.highWater).toBe('2');
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    expect(await f.staging.validationInputs(f.input)).toEqual(successor);
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+    const secondPlan = { ...f.plan, expected: disposed, pathNonce: successor!.payload.current.payload.pathNonce };
+    const second = await settleInput(f, secondPlan);
+    expect(await f.staging.disposeValidationInput(f.input, second.settled)).toBe(true);
+    await f.staging.finishPrivateWork(f.input, second.token);
+    const secondDisposed = (await f.staging.validationInputs(f.input))!;
+    const third = await f.staging.planValidationInput(f.input, {
+      ...f.plan,
+      expected: secondDisposed,
+      pathNonce: randomUUID(),
+    });
+    expect(third?.payload.highWater).toBe('3');
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(false);
+    expect(await f.staging.validationInputs(f.input)).toEqual(third);
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+  });
+
+  it('retains charge and parent after disposal rollback, then retries exact missing input once', async () => {
+    const f = await settledPlan();
+    const { settled, payload } = await settleInput(f);
+    const encode = f.transport.encodeSession.bind(f.transport);
+    const failure = vi.spyOn(f.transport, 'encodeSession').mockImplementation((scope, value) => {
+      if ((value as { state?: string }).state === 'disposed') throw new Error('fixture_disposal_rollback');
+      return encode(scope, value);
+    });
+    await expect(f.staging.disposeValidationInput(f.input, settled)).rejects.toThrow('fixture_disposal_rollback');
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+    expect(await f.staging.validationInputs(f.input)).toEqual(settled);
+    expect(await readdir(payload.directoryPath)).toEqual([]);
+    failure.mockRestore();
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(10);
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(10);
+  });
+
+  it.each(['grant-session', 'terminal'] as const)(
+    'disposes authenticated settled local work after %s retirement',
+    async (kind) => {
+      const f = await settledPlan();
+      const { settled } = await settleInput(f);
+      await sql`UPDATE public.icloud_weekly_grant SET enabled=false,"includeProtected"=false,
+      "pinBinding"=NULL,generation=generation+1,"revokedAt"=clock_timestamp()
+      WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+      await sql`UPDATE public.icloud_connection SET "encryptedSession"=NULL,state='disconnected' WHERE id=${f.connection.id}::uuid`.execute(
+        db,
+      );
+      if (kind === 'terminal') {
+        await sql`UPDATE public.media_operation SET status='cancelled',"claimToken"=NULL,"claimExpiresAt"=NULL WHERE id=${f.input.authority.operationId}::uuid`.execute(
+          db,
+        );
+        await sql`UPDATE public.icloud_identity_audit SET result='cancelled' WHERE id=${f.input.authority.auditRequestId}::uuid`.execute(
+          db,
+        );
+        await sql`UPDATE public.icloud_resource SET status='failed',"leaseToken"=NULL,"leaseExpiresAt"=NULL WHERE id=${f.input.resource.id}::uuid`.execute(
+          db,
+        );
+        await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE id=${settled.payload.current.payload.itemClaimId}::uuid`.execute(
+          db,
+        );
+      }
+      expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+      expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(10);
+    },
+  );
+
+  it.each([
+    'lease',
+    'claim',
+    'envelope',
+    'same-resource-generation',
+    'same-resource-destination',
+    'physical-reference',
+  ] as const)('retains settled input and charge on %s conflict', async (kind) => {
+    const f = await settledPlan();
+    const { settled, payload } = await settleInput(f);
+    switch (kind) {
+      case 'lease': {
+        await sql`UPDATE public.icloud_resource SET "leaseToken"=${randomUUID()}::uuid WHERE id=${f.input.resource.id}::uuid`.execute(
+          db,
+        );
+        break;
+      }
+      case 'claim': {
+        await sql`UPDATE public.media_operation SET "claimToken"=${randomUUID()}::uuid WHERE id=${f.input.authority.operationId}::uuid`.execute(
+          db,
+        );
+        break;
+      }
+      case 'envelope': {
+        await sql`UPDATE public.icloud_resource SET verification=verification||'{"auditValidationInputs":{"version":99}}'::jsonb WHERE id=${f.input.resource.id}::uuid`.execute(
+          db,
+        );
+        break;
+      }
+      case 'same-resource-generation': {
+        const foreignPayload = { ...payload, sequence: '0', pathNonce: randomUUID(), state: 'reserved' };
+        const changed = {
+          ...settled,
+          payload: { ...settled.payload, previousDisposed: { payload: foreignPayload, seal: 'unknown' } },
+        };
+        await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditValidationInputs',${JSON.stringify(changed)}::text::jsonb) WHERE id=${f.input.resource.id}::uuid`.execute(
+          db,
+        );
+        expect(
+          await db.transaction().execute(async (trx) => {
+            await lockFilePath(trx, payload.inputPath);
+            return scheduledPrivatePathReferences(trx, payload.inputPath, payload.resourceId, f.transport, payload);
+          }),
+        ).toBe(true);
+
+        break;
+      }
+      case 'same-resource-destination': {
+        await sql`UPDATE public.icloud_resource SET "promotedPath"=${payload.inputPath} WHERE id=${payload.resourceId}::uuid`.execute(
+          db,
+        );
+        break;
+      }
+      case 'physical-reference': {
+        await db
+          .insertInto('physical_file')
+          .values({
+            path: payload.inputPath,
+            checksum: Buffer.alloc(32),
+            sizeInBytes: 10,
+            type: PhysicalFileType.Original,
+            canonicalAssetId: null,
+          })
+          .execute();
+        // No default
+        break;
+      }
+    }
+    try {
+      expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(false);
+      expect(await readFile(payload.inputPath)).toEqual(f.bytes);
+      expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(20);
+    } finally {
+      if (kind === 'physical-reference')
+        await db.deleteFrom('physical_file').where('path', '=', payload.inputPath).execute();
+    }
+  });
+
+  it('authenticates disposed and legacy input release inside the existing row transaction', async () => {
+    const f = await settledPlan();
+    const allDisposed = () =>
+      db.transaction().execute(async (trx) => {
+        const resource = (
+          await sql<
+            import('src/repositories/icloud-sync.repository.js').ICloudResource
+          >`SELECT * FROM public.icloud_resource WHERE id=${f.input.resource.id}::uuid FOR UPDATE`.execute(trx)
+        ).rows[0];
+        return f.staging.authenticateDisposedValidationInputs(trx, resource);
+      });
+    expect(await allDisposed()).toBe(true);
+    const { settled } = await settleInput(f);
+    expect(await allDisposed()).toBe(false);
+    expect(await f.staging.disposeValidationInput(f.input, settled)).toBe(true);
+    expect(await allDisposed()).toBe(true);
+    const payload = settled.payload.current.payload;
+    for (const [path, expected] of [
+      [payload.inputPath, false],
+      [payload.validationPath, false],
+      [payload.directoryPath, true],
+    ] as const) {
+      expect(
+        await db.transaction().execute(async (trx) => {
+          await lockFilePath(trx, path);
+          return scheduledPrivatePathReferences(trx, path, payload.resourceId, f.transport);
+        }),
+      ).toBe(expected);
+    }
+    await sql`UPDATE public.icloud_resource SET verification=verification||'{"auditValidationInputs":{"version":99}}'::jsonb WHERE id=${f.input.resource.id}::uuid`.execute(
+      db,
+    );
+    expect(await allDisposed()).toBe(false);
+  });
+
+  it.each(['absent', 'pending', 'seal', 'copy'] as const)(
+    'retains legacy scheduled work with %s evidence',
+    async (kind) => {
+      const f = await settledPlan();
+      const before = (await f.sync.resource(f.input.resource.id))!;
+      const work = before.verification!.auditOwnedWork;
+      if (!validPrivateWork(work)) throw new Error('fixture_work_missing');
+      const verification = { ...before.verification };
+      switch (kind) {
+        case 'absent': {
+          delete verification.auditOwnedWork;
+          break;
+        }
+        case 'pending': {
+          const payload = { ...work.payload, settled: false, pending: [randomUUID()] };
+          verification.auditOwnedWork = {
+            payload,
+            seal: await f.transport.encodeSession(privateWorkScope(payload), payload),
+          };
+
+          break;
+        }
+        case 'seal': {
+          verification.auditOwnedWork = { ...work, seal: 'unknown' };
+          break;
+        }
+        default: {
+          verification.auditPrivateCopy = { version: 99 };
+        }
+      }
+      await sql`UPDATE public.icloud_resource SET verification=${JSON.stringify(verification)}::text::jsonb WHERE id=${f.input.resource.id}::uuid`.execute(
+        db,
+      );
+      expect(
+        await db.transaction().execute(async (trx) => {
+          const resource = (
+            await sql<
+              import('src/repositories/icloud-sync.repository.js').ICloudResource
+            >`SELECT * FROM public.icloud_resource WHERE id=${f.input.resource.id}::uuid FOR UPDATE`.execute(trx)
+          ).rows[0];
+          return f.staging.authenticateDisposedValidationInputs(trx, resource);
+        }),
+      ).toBe(false);
+      expect(Number((await f.sync.resource(f.input.resource.id))?.reservedBytes)).toBe(10);
+    },
+  );
 
   it('refuses unknown input envelopes and lease renewal over retained input without resetting evidence', async () => {
     const f = await settledPlan();

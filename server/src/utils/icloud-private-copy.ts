@@ -1,5 +1,5 @@
 import { Stats, constants } from 'node:fs';
-import { lstat, open, realpath, unlink } from 'node:fs/promises';
+import { lstat, open, readdir, realpath, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, normalize } from 'node:path';
 import type { ScheduledFreshDownload } from 'src/repositories/icloud-scheduled-staging.repository.js';
 
@@ -369,4 +369,74 @@ export function validValidationInputs(value: unknown): value is ValidationInputE
 /** Not refund authority; authentication remains the repository caller's responsibility. */
 export function validationInputsDisposed(envelope: ValidationInputEnvelope): boolean {
   return validValidationInputs(envelope) && envelope.payload.current.payload.state === 'disposed';
+}
+
+/** Retain the authenticated parent until the disposal transaction commits; never recurse. */
+export async function unlinkOwnedValidationInput(input: ValidationInputPayload): Promise<void> {
+  const parent = input.directoryIdentity;
+  const identity = input.inputIdentity;
+  if (
+    input.state !== 'settled' ||
+    input.pending.length > 0 ||
+    !parent ||
+    !identity ||
+    !validInputIdentity(parent) ||
+    !validInputIdentity(identity) ||
+    identity.size !== input.reservedInputBytes ||
+    parent.uid !== identity.uid ||
+    !canonicalPath(input.stagingDirectory) ||
+    input.directoryPath !== `${input.stagingDirectory}/.validation-${input.pathNonce}` ||
+    !uuid.test(input.pathNonce) ||
+    input.inputPath !== `${input.directoryPath}/input`
+  )
+    throw new Error('validation_input_custody_invalid');
+  const checkParent = async () => {
+    const directory = await lstat(input.directoryPath);
+    if (
+      (await realpath(input.directoryPath)) !== input.directoryPath ||
+      !directory.isDirectory() ||
+      (directory.mode & 0o077) !== 0 ||
+      directory.dev !== parent.dev ||
+      directory.ino !== parent.ino ||
+      directory.uid !== parent.uid ||
+      (process.getuid && directory.uid !== process.getuid()) ||
+      (await readdir(input.directoryPath)).some((entry) => entry !== 'input')
+    )
+      throw new Error('validation_input_parent_changed');
+  };
+  const checkInput = (stat: Stats) => {
+    if (
+      !stat.isFile() ||
+      (stat.mode & 0o077) !== 0 ||
+      stat.dev !== identity.dev ||
+      stat.ino !== identity.ino ||
+      stat.uid !== identity.uid ||
+      stat.size !== identity.size ||
+      (process.getuid && stat.uid !== process.getuid())
+    )
+      throw new Error('validation_input_inode_changed');
+  };
+  await checkParent();
+  let handle;
+  try {
+    checkInput(await lstat(input.inputPath));
+    handle = await open(input.inputPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    await checkParent();
+    if ((await readdir(input.directoryPath)).length > 0)
+      throw new Error('validation_input_reappeared', { cause: error });
+    return;
+  }
+  try {
+    checkInput(await handle.stat());
+    checkInput(await lstat(input.inputPath));
+  } finally {
+    await handle.close();
+  }
+  await checkParent();
+  checkInput(await lstat(input.inputPath));
+  await unlink(input.inputPath);
+  await checkParent();
+  if ((await readdir(input.directoryPath)).length > 0) throw new Error('validation_input_reappeared');
 }
