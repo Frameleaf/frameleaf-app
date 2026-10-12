@@ -1000,6 +1000,39 @@ export class ICloudScheduledStagingRepository {
     }
   }
 
+  /** Advance a successful restart sweep only after current disposed custody authenticates. */
+  async deferDisposedValidationInput(input: ScheduledStagingInput): Promise<boolean> {
+    return this.db.transaction().execute(async (db) => {
+      const resource = (
+        await sql<ICloudResource>`SELECT * FROM public.icloud_resource
+        WHERE id=${input.resource.id}::uuid AND "ownerId"=${input.ownerId}::uuid
+          AND "auditRequestId"=${input.authority.auditRequestId}::uuid
+          AND status NOT IN ('finalized','removed') FOR UPDATE`.execute(db)
+      ).rows[0];
+      if (!resource) return false;
+      try {
+        const envelope = await this.authenticateValidationInputs(
+          resource,
+          undefined,
+          input.authority.operationId ?? undefined,
+        );
+        if (!envelope || !validationInputsDisposed(envelope)) return false;
+        const current = envelope.payload.current.payload;
+        if (
+          current.resourceLeaseToken !== input.resource.leaseToken ||
+          current.operationClaimToken !== input.authority.operationClaimToken
+        )
+          return false;
+        await sql`UPDATE public.icloud_resource SET "nextAttemptAt"=clock_timestamp()+interval '5 minutes',
+          "updatedAt"=clock_timestamp() WHERE id=${resource.id}::uuid
+            AND verification=${JSON.stringify(resource.verification)}::text::jsonb`.execute(db);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
+
   async retainedValidationInputs(): Promise<ICloudResource[]> {
     return (
       await sql<ICloudResource>`SELECT * FROM public.icloud_resource
