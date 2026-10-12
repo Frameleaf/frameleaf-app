@@ -143,6 +143,15 @@ export const reverseGeocodeMaxDistance = 25_000;
 export const LANDMARK_MAX_RADIUS_M = 200_000;
 /** A landmark wider than this is an area around things (a resort, a national park), not a spot. */
 export const LANDMARK_WIDE_RADIUS_M = 1000;
+/**
+ * The landmark brand icon pack (FL-355), made by base-image/geodata/landmarks/icons/pack.mjs. A server
+ * downloads the whole file once and checks it against this SHA-256, so no request ever names a place
+ * anyone has been. A new pack goes in a new folder; change the address and the checksum together.
+ */
+export const LANDMARK_ICON_PACK = {
+  url: 'https://static.frameleaf.cloud/landmark-icons/2026-10-11/landmark-icons.ndjson.gz',
+  sha256: 'e6139ccd9995a2a74638688bb905ee7ddea173818c3920a3b58b72ecd60dd6fa',
+};
 
 export const MOBILE_REDIRECT = 'app.immich:///oauth-callback';
 /**

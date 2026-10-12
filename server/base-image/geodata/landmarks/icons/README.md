@@ -6,8 +6,9 @@ or an Instagram account (`P2003`). That is about 10,400 of the 23,197 places. Th
 instead of the generic category icon once a visited place is zoomed in.
 
 **The pictures are third-party marks, collected automatically so a person can review and replace them.**
-Nothing here has had its licence or trademark position checked, which is why `out/` is not in git. Where
-they may be published is still to be decided.
+They are not in git. They are published as one file, the icon pack, which each server downloads whole
+(see "Publishing the pack"); the owner's decision of 2026-10-11, with legal's fair-use clearance of
+2026-10-10 for showing a place's own mark beside the customer's photos of it.
 
 ## Run
 
@@ -109,6 +110,24 @@ The transparent margin and any letterboxing stay transparent, so the circle's co
   `background`, a tile edge to edge. Edges that are not one colour, art in the corners and low contrast are
   flagged in red. Open it in a browser.
 - `raw/`, `gathered.ndjson`, `wikidata.json`: the downloads and the state that makes a run resumable.
+
+## Publishing the pack
+
+`node pack.mjs` writes `out/landmark-icons.ndjson.gz` from `out/icons.json` and `out/icons/`: one icon a
+line, `{"id","background","tile","png"}`, the PNG in base64. It prints the icon count, the size and the
+SHA-256. It also writes `out/NOTICE.txt`, which is published beside the pack: whose the marks are, and
+for each picture taken from Wikimedia Commons the page that gives its author and licence.
+
+1. Upload both files to `static.frameleaf.cloud` under a new folder, `landmark-icons/<date>/`, with their
+   entries in the cloud repository's static manifest (the pack as a `bucketOnly` object, the notice as a
+   seed file). A published folder is never changed; a new pack gets a new folder.
+2. Put the address and the SHA-256 in `LANDMARK_ICON_PACK` in `server/src/constants.ts`.
+
+A production server with reverse geocoding on fetches the pinned file when it starts and does not have it
+yet, checks it against the SHA-256, and unpacks it into a hidden folder beside its thumbnails
+(`thumbs/.landmark-icons/`). It asks for the whole file and never for one place, so the request says
+nothing about where anyone has been. Until the file arrives, and on a server that cannot reach the host,
+every landmark shows the icon for its kind.
 
 ## Untrusted input
 
