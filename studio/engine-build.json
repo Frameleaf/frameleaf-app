@@ -654,7 +654,12 @@
       "path": "patches/0135-shared-speed-gap-effective-lock-refusal.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1f577b1f3ec660b17b1aeab0c5eea3954b70f1eea667f53626b0b88ae1fccc10"
+    },
+    {
+      "path": "patches/0136-project-colour-policy-disclosure.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3a7c337bc1de01ff4c9af6f2255d661ebcad0403cca75df917830fe941dbeb79"
     }
   ],
-  "sourceSha256": "86c3c5b8cab095d45df4c18601185de27b9f3a5b5ca64dc393f2b80c54e3a07d"
+  "sourceSha256": "2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7"
 }
