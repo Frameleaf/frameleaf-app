@@ -3,6 +3,8 @@ import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
 import type { TimelineItem, TextItem } from '@/types/timeline'
 import { useEditorStore } from '@/shared/state/editor'
+import { useSelectionStore } from '@/shared/state/selection'
+import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
 import { buildTimelineFromStores } from '@/features/timeline/stores/timeline-persistence'
 import { applyCanonicalCommands, canonicalJson, type CanonicalEnvelope } from '../src/canonical-commands'
 import {
@@ -1180,4 +1182,30 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
     // The main timeline keeps its own rate; the wrapper reads the same seconds of the sequence.
     expect(itemsOf(next)[0]).toMatchObject({ from: 0, durationInFrames: 60, sourceStart: 60, sourceEnd: 180 })
   })
+
+})
+
+describe('FL-94 canonical linked lock refusal', () => {
+  it.each(['split', 'ripple delete'])('canonically refuses locked linked %s without graph/history/selection changes', async (tool) => {
+    const initial = await fourParts()
+    initial.timeline!.tracks.find(({ id }) => id === 'a1')!.locked = true
+    const middle = onTrack(initial, 'v1')[1]!
+    const normalized = await applied(initial, [])
+    const before = canonicalJson(normalized)
+    const graphBefore = buildTimelineFromStores()
+    const undoBefore = [...useTimelineCommandStore.getState().undoStack]
+    const redoBefore = [...useTimelineCommandStore.getState().redoStack]
+    useSelectionStore.getState().selectItems([middle.id])
+    const selection = useSelectionStore.getState()
+    const command = tool === 'split'
+      ? envelope('clip.split', { clipIds: [middle.id], at: seconds(3) })
+      : envelope('clip.delete', { clipIds: [middle.id], ripple: true })
+    await expect(applyCanonicalCommands(normalized, [command], media)).resolves.toMatchObject({ status: 'rejected' })
+    expect(canonicalJson(normalized)).toBe(before)
+    expect(buildTimelineFromStores()).toEqual(graphBefore)
+    expect(useTimelineCommandStore.getState().undoStack).toEqual(undoBefore)
+    expect(useTimelineCommandStore.getState().redoStack).toEqual(redoBefore)
+    expect(useSelectionStore.getState()).toEqual(selection)
+  })
+
 })
