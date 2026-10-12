@@ -366,6 +366,17 @@ const trimmed = (column: string) => sql`nullif(trim(${sql.ref(column)}), '')`;
  */
 const mostSpecificLandmark = sql`(landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}), landmark.rank desc, landmark."radiusM", landmark.id`;
 
+/**
+ * How well an item covers a landmark (FL-395): scored by Best Photos first, then landscape (the same test as
+ * the apps' `isPortrait`, an aspect ratio under 0.9; unknown sizes count as landscape), then the best score,
+ * then the latest.
+ */
+const bestCover = sql`asset_best_photo_score.score is not null desc,
+  coalesce(asset.width::float / nullif(asset.height, 0), 1.5) >= 0.9 desc,
+  asset_best_photo_score.score desc nulls last,
+  asset."localDateTime" desc,
+  asset.id`;
+
 @Injectable()
 export class SearchRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
@@ -698,7 +709,12 @@ export class SearchRepository {
 
   /**
    * Landmarks the viewer has media at (FL-353), with the same owners and privacy rules as
-   * `getCityAssetCounts`. The cover is the latest item; the place names are the most common among the items.
+   * `getCityAssetCounts`. The place names are the most common among the items.
+   *
+   * The cover is the best item taken there (FL-395), by the score the Best Photos list ranks by: scored
+   * items first, a landscape one before a portrait one (it fronts a wide card), then the highest score, then
+   * the latest. Unscored items fall back to the latest. Only the items counted here are candidates, so an
+   * archived, hidden, Locked or trashed item never covers a landmark.
    *
    * Around a famous site a photo matches every minor monument within reach of it, so a landmark is listed
    * only when it is the best label for at least one item, or is a wide area (a park, a resort) that
@@ -727,6 +743,7 @@ export class SearchRepository {
       .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
       .innerJoin('asset', 'asset.id', 'matched.assetId')
       .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .leftJoin('asset_best_photo_score', 'asset_best_photo_score.assetId', 'asset.id')
       .select([
         'landmark.id',
         'landmark.name',
@@ -739,7 +756,7 @@ export class SearchRepository {
         eb.fn.countAll<number>().as('assetCount'),
         eb.fn.min('asset.localDateTime').as('firstTakenAt'),
         eb.fn.max('asset.localDateTime').as('lastTakenAt'),
-        sql<string>`(array_agg(asset.id order by asset."localDateTime" desc))[1]`.as('coverAssetId'),
+        sql<string>`(array_agg(asset.id order by ${bestCover}))[1]`.as('coverAssetId'),
         sql<string | null>`mode() within group (order by asset_exif.city)`.as('city'),
         sql<string | null>`mode() within group (order by asset_exif.state)`.as('state'),
         sql<string | null>`mode() within group (order by asset_exif.country)`.as('country'),
