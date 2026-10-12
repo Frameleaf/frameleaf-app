@@ -8,6 +8,7 @@ import { constants } from 'node:fs/promises';
 import { join, parse } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
+import { LANDMARK_ICON_PACK } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -19,6 +20,7 @@ import {
   ChecksumAlgorithm,
   DatabaseLock,
   ExifOrientation,
+  ImmichEnvironment,
   ImmichWorker,
   JobName,
   JobStatus,
@@ -173,11 +175,34 @@ export class MetadataService extends BaseService {
       if (imported) {
         await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
       }
+      // Not awaited: a download of tens of megabytes must not hold up the worker's start.
+      void this.syncLandmarkIcons();
 
       this.logger.log(`Initialized local reverse geocoder`);
     } catch (error: Error | any) {
       this.logger.error(`Unable to initialize reverse geocoding: ${error}`, error?.stack);
       throw new Error('Metadata service init failed', { cause: error });
+    }
+  }
+
+  /**
+   * Fetches the landmark brand icon pack when this server does not have the current one (FL-355). The
+   * pack is taken whole, so the request says nothing about where anyone has been. It follows the reverse
+   * geocoding switch like every landmark surface, and only a production server fetches it, so test and
+   * development stacks stay quiet. Without it landmarks show the icon for their kind, and the next start
+   * tries again.
+   */
+  private async syncLandmarkIcons(): Promise<void> {
+    try {
+      const { reverseGeocoding } = await this.getConfig({ withCache: true });
+      if (!reverseGeocoding.enabled || this.configRepository.getEnv().environment !== ImmichEnvironment.Production) {
+        return;
+      }
+      if (await this.mapRepository.installLandmarkIcons(LANDMARK_ICON_PACK)) {
+        this.logger.log('Installed the landmark icon pack');
+      }
+    } catch (error) {
+      this.logger.warn(`The landmark icon pack was not installed; the next start tries again: ${error}`);
     }
   }
 
