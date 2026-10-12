@@ -1,4 +1,4 @@
-// Read-only contract checks for hosted CI and the canonical container publisher.
+// Read-only contract checks for Namespace CI and the canonical container publisher.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -18,11 +18,10 @@ const workflows = Object.fromEntries(
       load(fs.readFileSync(path.join(directory, file), "utf8")),
     ]),
 );
-const hosted = new Set([
-  "ubuntu-24.04",
-  "ubuntu-24.04-arm",
-  "windows-latest",
-  "macos-26",
+const supported = new Set([
+  "nscloud-ubuntu-24.04-amd64-8x16",
+  "nscloud-ubuntu-24.04-arm64-8x16",
+  "nscloud-windows-2022-amd64-8x16",
 ]);
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
@@ -72,12 +71,12 @@ for (const [file, workflow] of Object.entries(workflows)) {
           {
             include: [
               {
-                runner: "ubuntu-24.04",
+                runner: "nscloud-ubuntu-24.04-amd64-8x16",
                 architecture: "amd64",
                 "node-architecture": "x64",
               },
               {
-                runner: "ubuntu-24.04-arm",
+                runner: "nscloud-ubuntu-24.04-arm64-8x16",
                 architecture: "arm64",
                 "node-architecture": "arm64",
               },
@@ -90,18 +89,38 @@ for (const [file, workflow] of Object.entries(workflows)) {
         assert(
           Array.isArray(runners) &&
             runners.length &&
-            runners.every((runner) => hosted.has(runner)),
+            runners.every((runner) => supported.has(runner)),
           `${label}: uncontrolled runner matrix`,
         );
       }
     } else
       assert(
-        hosted.has(job["runs-on"]),
-        `${label}: not a supported hosted runner`,
+        supported.has(job["runs-on"]),
+        `${label}: not a supported Namespace runner`,
       );
     count++;
   }
 }
+const webSteps = workflows["test.yml"].jobs["e2e-tests-web"].steps;
+const browserInstall = webSteps.findIndex(
+  (step) => step.name === "Install Playwright Browsers",
+);
+const browserPreflight = webSteps.findIndex(
+  (step) => step.name === "Verify Playwright browser launch",
+);
+const stackStart = webSteps.findIndex((step) => step.name === "Docker build");
+assert.match(
+  webSteps[browserInstall]?.run ?? "",
+  /playwright install --with-deps chromium --only-shell/,
+);
+assert(
+  browserPreflight > browserInstall && browserPreflight < stackStart,
+  "Browser launch must be verified before starting the E2E stack",
+);
+assert.match(
+  webSteps[browserPreflight]?.run ?? "",
+  /chromium\.launch\(\{ timeout: 15000 \}\)/,
+);
 const docker = workflows["docker.yml"];
 assert.deepEqual(docker.on.push.branches, ["fork/main"]);
 assert(
@@ -200,7 +219,7 @@ for (const spec of VARIANTS) {
     matrix.map((row) => row.platform),
     spec.platforms,
   );
-  assert(matrix.every((row) => hosted.has(row.runner)));
+  assert(matrix.every((row) => supported.has(row.runner)));
   for (const change of [
     { PLATFORMS: "linux/ppc64le" },
     { PLATFORMS: "linux/amd64,linux/amd64" },
@@ -226,5 +245,5 @@ assert(
   "Zizmor must execute the real pinned scanner",
 );
 console.log(
-  `Hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
+  `Namespace runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
 );
