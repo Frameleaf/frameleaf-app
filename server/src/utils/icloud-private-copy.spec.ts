@@ -1,11 +1,33 @@
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import * as files from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ValidationInputEnvelope,
   ValidationInputPayload,
   ValidationInputState,
   nextValidationInputSequence,
+  privateCopyIdentity,
   privateCopyScope,
   privateWorkScope,
+  unlinkOwnedValidationInput,
   validPrivateCopy,
   validPrivateWork,
   validValidationInputs,
@@ -14,6 +36,8 @@ import {
   validationInputsScope,
 } from 'src/utils/icloud-private-copy.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+
+vi.mock('node:fs/promises', { spy: true });
 
 const ownerId = randomUUID();
 const resourceId = randomUUID();
@@ -311,5 +335,142 @@ describe('validation input envelopes', () => {
     expect(validPrivateWork({ payload: work, seal: 'old' })).toBe(true);
     expect(privateCopyScope(copy)).toBe(`icloud-scheduled-private-copy:v1:${ownerId}:${resourceId}:${generation}`);
     expect(privateWorkScope(work)).toBe(`icloud-scheduled-private-work:v1:${ownerId}:${resourceId}:${generation}`);
+  });
+});
+
+describe('owned validation input disposal', () => {
+  const roots: string[] = [];
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
+    roots.length = 0;
+  });
+  async function ownedInput() {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'fl296-input-owned-')));
+    roots.push(root);
+    const pathNonce = randomUUID();
+    const directoryPath = join(root, `.validation-${pathNonce}`);
+    const inputPath = join(directoryPath, 'input');
+    await mkdir(directoryPath, { mode: 0o700 });
+    await writeFile(inputPath, Buffer.alloc(10), { mode: 0o600, flag: 'wx' });
+    return inputEnvelope('settled', {
+      pathNonce,
+      stagingDirectory: root,
+      directoryPath,
+      inputPath,
+      validationPath: join(root, 'complete'),
+      directoryIdentity: privateCopyIdentity(await stat(directoryPath)),
+      inputIdentity: privateCopyIdentity(await stat(inputPath)),
+    }).payload.current.payload;
+  }
+  it('removes only the exact input and retains the owned parent for transaction retry', async () => {
+    const input = await ownedInput();
+    await unlinkOwnedValidationInput(input);
+    expect(await readdir(input.directoryPath)).toEqual([]);
+    expect(privateCopyIdentity(await stat(input.directoryPath))).toMatchObject({
+      dev: input.directoryIdentity!.dev,
+      ino: input.directoryIdentity!.ino,
+      uid: input.directoryIdentity!.uid,
+    });
+    await unlinkOwnedValidationInput(input);
+  });
+  it('opens NOFOLLOW and refuses a failed handle close before unlink', async () => {
+    const input = await ownedInput();
+    const originalOpen = files.open;
+    const opened = vi.spyOn(files, 'open').mockImplementationOnce(async (...args) => {
+      const handle = await originalOpen(...args);
+      const close = handle.close.bind(handle);
+      vi.spyOn(handle, 'close').mockImplementationOnce(async () => {
+        await close();
+        throw new Error('fixture_close_failed');
+      });
+      return handle;
+    });
+    await expect(unlinkOwnedValidationInput(input)).rejects.toThrow('fixture_close_failed');
+    expect(opened).toHaveBeenCalledWith(input.inputPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    expect(await readFile(input.inputPath)).toEqual(Buffer.alloc(10));
+  });
+  it('retains the input after failed unlink and permits an exact retry', async () => {
+    const input = await ownedInput();
+    const failure = vi.spyOn(files, 'unlink').mockRejectedValueOnce(new Error('fixture_unlink_failed'));
+    await expect(unlinkOwnedValidationInput(input)).rejects.toThrow('fixture_unlink_failed');
+    expect(await readFile(input.inputPath)).toEqual(Buffer.alloc(10));
+    failure.mockRestore();
+    await unlinkOwnedValidationInput(input);
+    expect(await readdir(input.directoryPath)).toEqual([]);
+  });
+  it('retains the exact input when an unexpected directory entry exists', async () => {
+    const input = await ownedInput();
+    await writeFile(join(input.directoryPath, 'foreign'), 'retain');
+    await expect(unlinkOwnedValidationInput(input)).rejects.toThrow();
+    expect(await readFile(input.inputPath)).toEqual(Buffer.alloc(10));
+  });
+  it('refuses missing input when its persisted parent was replaced', async () => {
+    const input = await ownedInput();
+    await rename(input.directoryPath, `${input.directoryPath}-old`);
+    await mkdir(input.directoryPath, { mode: 0o700 });
+    await expect(unlinkOwnedValidationInput(input)).rejects.toThrow();
+    expect(await readFile(`${input.directoryPath}-old/input`)).toEqual(Buffer.alloc(10));
+  });
+  it('refuses missing parent instead of inferring physical disposal', async () => {
+    const input = await ownedInput();
+    await unlink(input.inputPath);
+    await rmdir(input.directoryPath);
+    await expect(unlinkOwnedValidationInput(input)).rejects.toThrow();
+  });
+  it.each([
+    'file-mode',
+    'parent-mode',
+    'file-inode',
+    'file-size',
+    'file-symlink',
+    'parent-symlink',
+    'identity',
+    'pending',
+  ] as const)('retains custody on %s mutation', async (kind) => {
+    const input = await ownedInput();
+    switch (kind) {
+      case 'file-mode': {
+        await chmod(input.inputPath, 0o644);
+        break;
+      }
+      case 'parent-mode': {
+        await chmod(input.directoryPath, 0o755);
+        break;
+      }
+      case 'file-inode': {
+        await rename(input.inputPath, join(input.stagingDirectory, 'old'));
+        await writeFile(input.inputPath, Buffer.alloc(10), { mode: 0o600 });
+
+        break;
+      }
+      case 'file-size': {
+        await writeFile(input.inputPath, Buffer.alloc(9));
+        break;
+      }
+      case 'file-symlink': {
+        await rename(input.inputPath, join(input.stagingDirectory, 'old'));
+        await symlink(join(input.stagingDirectory, 'old'), input.inputPath);
+
+        break;
+      }
+      case 'parent-symlink': {
+        await rename(input.directoryPath, `${input.directoryPath}-old`);
+        await symlink(`${input.directoryPath}-old`, input.directoryPath);
+
+        break;
+      }
+      case 'identity': {
+        input.directoryIdentity = null;
+        break;
+      }
+      case 'pending': {
+        input.pending = [randomUUID()];
+        // No default
+        break;
+      }
+    }
+    await expect(unlinkOwnedValidationInput(input)).rejects.toThrow();
+    expect(await lstat(input.inputPath)).toBeDefined();
   });
 });

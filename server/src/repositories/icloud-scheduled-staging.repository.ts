@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import { lstat, realpath, rmdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { MediaIntegrityIdentity } from 'src/services/media-integrity.service.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
@@ -22,15 +23,18 @@ import {
   ScheduledPrivateCopyRecord,
   ScheduledPrivateWorkRecord,
   ValidationInputEnvelope,
+  ValidationInputKey,
   ValidationInputPayload,
   nextValidationInputSequence,
   privateCopyScope,
   privateWorkScope,
   unlinkOwnedPrivateCopy,
+  unlinkOwnedValidationInput,
   validPrivateCopy,
   validPrivateWork,
   validValidationInputs,
   validationInputScope,
+  validationInputsDisposed,
   validationInputsScope,
 } from 'src/utils/icloud-private-copy.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
@@ -112,16 +116,68 @@ export const scheduledDeepReceiptScope = (proof: ScheduledDeepValidation['payloa
 export type ScheduledStagingAdmission = { guarded: GuardedScheduledAudit; resource: ICloudResource };
 
 /** Caller holds the managed path lock. Unpublished rows and destination reservations own paths too. */
-export async function scheduledPrivatePathReferences(db: Transaction<DB>, path: string, resourceId: string) {
-  if (await countPathReferences(db, path)) {
-    return true;
-  }
+export async function scheduledPrivatePathReferences(
+  db: Transaction<DB>,
+  path: string,
+  resourceId: string,
+  transport: ICloudTransportRepository,
+  self?: ValidationInputKey,
+) {
+  if (await countPathReferences(db, path)) return true;
   const references = await sql`SELECT 1 FROM public.physical_file WHERE path=${path}
-    UNION ALL SELECT 1 FROM public.icloud_resource WHERE id<>${resourceId}::uuid
-      AND (${path} IN (path,"stagingPath","promotedPath") OR ("pendingJobs"<>'[]'::jsonb AND "expectedTarget"->>'originalPath'=${path}))`.execute(
+    UNION ALL SELECT 1 FROM public.icloud_resource WHERE (id<>${resourceId}::uuid OR ${self !== undefined})
+      AND (${path} IN (path,"stagingPath","promotedPath") OR ((${self !== undefined} OR "pendingJobs"<>'[]'::jsonb) AND "expectedTarget"->>'originalPath'=${path}))`.execute(
     db,
   );
-  return references.rows.length > 0;
+  if (references.rows.length > 0) return true;
+  const inputs = (
+    await sql<{
+      id: string;
+      ownerId: string;
+      inputs: unknown;
+    }>`SELECT id,"ownerId",verification->'auditValidationInputs' AS inputs
+    FROM public.icloud_resource r WHERE EXISTS (SELECT 1 FROM (VALUES
+      (r.verification->'auditValidationInputs'->'payload'->'current'->'payload'),
+      (r.verification->'auditValidationInputs'->'payload'->'previousDisposed'->'payload')
+    ) AS records(payload) WHERE ${path} IN (records.payload->>'inputPath',records.payload->>'directoryPath',records.payload->>'validationPath'))`.execute(
+      db,
+    )
+  ).rows;
+  for (const row of inputs) {
+    const value = row.inputs as ValidationInputEnvelope;
+    for (const record of [value?.payload?.current, value?.payload?.previousDisposed]) {
+      const payload = record?.payload;
+      if (!payload || ![payload.inputPath, payload.directoryPath, payload.validationPath].includes(path)) continue;
+      if (
+        row.id === self?.resourceId &&
+        payload.resourceId === self.resourceId &&
+        payload.sequence === self.sequence &&
+        payload.pathNonce === self.pathNonce
+      )
+        continue;
+      if (
+        payload.state === 'disposed' &&
+        path !== payload.directoryPath &&
+        validValidationInputs(value) &&
+        value.payload.resourceId === row.id &&
+        value.payload.ownerId === row.ownerId
+      ) {
+        try {
+          if (
+            canonicalJson(await transport.decodeSession(validationInputsScope(value.payload), value.seal)) ===
+              canonicalJson(value.payload) &&
+            canonicalJson(await transport.decodeSession(validationInputScope(payload), record!.seal)) ===
+              canonicalJson(payload)
+          )
+            continue;
+        } catch {
+          /* Unknown evidence remains a reference. */
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Short database-only transactions. No callback may perform transport, filesystem or decoder work. */
@@ -644,6 +700,180 @@ export class ICloudScheduledStagingRepository {
     });
   }
 
+  /** Existing release transactions use this instance helper; it never nests or changes a budget. */
+  async authenticateDisposedValidationInputs(db: Transaction<DB>, resource: ICloudResource): Promise<boolean> {
+    try {
+      const envelope = await this.authenticateValidationInputs(resource);
+      if (envelope) return validationInputsDisposed(envelope);
+      if (!resource.auditRequestId) return true;
+      const work = resource.verification?.auditOwnedWork;
+      if (
+        !validPrivateWork(work) ||
+        !work.seal ||
+        !work.payload.settled ||
+        work.payload.pending.length > 0 ||
+        work.payload.ownerId !== resource.ownerId ||
+        work.payload.resourceId !== resource.id ||
+        work.payload.auditRequestId !== resource.auditRequestId ||
+        (resource.leaseToken !== null && work.payload.resourceLeaseToken !== resource.leaseToken) ||
+        canonicalJson(await this.transport.decodeSession(privateWorkScope(work.payload), work.seal)) !==
+          canonicalJson(work.payload)
+      )
+        return false;
+      const request = (
+        await sql<{ operationId: string; itemClaimId: string }>`SELECT "operationId","itemClaimId"
+        FROM public.icloud_identity_audit WHERE id=${resource.auditRequestId}::uuid AND "ownerId"=${resource.ownerId}::uuid
+          AND "connectionId"=${resource.connectionId}::uuid AND purpose='scheduled-weekly' AND "sessionId" IS NULL`.execute(
+          db,
+        )
+      ).rows[0];
+      if (
+        !request ||
+        request.operationId !== work.payload.operationId ||
+        request.itemClaimId !== work.payload.itemClaimId
+      )
+        return false;
+      const copy = resource.verification?.auditPrivateCopy;
+      if (copy === undefined) return work.payload.copyGeneration === null;
+      return (
+        validPrivateCopy(copy) &&
+        !!copy.seal &&
+        !!copy.payload.identity &&
+        copy.payload.settled &&
+        copy.pending.length === 0 &&
+        copy.payload.ownerId === resource.ownerId &&
+        copy.payload.resourceId === resource.id &&
+        copy.payload.connectionId === resource.connectionId &&
+        copy.payload.auditRequestId === resource.auditRequestId &&
+        copy.payload.sourceAssetId === resource.sourceAssetId &&
+        copy.payload.operationId === work.payload.operationId &&
+        copy.payload.operationClaimToken === work.payload.operationClaimToken &&
+        copy.payload.resourceLeaseToken === work.payload.resourceLeaseToken &&
+        copy.payload.itemClaimId === work.payload.itemClaimId &&
+        copy.payload.generation === work.payload.copyGeneration &&
+        canonicalJson(await this.transport.decodeSession(privateCopyScope(copy.payload), copy.seal)) ===
+          canonicalJson(copy.payload)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** Authenticated input-only refund; provider/grant admission is deliberately absent. */
+  async disposeValidationInput(input: ScheduledStagingInput, expected: ValidationInputEnvelope): Promise<boolean> {
+    const resource = (
+      await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize","reservedBytes"::float8 AS "reservedBytes"
+      FROM public.icloud_resource WHERE id=${input.resource.id}::uuid AND "ownerId"=${input.ownerId}::uuid
+        AND "auditRequestId"=${input.authority.auditRequestId}::uuid`.execute(this.db)
+    ).rows[0];
+    if (!resource) return false;
+    let envelope: ValidationInputEnvelope | undefined;
+    try {
+      envelope = await this.authenticateValidationInputs(resource, undefined, input.authority.operationId ?? undefined);
+      await this.authenticateValidationInputs(resource, expected, input.authority.operationId ?? undefined);
+    } catch {
+      return false;
+    }
+    if (!envelope) return false;
+    const payload = expected.payload.current.payload;
+    if (
+      payload.operationClaimToken !== input.authority.operationClaimToken ||
+      payload.resourceLeaseToken !== input.resource.leaseToken ||
+      !['settled', 'disposed'].includes(payload.state) ||
+      payload.pending.length > 0
+    )
+      return false;
+    const disposedPayload = { ...payload, state: 'disposed' as const };
+    for (const record of [envelope.payload.current, envelope.payload.previousDisposed]) {
+      if (record?.payload.state === 'disposed' && canonicalJson(record.payload) === canonicalJson(disposedPayload))
+        return true;
+    }
+    if (payload.state !== 'settled' || canonicalJson(envelope) !== canonicalJson(expected)) return false;
+    const copy = resource.verification?.auditPrivateCopy;
+    let copyBytes = 0;
+    if (copy !== undefined) {
+      try {
+        if (
+          !validPrivateCopy(copy) ||
+          !copy.seal ||
+          !copy.payload.identity ||
+          copy.payload.ownerId !== payload.ownerId ||
+          copy.payload.resourceId !== payload.resourceId ||
+          copy.payload.connectionId !== payload.connectionId ||
+          copy.payload.auditRequestId !== payload.auditRequestId ||
+          copy.payload.sourceAssetId !== payload.sourceAssetId ||
+          copy.payload.operationId !== payload.operationId ||
+          copy.payload.reservedCopyBytes !== resource.expectedSize ||
+          canonicalJson(await this.transport.decodeSession(privateCopyScope(copy.payload), copy.seal)) !==
+            canonicalJson(copy.payload)
+        )
+          return false;
+        copyBytes = copy.payload.disposed ? 0 : copy.payload.reservedCopyBytes;
+      } catch {
+        return false;
+      }
+    }
+    const aggregate = resource.expectedSize + copyBytes + payload.reservedInputBytes;
+    if (
+      !Number.isSafeInteger(aggregate) ||
+      Number(resource.reservedBytes) !== aggregate ||
+      !Number.isSafeInteger(resource.expectedSize) ||
+      resource.expectedSize <= 0
+    )
+      return false;
+    const disposed = await this.db.transaction().execute(async (db) => {
+      await lockICloudItemClaims(db, payload.ownerId, [payload.sourceAssetId]);
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(db);
+      if (!(await this.lockValidationSettlement(db, input, payload))) return false;
+      const locked = (
+        await sql<ICloudResource>`SELECT * FROM public.icloud_resource WHERE id=${payload.resourceId}::uuid FOR UPDATE`.execute(
+          db,
+        )
+      ).rows[0];
+      if (
+        !locked ||
+        canonicalJson(locked.verification) !== canonicalJson(resource.verification) ||
+        Number(locked.reservedBytes) !== aggregate
+      )
+        return false;
+      for (const path of [payload.directoryPath, payload.inputPath].sort()) {
+        await lockFilePath(db, path);
+        if (await scheduledPrivatePathReferences(db, path, payload.resourceId, this.transport, payload)) return false;
+      }
+      await unlinkOwnedValidationInput(payload);
+      const sealed = await this.sealValidationInputs({
+        ...envelope!.payload,
+        current: { payload: disposedPayload, seal: 'pending' },
+      });
+      const changed =
+        await sql`UPDATE public.icloud_resource SET "reservedBytes"="reservedBytes"-${payload.reservedInputBytes},
+        verification=verification||jsonb_build_object('auditValidationInputs',${JSON.stringify(sealed)}::text::jsonb),"updatedAt"=clock_timestamp()
+        WHERE id=${payload.resourceId}::uuid AND verification=${JSON.stringify(resource.verification)}::text::jsonb
+          AND "reservedBytes"=${aggregate} RETURNING id`.execute(db);
+      if (changed.rows.length !== 1) throw new Error('validation_input_generation_changed');
+      return true;
+    });
+    if (disposed) {
+      // Empty-parent removal is housekeeping after commit, never refund authority or recursive cleanup.
+      try {
+        const parent = await lstat(payload.directoryPath);
+        const owned = payload.directoryIdentity!;
+        if (
+          parent.isDirectory() &&
+          (parent.mode & 0o077) === 0 &&
+          parent.dev === owned.dev &&
+          parent.ino === owned.ino &&
+          parent.uid === owned.uid &&
+          (await realpath(payload.directoryPath)) === payload.directoryPath
+        )
+          await rmdir(payload.directoryPath);
+      } catch {
+        /* A changed/nonempty parent remains retained. */
+      }
+    }
+    return disposed;
+  }
+
   /** Called only by recovery.reserve while the existing global staging-budget lock is held. */
   async planPrivateCopy(db: Transaction<DB>, input: ScheduledStagingInput, promotedPath: string) {
     const guarded = await guardScheduledAudit(db, input.authority, input.ownerId, { resource: input.resource });
@@ -756,7 +986,7 @@ export class ICloudScheduledStagingRepository {
         if (canonicalJson(resource.verification?.auditPrivateCopy) !== canonicalJson(record)) {
           return false;
         }
-        if (await scheduledPrivatePathReferences(db, record.payload.temporaryPath, input.resource.id)) {
+        if (await scheduledPrivatePathReferences(db, record.payload.temporaryPath, input.resource.id, this.transport)) {
           return false;
         }
         await unlinkOwnedPrivateCopy(record.payload.temporaryPath, record.payload.identity!);
@@ -1085,7 +1315,7 @@ export class ICloudScheduledStagingRepository {
       }
       for (const path of [copy.temporaryPath, copy.promotedPath].sort()) {
         await lockFilePath(db, path);
-        if (await scheduledPrivatePathReferences(db, path, copy.resourceId)) {
+        if (await scheduledPrivatePathReferences(db, path, copy.resourceId, this.transport)) {
           return false;
         }
       }
@@ -1226,7 +1456,7 @@ export class ICloudScheduledStagingRepository {
         return false;
       }
       await lockFilePath(db, stagingPath);
-      if (await scheduledPrivatePathReferences(db, stagingPath, resource.id)) {
+      if (await scheduledPrivatePathReferences(db, stagingPath, resource.id, this.transport)) {
         return false;
       }
       if (!process.getuid) {
