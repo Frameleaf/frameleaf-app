@@ -608,11 +608,11 @@ Every command has fixtures named `<command>/<case>` in `studio/graph-conformance
 
 A track with `locked: true` is locked. Lock checking is **per command and is not uniform**:
 
-| Lock checking                                     | Commands                                                                                                                                                 |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`, `clip.split` (12.3.4)                     |
-| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`, `clip.delete` (ripple only)                                                                                                              |
-| Check nothing                                     | `clip.add`, `clip.delete` (non-ripple), `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent` |
+| Lock checking                                     | Commands                                                                                                                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`, `clip.split` (12.3.4) |
+| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`, `clip.delete` (ripple only)                                                                                    |
+| Check nothing                                     | `clip.add`, `clip.delete` (non-ripple), `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent`     |
 
 The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph. The October 12 correction records actual refusals for the four repaired forbidden inputs; it does not add a blanket lock guard to every command.
 
