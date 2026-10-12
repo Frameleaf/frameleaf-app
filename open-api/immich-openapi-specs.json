@@ -80439,7 +80439,7 @@
         "type": "string"
       },
       "MailTransportType": {
-        "description": "FL-379: how this server sends email: a mail server entered by hand, Gmail or Microsoft",
+        "description": "How this server sends email: a mail server entered by hand, Gmail or Microsoft",
         "enum": [
           "smtp",
           "gmail",
