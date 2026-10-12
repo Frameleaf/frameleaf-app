@@ -47,6 +47,10 @@ and map tiles remain functional. Nothing is fetched from upstream-hosted service
 comes from:
 
 - Map styles and tiles: `tiles.frameleaf.cloud`.
+- Landmark brand icons: one file from `static.frameleaf.cloud`, fetched when the server starts and does
+  not have it yet. It is the whole set, the same for every server, so the request does not say which
+  places you have photos of. Turning reverse geocoding off stops the download; landmarks then show a
+  plain icon for their kind.
 - Smart search, face recognition and text recognition (OCR) models (`frameleaf/<model>`): the model source, which is
   `MACHINE_LEARNING_MODEL_SOURCE_URL` if set, otherwise `HF_ENDPOINT` if set, otherwise
   `models.frameleaf.cloud`. A Hugging Face token is only ever sent to `huggingface.co`.
