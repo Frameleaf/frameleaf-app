@@ -1,6 +1,8 @@
 import {
+  AdminConfigDto,
   AssetMediaResponseDto,
   createUserAdmin,
+  getConfig,
   getQueuesLegacy,
   IntegrityReportResponseDto,
   login,
@@ -11,6 +13,7 @@ import {
   runQueueCommandLegacy,
   signUpAdmin,
   updateAdminOnboarding,
+  updateConfig,
 } from '@frameleaf/sdk';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -22,17 +25,46 @@ import { resetWhilePaused } from 'src/harness-reset.js';
 import { withDeadline, type WaitContext } from 'src/harness-wait.js';
 import { app, asBearerAuth, testAssetDir, utils } from 'src/utils.js';
 import request from 'supertest';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-// Reset 8s + authentication 30s + snapshot 5s + pause 10s + three uploads
+// Reset 8s + authentication 30s + schedules 5s + snapshot 5s + pause 10s + three uploads
 // (60s CI / 10s local each) + backup 18s + empty 10s. Reserve another
 // 9s for host settlement/self-termination, 10s restoration and 2s settlement.
-const INTEGRITY_SETUP_WORK_TIMEOUT = process.env.CI ? 261_000 : 111_000;
+const INTEGRITY_SETUP_WORK_TIMEOUT = process.env.CI ? 266_000 : 116_000;
 const INTEGRITY_SETUP_TIMEOUT = INTEGRITY_SETUP_WORK_TIMEOUT + 21_000;
 
 const assetFilepath = `${testAssetDir}/metadata/gps-position/thompson-springs.jpg`;
 const asset1Filepath = `${testAssetDir}/albums/nature/el_torcal_rocks.jpg`;
 const asset2Filepath = `${testAssetDir}/albums/nature/wood_anemones.jpg`;
+
+type ScheduledLibraryScans = {
+  healthScan: boolean;
+  untrackedFiles: boolean;
+  missingFiles: boolean;
+  checksumFiles: boolean;
+};
+
+const readScheduledLibraryScans = (config: AdminConfigDto): ScheduledLibraryScans => {
+  if (!config.libraryCare) {
+    throw new TypeError('System config did not report the Library care schedule');
+  }
+  return {
+    healthScan: config.libraryCare.healthScan,
+    untrackedFiles: config.integrityChecks.untrackedFiles.enabled,
+    missingFiles: config.integrityChecks.missingFiles.enabled,
+    checksumFiles: config.integrityChecks.checksumFiles.enabled,
+  };
+};
+
+const writeScheduledLibraryScans = (config: AdminConfigDto, scans: ScheduledLibraryScans): AdminConfigDto => ({
+  ...config,
+  libraryCare: { ...config.libraryCare!, healthScan: scans.healthScan },
+  integrityChecks: {
+    untrackedFiles: { ...config.integrityChecks.untrackedFiles, enabled: scans.untrackedFiles },
+    missingFiles: { ...config.integrityChecks.missingFiles, enabled: scans.missingFiles },
+    checksumFiles: { ...config.integrityChecks.checksumFiles, enabled: scans.checksumFiles },
+  },
+});
 
 const runIntegrityFixtureCommand = async (context: WaitContext, args: string[], failureMessage: string) => {
   const nativeTimeout = Math.min(5000, Math.floor((context.remaining() - 3000) / 1000) * 1000);
@@ -126,6 +158,7 @@ describe('/admin/integrity', () => {
   let asset2: AssetMediaResponseDto;
   let fixtureRestorationFailed = false;
   let fixtureRestorationFailure: unknown;
+  let savedScheduledScans: ScheduledLibraryScans | undefined;
 
   beforeAll(
     withApiAssetReadiness(INTEGRITY_SETUP_WORK_TIMEOUT, async (signal) => {
@@ -151,6 +184,34 @@ describe('/admin/integrity', () => {
             users.push(await login({ loginCredentialDto: credentials }, { signal: context.signal }));
           }
           [user1, user2] = users;
+        },
+        signal,
+      );
+
+      // The server's own wall-clock schedules write the state these tests count: the 2 AM Library care
+      // health scan imports media-named files it finds untracked in an upload folder (untracked1.png
+      // here) as new assets, and the 3 AM integrity checks write integrity reports. A run that crosses
+      // either time fails with counts one too high, so the fixture owns the schedule while it runs.
+      // Jobs queued by the tests themselves still run with the schedules off.
+      await ownedWait(
+        'Stop scheduled library scans for the integrity fixture',
+        5000,
+        async (context) => {
+          const options = { headers: asBearerAuth(admin.accessToken), signal: context.signal };
+          const config = await getConfig(options);
+          savedScheduledScans = readScheduledLibraryScans(config);
+          context.remaining();
+          await updateConfig(
+            {
+              adminConfigDto: writeScheduledLibraryScans(config, {
+                healthScan: false,
+                untrackedFiles: false,
+                missingFiles: false,
+                checksumFiles: false,
+              }),
+            },
+            options,
+          );
         },
         signal,
       );
@@ -289,6 +350,19 @@ describe('/admin/integrity', () => {
     }),
     INTEGRITY_SETUP_TIMEOUT,
   );
+
+  afterAll(async () => {
+    const saved = savedScheduledScans;
+    if (!saved) {
+      return;
+    }
+    await withDeadline('Restore scheduled library scans', 5000, async (context) => {
+      const options = { headers: asBearerAuth(admin.accessToken), signal: context.signal };
+      const config = await getConfig(options);
+      context.remaining();
+      await updateConfig({ adminConfigDto: writeScheduledLibraryScans(config, saved) }, options);
+    });
+  });
 
   beforeEach(() => {
     if (fixtureRestorationFailed) {
