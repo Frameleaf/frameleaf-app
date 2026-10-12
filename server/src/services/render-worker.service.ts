@@ -89,6 +89,7 @@ import {
   canReuseChunk,
   isRenderWorkerMediaOperationKind,
 } from 'src/utils/media-operation.js';
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -98,7 +99,6 @@ import {
   UnknownDestinationHealthProvider,
   evaluateClaimAdmission,
   evaluateRunningLimits,
-  isQualifiedRenderSession,
   isWorkerRefusal,
   signInputGrant,
   tightestLimits,
@@ -349,28 +349,21 @@ export class RenderWorkerService {
   /** FL-71 (CC-9): the render kinds with and without a qualified GPU worker right now. */
   async getCompatibility(): Promise<RenderWorkerCompatibilityResponseDto> {
     const sessions = await this.repository.listLiveSessions();
-    const now = new Date();
-    const qualifiedFor = (kind: MediaOperationKind) =>
-      sessions.some(
-        ({ worker, session }) =>
-          session.scopes.includes(kind) &&
-          isQualifiedRenderSession({
-            worker: {
-              revoked: worker.status !== RenderWorkerStatus.Active,
-              engineDigest: worker.engineDigest,
-              conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
-            },
-            session: {
-              revoked: session.revokedAt !== null,
-              expiresAt: new Date(session.expiresAt),
-              engineDigest: session.engineDigest,
-              conformanceReportedAt: new Date(session.conformanceReportedAt),
-              scopes: [kind],
-            },
-            now,
-          }),
-      );
-    const qualified = RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) => qualifiedFor(kind));
+    const evaluated = await Promise.all(
+      sessions.map(async (entry) => ({
+        ...entry,
+        budget: evaluateApprovedRenderSession({
+          ...entry,
+          capabilities: await this.repository.getSessionCapabilities(entry.session.id),
+          now: new Date(),
+        }),
+      })),
+    );
+    const qualified = RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) =>
+      evaluated.some(
+        ({ worker, session, budget }) => budget.valid && worker.kinds.includes(kind) && session.scopes.includes(kind),
+      ),
+    );
     return {
       qualified: [...qualified],
       unavailable: RENDER_WORKER_MEDIA_OPERATION_KINDS.filter((kind) => !qualified.includes(kind)),
