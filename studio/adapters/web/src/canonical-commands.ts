@@ -1720,8 +1720,13 @@ const handlers: Record<string, Handler> = {
     if (ids.length === 0 || ids.some((id) => typeof id !== 'string'))
       invalid('clipId or clipIds is required')
     for (const id of ids as string[]) requireItem(id, 'clipIds')
-    if (payload.ripple === true) rippleDeleteItems(ids as string[])
-    else removeItems(ids as string[])
+    if (payload.ripple === true) {
+      rippleDeleteItems(ids as string[])
+      // Shared ripple preflight refuses the whole edit, including locked downstream companions.
+      if ((ids as string[]).some((id) => items().some((item) => item.id === id))) {
+        failed('clip.delete: a clip it would change is on a locked track')
+      }
+    } else removeItems(ids as string[])
   },
 
   'clip.move'(payload, { cadence }) {
