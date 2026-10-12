@@ -87,7 +87,7 @@ jobs:
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: windows-latest
+    runs-on: nscloud-windows-2022-amd64-8x16
     permissions:
       contents: read
     defaults:
