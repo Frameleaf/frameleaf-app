@@ -156,8 +156,17 @@ test("every supported image variant has an explicit native build contract", () =
       GITHUB_EVENT_NAME: "push",
     };
     assert.deepEqual(
-      validateBuildInput(env).map((r) => r.platform),
-      spec.platforms,
+      validateBuildInput(env).map(({ platform, runner }) => ({
+        platform,
+        runner,
+      })),
+      spec.platforms.map((platform) => ({
+        platform,
+        runner:
+          platform === "linux/amd64"
+            ? "nscloud-ubuntu-24.04-amd64-8x16"
+            : "nscloud-ubuntu-24.04-arm64-8x16",
+      })),
     );
     for (const patch of [
       { GITHUB_REF: "refs/heads/feature" },
@@ -310,16 +319,16 @@ const testJobNames = [
   "End-to-End Lint",
   "Medium Tests (Server)",
   "Medium Scale Tests (Server)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-  "End-to-End Image (ubuntu-24.04)",
-  "End-to-End Image (ubuntu-24.04-arm)",
-  "End-to-End Tests (Web) (ubuntu-24.04, 1)",
-  "End-to-End Tests (Web) (ubuntu-24.04, 2)",
-  "End-to-End Tests (Web) (ubuntu-24.04, 3)",
-  "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
-  "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
-  "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
+  "End-to-End Tests (Server & CLI) (nscloud-ubuntu-24.04-amd64-8x16)",
+  "End-to-End Tests (Server & CLI) (nscloud-ubuntu-24.04-arm64-8x16)",
+  "End-to-End Image (nscloud-ubuntu-24.04-amd64-8x16)",
+  "End-to-End Image (nscloud-ubuntu-24.04-arm64-8x16)",
+  "End-to-End Tests (Web) (nscloud-ubuntu-24.04-amd64-8x16, 1)",
+  "End-to-End Tests (Web) (nscloud-ubuntu-24.04-amd64-8x16, 2)",
+  "End-to-End Tests (Web) (nscloud-ubuntu-24.04-amd64-8x16, 3)",
+  "End-to-End Tests (Web) (nscloud-ubuntu-24.04-arm64-8x16, 1)",
+  "End-to-End Tests (Web) (nscloud-ubuntu-24.04-arm64-8x16, 2)",
+  "End-to-End Tests (Web) (nscloud-ubuntu-24.04-arm64-8x16, 3)",
   "End-to-End Tests Success",
   "Unit Test ML",
   ".github Files Formatting",
@@ -375,14 +384,14 @@ test("same-SHA Test qualification requires every real non-mobile job, including 
       .filter((job) => job.name.startsWith("End-to-End Tests ("))
       .map((job) => job.name),
     [
-      "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
-      "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 1)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 2)",
-      "End-to-End Tests (Web) (ubuntu-24.04, 3)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 1)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 2)",
-      "End-to-End Tests (Web) (ubuntu-24.04-arm, 3)",
+      "End-to-End Tests (Server & CLI) (nscloud-ubuntu-24.04-amd64-8x16)",
+      "End-to-End Tests (Server & CLI) (nscloud-ubuntu-24.04-arm64-8x16)",
+      "End-to-End Tests (Web) (nscloud-ubuntu-24.04-amd64-8x16, 1)",
+      "End-to-End Tests (Web) (nscloud-ubuntu-24.04-amd64-8x16, 2)",
+      "End-to-End Tests (Web) (nscloud-ubuntu-24.04-amd64-8x16, 3)",
+      "End-to-End Tests (Web) (nscloud-ubuntu-24.04-arm64-8x16, 1)",
+      "End-to-End Tests (Web) (nscloud-ubuntu-24.04-arm64-8x16, 2)",
+      "End-to-End Tests (Web) (nscloud-ubuntu-24.04-arm64-8x16, 3)",
     ],
   );
 });

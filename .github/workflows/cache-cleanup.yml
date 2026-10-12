@@ -8,7 +8,7 @@ jobs:
   disabled:
     name: Legacy automation is disabled
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions: {}
     steps:
       - name: Explain the retired automation
