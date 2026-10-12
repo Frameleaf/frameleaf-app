@@ -599,9 +599,9 @@ describe('scheduled validation input durable accounting baseline', () => {
     expect(
       await f.staging.storeValidationInput(f.input, running, { ...runningPayload, state: 'disposed', pending: [] }),
     ).toBeUndefined();
-    await sql`UPDATE public.icloud_weekly_grant SET enabled=false WHERE "connectionId"=${f.connection.id}::uuid`.execute(
-      db,
-    );
+    await sql`UPDATE public.icloud_weekly_grant SET enabled=false,"includeProtected"=false,
+      "pinBinding"=NULL,generation=generation+1,"revokedAt"=clock_timestamp()
+      WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
     expect(await f.staging.storeValidationInput(f.input, running, runningPayload)).toBeUndefined();
     const settled = await f.staging.storeValidationInput(f.input, running, {
       ...runningPayload,
