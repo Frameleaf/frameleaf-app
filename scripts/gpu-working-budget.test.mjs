@@ -55,6 +55,29 @@ const success = (
   expiresAt,
 });
 
+test("canonical quantities, digests and UUIDs reject trailing line terminators", () => {
+  for (const suffix of ["\n", "\r", "\r\n"]) {
+    assert.equal(
+      evaluate({}, { administratorCeiling: `1${suffix}` }).valid,
+      false,
+    );
+    for (const key of [
+      "profileDigest",
+      "receiptDigest",
+      "buildDigest",
+      "encoderEvidenceDigest",
+      "pressureEnvelopeDigest",
+      "outputReceiptDigest",
+      "measurementId",
+      "workerId",
+      "deviceLifetimeId",
+    ]) {
+      const value = evidence[key] + suffix;
+      assert.equal(evaluate({ [key]: value }).valid, false);
+    }
+  }
+});
+
 test("preserves measured bytes when no administrator ceiling exists", () => {
   assert.deepEqual(evaluate(), success());
 });
