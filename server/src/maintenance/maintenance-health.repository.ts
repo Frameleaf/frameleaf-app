@@ -8,8 +8,9 @@ import { IMMICH_SERVER_START } from 'src/constants.js';
  * IMMICH_HOST and IMMICH_PORT are dropped, since an old-name port would conflict with the one set here.
  */
 export const healthCheckEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
-  const { IMMICH_HOST: _host, IMMICH_PORT: _port, ...rest } = env;
-  return { ...rest, FRAMELEAF_HOST: '127.0.0.1', FRAMELEAF_PORT: '33001' };
+  const { IMMICH_HOST: _host, IMMICH_PORT: _port, IMMICH_LOG_LEVEL: _logLevel, ...rest } = env;
+  // The child must emit its readiness marker even when the admin CLI keeps the parent quiet.
+  return { ...rest, FRAMELEAF_HOST: '127.0.0.1', FRAMELEAF_PORT: '33001', FRAMELEAF_LOG_LEVEL: 'log' };
 };
 
 @Injectable()
