@@ -160,6 +160,18 @@ const namedClip = (state, payload, name = 'clipId') => clipOf(state, text(payloa
 const trackOf = (state, id) => state.tracks.find((track) => track.id === id) ?? invalid(`track "${id}" does not exist`);
 const namedTrack = (state, payload) => trackOf(state, text(payload, 'trackId'));
 const lockedTrack = (state, clip) => state.tracks.find((track) => track.id === clip.trackId)?.locked === true;
+// 0134 correction: these edit preflights inherit organizational lane locks; legacy checks stay per-command.
+const effectiveEditLock = (state, clip) => {
+  const seen = new Set();
+  let track = state.tracks.find((track) => track.id === clip.trackId);
+  while (track && !seen.has(track.id)) {
+    if (track.locked) return true;
+    seen.add(track.id);
+    track = state.tracks.find((parent) => parent.id === track.parentTrackId);
+  }
+  return false;
+};
+
 
 /** Section 3.3: a payload time as a non-negative frame of the project. */
 const time = (state, payload, name) => {
@@ -744,8 +756,12 @@ const commands = {
       .map((clip) => clip.id);
     const alsoRemoved = new Set(linkedSet(view, covered));
     const intervals = deleted.map((item) => ({ start: item.from, end: end(item) }));
-    removeClips(state, [...removed, ...alsoRemoved]);
     const moves = survivors.filter((clip) => shift.has(clip.id) && !alsoRemoved.has(clip.id));
+    // Independent rule: a ripple may neither remove nor shift an effectively locked participant.
+    const participants = new Set([...removed, ...alsoRemoved, ...moves.map((clip) => clip.id)]);
+    if (state.items.some((clip) => participants.has(clip.id) && effectiveEditLock(state, clip)))
+      failed('clip.delete: a clip it would change is on a locked track');
+    removeClips(state, [...removed, ...alsoRemoved]);
     for (const clip of moves) move(state, clip.id, clip.from - shift.get(clip.id));
     const affected = removeIntervals(state, edited, intervals, draw);
     repair(state, [...moves.map((clip) => clip.id), ...affected]);
@@ -772,8 +788,11 @@ const commands = {
   'clip.split'(state, payload, draw) {
     const at = time(state, payload, 'at');
     const { clipIds } = payload;
-    const splittable = (group) => group.every((member) => member.from < at && at < end(member) && !inTransition(state, member, at));
+    const splittable = (group) => group.every((member) => member.from < at && at < end(member) && !inTransition(state, member, at) && !effectiveEditLock(state, member));
     if (clipIds === undefined) {
+      const crossing = state.items.filter((item) => item.from < at && at < end(item));
+      if (crossing.some((item) => linkedGroup(state, item).some((member) => effectiveEditLock(state, member))))
+        invalid('clip.split: nothing spans that time');
       const seen = new Set();
       let count = 0;
       for (const candidate of state.items.filter((item) => item.from < at && at < end(item)).map((item) => item.id)) {

@@ -4,6 +4,8 @@ This page specifies the Studio project graph. The native Frameleaf apps for iPad
 
 It is a clean-room specification. It was written by reading the engine, and it describes behaviour only: it contains no engine source text. The engine is an adapted build of Freecut (MIT, see `studio/notices/freecut.txt`), pinned at revision `4d62e8082c5eb387a96275bcbd323d28f6e41a62`. The protocol is versioned with that pin. A change of engine revision is a new protocol version unless the conformance fixtures still pass unchanged.
 
+**Compatibility correction (October 12, 2026).** Accepted adaptation patch `0134-shared-edit-effective-lock-refusal.patch` (SHA-256 `73c40127074800a2fa47e93440e03254689bb3e78a27275afa6e771d0ce3758d`), in prepared source `1d91e981316146386b98192d087f140b9752e391476a8805a1bce302c546bdee`, repairs three previously forbidden locked-input fixtures: two ripple deletes and an all-track split. Their old applied answers encoded a lock bypass. They now record the engine's actual atomic refusals. The upstream revision, graph schema, command payloads, API and unified SDK are unchanged; every other fixture answer remains unchanged. A native client was already forbidden to issue these inputs (12.2.2). Non-ripple delete and the other documented implementation-defined paths retain their existing rules.
+
 Machine-readable files sit beside the other Studio contracts:
 
 | File                                    | What it is                                                                                                                                                       |
@@ -606,11 +608,11 @@ A track with `locked: true` is locked. Lock checking is **per command and is not
 
 | Lock checking                                     | Commands                                                                                                                                                 |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`                     |
-| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`                                                                                                              |
-| Check nothing                                     | `clip.add`, `clip.delete`, `clip.split`, `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent` |
+| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`, `clip.split` (12.3.4)                     |
+| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`, `clip.delete` (ripple only)                                                                                                              |
+| Check nothing                                     | `clip.add`, `clip.delete` (non-ripple), `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent` |
 
-The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph.
+The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph. The October 12 correction records actual refusals for the three repaired forbidden inputs; it does not add a blanket lock guard to every command.
 
 `track.closeGap` checks the lock of every **attached caption** in its affected linked set (12.7.5). Other commands' caption lock behaviour remains as recorded by their own sections and fixtures.
 
@@ -784,6 +786,7 @@ Removes clips, optionally closing the space they leave. Payload: `clipId` or `cl
 
 1. Neither field names a clip: `clipIds` is absent and `clipId` is absent, or `clipIds` is empty, or a named id is not a string: `invalid`. When `clipIds` is an array, `clipId` is ignored.
 2. A named clip does not exist: `invalid`.
+3. With `ripple: true`, an effectively locked participant would be removed, covered or shifted (including linked companions and downstream propagation): `failed`, before any edit or identity draw.
 
 **Effect.** The clips removed are the **linked set** of the named clips (12.2.1): the clips, their linked groups, and the attached captions of all of them. Call them `D`. Their transitions and keyframes are removed with them.
 
@@ -797,7 +800,7 @@ With `ripple: true`, further:
 **Consequences**
 
 - **Linked:** linked clips and attached captions are deleted with the clip. With ripple, linked clips of shifted clips move with them.
-- **Locks:** not checked. A ripple removes and moves clips on locked edited tracks too (`clip.delete/locked-track-is-not-checked`, `clip.delete/ripple-locked-track-is-not-checked`). A locked track that is not edited is never rippled by sync lock, but a linked clip on it still moves by step 2 (`clip.delete/ripple-moves-linked-clips-on-locked-track`).
+- **Locks:** non-ripple deletion still does not check (`clip.delete/locked-track-is-not-checked`). Ripple deletion atomically refuses effectively locked participants, including an edited linked track (`clip.delete/ripple-refuses-locked-linked-track`) or a downstream linked companion (`clip.delete/ripple-refuses-locked-downstream-companion`). An unrelated locked track is excluded from sync propagation and does not by itself refuse the edit (`clip.delete/ripple-locked-track-untouched`).
 - **Sync lock:** with ripple, step 4. Without ripple, none.
 - **Overlap:** without ripple, none can arise. With ripple, step 3 removes what would be overlapped. That is **implementation-defined**: it deletes a clip the person did not name (`clip.delete/ripple-unsynced-companion-covers`). **Native rule:** reproduce it.
 - **Transitions:** transitions of removed clips are removed. With ripple, the changed clips are the moved clips and the clips step 4 cut or moved. The clips that now meet are **not** joined by the removed clip's transition (`clip.delete/ripple-removes-transition`).
@@ -851,7 +854,7 @@ Cuts clips at a time. Payload: `at`, optional `clipIds`.
 **Consequences**
 
 - **Linked:** a linked group is split together or not at all. Its halves form two new linked groups. A clip that is alone in its linked group loses the group (`clip.split/unlinked-clip-loses-own-group`). Attached captions are not split and stay attached to the left half, which keeps the id.
-- **Locks:** not checked (`clip.split/locked-track-is-not-checked`).
+- **Locks:** an effectively locked member prevents the whole linked split. With named `clipIds` this is refusal 3 (`invalid`); without `clipIds`, any locked candidate or linked participant prevents the all-track split and yields refusal 4, with detail `clip.split: nothing spans that time` (`clip.split/refuses-locked-tracks`). No graph/history change or identity draw is made. The refusal retains its existing classification rather than adding a new protocol reason.
 - **Sync lock:** none.
 - **Overlap:** none can arise.
 - **Transitions:** remapped as 12.2.5 says. No repair runs.
