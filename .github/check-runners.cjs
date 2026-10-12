@@ -21,8 +21,7 @@ const workflows = Object.fromEntries(
 const supported = new Set([
   "nscloud-ubuntu-24.04-amd64-8x16",
   "nscloud-ubuntu-24.04-arm64-8x16",
-  "windows-latest",
-  "macos-26",
+  "nscloud-windows-2022-amd64-8x16",
 ]);
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
