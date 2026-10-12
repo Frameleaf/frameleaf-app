@@ -164,7 +164,9 @@ export function validateBaseRaster(capture, envelope, binding) {
         binding.sourceSha256 ===
           '2be3c9aace8167be04a94878541a2fb5cb874d69274e9b05465596801a6d95e9' ||
         binding.sourceSha256 ===
-          '2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7'),
+          '2c892d4445da5b1e390a9505a82d34ac402cbef5e6bd2f1f88d532aa61e0d6f7' ||
+        binding.sourceSha256 ===
+          'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578'),
     'SOURCE_BROWSER',
   )
   check(
