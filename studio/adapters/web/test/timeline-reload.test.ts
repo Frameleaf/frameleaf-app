@@ -320,6 +320,7 @@ describe('FL-94 timeline state across save and reload', () => {
   const nestedEdits = [
     { tool: 'speed', run: () => rateStretchItem('middle-v', 60, 30, 2), ranges: [[0, 60, 0, 60], [60, 30, 60, 120], [90, 60, 120, 180]] },
     { tool: 'push', run: () => trackPushItems('middle-v', 15), ranges: [[0, 60, 0, 60], [75, 60, 60, 120], [135, 60, 120, 180]] },
+    { tool: 'pull', run: () => trackPushItems('middle-v', -15), ranges: [[0, 60, 0, 60], [60, 60, 60, 120], [120, 60, 120, 180]] },
     { tool: 'close all gaps', run: () => closeAllGapsOnTrack('inner-v'), ranges: [[0, 60, 0, 60], [60, 60, 60, 120], [120, 60, 120, 180]] },
     { tool: 'close gap', run: () => closeGapAtPosition('inner-v', 65), ranges: [[0, 60, 0, 60], [60, 60, 60, 120], [120, 60, 120, 180]] },
     { tool: 'split', run: () => splitItem('middle-v', 90), ranges: [[0, 60, 0, 60], [60, 30, 60, 90], [90, 30, 90, 120], [120, 60, 120, 180]] },
@@ -328,7 +329,7 @@ describe('FL-94 timeline state across save and reload', () => {
     { tool: 'slip', run: () => slipItem('middle-v', 15), ranges: [[0, 60, 0, 60], [60, 60, 75, 135], [120, 60, 120, 180]] },
     { tool: 'slide', run: () => slideItem('middle-v', 15, 'left-v', 'right-v'), ranges: [[0, 75, 0, 75], [75, 60, 75, 135], [135, 45, 135, 180]] },
   ]
-  it.each(nestedEdits.flatMap((edit) => ['none', 'direct', 'inherited', ...(['ripple delete', 'speed', 'push', 'close gap', 'close all gaps'].includes(edit.tool) ? ['downstream', 'downstream-inherited'] : []), ...(edit.tool === 'ripple delete' ? ['unaffected', 'sync-off'] : [])].map((lockMode) => ({ ...edit, lockMode }))))(
+  it.each(nestedEdits.flatMap((edit) => ['none', 'direct', 'inherited', ...(['ripple delete', 'speed', 'push', 'pull', 'close gap', 'close all gaps'].includes(edit.tool) ? ['downstream', 'downstream-inherited'] : []), ...(edit.tool === 'ripple delete' ? ['unaffected', 'sync-off'] : [])].map((lockMode) => ({ ...edit, lockMode }))))(
     'preserves nested linked $tool history and reload (lock: $lockMode)',
     async ({ tool, run, ranges, lockMode }) => {
       const locked = ['direct', 'inherited', 'downstream', 'downstream-inherited'].includes(lockMode)
@@ -345,11 +346,11 @@ describe('FL-94 timeline state across save and reload', () => {
         tracks: [track('inner-v', 'video', 0), track('inner-a', 'audio', 1, { locked: lockMode === 'direct', ...(lockMode === 'inherited' ? { parentTrackId: 'locked-group' } : {}) }), ...(lockMode === 'inherited' ? [track('locked-group', 'audio', 2, { isGroup: true, locked: true })] : [])],
         items: ['v', 'a'].flatMap((kind) => ['left', 'middle', 'right'].map((part, index) =>
           clip(`${part}-${kind}`, `inner-${kind}`, kind === 'v' ? 'video' : 'audio', {
-            from: index * 60 + (['close gap', 'close all gaps'].includes(tool) && index > 0 ? 15 : 0), durationInFrames: 60, sourceStart: index * 60,
+            from: index * 60 + (['pull', 'close gap', 'close all gaps'].includes(tool) && index > 0 ? 15 : 0), durationInFrames: 60, sourceStart: index * 60,
             sourceEnd: (index + 1) * 60, linkedGroupId: part,
           }))),
         transitions: [], keyframes: [], fps: 30, width: 1920, height: 1080,
-        durationInFrames: ['close gap', 'close all gaps'].includes(tool) ? 195 : 180, markers: [{ id: 'inner-marker', frame: 30, color: '#fff' }],
+        durationInFrames: ['pull', 'close gap', 'close all gaps'].includes(tool) ? 195 : 180, markers: [{ id: 'inner-marker', frame: 30, color: '#fff' }],
       } as never)
       if (['downstream', 'downstream-inherited', 'unaffected', 'sync-off'].includes(lockMode)) {
         const inner = initial.timeline!.compositions!.find(({ id }) => id === 'inner')!
@@ -380,6 +381,16 @@ describe('FL-94 timeline state across save and reload', () => {
       useEditorStore.setState({ linkedSelectionEnabled: true })
       try {
         const before = structuredClone(buildTimelineFromStores())
+        if (tool === 'pull') {
+          const inner = before.compositions!.find(({ id }) => id === 'inner')!
+          expect(inner.durationInFrames).toBe(195)
+          for (const kind of ['video', 'audio']) {
+            // Downstream lock variants place the right audio companion on a separate locked lane.
+            expect(inner.items.filter((item) => item.type === kind).sort((a, b) => a.from - b.from)
+              .map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd]))
+              .toEqual([[0, 60, 0, 60], [75, 60, 60, 120], [135, 60, 120, 180]])
+          }
+        }
         const history = useTimelineCommandStore.getState()
         const undoBefore = [...history.undoStack]
         const redoBefore = [...history.redoStack]
