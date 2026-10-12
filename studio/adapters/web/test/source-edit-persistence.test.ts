@@ -312,12 +312,14 @@ describe('FL94 source edits through host history and real engine persistence', (
   );
 
   it.each([
-    { locked: false, failAfterAssertions: false },
-    { locked: true, failAfterAssertions: false },
-    { locked: false, failAfterAssertions: true },
+    { edit: 'insert', locked: false, failAfterAssertions: false },
+    { edit: 'insert', locked: true, failAfterAssertions: false },
+    { edit: 'insert', locked: false, failAfterAssertions: true },
+    { edit: 'overwrite', locked: false, failAfterAssertions: false },
+    { edit: 'overwrite', locked: true, failAfterAssertions: false },
   ])(
-    'native marked insert preserves nested ownership/history/reload (audio locked: $locked, cleanup failure: $failAfterAssertions)',
-    async ({ locked, failAfterAssertions }) => {
+    'native marked $edit preserves nested ownership/history/reload (audio locked: $locked, cleanup failure: $failAfterAssertions)',
+    async ({ edit, locked, failAfterAssertions }) => {
       const workspace = new VirtualWorkspace();
       const original = {
         markers: useMarkersStore.getState(), transitions: useTransitionsStore.getState(),
@@ -348,7 +350,7 @@ describe('FL94 source edits through host history and real engine persistence', (
         setWorkspaceRoot(workspace.handle());
         try {
           const initial = fresh();
-          initial.id = `nested-source-insert-${locked}`;
+          initial.id = `nested-source-${edit}-${locked}`;
           const tracks = fresh().timeline!.tracks;
           const sentinel = (id: string, trackId: string) => ({
             id, trackId, type: 'text', from: 0, durationInFrames: 30,
@@ -414,7 +416,7 @@ describe('FL94 source edits through host history and real engine persistence', (
           const before = structuredClone(buildTimelineFromStores());
           const historyBefore = useTimelineCommandStore.getState();
           const parkedBefore = structuredClone(historyBefore.stacksByContext);
-          await performInsertEdit();
+          await (edit === 'insert' ? performInsertEdit : performOverwriteEdit)();
           const edited = structuredClone(buildTimelineFromStores());
           expect(useTimelineCommandStore.getState().activeContextKey).toBe('inner');
           expect(useTimelineCommandStore.getState().stacksByContext).toEqual(parkedBefore);
@@ -428,17 +430,19 @@ describe('FL94 source edits through host history and real engine persistence', (
             const child = edited.compositions!.find(({ id }) => id === 'inner')!;
             const paired = ['inner-video', 'inner-audio'].map((trackId) => child.items
               .filter((item) => item.trackId === trackId).sort((a, b) => a.from - b.from));
-            // Hand-derived oracle, independent of the production partition/insert calculations.
+            // Hand-derived oracle, independent of the production partition/edit calculations.
             for (const items of paired) {
               expect(items.map((item) => [item.from, item.durationInFrames, item.sourceStart, item.sourceEnd]))
-                .toEqual([[0, 60, 0, 60], [60, 30, 150, 180], [90, 180, 60, 240]]);
+                .toEqual(edit === 'insert'
+                  ? [[0, 60, 0, 60], [60, 30, 150, 180], [90, 180, 60, 240]]
+                  : [[0, 60, 0, 60], [60, 30, 150, 180], [90, 150, 90, 240]]);
               expect(items.every((item) => item.mediaId === 'linked-media' && item.sourceFps === 30 && item.sourceDuration === 240)).toBe(true);
             }
             expect(child.items).toHaveLength(6);
             expect(paired[0]!.map((item) => item.linkedGroupId)).toEqual(paired[1]!.map((item) => item.linkedGroupId));
             expect(new Set(paired[0]!.map((item) => item.linkedGroupId)).size).toBe(3);
             expect(paired[0]!.every((item) => Boolean(item.linkedGroupId))).toBe(true);
-            expect(child.durationInFrames).toBe(270);
+            expect(child.durationInFrames).toBe(edit === 'insert' ? 270 : 240);
             const outer = (timeline: ProjectTimeline) => ({
               ...timeline, compositions: timeline.compositions!.filter(({ id }) => id !== 'inner'),
             });
