@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { assertResetExecutionsStopped, drainAfterExecutorStop } from './harness-reset-executions.mjs';
-import { resetWhilePaused } from './harness-reset.ts';
+import { resetLockSettings, resetWhilePaused } from './harness-reset.ts';
 import { waitUntil, withDeadline } from './harness-wait.ts';
 
 test('reset joins unsafe edits while preserving bounded refusals and cleanup', async (t) => {
@@ -320,7 +320,10 @@ test('only metadata resets request configuration reconciliation and never delete
       );
     },
   };
-  const reset = new Function('utils', `return (${stripTypeScriptTypes(expression)});`)(utils);
+  const reset = new Function('utils', 'resetLockSettings', `return (${stripTypeScriptTypes(expression)});`)(
+    utils,
+    resetLockSettings,
+  );
   await reset(['asset']);
   assert.equal(resetConfig, false);
   assert.equal(deletedMetadata, undefined);
@@ -616,4 +619,25 @@ test('fixture defaults explicitly clear owned credentials and protected remote s
   )(bindings);
   await reset('fixture-admin', signal);
   assert.deepEqual(calls, ['defaults', 'clear-owned-credential', 'clear-owned-hostname', 'reset-remote']);
+});
+
+test('fixture TRUNCATE checks for a blocking autovacuum well inside its statement timeout', () => {
+  for (const budget of [1000, 400, 40, 3, 1]) {
+    const { text, values } = resetLockSettings(budget);
+    const settings = new Map();
+    for (const [, name, index] of text.matchAll(/set_config\('(\w+)', \$(\d+), true\)/g)) {
+      settings.set(name, values[Number(index) - 1]);
+    }
+    assert.equal(settings.get('statement_timeout'), `${budget}ms`);
+    assert.equal(settings.get('lock_timeout'), `${budget}ms`);
+    // Postgres cancels an autovacuum worker that blocks a lock only once the waiter's deadlock_timeout
+    // (default 1 s) expires; a statement timeout of 1 s fires first, so the reset failed instead.
+    const deadlock = Number.parseInt(settings.get('deadlock_timeout'), 10);
+    assert.ok(deadlock >= 1 && deadlock <= 100, `deadlock_timeout ${deadlock}ms`);
+    assert.ok(budget === 1 || deadlock < budget, `deadlock_timeout ${deadlock}ms within ${budget}ms`);
+  }
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const reset = source.slice(source.indexOf('\n  resetDatabase: async'), source.indexOf('\n  unzip: async'));
+  const settings = reset.indexOf('resetLockSettings(');
+  assert.ok(settings > 0 && settings < reset.indexOf('TRUNCATE'), 'reset applies the lock settings before TRUNCATE');
 });

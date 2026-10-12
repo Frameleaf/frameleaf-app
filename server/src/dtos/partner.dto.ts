@@ -32,9 +32,10 @@ const PartnerBackfillSchema = z
   .meta({ id: 'PartnerBackfillDto' });
 
 const PartnerResponseSchema = UserResponseSchema.extend({
+  // FL-326
   backfill: PartnerBackfillSchema.nullable()
     .optional()
-    .describe('FL-326: copy progress of the library shared this way; null when it was never copied'),
+    .describe('Copy progress of the library shared this way; null when it was never copied'),
 })
   .describe('Partner response')
   .meta({ id: 'PartnerResponseDto' });

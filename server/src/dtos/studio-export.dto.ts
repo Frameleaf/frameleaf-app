@@ -91,6 +91,7 @@ const StudioExportCreateSchema = z
     requestKey: IdentifierSchema.optional().describe(
       'Idempotency key; a repeated submit answers with the first export',
     ),
+    // FL-162
     smoothMotion: z
       .object({
         factor: z
@@ -104,7 +105,7 @@ const StudioExportCreateSchema = z
       })
       .optional()
       .describe(
-        'FL-162: Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.',
+        'Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.',
       )
       .meta({ id: 'StudioExportSmoothMotionDto' }),
   })

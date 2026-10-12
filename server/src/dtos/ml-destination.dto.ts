@@ -329,9 +329,10 @@ const StudioCapabilitiesSchema = z
     renderWorker: z.boolean().describe('False until the Studio render worker admission (FL-95, FL-104) reports one'),
     restorationWorker: z.boolean().describe('A destination can serve a restoration workload right now'),
     transcriptionWorker: z.boolean().describe('A destination can serve the Studio AI workload right now'),
+    // FL-42
     render: z
       .array(StudioRenderEvidenceSchema)
-      .describe('FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)'),
+      .describe('Per destination, what qualified render sessions verified (memory, codecs, colour precision)'),
   })
   .meta({ id: 'StudioCapabilitiesDto' });
 
