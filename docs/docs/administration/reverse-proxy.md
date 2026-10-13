@@ -7,7 +7,7 @@ Frameleaf does not support being served on a sub-path such as `location /photos 
 :::
 
 :::info
-If your reverse proxy uses the [Let's Encrypt](https://letsencrypt.org/) [http-01 challenge](https://letsencrypt.org/docs/challenge-types/#http-01-challenge), you may want to verify that the Frameleaf well-known endpoint (`/.well-known/immich`) gets correctly routed to Frameleaf, otherwise it will likely be routed elsewhere and the mobile app may run into connection issues.
+If your reverse proxy uses the [Let's Encrypt](https://letsencrypt.org/) [http-01 challenge](https://letsencrypt.org/docs/challenge-types/#http-01-challenge), you may want to verify that the Frameleaf well-known endpoint (`/.well-known/frameleaf`) gets correctly routed to Frameleaf, otherwise it will likely be routed elsewhere and the mobile app may run into connection issues.
 :::
 
 ### Nginx example config
@@ -49,7 +49,7 @@ server {
     }
 
     # useful when using Let's Encrypt http-01 challenge
-    # location = /.well-known/immich {
+    # location = /.well-known/frameleaf {
     #     proxy_pass http://<backend_url>:2283;
     # }
 }

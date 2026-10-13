@@ -3,6 +3,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { BBoxSchema } from 'src/dtos/bbox.dto.js';
 import {
+  AssetLockReason,
   AssetLockReasonSchema,
   AssetOrderBySchema,
   AssetOrderSchema,
@@ -45,9 +46,15 @@ const TimeBucketQueryBaseSchema = z
     visibility: AssetVisibilitySchema.optional().describe(
       'Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)',
     ),
-    lockReason: AssetLockReasonSchema.optional().describe(
-      'With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.',
-    ),
+    lockReason: z
+      .union([
+        AssetLockReasonSchema,
+        z.literal('immich-locked-folder').transform(() => AssetLockReason.FrameleafLockedFolder),
+      ])
+      .optional()
+      .describe(
+        'With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.',
+      ),
     withCoordinates: stringToBool.optional().describe('Include location data in the response'),
     key: z.string().optional(),
     slug: z.string().optional(),

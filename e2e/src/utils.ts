@@ -1023,13 +1023,13 @@ export const utils = {
    * FL-195: a lock record as a sensitive-content detection or the upgrade from the old Locked folder
    * writes it, which no endpoint can create on demand.
    */
-  setAssetLock: async (assetId: string, reason: 'marked' | 'detected' | 'immich-locked-folder') => {
+  setAssetLock: async (assetId: string, reason: 'marked' | 'detected' | 'frameleaf-locked-folder') => {
     const db = await utils.connectDatabase();
 
     await db.query(
       `INSERT INTO asset_lock ("assetId", reason, "previousVisibility") VALUES ($1, $2, $3)
        ON CONFLICT ("assetId") DO UPDATE SET reason = excluded.reason, "previousVisibility" = excluded."previousVisibility"`,
-      [assetId, reason, reason === 'immich-locked-folder' ? 'locked' : null],
+      [assetId, reason, reason === 'frameleaf-locked-folder' ? 'locked' : null],
     );
   },
 

@@ -15,7 +15,7 @@ export type LockedFilter = 'all' | AssetLockReason;
 
 export const LOCKED_FILTERS: readonly LockedFilter[] = [
   'all',
-  AssetLockReason.ImmichLockedFolder,
+  AssetLockReason.FrameleafLockedFolder,
   AssetLockReason.Marked,
   AssetLockReason.Detected,
 ];
@@ -24,7 +24,7 @@ export const DEFAULT_LOCKED_FILTER: LockedFilter = 'all';
 
 const FILTER_LABEL_KEYS: Record<LockedFilter, Translations> = {
   all: 'frameleaf_lock_filter_all',
-  [AssetLockReason.ImmichLockedFolder]: 'frameleaf_lock_filter_folder',
+  [AssetLockReason.FrameleafLockedFolder]: 'frameleaf_lock_filter_folder',
   [AssetLockReason.Marked]: 'frameleaf_lock_filter_marked',
   [AssetLockReason.Detected]: 'frameleaf_lock_filter_detected',
 };

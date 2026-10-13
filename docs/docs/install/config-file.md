@@ -164,7 +164,7 @@ The default configuration looks like this:
       "minRecognitionScore": 0.8,
       "modelName": "PP-OCRv5_mobile"
     },
-    "urls": ["http://immich-machine-learning:3003"]
+    "urls": ["http://frameleaf-machine-learning:3003"]
   },
   "map": {
     "darkStyle": "https://tiles.frameleaf.cloud/v1/style/dark.json",
@@ -216,11 +216,11 @@ The default configuration looks like this:
     "mobileOverrideEnabled": false,
     "mobileRedirectUri": "",
     "profileSigningAlgorithm": "none",
-    "roleClaim": "immich_role",
+    "roleClaim": "frameleaf_role",
     "scope": "openid email profile",
     "signingAlgorithm": "RS256",
     "storageLabelClaim": "preferred_username",
-    "storageQuotaClaim": "immich_quota",
+    "storageQuotaClaim": "frameleaf_quota",
     "timeout": 30000,
     "tokenEndpointAuthMethod": "client_secret_post"
   },

@@ -23,7 +23,7 @@ If using hardware acceleration, the [hwaccel.ml.yml](https://github.com/Framelea
 name: frameleaf_remote_ml
 
 services:
-  immich-machine-learning:
+  frameleaf-machine-learning:
     container_name: frameleaf_machine_learning
     # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
     # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
@@ -53,7 +53,7 @@ Version mismatches between both hosts may cause bugs and instability, so remembe
 
 ## Forcing remote processing
 
-Adding a new URL to the settings is recommended over replacing the existing URL (http://immich-machine-learning:3003). This is because it will allow machine learning tasks to be processed successfully when the remote server is down by falling back to the local machine learning container. If you do not want machine learning tasks to be processed locally when the remote server is not available, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `immich-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
+Adding a new URL to the settings is recommended over replacing the existing URL (http://frameleaf-machine-learning:3003). This is because it will allow machine learning tasks to be processed successfully when the remote server is down by falling back to the local machine learning container. If you do not want machine learning tasks to be processed locally when the remote server is not available, you can instead replace the existing URL and only provide the remote container's URL. If doing this, you can remove the `frameleaf-machine-learning` section of the local `docker-compose.yml` file to save resources, as this service will never be used.
 
 <ComposeBuilder query="machineLearning.external=true" />
 

@@ -1441,7 +1441,7 @@ describe(StorageTemplateService.name, () => {
       mocks.move.getPendingAssetMoves.mockResolvedValue([pending({ id: 'offline', entityId: 'asset-1' })]);
       // the mount-check file is missing too: the folder is not mounted
       mocks.storage.stat.mockImplementation(
-        failing('ENOENT', (path) => path.includes('offline') || path.endsWith('/.immich')),
+        failing('ENOENT', (path) => path.includes('offline') || path.endsWith('/.frameleaf')),
       );
 
       await sut.onNightlyDatabaseCleanup();
@@ -1455,7 +1455,7 @@ describe(StorageTemplateService.name, () => {
 
       await sut.onNightlyDatabaseCleanup();
 
-      expect(mocks.storage.stat).toHaveBeenCalledWith('/data/library/.immich');
+      expect(mocks.storage.stat).toHaveBeenCalledWith('/data/library/.frameleaf');
       expect(mocks.move.deleteMoves).toHaveBeenCalledWith([expect.objectContaining({ id: 'lost' })]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });

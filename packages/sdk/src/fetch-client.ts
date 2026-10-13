@@ -20102,13 +20102,13 @@ export function endSession({ id, key, sessionId, slug }: {
 /**
  * Get HLS media playlist
  */
-export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xImmichHlsPos }: {
+export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xFrameleafHlsPos }: {
     id: string;
     key?: string;
     sessionId: string;
     slug?: string;
     variantIndex: number;
-    xImmichHlsPos?: number;
+    xFrameleafHlsPos?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -20119,21 +20119,21 @@ export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xImmi
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-immich-hls-pos": xImmichHlsPos
+            "x-frameleaf-hls-pos": xFrameleafHlsPos
         })
     }));
 }
 /**
  * Get HLS segment or init file
  */
-export function getSegment({ filename, id, key, sessionId, slug, variantIndex, xImmichHlsMsn }: {
+export function getSegment({ filename, id, key, sessionId, slug, variantIndex, xFrameleafHlsMsn }: {
     filename: string;
     id: string;
     key?: string;
     sessionId: string;
     slug?: string;
     variantIndex: number;
-    xImmichHlsMsn?: number;
+    xFrameleafHlsMsn?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -20144,7 +20144,7 @@ export function getSegment({ filename, id, key, sessionId, slug, variantIndex, x
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-immich-hls-msn": xImmichHlsMsn
+            "x-frameleaf-hls-msn": xFrameleafHlsMsn
         })
     }));
 }
@@ -27951,7 +27951,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28004,7 +28004,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28057,7 +28057,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28112,7 +28112,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, da
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -32414,7 +32414,7 @@ export enum TimeBucketDateType {
 export enum AssetLockReason {
     Marked = "marked",
     Detected = "detected",
-    ImmichLockedFolder = "immich-locked-folder"
+    FrameleafLockedFolder = "frameleaf-locked-folder"
 }
 export enum AssetOrderBy {
     TakenAt = "takenAt",

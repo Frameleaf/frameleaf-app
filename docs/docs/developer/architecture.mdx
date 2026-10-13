@@ -61,7 +61,7 @@ The Frameleaf CLI is an [npm](https://www.npmjs.com/) package that lets users co
 The Frameleaf backend is divided into several services, which are run as individual docker containers.
 
 1. `frameleaf-server` - Handle and respond to REST API requests, execute background jobs (thumbnail generation, metadata extraction, transcoding, etc.)
-1. `immich-machine-learning` - Execute machine learning models
+1. `frameleaf-machine-learning` - Execute machine learning models
 1. `postgres` - Canonical content, configuration, durable jobs and shared coordination
 
 ### Frameleaf server
@@ -103,7 +103,7 @@ This list closely matches what is available on the [Administration > Jobs](/admi
 
 The machine learning service is written in [Python](https://www.python.org/) and uses [FastAPI](https://fastapi.tiangolo.com/) for HTTP communication.
 
-All machine learning related operations have been externalized to this service, `immich-machine-learning`. Python is a natural choice for AI and machine learning. It also has some pretty specific hardware requirements. Running it as a separate container makes it possible to run the container on a separate machine, or easily disable it entirely.
+All machine learning related operations have been externalized to this service, `frameleaf-machine-learning`. Python is a natural choice for AI and machine learning. It also has some pretty specific hardware requirements. Running it as a separate container makes it possible to run the container on a separate machine, or easily disable it entirely.
 
 Each request to the machine learning service contains the relevant metadata for the model task, model name, and so on. These settings are stored in Postgres along with other system configs. For each request, the microservices container fetches these settings in order to attach them to the request.
 

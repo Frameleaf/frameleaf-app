@@ -124,9 +124,9 @@ You can choose to disable a certain type of machine learning, for example smart 
 
 ### URL
 
-The built in (`http://immich-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers.
+The built in (`http://frameleaf-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers.
 
-Hosting the `immich-machine-learning` container on a machine with a more powerful GPU can be helpful to for processing a large number of photos (such as during batch import) or for faster search.
+Hosting the `frameleaf-machine-learning` container on a machine with a more powerful GPU can be helpful to for processing a large number of photos (such as during batch import) or for faster search.
 
 If more than one URL is provided, each server will be attempted one-at-a-time until one responds successfully, in order from first to last. Servers that don't respond will be temporarily ignored until they come back online.
 

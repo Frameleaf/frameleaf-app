@@ -163,7 +163,7 @@ export const FRAMELEAF_MOBILE_REDIRECT = 'frameleaf-auth:///oauth-callback';
 export const FRAMELEAF_MOBILE_REDIRECT_PATH = '/oauth/frameleaf-mobile-redirect';
 export const LOGIN_URL = '/auth/login?autoLaunch=0';
 
-export const excludePaths = ['/.well-known/immich', '/custom.css', '/favicon.ico'];
+export const excludePaths = ['/.well-known/frameleaf', '/.well-known/immich', '/custom.css', '/favicon.ico'];
 
 export const FACE_THUMBNAIL_SIZE = 250;
 

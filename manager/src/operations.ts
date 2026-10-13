@@ -521,7 +521,7 @@ export class Operations {
             machineLearning: {
               ...(captured.settings?.machineLearning as Record<string, unknown> | undefined),
               enabled: installation.ml,
-              urls: ['http://immich-machine-learning:3003'],
+              urls: ['http://frameleaf-machine-learning:3003'],
             },
           }).replaceAll("'", "''");
           await this.docker.sql(
@@ -839,9 +839,13 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'stop-application', async () => {
+      const compose = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8'));
+      const mlService = compose.services['frameleaf-machine-learning']
+        ? 'frameleaf-machine-learning'
+        : 'immich-machine-learning';
       await this.docker.compose(this.directory(), review.current.project, 'stop', [
         'frameleaf-server',
-        ...(review.current.ml ? ['immich-machine-learning'] : []),
+        ...(review.current.ml ? [mlService] : []),
       ]);
       return true;
     });

@@ -306,6 +306,15 @@ describe(compareWithLibrary.name, () => {
     expect(comparison.fills).not.toContain('description');
   });
 
+  it('normalizes old backup lock reasons without removing the lock', () => {
+    const restored = PreservationSidecarSchema.parse({
+      ...sidecarOf(),
+      lock: { reason: 'immich-locked-folder', lockedAt: null },
+    });
+    expect(restored.lock).toEqual({ reason: 'frameleaf-locked-folder', lockedAt: null });
+    expect(compareWithLibrary(restored, libraryOf(), { restoreEditRecipes: true }).lock).toBe(true);
+  });
+
   it('adds a favourite and a lock but never removes either', () => {
     const options = { restoreEditRecipes: true };
     expect(compareWithLibrary(sidecarOf({ isFavorite: true }), libraryOf(), options).fills).toContain('favorite');

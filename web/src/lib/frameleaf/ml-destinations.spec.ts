@@ -28,7 +28,7 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   id: 'local',
   kind: MlDestinationKind.Local,
   name: 'This server',
-  url: 'http://immich-machine-learning:3003',
+  url: 'http://frameleaf-machine-learning:3003',
   authTokenConfigured: false,
   enabled: true,
   workloads: [MlWorkload.Face, MlWorkload.Clip],

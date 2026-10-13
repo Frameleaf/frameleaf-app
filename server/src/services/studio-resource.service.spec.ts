@@ -328,7 +328,7 @@ describe(StudioResourceService.name, () => {
       mocks.asset.getLockReasons.mockResolvedValue([
         { assetId: marked.id, reason: AssetLockReason.Marked, lockedAt: new Date() },
         { assetId: detected.id, reason: AssetLockReason.Detected, lockedAt: new Date() },
-        { assetId: legacy.id, reason: AssetLockReason.ImmichLockedFolder, lockedAt: new Date() },
+        { assetId: legacy.id, reason: AssetLockReason.FrameleafLockedFolder, lockedAt: new Date() },
       ]);
       allowOwned(marked.id, detected.id, legacy.id);
       const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };

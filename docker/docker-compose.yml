@@ -34,7 +34,10 @@ services:
     healthcheck:
       disable: false
 
-  immich-machine-learning:
+  frameleaf-machine-learning:
+    networks:
+      default:
+        aliases: [immich-machine-learning]
     container_name: frameleaf_machine_learning
     # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
     # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda

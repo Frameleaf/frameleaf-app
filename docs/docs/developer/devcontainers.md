@@ -55,7 +55,7 @@ The Dev Container environment consists of the following services:
 | ---------------- | ------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Server & Web     | `frameleaf-server`        | Runs both API server and web frontend in development mode | 2283 (API)<br/>3000 (Web)<br/>9230 (Workers Debug)<br/>9231 (API Debug) |
 | Database         | `database`                | PostgreSQL database                                       | 5432                                                                    |
-| Machine Learning | `immich-machine-learning` | Frameleaf ML model inference server                       | 3003                                                                    |
+| Machine Learning | `frameleaf-machine-learning` | Frameleaf ML model inference server                       | 3003                                                                    |
 
 ## Getting Started
 

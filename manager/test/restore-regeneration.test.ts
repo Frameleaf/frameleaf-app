@@ -169,7 +169,7 @@ for (const restoredAgain of [false, true])
             services: {
               database: {},
               'frameleaf-server': {},
-              'immich-machine-learning': {},
+              'frameleaf-machine-learning': {},
             },
           }),
         );

@@ -67,7 +67,7 @@ describe('database backup names', () => {
       [`uploaded-${routine}`, false],
       [`cloud-backup-${routine}`, false],
       ['frameleaf-db-backup-1.sql', false],
-      ['.immich', false],
+      ['.frameleaf', false],
     ])('%s → %s', (filename, expected) => {
       expect(isDatabaseBackupDumpName(filename)).toBe(expected);
     });

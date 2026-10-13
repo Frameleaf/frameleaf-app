@@ -692,7 +692,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       "  frameleaf-server:",
       "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       "    volumes: ['${UPLOAD_LOCATION}:/data']",
-      "  immich-machine-learning:",
+      "  frameleaf-machine-learning:",
       "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       "    volumes: ['model-cache:/cache']",
       "  database:",
@@ -1402,7 +1402,7 @@ test("promotion rejects stale pins, upstream images and unpinned third-party ima
       [
         "ghcr.io",
         "immich-app",
-        "immich-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+        "frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       ].join("/"),
       /must not pull upstream images/,
     ],
