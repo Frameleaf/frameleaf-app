@@ -601,18 +601,24 @@ export class MetadataService extends BaseService {
         ? sidecarFile.path
         : await this.getSidecarWritePath(asset, kysely);
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, tags, timeZone } = pick(
-      {
-        description: asset.exifInfo.description,
-        dateTimeOriginal: asset.exifInfo.dateTimeOriginal,
-        latitude: asset.exifInfo.latitude,
-        longitude: asset.exifInfo.longitude,
-        rating: asset.exifInfo.rating ?? 0,
-        tags: asset.exifInfo.tags,
-        timeZone: asset.exifInfo.timeZone,
-      },
-      lockedProperties,
-    );
+    // An asset sharing another asset's original (a partner copy, a deduplicated upload) never reads that
+    // asset's sidecar, so values its row took from there (time zone, GPS) live only in the row. Its own
+    // sidecar carries every field, or the next metadata read takes the bare file's and drops them.
+    const sharesOriginal =
+      !!asset.physicalOriginalFileId &&
+      !(await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId, kysely));
+    const values = {
+      description: asset.exifInfo.description,
+      dateTimeOriginal: asset.exifInfo.dateTimeOriginal,
+      latitude: asset.exifInfo.latitude,
+      longitude: asset.exifInfo.longitude,
+      rating: asset.exifInfo.rating ?? 0,
+      tags: asset.exifInfo.tags,
+      timeZone: asset.exifInfo.timeZone,
+    };
+    const { description, dateTimeOriginal, latitude, longitude, rating, tags, timeZone } = sharesOriginal
+      ? values
+      : pick(values, lockedProperties);
 
     const exif = omitBy(
       <Tags>{
