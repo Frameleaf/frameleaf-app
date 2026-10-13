@@ -58,7 +58,7 @@
   import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { motionFade } from '$lib/frameleaf/motion';
-  import './immich-time-range';
+  import './frameleaf-time-range';
 
   interface Props {
     asset: AssetResponseDto;
@@ -720,7 +720,7 @@
               <media-settings-menu-button class="shrink-0 rounded-full p-2 outline-none"></media-settings-menu-button>
             {/if}
           </media-control-bar>
-          <immich-time-range class="h-8 w-full rounded-lg px-2 pb-3 outline-none"></immich-time-range>
+          <frameleaf-time-range class="h-8 w-full rounded-lg px-2 pb-3 outline-none"></frameleaf-time-range>
         </div>
       </media-controller>
 
@@ -845,17 +845,17 @@
       min-height: var(--fl-control-height);
     }
 
-    immich-time-range {
+    frameleaf-time-range {
       height: var(--fl-control-height);
     }
   }
 
-  immich-time-range,
+  frameleaf-time-range,
   media-volume-range {
     --media-control-hover-background: none;
   }
 
-  immich-time-range:hover,
+  frameleaf-time-range:hover,
   media-volume-range:hover {
     --media-range-thumb-opacity: 1;
   }
