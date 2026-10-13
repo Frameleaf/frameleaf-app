@@ -240,6 +240,7 @@ for (const stage of ['headers', 'body']) {
             assert.equal(fixture.counts.factories, 1);
             assert.equal(fixture.counts.requests, 1);
             assert.equal(fixture.clients.length, 1);
+            assert.equal(fixture.counts.callbacks, 1, 'The native completion callback did not settle before join');
             if (stage === 'body') {
               assert.ok(fixture.clients[0].bytes > 0, 'The actual response body never reached the client');
               assert.equal(fixture.clients[0].response.complete, false);
