@@ -216,7 +216,8 @@ describe('develop recipe', () => {
       const large = planDevelopDetail(params, { width: 6000, height: 4000 });
       expect(small.median).toBe(5);
       expect(small.clarity?.sigma).toBe(2);
-      expect(large.clarity?.sigma).toBe(24);
+      expect(large.clarity?.sigma).toBe(10);
+      expect(planDevelopDetail(params, { width: 4000, height: 3000 }).clarity?.sigma).toBeLessThanOrEqual(10);
       expect(small.sharpen).toEqual({ sigma: 1.4, m1: 0.5, m2: 1.1 });
       const soft = planDevelopDetail(effectiveDevelop({ ...defaultDevelopRecipe(), clarity: -40 }).params, {
         width: 400,
