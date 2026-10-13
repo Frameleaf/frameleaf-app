@@ -20,7 +20,6 @@ import {
   type DownloadResponseDto,
   type ExifResponseDto,
   type StackResponseDto,
-  type UserResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import { DateTime } from 'luxon';
@@ -448,17 +447,6 @@ export const getAssetType = (type: AssetTypeEnum) => {
   }
 };
 
-export const getOwnedAssetsWithWarning = (assets: TimelineAsset[], user: UserResponseDto | null): string[] => {
-  const ids = [...assets].filter((a) => user && a.ownerId === user.id).map((a) => a.id);
-
-  const numberOfIssues = [...assets].filter((a) => user && a.ownerId !== user.id).length;
-  if (numberOfIssues > 0) {
-    const $t = get(t);
-    toastManager.warning($t('errors.cant_change_metadata_assets_count', { values: { count: numberOfIssues } }));
-  }
-  return ids;
-};
-
 export type StackResponse = {
   stack?: StackResponseDto;
   toDeleteIds: string[];
@@ -627,12 +615,12 @@ const imgToBlob = async (imageElement: HTMLImageElement) => {
   if (context) {
     context.drawImage(imageElement, 0, 0);
 
-    return await new Promise<Blob>((resolve) => {
+    return await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (blob) {
           resolve(blob);
         } else {
-          throw new Error('Canvas conversion to Blob failed');
+          reject(new Error('Canvas conversion to Blob failed'));
         }
       });
     });
