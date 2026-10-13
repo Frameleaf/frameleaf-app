@@ -1,4 +1,3 @@
-import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -41,6 +40,7 @@ import {
   cloudErrorCode,
   compareConsentVersions,
 } from 'src/utils/frameleaf-cloud.js';
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -759,66 +759,62 @@ export class MlDestinationService extends BaseService {
       list.push(entry);
       byDestination.set(entry.worker.destination, list);
     }
-    const render = await Promise.all(
-      [...byDestination].map(async ([destination, entries]) => {
-        const memories = entries
-          .map(({ gpuMemoryBytes }) => gpuMemoryBytes)
-          .filter((value): value is number => value !== null);
-        const precisions = entries.map(({ session }) => session.colorPrecision ?? SDR_ONLY);
-        return {
-          destination,
-          gpuMemoryBytes: memories.length > 0 ? Math.max(...memories) : null,
-          codecs: [...new Set(entries.flatMap(({ session }) => session.codecs ?? []))].toSorted(),
-          maxBitDepth: Math.max(...precisions.map((precision) => precision.maxBitDepth)),
-          hdr10: precisions.some((precision) => precision.hdr10),
-          dolbyVision: precisions.some((precision) => precision.dolbyVision),
-          sessions: entries.length,
-          candidates: await Promise.all(
-            entries
-              .filter(
-                ({ worker, session }) =>
-                  worker.kinds.includes(MediaOperationKind.StudioExport) &&
-                  session.scopes.includes(MediaOperationKind.StudioExport),
-              )
-              .map(({ worker, session, capabilities, gpuMemoryBytes }) => {
-                return {
-                  gpuMemoryBytes,
-                  outputFormats: STUDIO_EXPORT_FORMATS.filter((format) =>
-                    provesOutput(capabilities ?? null, requiredOutput({ format })!),
-                  ),
-                  ...(worker.engineDigest &&
-                    worker.engineDigest === session.engineDigest &&
-                    provesOutput(
-                      capabilities ?? null,
-                      requiredOutput({
-                        format: 'mp4-h264',
-                        subtitleMode: 'sidecar',
-                        color: 'preserve',
-                        resolution: '720p',
-                        quality: 'high',
-                        audio: 'preserve',
-                      })!,
-                    ) && { sidecarOutputFormats: ['mp4-h264' as const] }),
-                  ...(worker.engineDigest &&
-                    worker.engineDigest === session.engineDigest &&
-                    provesOutput(
-                      capabilities ?? null,
-                      requiredOutput({
-                        format: 'mp4-h264',
-                        subtitleMode: 'embedded',
-                        color: 'preserve',
-                        resolution: '720p',
-                        quality: 'high',
-                        audio: 'preserve',
-                      })!,
-                    ) && { embeddedOutputFormats: ['mp4-h264' as const] }),
-                  ...(session.colorPrecision ?? SDR_ONLY),
-                };
-              }),
-          ),
-        };
-      }),
-    );
+    const render = [...byDestination].map(([destination, entries]) => {
+      const memories = entries
+        .map(({ gpuMemoryBytes }) => gpuMemoryBytes)
+        .filter((value): value is number => value !== null);
+      const precisions = entries.map(({ session }) => session.colorPrecision ?? SDR_ONLY);
+      return {
+        destination,
+        gpuMemoryBytes: memories.length > 0 ? Math.max(...memories) : null,
+        codecs: [...new Set(entries.flatMap(({ session }) => session.codecs ?? []))].toSorted(),
+        maxBitDepth: Math.max(...precisions.map((precision) => precision.maxBitDepth)),
+        hdr10: precisions.some((precision) => precision.hdr10),
+        dolbyVision: precisions.some((precision) => precision.dolbyVision),
+        sessions: entries.length,
+        candidates: entries
+          .filter(
+            ({ worker, session }) =>
+              worker.kinds.includes(MediaOperationKind.StudioExport) &&
+              session.scopes.includes(MediaOperationKind.StudioExport),
+          )
+          .map(({ worker, session, capabilities, gpuMemoryBytes }) => {
+            return {
+              gpuMemoryBytes,
+              outputFormats: STUDIO_EXPORT_FORMATS.filter((format) =>
+                provesOutput(capabilities ?? null, requiredOutput({ format })!),
+              ),
+              ...(worker.engineDigest &&
+                worker.engineDigest === session.engineDigest &&
+                provesOutput(
+                  capabilities ?? null,
+                  requiredOutput({
+                    format: 'mp4-h264',
+                    subtitleMode: 'sidecar',
+                    color: 'preserve',
+                    resolution: '720p',
+                    quality: 'high',
+                    audio: 'preserve',
+                  })!,
+                ) && { sidecarOutputFormats: ['mp4-h264' as const] }),
+              ...(worker.engineDigest &&
+                worker.engineDigest === session.engineDigest &&
+                provesOutput(
+                  capabilities ?? null,
+                  requiredOutput({
+                    format: 'mp4-h264',
+                    subtitleMode: 'embedded',
+                    color: 'preserve',
+                    resolution: '720p',
+                    quality: 'high',
+                    audio: 'preserve',
+                  })!,
+                ) && { embeddedOutputFormats: ['mp4-h264' as const] }),
+              ...(session.colorPrecision ?? SDR_ONLY),
+            };
+          }),
+      };
+    });
 
     return {
       workloads,

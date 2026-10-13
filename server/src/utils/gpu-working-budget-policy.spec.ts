@@ -5,13 +5,13 @@ import {
   RenderWorkerSessionDto,
   RenderWorkerUpdateDto,
 } from 'src/dtos/render-worker.dto.js';
+import { MediaOperationKind, RenderWorkerStatus } from 'src/enum.js';
 import {
   GpuWorkingBudgetApprovalSchema,
   GpuWorkingBudgetEvidenceSchema,
   evaluateApprovedGpuWorkingBudget,
   evaluateApprovedRenderSession,
 } from 'src/utils/gpu-working-budget-policy.js';
-import { MediaOperationKind, RenderWorkerStatus } from 'src/enum.js';
 
 // Synthetic policy fixtures are not reviewed native receipts or actual GPU qualification.
 const evidence = {
@@ -115,19 +115,61 @@ describe('current approved render session', () => {
     'measurement',
   ])('refuses %s', (mode) => {
     const value = liveSessionInput();
-    if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
-    if (mode === 'approval') value.worker.gpuWorkingBudgetApproval = null;
-    if (mode === 'budget') value.session.gpuMemoryBytes = null;
-    if (mode === 'capabilities') value.capabilities = null;
-    if (mode === 'codecs') value.session.codecs = ['av1'];
-    if (mode === 'binding') value.session.workerId = '33333333-3333-4333-8333-333333333333';
-    if (mode === 'engine') value.session.engineDigest = 'other-engine';
-    if (mode === 'revoked-worker') value.worker.status = RenderWorkerStatus.Revoked;
-    if (mode === 'revoked-session') value.session.revokedAt = value.now;
-    if (mode === 'scope') value.worker.kinds = [];
-    if (mode === 'credential') value.session.expiresAt = value.now;
-    if (mode === 'conformance') value.worker.conformanceMaxAgeMs = 1;
-    if (mode === 'measurement') value.now = new Date(evidence.validUntil);
+    switch (mode) {
+      case 'legacy': {
+        value.session.gpuWorkingBudgetEvidence = null;
+        break;
+      }
+      case 'approval': {
+        value.worker.gpuWorkingBudgetApproval = null;
+        break;
+      }
+      case 'budget': {
+        value.session.gpuMemoryBytes = null;
+        break;
+      }
+      case 'capabilities': {
+        value.capabilities = null;
+        break;
+      }
+      case 'codecs': {
+        value.session.codecs = ['av1'];
+        break;
+      }
+      case 'binding': {
+        value.session.workerId = '33333333-3333-4333-8333-333333333333';
+        break;
+      }
+      case 'engine': {
+        value.session.engineDigest = 'other-engine';
+        break;
+      }
+      case 'revoked-worker': {
+        value.worker.status = RenderWorkerStatus.Revoked;
+        break;
+      }
+      case 'revoked-session': {
+        value.session.revokedAt = value.now;
+        break;
+      }
+      case 'scope': {
+        value.worker.kinds = [];
+        break;
+      }
+      case 'credential': {
+        value.session.expiresAt = value.now;
+        break;
+      }
+      case 'conformance': {
+        value.worker.conformanceMaxAgeMs = 1;
+        break;
+      }
+      case 'measurement': {
+        value.now = new Date(evidence.validUntil);
+        // No default
+        break;
+      }
+    }
     expect(evaluateApprovedRenderSession(value).valid).toBe(false);
   });
 });
@@ -138,15 +180,12 @@ describe('reviewed approval binding', () => {
     expect(approval.evidence).not.toHaveProperty('workerId');
   });
 
-  it.each([null, undefined, {}, { ...approval, evidence: evidence }])(
-    'refuses absent or malformed approval %j',
-    (value) => {
-      const valueInput = input();
-      valueInput.worker.gpuWorkingBudgetApproval = value;
-      valueInput.worker.gpuMemoryBytes = '9223372036854775807';
-      expect(evaluateApprovedGpuWorkingBudget(valueInput)).toEqual({ valid: false, reason: 'profile-unapproved' });
-    },
-  );
+  it.each([null, undefined, {}, { ...approval, evidence }])('refuses absent or malformed approval %j', (value) => {
+    const valueInput = input();
+    valueInput.worker.gpuWorkingBudgetApproval = value;
+    valueInput.worker.gpuMemoryBytes = '9223372036854775807';
+    expect(evaluateApprovedGpuWorkingBudget(valueInput)).toEqual({ valid: false, reason: 'profile-unapproved' });
+  });
 
   it.each([
     { profileDigest: '0'.repeat(64) },
@@ -192,7 +231,7 @@ describe('reviewed approval binding', () => {
   });
 
   it('ignores object key ordering without treating changed arrays as the same proof', () => {
-    const reverse = (value: object) => Object.fromEntries(Object.entries(value).reverse());
+    const reverse = (value: object) => Object.fromEntries(Object.entries(value).toReversed());
     expect(
       evaluateApprovedGpuWorkingBudget({
         ...input(),

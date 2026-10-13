@@ -3,6 +3,8 @@ import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import type { RenderWorkerAdmissionDto } from 'src/dtos/render-worker.dto.js';
+import type { GpuWorkingBudgetDecision } from 'src/utils/gpu-working-budget.js';
 import {
   MediaOperationDestination,
   MediaOperationKind,
@@ -11,7 +13,6 @@ import {
   RenderWorkerRefusalReason,
   RenderWorkerStatus,
 } from 'src/enum.js';
-import type { RenderWorkerAdmissionDto } from 'src/dtos/render-worker.dto.js';
 
 import { DB } from 'src/schema/index.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
@@ -22,21 +23,20 @@ import {
   RenderWorkerSessionTable,
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
-import type { GpuWorkingBudgetDecision } from 'src/utils/gpu-working-budget.js';
 import { notJobQueueExecuted } from 'src/utils/edit-operation.js';
-import { CLAIMED_MEDIA_OPERATION_STATUSES, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import {
   GpuWorkingBudgetApprovalSchema,
   GpuWorkingBudgetEvidenceSchema,
   evaluateApprovedGpuWorkingBudget,
   evaluateApprovedRenderSession,
 } from 'src/utils/gpu-working-budget-policy.js';
+import { CLAIMED_MEDIA_OPERATION_STATUSES, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import {
   DestinationHealth,
   RenderLimits,
-  evaluateSessionAdmission,
   evaluateClaimAdmission,
   evaluateRenderOutput,
+  evaluateSessionAdmission,
   tightestLimits,
 } from 'src/utils/render-admission.js';
 
@@ -289,7 +289,7 @@ export class RenderWorkerRepository {
           .limit(1)
           .executeTakeFirst();
         if (active) return { admitted: false, reason: RenderWorkerRefusalReason.WorkerConcurrency };
-        if (previous.length)
+        if (previous.length > 0)
           await db
             .updateTable('render_worker_session')
             .set({ revokedAt: now })
@@ -671,7 +671,7 @@ export class RenderWorkerRepository {
       const refuse = (
         refused: RenderWorkerRefusalReason,
         budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'],
-      ) => ({ refused, ...(budgetReason ? { budgetReason } : {}) });
+      ) => ({ refused, ...(budgetReason && { budgetReason }) });
       const worker = await db
         .selectFrom('render_worker')
         .selectAll()
@@ -700,7 +700,7 @@ export class RenderWorkerRepository {
         .where('id', '=', options.id)
         .forUpdate()
         .executeTakeFirst();
-      if (!operation) return undefined;
+      if (!operation) return;
       // Serialize per-owner ceilings across separate workers and device lifetimes.
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'render-worker-owner:' + operation.ownerId},0))`.execute(
         db,
@@ -740,7 +740,7 @@ export class RenderWorkerRepository {
         (operation.retryAt && new Date(operation.retryAt) > now) ||
         operation.attempt >= operation.maxAttempts
       )
-        return undefined;
+        return;
       for (const key of [
         'ownerId',
         'kind',

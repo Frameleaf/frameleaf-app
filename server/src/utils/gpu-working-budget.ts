@@ -152,7 +152,7 @@ export const evaluateGpuWorkingBudget = (
   }
   const quantities = [value.measuredBytes, value.headroomBytes, context.reportedBytes];
   for (const quantity of quantities) {
-    if (typeof quantity !== 'string' || !DECIMAL.test(quantity) || BigInt(quantity) > 9223372036854775807n) {
+    if (typeof quantity !== 'string' || !DECIMAL.test(quantity) || BigInt(quantity) > 9_223_372_036_854_775_807n) {
       return { valid: false, reason: 'evidence-invalid' };
     }
   }
@@ -163,17 +163,17 @@ export const evaluateGpuWorkingBudget = (
   ) {
     return { valid: false, reason: 'evidence-invalid' };
   }
-  let qualified = 2147483648n;
+  let qualified = 2_147_483_648n;
   if (context.administratorCeiling !== null) {
     const ceiling = context.administratorCeiling;
-    if (typeof ceiling !== 'string' || !DECIMAL.test(ceiling) || BigInt(ceiling) > 9223372036854775807n) {
+    if (typeof ceiling !== 'string' || !DECIMAL.test(ceiling) || BigInt(ceiling) > 9_223_372_036_854_775_807n) {
       return { valid: false, reason: 'ceiling-invalid' };
     }
     if (BigInt(ceiling) < qualified) qualified = BigInt(ceiling);
   }
   if (context.phase.kind === 'session') {
     const admitted = context.phase.admittedBudgetBytes;
-    if (typeof admitted !== 'string' || !DECIMAL.test(admitted) || BigInt(admitted) > 2147483648n) {
+    if (typeof admitted !== 'string' || !DECIMAL.test(admitted) || BigInt(admitted) > 2_147_483_648n) {
       return { valid: false, reason: 'session-unqualified' };
     }
     if (BigInt(admitted) < qualified) qualified = BigInt(admitted);

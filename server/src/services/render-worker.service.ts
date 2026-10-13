@@ -82,6 +82,7 @@ import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.s
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { GpuMemoryBytesSchema, evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   ChunkPlan,
   RENDER_WORKER_MEDIA_OPERATION_KINDS,
@@ -89,7 +90,6 @@ import {
   canReuseChunk,
   isRenderWorkerMediaOperationKind,
 } from 'src/utils/media-operation.js';
-import { GpuMemoryBytesSchema, evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -552,7 +552,7 @@ export class RenderWorkerService {
         workerId: dto.workerId,
         event: RenderWorkerAuditEvent.Refused,
         reason: result.reason,
-        ...(result.budgetReason ? { detail: { gpuWorkingBudgetReason: result.budgetReason } } : {}),
+        ...(result.budgetReason && { detail: { gpuWorkingBudgetReason: result.budgetReason } }),
       });
       throw new UnauthorizedException('Worker admission refused');
     }
@@ -753,7 +753,7 @@ export class RenderWorkerService {
             workerId: worker.id,
             event: RenderWorkerAuditEvent.ClaimRefused,
             reason: claimed.refused,
-            ...(claimed.budgetReason ? { detail: { gpuWorkingBudgetReason: claimed.budgetReason } } : {}),
+            ...(claimed.budgetReason && { detail: { gpuWorkingBudgetReason: claimed.budgetReason } }),
             operationId: candidate.id,
           });
           await this.repository.recordRefusal(candidate.id, claimed.refused);

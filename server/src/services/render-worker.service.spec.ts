@@ -1,4 +1,3 @@
-import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -29,6 +28,7 @@ import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/st
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
@@ -1214,7 +1214,7 @@ describe(RenderWorkerService.name, () => {
         claimToken: 'claim-1',
         claimedAt: new Date(),
         engineDigest: 'engine-1',
-        limits: { maxConcurrentOperations: 1, maxWallClockMs: 300000, maxOutputBytes: 1000 },
+        limits: { maxConcurrentOperations: 1, maxWallClockMs: 300_000, maxOutputBytes: 1000 },
       } as never);
       const claim = await sut.claim(SESSION_A, {} as never);
 
@@ -2807,13 +2807,29 @@ describe(RenderWorkerService.name, () => {
 
     it.each(['legacy', 'policy', 'expired', 'caps', 'scope'])('does not advertise %s evidence', async (mode) => {
       const value = live(workerA, sessionA);
-      if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
-      if (mode === 'policy') value.worker.gpuWorkingBudgetApproval = null;
-      if (mode === 'expired')
-        value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
-      if (mode === 'scope') value.worker.kinds = [];
-      if (mode === 'caps')
-        vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+      switch (mode) {
+        case 'legacy': {
+          value.session.gpuWorkingBudgetEvidence = null;
+          break;
+        }
+        case 'policy': {
+          value.worker.gpuWorkingBudgetApproval = null;
+          break;
+        }
+        case 'expired': {
+          value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+          break;
+        }
+        case 'scope': {
+          value.worker.kinds = [];
+          break;
+        }
+        case 'caps': {
+          vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+          // No default
+          break;
+        }
+      }
       (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
         .fn()
         .mockResolvedValue([value]);

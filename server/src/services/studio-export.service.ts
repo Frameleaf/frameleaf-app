@@ -1,4 +1,3 @@
-import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   BadRequestException,
   ConflictException,
@@ -80,6 +79,7 @@ import { getConfig } from 'src/utils/config.js';
 import { assertExecutionActive, settleOperationExecution } from 'src/utils/execution-signal.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { pushJobData, shouldSendRenderProgress } from 'src/utils/frameleaf-push.js';
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';

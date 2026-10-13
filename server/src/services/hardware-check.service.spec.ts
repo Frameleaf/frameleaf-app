@@ -1,8 +1,7 @@
-import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
-import { MediaOperationKind } from 'src/enum.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
-import { MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
+import { MediaOperationKind, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 

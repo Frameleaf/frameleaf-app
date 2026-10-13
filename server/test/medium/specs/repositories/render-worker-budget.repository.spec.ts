@@ -4,14 +4,14 @@ import { RenderWorkerAdmissionDto } from 'src/dtos/render-worker.dto.js';
 import {
   MediaOperationDestination,
   MediaOperationKind,
+  MediaOperationStatus,
   RenderWorkerAuditEvent,
   RenderWorkerRefusalReason,
-  MediaOperationStatus,
 } from 'src/enum.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { DB } from 'src/schema/index.js';
-import { getKyselyDB } from 'test/utils.js';
 import { seedCanonicalUser } from 'test/fixtures/canonical-database.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
 let sut: RenderWorkerRepository;
@@ -99,7 +99,7 @@ describe('measured GPU budget atomic admission', () => {
   it('refuses active work on any worker associated with the same lifetime before revoking it', async () => {
     const first = await candidate();
     const admitted = await sut.admitSession(first);
-    if (!admitted.admitted) throw Error('Expected admission');
+    if (!admitted.admitted) throw new Error('Expected admission');
     const owner = await seedCanonicalUser(db);
     const operation = await db
       .insertInto('media_operation')
@@ -134,7 +134,7 @@ describe('measured GPU budget atomic admission', () => {
 
   it('refuses capability mutation on measured sessions', async () => {
     const result = await sut.admitSession(await candidate());
-    if (!result.admitted) throw Error('Expected admission');
+    if (!result.admitted) throw new Error('Expected admission');
     await expect(
       sut.recordSessionCapabilities(result.session.id, { codecs: ['av1'], formats: ['webm'] }),
     ).rejects.toThrow('immutable');
@@ -144,7 +144,7 @@ describe('measured GPU budget atomic admission', () => {
     const input = await candidate(undefined, '1073741824');
     const result = await sut.admitSession(input);
     expect(result.admitted).toBe(true);
-    if (!result.admitted) throw Error('Expected admission');
+    if (!result.admitted) throw new Error('Expected admission');
     expect(result.session.gpuMemoryBytes).toBe('1073741824');
     expect(result.session.gpuWorkingBudgetEvidence).toEqual(input.report.gpuWorkingBudgetEvidence);
     expect(result.session.scopes).toEqual([MediaOperationKind.StudioExport]);
@@ -185,16 +185,45 @@ describe('measured GPU budget atomic admission', () => {
     'replayed-conformance',
   ])('refuses %s without creating a session', async (mode) => {
     const input = await candidate();
-    if (mode === 'missing-evidence') input.report.gpuWorkingBudgetEvidence = null;
-    if (mode === 'missing-approval') await sut.updateWorker(input.worker.id, { gpuWorkingBudgetApproval: null });
-    if (mode === 'wrong-capabilities') input.report.formats = ['mov'];
-    if (mode === 'wrong-engine') input.report.engineDigest = 'another-engine';
-    if (mode === 'software') input.report.softwareRenderer = true;
-    if (mode === 'revoked') await sut.revokeWorker(input.worker.id);
-    if (mode === 'wrong-secret') input.enrolmentSecret = randomBytes(32);
-    if (mode === 'wrong-worker') input.report.workerId = randomUUID();
-    if (mode === 'replayed-conformance')
-      await sut.markAdmitted(input.worker.id, new Date(input.report.conformanceReportedAt));
+    switch (mode) {
+      case 'missing-evidence': {
+        input.report.gpuWorkingBudgetEvidence = null;
+        break;
+      }
+      case 'missing-approval': {
+        await sut.updateWorker(input.worker.id, { gpuWorkingBudgetApproval: null });
+        break;
+      }
+      case 'wrong-capabilities': {
+        input.report.formats = ['mov'];
+        break;
+      }
+      case 'wrong-engine': {
+        input.report.engineDigest = 'another-engine';
+        break;
+      }
+      case 'software': {
+        input.report.softwareRenderer = true;
+        break;
+      }
+      case 'revoked': {
+        await sut.revokeWorker(input.worker.id);
+        break;
+      }
+      case 'wrong-secret': {
+        input.enrolmentSecret = randomBytes(32);
+        break;
+      }
+      case 'wrong-worker': {
+        input.report.workerId = randomUUID();
+        break;
+      }
+      case 'replayed-conformance': {
+        await sut.markAdmitted(input.worker.id, new Date(input.report.conformanceReportedAt));
+        // No default
+        break;
+      }
+    }
     expect((await sut.admitSession(input)).admitted).toBe(false);
     expect(
       await db.selectFrom('render_worker_session').selectAll().where('workerId', '=', input.worker.id).execute(),
@@ -239,7 +268,7 @@ describe('measured GPU budget atomic admission', () => {
   it('rolls back session, prior revocation, watermark and audit on capability insert failure', async () => {
     const old = await candidate();
     const admitted = await sut.admitSession(old);
-    if (!admitted.admitted) throw Error('Expected admission');
+    if (!admitted.admitted) throw new Error('Expected admission');
     const next = await candidate(receipt(old.report.gpuWorkingBudgetEvidence!.deviceLifetimeId));
     await sql`CREATE FUNCTION public.fl105_fail_capability() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic insert failure'; END $$`.execute(
       db,
@@ -262,14 +291,8 @@ describe('measured GPU budget atomic admission', () => {
   });
   it('samples freshness after a worker row lock wait', async () => {
     const input = await candidate(receipt(undefined, 1800));
-    let release!: () => void;
-    let locked!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: ready, resolve: locked } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
     const lock = db.transaction().execute(async (tx) => {
       await tx.selectFrom('render_worker').select('id').where('id', '=', input.worker.id).forUpdate().execute();
       locked();
@@ -294,7 +317,7 @@ const prepareClaim = async (evidence = receipt(), ceiling: string | null = null,
   await sut.updateWorker(input.worker.id, { gpuWorkingBudgetApproval: { evidence, capabilities: writer } });
   input.report.codecs = writer.codecs;
   const admission = await sut.admitSession(input);
-  if (!admission.admitted) throw Error('Expected synthetic admission');
+  if (!admission.admitted) throw new Error('Expected synthetic admission');
   const owner = await seedCanonicalUser(db, ownerId ? { id: ownerId } : {});
   const operation = await db
     .insertInto('media_operation')
@@ -351,7 +374,7 @@ describe('final measured claim transaction', () => {
         limits: expect.objectContaining({ maxConcurrentOperations: 1 }),
       }),
     );
-    if (!result || 'refused' in result) throw Error('Expected claim');
+    if (!result || 'refused' in result) throw new Error('Expected claim');
     expect(result.operation.claimExpiresAt).toEqual(new Date(result.claimedAt.getTime() + value.options.leaseMs));
     expect(result.operation.attemptStartedAt).toEqual(result.claimedAt);
   });
@@ -387,31 +410,67 @@ describe('final measured claim transaction', () => {
     'old-health',
   ])('refuses changed %s after initial authorization', async (mode) => {
     const value = await prepareClaim();
-    if (mode === 'legacy')
-      await db
-        .updateTable('render_worker_session')
-        .set({ gpuWorkingBudgetEvidence: null })
-        .where('id', '=', value.admission.session.id)
-        .execute();
-    if (mode === 'policy') await sut.updateWorker(value.input.worker.id, { gpuWorkingBudgetApproval: null });
-    if (mode === 'worker-revoked') await sut.revokeWorker(value.input.worker.id);
-    if (mode === 'session-revoked') await sut.revokeSessions(value.input.worker.id);
-    if (mode === 'credential')
-      await db
-        .updateTable('render_worker_session')
-        .set({ expiresAt: new Date(0) })
-        .where('id', '=', value.admission.session.id)
-        .execute();
-    if (mode === 'engine') await sut.updateWorker(value.input.worker.id, { engineDigest: 'changed' });
-    if (mode === 'scope') await sut.updateWorker(value.input.worker.id, { kinds: [MediaOperationKind.StudioPreview] });
-    if (mode === 'caps')
-      await sql`UPDATE public.render_worker_session_capability SET codecs=ARRAY['av1'] WHERE "sessionId"=${value.admission.session.id}::uuid`.execute(
-        db,
-      );
-    if (mode === 'ceiling') await sut.updateWorker(value.input.worker.id, { gpuMemoryBytes: '1073741824' });
-    if (mode === 'token') value.options.sessionTokenHash = randomBytes(32);
-    if (mode === 'health') value.options.destinationHealth.state = 'unknown' as never;
-    if (mode === 'old-health') value.options.destinationHealth.checkedAt = new Date(0);
+    switch (mode) {
+      case 'legacy': {
+        await db
+          .updateTable('render_worker_session')
+          .set({ gpuWorkingBudgetEvidence: null })
+          .where('id', '=', value.admission.session.id)
+          .execute();
+        break;
+      }
+      case 'policy': {
+        await sut.updateWorker(value.input.worker.id, { gpuWorkingBudgetApproval: null });
+        break;
+      }
+      case 'worker-revoked': {
+        await sut.revokeWorker(value.input.worker.id);
+        break;
+      }
+      case 'session-revoked': {
+        await sut.revokeSessions(value.input.worker.id);
+        break;
+      }
+      case 'credential': {
+        await db
+          .updateTable('render_worker_session')
+          .set({ expiresAt: new Date(0) })
+          .where('id', '=', value.admission.session.id)
+          .execute();
+        break;
+      }
+      case 'engine': {
+        await sut.updateWorker(value.input.worker.id, { engineDigest: 'changed' });
+        break;
+      }
+      case 'scope': {
+        await sut.updateWorker(value.input.worker.id, { kinds: [MediaOperationKind.StudioPreview] });
+        break;
+      }
+      case 'caps': {
+        await sql`UPDATE public.render_worker_session_capability SET codecs=ARRAY['av1'] WHERE "sessionId"=${value.admission.session.id}::uuid`.execute(
+          db,
+        );
+        break;
+      }
+      case 'ceiling': {
+        await sut.updateWorker(value.input.worker.id, { gpuMemoryBytes: '1073741824' });
+        break;
+      }
+      case 'token': {
+        value.options.sessionTokenHash = randomBytes(32);
+        break;
+      }
+      case 'health': {
+        value.options.destinationHealth.state = 'unknown' as never;
+        break;
+      }
+      case 'old-health': {
+        value.options.destinationHealth.checkedAt = new Date(0);
+        // No default
+        break;
+      }
+    }
     const result = await sut.claimQueued(value.options);
     expect(result).toMatchObject({ refused: expect.any(String) });
     expect(
@@ -467,15 +526,9 @@ describe('final measured claim transaction', () => {
     const subject = target === 'instance' ? 'instance' : owner.id;
     await db.deleteFrom('render_worker_limit').where('subject', '=', subject).execute();
     const key = target === 'instance' ? 'render-worker-limit:instance' : 'render-worker-owner:' + subject;
-    let release!: () => void;
-    let ready!: () => void;
     let settled = false;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const locked = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const { promise: locked, resolve: ready } = Promise.withResolvers<void>();
     const lock = db.transaction().execute(async (tx) => {
       await sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${key},0))`.execute(tx);
       ready();
@@ -515,8 +568,8 @@ describe('final measured claim transaction', () => {
       maxOutputBytes: '5000',
     });
     const result = await sut.claimQueued(value.options);
-    if (!result || 'refused' in result) throw Error('Expected claim');
-    expect(result.limits).toEqual({ maxConcurrentOperations: 1, maxWallClockMs: 300000, maxOutputBytes: 1000 });
+    if (!result || 'refused' in result) throw new Error('Expected claim');
+    expect(result.limits).toEqual({ maxConcurrentOperations: 1, maxWallClockMs: 300_000, maxOutputBytes: 1000 });
   });
 
   it('serializes the owner ceiling across separate workers and lifetimes', async () => {
@@ -562,36 +615,39 @@ describe('final measured claim transaction', () => {
     'refuses measurement expiry after an unchanged %s lock wait',
     async (table) => {
       const value = await prepareClaim(receipt(undefined, 2500));
-      let release!: () => void;
-      let ready!: () => void;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const locked = new Promise<void>((resolve) => {
-        ready = resolve;
-      });
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const { promise: locked, resolve: ready } = Promise.withResolvers<void>();
       const lock = db.transaction().execute(async (tx) => {
-        if (table === 'worker')
-          await tx
-            .selectFrom('render_worker')
-            .select('id')
-            .where('id', '=', value.input.worker.id)
-            .forUpdate()
-            .execute();
-        if (table === 'session')
-          await tx
-            .selectFrom('render_worker_session')
-            .select('id')
-            .where('id', '=', value.admission.session.id)
-            .forUpdate()
-            .execute();
-        if (table === 'operation')
-          await tx
-            .selectFrom('media_operation')
-            .select('id')
-            .where('id', '=', value.operation.id)
-            .forUpdate()
-            .execute();
+        switch (table) {
+          case 'worker': {
+            await tx
+              .selectFrom('render_worker')
+              .select('id')
+              .where('id', '=', value.input.worker.id)
+              .forUpdate()
+              .execute();
+            break;
+          }
+          case 'session': {
+            await tx
+              .selectFrom('render_worker_session')
+              .select('id')
+              .where('id', '=', value.admission.session.id)
+              .forUpdate()
+              .execute();
+            break;
+          }
+          case 'operation': {
+            await tx
+              .selectFrom('media_operation')
+              .select('id')
+              .where('id', '=', value.operation.id)
+              .forUpdate()
+              .execute();
+            // No default
+            break;
+          }
+        }
         ready();
         await held;
       });
@@ -617,14 +673,8 @@ describe('final measured claim transaction', () => {
       .set({ expiresAt: new Date(Date.now() + 300) })
       .where('id', '=', value.admission.session.id)
       .execute();
-    let release!: () => void;
-    let ready!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const locked = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const { promise: locked, resolve: ready } = Promise.withResolvers<void>();
     const lock = db.transaction().execute(async (tx) => {
       await tx.selectFrom('media_operation').select('id').where('id', '=', value.operation.id).forUpdate().execute();
       ready();

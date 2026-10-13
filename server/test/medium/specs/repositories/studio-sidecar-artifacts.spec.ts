@@ -1,4 +1,3 @@
-import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -28,6 +27,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
 import { sealStudioSidecar } from 'src/utils/studio-subtitle-sidecar.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 

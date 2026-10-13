@@ -1,10 +1,10 @@
-import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import { Injectable } from '@nestjs/common';
 import { performance } from 'node:perf_hooks';
 import { HardwareCheck, HardwareCheckResponseDto } from 'src/dtos/hardware-check.dto.js';
 import { MlDestinationKind, MlWorkerRole, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   ContainerTest,
   MlContainerReport,

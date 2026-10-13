@@ -1,4 +1,3 @@
-import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -38,6 +37,7 @@ import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 
 vi.mock('src/utils/config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/config.js')>()),
@@ -577,11 +577,25 @@ describe(StudioExportService.name, () => {
       async (mode) => {
         studio.authorizeRevision.mockResolvedValue(authorized());
         const value = liveSession();
-        if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
-        if (mode === 'policy') value.worker.gpuWorkingBudgetApproval = null;
-        if (mode === 'expired')
-          value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
-        if (mode === 'scope') value.worker.kinds = [];
+        switch (mode) {
+          case 'legacy': {
+            value.session.gpuWorkingBudgetEvidence = null;
+            break;
+          }
+          case 'policy': {
+            value.worker.gpuWorkingBudgetApproval = null;
+            break;
+          }
+          case 'expired': {
+            value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+            break;
+          }
+          case 'scope': {
+            value.worker.kinds = [];
+            // No default
+            break;
+          }
+        }
         mockRenderSessions([value]);
         if (mode === 'changed-capabilities')
           renderWorkers.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
