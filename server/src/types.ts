@@ -764,7 +764,7 @@ export interface ExtensionVersion {
   installedVersion: string | null;
 }
 
-export interface ImmichFile extends Express.Multer.File {
+export interface FrameleafFile extends Express.Multer.File {
   uuid: string;
   /** sha256 hash of file */
   checksum: Buffer;
@@ -794,8 +794,8 @@ export type UploadRequest = {
 };
 
 export interface UploadFiles {
-  assetData: ImmichFile[];
-  sidecarData: ImmichFile[];
+  assetData: FrameleafFile[];
+  sidecarData: FrameleafFile[];
 }
 
 export interface IBulkAsset {

@@ -10,7 +10,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { IBulkAsset, ImmichFile, UploadFile, UploadRequest } from 'src/types.js';
+import { FrameleafFile, IBulkAsset, UploadFile, UploadRequest } from 'src/types.js';
 import { checkAccess } from 'src/utils/access.js';
 
 export const getAssetFile = (files: AssetFile[], type: AssetFileType, { isEdited }: { isEdited: boolean }) => {
@@ -90,6 +90,7 @@ export const removeAssets = async (
         });
 
   const results: BulkIdResponseDto[] = [];
+  const removedIds: string[] = [];
   for (const assetId of dto.assetIds) {
     const hasAsset = existingAssetIds.has(assetId);
     if (!hasAsset) {
@@ -104,10 +105,10 @@ export const removeAssets = async (
     }
 
     existingAssetIds.delete(assetId);
+    removedIds.push(assetId);
     results.push({ id: assetId, success: true });
   }
 
-  const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
   if (removedIds.length > 0) {
     await bulk.removeAssetIds(dto.parentId, removedIds);
   }
@@ -191,7 +192,7 @@ export const linkLivePhotoAssets = async (
   await eventRepository.emit('AssetHide', { assetId: motionAssetId, userId: motionOwnerId });
 };
 
-export function mapToUploadFile(file: ImmichFile): UploadFile {
+export function mapToUploadFile(file: FrameleafFile): UploadFile {
   return {
     uuid: file.uuid,
     checksum: file.checksum,
@@ -207,7 +208,7 @@ export const asUploadRequest = (request: AuthRequest, file: Express.Multer.File)
     auth: request.user || null,
     body: request.body,
     fieldName: file.fieldname as UploadFieldName,
-    file: mapToUploadFile(file as ImmichFile),
+    file: mapToUploadFile(file as FrameleafFile),
   };
 };
 
