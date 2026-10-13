@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
   import { navigating } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';

@@ -27,7 +27,7 @@
    * page that mounts this view; tiles offer their hover quick actions (`AssetTile.jsx`), and an empty
    * view shows the Frameleaf empty state rather than the legacy upload card.
    */
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
@@ -516,7 +516,7 @@
     restoredContext = storageContext;
     restoredView = urlView;
     writtenView = undefined;
-    session.restore(page.url, storageUserId, storageContext);
+    session.restore(new URL(page.url.href), storageUserId, storageContext);
     // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
     // than being quietly replaced by the stored view.
     if (session.refusedView) {
@@ -551,7 +551,7 @@
       if (next.href !== current.href) {
         // A URL we just wrote is the current session, not a new link to restore from.
         writtenView = next.searchParams.get('fl');
-        replaceState(next, page.state);
+        replaceState(next, page.state).catch((error) => handleError(error, $t('error')));
       }
     }
   });

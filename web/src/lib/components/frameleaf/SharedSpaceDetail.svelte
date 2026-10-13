@@ -139,7 +139,7 @@
   /* ------------------------------------------------------------------ */
   /* Panels                                                              */
   /* ------------------------------------------------------------------ */
-  let panel = $state<SpacePanel>(panelFromSearch(page.url.searchParams));
+  let panel = $state<SpacePanel>(panelFromSearch(new URLSearchParams(page.url.searchParams.toString())));
 
   const panelLabels: Record<SpacePanel, string> = $derived({
     timeline: $t('frameleaf_spaces_panel_timeline'),
@@ -163,14 +163,14 @@
   // A shallow replace: the address follows the panel without re-running the loader.
   const choosePanel = (next: string) => {
     panel = panelFromSearch(new URLSearchParams({ panel: next }));
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     if (panel === 'timeline') {
       url.searchParams.delete('panel');
     } else {
       url.searchParams.set('panel', panel);
     }
     if (url.href !== page.url.href) {
-      replaceState(url, page.state);
+      replaceState(url, page.state).catch((error) => handleError(error, $t('error')));
     }
   };
 

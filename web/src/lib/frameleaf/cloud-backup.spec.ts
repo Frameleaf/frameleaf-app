@@ -80,7 +80,7 @@ describe('cloud backup keys in the browser (FL-160)', () => {
     ).toEqual({});
     expect(
       bucketSettingsErrors({
-        // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
+        // an HTTP storage address is what is being refused
         endpoint: 'http://s3.example.test',
         bucket: 'Family',
         accessKeyId: ' ',

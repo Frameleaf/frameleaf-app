@@ -401,7 +401,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
             body: {
               version: 1,
               validFor: 3600,
-              // eslint-disable-next-line unicorn/prefer-https -- the refused address
+              // the refused address
               issuer: 'http://id.attacker.example/id',
               api: `${cloud.url}/api`,
               ml: { eu: `${cloud.url}/ml-eu` },

@@ -1,11 +1,16 @@
+import adapter from '@sveltejs/adapter-static';
 import { enhancedImages } from '@sveltejs/enhanced-img';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
+import dotenv from 'dotenv';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { defineConfig, type Plugin, type ProxyOptions, type UserConfig } from 'vite';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+dotenv.config({ quiet: true });
 
 /**
  * FL-139: regenerates the full MDI icon-path lookup as a static JSON asset, fetched lazily by
@@ -65,7 +70,37 @@ export default defineConfig({
     mdiIconPaths(),
     enhancedImages(),
     tailwindcss(),
-    sveltekit(),
+    sveltekit({
+      preprocess: vitePreprocess(),
+      version: {
+        name: process.env.FRAMELEAF_BUILD || process.env.IMMICH_BUILD || process.env.npm_package_version || 'local',
+      },
+      paths: {
+        relative: false,
+      },
+      adapter: adapter({
+        fallback: 'index.html',
+        precompress: true,
+      }),
+      alias: {
+        $lib: 'src/lib',
+        '$lib/*': 'src/lib/*',
+        $tests: 'src/../tests',
+        '$tests/*': 'src/../tests/*',
+        '@test-data': 'src/test-data',
+        $i18n: '../i18n',
+        // Third-party acknowledgements and the licence texts that ship with the product (FL-86).
+        $licenses: '../licenses',
+        $studioNotices: '../studio/notices',
+        'chromecast-caf-sender': './node_modules/@types/chromecast-caf-sender/index.d.ts',
+      },
+      onwarn: (warning, handler) => {
+        if (warning.code === 'state_referenced_locally') {
+          return;
+        }
+        handler(warning);
+      },
+    }),
     process.env.BUILD_STATS === 'true'
       ? visualizer({
           emitFile: true,

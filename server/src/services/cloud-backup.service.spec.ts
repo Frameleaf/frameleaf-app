@@ -669,7 +669,7 @@ describe(CloudBackupService.name, () => {
     });
 
     it('refuses an HTTP storage address and a key that is not 256 bits', async () => {
-      // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
+      // an HTTP storage address is what is being refused
       await expect(setup({ s3: { ...s3, endpoint: 'http://s3.example.test' } })).rejects.toThrow('HTTPS');
       await expect(setup({ key: 'not-a-key' })).rejects.toBeInstanceOf(BadRequestException);
       expect(store.claim).not.toHaveBeenCalled();
@@ -2067,7 +2067,7 @@ describe(CloudBackupService.name, () => {
         'storage address and a bucket name',
       );
       expect(() =>
-        // eslint-disable-next-line unicorn/prefer-https -- an HTTP storage address is what is being refused
+        // an HTTP storage address is what is being refused
         sut.onConfigValidate({ newConfig: config({ endpoint: 'http://s3.example.test' }), oldConfig: config({}) }),
       ).toThrow('HTTPS');
       expect(() => sut.onConfigValidate({ newConfig: config({}), oldConfig: config({}) })).not.toThrow();

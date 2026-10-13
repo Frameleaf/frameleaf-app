@@ -307,9 +307,9 @@
     }
     consumedCreateRequest = request;
     untrack(() => openCreate(request === 'space' ? AlbumKind.Space : AlbumKind.Album));
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.delete('create');
-    replaceState(url, page.state);
+    replaceState(url, page.state).catch((error) => handleError(error, $t('error')));
   });
 
   /** A smart album and its rule are created together (FL-60); nothing is matched until it is applied. */

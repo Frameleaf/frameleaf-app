@@ -1,5 +1,5 @@
 import { on } from 'svelte/events';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 const isSupported = browser && 'wakeLock' in navigator;
 
@@ -16,7 +16,6 @@ export async function acquireWakeLock(holder = 'default') {
   if (!isSupported) {
     return;
   }
-  // eslint-disable-next-line tscompat/tscompat
   if (sentinel && !sentinel.released) {
     return;
   }
@@ -25,11 +24,9 @@ export async function acquireWakeLock(holder = 'default') {
   }
   acquiring = true;
   try {
-    // eslint-disable-next-line tscompat/tscompat
     const lock = await navigator.wakeLock.request('screen');
     if (holders.size === 0) {
       // everyone let go while the request was in flight
-      // eslint-disable-next-line tscompat/tscompat
       await lock.release().catch((error: unknown) => console.warn('Failed to release wake lock:', error));
     } else {
       sentinel = lock;
@@ -52,7 +49,6 @@ export async function releaseWakeLock(holder = 'default') {
   sentinel = undefined;
 
   try {
-    // eslint-disable-next-line tscompat/tscompat
     await toReleaseSentinel.release();
   } catch (error) {
     // an already released lock (the tab was hidden) can reject; nothing is left to undo

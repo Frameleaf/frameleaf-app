@@ -12,7 +12,7 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
-  import { askInstalledVersion, updateState } from '$lib/components/frameleaf/settings/server/update-status';
+  import { askInstalledVersion, updateState } from '$lib/components/frameleaf/settings/server-settings/update-status';
   import { ADVANCED_SECTIONS, commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { locale } from '$lib/stores/preferences.store';

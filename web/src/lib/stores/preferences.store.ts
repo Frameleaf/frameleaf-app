@@ -1,5 +1,5 @@
 import { persisted } from 'svelte-persisted-store';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { defaultLang } from '$lib/constants';
 import { defaultAlbumDirectoryView, type AlbumDirectoryView } from '$lib/frameleaf/album-directory';
 import { convertBCP47, getPreferredLocale } from '$lib/utils/i18n';

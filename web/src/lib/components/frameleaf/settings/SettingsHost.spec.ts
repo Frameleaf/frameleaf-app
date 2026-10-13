@@ -52,7 +52,7 @@ vi.mock('$lib/components/frameleaf/settings/UtilitiesArea.svelte', async () => (
 vi.mock('$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
-vi.mock('$lib/components/frameleaf/settings/server/ServerLanding.svelte', async () => ({
+vi.mock('$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
 vi.mock('$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte', async () => ({

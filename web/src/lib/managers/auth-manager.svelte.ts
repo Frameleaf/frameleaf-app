@@ -6,7 +6,7 @@ import {
   type UserAdminResponseDto,
   type UserPreferencesResponseDto,
 } from '@frameleaf/sdk';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';

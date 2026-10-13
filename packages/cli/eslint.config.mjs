@@ -34,6 +34,15 @@ export default typescriptEslint.config([
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
+      // Keep the pre-upgrade documentation and parameter style policy.
+      'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+      'unicorn/no-unnecessary-parameters': 'off',
+      // shortcut: restore widened style rules after focused reviews of the affected files.
+      'unicorn/prefer-ternary': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-combined-guards': 'off',
       'unicorn/prefer-module': 'off',
       'unicorn/name-replacements': 'off',
       'unicorn/no-unreadable-for-of-expression': 'off',

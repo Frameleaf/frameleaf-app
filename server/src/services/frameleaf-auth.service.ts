@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { parse } from 'cookie';
+import { parseCookie as parse } from 'cookie';
 import { timingSafeEqual } from 'node:crypto';
 import type { JWTPayload } from 'jose';
 import type { IncomingHttpHeaders } from 'node:http';

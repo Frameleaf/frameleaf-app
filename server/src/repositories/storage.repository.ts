@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { ChokidarOptions, watch as chokidarWatch } from 'chokidar';
 import fastGlob from 'fast-glob';
 import {
@@ -112,7 +112,7 @@ export class StorageRepository {
   }
 
   createZipStream(): ImmichZipStream {
-    const archive = archiver('zip', { store: true });
+    const archive = new ZipArchive({ store: true });
 
     const addFile = (input: string, filename: string) => {
       archive.file(input, { name: filename, mode: 0o644 });
@@ -124,7 +124,7 @@ export class StorageRepository {
   }
 
   createPacedZipStream(): ImmichPacedZipStream {
-    const archive = archiver('zip', { store: true });
+    const archive = new ZipArchive({ store: true });
     let pending = 0;
     let closed = false;
     let waiters: Array<() => void> = [];

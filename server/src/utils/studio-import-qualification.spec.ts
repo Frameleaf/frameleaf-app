@@ -172,7 +172,7 @@ describe('publication qualification structural gate', () => {
     ['../receipt'],
     ['sha256:ab'],
     [`sha256:${'AB'.repeat(32)}`],
-    // eslint-disable-next-line unicorn/prefer-https -- HTTP must remain a negative qualification fixture.
+    // HTTP must remain a negative qualification fixture.
     ['http://evidence.example.test/receipt'],
     ['https:receipt'],
     ['https://user:secret@evidence.example.test/receipt'],

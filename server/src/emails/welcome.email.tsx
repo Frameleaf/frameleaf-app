@@ -1,5 +1,5 @@
-import { Link, Section, Text } from '@react-email/components';
 import * as React from 'react';
+import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { NO_LINK_SIGN_IN } from 'src/emails/components/no-link.js';

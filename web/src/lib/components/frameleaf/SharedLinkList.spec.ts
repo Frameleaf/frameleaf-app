@@ -10,6 +10,7 @@ import {
 import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { replaceState } from '$app/navigation';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
 import { getAssetMediaUrl } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
@@ -36,7 +37,7 @@ vi.mock('$app/state', () => ({
   },
 }));
 vi.mock('$app/navigation', () => ({
-  replaceState: vi.fn((url: URL) => {
+  replaceState: vi.fn(async (url: URL) => {
     pageState.url = new URL(url);
   }),
 }));
@@ -420,4 +421,16 @@ describe('SharedLinkList', () => {
       expect(handleError).toHaveBeenCalledWith(expect.any(Error), en.frameleaf_sharing.albums_load_failed),
     );
   });
+});
+
+it('reports a rejected edit address update and keeps the share editor closed', async () => {
+  const link = sharedLinkFactory.build();
+  vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+  const failure = new Error('Navigation aborted');
+  vi.mocked(replaceState).mockRejectedValueOnce(failure);
+  pageState.url = new URL(`http://localhost/shared-links?edit=${link.id}`);
+  render(SharedLinkList);
+  await waitFor(() => expect(handleError).toHaveBeenCalledWith(failure, en.frameleaf_sharing.links_load_failed));
+  expect(pageState.url.searchParams.get('edit')).toBe(link.id);
+  expect(screen.queryByRole('heading', { name: en.frameleaf_sharing.edit_shared_link_title })).toBeNull();
 });

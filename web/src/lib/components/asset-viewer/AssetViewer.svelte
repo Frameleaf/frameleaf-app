@@ -1,6 +1,6 @@
 <script lang="ts">
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { focusTrap } from '$lib/actions/focus-trap';
@@ -405,9 +405,9 @@
       (asset.type === AssetTypeEnum.Image || asset.type === AssetTypeEnum.Video);
     editRequestHandled = true;
     untrack(() => {
-      const url = new URL(page.url);
+      const url = new URL(page.url.href);
       url.searchParams.delete('edit');
-      replaceState(url, page.state);
+      handlePromiseError(replaceState(url, page.state));
       if (editable) {
         assetViewerManager.openEditor();
       }

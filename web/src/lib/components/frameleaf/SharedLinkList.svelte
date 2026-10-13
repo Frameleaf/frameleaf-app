@@ -112,9 +112,14 @@
    * list is asked for by id; one that cannot be found says so.
    */
   const openRequestedEdit = async (id: string) => {
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.delete('edit');
-    replaceState(url, page.state);
+    try {
+      await replaceState(url, page.state);
+    } catch (error) {
+      handleError(error, $t('frameleaf_sharing.links_load_failed'));
+      return;
+    }
 
     let link = links.find((entry) => entry.id === id);
     if (!link) {

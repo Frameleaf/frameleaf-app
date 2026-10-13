@@ -68,9 +68,9 @@
       });
   });
 
-  const navigate = (url: string) => goto(url, { noScroll: true, keepFocus: true });
+  const navigate = (url: string) => goto(url, { reset: false });
   const close = () => {
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.delete('workflow');
     url.searchParams.delete('import');
     void navigate(`${url.pathname}${url.search}`);

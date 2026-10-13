@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { parse } from 'cookie';
+import { parseCookie as parse } from 'cookie';
 import { NextFunction, Request, Response } from 'express';
 import { jwtVerify } from 'jose';
 import { readFileSync } from 'node:fs';

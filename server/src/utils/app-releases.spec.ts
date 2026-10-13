@@ -42,7 +42,7 @@ describe('parseAppReleases', () => {
   });
 
   it.each([
-    // eslint-disable-next-line unicorn/prefer-https -- an http destination is what is being refused
+    // an http destination is what is being refused
     ['http://releases.example.test/{version}', /https/],
     ['https://user:pass@releases.example.test/{version}', /credentials/],
     ['not a url/{version}', /not a URL/],
@@ -96,7 +96,7 @@ describe('Android store listing (FL-135)', () => {
     expect(parseAppReleases({ FRAMELEAF_ANDROID_STORE_URL: 'https://f-droid.example/app/' })).toEqual({
       androidStoreUrl: 'https://f-droid.example/app',
     });
-    // eslint-disable-next-line unicorn/prefer-https -- an insecure address must be refused
+    // an insecure address must be refused
     expect(() => parseAppReleases({ FRAMELEAF_ANDROID_STORE_URL: 'http://play.example/app' })).toThrow(
       'FRAMELEAF_ANDROID_STORE_URL: must be an https address',
     );
@@ -124,7 +124,7 @@ describe('parseHelpLinks (FL-135)', () => {
       documentationUrl: 'https://docs.frameleaf.example',
       supportUrl: 'https://help.frameleaf.example',
     });
-    // eslint-disable-next-line unicorn/prefer-https -- an insecure address must be refused
+    // an insecure address must be refused
     expect(() => parseHelpLinks({ FRAMELEAF_DOCS_URL: 'http://docs.example' })).toThrow(
       'FRAMELEAF_DOCS_URL: must be an https address',
     );
@@ -137,7 +137,7 @@ describe('parseHelpLinks (FL-135)', () => {
     expect(
       parseHelpLinks({
         IMMICH_THIRD_PARTY_SUPPORT_URL: 'https://support.example',
-        // eslint-disable-next-line unicorn/prefer-https -- an insecure address must be refused
+        // an insecure address must be refused
         IMMICH_THIRD_PARTY_DOCUMENTATION_URL: 'http://docs.example',
       }),
     ).toMatchObject({ supportUrl: 'https://support.example', documentationUrl: undefined });

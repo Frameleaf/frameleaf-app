@@ -54,9 +54,8 @@
     pendingFilter = next;
     try {
       await goto(Route.locked(next === 'all' ? undefined : { reason: next }), {
-        keepFocus: true,
-        noScroll: true,
-        replaceState: true,
+        reset: false,
+        replace: true,
       });
     } finally {
       pendingFilter = undefined;

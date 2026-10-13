@@ -19,7 +19,7 @@ const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie' });
 const app = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/albums'), state: {} },
   goto: vi.fn(),
-  replaceState: vi.fn(),
+  replaceState: vi.fn<(url: string | URL, state: App.PageState) => Promise<void>>(async () => {}),
   routerStarted: true,
 }));
 vi.mock('$app/state', () => ({ page: app.page }));
@@ -219,8 +219,9 @@ describe('AlbumDirectory', () => {
 
     expect(await screen.findByRole('dialog', { name: 'New shared space' })).toBeInTheDocument();
     expect(app.replaceState).toHaveBeenCalledOnce();
-    const [url] = app.replaceState.mock.calls[0] as [URL];
-    expect(url.search).toBe('');
+    const [url] = app.replaceState.mock.calls[0];
+    expect(url).toBeInstanceOf(URL);
+    expect(new URL(url).search).toBe('');
   });
 
   it('waits for the router before touching the address on a direct load', async () => {

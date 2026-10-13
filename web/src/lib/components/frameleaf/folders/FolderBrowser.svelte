@@ -23,6 +23,7 @@
    * deletes a folder.
    */
   import { afterNavigate, beforeNavigate, goto, invalidateAll } from '$app/navigation';
+  import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import FolderCardGrid from '$lib/components/frameleaf/folders/FolderCardGrid.svelte';
@@ -193,12 +194,12 @@
   const hrefOf = (node: FolderNode) => Route.folders({ path: node.path });
   /** A step inside the page (a neighbouring folder, a row in the columns): focus stays where it is. */
   const go = (node: FolderNode, { replace = false }: { replace?: boolean } = {}) =>
-    goto(hrefOf(node), { keepFocus: true, noScroll: true, replaceState: replace });
+    goto(hrefOf(node), { reset: false, replace });
   /** Open a folder in the grid from the columns (Enter, a double click, Open). */
   const openInGrid = async (node: FolderNode) => {
     setView('grid');
     if (node !== folder) {
-      await goto(hrefOf(node), { keepFocus: true });
+      await gotoWithFocusAndScroll(hrefOf(node), { keepFocus: true });
     }
     // The row or button that was pressed went with the columns; reading starts at the folder's name.
     await tick();

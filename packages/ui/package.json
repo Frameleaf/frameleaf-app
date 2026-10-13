@@ -26,20 +26,20 @@
     "./theme/default.css": "./dist/theme/default.css"
   },
   "peerDependencies": {
-    "@sveltejs/kit": "^2.13.0",
-    "svelte": "^5.0.0"
+    "@sveltejs/kit": "^3.0.1",
+    "svelte": "^5.57.2"
   },
   "dependencies": {
-    "@internationalized/date": "^3.10.0",
+    "@internationalized/date": "^3.12.4",
     "@mdi/js": "^7.4.47",
-    "bits-ui": "^2.15.7",
-    "fuse.js": "^7.4.2",
+    "bits-ui": "^2.19.5",
+    "fuse.js": "^7.5.0",
     "luxon": "^3.7.2",
-    "simple-icons": "^16.0.0",
-    "svelte-highlight": "^7.8.4",
-    "tailwind-merge": "^3.0.0",
-    "tailwind-variants": "^3.0.0",
-    "tailwindcss": "^4.2.4"
+    "simple-icons": "^16.35.0",
+    "svelte-highlight": "^7.23.1",
+    "tailwind-merge": "^3.7.0",
+    "tailwind-variants": "^3.3.1",
+    "tailwindcss": "^4.3.3"
   },
   "private": true,
   "devDependencies": {

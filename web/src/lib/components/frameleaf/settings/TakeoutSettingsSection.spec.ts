@@ -59,7 +59,7 @@ describe('TakeoutSettingsSection', () => {
     await userEvent.click(screen.getByRole('button', { name: en.frameleaf_takeout_settings_action }));
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=backup&section=takeout&workflow=import',
-      expect.objectContaining({ noScroll: true }),
+      expect.objectContaining({ reset: false }),
     );
   });
 
@@ -91,7 +91,7 @@ describe('TakeoutSettingsSection', () => {
     await userEvent.click(await within(dialog).findByRole('button', { name: en.frameleaf_takeout_cancel }));
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=backup&section=takeout&scope=all',
-      expect.objectContaining({ noScroll: true }),
+      expect.objectContaining({ reset: false }),
     );
   });
 });

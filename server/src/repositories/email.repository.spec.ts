@@ -23,6 +23,10 @@ describe(EmailRepository.name, () => {
 
       expect(result.html).toContain('<!DOCTYPE html PUBLIC');
       expect(result.text).toContain('test email');
+      expect(result.html).toContain('font-size:16px');
+      expect(result.html).toContain('padding:48px');
+      expect(result.html).toContain('Overpass');
+      expect(result.html).toContain('Frameleaf');
     });
 
     it('should serve the Frameleaf header logo from the configured server origin', async () => {

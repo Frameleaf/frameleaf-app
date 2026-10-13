@@ -385,7 +385,7 @@ describe(UserService.name, () => {
     });
   });
 
-  describe.sequential('handleUserDeleteCheck', () => {
+  describe('handleUserDeleteCheck', { concurrent: false }, () => {
     beforeEach(async () => {
       const { sut, ctx } = setup();
       // These tests specifically have to be sequential otherwise we hit race conditions with config changes applying in incorrect tests

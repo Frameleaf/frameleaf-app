@@ -102,10 +102,10 @@
     loading = true;
     exportStatus = '';
     try {
-      const url = new URL(page.url);
+      const url = new URL(page.url.href);
       url.searchParams.set('scope', scope);
       url.searchParams.set('range', next.range ?? range);
-      await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+      await goto(`${url.pathname}${url.search}`, { replace: true, reset: false });
     } catch (error) {
       handleError(error, $t('frameleaf_analytics_load_failed'));
     } finally {

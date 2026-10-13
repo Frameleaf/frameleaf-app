@@ -58,7 +58,7 @@
   const owners = $derived((data?.users ?? []).filter((user) => user.status === UserStatus.Active && !user.deletedAt));
 
   const select = async (key: string | null) => {
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.delete('edit');
     url.searchParams.delete('new');
     if (key) {
@@ -66,7 +66,7 @@
     } else {
       url.searchParams.delete('selected');
     }
-    await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+    await goto(`${url.pathname}${url.search}`, { replace: true, reset: false });
   };
 </script>
 

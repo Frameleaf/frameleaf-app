@@ -27,6 +27,7 @@
    * is a lower bound. Queue controls and concurrency still affect every account.
    */
   import { goto } from '$app/navigation';
+  import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -366,7 +367,7 @@
     scopeParam === 'all' ? href : `${href}${href.includes('?') ? '&' : '?'}scope=${encodeURIComponent(scopeParam)}`;
   const open = async (name?: QueueName, next?: JobTab) => {
     query = '';
-    await goto(scoped(name ? Route.viewQueue({ name, tab: next }) : Route.queues()), {
+    await gotoWithFocusAndScroll(scoped(name ? Route.viewQueue({ name, tab: next }) : Route.queues()), {
       keepFocus: true,
       noScroll: !name,
     });
@@ -808,8 +809,7 @@
   const selectTab = (next: JobTab) => {
     if (selected) {
       void goto(scoped(Route.viewQueue({ name: selected.definition.name, tab: next })), {
-        keepFocus: true,
-        noScroll: true,
+        reset: false,
       });
     }
   };

@@ -19,7 +19,10 @@ import SharedSpaceDetail from './SharedSpaceDetail.svelte';
 
 const app = vi.hoisted(() => ({ page: { url: new URL('http://localhost/sharing/space-1'), state: {} } }));
 vi.mock('$app/state', () => ({ page: app.page }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn() }));
+vi.mock('$app/navigation', () => ({
+  goto: vi.fn(),
+  replaceState: vi.fn<(url: string | URL, state: App.PageState) => Promise<void>>(async () => {}),
+}));
 vi.mock('$lib/utils/file-uploader', () => ({ openFileUploadDialog: vi.fn(() => Promise.resolve([])) }));
 
 let signedInId = 'me';

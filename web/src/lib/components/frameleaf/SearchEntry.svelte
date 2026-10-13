@@ -121,7 +121,7 @@
    * The query the palette opens on: the search the page already shows, or the scope it stands for,
    * together with its session's filters (FL-48). Nothing the page is narrowed by is reset.
    */
-  const currentContext = $derived(searchContextFor(page.url));
+  const currentContext = $derived(searchContextFor(new URL(page.url.href)));
   const currentQuery = $derived(currentContext.query);
 
   /**

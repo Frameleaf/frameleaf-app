@@ -55628,6 +55628,41 @@
         ],
         "type": "string"
       },
+      "AlbumMapMarkerDto": {
+        "properties": {
+          "fileCreatedAfter": {
+            "description": "Filter assets created after this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "fileCreatedBefore": {
+            "description": "Filter assets created before this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "isArchived": {
+            "description": "Include archived items (the album default); false leaves them out",
+            "type": "boolean"
+          },
+          "isFavorite": {
+            "description": "Filter by the viewer's own favorites; other members' favorites are never matched",
+            "type": "boolean"
+          },
+          "withPartners": {
+            "description": "Include the album's items owned by anyone else (the album default); false keeps only your own",
+            "type": "boolean"
+          },
+          "withSharedAlbums": {
+            "description": "Accepted for the shared map settings; has no effect on an album map",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "AlbumOrderDto": {
         "properties": {
           "albumIds": {
@@ -57153,6 +57188,20 @@
           "hour",
           "weekday"
         ],
+        "type": "object"
+      },
+      "AnalyticsQueryDto": {
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/AnalyticsRange",
+            "default": "year"
+          },
+          "scope": {
+            "default": "all",
+            "description": "`all` (the whole server, administrators only), `account:<id>` or `library:<id>`",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AnalyticsRange": {
@@ -59495,6 +59544,32 @@
         ],
         "type": "string"
       },
+      "AssetDevelopFileQueryDto": {
+        "properties": {
+          "dynamicRange": {
+            "enum": [
+              "auto",
+              "sdr",
+              "hdr"
+            ],
+            "type": "string"
+          },
+          "format": {
+            "description": "Explicit full-resolution still export. Overrides dynamicRange and requires download permission. Original downloads use the existing original endpoint; motion is never included in a still export.",
+            "enum": [
+              "sdr-jpeg",
+              "hdr-jpeg",
+              "hdr-heic"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopFileKind",
+            "default": "preview"
+          }
+        },
+        "type": "object"
+      },
       "AssetDevelopFillGenerateDto": {
         "additionalProperties": false,
         "properties": {
@@ -60155,6 +60230,27 @@
         ],
         "type": "string"
       },
+      "AssetDevelopRevisionParamDto": {
+        "properties": {
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revisionId": {
+            "description": "Develop revision ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revisionId"
+        ],
+        "type": "object"
+      },
       "AssetDevelopRevisionResponseDto": {
         "properties": {
           "assetId": {
@@ -60421,6 +60517,8 @@
                 "minimum": 0,
                 "type": "number"
               },
+              "maxItems": 2,
+              "minItems": 2,
               "type": "array"
             },
             "maxItems": 512,
@@ -60439,6 +60537,24 @@
           "points",
           "radius"
         ],
+        "type": "object"
+      },
+      "AssetDownloadOriginalDto": {
+        "properties": {
+          "edited": {
+            "description": "Return edited asset if available",
+            "type": "boolean"
+          },
+          "format": {
+            "description": "Explicit still export from an unedited photo; omission returns the untouched original or selected edit",
+            "enum": [
+              "sdr-jpeg",
+              "hdr-jpeg",
+              "hdr-heic"
+            ],
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AssetEditAction": {
@@ -61086,6 +61202,36 @@
         ],
         "type": "object"
       },
+      "AssetFileSearchDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID to filter files by",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isEdited": {
+            "description": "The file was generated from an edit",
+            "type": "boolean"
+          },
+          "isProgressive": {
+            "description": "The file is a progressively encoded JPEG",
+            "type": "boolean"
+          },
+          "isTransparent": {
+            "description": "The file is transparent",
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetFileType",
+            "description": "Filter by type of file"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
       "AssetFileType": {
         "description": "Type of file",
         "enum": [
@@ -61140,6 +61286,29 @@
           "x",
           "y"
         ],
+        "type": "object"
+      },
+      "AssetFilmstripOptionsDto": {
+        "properties": {
+          "count": {
+            "default": 20,
+            "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
+            "maximum": 120,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/components/schemas/AssetFilmstripFormat",
+            "default": "jpeg"
+          },
+          "height": {
+            "default": 90,
+            "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
+            "maximum": 240,
+            "minimum": 32,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "AssetFilmstripResponseDto": {
@@ -61224,6 +61393,34 @@
           "spriteWidth",
           "version"
         ],
+        "type": "object"
+      },
+      "AssetFilmstripSpriteOptionsDto": {
+        "properties": {
+          "count": {
+            "default": 20,
+            "description": "Frames to sample, rounded up to 1, 2, 4, 20, 60 or 120 (default 20)",
+            "maximum": 120,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/components/schemas/AssetFilmstripFormat",
+            "default": "jpeg"
+          },
+          "height": {
+            "default": 90,
+            "description": "Frame height in pixels, rounded up to 32, 90, 180 or 240 (default 90); the width follows the aspect ratio",
+            "maximum": 240,
+            "minimum": 32,
+            "type": "integer"
+          },
+          "version": {
+            "description": "The `version` from the filmstrip index. When given and the video changed since, 404 is returned",
+            "pattern": "^[0-9a-f]{16}$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AssetIdErrorReason": {
@@ -61423,6 +61620,38 @@
         ],
         "type": "object"
       },
+      "AssetMediaOptionsDto": {
+        "properties": {
+          "dynamicRange": {
+            "description": "Defaults to compatible SDR. Auto prefers an available HDR derivative; explicit HDR fails when unavailable.",
+            "enum": [
+              "auto",
+              "sdr",
+              "hdr"
+            ],
+            "type": "string"
+          },
+          "edited": {
+            "description": "Return edited asset if available",
+            "type": "boolean"
+          },
+          "faceSource": {
+            "description": "Return the ordinary edited preview used for face coordinates",
+            "type": "boolean"
+          },
+          "size": {
+            "$ref": "#/components/schemas/AssetMediaSize",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Updated",
+                "description": "Specifying 'original' is deprecated. Use the original endpoint directly instead"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
       "AssetMediaResponseDto": {
         "properties": {
           "id": {
@@ -61592,6 +61821,25 @@
         ],
         "type": "object"
       },
+      "AssetMetadataRouteParams": {
+        "properties": {
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "key": {
+            "description": "Metadata key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key"
+        ],
+        "type": "object"
+      },
       "AssetMetadataUpsertDto": {
         "properties": {
           "items": {
@@ -61724,6 +61972,15 @@
           "createdAt"
         ],
         "type": "string"
+      },
+      "AssetPlaybackOptionsDto": {
+        "properties": {
+          "edited": {
+            "description": "Play the edited version when one exists (default). false plays the unedited source for the asset's owner, as the quick editor needs; everyone else is always given the edited version",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "AssetRejectReason": {
         "description": "Rejection reason if rejected",
@@ -62138,6 +62395,15 @@
         ],
         "type": "string"
       },
+      "AssetRestorationFileQueryDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AssetRestorationFileKind",
+            "default": "after"
+          }
+        },
+        "type": "object"
+      },
       "AssetRestorationListResponseDto": {
         "properties": {
           "assetId": {
@@ -62261,6 +62527,42 @@
           "sourceWidth",
           "upscale",
           "workload"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationOptionsQueryDto": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode",
+            "default": "faithful"
+          },
+          "upscale": {
+            "default": 2,
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AssetRestorationParamDto": {
+        "properties": {
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "restorationId": {
+            "description": "Restoration ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "restorationId"
         ],
         "type": "object"
       },
@@ -62762,6 +63064,22 @@
         ],
         "type": "object"
       },
+      "AssetStatsDto": {
+        "properties": {
+          "isFavorite": {
+            "description": "Filter by favorite status",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Filter by trash status",
+            "type": "boolean"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility"
+          }
+        },
+        "type": "object"
+      },
       "AssetStatsResponseDto": {
         "properties": {
           "images": {
@@ -62894,6 +63212,22 @@
           "all"
         ],
         "type": "string"
+      },
+      "AssetWaveformOptionsDto": {
+        "properties": {
+          "buckets": {
+            "default": 1000,
+            "description": "Peak pairs to return per channel (default 1000); fewer are returned for very short audio",
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "channels": {
+            "$ref": "#/components/schemas/AssetWaveformChannelMode",
+            "default": "mono"
+          }
+        },
+        "type": "object"
       },
       "AssetWaveformResponseDto": {
         "properties": {
@@ -63099,6 +63433,23 @@
           "devices",
           "nextOffset"
         ],
+        "type": "object"
+      },
+      "BackupDevicePageDto": {
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "BackupDeviceWriteDto": {
@@ -63659,6 +64010,32 @@
           "subjectScore",
           "technicalScore"
         ],
+        "type": "object"
+      },
+      "BestPhotosQueryDto": {
+        "properties": {
+          "includeArchived": {
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minScore": {
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "page": {
+            "default": 1,
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "BestPhotosResponseDto": {
@@ -65196,6 +65573,29 @@
         ],
         "type": "string"
       },
+      "CalendarHeatmapDto": {
+        "properties": {
+          "from": {
+            "description": "Start date in UTC",
+            "example": "2024-01-01",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "to": {
+            "description": "End date in UTC",
+            "example": "2024-01-01",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/CalendarHeatmapType",
+            "default": "Upload"
+          }
+        },
+        "type": "object"
+      },
       "CalendarHeatmapResponseDto": {
         "properties": {
           "from": {
@@ -65569,6 +65969,27 @@
         ],
         "type": "object"
       },
+      "ClassificationMatchQueryDto": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ClassificationMatchDecision",
+            "default": "suggested"
+          },
+          "page": {
+            "default": 1,
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ClassificationMediaType": {
         "description": "Which media a classification rule considers",
         "enum": [
@@ -65905,6 +66326,17 @@
         "required": [
           "albumName"
         ],
+        "type": "object"
+      },
+      "ClassificationRuleQueryDto": {
+        "properties": {
+          "albumId": {
+            "description": "Only the rule behind this album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ClassificationRuleResponseDto": {
@@ -67733,6 +68165,19 @@
         ],
         "type": "object"
       },
+      "CloudMlConsentTermsQueryDto": {
+        "properties": {
+          "identityNames": {
+            "description": "The names-in-photos feature as the administrator chose it",
+            "type": "boolean"
+          },
+          "medicalSignals": {
+            "description": "The medical-signals feature as the administrator chose it",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "CloudMlDescriptionBatchCreateDto": {
         "properties": {
           "estimateId": {
@@ -69436,6 +69881,17 @@
         ],
         "type": "string"
       },
+      "ConfigCredentialParamDto": {
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/ConfigCredential"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "ConfigCredentialResponseDto": {
         "properties": {
           "configured": {
@@ -69978,6 +70434,8 @@
                             "minimum": 0,
                             "type": "number"
                           },
+                          "maxItems": 2,
+                          "minItems": 2,
                           "type": "array"
                         },
                         "maxItems": 512,
@@ -71291,6 +71749,42 @@
           "recognition",
           "recognizedAt"
         ],
+        "type": "object"
+      },
+      "DocumentRevisionDto": {
+        "properties": {
+          "revision": {
+            "description": "Revision of the decision being removed",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "type": "object"
+      },
+      "DocumentSearchDto": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Text to find in recognized text and in the owner’s corrections",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "size": {
+            "default": 100,
+            "maximum": 250,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "DocumentSearchResponseDto": {
@@ -72839,6 +73333,30 @@
         ],
         "type": "object"
       },
+      "FaceSearchDto": {
+        "properties": {
+          "id": {
+            "description": "Face ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "withHidden": {
+            "description": "Also list faces the asset's owner hid (owner only)",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
       "FileTrashItemResponseDto": {
         "properties": {
           "checksum": {
@@ -72890,6 +73408,25 @@
           "sizeInBytes",
           "trashedAt"
         ],
+        "type": "object"
+      },
+      "FileTrashListQueryDto": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "description": "Page number, from 1",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 100,
+            "description": "Entries per page",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "FileTrashResponseDto": {
@@ -73373,7 +73910,7 @@
           "email": {
             "description": "The administrator’s email",
             "format": "email",
-            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
             "type": "string"
           },
           "name": {
@@ -73858,6 +74395,48 @@
           "relay"
         ],
         "type": "string"
+      },
+      "GetAlbumInfoDto": {
+        "properties": {
+          "suppressedOnly": {
+            "description": "Return album metadata for suppressed content only",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "GetAlbumsDto": {
+        "properties": {
+          "assetId": {
+            "description": "Filter albums containing this asset ID (ignores other parameters)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Album ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isOwned": {
+            "description": "Filter by ownership: true = only owned, false = only shared-with-me, undefined = no filter",
+            "type": "boolean"
+          },
+          "isShared": {
+            "description": "Filter by shared status: true = only shared, false = not shared, undefined = no filter",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Album name (exact match)",
+            "type": "string"
+          },
+          "suppressedOnly": {
+            "description": "Return album metadata for suppressed content only",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "HardwareBackend": {
         "enum": [
@@ -75513,7 +76092,7 @@
           "appleId": {
             "format": "email",
             "maxLength": 320,
-            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
             "type": "string"
           },
           "code": {
@@ -76473,6 +77052,20 @@
           "device"
         ],
         "type": "string"
+      },
+      "ICloudEditEvidenceQueryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
       },
       "ICloudEditEvidenceResponseDto": {
         "properties": {
@@ -77958,6 +78551,29 @@
         ],
         "type": "object"
       },
+      "IntegrityGetReportDto": {
+        "properties": {
+          "cursor": {
+            "description": "Cursor for pagination",
+            "type": "string"
+          },
+          "limit": {
+            "default": 500,
+            "description": "Number of items per page",
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
       "IntegrityReport": {
         "description": "Integrity report type",
         "enum": [
@@ -77966,6 +78582,17 @@
           "checksum_mismatch"
         ],
         "type": "string"
+      },
+      "IntegrityReportDto": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
       },
       "IntegrityReportResponseDto": {
         "properties": {
@@ -78739,6 +79366,23 @@
         ],
         "type": "object"
       },
+      "JobRunSearchDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "KnownAssetDevelopCrop": {
         "properties": {
           "h": {
@@ -79063,6 +79707,675 @@
           "kind",
           "name"
         ],
+        "type": "object"
+      },
+      "LargeAssetSearchDto": {
+        "properties": {
+          "albumIds": {
+            "deprecated": true,
+            "description": "Filter by album IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "city": {
+            "deprecated": true,
+            "description": "Filter by city name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "country": {
+            "deprecated": true,
+            "description": "Filter by country name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "createdAfter": {
+            "deprecated": true,
+            "description": "Filter by creation date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "createdBefore": {
+            "deprecated": true,
+            "description": "Filter by creation date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "imageEnrichment": {
+            "$ref": "#/components/schemas/ImageEnrichmentFilter"
+          },
+          "isEncoded": {
+            "deprecated": true,
+            "description": "Filter by encoded status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isFavorite": {
+            "deprecated": true,
+            "description": "Filter by favorite status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isMotion": {
+            "deprecated": true,
+            "description": "Filter by motion photo status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isNotInAlbum": {
+            "deprecated": true,
+            "description": "Filter assets not in any album",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "isOffline": {
+            "deprecated": true,
+            "description": "Filter by offline status",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "lensModel": {
+            "deprecated": true,
+            "description": "Filter by lens model",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "libraryId": {
+            "deprecated": true,
+            "description": "Library ID to filter by",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "make": {
+            "deprecated": true,
+            "description": "Filter by camera make",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "minFileSize": {
+            "description": "Minimum file size in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "deprecated": true,
+            "description": "Filter by camera model",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "ocr": {
+            "deprecated": true,
+            "description": "Filter by OCR text content",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "personIds": {
+            "deprecated": true,
+            "description": "Filter by person IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "petIds": {
+            "deprecated": true,
+            "description": "Filter by the caller's own pet IDs (confirmed pet observations only)",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "rating": {
+            "deprecated": true,
+            "description": "Filter by rating [1-5], or null for unrated",
+            "maximum": 5,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v2.6.0",
+                "state": "Updated",
+                "description": "Using -1 as a rating is deprecated and will be removed in the next major version."
+              },
+              {
+                "version": "v3",
+                "state": "Updated",
+                "description": "Using -1 as a rating is no longer valid."
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "size": {
+            "description": "Number of results to return",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "deprecated": true,
+            "description": "Filter by state/province name",
+            "nullable": true,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagIds": {
+            "deprecated": true,
+            "description": "Filter by tag IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "takenAfter": {
+            "deprecated": true,
+            "description": "Filter by taken date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "takenBefore": {
+            "deprecated": true,
+            "description": "Filter by taken date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "trashedAfter": {
+            "deprecated": true,
+            "description": "Filter by trash date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "trashedBefore": {
+            "deprecated": true,
+            "description": "Filter by trash date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "deprecated": true,
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "updatedAfter": {
+            "deprecated": true,
+            "description": "Filter by update date (after)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "updatedBefore": {
+            "deprecated": true,
+            "description": "Filter by update date (before)",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "deprecated": true,
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "withDeleted": {
+            "deprecated": true,
+            "description": "Include deleted assets",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              },
+              {
+                "version": "v3.2.0",
+                "state": "Deprecated"
+              }
+            ],
+            "x-immich-state": "Deprecated"
+          },
+          "withExif": {
+            "description": "Include EXIF data in response",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "LibraryImportPathReason": {
@@ -79448,6 +80761,15 @@
           "owner_deleted"
         ],
         "type": "string"
+      },
+      "LibrarySearchDto": {
+        "properties": {
+          "withDeleted": {
+            "description": "Include libraries whose removal is still in progress",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "LibrarySetupStatusDto": {
         "properties": {
@@ -80353,6 +81675,17 @@
         ],
         "type": "string"
       },
+      "MachineLearningHardwareQueryDto": {
+        "properties": {
+          "destinationId": {
+            "description": "Destination to probe. When omitted, the first enabled local destination is probed; a cloud destination is never chosen implicitly.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MachineLearningHardwareResponseDto": {
         "properties": {
           "cudaDeviceCount": {
@@ -80757,6 +82090,37 @@
         ],
         "type": "string"
       },
+      "MapMarkerDto": {
+        "properties": {
+          "fileCreatedAfter": {
+            "description": "Filter assets created after this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "fileCreatedBefore": {
+            "description": "Filter assets created before this date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "isArchived": {
+            "description": "Filter by archived status",
+            "type": "boolean"
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status",
+            "type": "boolean"
+          },
+          "withSharedAlbums": {
+            "description": "Include shared album assets",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "MapMarkerResponseDto": {
         "properties": {
           "city": {
@@ -80815,6 +82179,25 @@
           "lat",
           "lon",
           "state"
+        ],
+        "type": "object"
+      },
+      "MapReverseGeocodeDto": {
+        "properties": {
+          "lat": {
+            "description": "Latitude (-90 to 90)",
+            "format": "double",
+            "type": "number"
+          },
+          "lon": {
+            "description": "Longitude (-180 to 180)",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
         ],
         "type": "object"
       },
@@ -81325,6 +82708,43 @@
         ],
         "type": "object"
       },
+      "MediaHealthListQueryDto": {
+        "properties": {
+          "allAccounts": {
+            "description": "Review every account; administrators only",
+            "type": "boolean"
+          },
+          "category": {
+            "$ref": "#/components/schemas/MediaHealthCategory"
+          },
+          "needsAttention": {
+            "description": "Only findings that still need a decision",
+            "type": "boolean"
+          },
+          "ownerId": {
+            "description": "Account to review; administrators only for another account",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaHealthStatus"
+          }
+        },
+        "type": "object"
+      },
       "MediaHealthListResponseDto": {
         "properties": {
           "buckets": {
@@ -81799,6 +83219,21 @@
           "deleted"
         ],
         "type": "string"
+      },
+      "MediaHealthSummaryQueryDto": {
+        "properties": {
+          "allAccounts": {
+            "description": "Review every account; administrators only",
+            "type": "boolean"
+          },
+          "ownerId": {
+            "description": "Account to review; administrators only for another account",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "MediaHealthSummaryResponseDto": {
         "properties": {
@@ -82870,6 +84305,34 @@
         ],
         "type": "object"
       },
+      "MediaOperationSearchDto": {
+        "properties": {
+          "includeDismissed": {
+            "description": "Include jobs the owner cleared",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus",
+            "description": "Restrict to one status"
+          },
+          "take": {
+            "default": 100,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "MediaOperationStatisticsDto": {
         "properties": {
           "active": {
@@ -83224,6 +84687,17 @@
         ],
         "type": "object"
       },
+      "MemoryExportSearchDto": {
+        "properties": {
+          "memoryId": {
+            "description": "Only return exports of this memory",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MemoryExportStatus": {
         "description": "Memory export status",
         "enum": [
@@ -83430,6 +84904,64 @@
           "type",
           "updatedAt"
         ],
+        "type": "object"
+      },
+      "MemorySearchDto": {
+        "properties": {
+          "for": {
+            "description": "Filter by date",
+            "example": "2024-01-01",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Memory ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isHidden": {
+            "description": "Only the memories the owner hid (true); hidden memories are left out otherwise",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
+          "isSaved": {
+            "description": "Filter by saved status",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Include trashed memories",
+            "type": "boolean"
+          },
+          "isUpcoming": {
+            "description": "Filter by memories that have not been shown yet",
+            "type": "boolean"
+          },
+          "order": {
+            "$ref": "#/components/schemas/MemorySearchOrder"
+          },
+          "page": {
+            "description": "Page number",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "description": "Number of memories to return",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/MemoryType"
+          }
+        },
         "type": "object"
       },
       "MemorySearchOrder": {
@@ -85541,6 +87073,27 @@
         ],
         "type": "string"
       },
+      "NotificationSearchDto": {
+        "properties": {
+          "id": {
+            "description": "Filter by notification ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/NotificationLevel"
+          },
+          "type": {
+            "$ref": "#/components/schemas/NotificationType"
+          },
+          "unread": {
+            "description": "Filter by unread status",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "NotificationType": {
         "description": "Notification type",
         "enum": [
@@ -85860,6 +87413,36 @@
         ],
         "type": "string"
       },
+      "OwnerBackupHistoryDto": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "manifestKey": {
+            "description": "The backup run’s manifest in the bucket",
+            "maxLength": 300,
+            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifestKey"
+        ],
+        "type": "object"
+      },
       "OwnerBackupHistoryResponseDto": {
         "properties": {
           "items": {
@@ -85948,6 +87531,23 @@
           "degraded"
         ],
         "type": "string"
+      },
+      "OwnerBackupPageDto": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "OwnerBackupRestoreDto": {
         "properties": {
@@ -86168,6 +87768,17 @@
           "name",
           "profileChangedAt",
           "profileImagePath"
+        ],
+        "type": "object"
+      },
+      "PartnerSearchDto": {
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/PartnerDirection"
+          }
+        },
+        "required": [
+          "direction"
         ],
         "type": "object"
       },
@@ -86730,6 +88341,25 @@
         ],
         "type": "object"
       },
+      "PersonCorrectionSearchDto": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "description": "Page number",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 25,
+            "description": "Number of decisions per page",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PersonCorrectionsResponseDto": {
         "properties": {
           "corrections": {
@@ -87060,6 +88690,41 @@
         ],
         "type": "object"
       },
+      "PersonSearchDto": {
+        "properties": {
+          "closestAssetId": {
+            "description": "Closest asset ID for similarity search",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "closestPersonId": {
+            "description": "Closest person ID for similarity search",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number for pagination",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 500,
+            "description": "Number of items per page",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "withHidden": {
+            "description": "Include hidden people",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "PersonStatisticsResponseDto": {
         "properties": {
           "assets": {
@@ -87121,6 +88786,20 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "PetAssetObservationSearchDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset whose pet observations to list",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
         "type": "object"
       },
       "PetCandidateListResponseDto": {
@@ -87278,6 +88957,18 @@
         },
         "type": "object"
       },
+      "PetCandidateSearchDto": {
+        "properties": {
+          "size": {
+            "default": 100,
+            "description": "Number of candidates to return",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PetCreateDto": {
         "properties": {
           "birthDate": {
@@ -87385,6 +89076,17 @@
         "required": [
           "assetId"
         ],
+        "type": "object"
+      },
+      "PetObservationDeleteDto": {
+        "properties": {
+          "expectedChecksum": {
+            "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "PetObservationResponseDto": {
@@ -87746,6 +89448,15 @@
         ],
         "type": "object"
       },
+      "PetSearchDto": {
+        "properties": {
+          "withHidden": {
+            "description": "Include hidden pets",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "PetSpecies": {
         "description": "Pet species",
         "enum": [
@@ -88011,7 +89722,7 @@
                     "type": "string",
                     "maxLength": 254,
                     "format": "email",
-                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                   },
                   {
                     "type": "string",
@@ -88332,7 +90043,7 @@
                     "type": "string",
                     "maxLength": 254,
                     "format": "email",
-                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                   },
                   {
                     "type": "string",
@@ -102501,6 +104212,46 @@
         ],
         "type": "object"
       },
+      "PluginMethodSearchDto": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether the plugin method is enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Plugin method ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pluginName": {
+            "description": "Plugin name",
+            "type": "string"
+          },
+          "pluginVersion": {
+            "description": "Plugin version",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/WorkflowTrigger",
+            "description": "Workflow trigger"
+          },
+          "type": {
+            "$ref": "#/components/schemas/WorkflowType",
+            "description": "Workflow types"
+          }
+        },
+        "type": "object"
+      },
       "PluginResponseDto": {
         "properties": {
           "author": {
@@ -102556,6 +104307,33 @@
           "updatedAt",
           "version"
         ],
+        "type": "object"
+      },
+      "PluginSearchDto": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Whether the plugin is enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Plugin ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "PluginTemplateResponseDto": {
@@ -102824,6 +104602,27 @@
           "listed"
         ],
         "type": "string"
+      },
+      "PreservationItemsQueryDto": {
+        "properties": {
+          "skip": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PreservationItemState"
+          },
+          "take": {
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "verifyState": {
+            "$ref": "#/components/schemas/PreservationVerifyState"
+          }
+        },
+        "type": "object"
       },
       "PreservationItemsResponseDto": {
         "properties": {
@@ -103485,6 +105284,24 @@
           "skipped"
         ],
         "type": "string"
+      },
+      "PreservationRestoreItemsQueryDto": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/PreservationRestoreItemFilter"
+          },
+          "skip": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "PreservationRestoreItemsResponseDto": {
         "properties": {
@@ -104436,6 +106253,24 @@
         ],
         "type": "object"
       },
+      "QueueJobSearchDto": {
+        "properties": {
+          "ownerId": {
+            "description": "Only jobs whose item belongs to this account (FL-71 account filter)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "description": "Filter jobs by status",
+            "items": {
+              "$ref": "#/components/schemas/QueueJobStatus"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "QueueJobStatus": {
         "description": "Queue job status",
         "enum": [
@@ -104506,6 +106341,17 @@
         ],
         "type": "string"
       },
+      "QueueNameParamDto": {
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/QueueName"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "QueueOwnerStatisticsResponseDto": {
         "properties": {
           "active": {
@@ -104557,6 +106403,20 @@
           "paused",
           "truncated",
           "waiting"
+        ],
+        "type": "object"
+      },
+      "QueueOwnerStatisticsSearchDto": {
+        "properties": {
+          "ownerId": {
+            "description": "The account whose jobs are counted",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerId"
         ],
         "type": "object"
       },
@@ -106624,6 +108484,58 @@
         ],
         "type": "object"
       },
+      "RenderWorkerArtifactDto": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          },
+          "chunkKey": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "media",
+              "subtitle"
+            ],
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "chunkKey",
+          "sizeInBytes"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerArtifactReadDto": {
+        "additionalProperties": false,
+        "properties": {
+          "chunkKey": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "media",
+              "subtitle"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunkKey"
+        ],
+        "type": "object"
+      },
       "RenderWorkerAuditDto": {
         "properties": {
           "actorId": {
@@ -106697,6 +108609,22 @@
           "device_lost"
         ],
         "type": "string"
+      },
+      "RenderWorkerAuditSearchDto": {
+        "properties": {
+          "take": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "RenderWorkerCancelAckDto": {
         "properties": {
@@ -110328,6 +112256,34 @@
         ],
         "type": "string"
       },
+      "SearchPeopleDto": {
+        "properties": {
+          "name": {
+            "description": "Person name to search for",
+            "type": "string"
+          },
+          "withHidden": {
+            "description": "Include hidden people",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "SearchPlacesDto": {
+        "properties": {
+          "name": {
+            "description": "Place name to search for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "SearchResponseDto": {
         "properties": {
           "albums": {
@@ -110354,6 +112310,52 @@
         },
         "required": [
           "total"
+        ],
+        "type": "object"
+      },
+      "SearchSuggestionRequestDto": {
+        "properties": {
+          "country": {
+            "description": "Filter by country",
+            "type": "string"
+          },
+          "includeNull": {
+            "description": "Include null values in suggestions",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v1.111.0",
+                "state": "Added"
+              },
+              {
+                "version": "v2",
+                "state": "Stable"
+              }
+            ],
+            "x-immich-state": "Stable"
+          },
+          "lensModel": {
+            "description": "Filter by lens model",
+            "type": "string"
+          },
+          "make": {
+            "description": "Filter by camera make",
+            "type": "string"
+          },
+          "model": {
+            "description": "Filter by camera model",
+            "type": "string"
+          },
+          "state": {
+            "description": "Filter by state/province",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/SearchSuggestionType"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },
@@ -111517,6 +113519,29 @@
           "url",
           "userId"
         ],
+        "type": "object"
+      },
+      "SharedLinkSearchDto": {
+        "properties": {
+          "albumId": {
+            "description": "Filter by album ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Filter by shared link ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v2.5.0",
+                "state": "Added"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "SharedLinkType": {
@@ -113083,6 +115108,17 @@
           "id",
           "primaryAssetId"
         ],
+        "type": "object"
+      },
+      "StackSearchDto": {
+        "properties": {
+          "primaryAssetId": {
+            "description": "Filter by primary asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "StackUpdateDto": {
@@ -114791,6 +116827,23 @@
         ],
         "type": "string"
       },
+      "StudioExportSearchDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "StudioExportSettingsDto": {
         "properties": {
           "audio": {
@@ -115198,6 +117251,19 @@
           "ttf"
         ],
         "type": "string"
+      },
+      "StudioFontParamDto": {
+        "properties": {
+          "sha256": {
+            "description": "SHA-256 of a catalogue file, lower-case hex",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256"
+        ],
+        "type": "object"
       },
       "StudioFontStyle": {
         "enum": [
@@ -115992,6 +118058,15 @@
         ],
         "type": "object"
       },
+      "StudioProjectDeleteQueryDto": {
+        "properties": {
+          "permanent": {
+            "description": "Delete for good instead of moving to the trash. Library media is never touched either way.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "StudioProjectDetailDto": {
         "properties": {
           "access": {
@@ -116196,6 +118271,20 @@
           "removed",
           "to",
           "truncated"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDiffQueryDto": {
+        "properties": {
+          "against": {
+            "description": "The earlier revision to compare with",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "against"
         ],
         "type": "object"
       },
@@ -116588,6 +118677,35 @@
         ],
         "type": "object"
       },
+      "StudioProjectLibrarySearchDto": {
+        "properties": {
+          "query": {
+            "description": "Case-insensitive part of the name",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "shelf": {
+            "$ref": "#/components/schemas/StudioProjectShelf",
+            "description": "Which shelf to list; `active` when omitted"
+          },
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/StudioProjectSort"
+          },
+          "take": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "StudioProjectListResponseDto": {
         "properties": {
           "items": {
@@ -116972,6 +119090,23 @@
           "revisionId",
           "unchanged"
         ],
+        "type": "object"
+      },
+      "StudioProjectSearchDto": {
+        "properties": {
+          "skip": {
+            "default": 0,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "StudioProjectShelf": {
@@ -122492,6 +124627,114 @@
         ],
         "type": "string"
       },
+      "TimeBucketAssetDto": {
+        "properties": {
+          "albumId": {
+            "description": "Filter assets belonging to a specific album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "assetType": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "description": "Filter assets by media type"
+          },
+          "bbox": {
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "dateType": {
+            "$ref": "#/components/schemas/TimeBucketDateType",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "lockReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetLockReason"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "immich-locked-folder"
+                ]
+              }
+            ],
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "order": {
+            "$ref": "#/components/schemas/AssetOrder",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)"
+          },
+          "orderBy": {
+            "$ref": "#/components/schemas/AssetOrderBy",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
+          },
+          "personId": {
+            "description": "Filter assets containing a specific person (face recognition)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "petId": {
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagId": {
+            "description": "Filter assets with a specific tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "timeBucket": {
+            "description": "Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format",
+            "example": "2024-01-01T00:00:00.000Z",
+            "type": "string"
+          },
+          "userId": {
+            "description": "Filter assets by specific user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withCoordinates": {
+            "description": "Include location data in the response",
+            "type": "boolean"
+          },
+          "withStacked": {
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "timeBucket"
+        ],
+        "type": "object"
+      },
       "TimeBucketAssetResponseDto": {
         "properties": {
           "city": {
@@ -122750,6 +124993,106 @@
         ],
         "type": "string"
       },
+      "TimeBucketDto": {
+        "properties": {
+          "albumId": {
+            "description": "Filter assets belonging to a specific album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "assetType": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "description": "Filter assets by media type"
+          },
+          "bbox": {
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "dateType": {
+            "$ref": "#/components/schemas/TimeBucketDateType",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "lockReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetLockReason"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "immich-locked-folder"
+                ]
+              }
+            ],
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "order": {
+            "$ref": "#/components/schemas/AssetOrder",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)"
+          },
+          "orderBy": {
+            "$ref": "#/components/schemas/AssetOrderBy",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
+          },
+          "personId": {
+            "description": "Filter assets containing a specific person (face recognition)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "petId": {
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagId": {
+            "description": "Filter assets with a specific tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "userId": {
+            "description": "Filter assets by specific user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withCoordinates": {
+            "description": "Include location data in the response",
+            "type": "boolean"
+          },
+          "withStacked": {
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "TimeBucketsResponseDto": {
         "properties": {
           "count": {
@@ -122819,6 +125162,245 @@
           "keyAssetId",
           "places",
           "timeBucket"
+        ],
+        "type": "object"
+      },
+      "TimelineHighlightsDto": {
+        "properties": {
+          "albumId": {
+            "description": "Filter assets belonging to a specific album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "assetType": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "description": "Filter assets by media type"
+          },
+          "bbox": {
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "dateType": {
+            "$ref": "#/components/schemas/TimeBucketDateType",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "grouping": {
+            "$ref": "#/components/schemas/TimelineHighlightGrouping"
+          },
+          "highlightCount": {
+            "description": "Highlights besides the key photo for each month card (default 4). Year cards carry none",
+            "maximum": 12,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "lockReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetLockReason"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "immich-locked-folder"
+                ]
+              }
+            ],
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "order": {
+            "$ref": "#/components/schemas/AssetOrder",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)"
+          },
+          "orderBy": {
+            "$ref": "#/components/schemas/AssetOrderBy",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
+          },
+          "personId": {
+            "description": "Filter assets containing a specific person (face recognition)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "petId": {
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagId": {
+            "description": "Filter assets with a specific tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "userId": {
+            "description": "Filter assets by specific user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withCoordinates": {
+            "description": "Include location data in the response",
+            "type": "boolean"
+          },
+          "withStacked": {
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "TimelineOrderedDto": {
+        "properties": {
+          "after": {
+            "description": "Continue after the previous ordered page cursor; overrides skip",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "albumId": {
+            "description": "Filter assets belonging to a specific album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "assetType": {
+            "$ref": "#/components/schemas/AssetTypeEnum",
+            "description": "Filter assets by media type"
+          },
+          "bbox": {
+            "description": "Bounding box coordinates as west,south,east,north (WGS84)",
+            "example": "11.075683,49.416711,11.117589,49.454875",
+            "type": "string"
+          },
+          "before": {
+            "description": "Read the page before this ordered cursor; overrides skip",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "dateType": {
+            "$ref": "#/components/schemas/TimeBucketDateType",
+            "description": "Date source for timeline bucket grouping. Defaults to taken date."
+          },
+          "isFavorite": {
+            "description": "Filter by favorite status (true for favorites only, false for non-favorites only)",
+            "type": "boolean"
+          },
+          "isTrashed": {
+            "description": "Filter by trash status (true for trashed assets only, false for non-trashed only)",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "lockReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssetLockReason"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "immich-locked-folder"
+                ]
+              }
+            ],
+            "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session."
+          },
+          "order": {
+            "$ref": "#/components/schemas/AssetOrder",
+            "description": "Sort order for assets within time buckets (ASC for oldest first, DESC for newest first)"
+          },
+          "orderBy": {
+            "$ref": "#/components/schemas/AssetOrderBy",
+            "description": "Date to group and order assets by (takenAt for date taken, createdAt for date added to Frameleaf)"
+          },
+          "personId": {
+            "description": "Filter assets containing a specific person (face recognition)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "petId": {
+            "description": "Filter assets in which the caller confirmed one of their own pets",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "skip": {
+            "default": 0,
+            "description": "Items to skip when no cursor is supplied",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/TimelineOrderedSort"
+          },
+          "suppressedOnly": {
+            "description": "Return only suppressed content. Requires an elevated session.",
+            "type": "boolean"
+          },
+          "tagId": {
+            "description": "Filter assets with a specific tag",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "take": {
+            "default": 500,
+            "description": "Items to return (at most 1000)",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "userId": {
+            "description": "Filter assets by specific user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility",
+            "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withCoordinates": {
+            "description": "Include location data in the response",
+            "type": "boolean"
+          },
+          "withStacked": {
+            "description": "Include stacked assets in the response. When true, only primary assets from stacks are returned.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sort"
         ],
         "type": "object"
       },
@@ -122959,6 +125541,36 @@
           "name"
         ],
         "type": "string"
+      },
+      "TrashItemsDto": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "description": "Page number, from 1",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Words that must all appear in the file name",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "size": {
+            "default": 200,
+            "description": "Items per page",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/TrashItemSort"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          }
+        },
+        "type": "object"
       },
       "TrashItemsResponseDto": {
         "properties": {
@@ -123689,6 +126301,21 @@
           "storageLabel",
           "updatedAt"
         ],
+        "type": "object"
+      },
+      "UserAdminSearchDto": {
+        "properties": {
+          "id": {
+            "description": "User ID filter",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "withDeleted": {
+            "description": "Include deleted users",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "UserAdminUpdateDto": {
@@ -124835,6 +127462,17 @@
         ],
         "type": "object"
       },
+      "UtilityActivityQueryDto": {
+        "properties": {
+          "tool": {
+            "$ref": "#/components/schemas/UtilityActivityTool"
+          }
+        },
+        "required": [
+          "tool"
+        ],
+        "type": "object"
+      },
       "UtilityActivityResponseDto": {
         "properties": {
           "entries": {
@@ -125356,6 +127994,18 @@
         "required": [
           "hits"
         ],
+        "type": "object"
+      },
+      "VideoMomentSimilarDto": {
+        "properties": {
+          "limit": {
+            "default": 24,
+            "description": "Most moments to return",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "VideoMomentSource": {
@@ -126121,6 +128771,37 @@
           "step_failed"
         ],
         "type": "string"
+      },
+      "WorkflowSearchDto": {
+        "properties": {
+          "description": {
+            "description": "Workflow description",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Workflow enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Workflow ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "logging": {
+            "description": "Workflow logs run results",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Workflow name",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/WorkflowTrigger",
+            "description": "Workflow trigger type"
+          }
+        },
+        "type": "object"
       },
       "WorkflowShareResponseDto": {
         "properties": {

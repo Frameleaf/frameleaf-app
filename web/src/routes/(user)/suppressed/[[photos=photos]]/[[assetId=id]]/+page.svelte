@@ -49,7 +49,7 @@
   const setTab = async (tab: 'timeline' | 'albums') => {
     pendingTab = tab;
     try {
-      await goto(Route.suppressed({ tab }), { keepFocus: true, noScroll: true, replaceState: true });
+      await goto(Route.suppressed({ tab }), { reset: false, replace: true });
     } finally {
       pendingTab = undefined;
     }

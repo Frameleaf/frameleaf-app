@@ -225,9 +225,8 @@
     filter = next;
     // Keep the URL honest so the view can be linked to and reloaded onto the same filter.
     void goto(Route.activity(next === 'all' ? undefined : { filter: next }), {
-      replaceState: true,
-      keepFocus: true,
-      noScroll: true,
+      replace: true,
+      reset: false,
     });
   };
 

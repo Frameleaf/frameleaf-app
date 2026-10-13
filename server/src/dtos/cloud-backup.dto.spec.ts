@@ -32,7 +32,9 @@ describe('backup manifest request contracts', () => {
       expect(z.toJSONSchema(request.schema), request.name).not.toHaveProperty('properties.manifestKey.maxLength');
     }
     for (const request of owner) {
-      expect(z.toJSONSchema(request.schema), request.name).toHaveProperty('properties.manifestKey.maxLength', 300);
+      const document = z.toJSONSchema(request.schema);
+      const root = document.$ref ? document.$defs![document.$ref.slice('#/$defs/'.length)] : document;
+      expect(root, request.name).toHaveProperty('properties.manifestKey.maxLength', 300);
     }
   });
 

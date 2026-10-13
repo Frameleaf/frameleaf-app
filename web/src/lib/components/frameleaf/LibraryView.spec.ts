@@ -33,7 +33,10 @@ const app = vi.hoisted(() => ({
 }));
 vi.mock('$app/state', () => ({ page: app.page }));
 
-const navigation = vi.hoisted(() => ({ goto: vi.fn(), replaceState: vi.fn() }));
+const navigation = vi.hoisted(() => ({
+  goto: vi.fn(),
+  replaceState: vi.fn<(url: string | URL, state: App.PageState) => Promise<void>>(async () => {}),
+}));
 vi.mock('$app/navigation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$app/navigation')>()),
   goto: navigation.goto,
@@ -94,7 +97,8 @@ describe('LibraryView', () => {
     const first = writeLibraryView(new URL('http://localhost/photos'), session.state);
     const second = writeLibraryView(first, { ...session.state, sort: 'filename' });
     app.page.url = new SvelteURL(first.href);
-    navigation.replaceState.mockImplementation((url: URL) => {
+    navigation.replaceState.mockImplementation(async (target: string | URL) => {
+      const url = new URL(target);
       app.page.url.searchParams.set('fl', url.searchParams.get('fl') ?? '');
       // A real `replaceState` updates `location.href` synchronously (only the reactive `page.url`
       // store lags behind); keep this mock's `location` in step so the FL-40 fix's comparison

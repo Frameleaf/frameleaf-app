@@ -19,6 +19,7 @@
    */
   import { searchShortcutHintKey } from '$lib/frameleaf/search-shortcuts';
   import { goto } from '$app/navigation';
+  import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
@@ -30,7 +31,7 @@
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
   import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
-  import ServerLanding from '$lib/components/frameleaf/settings/server/ServerLanding.svelte';
+  import ServerLanding from '$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
@@ -634,7 +635,9 @@
     query = '';
     sidebarStore.isOpen = false;
     const currentScope = page.url.searchParams.get('scope') ?? undefined;
-    await goto(commandCenterUrl(next, section, { ...params, scope: currentScope }), { keepFocus: true });
+    await gotoWithFocusAndScroll(commandCenterUrl(next, section, { ...params, scope: currentScope }), {
+      keepFocus: true,
+    });
     await focusHeading();
   };
 
@@ -682,13 +685,13 @@
   };
 
   const changeScope = async (value: string) => {
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     if (value === 'all') {
       url.searchParams.delete('scope');
     } else {
       url.searchParams.set('scope', value);
     }
-    await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+    await goto(`${url.pathname}${url.search}`, { replace: true, reset: false });
   };
 </script>
 

@@ -222,3 +222,16 @@ describe('removeOpenApi30IncompatibleKeys', () => {
     expect(schema).toEqual({ type: 'array', items: { type: 'array', items: point } });
   });
 });
+
+it('retains tuple bounds and formats when closed JSON Schema tuple items is false', () => {
+  const point = { type: 'number', format: 'double' };
+  const schema = { type: 'array', prefixItems: [point, point], items: false, minItems: 2, maxItems: 2 };
+  removeOpenApi30IncompatibleKeys(schema);
+  expect(schema).toEqual({ type: 'array', items: point, minItems: 2, maxItems: 2 });
+});
+
+it('leaves closed arrays without positional tuple metadata intact', () => {
+  const schema = { type: 'array', items: false };
+  removeOpenApi30IncompatibleKeys(schema);
+  expect(schema).toEqual({ type: 'array', items: false });
+});

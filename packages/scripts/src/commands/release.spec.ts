@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getNewVersion, ReleaseError } from './release';
+import { getNewVersion } from './release';
+import { ReleaseError } from 'src/types';
 
 describe(getNewVersion.name, () => {
   describe('transitions', () => {

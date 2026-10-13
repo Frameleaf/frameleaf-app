@@ -236,7 +236,9 @@ export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
   // adding them reads as a breaking request change to the compatibility check.
   if (Array.isArray(object.prefixItems)) {
     const prefixItems = object.prefixItems as unknown[];
-    object.items ??= prefixItems[0];
+    if ((object.items ?? false) === false) {
+      object.items = prefixItems[0];
+    }
     delete object.prefixItems;
   }
 

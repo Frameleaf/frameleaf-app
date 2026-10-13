@@ -114,9 +114,8 @@
       debounce = undefined;
       const text = query.trim();
       void goto(Route.documents(text ? { query: text } : undefined), {
-        replaceState: true,
-        keepFocus: true,
-        noScroll: true,
+        replace: true,
+        reset: false,
       });
       void restart();
     }, DOCUMENT_SEARCH_DEBOUNCE_MS);

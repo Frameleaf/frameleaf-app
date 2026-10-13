@@ -98,8 +98,7 @@
    * Moves the hosting dialog to another import, or to the list. The host reads the import from the
    * address and loads it from the server, so the page's own data is never reloaded.
    */
-  const openImport = (id?: string) =>
-    goto(Route.takeout(id ? { import: id } : undefined), { noScroll: true, keepFocus: true });
+  const openImport = (id?: string) => goto(Route.takeout(id ? { import: id } : undefined), { reset: false });
   const close = () => (onClose ? onClose() : history.back());
 
   type ReconcileTab = 'review' | 'live-photos' | 'albums' | 'options' | 'report';

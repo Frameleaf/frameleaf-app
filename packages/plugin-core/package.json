@@ -12,10 +12,10 @@
   "author": "",
   "license": "AGPL-3.0",
   "devDependencies": {
-    "@extism/js-pdk": "^1.0.1",
+    "@extism/js-pdk": "^1.1.1",
     "@frameleaf/sdk": "workspace:*",
     "@frameleaf/plugin-sdk": "workspace:*",
-    "esbuild": "^0.28.0",
-    "typescript": "^7.0.0"
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }

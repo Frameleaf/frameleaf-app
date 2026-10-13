@@ -637,7 +637,7 @@
       return;
     }
 
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.delete(QueryParameter.QUERY);
     url.searchParams.delete(DISCOVERY_QUERY_PARAMETER);
     url.searchParams.set(ASK_QUERY_PARAMETER, normalizedQuery);
@@ -648,7 +648,7 @@
       return;
     }
 
-    await goto(url, { keepFocus: true, noScroll: true });
+    await goto(url, { reset: false });
   }
 
   async function loadNextAskPage() {

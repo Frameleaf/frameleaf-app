@@ -261,7 +261,7 @@
     failed = false;
     loading = true;
     shelf = next;
-    void goto(Route.studioProjects({ shelf: next }), { replaceState: true, keepFocus: true, noScroll: true });
+    void goto(Route.studioProjects({ shelf: next }), { replace: true, reset: false });
   };
 
   const run = async (

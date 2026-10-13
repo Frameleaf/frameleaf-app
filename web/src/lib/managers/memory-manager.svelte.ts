@@ -497,7 +497,7 @@ class MemoryManager {
   }
 
   #goto(href: string) {
-    return goto(href, { replaceState: true, noScroll: true, keepFocus: true });
+    return goto(href, { replace: true, reset: false });
   }
 
   loadNextPage() {

@@ -1,5 +1,5 @@
 import { AssetLockReason, AssetVisibility } from '@frameleaf/sdk';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 /**
  * Whether this browser session is unlocked with the PIN (FL-34), for code outside the top bar that

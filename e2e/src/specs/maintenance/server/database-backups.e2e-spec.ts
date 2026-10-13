@@ -112,7 +112,7 @@ describe('/admin/database-backups', () => {
 
   // => action: restore database flow
 
-  describe.sequential('POST /start-restore', () => {
+  describe('POST /start-restore', { concurrent: false }, () => {
     // The hook covers End, the bounded restart wait, and recreating the admin.
     afterAll(async () => {
       await request(app)
@@ -181,7 +181,7 @@ describe('/admin/database-backups', () => {
 
   // => action: restore database
 
-  describe.sequential('POST /backups/restore', () => {
+  describe('POST /backups/restore', { concurrent: false }, () => {
     // Register teardown before entering maintenance: failed assertions must not strand later specs.
     afterEach(async () => {
       if (!cookie) {

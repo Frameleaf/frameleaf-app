@@ -44,7 +44,7 @@ import { getKyselyDB } from 'test/utils.js';
 // Real PostgreSQL, native media I/O, entry guard, operation claim and adoption.
 // This intentionally asserts the concurrent-save contract, rather than expecting
 // the current generic input-snapshot refusal or serializing the two saves.
-describe.sequential('retained video render entry publication (PR201)', () => {
+describe('retained video render entry publication (PR201)', { concurrent: false }, () => {
   let db: Kysely<DB>;
   let databaseName: string;
   let folder: string;

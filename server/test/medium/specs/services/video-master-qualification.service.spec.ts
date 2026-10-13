@@ -327,7 +327,7 @@ const assertChannelIdentity = (amplitudes: number[][]) => {
   }
 };
 
-describe.sequential('VID-100 production master qualification (FL-16)', () => {
+describe('VID-100 production master qualification (FL-16)', { concurrent: false }, () => {
   let db: Kysely<DB>;
   let folder: string;
   let originalRoot: string | undefined;

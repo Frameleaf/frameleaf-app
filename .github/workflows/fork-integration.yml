@@ -157,7 +157,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.8.15'
+          version: '0.13.0'
           python-version: '3.12'
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups

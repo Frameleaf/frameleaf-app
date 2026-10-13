@@ -227,7 +227,7 @@ describe('getEnv', () => {
     });
 
     it('keeps an invalid legacy help link out instead of refusing to start', () => {
-      // eslint-disable-next-line unicorn/prefer-https -- an insecure legacy address must be left out
+      // an insecure legacy address must be left out
       process.env.IMMICH_THIRD_PARTY_DOCUMENTATION_URL = 'http://docs.example';
       process.env.IMMICH_THIRD_PARTY_SUPPORT_URL = 'https://support.example';
 

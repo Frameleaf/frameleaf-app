@@ -1,4 +1,5 @@
-import { navigating } from '$app/stores';
+import { toStore } from 'svelte/store';
+import { navigating } from '$app/state';
 import { SessionStorageKey } from '$lib/constants';
 import { handlePromiseError } from '$lib/utils';
 
@@ -31,11 +32,11 @@ export function scrollMemory(
   node: HTMLElement,
   { routeStartsWith, beforeSave, beforeClear, beforeScroll }: PageOptions,
 ) {
-  const unsubscribeNavigating = navigating.subscribe((navigation) => {
+  const unsubscribeNavigating = toStore(() => navigating.to).subscribe((to) => {
     const existingScroll = sessionStorage.getItem(SessionStorageKey.SCROLL_POSITION);
-    if (navigation?.to && !existingScroll) {
+    if (to && !existingScroll) {
       // Save current scroll information when going into a subpage.
-      if (navigation.to.url.pathname.startsWith(routeStartsWith)) {
+      if (to.url.pathname.startsWith(routeStartsWith)) {
         beforeSave?.();
         sessionStorage.setItem(SessionStorageKey.SCROLL_POSITION, node.scrollTop.toString());
       } else {
@@ -69,9 +70,9 @@ export function scrollMemory(
 }
 
 export function scrollMemoryClearer(_node: HTMLElement, { routeStartsWith, beforeClear }: Options) {
-  const unsubscribeNavigating = navigating.subscribe((navigation) => {
+  const unsubscribeNavigating = toStore(() => navigating.to).subscribe((to) => {
     // Forget scroll position from main page if going somewhere else.
-    if (!navigation?.to || navigation?.to.url.pathname.startsWith(routeStartsWith)) {
+    if (!to || to.url.pathname.startsWith(routeStartsWith)) {
       return;
     }
 

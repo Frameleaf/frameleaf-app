@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { page } from '$app/state';
   import RailSavedSearches from '$lib/components/frameleaf/RailSavedSearches.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
@@ -219,7 +219,7 @@
     $t(destination.labelKey),
     destination.icon,
     destination.href,
-    isDestinationCurrent(page.url, destination),
+    isDestinationCurrent(new URL(page.url.href), destination),
     false,
   )}
 {/snippet}

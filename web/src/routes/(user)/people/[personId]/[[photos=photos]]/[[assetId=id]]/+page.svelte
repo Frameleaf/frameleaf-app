@@ -1,6 +1,6 @@
 <script lang="ts">
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
@@ -45,13 +45,13 @@
   let refresh = $state(0);
 
   onMount(() => {
-    const fallbackRoute = $page.params.assetId ? Route.viewPerson(data.person) : Route.people();
-    previousRoute = Route.continue($page.url.searchParams.get(QueryParameter.PREVIOUS_ROUTE), fallbackRoute).toString();
+    const fallbackRoute = page.params.assetId ? Route.viewPerson(data.person) : Route.people();
+    previousRoute = Route.continue(page.url.searchParams.get(QueryParameter.PREVIOUS_ROUTE), fallbackRoute).toString();
   });
 
   afterNavigate(({ from }) => {
     // Prevent setting previousRoute to the current page.
-    if (from?.url && from.route.id !== $page.route.id) {
+    if (from?.url && from.route.id !== page.route.id) {
       previousRoute = from.url.href;
     }
   });

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
   import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
@@ -59,7 +60,7 @@
       return;
     }
     let active = true;
-    const url = untrack(() => new URL(page.url));
+    const url = untrack(() => new URL(page.url.href));
     if (status) {
       url.searchParams.set('status', status);
     }
@@ -102,14 +103,14 @@
     if (!section && fromCare) {
       return goto(commandCenterUrl('care', undefined, { scope: page.url.searchParams.get('scope') ?? undefined }));
     }
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     for (const key of ['section', 'assetId', 'status', 'at', 'index', 'workflowId', 'from']) {
       url.searchParams.delete(key);
     }
     if (section) {
       url.searchParams.set('section', section);
     }
-    return goto(`${url.pathname}${url.search}`, { noScroll: true, keepFocus: true });
+    return goto(`${url.pathname}${url.search}`, { reset: false });
   };
 </script>
 
@@ -148,9 +149,9 @@
           <WorkflowsPanel
             openId={page.url.searchParams.get('workflowId') ?? undefined}
             onOpenClosed={() => {
-              const url = new URL(page.url);
+              const url = new URL(page.url.href);
               url.searchParams.delete('workflowId');
-              void goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
+              void gotoWithFocusAndScroll(`${url.pathname}${url.search}`, { replace: true, noScroll: true });
             }}
           />
         {/key}

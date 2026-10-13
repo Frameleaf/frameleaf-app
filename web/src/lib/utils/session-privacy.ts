@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
 

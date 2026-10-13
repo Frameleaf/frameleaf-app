@@ -1158,20 +1158,24 @@
   const onReacquire = () => void session.reacquire();
   const onTakeOver = () => void session.takeOver();
   const onSaveCopy = async () => {
-    const id = await session.saveAsCopy($t('frameleaf_studio_copy_name', { values: { name: project.name } }));
-    if (!id) {
-      return;
+    try {
+      const id = await session.saveAsCopy($t('frameleaf_studio_copy_name', { values: { name: project.name } }));
+      if (!id) {
+        return;
+      }
+      // Same route, new project: the URL follows without re-running the load or remounting.
+      await replaceState(
+        Route.studio({
+          projectId: id,
+          assetIds: libraryAssetIds,
+          restorationIds: data.restoredVersions.map((version) => version.restorationId),
+        }),
+        {},
+      );
+      toastManager.primary($t('frameleaf_studio_copy_saved'));
+    } catch (error) {
+      handleError(error, $t('frameleaf_studio_save_failed'));
     }
-    // Same route, new project: the URL follows without re-running the load or remounting.
-    replaceState(
-      Route.studio({
-        projectId: id,
-        assetIds: libraryAssetIds,
-        restorationIds: data.restoredVersions.map((version) => version.restorationId),
-      }),
-      {},
-    );
-    toastManager.primary($t('frameleaf_studio_copy_saved'));
   };
 
   onMount(() => {

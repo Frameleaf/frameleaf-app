@@ -209,14 +209,15 @@ it('keeps existing version1 public save validation while retaining opaque fields
 
 describe('Native development API schemas', () => {
   it('publishes explicit double/integer metadata for SDK generation, including nested controls', () => {
-    const schema = z.toJSONSchema(DarktableDevelopRecipeSchema, { target: 'openapi-3.0', io: 'input' });
+    const document = z.toJSONSchema(DarktableDevelopRecipeSchema, { target: 'openapi-3.0', io: 'input' });
+    const schema = document.$ref ? document.definitions![document.$ref.slice('#/definitions/'.length)] : document;
     const visit = (value: unknown) => {
       if (!value || typeof value !== 'object') return;
       const node = value as Record<string, unknown>;
       if (node.type === 'number') expect(node.format).toBe('double');
       for (const child of Object.values(node)) visit(child);
     };
-    visit(schema);
+    visit(document);
     expect(schema.properties?.version).toMatchObject({ type: 'integer', format: 'int32', enum: [2] });
   });
 });

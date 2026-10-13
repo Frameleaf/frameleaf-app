@@ -134,7 +134,7 @@ describe('TakeoutWizard', () => {
     });
     expect(state.goto).toHaveBeenCalledWith(
       '/user-settings?area=backup&section=takeout&workflow=import&import=created',
-      expect.objectContaining({ noScroll: true }),
+      expect.objectContaining({ reset: false }),
     );
   });
 
