@@ -15,7 +15,9 @@ const nextId = () => count++;
 const noop = () => {};
 
 export class BaseEventManager<Events extends EventsBase> {
-  #callbacks: EventItem<Events>[] = $state.raw([]);
+  #callbacks = new Map<keyof Events, EventItem<Events>[]>();
+  // Listener reads and subscription writes keep the original global Svelte dependency.
+  #revision = $state.raw(0);
 
   on(subscriptions: EventMap<Events>): () => void {
     const cleanups = Object.entries(subscriptions).map(([event, callback]) =>
@@ -36,10 +38,17 @@ export class BaseEventManager<Events extends EventsBase> {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const item = { id: nextId(), event, callback } as EventItem<Events, any>;
-    this.#callbacks = [...this.#callbacks, item];
+    this.#callbacks.set(event, [...(this.#callbacks.get(event) ?? []), item]);
+    this.#revision++;
 
     return () => {
-      this.#callbacks = this.#callbacks.filter((current) => current.id !== item.id);
+      const remaining = (this.#callbacks.get(event) ?? []).filter((current) => current.id !== item.id);
+      if (remaining.length > 0) {
+        this.#callbacks.set(event, remaining);
+      } else {
+        this.#callbacks.delete(event);
+      }
+      this.#revision++;
     };
   }
 
@@ -51,12 +60,12 @@ export class BaseEventManager<Events extends EventsBase> {
   }
 
   hasListeners<T extends keyof Events>(event: T) {
-    return this.#callbacks.some((item) => item.event === event);
+    void this.#revision;
+    return this.#callbacks.has(event);
   }
 
   private getListeners<T extends keyof Events>(event: T) {
-    return this.#callbacks
-      .filter((item) => item.event === event)
-      .map((item) => item.callback as EventCallback<Events, T>);
+    void this.#revision;
+    return (this.#callbacks.get(event) ?? []).map((item) => item.callback as EventCallback<Events, T>);
   }
 }
