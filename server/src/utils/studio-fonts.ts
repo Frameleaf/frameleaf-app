@@ -43,3 +43,52 @@ export const studioBundledFontPath = (family: StudioBundledFontFamily, file: Stu
   file.format === 'ttf'
     ? join(decodedRoot, file.file)
     : join(dirname(resolver.resolve(`${family.package}/package.json`)), 'files', file.file);
+
+/** One file of a bundled family as a render reads it: where it is, and what it holds. */
+export type StudioRenderFontFile = {
+  /** File name, unique within the family; with the entry key it names the worker input. */
+  file: string;
+  weight: number;
+  style: 'normal' | 'italic';
+  subset: string;
+  format: 'ttf';
+  checksum: string;
+  path: string;
+};
+
+export type StudioRenderFontEntry = { path: string; checksum: string; files: StudioRenderFontFile[] };
+
+let renderCatalog: Readonly<Record<string, StudioRenderFontEntry>> | undefined;
+
+/**
+ * The bundled families as the render font catalogue: family name to its decoded TrueType files
+ * (every platform's font loader reads sfnt; the WOFF2 twins are for clients that prefer them).
+ * `path` and `checksum` are the family's regular Latin file, the one-file shape a manifest entry
+ * had before `files` existed, so a reader of the old shape still gets a usable font.
+ */
+export const studioBundledRenderFonts = (): Readonly<Record<string, StudioRenderFontEntry>> => {
+  if (!renderCatalog) {
+    const catalog: Record<string, StudioRenderFontEntry> = {};
+    for (const family of studioBundledFonts) {
+      const files = family.files
+        .filter((file) => file.format === 'ttf')
+        .map((file) => ({
+          file: file.file,
+          weight: file.weight,
+          style: file.style,
+          subset: file.subset,
+          format: 'ttf' as const,
+          checksum: file.sha256,
+          path: studioBundledFontPath(family, file),
+        }));
+      const regular =
+        files.find((file) => file.weight === 400 && file.style === 'normal' && file.subset === 'latin') ?? files[0];
+      catalog[family.family] = { path: regular.path, checksum: regular.checksum, files };
+    }
+    renderCatalog = catalog;
+  }
+  return renderCatalog;
+};
+
+/** The worker input id of one file of a font entry: the entry key, `#`, the file name. */
+export const studioFontFileInputId = (entryKey: string, file: string) => `${entryKey}#${file}`;

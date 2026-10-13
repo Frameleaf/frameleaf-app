@@ -107,6 +107,7 @@ import {
 } from 'src/utils/render-admission.js';
 import { RenderArtifact, openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
 import { sameTimeBase } from 'src/utils/studio-export-contract.js';
+import { studioFontFileInputId } from 'src/utils/studio-fonts.js';
 import { StudioDestination, isStudioDestination } from 'src/utils/studio-resources.js';
 import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
 
@@ -845,7 +846,7 @@ export class RenderWorkerService {
                   graph: resolved.graph,
                   // Public closure identity only. Credentials, owners and host paths stay server-side.
                   resources: resolved.studio.entries.map(
-                    ({ key, kind, id, family, source, sourceAccess, graphPath, checksum, grant }) => ({
+                    ({ key, kind, id, family, source, sourceAccess, graphPath, checksum, grant, files }) => ({
                       key,
                       kind,
                       id,
@@ -855,6 +856,18 @@ export class RenderWorkerService {
                       graphPath,
                       checksum,
                       grant,
+                      // A font family's files, each with the input id that reads it. Never a path.
+                      ...(files && {
+                        files: files.map(({ file, weight, style, subset, format, checksum: fileChecksum }) => ({
+                          inputId: studioFontFileInputId(key, file),
+                          file,
+                          weight,
+                          style,
+                          subset,
+                          format,
+                          checksum: fileChecksum,
+                        })),
+                      }),
                     }),
                   ),
                 },
@@ -1743,13 +1756,23 @@ export class RenderWorkerService {
           revisionId: operation.revisionId,
           inputs: resolution.manifest.entries
             .filter((entry) => entry.grant === 'render' && entry.path)
-            .map((entry) => ({
-              inputId: entry.key,
-              kind: entry.kind,
-              resourceId: entry.id,
-              checksum: entry.checksum,
-              token: null,
-            })),
+            .flatMap((entry) => [
+              {
+                inputId: entry.key,
+                kind: entry.kind,
+                resourceId: entry.id,
+                checksum: entry.checksum,
+                token: null,
+              },
+              // One more input per file of a font family; the entry's own input stays as it was.
+              ...(entry.files ?? []).map((file) => ({
+                inputId: studioFontFileInputId(entry.key, file.file),
+                kind: entry.kind,
+                resourceId: entry.id,
+                checksum: file.checksum,
+                token: null,
+              })),
+            ]),
         },
       };
     }
@@ -1792,7 +1815,14 @@ export class RenderWorkerService {
       ttlSeconds: Math.floor(INPUT_GRANT_TTL_MS / 1000),
       now,
     });
-    const checksums = new Map(manifest.entries.map((entry) => [entry.key, entry.checksum]));
+    const checksums = new Map<string, string | null>(
+      manifest.entries.flatMap((entry) => [
+        [entry.key, entry.checksum] as [string, string | null],
+        ...(entry.files ?? []).map(
+          (file) => [studioFontFileInputId(entry.key, file.file), file.checksum] as [string, string | null],
+        ),
+      ]),
+    );
 
     return {
       operationId: operation.id,
@@ -1850,14 +1880,19 @@ export class RenderWorkerService {
     // Project-owned and deployment-owned files: FL-90 bound their access at resolve time; the path
     // comes from a fresh resolution so a re-declared or removed resource is not served from memory.
     const resolved = await this.resolveManifest(operation, workerSessionId);
-    const entry = resolved.complete
-      ? resolved.studio?.entries.find((candidate) => candidate.key === payload.inputId && candidate.grant === 'render')
-      : undefined;
-    if (!entry?.path) {
-      throw new NotFoundException('Input not available');
+    const granted = resolved.complete ? (resolved.studio?.entries ?? []).filter((item) => item.grant === 'render') : [];
+    const entry = granted.find((candidate) => candidate.key === payload.inputId);
+    if (entry?.path) {
+      return entry.path;
     }
-
-    return entry.path;
+    // A file of a font family: the id is compared whole against the ids this resolution issues.
+    for (const candidate of granted) {
+      const file = candidate.files?.find((item) => studioFontFileInputId(candidate.key, item.file) === payload.inputId);
+      if (file) {
+        return file.path;
+      }
+    }
+    throw new NotFoundException('Input not available');
   }
 
   /** Redeem a single-asset input: the owner must still be able to read the asset, and own it. */
