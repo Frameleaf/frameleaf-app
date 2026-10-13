@@ -16,20 +16,44 @@ import { AlbumKind } from 'src/enum.js';
  * - Shared spaces are always top level.
  */
 export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto => {
-  const collections = albums.filter((album) => album.kind === AlbumKind.Collection);
-  const spaces = albums.filter((album) => album.kind === AlbumKind.Space);
-  const collectionIds = new Set(collections.map(({ id }) => id));
-  const plainAlbums = albums.filter((album) => album.kind === AlbumKind.Album);
+  const collections: AlbumResponseDto[] = [];
+  const spaces: AlbumResponseDto[] = [];
+  const plainAlbums: AlbumResponseDto[] = [];
+  const collectionIds = new Set<string>();
+  // eslint-disable-next-line unicorn/no-for-each -- Match filter traversal of sparse arrays.
+  albums.forEach((album) => {
+    switch (album.kind) {
+      case AlbumKind.Collection: {
+        collections.push(album);
+        collectionIds.add(album.id);
+        break;
+      }
+      case AlbumKind.Space: {
+        spaces.push(album);
+        break;
+      }
+      case AlbumKind.Album: {
+        plainAlbums.push(album);
+        break;
+      }
+    }
+  });
+
+  const standalone: AlbumResponseDto[] = [];
   const membersByParent = new Map<string, AlbumResponseDto[]>();
   for (const album of plainAlbums) {
     const parentId = album.parentId;
-    if (parentId !== null && collectionIds.has(parentId)) {
+    const hasCollection = parentId !== null && collectionIds.has(parentId);
+    if (hasCollection) {
       const members = membersByParent.get(parentId);
       if (members) {
         members.push(album);
       } else {
         membersByParent.set(parentId, [album]);
       }
+    }
+    if (!parentId || !hasCollection) {
+      standalone.push(album);
     }
   }
 
@@ -42,8 +66,6 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto
       assetCount: members.reduce((total, album) => total + album.assetCount, collection.assetCount),
     };
   });
-
-  const standalone = plainAlbums.filter((album) => !(album.parentId && collectionIds.has(album.parentId)));
 
   return { collections: shelves, albums: standalone, spaces };
 };

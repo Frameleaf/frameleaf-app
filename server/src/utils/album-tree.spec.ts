@@ -109,7 +109,35 @@ describe(buildAlbumTree.name, () => {
 
     expect(tree.collections[0].albums.map(({ id }) => id)).toEqual(['album-0', 'album-40']);
     expect(tree.albums).toEqual([]);
-    expect(parentReads).toBeLessThanOrEqual(members.length * 4);
+    expect(parentReads).toBe(members.length);
+  });
+
+  it('classifies each input once and skips sparse entries and unknown kinds', () => {
+    let kindReads = 0;
+    const family = album({ id: 'family', kind: AlbumKind.Collection });
+    const child = album({ id: 'child', parentId: 'family' });
+    const space = album({ id: 'space', kind: AlbumKind.Space });
+    const unknown = album({ id: 'unknown' });
+    Reflect.set(unknown, 'kind', 'unsupported');
+    const inputs = [child, family, space, unknown];
+    for (const input of inputs) {
+      const kind = input.kind;
+      Object.defineProperty(input, 'kind', {
+        get: () => {
+          kindReads++;
+          return kind;
+        },
+      });
+    }
+    inputs.length++;
+
+    const tree = buildAlbumTree(inputs);
+
+    expect(tree.collections[0].collection).toBe(family);
+    expect(tree.collections[0].albums).toEqual([child]);
+    expect(tree.albums).toEqual([]);
+    expect(tree.spaces).toEqual([space]);
+    expect(kindReads).toBe(4);
   });
 });
 
