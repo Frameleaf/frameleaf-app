@@ -22,6 +22,15 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
     { name: 'owner abort is joined', edit: 'video_edit', behavior: 'abort' },
     { name: 'photo versions retain API cancellation', edit: 'photo_version', behavior: 'cancel' },
     { name: 'queued-to-claimed refusal remains fatal', edit: 'video_edit', behavior: 'race' },
+    { name: 'queued unsafe edit cancels before queues pause', edit: 'video_edit', behavior: 'queued_cancel' },
+    {
+      name: 'claim winning queued cancellation is joined before queues pause',
+      edit: 'video_edit',
+      behavior: 'queued_claim',
+    },
+    { name: 'queued edit authentication refusal stays fatal', edit: 'video_edit', behavior: 'queued_auth' },
+    { name: 'other queued edit refusal stays fatal', edit: 'video_edit', behavior: 'queued_other' },
+    { name: 'claimed refusal without a started row stays fatal', edit: 'video_edit', behavior: 'queued_unclaimed' },
     { name: 'unexpected authentication refusal remains fatal', edit: 'photo_version', behavior: 'auth' },
     { name: 'retained executor-stop refusal remains fatal', edit: 'photo_version', behavior: 'stop' },
     { name: 'restoration error is reported after genuine quiescence', edit: 'video_edit', behavior: 'cleanup' },
@@ -39,8 +48,8 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
         ownerId: 'owner',
         kind: 'quick_edit',
         settings: { edit },
-        status: behavior === 'race' ? 'queued' : 'rendering',
-        claimed: behavior !== 'race',
+        status: behavior === 'race' || behavior.startsWith('queued_') ? 'queued' : 'rendering',
+        claimed: behavior !== 'race' && !behavior.startsWith('queued_'),
         remotePending: false,
         cancelRequestedAt: null,
       };
@@ -76,10 +85,16 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
               if (text.includes('FROM media_operation')) {
                 assert.match(text, /SELECT id, "ownerId", kind, settings, status/);
                 reads++;
+                if (behavior === 'race' && reads === 1) return { rows: [] };
                 if (behavior === 'abort' && reads === 2) owner.abort(new Error('owned reset aborted'));
                 if (behavior === 'race' && reads === 2) {
                   operation.status = 'rendering';
                   operation.claimed = true;
+                }
+                if (behavior === 'queued_claim' && reads >= 4 && !settled) {
+                  settled = true;
+                  operation.claimed = false;
+                  order.push('settled');
                 }
                 if (behavior === 'retry' || behavior === 'cleanup') {
                   if (reads === 2) {
@@ -114,6 +129,28 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
         asBearerAuth: () => ({}),
         cancelMediaOperation: async () => {
           order.push('cancel');
+          if (behavior.startsWith('queued_')) {
+            assert.equal(paused, false, 'queued unsafe edits must be handled while workers can still finish');
+            if (behavior === 'queued_auth') throw { status: 401, data: { message: 'owner authentication refused' } };
+            if (behavior === 'queued_other') throw { status: 400, data: { message: 'unexpected refusal' } };
+            if (behavior === 'queued_unclaimed') {
+              throw {
+                status: 400,
+                data: { message: 'This edit finishes once it has started and cannot be cancelled' },
+              };
+            }
+            if (behavior === 'queued_claim') {
+              operation.status = 'preparing';
+              operation.claimed = true;
+              throw {
+                status: 400,
+                data: { message: 'This edit finishes once it has started and cannot be cancelled' },
+              };
+            }
+            settled = true;
+            order.push('settled');
+            return;
+          }
           assert.equal(paused, true);
           if (behavior === 'race') throw new Error('400: started edit cannot be cancelled');
           if (behavior === 'auth') throw new Error('401: owner authentication refused');
@@ -142,13 +179,15 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
         assert.equal(paused, true);
         order.push('mutated');
       };
-      if (behavior === 'retry' || behavior === 'cancel') {
+      if (['retry', 'cancel', 'queued_cancel', 'queued_claim'].includes(behavior)) {
         await drain(mutation, owner.signal);
         assert.deepEqual(
           order,
-          behavior === 'retry'
-            ? ['settled', 'paused', 'mutated', 'restored', 'closed']
-            : ['paused', 'cancel', 'mutated', 'restored', 'closed'],
+          ['queued_cancel', 'queued_claim'].includes(behavior)
+            ? ['cancel', 'settled', 'paused', 'mutated', 'restored', 'closed']
+            : behavior === 'retry'
+              ? ['settled', 'paused', 'mutated', 'restored', 'closed']
+              : ['paused', 'cancel', 'mutated', 'restored', 'closed'],
         );
       } else {
         let failure;
@@ -166,6 +205,10 @@ test('reset joins unsafe edits while preserving bounded refusals and cleanup', a
         if (behavior === 'race' || behavior === 'auth') {
           assert.deepEqual(order, ['paused', 'cancel', 'restored', 'closed']);
           assert.match(failure.cause.cause.message, behavior === 'race' ? /400/ : /401/);
+        }
+        if (['queued_auth', 'queued_other', 'queued_unclaimed'].includes(behavior)) {
+          assert.deepEqual(order, ['cancel', 'closed']);
+          assert.equal(failure.cause.status, behavior === 'queued_auth' ? 401 : 400);
         }
         if (behavior === 'stop') {
           assert.deepEqual(order, ['paused', 'cancel', 'restored', 'closed']);

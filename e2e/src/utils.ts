@@ -561,7 +561,7 @@ export const utils = {
                 total.signal,
               );
             const startedEdits = new Set<string>();
-            phase = 'join started non-cancellable edits';
+            phase = 'settle non-cancellable edits before pausing';
             await waitUntil(
               total,
               async () => {
@@ -570,9 +570,32 @@ export const utils = {
                   if (
                     operation.kind === 'quick_edit' &&
                     ['photo_edit', 'video_edit', 'video_export'].includes(operation.settings?.edit) &&
-                    (operation.status !== 'queued' || operation.claimed || operation.remotePending)
+                    !startedEdits.has(operation.id)
                   ) {
                     startedEdits.add(operation.id);
+                    if (operation.status === 'queued' && !operation.claimed && !operation.remotePending) {
+                      try {
+                        await cancelMediaOperation(
+                          { id: operation.id },
+                          {
+                            headers: asBearerAuth(await ownerToken(total, operation.ownerId)),
+                            signal: total.signal,
+                          },
+                        );
+                      } catch (error) {
+                        const refusal = error as { status?: number; data?: { message?: string } };
+                        if (
+                          refusal.status !== 400 ||
+                          refusal.data?.message !== 'This edit finishes once it has started and cannot be cancelled'
+                        ) {
+                          throw error;
+                        }
+                        const remaining = await unfinishedOperations(total, operation.id);
+                        if (remaining.some((row) => row.status === 'queued' && !row.claimed && !row.remotePending)) {
+                          throw error;
+                        }
+                      }
+                    }
                   }
                 }
                 // A failed render can clear its claim while queued for retry; it still owns its saved edit.
