@@ -21,6 +21,7 @@ test.describe('Maintenance', () => {
   });
 
   test('enter and exit maintenance mode', async ({ context, page }) => {
+    test.setTimeout(90_000);
     await utils.setAuthCookies(context, admin.accessToken);
 
     // FL-71: maintenance mode is the Command Center's Maintenance → Maintenance mode section.
@@ -38,7 +39,20 @@ test.describe('Maintenance', () => {
       timeout: 10_000,
     });
     await expect(page.getByText('Replacing the library disk')).toBeVisible();
-    await page.getByRole('button', { name: 'End maintenance' }).click();
+    // The normal workers restart before inactive status; use the server maintenance startup budget.
+    await Promise.all([
+      page.waitForResponse(
+        async (response) => {
+          if (!response.url().endsWith('/api/admin/maintenance/status') || response.status() !== 200) {
+            return false;
+          }
+          const { active, action } = await response.json();
+          return active === false && action === 'end';
+        },
+        { timeout: 60_000 },
+      ),
+      page.getByRole('button', { name: 'End maintenance' }).click(),
+    ]);
     await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
       timeout: 10_000,
     });
@@ -47,6 +61,7 @@ test.describe('Maintenance', () => {
   });
 
   test('maintenance shows no options to users until they authenticate', async ({ page }) => {
+    test.setTimeout(90_000);
     const setCookie = await utils.enterMaintenance(admin.accessToken);
     const cookie = setCookie
       ?.map((cookie) => cookie.split(';', 1)[0].split('='))
@@ -69,7 +84,20 @@ test.describe('Maintenance', () => {
     await page.goto(`/maintenance?${new URLSearchParams({ token: cookie![1] })}`);
     await expect(page.getByRole('heading', { name: 'Frameleaf is being looked after' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'End maintenance' })).toBeVisible();
-    await page.getByRole('button', { name: 'End maintenance' }).click();
+    // The normal workers restart before inactive status; use the server maintenance startup budget.
+    await Promise.all([
+      page.waitForResponse(
+        async (response) => {
+          if (!response.url().endsWith('/api/admin/maintenance/status') || response.status() !== 200) {
+            return false;
+          }
+          const { active, action } = await response.json();
+          return active === false && action === 'end';
+        },
+        { timeout: 60_000 },
+      ),
+      page.getByRole('button', { name: 'End maintenance' }).click(),
+    ]);
     await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
       timeout: 10_000,
     });

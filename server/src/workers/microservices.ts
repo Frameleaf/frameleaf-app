@@ -37,11 +37,22 @@ export async function bootstrap() {
 
   logger.setContext('Bootstrap');
   app.useLogger(logger);
-  // Gateway attachment precedes AppBootstrap during listen(), so migrate and check import activation first.
-  await app.get(DatabaseService).initialize();
-  app.useWebSocketAdapter(new WebSocketAdapter(app));
+  try {
+    // Gateway attachment precedes AppBootstrap during listen(), so migrate and check import activation first.
+    await app.get(DatabaseService).initialize();
+    app.useWebSocketAdapter(new WebSocketAdapter(app));
 
-  await (host ? app.listen(0, host) : app.listen(0));
+    await (host ? app.listen(0, host) : app.listen(0));
+  } catch (error) {
+    // FL-386: a stop or restart (e.g. entering maintenance) closes the app, database included, while
+    // startup work such as the landmark re-import may still be running; that work then fails. The
+    // worker is already exiting through the stop, so end startup quietly instead of crashing.
+    if (appRepository.isStopping) {
+      logger.log(`Stopped during startup: ${error}`);
+      return;
+    }
+    throw error;
+  }
 
   logger.log(`Frameleaf Microservices is running [v${serverVersion}] [${environment}] `);
 }
