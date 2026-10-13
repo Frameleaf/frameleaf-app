@@ -112,7 +112,7 @@ import {
 } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { getKeyframeCommand } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -363,7 +363,7 @@ export class AssetDevelopService {
     dynamicRange: 'auto' | 'sdr' | 'hdr' = 'sdr',
     format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic',
     signal?: AbortSignal,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     signal?.throwIfAborted();
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     if (format) {
@@ -439,7 +439,7 @@ export class AssetDevelopService {
           !sameChecksum
         )
           throw new ConflictException('This version changed during export; try again');
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           path: output,
           contentType: heic ? 'image/heic' : 'image/jpeg',
           release,
@@ -453,7 +453,7 @@ export class AssetDevelopService {
       }
     }
     signal?.throwIfAborted();
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: filePath,
       contentType: mimeTypes.lookup(filePath),
       ...(format && { fileName: `${assetId}_${revisionId}_still_${dynamicRange}.jpg` }),

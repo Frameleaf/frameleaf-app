@@ -36,7 +36,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
 
 /**
@@ -216,10 +216,10 @@ export class IntegrityService extends BaseService {
     return Readable.from(generator());
   }
 
-  async getIntegrityReportFile(id: string): Promise<ImmichFileResponse> {
+  async getIntegrityReportFile(id: string): Promise<FileDownloadResponse> {
     const { path } = await this.integrityRepository.getById(id);
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path,
       fileName: basename(path),
       contentType: 'application/octet-stream',

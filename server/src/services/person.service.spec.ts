@@ -15,7 +15,7 @@ import {
 import { queueExecution } from 'src/queue/context.js';
 import { PersonService } from 'src/services/person.service.js';
 import { getFaceSourceRevision } from 'src/utils/face-source.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -482,7 +482,7 @@ describe(PersonService.name, () => {
       mocks.person.getByGroupId.mockResolvedValue(person);
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
       await expect(sut.getThumbnail(auth, person.personGroupId)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: person.thumbnailPath,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithoutCache,

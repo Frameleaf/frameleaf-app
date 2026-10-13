@@ -81,7 +81,7 @@ import {
   sameChecksum,
 } from 'src/utils/face-anchor.js';
 import { type FaceSource, getFaceSourceRevision } from 'src/utils/face-source.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -730,7 +730,7 @@ export class PersonService extends BaseService {
     return this.personRepository.getStatistics(personGroupId, auth.user.id, getHiddenContentQueryOptions(auth));
   }
 
-  async getThumbnail(auth: AuthDto, personGroupId: string): Promise<ImmichFileResponse> {
+  async getThumbnail(auth: AuthDto, personGroupId: string): Promise<FileDownloadResponse> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
     if (!person || !person.thumbnailPath) {
@@ -748,7 +748,7 @@ export class PersonService extends BaseService {
       }
     }
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: person.thumbnailPath,
       contentType: mimeTypes.lookup(person.thumbnailPath),
       cacheControl: CacheControl.PrivateWithoutCache,

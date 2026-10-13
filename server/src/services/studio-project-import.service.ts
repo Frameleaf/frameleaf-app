@@ -36,7 +36,7 @@ import {
   assertOwnerRestorePath,
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
@@ -291,13 +291,13 @@ export class StudioProjectImportService {
     };
   }
 
-  async getFile(auth: AuthDto, projectId: string, importId: string): Promise<ImmichFileResponse> {
+  async getFile(auth: AuthDto, projectId: string, importId: string): Promise<FileDownloadResponse> {
     const project = await this.requireOwnedProject(auth, projectId);
     const item = await this.projects.getImport(project.id, importId);
     if (!item) {
       throw new NotFoundException('Studio project import not found');
     }
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: item.path,
       // An SVG is declared UTF-8, the only encoding its scan accepted.
       contentType: item.contentType === 'image/svg+xml' ? 'image/svg+xml; charset=utf-8' : item.contentType,

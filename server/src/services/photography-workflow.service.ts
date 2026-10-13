@@ -50,7 +50,7 @@ import { PhotographyWorkflowRepository, type WorkflowRow } from 'src/repositorie
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 import { deliveryBlock, priceSelection, verifyStripeSignature } from 'src/utils/photography-workflow.js';
@@ -2010,7 +2010,7 @@ export class PhotographyWorkflowService {
     token: string | undefined,
     captureId: string,
     outputId: string,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     const { row, recipient } = await this.guest(id, token);
     if (!this.proofPermission(recipient, captureId) || !(await this.eligible(row, [captureId])).has(captureId))
       throw new ForbiddenException();
@@ -2030,7 +2030,7 @@ export class PhotographyWorkflowService {
       row.value.captures.find((capture) => capture.id === captureId)!,
       output.revisionId,
     );
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: output.approvalPreviewPath!,
       contentType: 'image/jpeg',
       cacheControl: CacheControl.None,
@@ -2041,18 +2041,18 @@ export class PhotographyWorkflowService {
     token: string | undefined,
     captureId: string,
     outputId: string,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     const { row, recipient } = await this.guest(id, token);
     const output = await this.downloadItem(row, recipient, captureId, outputId);
     const capture = row.value.captures.find((capture) => capture.id === captureId)!;
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: output.finalPath!,
       contentType: 'image/jpeg',
       fileName: `Photo-${capture.number}-${output.key}.jpg`,
       cacheControl: CacheControl.None,
     });
   }
-  async file(id: string, token: string | undefined, captureId: string, kind: string): Promise<ImmichFileResponse> {
+  async file(id: string, token: string | undefined, captureId: string, kind: string): Promise<FileDownloadResponse> {
     const { row, recipient } = await this.guest(id, token);
     const capture = row.value.captures.find((c) => c.id === captureId);
     if (!capture) throw new NotFoundException();
@@ -2070,7 +2070,7 @@ export class PhotographyWorkflowService {
       if (photo.revisionId) await this.requireRevision(row, capture, photo.revisionId);
       file = kind === 'thumbnail' ? photo.thumbnailPath : photo.previewPath;
     }
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: file,
       contentType: 'image/jpeg',
       fileName: `Photo-${capture.number}.jpg`,
@@ -2316,7 +2316,7 @@ export class PhotographyWorkflowService {
     const p = row.value.published;
     if (!p?.logoPath || !p.brand.logoAssetId || !(await this.repository.logo(row.ownerId, p.brand.logoAssetId))[0])
       throw new NotFoundException();
-    return new ImmichFileResponse({ path: p.logoPath, contentType: 'image/png', cacheControl: CacheControl.None });
+    return new FileDownloadResponse({ path: p.logoPath, contentType: 'image/png', cacheControl: CacheControl.None });
   }
   private studioSession(auth: AuthDto) {
     if (!auth.session || auth.apiKey || auth.sharedLink) throw new ForbiddenException('Studio session required');
@@ -2416,7 +2416,7 @@ export class PhotographyWorkflowService {
     )
       throw new NotFoundException();
     const { photo } = await this.portfolio(ownerId, shootId, captureId);
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: photo.previewPath,
       contentType: 'image/jpeg',
       cacheControl: CacheControl.None,

@@ -81,7 +81,7 @@ import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import {
   ChunkPlan,
   RENDER_WORKER_MEDIA_OPERATION_KINDS,
@@ -1645,7 +1645,7 @@ export class RenderWorkerService {
    * the claim is served even while the grant is unexpired. Locked is not "lost access": a
    * background task reads every asset the owner's job names (owner decision, September 22, 2026).
    */
-  async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<ImmichFileResponse> {
+  async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<FileDownloadResponse> {
     const { worker, session } = await this.authenticate(sessionToken);
 
     const operation = (await this.repository.getClaimedByWorker(operationId, worker.id)) as unknown as
@@ -1667,7 +1667,7 @@ export class RenderWorkerService {
       ? await this.studioInputPath(operation, worker.id, session.id, decision.payload)
       : await this.assetInputPath(operation, session.id, decision.payload);
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithoutCache,

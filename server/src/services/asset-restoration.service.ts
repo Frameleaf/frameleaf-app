@@ -48,7 +48,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -654,14 +654,14 @@ export class AssetRestorationService {
     assetId: string,
     restorationId: string,
     kind: AssetRestorationFileKind,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const restoration = await this.requireOwned(auth, assetId, restorationId);
     const filePath = this.fileFor(restoration, kind);
     if (!filePath) {
       throw new NotFoundException('This restoration file does not exist');
     }
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: filePath,
       contentType: mimeTypes.lookup(filePath),
       cacheControl: CacheControl.PrivateWithCache,
@@ -690,7 +690,7 @@ export class AssetRestorationService {
     assetId: string,
     view: 'video' | 'preview' | 'fullsize',
     fullSizeAllowed = true,
-  ): Promise<{ file: ImmichFileResponse | null; revalidate: boolean }> {
+  ): Promise<{ file: FileDownloadResponse | null; revalidate: boolean }> {
     if (auth.sharedLink) {
       return { file: null, revalidate: false };
     }
@@ -709,7 +709,7 @@ export class AssetRestorationService {
       return { file: null, revalidate: true };
     }
     return {
-      file: new ImmichFileResponse({
+      file: new FileDownloadResponse({
         path,
         contentType: mimeTypes.lookup(path),
         cacheControl: CacheControl.PrivateWithoutCache,

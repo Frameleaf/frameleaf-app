@@ -9,7 +9,7 @@ import { getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { CastMediaKind } from 'src/utils/cast-media.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup } from 'test/utils.js';
 
@@ -64,7 +64,7 @@ describe(CastController.name, () => {
         const path = join(folder, 'synthetic.bin');
         const bytes = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]);
         await writeFile(path, bytes);
-        const file = new ImmichFileResponse({
+        const file = new FileDownloadResponse({
           path,
           contentType: 'application/octet-stream',
           cacheControl: CacheControl.PrivateWithoutCache,

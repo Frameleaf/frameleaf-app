@@ -19,7 +19,7 @@ import {
 } from 'src/enum.js';
 import { UserService, describePreferenceChanges } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -398,7 +398,7 @@ describe(UserService.name, () => {
       mocks.user.get.mockResolvedValue(user);
 
       await expect(sut.getProfileImage(user.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/profile.jpg',
           contentType: 'image/jpeg',
           cacheControl: CacheControl.None,
@@ -423,7 +423,7 @@ describe(UserService.name, () => {
       mocks.user.get.mockResolvedValue(user);
 
       await expect(sut.getProfileImage(user.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/profile.webp',
           contentType: 'image/webp',
           cacheControl: CacheControl.None,

@@ -78,7 +78,7 @@ import {
 } from 'src/utils/cloud-backup-owner-path.js';
 import { getConfig } from 'src/utils/config.js';
 import { assertExecutionActive, settleOperationExecution } from 'src/utils/execution-signal.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { pushJobData, shouldSendRenderProgress } from 'src/utils/frameleaf-push.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
@@ -617,7 +617,7 @@ export class StudioExportService {
    * version that does not exist, so a temporary share never becomes a permanent copy. A result that
    * inherited a lock needs the owner's unlocked session, like any Locked media.
    */
-  async download(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+  async download(auth: AuthDto, id: string): Promise<FileDownloadResponse> {
     this.requireInteractive(auth);
     const version = await this.findOwned(auth, id);
     if (
@@ -649,7 +649,7 @@ export class StudioExportService {
       throw new NotFoundException('Studio export not found');
     }
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: version.outputPath,
       contentType: version.outputContentType ?? 'application/octet-stream',
       cacheControl: CacheControl.PrivateWithoutCache,

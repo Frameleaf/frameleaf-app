@@ -16,7 +16,7 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { SearchService } from 'src/services/search.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { factory, newUuid } from 'test/small.factory.js';
 
 let sourceDirectory: string;
@@ -76,7 +76,7 @@ const setup = () => {
   const search = { searchMetadata: vi.fn().mockResolvedValue({ assets: { items: [logo], nextCursor: null } }) };
   const media = {
     viewThumbnail: vi.fn().mockResolvedValue(
-      new ImmichFileResponse({
+      new FileDownloadResponse({
         path: '/derived/logo.webp',
         contentType: 'image/webp',
         cacheControl: CacheControl.PrivateWithCache,

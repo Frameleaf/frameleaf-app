@@ -11,7 +11,7 @@ import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
 import { CacheControl, ImmichWorker, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PendingEvents } from 'src/utils/event.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { getCodecString, getOutputSize } from 'src/utils/media.js';
 
 type AssetWithStreamInfo = { videoStream: VideoStreamInfo & { timeBase: number }; packets: VideoPacketInfo };
@@ -98,7 +98,7 @@ export class HlsService extends BaseService {
 
     const variantDir = StorageCore.getHlsVariantFolder({ ownerId: auth.user.id, sessionId, variantIndex });
     const path = join(variantDir, filename);
-    const response = new ImmichFileResponse({
+    const response = new FileDownloadResponse({
       path,
       contentType: 'video/mp4',
       cacheControl: CacheControl.PrivateWithCache,

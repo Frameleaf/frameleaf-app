@@ -21,7 +21,7 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { UploadBody } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -698,7 +698,7 @@ describe(AssetMediaService.name, () => {
         proxyPath: '/proxy.mp4',
       } as any);
       await expect(sut.downloadVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/master.mp4',
           fileName: 'asset-1-version-1.mp4',
           contentType: 'video/mp4',
@@ -726,7 +726,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue(asset);
 
       await expect(sut.downloadOriginal(authStub.admin, asset.id, {})).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.originalPath,
           fileName: asset.originalFileName,
           contentType: 'image/jpeg',
@@ -746,7 +746,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, {})).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: editedAsset.files[3].path,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -766,7 +766,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: true })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: editedAsset.files[3].path,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -785,7 +785,7 @@ describe(AssetMediaService.name, () => {
       await expect(
         sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: false }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: fullsizeEdited.path,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -805,7 +805,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue(editedAsset);
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, { edited: false })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: editedAsset.originalPath,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
@@ -1286,7 +1286,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1305,7 +1305,7 @@ describe(AssetMediaService.name, () => {
         path: asset.files[0].path,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1326,7 +1326,7 @@ describe(AssetMediaService.name, () => {
         path: asset.files[0].path,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'application/octet-stream',
@@ -1346,7 +1346,7 @@ describe(AssetMediaService.name, () => {
         path: asset.files[0].path,
       });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1368,7 +1368,7 @@ describe(AssetMediaService.name, () => {
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: true }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1390,7 +1390,7 @@ describe(AssetMediaService.name, () => {
       await expect(
         sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, edited: false }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1415,7 +1415,7 @@ describe(AssetMediaService.name, () => {
           edited: true,
         }),
       ).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1439,7 +1439,7 @@ describe(AssetMediaService.name, () => {
       const auth = AuthFactory.from().sharedLink({ showExif: false }).build();
 
       await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'image/jpeg',
@@ -1461,7 +1461,7 @@ describe(AssetMediaService.name, () => {
       );
 
       await expect(sut.playbackStudioHdrVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/encoded/v-studio-hdr.mp4',
           contentType: 'video/mp4',
           cacheControl: CacheControl.PrivateWithCache,
@@ -1525,7 +1525,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1547,7 +1547,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1566,7 +1566,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1585,7 +1585,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id, false)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: '/path/to/encoded/video_edited.mp4',
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'video/mp4',
@@ -1604,7 +1604,7 @@ describe(AssetMediaService.name, () => {
       });
 
       await expect(sut.playbackVideo(authStub.admin, asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
+        new FileDownloadResponse({
           path: asset.originalPath,
           cacheControl: CacheControl.PrivateWithCache,
           contentType: 'application/octet-stream',

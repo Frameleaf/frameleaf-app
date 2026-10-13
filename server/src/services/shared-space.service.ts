@@ -30,7 +30,7 @@ import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/reposit
 import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
-import { ImmichFileResponse, getFilenameExtension } from 'src/utils/file.js';
+import { FileDownloadResponse, getFilenameExtension } from 'src/utils/file.js';
 import { isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -253,7 +253,7 @@ export class SharedSpaceService extends BaseService {
    * (or already in it). Only the ids the preview lists right now are served, so this never opens the
    * rest of the space, the item's other sizes, its original or its file name; anything else is 404.
    */
-  async getPreviewThumbnail(auth: AuthDto, id: string, assetId: string): Promise<ImmichFileResponse> {
+  async getPreviewThumbnail(auth: AuthDto, id: string, assetId: string): Promise<FileDownloadResponse> {
     const invite = await this.albumUserRepository.getInvite({ albumId: id, userId: auth.user.id });
     const album = await this.albumRepository.getById(id, { withAssets: false }, auth.user.id);
     if (!album || !isSharedSpace(album) || (!invite && !isSpaceMember(album, auth.user.id))) {
@@ -269,7 +269,7 @@ export class SharedSpaceService extends BaseService {
     if (!path) {
       throw new NotFoundException('Preview item not found');
     }
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       fileName: `${assetId}_${AssetFileType.Thumbnail}${getFilenameExtension(path)}`,
       path,
       contentType: mimeTypes.lookup(path),

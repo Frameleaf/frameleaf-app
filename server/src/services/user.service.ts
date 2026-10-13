@@ -44,7 +44,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -345,7 +345,7 @@ export class UserService extends BaseService {
     }
   }
 
-  async getProfileImage(id: string): Promise<ImmichFileResponse> {
+  async getProfileImage(id: string): Promise<FileDownloadResponse> {
     const user = await this.userRepository.get(id, {});
     if (!user || !user.profileImagePath) {
       this.logger.debug('User or profile image not found');
@@ -358,7 +358,7 @@ export class UserService extends BaseService {
       throw new NotFoundException();
     }
 
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: user.profileImagePath,
       contentType: mimeTypes.lookup(user.profileImagePath),
       cacheControl: CacheControl.None,

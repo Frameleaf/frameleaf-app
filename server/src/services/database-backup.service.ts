@@ -45,7 +45,7 @@ import {
   isValidDatabaseRoutineBackupName,
 } from 'src/utils/database-backups.js';
 import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 
 /** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
 export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
@@ -448,7 +448,7 @@ export class DatabaseBackupService {
     await this.storageRepository.createOrOverwriteFile(filePath, file.buffer);
   }
 
-  downloadBackup(fileName: string): ImmichFileResponse {
+  downloadBackup(fileName: string): FileDownloadResponse {
     if (!isValidDatabaseBackupName(fileName)) {
       throw new BadRequestException('Invalid backup name!');
     }

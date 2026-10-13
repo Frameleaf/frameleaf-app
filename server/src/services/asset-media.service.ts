@@ -49,7 +49,7 @@ import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
-import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
+import { FileDownloadResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -344,7 +344,7 @@ export class AssetMediaService extends BaseService {
     id: string,
     dto: AssetDownloadOriginalDto,
     signal?: AbortSignal,
-  ): Promise<ImmichFileResponse> {
+  ): Promise<FileDownloadResponse> {
     signal?.throwIfAborted();
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
@@ -393,7 +393,7 @@ export class AssetMediaService extends BaseService {
           !current.checksum.equals(checksum)
         )
           throw new ConflictException('This photo changed during export; try again');
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           path: output,
           release,
           contentType: heic ? 'image/heic' : 'image/jpeg',
@@ -437,13 +437,13 @@ export class AssetMediaService extends BaseService {
     auth: AuthDto,
     asset: OriginalAsset,
     purpose: OriginalPurpose,
-    response: ImmichFileResponse,
-  ): Promise<ImmichFileResponse> {
+    response: FileDownloadResponse,
+  ): Promise<FileDownloadResponse> {
     const policyFor = getOriginalLocationPolicies({ auth, assets: [asset], purpose });
 
     switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {
-        return new ImmichFileResponse(response);
+        return new FileDownloadResponse(response);
       }
 
       case OriginalLocationPolicy.Refuse: {
@@ -454,7 +454,7 @@ export class AssetMediaService extends BaseService {
         const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(() => {
           throw new ForbiddenException('The location of this file could not be removed');
         });
-        return new ImmichFileResponse({ ...response, path: lease.path, release: lease.release });
+        return new FileDownloadResponse({ ...response, path: lease.path, release: lease.release });
       }
     }
   }
@@ -476,7 +476,7 @@ export class AssetMediaService extends BaseService {
     id: string,
     dto: AssetMediaOptionsDto,
     via: FrameleafVia | null = null,
-  ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
+  ): Promise<FileDownloadResponse | AssetMediaRedirectResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     if (dto.size === AssetMediaSize.Original) {
@@ -521,7 +521,7 @@ export class AssetMediaService extends BaseService {
         if (!developedPath) {
           throw new NotFoundException('Current developed preview is unavailable');
         }
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           fileName: `${getFileNameWithoutExtension(originalFileName)}_develop_${size}${getFilenameExtension(developedPath)}`,
           path: developedPath,
           contentType: mimeTypes.lookup(developedPath),
@@ -546,7 +546,7 @@ export class AssetMediaService extends BaseService {
         // The worker re-encodes pixels without source EXIF/XMP and validates required HDR metadata.
         // These are sanitized derivatives, as are ordinary previews; original-file stripping is not needed.
         const base = auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
-        return new ImmichFileResponse({
+        return new FileDownloadResponse({
           path: hdr.path,
           fileName: `${base}_${type}.jpg`,
           contentType: 'image/jpeg',
@@ -594,7 +594,7 @@ export class AssetMediaService extends BaseService {
     const fileNameBase =
       auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
     const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
-    const response = new ImmichFileResponse({
+    const response = new FileDownloadResponse({
       fileName,
       path,
       contentType: mimeTypes.lookup(path),
@@ -612,12 +612,12 @@ export class AssetMediaService extends BaseService {
     return response;
   }
 
-  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<ImmichFileResponse> {
+  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<FileDownloadResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
     const version = await this.assetEditRepository.getVideoVersion(id, versionId);
     if (!version || version.ownerId !== auth.user.id || version.status !== 'ready' || !version.masterPath)
       throw new NotFoundException('Video version is unavailable');
-    return new ImmichFileResponse({
+    return new FileDownloadResponse({
       path: version.masterPath,
       fileName: `${id}-${version.id}.mp4`,
       contentType: 'video/mp4',
@@ -625,7 +625,7 @@ export class AssetMediaService extends BaseService {
     });
   }
 
-  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<ImmichFileResponse> {
+  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<FileDownloadResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     const asset = await this.assetRepository.getForVideo(id);
@@ -652,7 +652,7 @@ export class AssetMediaService extends BaseService {
    * policy is applied as for any file served for playback. It exists only while no edit is
    * published over the original and the original is the one it was made from.
    */
-  async playbackStudioHdrVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+  async playbackStudioHdrVideo(auth: AuthDto, id: string): Promise<FileDownloadResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
     if (auth.sharedLink) {
       throw new NotFoundException('Asset not found');

@@ -24,7 +24,7 @@ export function getLivePhotoMotionFilename(stillName: string, motionName: string
   return getFileNameWithoutExtension(stillName) + getFilenameExtension(motionName);
 }
 
-export class ImmichFileResponse {
+export class FileDownloadResponse {
   public readonly path!: string;
   public readonly contentType!: string;
   public readonly cacheControl!: CacheControl;
@@ -32,7 +32,7 @@ export class ImmichFileResponse {
   /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
   public readonly release?: () => void;
 
-  constructor(response: ImmichFileResponse) {
+  constructor(response: FileDownloadResponse) {
     Object.assign(this, response);
   }
 }
@@ -49,14 +49,10 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
 export const sendFile = async (
   res: Response,
   next: NextFunction,
-  handler: () => Promise<ImmichFileResponse> | ImmichFileResponse,
+  handler: () => Promise<FileDownloadResponse> | FileDownloadResponse,
   logger: LoggingRepository,
 ): Promise<void> => {
-  // promisified version of 'res.sendFile' for cleaner async handling
-  const _sendFile = (path: string, options: SendFileOptions) =>
-    promisify<string, SendFileOptions>(res.sendFile).bind(res)(path, options);
-
-  let file: ImmichFileResponse | undefined;
+  let file: FileDownloadResponse | undefined;
   try {
     file = await handler();
 
@@ -73,7 +69,9 @@ export const sendFile = async (
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
 
-    return await _sendFile(file.path, { dotfiles: 'allow' });
+    const path = file.path;
+    const options: SendFileOptions = { dotfiles: 'allow' };
+    return await promisify<string, SendFileOptions>(res.sendFile).call(res, path, options);
   } catch (error: Error | any) {
     const { canWrite } = onRouteError(undefined, res, error, logger);
     if (canWrite) {

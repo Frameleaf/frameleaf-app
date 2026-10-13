@@ -44,7 +44,7 @@ import {
   StudioAuthorizedManifest,
   StudioResourceService,
 } from 'src/services/studio-resource.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
+import { FileDownloadResponse } from 'src/utils/file.js';
 import { rational } from 'src/utils/rational-time.js';
 import { StudioExportTiming, declareStudioTiming, studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { isInsideFolder } from 'src/utils/studio-export.js';
@@ -350,7 +350,7 @@ export class StudioPreviewService {
     auth: AuthDto,
     id: string,
     options: { ifNoneMatch?: string; consumerRequestId?: string },
-  ): Promise<{ file: ImmichFileResponse; stream: Readable; etag: string } | { notModified: true; etag: string }> {
+  ): Promise<{ file: FileDownloadResponse; stream: Readable; etag: string } | { notModified: true; etag: string }> {
     const frame = await this.findOwned(auth, id, options);
 
     /**
@@ -450,7 +450,7 @@ export class StudioPreviewService {
         return {
           etag,
           stream: handle.createReadStream({ start: 0 }),
-          file: new ImmichFileResponse({
+          file: new FileDownloadResponse({
             path: frame.framePath as string,
             contentType: frame.contentType ?? 'image/png',
             cacheControl: CacheControl.PrivateWithoutCache,
