@@ -1,6 +1,39 @@
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 describe('mimeTypes', () => {
+  it('classifies supported extensions consistently across filename forms', () => {
+    const animated = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
+    const heif = new Set(['.avif', '.heic', '.heif', '.hif']);
+    for (const extension of [...mimeTypes.getSupportedFileExtensions(), '.xmp', '.unknown']) {
+      for (const filename of [extension, `photo${extension.toUpperCase()}`, `/media.with.dots/photo${extension}`]) {
+        expect(mimeTypes.isAsset(filename)).toBe(
+          Object.hasOwn(mimeTypes.image, extension) || Object.hasOwn(mimeTypes.video, extension),
+        );
+        expect(mimeTypes.isPossiblyAnimatedImage(filename)).toBe(animated.has(extension));
+        expect(mimeTypes.isHeifImage(filename)).toBe(heif.has(extension));
+      }
+    }
+    for (const filename of ['', 'photo', 'photo.', '/media.jpg/photo', '/media.jpg/.hidden']) {
+      expect(mimeTypes.isAsset(filename)).toBe(false);
+      expect(mimeTypes.isPossiblyAnimatedImage(filename)).toBe(false);
+      expect(mimeTypes.isHeifImage(filename)).toBe(false);
+    }
+  });
+
+  it('keeps asset checks live while metadata categories remain fixed', () => {
+    mimeTypes.image['.frameleaf-test-image'] = ['image/frameleaf-test'];
+    mimeTypes.video['.frameleaf-test-video'] = ['video/frameleaf-test'];
+    try {
+      expect(mimeTypes.isAsset('photo.FRAMELEAF-TEST-IMAGE')).toBe(true);
+      expect(mimeTypes.isAsset('movie.FRAMELEAF-TEST-VIDEO')).toBe(true);
+      expect(mimeTypes.isPossiblyAnimatedImage('photo.frameleaf-test-image')).toBe(false);
+      expect(mimeTypes.isHeifImage('photo.frameleaf-test-image')).toBe(false);
+    } finally {
+      delete mimeTypes.image['.frameleaf-test-image'];
+      delete mimeTypes.video['.frameleaf-test-video'];
+    }
+  });
+
   for (const { mimetype, extension } of [
     // Please ensure this list is sorted.
     { mimetype: 'image/3fr', extension: '.3fr' },

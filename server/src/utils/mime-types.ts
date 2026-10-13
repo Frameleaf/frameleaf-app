@@ -70,14 +70,8 @@ const image: Record<string, string[]> = {
 };
 
 const possiblyAnimatedImageExtensions = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
-const possiblyAnimatedImage: Record<string, string[]> = Object.fromEntries(
-  Object.entries(image).filter(([key]) => possiblyAnimatedImageExtensions.has(key)),
-);
 
 const heifImageExtensions = new Set(['.avif', '.heic', '.heif', '.hif']);
-const heifImage: Record<string, string[]> = Object.fromEntries(
-  Object.entries(image).filter(([key]) => heifImageExtensions.has(key)),
-);
 
 const transparentCapableExtensions = new Set([
   '.avif',
@@ -144,11 +138,15 @@ export const mimeTypes = {
   raw,
   webUnsupportedImage,
 
-  isAsset: (filename: string) => isType(filename, image) || isType(filename, video),
+  isAsset: (filename: string) => {
+    const extension = getFilenameExtension(filename).toLowerCase();
+    return Object.hasOwn(image, extension) || Object.hasOwn(video, extension);
+  },
   isImage: (filename: string) => isType(filename, image),
   isWebSupportedImage: (filename: string) => isType(filename, webSupportedImage),
-  isHeifImage: (filename: string) => isType(filename, heifImage),
-  isPossiblyAnimatedImage: (filename: string) => isType(filename, possiblyAnimatedImage),
+  isHeifImage: (filename: string) => heifImageExtensions.has(getFilenameExtension(filename).toLowerCase()),
+  isPossiblyAnimatedImage: (filename: string) =>
+    possiblyAnimatedImageExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isProfile: (filename: string) => isType(filename, profile),
   isSidecar: (filename: string) => isType(filename, sidecar),
   isVideo: (filename: string) => isType(filename, video),

@@ -6,9 +6,9 @@ const PiB = Math.pow(1024, 5);
 
 export const HumanReadableSize = { KiB, MiB, GiB, TiB, PiB };
 
-export function asHumanReadable(bytes: number, precision = 1): string {
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
+const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
 
+export function asHumanReadable(bytes: number, precision = 1): string {
   let magnitude = 0;
   let remainder = bytes;
   while (remainder >= 1024) {
