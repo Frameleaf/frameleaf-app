@@ -41,56 +41,37 @@ const userTimeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
 const knownTimezones = Intl.supportedValuesOf('timeZone');
 
 export function getTimezones(selectedDate: string) {
-  // Use a fixed modern date to calculate stable timezone offsets for the list
-  // This ensures that the offsets shown in the combobox are always current,
-  // regardless of the historical date selected by the user.
-  return knownTimezones
-    .map((zone) => zoneOptionForDate(zone, selectedDate))
-    .filter((zone) => zone.valid)
-    .sort((zoneA, zoneB) => sortTwoZones(zoneA, zoneB));
+  // Browser inputs omit seconds and trim milliseconds; compare at their actual precision.
+  const withoutMillis = selectedDate.replace(/\.\d+/, '');
+  const compareFormat = /T\d{2}:\d{2}:\d{2}$/.test(withoutMillis) ? "yyyy-MM-dd'T'HH:mm:ss" : "yyyy-MM-dd'T'HH:mm";
+  const currentYear = DateTime.now().year;
+  const options: ZoneOption[] = [];
+
+  for (const zone of knownTimezones) {
+    const date = DateTime.fromISO(selectedDate, { zone });
+    // Luxon advances missing DST times, so validity also requires an exact wall-clock match.
+    if (!date.isValid || date.toFormat(compareFormat) !== withoutMillis) {
+      continue;
+    }
+    // Keep historical-date admission, but display offsets under the current year's rules.
+    const modernDate = date.set({ year: currentYear });
+    options.push({
+      value: zone,
+      offsetMinutes: modernDate.offset,
+      label: zone + ' (' + modernDate.toFormat('ZZ') + ')',
+      valid: true,
+    });
+  }
+
+  return options.sort(sortTwoZones);
 }
 
 export function getModernOffsetForZoneAndDate(
   zone: string,
   dateString: string,
 ): { offsetMinutes: number; offsetFormat: string } {
-  const dt = DateTime.fromISO(dateString, { zone });
-
-  // we determine the *modern* offset for this zone based on its current rules.
-  // To do this, we "move" the date to the current year, keeping the local time components.
-  // This allows Luxon to apply current-year DST rules.
-  const modernYearDt = dt.set({ year: DateTime.now().year });
-
-  // Calculate the offset at that modern year's date.
-  const modernOffsetMinutes = modernYearDt.setZone(zone, { keepLocalTime: true }).offset;
-  const modernOffsetFormat = modernYearDt.setZone(zone, { keepLocalTime: true }).toFormat('ZZ');
-
-  return { offsetMinutes: modernOffsetMinutes, offsetFormat: modernOffsetFormat };
-}
-
-function zoneOptionForDate(zone: string, date: string) {
-  const { offsetMinutes, offsetFormat: zoneOffsetAtDate } = getModernOffsetForZoneAndDate(zone, date);
-  // For validity, we still need to check if the exact date/time exists in the *original* timezone.
-  // Use the fact that in DST gaps Luxon advances the missing time by an hour.
-  // Ignore milliseconds:
-  // - milliseconds are not relevant for TZ calculations
-  // - browsers strip insignificant .000 making string comparison with milliseconds more fragile.
-  //
-  // Also, some browsers emit `datetime-local` values without seconds when seconds are 00,
-  // e.g. `2024-01-01T00:00` instead of `2024-01-01T00:00:00.000`.
-  // In that case we must compare with minute precision (otherwise every zone looks "invalid").
-  const dateInTimezone = DateTime.fromISO(date, { zone });
-  const withoutMillis = date.replace(/\.\d+/, '');
-  const hasSeconds = /T\d{2}:\d{2}:\d{2}$/.test(withoutMillis);
-  const compareFormat = hasSeconds ? "yyyy-MM-dd'T'HH:mm:ss" : "yyyy-MM-dd'T'HH:mm";
-  const exists = withoutMillis === dateInTimezone.toFormat(compareFormat);
-  const valid = dateInTimezone.isValid && exists;
-  return {
-    value: zone,
-    offsetMinutes,
-    label: zone + ' (' + zoneOffsetAtDate + ')' + (valid ? '' : ' [invalid date!]'),
-    valid,
-  };
+  const modernDate = DateTime.fromISO(dateString, { zone }).set({ year: DateTime.now().year });
+  return { offsetMinutes: modernDate.offset, offsetFormat: modernDate.toFormat('ZZ') };
 }
 
 function sortTwoZones(zoneA: ZoneOption, zoneB: ZoneOption) {
