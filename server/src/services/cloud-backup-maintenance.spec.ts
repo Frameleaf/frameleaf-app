@@ -114,6 +114,9 @@ describe(CloudBackupMaintenance.name, () => {
       }),
     };
     index = {
+      listKeptManifests: vi.fn().mockResolvedValue([]),
+      getManifestKeys: vi.fn().mockResolvedValue(new Set()),
+      adoptManifests: vi.fn().mockResolvedValue(0),
       recordObjectVerification: vi.fn().mockResolvedValue(undefined),
       forget: vi.fn().mockResolvedValue(undefined),
       markManifests: vi.fn().mockResolvedValue(0),

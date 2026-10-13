@@ -435,7 +435,7 @@ export class CloudBackupIndexRepository {
   }
   /** FL-164: which of these manifest keys this server has a record of, in any state. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  async getManifestKeys(bucket: string, keys: string[]): Promise<Set<string>> {
+  async getManifestKeys(bucket: string, keys: string[], status?: 'pruned'): Promise<Set<string>> {
     if (keys.length === 0) {
       return new Set();
     }
@@ -444,12 +444,13 @@ export class CloudBackupIndexRepository {
       .select('key')
       .where('bucket', '=', bucket)
       .where('key', 'in', [...new Set(keys)])
+      .$if(status === 'pruned', (query) => query.where('status', '=', 'pruned'))
       .execute();
     return new Set(rows.map(({ key }) => key));
   }
   /**
    * FL-164: record manifests found in the bucket that this server has no record of (a bucket claimed
-   * again, or a database restored from before them) as complete, so they can be listed and restored from.
+   * again, or a database restored from before them) as complete, or as pruned when retention expires them.
    * A key already recorded, in any state, is left as it is.
    */
   @GenerateSql({
@@ -467,7 +468,11 @@ export class CloudBackupIndexRepository {
       ],
     ],
   })
-  async adoptManifests(bucket: string, manifests: CloudBackupAdoptedManifest[]): Promise<number> {
+  async adoptManifests(
+    bucket: string,
+    manifests: CloudBackupAdoptedManifest[],
+    status: 'complete' | 'pruned' = 'complete',
+  ): Promise<number> {
     const known = await this.getManifestKeys(
       bucket,
       manifests.map(({ key }) => key),
@@ -489,7 +494,7 @@ export class CloudBackupIndexRepository {
           assetCount: manifest.assetCount,
           fileCount: manifest.fileCount,
           bytes: manifest.bytes,
-          status: 'complete',
+          status,
         })),
       )
       .execute();
@@ -531,7 +536,7 @@ export class CloudBackupIndexRepository {
       .set({ status })
       .where('bucket', '=', bucket)
       .where('key', 'in', [...new Set(keys)])
-      .where('status', 'in', [...KEPT_MANIFEST_STATUSES])
+      .$if(status === 'degraded', (query) => query.where('status', 'in', [...KEPT_MANIFEST_STATUSES]))
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }
