@@ -222,17 +222,30 @@
     }
 
     const onReadyHandler = () => updateOcrBoxes(ocrManager.showOverlay, ocrManager.data, false);
-    const updateHandler = () => updateOcrBoxes(ocrManager.showOverlay, ocrManager.data, true);
+    let ocrUpdatePending = false;
+    const updateHandler = () => {
+      ocrUpdatePending = true;
+    };
+    // Project once against the rendered camera after a burst of view changes.
+    const renderHandler = () => {
+      if (!ocrUpdatePending) {
+        return;
+      }
+      ocrUpdatePending = false;
+      updateOcrBoxes(ocrManager.showOverlay, ocrManager.data, true);
+    };
     viewer.addEventListener(events.ReadyEvent.type, onReadyHandler);
     viewer.addEventListener(events.PositionUpdatedEvent.type, updateHandler);
     viewer.addEventListener(events.SizeUpdatedEvent.type, updateHandler);
     viewer.addEventListener(events.ZoomUpdatedEvent.type, updateHandler, { passive: true });
+    viewer.addEventListener(events.RenderEvent.type, renderHandler);
 
     return () => {
       viewer.removeEventListener(events.ReadyEvent.type, onReadyHandler);
       viewer.removeEventListener(events.PositionUpdatedEvent.type, updateHandler);
       viewer.removeEventListener(events.SizeUpdatedEvent.type, updateHandler);
       viewer.removeEventListener(events.ZoomUpdatedEvent.type, updateHandler);
+      viewer.removeEventListener(events.RenderEvent.type, renderHandler);
       viewer.removeEventListener(events.ZoomUpdatedEvent.type, zoomHandler);
     };
   });
