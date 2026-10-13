@@ -280,10 +280,10 @@ export const parseIsoDay = (day: string) => new Date(`${day}T00:00:00.000Z`);
 export const addDays = (day: string, days: number) => isoDay(parseIsoDay(day).getTime() + days * DAY_MS);
 
 /** The later of two `YYYY-MM-DD` days (they compare as strings, not numbers). */
-const laterDay = (a: string, b: string) => [a, b].toSorted().at(-1)!;
+const laterDay = (a: string, b: string) => (a > b ? a : b);
 
 /** The earlier of two `YYYY-MM-DD` days. */
-const earlierDay = (a: string, b: string) => [a, b].toSorted()[0];
+const earlierDay = (a: string, b: string) => (a < b ? a : b);
 
 /** The Monday that starts the ISO week holding `day`. */
 export const weekStartOf = (day: string) => addDays(day, -((parseIsoDay(day).getUTCDay() + 6) % 7));
@@ -370,20 +370,24 @@ export type BoundGrowth = Record<GrowthSeriesId, number | null> & { observedAt: 
  * before a gap is never carried into it, and a value that went down (items removed, a library
  * detached, history cleared and started again) is shown as it was read, not smoothed.
  */
-export const bindGrowth = (buckets: AnalyticsBucketWindow[], samples: AnalyticsSampleRow[]): BoundGrowth[] =>
-  buckets.map((bucket) => {
-    const inBucket = samples.filter((sample) => {
-      const day = isoDay(sample.observedAt);
-      return day >= bucket.from && day <= bucket.through;
-    });
-    const bound = { observedAt: null } as BoundGrowth;
-    for (const series of GROWTH_SERIES) {
-      let latest: AnalyticsSampleRow | null = null;
-      for (const sample of inBucket) {
-        if (sample.series === series && (!latest || sample.observedAt > latest.observedAt)) {
-          latest = sample;
+export const bindGrowth = (buckets: AnalyticsBucketWindow[], samples: AnalyticsSampleRow[]): BoundGrowth[] => {
+  let sampleDays: string[] | undefined;
+  return buckets.map((bucket) => {
+    sampleDays ??= samples.map((sample) => isoDay(sample.observedAt));
+    const latestBySeries = new Map<AnalyticsSeriesId, AnalyticsSampleRow>();
+    for (let index = 0; index < samples.length; index++) {
+      const day = sampleDays[index];
+      if (day >= bucket.from && day <= bucket.through) {
+        const sample = samples[index];
+        const previous = latestBySeries.get(sample.series);
+        if (!previous || sample.observedAt > previous.observedAt) {
+          latestBySeries.set(sample.series, sample);
         }
       }
+    }
+    const bound = { observedAt: null } as BoundGrowth;
+    for (const series of GROWTH_SERIES) {
+      const latest = latestBySeries.get(series);
       bound[series] = latest ? latest.value : null;
       if (latest && (!bound.observedAt || latest.observedAt > bound.observedAt)) {
         bound.observedAt = latest.observedAt;
@@ -391,6 +395,7 @@ export const bindGrowth = (buckets: AnalyticsBucketWindow[], samples: AnalyticsS
     }
     return bound;
   });
+};
 
 /**
  * Sum per-day rows into buckets. A day the table has no row for counts as zero: these series are
