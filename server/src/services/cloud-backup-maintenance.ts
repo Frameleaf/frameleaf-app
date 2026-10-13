@@ -6,6 +6,7 @@ import {
   CloudBackupStoreError,
   CloudBackupStoreRepository,
 } from 'src/repositories/cloud-backup-store.repository.js';
+import { clientBackupContext } from 'src/utils/cloud-backup-crypto.js';
 import {
   CloudBackupRetention,
   inVerifySlice,
@@ -154,7 +155,17 @@ export class CloudBackupMaintenance {
       const createdAt = manifestTime(key);
       return createdAt ? [{ key, createdAt }] : [];
     });
-    const plan = retentionPlan(candidates, retention);
+    const inventory = new Map(candidates.map((manifest) => [manifest.key, manifest]));
+    const kept = await this.index.listKeptManifests(bucket.bucketRef);
+    const signedKeys = Object.keys(bucket.connection.trustedManifests ?? {});
+    const pruned = await this.index.getManifestKeys(bucket.bucketRef, signedKeys, 'pruned');
+    // Only explicit pruning expires signed history, including receipts committed before an index crash.
+    for (const key of [...kept.map(({ key }) => key), ...signedKeys.filter((key) => !pruned.has(key))]) {
+      const createdAt = manifestTime(key);
+      if (!createdAt) throw new Error('Known backup history has an invalid manifest key; clean-up is refused');
+      inventory.set(key, { key, createdAt });
+    }
+    const plan = retentionPlan(inventory.values().toArray(), retention);
     const anchored = plan.remove.find(({ key }) => key === trustedHead);
     if (anchored) {
       plan.keep.push(anchored);
@@ -165,7 +176,17 @@ export class CloudBackupMaintenance {
     // clean-up, so an object it might name is never removed.
     const referenced = new Set<string>();
     const referencedDumps = new Set<string>();
+    const listedKeys = new Set(listed.map(({ key }) => key));
     for (const manifest of plan.keep) {
+      const trusted = bucket.connection.trustedManifests?.[manifest.key];
+      if (
+        !listedKeys.has(manifest.key) &&
+        (!clientBackupContext(bucket.connection.bucket, manifest.key, bucket.connection.vaultId) ||
+          !trusted?.versionId ||
+          trusted.versionId === 'null' ||
+          !/^[\da-f]{64}$/.test(trusted.ciphertextSha256))
+      )
+        throw new Error('A retained backup manifest has no trusted exact version; clean-up is refused');
       const references = await this.readReferences(bucket, manifest.key);
       for (const sha256 of references.objects.keys()) {
         referenced.add(sha256);
@@ -204,6 +225,18 @@ export class CloudBackupMaintenance {
 
     // The manifests go first, marked pruned before they are deleted so nothing offers a restore from one
     // that is going; the objects only they named are unreferenced whichever way this is interrupted.
+    await this.index.adoptManifests(
+      bucket.bucketRef,
+      plan.remove.map(({ key, createdAt }) => ({
+        key,
+        createdAt,
+        databaseKey: null,
+        assetCount: 0,
+        fileCount: 0,
+        bytes: 0,
+      })),
+      'pruned',
+    );
     await this.index.markManifests(
       bucket.bucketRef,
       plan.remove.map(({ key }) => key),
