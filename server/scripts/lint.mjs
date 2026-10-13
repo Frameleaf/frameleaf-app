@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { globSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import fastGlob from 'fast-glob';
 
 const options = process.argv.slice(2);
 // Reporting and validation overrides belong in native ESLint, whose output is not split across batches.
@@ -11,7 +11,13 @@ if (options.length > 1 || (options.length === 1 && options[0] !== '--fix')) {
 }
 
 const eslint = fileURLToPath(new URL('bin/eslint.js', import.meta.resolve('eslint/package.json')));
-const files = [...globSync(['src/**/*.ts', 'test/**/*.ts'])].toSorted((left, right) => left.localeCompare(right));
+// Match ESLint's default directory ignores before passing explicit file paths.
+const matches = await fastGlob(['src/**/*.ts', 'test/**/*.ts'], {
+  dot: true,
+  followSymbolicLinks: false,
+  ignore: ['**/node_modules/**', '.git/**'],
+});
+const files = matches.toSorted((left, right) => left.localeCompare(right));
 if (files.length === 0) {
   throw new Error('No server TypeScript files found for linting.');
 }

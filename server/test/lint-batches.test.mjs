@@ -172,3 +172,43 @@ test('lint rejects reporting and validation overrides before running ESLint', (t
     assert.equal(readFileSync(source, 'utf8'), original);
   }
 });
+
+test('lint matches native ESLint glob coverage with nested dependency directories', (t) => {
+  const cwd = fixture(t);
+  const owned = ['src/owned.ts', 'test/owned.d.ts', 'src/.git/objects/owned.ts', 'test/node_modules_backup/owned.ts'];
+  for (const file of owned) {
+    mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
+    writeFileSync(path.join(cwd, file), 'const unused = 1;\nexport {};\n');
+  }
+  for (const file of [
+    'test/lifecycle/dependencies/node_modules/zod/index.ts',
+    'test/lifecycle/dependencies/node_modules/zod/index.d.ts',
+    'src/node_modules/ignored.ts',
+    '.git/objects/ignored.ts',
+  ]) {
+    mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
+    writeFileSync(path.join(cwd, file), 'vendor source should never be linted');
+  }
+  const eslint = fileURLToPath(new URL('bin/eslint.js', import.meta.resolve('eslint/package.json')));
+  const native = spawnSync(
+    process.execPath,
+    [eslint, 'src/**/*.ts', 'test/**/*.ts', '--format=json', '--max-warnings', '0'],
+    { cwd, encoding: 'utf8' },
+  );
+  const nativeResults = JSON.parse(native.stdout);
+  const expected = nativeResults.map((entry) => entry.filePath).toSorted((left, right) => left.localeCompare(right));
+  assert.deepEqual(
+    expected,
+    owned.map((file) => path.join(cwd, file)).toSorted((left, right) => left.localeCompare(right)),
+  );
+  for (const options of [[], ['--fix']]) {
+    const batched = run(cwd, ...options);
+    const actual = batched.stdout
+      .split('\n')
+      .filter((line) => line.startsWith(cwd + path.sep))
+      .toSorted((left, right) => left.localeCompare(right));
+    assert.deepEqual(actual, expected, batched.stderr + batched.stdout);
+    assert.equal(batched.status, native.status);
+    assert.doesNotMatch(batched.stdout, /File ignored by default|File ignored because/);
+  }
+});
