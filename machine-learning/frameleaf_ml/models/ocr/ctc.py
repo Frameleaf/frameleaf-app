@@ -30,7 +30,7 @@ class CtcDecoder:
 
     def decode(self, indices: NDArray[np.int32], probs: NDArray[np.float32]) -> tuple[list[str], NDArray[np.float32]]:
         keep = np.empty(indices.shape, dtype=bool)
-        keep[:, 0] = True
+        keep[:, :1] = True
         np.not_equal(indices[:, 1:], indices[:, :-1], out=keep[:, 1:])  # repeats before blanks
         keep &= indices != 0
 
