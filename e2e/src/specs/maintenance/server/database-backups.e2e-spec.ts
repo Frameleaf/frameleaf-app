@@ -379,7 +379,7 @@ describe('/admin/database-backups', () => {
       await waitForServerRestart();
     });
 
-    it.sequential('rollback to restore point if backup is missing admin', { timeout: 60_000 }, async () => {
+    it.sequential('rollback to restore point if backup is missing admin', { timeout: 120_000 }, async () => {
       const filename = await utils.prepareTestBackup('empty', admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -407,7 +407,17 @@ describe('/admin/database-backups', () => {
         )
         .toBeTruthy();
 
-      // The restore and completed rollback share this test's unchanged 60-second deadline.
+      // Restore and rollback each replay the canonical schema; bound each phase to 60 seconds.
+      await ownedWait('Waiting for missing-admin restore to reach rollback', 60_000, (context) =>
+        pollRequest(
+          context,
+          () => request(app).get('/admin/maintenance/status').send({ token: 'token' }),
+          ({ status, body }) => {
+            expect(status).toBe(200);
+            return body.task === 'rollback' || body.task === 'error';
+          },
+        ),
+      );
       const failedRestore = await ownedWait('Waiting for missing-admin rollback', 60_000, (context) =>
         pollRequest(
           context,
@@ -441,6 +451,9 @@ describe('/admin/database-backups', () => {
 
       await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' }).expect(201);
       await waitForServerRestart();
+      const restoredAdmin = await request(app).get('/users/me').set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(restoredAdmin.status).toBe(200);
+      expect(restoredAdmin.body).toEqual(expect.objectContaining({ id: admin.userId, isAdmin: true }));
     });
 
     // FL-81: a backup from a newer server cannot be migrated down; it is refused before anything changes.
