@@ -65,6 +65,29 @@ CMake, and refuse upstream source drift. This replaces manual patch application 
 The stage reuses the existing pinned LibRaw/jpegli/media builds, forbids an internal LibRaw fallback,
 uses portable CPU code, and disables darktable's own AI/download feature. Semantic masks use local ML.
 
+LibRaw uses the upstream master snapshot
+[`7bfffe2efa508da00c0d8af299c37cd426a4528d`](https://github.com/LibRaw/LibRaw/commit/7bfffe2efa508da00c0d8af299c37cd426a4528d),
+labelled `0.22.0-dev.7bfffe2e` to distinguish its development snapshot from a stable tag;
+its upstream header reports `0.22.0-Release`.
+It is not the latest stable release. The [0.22.2 tag](https://github.com/LibRaw/LibRaw/releases/tag/0.22.2)
+resolves to `b93f6e45c194f5df9b02a43b1af9a54b4f41f33f`; replacing the snapshot with it
+would remove Sony ARW6 CRAW HQ decoding (TIFF compression 32766), its black/white/linear-max
+calibration, and camera registrations for Canon EOS R50 V, Hasselblad X2D II 100C,
+Sony ILCE-1M2 and Sony ILCE-7M5. Public API headers otherwise match, but stable uses
+`libraw.so.25` while the snapshot and packaged Darktable use `libraw.so.26`.
+The stable swap is rejected until an upstream release preserves these decoder/calibration paths
+and its dependent native binaries are rebuilt and qualified. No local codec patches are substituted.
+
+Compared with the previous `e419de08` pin, the development snapshot preserves all public headers,
+exported symbols, ARW6 decoder/dispatch/calibration, camera metadata and colour tables. The A1 II
+camera's display alias changed; its registration remains present. Isolated Linux arm64 builds of
+both this snapshot and stable 0.22.2 load successfully. Their sensor-rendered full 16-bit pixels,
+ICC profiles and dimensions match the previous pin across all ten existing RAW format fixtures;
+original hashes remain unchanged. The development snapshot also passes the calibrated Canon EOS70D
+native oracle against Darktable 5.6.2 and Sharp 0.35.5/libvips 8.18.7. These fixtures do not exercise
+the removed cameras or ARW6, so their successful comparison does not override the source-proven
+support loss. Both upstream licence files are unchanged between these revisions.
+
 Lensfun 0.3.4 and its shipped version-1 database are pinned to source commit
 `101c745e847a5de4a1e569a94368ce2027198598`; no runtime database updater is installed. This is a fixed
 release database, not an assertion of coverage for every recent camera/lens. Missing calibration
