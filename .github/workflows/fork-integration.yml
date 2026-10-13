@@ -25,14 +25,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
         working-directory: .
         run: bash scripts/checkout-test-assets.sh
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -52,7 +52,7 @@ jobs:
             .github/verify-release-bundle.test.cjs \
             scripts/frameleaf-distribution-gates.test.mjs
       - name: Set up the pinned NAS renderer Python
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11.17'
       - name: Prepare the pinned TrueNAS rendering library
@@ -109,7 +109,7 @@ jobs:
           node scripts/generate-typescript-sdk.mjs
       - name: Retain generated API artifacts for source reconciliation
         if: ${{ steps.api-generation.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: generated-api-${{ github.sha }}
           path: |
@@ -152,11 +152,12 @@ jobs:
       run:
         working-directory: machine-learning
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          save-cache: true
           version: '0.13.0'
           python-version: '3.12.15'
       - name: Install locked CPU test dependencies
@@ -180,7 +181,7 @@ jobs:
       matrix:
         device: [cpu, cuda]
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Configure public Docker Hub mirror
@@ -210,15 +211,15 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux/arm64
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
         working-directory: .
         run: bash scripts/checkout-test-assets.sh
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         if: inputs.raw_engine == 'libraw'
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         if: inputs.raw_engine == 'libraw'
         with:
           node-version-file: '.nvmrc'
@@ -310,7 +311,7 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/raw-validation/fixture.log"
       - name: Retain native runtime provenance and fixture result
         if: always() && inputs.raw_engine == 'darktable'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-raw-${{ matrix.runner }}-${{ github.sha }}
           path: ${{ runner.temp }}/raw-validation/

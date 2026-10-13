@@ -56,8 +56,9 @@ jobs:
         working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.10.8
@@ -74,7 +75,7 @@ jobs:
         env:
           STUDIO_LIFECYCLE_REPORT: ${{ runner.temp }}/studio-lifecycle-report.json
         run: pnpm test:medium run test/medium/specs/services/studio-project-lifecycle.service.spec.ts
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: studio-lifecycle-report
           path: ${{ runner.temp }}/studio-lifecycle-report.json
@@ -91,12 +92,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Mise for shared server contracts
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8
         with:
+          persist_github_token: true
           github_token: ${{ github.token }}
           install_args: --locked
           version: 2026.10.8
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 26.11.1
       - name: Pin the isolated engine package manager
@@ -120,7 +122,7 @@ jobs:
           fi
       - name: Retain genuine adapted source inventory for reviewed digest recovery
         if: ${{ always() && steps.source_recovery_receipt.outputs.produced == 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frameleaf-studio-source-recovery
           path: ${{ runner.temp }}/frameleaf-studio-source-recovery.json
@@ -145,7 +147,7 @@ jobs:
         run: node --test studio/tools/runtime-pairs.test.mjs studio/tools/lib/ephemeral-pipeline.test.mjs studio/tools/whisper-timing.test.mjs
       - name: Retain genuine Whisper diagnostic provenance
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: whisper-timing-diagnostic-${{ github.sha }}
           path: ${{ runner.temp }}/whisper-timing-report.json
@@ -245,14 +247,14 @@ jobs:
           STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/linked-edit-axis" node studio/tools/linked-edit-axis.browser.mjs
       - name: Retain independent linear HDR physical oracle
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: studio-linear-hdr-subtree-report
           path: ${{ runner.temp }}/linear-hdr-subtree-report.json
           if-no-files-found: error
       - name: Retain effect-free graphics float measurements
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: studio-graphics-float-report
           path: ${{ runner.temp }}/graphics-float-report.json
@@ -318,7 +320,7 @@ jobs:
           } > "$evidence/provenance.txt"
       - name: Retain genuine graph fixture recovery for reviewed import
         if: ${{ always() && steps.graph_fixture_recovery.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frameleaf-studio-graph-fixture-recovery
           path: ${{ runner.temp }}/studio-graph-fixture-recovery
@@ -334,7 +336,7 @@ jobs:
       # developer machine's evidence - actually measured as passed. See
       # applyCommandMatrixCoverage's doc: coverage is read per row from the report itself, not a
       # hand-reviewed static set, since which cases a row passes varies by command.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: studio-lifecycle-report
           path: ${{ runner.temp }}
@@ -353,7 +355,7 @@ jobs:
           node studio/tools/feature-manifest.mjs --check
       - name: Retain source, artifact and license evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: frameleaf-studio-engine-provenance
           path: |

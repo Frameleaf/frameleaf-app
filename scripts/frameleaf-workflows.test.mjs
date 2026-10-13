@@ -183,7 +183,7 @@ test("Studio graph recovery preserves the failed gate and generates only genuine
   assert.equal(upload.with["if-no-files-found"], "error");
   assert.equal(
     upload.uses,
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
   );
   assert.ok(
     steps.some((step) =>
@@ -216,7 +216,7 @@ test("Studio source recovery retains evidence without bypassing normal preparati
   assert.equal(upload.with["if-no-files-found"], "error");
   assert.equal(
     upload.uses,
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
   );
   for (const step of steps.filter((step) =>
     /npm --prefix studio\/engine (?:ci|run build)/.test(step.run ?? ""),
@@ -1903,4 +1903,26 @@ test("canonical TypeScript SDK generation has no workflow or mise raw bypass", (
   const mise = readFileSync(path.join(root, "mise.toml"), "utf8");
   assert.match(mise, /node scripts\/generate-typescript-sdk\.mjs/u);
   assert.doesNotMatch(mise, /oazapfts\s+--/u);
+});
+
+test("action upgrades preserve later mise authentication and the existing uv cache policy", () => {
+  for (const file of readdirSync(path.join(root, ".github/workflows")).filter(
+    (file) => /\.ya?ml$/.test(file),
+  )) {
+    for (const job of Object.values(workflow(file).jobs)) {
+      for (const step of job.steps ?? []) {
+        if (step.uses?.startsWith("jdx/mise-action@")) {
+          assert.equal(step.with.persist_github_token, true, file);
+        }
+      }
+    }
+  }
+  const ml = workflow("fork-integration.yml").jobs[
+    "machine-learning"
+  ].steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"));
+  assert.equal(ml.with["save-cache"], true);
+  const scanner = workflow("org-zizmor.yml").jobs.zizmor.steps.find((step) =>
+    step.uses?.startsWith("astral-sh/setup-uv@"),
+  );
+  assert.equal(scanner.with["enable-cache"], false);
 });
