@@ -18,7 +18,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { discoverMediaLocation } from 'src/utils/media-location.js';
-import { ImmichStartupError } from 'src/utils/misc.js';
+import { FrameleafStartupError } from 'src/utils/misc.js';
 
 const docsMessage = `Please see https://help.frameleaf.app/administration/system-integrity#folder-checks for more information.`;
 
@@ -226,7 +226,7 @@ export class StorageService extends BaseService {
       }
     } catch (error) {
       this.logger.error(`Failed to read (${internalPath}): ${error}`);
-      throw new ImmichStartupError(`Failed to read: "${externalPath} (${internalPath}) - ${docsMessage}"`);
+      throw new FrameleafStartupError(`Failed to read: "${externalPath} (${internalPath}) - ${docsMessage}"`);
     }
   }
 
@@ -241,7 +241,7 @@ export class StorageService extends BaseService {
         return;
       }
       this.logger.error(`Failed to create ${internalPath}: ${error}`);
-      throw new ImmichStartupError(`Failed to create "${externalPath} - ${docsMessage}"`);
+      throw new FrameleafStartupError(`Failed to create "${externalPath} - ${docsMessage}"`);
     }
   }
 
@@ -251,7 +251,7 @@ export class StorageService extends BaseService {
       await this.storageRepository.overwriteFile(internalPath, Buffer.from(Date.now().toString()));
     } catch (error) {
       this.logger.error(`Failed to write ${internalPath}: ${error}`);
-      throw new ImmichStartupError(`Failed to write "${externalPath} - ${docsMessage}"`);
+      throw new FrameleafStartupError(`Failed to write "${externalPath} - ${docsMessage}"`);
     }
   }
 

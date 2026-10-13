@@ -1,6 +1,6 @@
 import { SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
-import { ImmichStartupError } from 'src/utils/misc.js';
+import { FrameleafStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -47,7 +47,7 @@ describe(StorageService.name, () => {
         return Promise.resolve(Buffer.from('marker'));
       });
 
-      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(ImmichStartupError);
+      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(FrameleafStartupError);
 
       expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(mocks.storage.createFile).not.toHaveBeenCalledWith('/data/upload/.frameleaf', expect.anything());
@@ -58,7 +58,7 @@ describe(StorageService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
       mocks.storage.readFile.mockRejectedValue(Object.assign(new Error('denied'), { code: 'EACCES' }));
 
-      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(ImmichStartupError);
+      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(FrameleafStartupError);
 
       expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(mocks.storage.readFile).not.toHaveBeenCalledWith(expect.stringContaining('/.immich'));
@@ -215,7 +215,7 @@ describe(StorageService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ mountChecks: {} });
       mocks.storage.createFile.mockRejectedValue(new Error('Error creating file'));
 
-      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(ImmichStartupError);
+      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(FrameleafStartupError);
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 

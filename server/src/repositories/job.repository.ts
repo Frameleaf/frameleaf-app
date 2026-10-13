@@ -46,7 +46,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
-import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+import { FrameleafStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -151,7 +151,7 @@ export class JobRepository {
           this.logger.error(
             `${errorMessage}. JobName.${jobKey} is already handled by ${this.handlers[jobName]!.label}.`,
           );
-          throw new ImmichStartupError(errorMessage);
+          throw new FrameleafStartupError(errorMessage);
         }
 
         this.handlers[jobName] = {
@@ -173,7 +173,7 @@ export class JobRepository {
         this.logger.error(
           `${errorMessage}. Make sure to add the @OnJob({ name: JobName.${jobKey}, queue: QueueName.XYZ }) decorator for the new job.`,
         );
-        throw new ImmichStartupError(errorMessage);
+        throw new FrameleafStartupError(errorMessage);
       }
     }
   }
