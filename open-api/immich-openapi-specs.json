@@ -12390,6 +12390,79 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/uploads/{id}/direct": {
+      "post": {
+        "description": "Version 1 complete data-only offer/answer; native upload ownership, durable offsets and receipts remain authoritative.",
+        "operationId": "negotiateAssetUploadDirect",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "description": "Direct peer capacity unavailable"
+          },
+          "503": {
+            "description": "Direct negotiation unavailable; native HTTPS resume is retained"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Negotiate a resource-scoped direct upload data channel",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/uploads/{id}/result": {
       "get": {
         "operationId": "getAssetUploadResourceResult",
@@ -62694,6 +62767,26 @@
           "reject"
         ],
         "type": "string"
+      },
+      "AssetUploadDirectDescriptionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "sdp": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sdp",
+          "version"
+        ],
+        "type": "object"
       },
       "AssetUploadResultDto": {
         "properties": {

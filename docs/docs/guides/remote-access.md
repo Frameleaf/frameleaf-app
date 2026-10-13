@@ -1,5 +1,11 @@
 # Remote Access
 
+Native mobile backup can bypass relay payload bandwidth through a bounded direct
+WebRTC data channel when ICE reaches the home server. Existing LAN/WAN/IPv6 HTTPS
+remains the first choice, and resumable HTTPS remains the fallback subject to
+relay policy. See [Direct mobile backup](../features/direct-mobile-backup.md) for
+the signaling contract, STUN endpoints and qualification limits.
+
 This page gives a few pointers on how to access your Frameleaf instance from outside your LAN.
 You can read the [full discussion in Discord](https://discord.com/channels/979116623879368755/1122615710846308484)
 
