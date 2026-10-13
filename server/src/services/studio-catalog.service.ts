@@ -1,12 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { VideoInfo } from 'src/types.js';
+import type { VideoInfo, VideoStreamInfo } from 'src/types.js';
 import {
   StudioFontCatalogDto,
   StudioMediaFactsDto,
   StudioResourceInventoryDto,
 } from 'src/dtos/studio-inventory.dto.js';
-import { AssetType, CacheControl, Permission } from 'src/enum.js';
+import { AssetType, CacheControl, ColorTransfer, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -15,6 +15,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { parseDurationSeconds } from 'src/services/asset-restoration.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { parseSourcePixelLayout } from 'src/utils/media-decode.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { type Rational, rational } from 'src/utils/rational-time.js';
 import {
@@ -40,6 +41,58 @@ export const exactFrameRateOf = (fps: number | null | undefined): Rational | nul
     }
   }
   return null;
+};
+
+type StudioMediaColor = Pick<
+  StudioMediaFactsDto,
+  'colorTransfer' | 'colorTransferCode' | 'colorPrimariesCode' | 'colorMatrixCode' | 'bitDepth' | 'dolbyVisionProfile'
+>;
+
+/** A still, an asset with no picture stream, and a video nothing is known about. */
+const UNKNOWN_MEDIA_COLOR: StudioMediaColor = {
+  colorTransfer: 'sdr',
+  colorTransferCode: null,
+  colorPrimariesCode: null,
+  colorMatrixCode: null,
+  bitDepth: null,
+  dolbyVisionProfile: null,
+};
+
+/**
+ * The media record's `colorTransfer` (graph protocol 3.5) of a picture stream. Any Dolby Vision
+ * profile is `hdr` whatever transfer its base layer states, as the web host marks it; otherwise
+ * H.273 transfer 16 is `pq` and 18 is `hlg`; everything else, unspecified included, is `sdr`. Every
+ * stream `StudioResourceService.hdrLibraryAssets` counts as HDR is one of the first three.
+ */
+export const studioMediaColorOf = (
+  stream:
+    | (Pick<VideoStreamInfo, 'colorTransfer' | 'colorPrimaries' | 'colorMatrix'> & {
+        pixelFormat: string | null;
+        dvProfile: number | null;
+      })
+    | null
+    | undefined,
+): StudioMediaColor => {
+  if (!stream) {
+    return UNKNOWN_MEDIA_COLOR;
+  }
+  const dolbyVisionProfile = stream.dvProfile ?? null;
+  let colorTransfer: StudioMediaColor['colorTransfer'] = 'sdr';
+  if (dolbyVisionProfile !== null) {
+    colorTransfer = 'hdr';
+  } else if (stream.colorTransfer === ColorTransfer.Smpte2084) {
+    colorTransfer = 'pq';
+  } else if (stream.colorTransfer === ColorTransfer.AribStdB67) {
+    colorTransfer = 'hlg';
+  }
+  return {
+    colorTransfer,
+    colorTransferCode: stream.colorTransfer ?? null,
+    colorPrimariesCode: stream.colorPrimaries ?? null,
+    colorMatrixCode: stream.colorMatrix ?? null,
+    bitDepth: parseSourcePixelLayout(stream.pixelFormat)?.bitDepth ?? null,
+    dolbyVisionProfile,
+  };
 };
 
 /**
@@ -136,10 +189,13 @@ export class StudioCatalogService {
         hasAudio: false,
         audioCodec: null,
         videoCodec: null,
+        ...UNKNOWN_MEDIA_COLOR,
         source: 'stored',
       };
     }
 
+    // The colour metadata extraction stored, which is what decides a project's HDR sources too.
+    const storedColor = await this.assetRepository.getVideoColor(asset.id);
     let probe: VideoInfo | null = null;
     try {
       probe = await this.mediaRepository.probe(asset.originalPath);
@@ -162,6 +218,7 @@ export class StudioCatalogService {
         hasAudio: null,
         audioCodec: null,
         videoCodec: null,
+        ...studioMediaColorOf(storedColor),
         source: 'stored',
       };
     }
@@ -184,6 +241,8 @@ export class StudioCatalogService {
       hasAudio: probe.audioStreams.length > 0,
       audioCodec: audio?.codecName ?? null,
       videoCodec: video.codecName,
+      // an original whose metadata has not been extracted yet has no stored row: the probe just made answers
+      ...studioMediaColorOf(storedColor ?? video),
       source: 'probe',
     };
   }

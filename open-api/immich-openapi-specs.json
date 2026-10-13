@@ -41327,7 +41327,7 @@
     },
     "/studio/assets/{id}/media-facts": {
       "get": {
-        "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.",
+        "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so. It also answers the colour of the picture stream as metadata extraction stored it: `colorTransfer` (`hdr` for any Dolby Vision profile, else `pq` for H.273 transfer 16, `hlg` for 18, `sdr` otherwise), the H.273 codes, the bit depth and the Dolby Vision profile. A native client that cannot read the stream itself marks its media record from it.",
         "operationId": "getStudioMediaFacts",
         "parameters": [
           {
@@ -82194,6 +82194,21 @@
             "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
+          "lastAdmissionRefusalReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "description": "Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed",
+            "nullable": true
+          },
+          "lastAdmissionRefusedAt": {
+            "description": "When that worker refused it; null with lastAdmissionRefusalReason",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "maxAttempts": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -82407,6 +82422,21 @@
           },
           "label": {
             "description": "What the person sees in Activity; empty when withheld",
+            "type": "string"
+          },
+          "lastAdmissionRefusalReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "description": "Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed",
+            "nullable": true
+          },
+          "lastAdmissionRefusedAt": {
+            "description": "When that worker refused it; null with lastAdmissionRefusalReason",
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "maxAttempts": {
@@ -115160,6 +115190,16 @@
         ],
         "type": "string"
       },
+      "StudioMediaColorTransfer": {
+        "description": "The Studio media record's colorTransfer (graph protocol 3.5), from the stored picture stream: hdr for any Dolby Vision profile, whatever its transfer; otherwise pq for H.273 transfer 16 and hlg for 18; sdr for anything else, for a still, and when nothing is known",
+        "enum": [
+          "sdr",
+          "pq",
+          "hlg",
+          "hdr"
+        ],
+        "type": "string"
+      },
       "StudioMediaFactsDto": {
         "properties": {
           "assetId": {
@@ -115171,6 +115211,44 @@
             "description": "The first audio track codec; its presence places a linked audio clip",
             "nullable": true,
             "type": "string"
+          },
+          "bitDepth": {
+            "description": "Bits per component, read from the pixel format of the picture stream; null when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "colorMatrixCode": {
+            "description": "ITU-T H.273 matrix coefficients of the picture stream (2: unspecified); null when none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "colorPrimariesCode": {
+            "description": "ITU-T H.273 colour primaries of the picture stream (2: unspecified); null when none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "colorTransfer": {
+            "$ref": "#/components/schemas/StudioMediaColorTransfer"
+          },
+          "colorTransferCode": {
+            "description": "ITU-T H.273 transfer characteristics of the picture stream (2: unspecified); null when none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "dolbyVisionProfile": {
+            "description": "The Dolby Vision profile of the picture stream; null when it has none or none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
           },
           "durationSeconds": {
             "description": "Length in seconds; 0 for a still; null when unknown",
@@ -115236,6 +115314,12 @@
         "required": [
           "assetId",
           "audioCodec",
+          "bitDepth",
+          "colorMatrixCode",
+          "colorPrimariesCode",
+          "colorTransfer",
+          "colorTransferCode",
+          "dolbyVisionProfile",
           "durationSeconds",
           "fps",
           "frameCount",

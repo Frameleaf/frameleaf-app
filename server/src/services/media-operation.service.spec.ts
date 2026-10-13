@@ -39,6 +39,8 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     maxAttempts: 3,
     autoRetries: 0,
     retryAt: null,
+    lastAdmissionRefusalReason: null,
+    lastAdmissionRefusedAt: null,
     claimToken: 'claim-token',
     claimedBy: 'worker-1',
     claimExpiresAt: new Date('2026-09-22T10:00:00.000Z'),
@@ -208,6 +210,44 @@ describe(MediaOperationService.name, () => {
       await sut.search(authStub.user1, {} as never);
 
       expect(repository.list).toHaveBeenCalledWith(expect.objectContaining({ includeDismissed: false }));
+    });
+
+    it('tells the owner why a queued job was last passed over, and when', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        items: [
+          operationStub({
+            status: MediaOperationStatus.Queued,
+            lastAdmissionRefusalReason: 'gpu_memory_insufficient',
+            lastAdmissionRefusedAt: new Date('2026-09-22T09:58:00.000Z'),
+          }),
+          operationStub({ status: MediaOperationStatus.Queued }),
+        ],
+        total: 2,
+      });
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0]).toMatchObject({
+        lastAdmissionRefusalReason: 'gpu_memory_insufficient',
+        lastAdmissionRefusedAt: '2026-09-22T09:58:00.000Z',
+      });
+      expect(items[1]).toMatchObject({ lastAdmissionRefusalReason: null, lastAdmissionRefusedAt: null });
+    });
+
+    it('answers only a known refusal code, never stored free text', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        items: [
+          operationStub({
+            lastAdmissionRefusalReason: 'worker 7 at /mnt/render refused user 42',
+            lastAdmissionRefusedAt: new Date('2026-09-22T09:58:00.000Z'),
+          }),
+        ],
+        total: 1,
+      });
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0]).toMatchObject({ lastAdmissionRefusalReason: null, lastAdmissionRefusedAt: null });
     });
 
     it('never leaks the claim token or the worker identity', async () => {
