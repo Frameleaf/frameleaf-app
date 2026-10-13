@@ -91,13 +91,13 @@ class TextRecognizer(InferenceModel):
                 text_list[index] = text
                 score_list[index] = score
 
+        valid = score_list > minScore
+        boxes = boxes[valid]  # Keep the detector's pixel geometry intact and normalize only accepted boxes.
         boxes[:, :, 0] /= img.width
         boxes[:, :, 1] /= img.height
-
-        valid = score_list > minScore
         valid_list = valid.tolist()
         return {
-            "box": boxes.reshape(-1, 8)[valid].reshape(-1),
+            "box": boxes.reshape(-1),
             "text": [text for text, keep in zip(text_list, valid_list) if keep],
             "boxScore": box_scores[valid],
             "textScore": score_list[valid],
