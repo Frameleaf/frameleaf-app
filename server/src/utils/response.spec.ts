@@ -102,18 +102,19 @@ describe('respondWithCookie', () => {
 });
 
 describe('respondWithoutCookie', () => {
-  it.each([[], [ImmichCookie.OAuthState], [ImmichCookie.AccessToken, ImmichCookie.AuthType, ImmichCookie.AccessToken]])(
-    'clears cookies in order and only clears the cache for an access token: %j',
-    (...cookies) => {
-      const { res, events } = createResponse();
-      const body = { signedOut: true };
-      expect(respondWithoutCookie(res, body, cookies)).toBe(body);
-      expect(events).toEqual([
-        ...cookies.map((key) => ['clearCookie', key]),
-        ...(cookies.includes(ImmichCookie.AccessToken) ? [['header', 'Clear-Site-Data', '"cache"']] : []),
-      ]);
-    },
-  );
+  it.each<ImmichCookie[]>([
+    [],
+    [ImmichCookie.OAuthState],
+    [ImmichCookie.AccessToken, ImmichCookie.AuthType, ImmichCookie.AccessToken],
+  ])('clears cookies in order and only clears the cache for an access token: %j', (...cookies) => {
+    const { res, events } = createResponse();
+    const body = { signedOut: true };
+    expect(respondWithoutCookie(res, body, cookies)).toBe(body);
+    expect(events).toEqual([
+      ...cookies.map((key) => ['clearCookie', key]),
+      ...(cookies.includes(ImmichCookie.AccessToken) ? [['header', 'Clear-Site-Data', '"cache"']] : []),
+    ]);
+  });
 
   it('propagates clearing failures before clearing the cache', () => {
     const { res, clearCookie, setHeader } = createResponse();
