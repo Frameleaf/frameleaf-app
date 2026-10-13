@@ -8,13 +8,18 @@ export type SuggestDuplicateOptions = {
 
 /**
  * Counts all truthy values in the exifInfo object.
- * This matches the client implementation in web/src/lib/utils/exif-utils.ts
  *
  * @param asset Asset with optional exifInfo
  * @returns Count of truthy EXIF values
  */
 export const getExifCount = (asset: AssetResponseDto): number => {
-  return Object.values(asset.exifInfo ?? {}).filter(Boolean).length;
+  let count = 0;
+  for (const value of Object.values(asset.exifInfo ?? {})) {
+    if (value) {
+      count++;
+    }
+  }
+  return count;
 };
 
 /** Format preference only; the extension does not establish capture provenance. */

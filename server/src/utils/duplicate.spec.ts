@@ -77,6 +77,29 @@ describe('duplicate utils', () => {
       expect(getExifCount(asset)).toBe(12);
     });
 
+    it('counts own enumerable EXIF values without converting or changing them', () => {
+      const exif = Object.assign(Object.create({ inherited: 'ignored' }), {
+        zero: 0,
+        negativeZero: -0,
+        notANumber: NaN,
+        empty: '',
+        missing: undefined,
+        disabled: false,
+        negative: -1,
+        text: '0',
+        list: [],
+        object: {},
+      });
+      Object.defineProperties(exif, {
+        hidden: { value: 'ignored' },
+        [Symbol('ignored')]: { value: 'ignored', enumerable: true },
+      });
+      const asset = { ...createAsset('mixed'), exifInfo: exif };
+      expect(getExifCount(asset)).toBe(4);
+      expect(asset.exifInfo).toBe(exif);
+      expect(Object.is(exif.negativeZero, -0)).toBe(true);
+    });
+
     it('should not count null or undefined values', () => {
       const asset = createAsset('asset-1', 1000, {
         make: 'Canon',
