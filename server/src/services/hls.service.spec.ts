@@ -319,6 +319,48 @@ describe(HlsService.name, () => {
       mocks.storage.checkFileExists.mockResolvedValue(true);
     });
 
+    it('returns separate file responses to concurrent requests waiting on one segment', async () => {
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      const requests = Array.from({ length: 8 }, () =>
+        sut.getSegment(auth, assetId, sessionId, variantIndex, 'seg_1.m4s'),
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      sut.onSegmentResult({ sessionId, variantIndex, segmentIndex: 1 });
+
+      const responses = await Promise.all(requests);
+      expect(new Set(responses).size).toBe(8);
+      for (const response of responses) {
+        expect(response).toEqual(
+          expect.objectContaining({ path: expect.stringContaining('seg_1.m4s'), contentType: 'video/mp4' }),
+        );
+      }
+    });
+
+    it.each(['segment failed', 'session failed', 'Session ended'])(
+      'rejects all concurrent segment requests when %s',
+      async (error) => {
+        mocks.storage.checkFileExists.mockResolvedValue(false);
+        const requests = Array.from({ length: 8 }, () =>
+          sut.getSegment(auth, assetId, sessionId, variantIndex, 'seg_1.m4s').catch((error_: unknown) => error_),
+        );
+        await new Promise((resolve) => setImmediate(resolve));
+        if (error === 'segment failed') {
+          sut.onSegmentResult({ sessionId, variantIndex, segmentIndex: 1, error });
+        } else if (error === 'session failed') {
+          sut.onSessionResult({ sessionId, error });
+        } else {
+          sut.onSessionEnd({ sessionId });
+        }
+
+        const failures = await Promise.all(requests);
+        for (const failure of failures) {
+          expect(failure).toBeInstanceOf(Error);
+          expect((failure as Error).message).toBe(error);
+          expect(failure).toBe(failures[0]);
+        }
+      },
+    );
+
     it('emits HlsHeartbeat with segmentIndex 0 for the first init.mp4 request', async () => {
       await sut.getSegment(auth, assetId, sessionId, variantIndex, 'init.mp4');
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsHeartbeat', {
