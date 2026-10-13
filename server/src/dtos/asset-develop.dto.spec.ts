@@ -210,7 +210,8 @@ it('keeps existing version1 public save validation while retaining opaque fields
 describe('Native development API schemas', () => {
   it('publishes explicit double/integer metadata for SDK generation, including nested controls', () => {
     const document = z.toJSONSchema(DarktableDevelopRecipeSchema, { target: 'openapi-3.0', io: 'input' });
-    const schema = document.$ref ? document.definitions![document.$ref.slice('#/definitions/'.length)] : document;
+    const definitions = document.definitions as Record<string, typeof document>;
+    const schema = document.$ref ? definitions[document.$ref.slice('#/definitions/'.length)] : document;
     const visit = (value: unknown) => {
       if (!value || typeof value !== 'object') return;
       const node = value as Record<string, unknown>;
