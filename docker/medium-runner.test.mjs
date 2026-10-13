@@ -47,7 +47,7 @@ test("required medium tests use the production native runtime and complete suite
   );
   assert.match(
     dockerfile,
-    /ghcr.io\/jdx\/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730/,
+    /ghcr.io\/jdx\/mise:2026.10.8@sha256:b720f506c21a6bf5f733a3b1cd04361617ac461a597e44f513aa3976dcd71e57/,
   );
 });
 

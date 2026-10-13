@@ -1388,7 +1388,7 @@ export const utils = {
       {
         headers: asBearerAuth(accessToken),
         fetch: (...args: Parameters<typeof fetch>) =>
-          // eslint-disable-next-line unicorn/no-invalid-argument-count, unicorn/prefer-await
+          // eslint-disable-next-line unicorn/prefer-await
           fetch(...args).then((response) => {
             setCookie = response.headers.getSetCookie();
             return response;

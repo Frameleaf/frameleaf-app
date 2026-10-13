@@ -221,17 +221,21 @@ test.describe('Duplicate review', () => {
   test('plays two real duplicate videos side by side while keeping keyboard focus', async ({ page, assetReady }) => {
     test.setTimeout(300_000);
     await withVp9TranscodeTarget(admin.accessToken, async () => {
+      const [kayakBytes, forestBytes] = await Promise.all([
+        readFile(new URL('../../fixtures/frameleaf-media/kayak-demo.mp4', import.meta.url)),
+        readFile(new URL('../../fixtures/frameleaf-media/forest-demo.mp4', import.meta.url)),
+      ]);
       const [kayak, forest] = await Promise.all([
         utils.createAsset(admin.accessToken, {
           assetData: {
             filename: 'duplicate-kayak.mp4',
-            bytes: await readFile(new URL('../../fixtures/frameleaf-media/kayak-demo.mp4', import.meta.url)),
+            bytes: kayakBytes,
           },
         }),
         utils.createAsset(admin.accessToken, {
           assetData: {
             filename: 'duplicate-forest.mp4',
-            bytes: await readFile(new URL('../../fixtures/frameleaf-media/forest-demo.mp4', import.meta.url)),
+            bytes: forestBytes,
           },
         }),
       ]);
