@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { stripTypeScriptTypes } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +11,7 @@ import { describePreflight, runPipeline, verifyLedger } from 'src/commands/migra
 import { Ledger } from 'src/commands/migrate/ledger';
 import { FOREIGN_PATH, sanitizeDetail, sanitizeUrl } from 'src/commands/migrate/report';
 import type { MigrateOptions } from 'src/commands/migrate/types';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 /**
@@ -582,7 +582,7 @@ describe('migrate against disposable source/destination fixtures', () => {
       'utf8',
     );
     const parser = (await import(
-      `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(parserSource, { mode: 'transform' })).toString('base64')}`
+      `data:text/javascript;base64,${Buffer.from(ts.transpileModule(parserSource, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText).toString('base64')}`
     )) as { parseMigrationReport: (raw: string) => { ok: boolean; error?: string } };
     expect(parser.parseMigrationReport(text)).toMatchObject({ ok: true });
   });
