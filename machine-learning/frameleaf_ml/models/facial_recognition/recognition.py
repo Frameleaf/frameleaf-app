@@ -45,8 +45,13 @@ class FaceRecognizer(InferenceModel):
         if faces["boxes"].shape[0] == 0:
             return []
         image = np.asarray(decode_pil(inputs), dtype=np.uint8)
-        crops = np.stack([align_face(image, kps).transpose(2, 0, 1) for kps in faces["landmarks"]])
-        embeddings = self._predict_batch(normalize(crops, mean=127.5, std=127.5))
+        landmarks = faces["landmarks"]
+        batch_size = self.batch_size or len(landmarks)
+        batches = []
+        for i in range(0, len(landmarks), batch_size):
+            crops = np.stack([align_face(image, kps).transpose(2, 0, 1) for kps in landmarks[i : i + batch_size]])
+            batches.append(self._predict_batch(normalize(crops, mean=127.5, std=127.5)))
+        embeddings = batches[0] if len(batches) == 1 else np.concatenate(batches, axis=0)
         return self.postprocess(faces, embeddings)
 
     def _predict_batch(self, crops: NDArray[np.float32]) -> NDArray[np.float32]:

@@ -32,12 +32,13 @@ from frameleaf_ml.models.cache import ModelCache
 from frameleaf_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
 from frameleaf_ml.models.clip.visual import OpenClipVisualEncoder
 from frameleaf_ml.models.constants import _PADDLE_MODELS, get_model_source, get_ocr_model_file
+from frameleaf_ml.models.facial_recognition._ops import ARCFACE_DST, align_face
 from frameleaf_ml.models.facial_recognition.detection import FaceDetector
 from frameleaf_ml.models.facial_recognition.recognition import FaceRecognizer
 from frameleaf_ml.models.image_description import IMAGE_DESCRIPTION_PROMPT, ImageDescriptionModel
 from frameleaf_ml.models.ocr.detection import TextDetector
 from frameleaf_ml.models.ocr.recognition import TextRecognizer
-from frameleaf_ml.schemas import ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
+from frameleaf_ml.schemas import FaceDetectionOutput, ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
 from frameleaf_ml.sessions.ann import AnnSession
 from frameleaf_ml.sessions.ort import OrtSession
 from frameleaf_ml.sessions.rknn import RknnSession, run_inference
@@ -1806,6 +1807,83 @@ class TestFaceRecognition:
         assert len(face_recognizer.predict(pil_image, faces)) == num_faces
         assert session.run.call_count == 3  # 2 + 2 + 1
         assert [c.args[1]["input.1"].shape[0] for c in session.run.call_args_list] == [2, 2, 1]
+
+    @pytest.mark.parametrize(
+        ("num_faces", "batch_size"), [(0, 2), (1, 1), (1, 4), (5, 2), (17, 4), (17, 1), (17, None)]
+    )
+    @pytest.mark.parametrize("image_type", ["array", "pil", "bytes", "grayscale"])
+    def test_recognition_prepares_only_the_current_batch_with_exact_input_pixels(
+        self,
+        num_faces: int,
+        batch_size: int | None,
+        image_type: str,
+        stub_session: Callable[..., mock.Mock],
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch.object(FaceRecognizer, "load")
+        recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
+        recognizer.batch_size = batch_size
+        image = np.random.default_rng(42).integers(0, 256, (240, 320, 3), dtype=np.uint8)
+        pil = Image.fromarray(image)
+        if image_type == "grayscale":
+            pil = pil.convert("L")
+            image = np.asarray(pil.convert("RGB"))
+        image_input: Any = image if image_type == "array" else pil
+        if image_type == "bytes":
+            encoded = BytesIO()
+            pil.save(encoded, format="PNG")
+            image_input = encoded.getvalue()
+        landmarks = np.stack(
+            [ARCFACE_DST * (1 + i / 20) + [i * 7 - 15, i * 5] for i in range(max(num_faces, 1))]
+        ).astype(np.float32)[:num_faces]
+        faces: FaceDetectionOutput = {
+            "boxes": np.arange(num_faces * 4, dtype=np.float32).reshape(num_faces, 4),
+            "landmarks": landmarks,
+            "scores": np.linspace(0.5, 0.9, num_faces, dtype=np.float32),
+        }
+        # Freeze the eager reference pipeline: real OpenCV alignment, float32 scale then subtract.
+        expected = np.stack([align_face(image, kps).transpose(2, 0, 1) for kps in landmarks]) if num_faces else None
+        if expected is not None:
+            expected *= 1.0 / 127.5
+            expected -= 1.0
+        prepared = 0
+        consumed = 0
+
+        def prepare(image: Any, kps: Any) -> Any:
+            nonlocal prepared
+            prepared += 1
+            return align_face(image, kps)
+
+        def infer(_: Any, feed: Any) -> Any:
+            nonlocal consumed
+            crops = feed["input.1"]
+            count = crops.shape[0]
+            consumed += count
+            assert prepared == consumed  # no future crops exist when this batch reaches the model
+            assert count <= (batch_size or num_faces)
+            assert expected is not None
+            assert crops.shape[1:] == (3, 112, 112)
+            assert crops.dtype == np.float32
+            assert crops.tobytes() == expected[consumed - count : consumed].tobytes()
+            return [crops.reshape(count, -1)[:, :512].copy()]
+
+        mocker.patch("frameleaf_ml.models.facial_recognition.recognition.align_face", side_effect=prepare)
+        session = stub_session(("batch", 3, 112, 112))
+        session.run.side_effect = infer
+        recognizer.session = session
+        # Empty detections must bypass even image decoding.
+        result = recognizer.predict(image_input if num_faces else b"not an image", faces)
+
+        assert prepared == consumed == num_faces
+        assert len(result) == num_faces
+        for i, face in enumerate(result):
+            assert expected is not None
+            assert (
+                face["embedding"]
+                == orjson.dumps(expected[i].reshape(-1)[:512], option=orjson.OPT_SERIALIZE_NUMPY).decode()
+            )
+            assert list(face["boundingBox"].values()) == faces["boxes"][i].tolist()
+            assert face["score"] == faces["scores"][i]
 
     def test_recognition_adds_batch_axis_for_ort(
         self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
