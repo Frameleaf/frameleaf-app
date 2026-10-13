@@ -2,6 +2,26 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
+
+const sha = (value) => createHash("sha256").update(value).digest("hex");
+// Reviewed base 0a1a4aae150cbdd97ae4c0dd086ac45bc10d742c, raw spec SHA-256
+// 6c99abf3a3500d2ee5488a0c6e9f7361611e0436a04e23dca4f18835dc65d9cb.
+// SHA-256 of JSON.stringify(parsed base): formatting changes alone do not change its identity.
+const reviewedBaseSha256 =
+  "bcb48357fe0c4808d196da4993330c72e4db5201f03018f0c9b0e00c4e7c4057";
+const pointPointers = [
+  "/components/schemas/AssetDevelopStroke/properties/points/items",
+  "/components/schemas/DarktableDevelopRecipe/properties/masks/items/properties/strokes/items/properties/points/items",
+];
+const legacyEmailPattern = String.raw`^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`;
+const equivalentEmailPattern = String.raw`^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`;
+const emailPointers = [
+  "/components/schemas/FrameleafSetupAdminDto/properties/email",
+  "/components/schemas/ICloudAuthDto/properties/appleId",
+  "/components/schemas/PhotographyBrandDto/properties/brand/properties/email/anyOf/0",
+  "/components/schemas/PhotographyBrandSaveDto/properties/brand/properties/email/anyOf/0",
+];
 
 /** Derive only the comparison BASE; never normalize or replace the candidate checkpoint. */
 export function deriveOpenApiComparisonBase(input) {
@@ -9,6 +29,40 @@ export function deriveOpenApiComparisonBase(input) {
     throw new Error("Expected a legacy OpenAPI 3.0 base");
   const document = structuredClone(input);
   const rewrites = [];
+  if (sha(JSON.stringify(input)) === reviewedBaseSha256) {
+    const at = (pointer) =>
+      pointer
+        .split("/")
+        .slice(1)
+        .reduce((value, key) => value?.[key], document);
+    // OriginalPointSchema already enforced exactly two bounded numbers in the reviewed base DTO.
+    const point = {
+      description:
+        "A point as [x, y] fractions of the original image (before rotation, flips and crop)",
+      items: { format: "double", maximum: 1, minimum: 0, type: "number" },
+      type: "array",
+    };
+    for (const pointer of pointPointers) {
+      const value = at(pointer);
+      if (!isDeepStrictEqual(value, point))
+        throw new Error(`Unexpected reviewed point schema: ${pointer}`);
+      value.minItems = value.maxItems = 2;
+      rewrites.push(pointer);
+    }
+    // Both email patterns forbid leading/trailing/adjacent local dots; domain grouping alone differs.
+    for (const pointer of emailPointers) {
+      const value = at(pointer);
+      if (
+        value?.type !== "string" ||
+        value.format !== "email" ||
+        value.pattern !== legacyEmailPattern
+      )
+        throw new Error(`Unexpected reviewed email schema: ${pointer}`);
+      value.pattern = equivalentEmailPattern;
+      rewrites.push(`${pointer}/pattern`);
+    }
+  }
+
   const schema = (value, pointer) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     if (Object.hasOwn(value, "const")) {
@@ -93,7 +147,6 @@ if (
   const { document, rewrites } = deriveOpenApiComparisonBase(JSON.parse(bytes));
   const derived = JSON.stringify(document, null, 2);
   await writeFile(output, derived, { flag: "wx" });
-  const sha = (value) => createHash("sha256").update(value).digest("hex");
   console.log(
     JSON.stringify({
       source,

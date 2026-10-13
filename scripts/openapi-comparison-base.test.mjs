@@ -9,11 +9,41 @@ import { deriveOpenApiComparisonBase } from "./prepare-openapi-comparison-base.m
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.31.0";
+const legacyEmailPattern = String.raw`^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`;
+const equivalentEmailPattern = String.raw`^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`;
 const base = () => ({
   openapi: "3.0.3",
   info: { title: "Literal compatibility", version: "1" },
   paths: {
     "/value": {
+      post: {
+        operationId: "setValue",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  point: {
+                    type: "array",
+                    items: { type: "number" },
+                    minItems: 2,
+                    maxItems: 2,
+                  },
+                  unboundedPoints: { type: "array", items: { type: "number" } },
+                  email: {
+                    type: "string",
+                    format: "email",
+                    pattern: equivalentEmailPattern,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: { 200: { description: "OK" } },
+      },
       get: {
         operationId: "getValue",
         responses: {
@@ -83,6 +113,79 @@ test("derived base preserves raw input, nullable values and all other constraint
   );
 });
 
+const requestProperties = (doc) =>
+  doc.paths["/value"].post.requestBody.content["application/json"].schema
+    .properties;
+
+test("unknown historical bases retain tuple bounds and exact email patterns", () => {
+  const input = base();
+  const point = {
+    type: "array",
+    items: { type: "number", minimum: 0, maximum: 1 },
+  };
+  input.components = {
+    schemas: {
+      AssetDevelopStroke: {
+        type: "object",
+        properties: { points: { type: "array", items: point } },
+      },
+    },
+  };
+  requestProperties(input).email.pattern = legacyEmailPattern;
+  const { document, rewrites } = deriveOpenApiComparisonBase(input);
+  assert.deepEqual(document.components, input.components);
+  assert.deepEqual(requestProperties(document), requestProperties(input));
+  assert.ok(
+    !rewrites.some(
+      (pointer) =>
+        pointer.includes("AssetDevelopStroke") || pointer.includes("email"),
+    ),
+  );
+  const changed = structuredClone(input);
+  changed.components.schemas.AssetDevelopStroke.properties.points.items.minItems = 1;
+  changed.components.schemas.AssetDevelopStroke.properties.points.items.maxItems = 3;
+  assert.deepEqual(
+    deriveOpenApiComparisonBase(changed).document.components,
+    changed.components,
+  );
+});
+
+test("the exact historical email pattern pair accepts the same boundary cases", () => {
+  const before = new RegExp(legacyEmailPattern);
+  const after = new RegExp(equivalentEmailPattern);
+  for (const local of [
+    "",
+    "a",
+    ".a",
+    "a.",
+    "a..b",
+    "a'b",
+    "a+b",
+    "a_b",
+    "a-b",
+    "a'",
+    "a.b",
+    "a.b.c",
+    "ñ",
+    "a\nb",
+  ])
+    for (const domain of [
+      "example.com",
+      "example..com",
+      "-example.com",
+      "example-.com",
+      "example.c",
+      "example.12",
+      "example.com\n",
+      "x",
+      "example.sub.net",
+    ])
+      assert.equal(
+        before.test(`${local}@${domain}`),
+        after.test(`${local}@${domain}`),
+      );
+});
+
 test("pinned compatibility gate accepts equivalent legacy literals and rejects actual contract breaks", () => {
   const fixtures = mkdtempSync(
     path.join(tmpdir(), "frameleaf-openapi-derived-base-"),
@@ -90,6 +193,41 @@ test("pinned compatibility gate accepts equivalent legacy literals and rejects a
   const derived = deriveOpenApiComparisonBase(base()).document;
   const cases = [
     ["same-value", (doc) => {}, 0],
+    [
+      "new-unrelated-tuple-bounds",
+      (doc) => {
+        requestProperties(doc).unboundedPoints.minItems = requestProperties(
+          doc,
+        ).unboundedPoints.maxItems = 2;
+      },
+      1,
+    ],
+    [
+      "changed-reviewed-tuple-length",
+      (doc) => {
+        requestProperties(doc).point.minItems = requestProperties(
+          doc,
+        ).point.maxItems = 3;
+      },
+      1,
+    ],
+    // The unchanged ERR policy reports regex restrictions as WARN; never erase that finding.
+    [
+      "restrictive-email-pattern",
+      (doc) => {
+        requestProperties(doc).email.pattern = "^[a-z]+@example\\.com$";
+      },
+      0,
+    ],
+    [
+      "restrictive-email-warning-control",
+      (doc) => {
+        requestProperties(doc).email.pattern = "^[a-z]+@example\\.com$";
+      },
+      1,
+      "WARN",
+    ],
+
     [
       "changed-literal",
       (doc) => {
@@ -153,48 +291,58 @@ test("pinned compatibility gate accepts equivalent legacy literals and rejects a
       path.join(fixtures, "derived-base.json"),
       JSON.stringify(derived),
     );
-    for (const [name, change, expected] of cases) {
+    for (const [name, change, expected, failOn = "ERR"] of cases) {
       const candidate = structuredClone(derived);
       change(candidate);
       writeFileSync(
         path.join(fixtures, `${name}.json`),
         JSON.stringify(candidate),
       );
-      const result = spawnSync(
-        "docker",
-        [
-          "run",
-          "--rm",
-          "--name",
-          `fl24-base-policy-${process.pid}-${name}`,
-          "--network",
-          "none",
-          "-e",
-          "OASDIFF_INTERNAL=1",
-          "-v",
-          `${root}:/workspace:ro`,
-          "-v",
-          `${fixtures}:/fixtures:ro`,
-          "-w",
-          "/workspace",
-          oasdiffImage,
-          "breaking",
-          "--format",
-          "json",
-          "--fail-on",
-          "ERR",
-          "/fixtures/derived-base.json",
-          `/fixtures/${name}.json`,
-        ],
-        { encoding: "utf8", timeout: 120_000 },
-      );
+      const command = [
+        "run",
+        "--rm",
+        "--name",
+        `fl24-base-policy-${process.pid}-${name}`,
+        "--network",
+        "none",
+        "-e",
+        "OASDIFF_INTERNAL=1",
+        "-v",
+        `${root}:/workspace:ro`,
+        "-v",
+        `${fixtures}:/fixtures:ro`,
+        "-w",
+        "/workspace",
+        oasdiffImage,
+        "breaking",
+        "--format",
+        "json",
+        "--fail-on",
+        "ERR",
+        "/fixtures/derived-base.json",
+        `/fixtures/${name}.json`,
+      ];
+      if (failOn === "WARN") command[command.indexOf("--fail-on") + 1] = "WARN";
+      const result = spawnSync("docker", command, {
+        encoding: "utf8",
+        timeout: 120_000,
+      });
       assert.ifError(result.error);
       assert.equal(
         result.status,
         expected,
         `${name}: ${result.stdout}\n${result.stderr}`,
       );
-      if (expected) assert.match(result.stdout, /"level":3/u);
+      if (expected)
+        assert.match(
+          result.stdout,
+          failOn === "WARN" ? /"level":2/u : /"level":3/u,
+        );
+      if (name.startsWith("restrictive-email"))
+        assert.match(
+          result.stdout,
+          /"id":\s*"request-property-pattern-changed"/u,
+        );
       console.log(`${name}: actual=${result.status} expected=${expected}`);
     }
   } finally {
