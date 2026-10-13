@@ -9,6 +9,7 @@ import { ImmichHeader } from 'src/enum.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { setupRefusal } from 'src/utils/frameleaf-setup-gate.js';
+import { onRouteError } from 'src/utils/logger.js';
 import { serverErrorDisplay } from 'src/utils/server-error-display.js';
 
 type Vector = {
@@ -102,7 +103,7 @@ describe('FL-328 server error display contract', () => {
     expect(JSON.stringify([body, log.debug.mock.calls, log.error.mock.calls])).not.toContain(secret);
   });
 
-  it('logs the stack frames of an unexpected error without its message', () => {
+  it('keeps the built-in error class without trusting custom stack frames', () => {
     const log = logger();
     const secret = 'private-provider-account-a';
     const error = new TypeError(secret);
@@ -110,9 +111,17 @@ describe('FL-328 server error display contract', () => {
       value: `TypeError: ${secret}\n    at render (src/queue/sharp-pool.js:10:5)\n    at next (node:internal)`,
     });
     respond(error, 'request-a', log);
-    expect(log.error).toHaveBeenCalledExactlyOnceWith(
-      'Unknown route error\nTypeError\n    at render (src/queue/sharp-pool.js:10:5)\n    at next (node:internal)',
-    );
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nTypeError');
+  });
+
+  it('keeps native multiline error messages and mutable names out of responses and diagnostics', () => {
+    const error = new Error('synthetic-provider-body\n    at Bearer_fixture_secret');
+    Object.defineProperty(error, 'name', { value: 'Bearer_fixture_name' });
+    const { res, body, log } = respond(error);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(body).toEqual({ message: 'Internal server error', displayError: serverErrorDisplay(500, {}) });
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nError');
+    expect(JSON.stringify([body, log.debug.mock.calls, log.error.mock.calls])).not.toContain('Bearer_fixture');
   });
 
   it('does not reuse another request’s allowed arguments, content or correlation id', () => {
@@ -136,6 +145,98 @@ describe('FL-328 server error display contract', () => {
       sut.handleError(state as Request, res as unknown as Response, Object.assign(new Error('private'), state));
       expect(res.json).not.toHaveBeenCalled();
       expect(log.debug).toHaveBeenCalledExactlyOnceWith('Client aborted request');
+    },
+  );
+});
+
+describe('onRouteError diagnostics', () => {
+  it.each([
+    [Error, 'Error'],
+    [TypeError, 'TypeError'],
+    [RangeError, 'RangeError'],
+    [SyntaxError, 'SyntaxError'],
+    [ReferenceError, 'ReferenceError'],
+    [URIError, 'URIError'],
+    [EvalError, 'EvalError'],
+  ] as const)('uses a fixed class label for %s instead of the mutable name', (ErrorClass, label) => {
+    const error = new ErrorClass('synthetic-provider-body');
+    // Real V8 stacks retain the earlier name after the lazy stack has been read.
+    void error.stack;
+    Object.defineProperty(error, 'name', { value: 'synthetic-private-name' });
+    const log = logger();
+    expect(
+      onRouteError(undefined, { headersSent: false } as Response, error, log as unknown as LoggingRepository),
+    ).toEqual({
+      canWrite: true,
+    });
+    expect(log.error).toHaveBeenCalledExactlyOnceWith(`Unknown route error\n${label}`);
+  });
+
+  it('does not log nested aggregate error content', () => {
+    const error = new AggregateError([new Error('synthetic-private-cause')], 'synthetic-private-aggregate');
+    const log = logger();
+    onRouteError(undefined, { headersSent: false } as Response, error, log as unknown as LoggingRepository);
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nAggregateError');
+  });
+
+  it.each([
+    'synthetic-provider-body\n    at Bearer_fixture_secret',
+    'synthetic-provider-body\n    at render (src/queue/Bearer_fixture_secret.js:10:5)',
+    'synthetic-provider-body\n    at next (node:internal/Bearer_fixture_secret:10:5)',
+  ])('does not treat multiline native error messages as stack frames: %s', (message) => {
+    const log = logger();
+    onRouteError(
+      undefined,
+      { headersSent: false } as Response,
+      new Error(message),
+      log as unknown as LoggingRepository,
+    );
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nError');
+  });
+
+  it.each([undefined, null, 42, {}, '    at render (src/queue/Bearer_fixture_secret.js:10:5)'])(
+    'does not read malformed or customized stack values: %j',
+    (stack) => {
+      const error = new Error('synthetic-provider-body');
+      Object.defineProperty(error, 'stack', { value: stack });
+      const log = logger();
+      expect(
+        onRouteError(undefined, { headersSent: false } as Response, error, log as unknown as LoggingRepository),
+      ).toEqual({ canWrite: true });
+      expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nError');
+    },
+  );
+
+  it.each(['name', 'stack', 'message'] as const)('does not invoke an error %s getter', (field) => {
+    const error = new TypeError('synthetic-provider-body');
+    const getter = vi.fn(() => {
+      throw new Error('synthetic-private-getter');
+    });
+    Object.defineProperty(error, field, { get: getter });
+    const log = logger();
+    expect(
+      onRouteError(undefined, { headersSent: false } as Response, error, log as unknown as LoggingRepository),
+    ).toEqual({
+      canWrite: true,
+    });
+    expect(getter).not.toHaveBeenCalled();
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nTypeError');
+  });
+
+  it.each(['synthetic-private-thrown-string', 42, false, { message: 'synthetic-private-thrown-object' }])(
+    'preserves writable responses without logging non-Error values: %j',
+    (error) => {
+      const log = logger();
+      expect(
+        onRouteError(
+          undefined,
+          { headersSent: false } as Response,
+          error as Error,
+          log as unknown as LoggingRepository,
+        ),
+      ).toEqual({ canWrite: true });
+      expect(log.error).not.toHaveBeenCalled();
+      expect(log.debug).not.toHaveBeenCalled();
     },
   );
 });

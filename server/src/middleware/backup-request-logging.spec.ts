@@ -100,13 +100,16 @@ describe('backup request diagnostics', () => {
   });
 
   it('excludes bodies and private error messages/stacks when escrow fails', async () => {
-    cloud.storeEscrow.mockRejectedValueOnce(new Error(passphrase));
+    const error = new Error(`${passphrase}\n    at Bearer_fixture_secret`);
+    Object.defineProperty(error, 'name', { value: 'Bearer_fixture_name' });
+    cloud.storeEscrow.mockRejectedValueOnce(error);
     const { status, body } = await request(ctx.getHttpServer()).put('/admin/cloud/backup/escrow').send({ passphrase });
     expect(status).toBe(500);
-    expect(log.error).toHaveBeenCalledWith(expect.stringMatching(/^Unknown route error\nError\n/));
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nError');
     expect(log.verbose).not.toHaveBeenCalled();
     expect(output()).not.toContain(passphrase);
     expect(JSON.stringify(body)).not.toContain(passphrase);
+    expect(JSON.stringify([body, output()])).not.toContain('Bearer_fixture');
   });
 
   it('excludes unrecognized nested fields when validation refuses a recovery request', async () => {
