@@ -1,6 +1,366 @@
 # Server API models 10
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## CloudStatusResponseDto
+
+Related models: [CloudHeartbeatField](models-09.md#cloudheartbeatfield), [CloudLinkPendingDto](models-09.md#cloudlinkpendingdto), [CloudLinkRefusal](models-09.md#cloudlinkrefusal), [CloudLinkResult](models-09.md#cloudlinkresult), [CloudLinkState](models-09.md#cloudlinkstate), [CloudPermissionsDto](models-09.md#cloudpermissionsdto).
+
+```json
+{
+  "properties": {
+    "account": {
+      "description": "The linked Frameleaf account",
+      "nullable": true,
+      "properties": {
+        "id": {
+          "nullable": true,
+          "type": "string"
+        },
+        "label": {
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "type": "object"
+    },
+    "allowOriginalsOverRelay": {
+      "description": "Originals, archives and database backups may be downloaded through the relay",
+      "type": "boolean"
+    },
+    "allowPasswordOverRelay": {
+      "description": "Password sign-in is allowed away from home",
+      "type": "boolean"
+    },
+    "cloneSuspected": {
+      "description": "Frameleaf Cloud saw this server’s identity start from two places",
+      "type": "boolean"
+    },
+    "cloudHost": {
+      "description": "Host of the configured Frameleaf Cloud address",
+      "nullable": true,
+      "type": "string"
+    },
+    "configured": {
+      "description": "FRAMELEAF_CLOUD_URL is set",
+      "type": "boolean"
+    },
+    "dataRegion": {
+      "nullable": true,
+      "type": "string"
+    },
+    "heartbeatFailures": {
+      "description": "Check-ins that failed in a row",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "heartbeatFields": {
+      "description": "Exactly the fields each check-in sends; the \"What this server sends\" panel lists them",
+      "items": {
+        "$ref": "#/components/schemas/CloudHeartbeatField"
+      },
+      "type": "array"
+    },
+    "instanceId": {
+      "description": "This server’s instance ID, once its identity exists",
+      "nullable": true,
+      "type": "string"
+    },
+    "keyFingerprint": {
+      "description": "RFC 7638 thumbprint of this server’s key",
+      "nullable": true,
+      "type": "string"
+    },
+    "lastContactAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "lastError": {
+      "description": "The last link or check-in problem, in plain words",
+      "nullable": true,
+      "type": "string"
+    },
+    "linkRefusal": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudLinkRefusal"
+        }
+      ],
+      "description": "Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason",
+      "nullable": true
+    },
+    "linkResult": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudLinkResult"
+        }
+      ],
+      "nullable": true
+    },
+    "linkTokenConfigured": {
+      "description": "FRAMELEAF_LINK_TOKEN is set",
+      "type": "boolean"
+    },
+    "linkedAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "manageUrl": {
+      "description": "This server’s page on the Frameleaf account site, while linked; opened in a new tab",
+      "nullable": true,
+      "type": "string"
+    },
+    "pending": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudLinkPendingDto"
+        }
+      ],
+      "nullable": true
+    },
+    "permissions": {
+      "$ref": "#/components/schemas/CloudPermissionsDto"
+    },
+    "regionMismatch": {
+      "description": "Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message",
+      "nullable": true,
+      "properties": {
+        "accountRegion": {
+          "description": "The data region the Frameleaf account keeps its data in (eu, na)",
+          "type": "string"
+        },
+        "canContinue": {
+          "description": "The approved link is kept: linking again in the account’s region needs no new code",
+          "type": "boolean"
+        },
+        "requestedRegion": {
+          "description": "The data region this server asked for",
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountRegion",
+        "requestedRegion",
+        "canContinue"
+      ],
+      "type": "object"
+    },
+    "relinkRequested": {
+      "description": "Frameleaf Cloud asked an administrator to link again",
+      "type": "boolean"
+    },
+    "remoteAccessEnabled": {
+      "description": "Remote access is switched on for this linked server",
+      "type": "boolean"
+    },
+    "revoked": {
+      "nullable": true,
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "signInButtonText": {
+      "description": "The Sign in with Frameleaf button text",
+      "type": "string"
+    },
+    "signInClientId": {
+      "description": "The OpenID client ID for Sign in with Frameleaf",
+      "nullable": true,
+      "type": "string"
+    },
+    "signInInvitedStorageQuota": {
+      "description": "Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "signInIssuer": {
+      "nullable": true,
+      "type": "string"
+    },
+    "signInLinkedAccounts": {
+      "description": "Accounts here linked to a Frameleaf account",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "signInShowOnLocalLogin": {
+      "description": "Sign in with Frameleaf is offered at home too",
+      "type": "boolean"
+    },
+    "state": {
+      "$ref": "#/components/schemas/CloudLinkState"
+    }
+  },
+  "required": [
+    "account",
+    "allowOriginalsOverRelay",
+    "allowPasswordOverRelay",
+    "cloneSuspected",
+    "cloudHost",
+    "configured",
+    "dataRegion",
+    "heartbeatFailures",
+    "heartbeatFields",
+    "instanceId",
+    "keyFingerprint",
+    "lastContactAt",
+    "lastError",
+    "linkRefusal",
+    "linkResult",
+    "linkTokenConfigured",
+    "linkedAt",
+    "manageUrl",
+    "pending",
+    "permissions",
+    "regionMismatch",
+    "relinkRequested",
+    "remoteAccessEnabled",
+    "revoked",
+    "signInButtonText",
+    "signInClientId",
+    "signInInvitedStorageQuota",
+    "signInIssuer",
+    "signInLinkedAccounts",
+    "signInShowOnLocalLogin",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## CloudTourEnding
+
+
+```json
+{
+  "description": "How the tour ended: finished (Done), skipped (Skip tour or Escape), opened-settings (an \"Open …\" link), setup (the server was linked during first-run setup, which has its own summary)",
+  "enum": [
+    "finished",
+    "skipped",
+    "opened-settings",
+    "setup"
+  ],
+  "type": "string"
+}
+```
+
+## CloudTourResponseDto
+
+Related models: [CloudTourEnding](models-10.md#cloudtourending).
+
+```json
+{
+  "properties": {
+    "backupConfigured": {
+      "description": "Cloud backup is set up",
+      "type": "boolean"
+    },
+    "customHostnameVerified": {
+      "description": "Remote access answers on a domain you own, and its DNS is verified",
+      "type": "boolean"
+    },
+    "ending": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudTourEnding"
+        }
+      ],
+      "description": "How you first ended the tour; later endings keep this one",
+      "nullable": true
+    },
+    "offer": {
+      "description": "Open the tour now: this server is linked to a Frameleaf account and you have not seen it",
+      "type": "boolean"
+    },
+    "processingEnabled": {
+      "description": "Frameleaf Cloud processing is switched on",
+      "type": "boolean"
+    },
+    "seen": {
+      "description": "You have seen the tour (or were shown setup’s summary instead)",
+      "type": "boolean"
+    },
+    "seenAt": {
+      "description": "When you first ended the tour",
+      "nullable": true,
+      "type": "string"
+    },
+    "walletAvailableUsd": {
+      "description": "AI Wallet credit available at the last read (US dollars, balance less holds); null before any read",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    }
+  },
+  "required": [
+    "backupConfigured",
+    "customHostnameVerified",
+    "ending",
+    "offer",
+    "processingEnabled",
+    "seen",
+    "seenAt",
+    "walletAvailableUsd"
+  ],
+  "type": "object"
+}
+```
+
+## CloudTourSeenDto
+
+Related models: [CloudTourEnding](models-10.md#cloudtourending).
+
+```json
+{
+  "properties": {
+    "ending": {
+      "$ref": "#/components/schemas/CloudTourEnding"
+    }
+  },
+  "required": [
+    "ending"
+  ],
+  "type": "object"
+}
+```
+
+## ClusterGroupRequestCreateDto
+
+
+```json
+{
+  "properties": {
+    "userId": {
+      "description": "User to invite into the cluster group",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "userId"
+  ],
+  "type": "object"
+}
+```
 
 ## ClusterGroupRequestResponseDto
 
@@ -1066,7 +1426,7 @@ Related models: [DatabaseBackupDto](models-10.md#databasebackupdto).
 
 ```json
 {
-  "description": "FL-101: why this server cannot decode a video source",
+  "description": "Why this server cannot decode a video source",
   "enum": [
     "dolbyVisionProfile5",
     "dolbyVisionEnhancementLayer",
@@ -1348,7 +1708,7 @@ Related models: [AssetDevelopPreset](models-04.md#assetdeveloppreset), [Darktabl
     },
     "brilliance": {
       "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
       "format": "double",
       "maximum": 100,
       "minimum": -100,
@@ -1499,393 +1859,5 @@ Related models: [AssetDevelopPreset](models-04.md#assetdeveloppreset), [Darktabl
     }
   },
   "type": "object"
-}
-```
-
-## DevelopPresetSettingsUpdateDto
-
-Related models: [AssetDevelopPreset](models-04.md#assetdeveloppreset), [DarktableDevelopRecipe](models-10.md#darktabledeveloprecipe), [DevelopPresetMask](models-10.md#developpresetmask).
-
-```json
-{
-  "properties": {
-    "blacks": {
-      "description": "Black point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "brilliance": {
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "clarity": {
-      "description": "Local contrast in the midtones",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "contrast": {
-      "description": "Contrast around middle grey",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "dehaze": {
-      "description": "Haze removal (positive) or addition (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "exposure": {
-      "description": "Exposure in EV; each whole stop doubles the light",
-      "format": "double",
-      "maximum": 2,
-      "minimum": -2,
-      "type": "number"
-    },
-    "grain": {
-      "description": "Film grain amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "highlights": {
-      "description": "Highlight recovery (negative) or lift (positive)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "masks": {
-      "description": "Radial and linear selective adjustments, applied in order after the global develop",
-      "items": {
-        "$ref": "#/components/schemas/DevelopPresetMask"
-      },
-      "maxItems": 8,
-      "type": "array"
-    },
-    "native": {
-      "$ref": "#/components/schemas/DarktableDevelopRecipe"
-    },
-    "noiseReduction": {
-      "description": "Luminance noise reduction amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "preset": {
-      "$ref": "#/components/schemas/AssetDevelopPreset"
-    },
-    "presetStrength": {
-      "description": "How much of the preset is applied, as a percentage",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "saturation": {
-      "description": "Global saturation",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "shadows": {
-      "description": "Shadow lift (positive) or deepening (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "sharpen": {
-      "description": "Detail sharpening amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "temperature": {
-      "description": "Warm (positive) or cool (negative) white balance shift",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "tint": {
-      "description": "Magenta (positive) or green (negative) tint",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "vibrance": {
-      "description": "Saturation weighted towards muted colours",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "vignette": {
-      "description": "Darkened (positive) or lightened (negative) edges",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "whites": {
-      "description": "White point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    }
-  },
-  "type": "object"
-}
-```
-
-## DevelopPresetUpdateDto
-
-Related models: [DevelopPresetSettingsUpdateDto](models-10.md#developpresetsettingsupdatedto).
-
-```json
-{
-  "properties": {
-    "name": {
-      "description": "Name shown in the presets list; unique per account",
-      "maxLength": 80,
-      "minLength": 1,
-      "type": "string"
-    },
-    "settings": {
-      "$ref": "#/components/schemas/DevelopPresetSettingsUpdateDto",
-      "description": "Settings to change; every setting left out, including ones this client does not know, keeps its stored value"
-    }
-  },
-  "type": "object"
-}
-```
-
-## DocumentEditAction
-
-
-```json
-{
-  "description": "What the owner decided about recognized text",
-  "enum": [
-    "confirm",
-    "correct",
-    "dismiss"
-  ],
-  "type": "string"
-}
-```
-
-## DocumentField
-
-
-```json
-{
-  "description": "A value suggested from recognized text",
-  "enum": [
-    "date",
-    "total",
-    "reference",
-    "email",
-    "phone"
-  ],
-  "type": "string"
-}
-```
-
-## DocumentFieldCandidateDto
-
-Related models: [DocumentRegionDto](models-11.md#documentregiondto).
-
-```json
-{
-  "properties": {
-    "confidence": {
-      "description": "Recognition confidence of that line; null for a corrected line",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "lineId": {
-      "description": "Recognized line the value was read from",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "region": {
-      "$ref": "#/components/schemas/DocumentRegionDto"
-    },
-    "value": {
-      "description": "The value as the text reads it",
-      "type": "string"
-    }
-  },
-  "required": [
-    "confidence",
-    "lineId",
-    "region",
-    "value"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentFieldEditDto
-
-Related models: [DocumentEditAction](models-10.md#documenteditaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/DocumentEditAction"
-    },
-    "lineId": {
-      "description": "Recognized line supporting the value",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "recognizedText": {
-      "description": "The recognized text of that line the caller read",
-      "type": "string"
-    },
-    "revision": {
-      "description": "Revision of the existing decision, if there is one",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "nullable": true,
-      "type": "integer"
-    },
-    "value": {
-      "description": "The value, for confirm and correct",
-      "maxLength": 2000,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "action"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentFieldResponseDto
-
-Related models: [DocumentField](models-10.md#documentfield), [DocumentFieldCandidateDto](models-10.md#documentfieldcandidatedto), [DocumentFieldStatus](models-10.md#documentfieldstatus), [DocumentRegionDto](models-11.md#documentregiondto).
-
-```json
-{
-  "properties": {
-    "candidates": {
-      "description": "Values the text suggests, most likely first",
-      "items": {
-        "$ref": "#/components/schemas/DocumentFieldCandidateDto"
-      },
-      "type": "array"
-    },
-    "confidence": {
-      "description": "Recognition confidence of the supporting line (0-1)",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "editId": {
-      "description": "ID of the owner’s decision about this field",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "evidenceChanged": {
-      "description": "The supporting text has since been read differently or is gone",
-      "type": "boolean"
-    },
-    "field": {
-      "$ref": "#/components/schemas/DocumentField"
-    },
-    "lineId": {
-      "description": "Recognized line supporting the value",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "region": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/DocumentRegionDto"
-        }
-      ],
-      "nullable": true
-    },
-    "revision": {
-      "description": "Revision of the owner’s decision",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "status": {
-      "$ref": "#/components/schemas/DocumentFieldStatus"
-    },
-    "updatedAt": {
-      "description": "When the owner last decided",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "value": {
-      "description": "The suggested, confirmed or corrected value; null when dismissed",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "candidates",
-    "confidence",
-    "editId",
-    "evidenceChanged",
-    "field",
-    "lineId",
-    "region",
-    "revision",
-    "status",
-    "updatedAt",
-    "value"
-  ],
-  "type": "object"
-}
-```
-
-## DocumentFieldStatus
-
-
-```json
-{
-  "description": "Whether a document field is a suggestion or the owner decided it",
-  "enum": [
-    "suggested",
-    "confirmed",
-    "corrected",
-    "dismissed"
-  ],
-  "type": "string"
 }
 ```

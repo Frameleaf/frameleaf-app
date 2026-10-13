@@ -1,12 +1,12 @@
 # Server API — Shared spaces 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## unlinkSharedSpacePerson
 
 `DELETE /api/shared-spaces/{id}/people/{linkId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L295).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/shared-space.controller.ts#L295).
 
 Unlink a person from a shared space
 
@@ -92,7 +92,7 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L131).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/shared-space.controller.ts#L131).
 
 Preview a shared space
 
@@ -179,7 +179,7 @@ Complete operation contract:
 
 `GET /api/shared-spaces/{id}/preview/assets/{assetId}/thumbnail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L143).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/shared-space.controller.ts#L143).
 
 View a shared space preview thumbnail
 
@@ -278,7 +278,7 @@ Complete operation contract:
 
 `POST /api/shared-spaces/{id}/visit`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/shared-space.controller.ts#L308).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/shared-space.controller.ts#L308).
 
 Mark a shared space seen
 

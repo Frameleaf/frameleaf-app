@@ -1,12 +1,12 @@
 # Server API — Assets 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAssetUploadResourceOffset
 
 `HEAD /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-upload-resource.controller.ts#L180).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-upload-resource.controller.ts#L217).
 
 Get durable upload offset
 
@@ -103,7 +103,7 @@ Complete operation contract:
 
 `PATCH /api/assets/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-upload-resource.controller.ts#L197).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-upload-resource.controller.ts#L234).
 
 Append immutable upload bytes
 
@@ -268,11 +268,118 @@ Complete operation contract:
 }
 ```
 
+## negotiateAssetUploadDirect
+
+`POST /api/assets/uploads/{id}/direct`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-upload-resource.controller.ts#L43).
+
+Negotiate a resource-scoped direct upload data channel
+
+Permission: `asset.upload`. Admin only: `false`.
+
+Models: [AssetUploadDirectDescriptionDto](models-06.md#assetuploaddirectdescriptiondto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller('assets/uploads')
+@Post(':id/direct')
+@HttpCode(200)
+@Authenticated({ permission: Permission.AssetUpload })
+@ApiResponse({ status: 200, type: AssetUploadDirectDescriptionDto })
+@ApiResponse({ status: 429, description: 'Direct peer capacity unavailable' })
+@ApiResponse({ status: 503, description: 'Direct negotiation unavailable; native HTTPS resume is retained' })
+@Endpoint({
+    summary: 'Negotiate a resource-scoped direct upload data channel',
+    description:
+      'Version 1 complete data-only offer/answer; native upload ownership, durable offsets and receipts remain authoritative.',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Version 1 complete data-only offer/answer; native upload ownership, durable offsets and receipts remain authoritative.",
+  "operationId": "negotiateAssetUploadDirect",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+          }
+        }
+      },
+      "description": ""
+    },
+    "429": {
+      "description": "Direct peer capacity unavailable"
+    },
+    "503": {
+      "description": "Direct negotiation unavailable; native HTTPS resume is retained"
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Negotiate a resource-scoped direct upload data channel",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Beta"
+    }
+  ],
+  "x-immich-permission": "asset.upload",
+  "x-immich-state": "Beta"
+}
+```
+
 ## getAssetUploadResourceResult
 
 `GET /api/assets/uploads/{id}/result`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-upload-resource.controller.ts#L243).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-upload-resource.controller.ts#L280).
 
 Recover a completed upload result
 
@@ -361,7 +468,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L132).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset.controller.ts#L132).
 
 Retrieve an asset
 
@@ -467,7 +574,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset.controller.ts#L210).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset.controller.ts#L210).
 
 Update an asset
 
@@ -578,13 +685,13 @@ Complete operation contract:
 
 `POST /api/assets/{id}/cast`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cast.controller.ts#L34).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cast.controller.ts#L34).
 
 Create a Cast media URL
 
 Permission: `asset.view`. Admin only: `false`.
 
-Models: [CastMediaUrlCreateDto](models-07.md#castmediaurlcreatedto), [CastMediaUrlResponseDto](models-07.md#castmediaurlresponsedto).
+Models: [CastMediaUrlCreateDto](models-07.md#castmediaurlcreatedto), [CastMediaUrlResponseDto](models-08.md#castmediaurlresponsedto).
 
 Controller access declarations:
 
@@ -671,7 +778,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L52).
 
 List develop versions of an asset
 
@@ -758,7 +865,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/develop`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L64).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L64).
 
 Save a develop recipe as a new version
 
@@ -855,7 +962,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/artifacts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L178).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L179).
 
 Upload a develop artifact
 
@@ -878,7 +985,7 @@ Controller access declarations:
 @Endpoint({
     summary: 'Upload a develop artifact',
     description:
-      'FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.',
+      'Keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.',
     history: history(),
   })
 ```
@@ -887,7 +994,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.",
+  "description": "Keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.",
   "operationId": "uploadAssetDevelopArtifact",
   "parameters": [
     {
@@ -958,7 +1065,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L133).
 
 List exports of an original for editing elsewhere
 
@@ -1047,7 +1154,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L144).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L144).
 
 Export an original for editing elsewhere
 
@@ -1134,7 +1241,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/fills/generate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L152).
 
 Generate a Clean Up Remove fill
 
@@ -1231,7 +1338,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L156).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L156).
 
 Bring back a file developed elsewhere
 
@@ -1334,7 +1441,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/masks/propose`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L127).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L127).
 
 Suggest a subject or sky mask locally
 
@@ -1431,7 +1538,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L80).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L80).
 
 Render a develop preview
 
@@ -1547,7 +1654,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/develop/revert`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L177).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L177).
 
 Revert to the original or an earlier develop version
 
@@ -1645,7 +1752,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/develop/revisions/{revisionId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L225).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-develop.controller.ts#L225).
 
 View a rendered develop file
 
@@ -1774,106 +1881,6 @@ Complete operation contract:
     }
   ],
   "x-immich-permission": "asset.edit.get",
-  "x-immich-state": "Alpha"
-}
-```
-
-## cancelAssetDevelopRender
-
-`DELETE /api/assets/{id}/develop/revisions/{revisionId}/render`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-develop.controller.ts#L209).
-
-Cancel a develop render
-
-Permission: `asset.edit.create`. Admin only: `false`.
-
-Models: [AssetDevelopRevisionResponseDto](models-05.md#assetdeveloprevisionresponsedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller(RouteKey.Asset)
-@Delete(':id/develop/revisions/:revisionId/render')
-@HttpCode(HttpStatus.OK)
-@Authenticated({ permission: Permission.AssetEditCreate })
-@Endpoint({
-    summary: 'Cancel a develop render',
-    description:
-      'Stops a queued or running render of the version. Files already rendered for other versions are untouched.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Stops a queued or running render of the version. Files already rendered for other versions are untouched.",
-  "operationId": "cancelAssetDevelopRender",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "description": "Asset ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    },
-    {
-      "name": "revisionId",
-      "required": true,
-      "in": "path",
-      "description": "Develop revision ID",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Cancel a develop render",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-permission": "asset.edit.create",
   "x-immich-state": "Alpha"
 }
 ```

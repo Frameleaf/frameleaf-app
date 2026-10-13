@@ -1,6 +1,153 @@
 # Server API models 37
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## SyncAssetV1
+
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility).
+
+```json
+{
+  "properties": {
+    "checksum": {
+      "description": "Checksum",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "Uploaded to Frameleaf at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "deletedAt": {
+      "description": "Deleted at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "duration": {
+      "description": "Duration",
+      "nullable": true,
+      "type": "string"
+    },
+    "fileCreatedAt": {
+      "description": "File created at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "fileModifiedAt": {
+      "description": "File modified at",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "height": {
+      "description": "Asset height",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "id": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isEdited": {
+      "description": "Is edited",
+      "type": "boolean"
+    },
+    "isFavorite": {
+      "description": "Is favorite",
+      "type": "boolean"
+    },
+    "libraryId": {
+      "description": "Library ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "livePhotoVideoId": {
+      "description": "Live photo video ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "localDateTime": {
+      "description": "Local date time",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "originalFileName": {
+      "description": "Original file name",
+      "type": "string"
+    },
+    "ownerId": {
+      "description": "Owner ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "stackId": {
+      "description": "Stack ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "thumbhash": {
+      "description": "Thumbhash",
+      "nullable": true,
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    },
+    "visibility": {
+      "$ref": "#/components/schemas/AssetVisibility"
+    },
+    "width": {
+      "description": "Asset width",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "checksum",
+    "createdAt",
+    "deletedAt",
+    "duration",
+    "fileCreatedAt",
+    "fileModifiedAt",
+    "height",
+    "id",
+    "isEdited",
+    "isFavorite",
+    "libraryId",
+    "livePhotoVideoId",
+    "localDateTime",
+    "originalFileName",
+    "ownerId",
+    "stackId",
+    "thumbhash",
+    "type",
+    "visibility",
+    "width"
+  ],
+  "type": "object"
+}
+```
 
 ## SyncAssetV2
 
@@ -590,7 +737,7 @@ Related models: [UserAvatarColor](models-39.md#useravatarcolor).
 
 ## SyncMemoryV1
 
-Related models: [MemoryType](models-17.md#memorytype).
+Related models: [MemoryType](models-18.md#memorytype).
 
 ```json
 {
@@ -1558,156 +1705,6 @@ Related models: [SyncRequestType](models-37.md#syncrequesttype).
   },
   "required": [
     "types"
-  ],
-  "type": "object"
-}
-```
-
-## SyncTagDeleteV1
-
-
-```json
-{
-  "properties": {
-    "tagId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "tagId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncTagV1
-
-
-```json
-{
-  "properties": {
-    "color": {
-      "nullable": true,
-      "type": "string"
-    },
-    "createdAt": {
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "parentId": {
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "updatedAt": {
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "userId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "value": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "color",
-    "createdAt",
-    "id",
-    "parentId",
-    "updatedAt",
-    "userId",
-    "value"
-  ],
-  "type": "object"
-}
-```
-
-## SyncUserDeleteV1
-
-
-```json
-{
-  "properties": {
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncUserMetadataDeleteV1
-
-Related models: [UserMetadataKey](models-39.md#usermetadatakey).
-
-```json
-{
-  "properties": {
-    "key": {
-      "$ref": "#/components/schemas/UserMetadataKey"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "key",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## SyncUserMetadataV1
-
-Related models: [UserMetadataKey](models-39.md#usermetadatakey).
-
-```json
-{
-  "properties": {
-    "key": {
-      "$ref": "#/components/schemas/UserMetadataKey"
-    },
-    "userId": {
-      "description": "User ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "value": {
-      "additionalProperties": {},
-      "description": "User metadata value",
-      "type": "object"
-    }
-  },
-  "required": [
-    "key",
-    "userId",
-    "value"
   ],
   "type": "object"
 }

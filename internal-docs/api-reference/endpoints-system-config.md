@@ -1,12 +1,12 @@
 # Server API — System config
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getConfig
 
 `GET /api/system-config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L30).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L30).
 
 Get system configuration
 
@@ -97,7 +97,7 @@ Complete operation contract:
 
 `PUT /api/system-config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L96).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L96).
 
 Update system configuration
 
@@ -198,7 +198,7 @@ Complete operation contract:
 
 `GET /api/system-config/config-file/activation`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L45).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L45).
 
 Get activated file configuration epoch
 
@@ -273,7 +273,7 @@ Complete operation contract:
 
 `POST /api/system-config/config-file/reload`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L56).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L56).
 
 Activate the configured server file
 
@@ -358,7 +358,7 @@ Complete operation contract:
 
 `GET /api/system-config/defaults`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L67).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L67).
 
 Get system configuration defaults
 
@@ -449,7 +449,7 @@ Complete operation contract:
 
 `POST /api/system-config/image-description/defer-requeue`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L147).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L147).
 
 Defer image description re-queue
 
@@ -522,7 +522,7 @@ Complete operation contract:
 
 `POST /api/system-config/image-description/requeue`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L134).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L134).
 
 Trigger image description re-queue
 
@@ -603,7 +603,7 @@ Complete operation contract:
 
 `GET /api/system-config/image-description/requeue-estimate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L122).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L122).
 
 Estimate image description re-queue cost
 
@@ -680,7 +680,7 @@ Complete operation contract:
 
 `GET /api/system-config/machine-learning/hardware`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L82).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L82).
 
 Get machine learning hardware
 
@@ -773,7 +773,7 @@ Complete operation contract:
 
 `POST /api/system-config/smart-albums/reevaluate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L173).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L173).
 
 Trigger smart-album re-evaluate
 
@@ -865,7 +865,7 @@ Complete operation contract:
 
 `GET /api/system-config/smart-albums/reevaluate-estimate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L161).
 
 Estimate smart-album re-evaluate cost
 
@@ -942,7 +942,7 @@ Complete operation contract:
 
 `GET /api/system-config/storage-template-options`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/system-config.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/system-config.controller.ts#L111).
 
 Get storage template options
 

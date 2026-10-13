@@ -1,6 +1,422 @@
 # Server API models 9
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## CloudBackupStatusResponseDto
+
+Related models: [CloudBackupActiveRestoreDto](models-08.md#cloudbackupactiverestoredto), [CloudBackupActiveRunDto](models-08.md#cloudbackupactiverundto), [CloudBackupEscrowStatusDto](models-08.md#cloudbackupescrowstatusdto), [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBackupLastPruneDto](models-08.md#cloudbackuplastprunedto), [CloudBackupLastRestoreDto](models-08.md#cloudbackuplastrestoredto), [CloudBackupLastRunDto](models-08.md#cloudbackuplastrundto), [CloudBackupLastVerifyDto](models-08.md#cloudbackuplastverifydto), [CloudBackupManagedDto](models-08.md#cloudbackupmanageddto), [CloudBackupTargetSetting](models-09.md#cloudbackuptargetsetting).
+
+```json
+{
+  "properties": {
+    "activeRestore": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupActiveRestoreDto"
+        }
+      ],
+      "nullable": true
+    },
+    "activeRun": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupActiveRunDto"
+        }
+      ],
+      "nullable": true
+    },
+    "bucket": {
+      "nullable": true,
+      "type": "string"
+    },
+    "claimedAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "configured": {
+      "description": "A bucket is claimed and cloud backup is on",
+      "type": "boolean"
+    },
+    "endpoint": {
+      "nullable": true,
+      "type": "string"
+    },
+    "escrow": {
+      "$ref": "#/components/schemas/CloudBackupEscrowStatusDto"
+    },
+    "instanceId": {
+      "nullable": true,
+      "type": "string"
+    },
+    "keyFingerprint": {
+      "nullable": true,
+      "type": "string"
+    },
+    "keyLoaded": {
+      "description": "The key is available to this server; false in own-memory mode until unlocked",
+      "type": "boolean"
+    },
+    "keyMode": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupKeyMode"
+        }
+      ],
+      "nullable": true
+    },
+    "lastManifestKey": {
+      "nullable": true,
+      "type": "string"
+    },
+    "lastPrune": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupLastPruneDto"
+        }
+      ],
+      "nullable": true
+    },
+    "lastRestore": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupLastRestoreDto"
+        }
+      ],
+      "nullable": true
+    },
+    "lastRun": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupLastRunDto"
+        }
+      ],
+      "nullable": true
+    },
+    "lastSuccessAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "lastVerify": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupLastVerifyDto"
+        }
+      ],
+      "nullable": true
+    },
+    "managed": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/CloudBackupManagedDto"
+        }
+      ],
+      "description": "Frameleaf-managed storage only",
+      "nullable": true
+    },
+    "managedAvailable": {
+      "description": "Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud",
+      "type": "boolean"
+    },
+    "region": {
+      "nullable": true,
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/components/schemas/CloudBackupTargetSetting"
+    },
+    "usage": {
+      "description": "Unique files this server has in the bucket and their size",
+      "nullable": true,
+      "properties": {
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "objects": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "objects",
+        "bytes"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "activeRestore",
+    "activeRun",
+    "bucket",
+    "claimedAt",
+    "configured",
+    "endpoint",
+    "escrow",
+    "instanceId",
+    "keyFingerprint",
+    "keyLoaded",
+    "keyMode",
+    "lastManifestKey",
+    "lastPrune",
+    "lastRestore",
+    "lastRun",
+    "lastSuccessAt",
+    "lastVerify",
+    "managed",
+    "managedAvailable",
+    "region",
+    "target",
+    "usage"
+  ],
+  "type": "object"
+}
+```
+
+## CloudBackupTarget
+
+
+```json
+{
+  "description": "managed: Frameleaf-managed storage; byo-s3: your own S3-compatible bucket",
+  "enum": [
+    "managed",
+    "byo-s3"
+  ],
+  "type": "string"
+}
+```
+
+## CloudBackupTargetSetting
+
+
+```json
+{
+  "description": "off: no cloud backup; managed: Frameleaf-managed storage; byo-s3: your own S3-compatible bucket",
+  "enum": [
+    "off",
+    "managed",
+    "byo-s3"
+  ],
+  "type": "string"
+}
+```
+
+## CloudBackupTask
+
+
+```json
+{
+  "description": "backup: a backup run; verify: a check of the backed-up files; prune: a clean-up of runs past retention",
+  "enum": [
+    "backup",
+    "verify",
+    "prune"
+  ],
+  "type": "string"
+}
+```
+
+## CloudBackupUnlockDto
+
+
+```json
+{
+  "properties": {
+    "key": {
+      "description": "The key file, the base64 key or the recovery code. Kept in memory only",
+      "maxLength": 16384,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+}
+```
+
+## CloudBackupVerifyDepth
+
+
+```json
+{
+  "description": "sample: fetch and check this week’s 1/52 of the files; full: check every referenced file is there",
+  "enum": [
+    "sample",
+    "full"
+  ],
+  "type": "string"
+}
+```
+
+## CloudBackupVerifyDto
+
+Related models: [CloudBackupVerifyDepth](models-09.md#cloudbackupverifydepth).
+
+```json
+{
+  "properties": {
+    "depth": {
+      "$ref": "#/components/schemas/CloudBackupVerifyDepth"
+    }
+  },
+  "required": [
+    "depth"
+  ],
+  "type": "object"
+}
+```
+
+## CloudBackupVerifyStatus
+
+
+```json
+{
+  "enum": [
+    "passed",
+    "degraded",
+    "failed"
+  ],
+  "type": "string"
+}
+```
+
+## CloudHeartbeatField
+
+
+```json
+{
+  "enum": [
+    "version",
+    "bootId",
+    "uptimeSec",
+    "health",
+    "endpoints",
+    "remoteAccess",
+    "permissions",
+    "licenseKid",
+    "capabilities",
+    "remoteAccessSettings",
+    "cloudMl",
+    "cloudBackup",
+    "licenseState"
+  ],
+  "type": "string"
+}
+```
+
+## CloudLinkPendingDto
+
+
+```json
+{
+  "properties": {
+    "expiresAt": {
+      "type": "string"
+    },
+    "intervalSeconds": {
+      "description": "How often this server asks whether the code was approved",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "userCode": {
+      "description": "The code to enter on the approval page, XXXX-XXXX",
+      "type": "string"
+    },
+    "verificationUri": {
+      "type": "string"
+    },
+    "verificationUriComplete": {
+      "description": "The approval page with the code filled in; shown as a QR code",
+      "type": "string"
+    }
+  },
+  "required": [
+    "expiresAt",
+    "intervalSeconds",
+    "userCode",
+    "verificationUri",
+    "verificationUriComplete"
+  ],
+  "type": "object"
+}
+```
+
+## CloudLinkRefusal
+
+
+```json
+{
+  "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory); region-mismatch: the account keeps its data in another region than the one this server asked for (FC-18)",
+  "enum": [
+    "instance-limit",
+    "server-refused",
+    "instance-id-taken",
+    "key-already-linked",
+    "region-mismatch"
+  ],
+  "type": "string"
+}
+```
+
+## CloudLinkResult
+
+
+```json
+{
+  "description": "How the current or last device authorization stands",
+  "enum": [
+    "pending",
+    "approved",
+    "denied",
+    "expired"
+  ],
+  "type": "string"
+}
+```
+
+## CloudLinkState
+
+
+```json
+{
+  "description": "not-configured: FRAMELEAF_CLOUD_URL is unset and nothing is contacted; unlinked: configured but not linked; pending: waiting for approval of a device code; linked; revoked: Frameleaf Cloud ended the link",
+  "enum": [
+    "not-configured",
+    "unlinked",
+    "pending",
+    "linked",
+    "revoked"
+  ],
+  "type": "string"
+}
+```
+
+## CloudMlCatalogResponseDto
+
+Related models: [CloudMlModelDto](models-09.md#cloudmlmodeldto).
+
+```json
+{
+  "properties": {
+    "models": {
+      "description": "Models Frameleaf Cloud offers now; retired models are left out",
+      "items": {
+        "$ref": "#/components/schemas/CloudMlModelDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "models"
+  ],
+  "type": "object"
+}
+```
 
 ## CloudMlConnection
 
@@ -1740,366 +2156,6 @@ Related models: [CloudMlConnection](models-09.md#cloudmlconnection), [CloudMlCon
       "type": "boolean"
     }
   },
-  "type": "object"
-}
-```
-
-## CloudStatusResponseDto
-
-Related models: [CloudHeartbeatField](models-08.md#cloudheartbeatfield), [CloudLinkPendingDto](models-08.md#cloudlinkpendingdto), [CloudLinkRefusal](models-08.md#cloudlinkrefusal), [CloudLinkResult](models-08.md#cloudlinkresult), [CloudLinkState](models-08.md#cloudlinkstate), [CloudPermissionsDto](models-09.md#cloudpermissionsdto).
-
-```json
-{
-  "properties": {
-    "account": {
-      "description": "The linked Frameleaf account",
-      "nullable": true,
-      "properties": {
-        "id": {
-          "nullable": true,
-          "type": "string"
-        },
-        "label": {
-          "nullable": true,
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "label"
-      ],
-      "type": "object"
-    },
-    "allowOriginalsOverRelay": {
-      "description": "Originals, archives and database backups may be downloaded through the relay",
-      "type": "boolean"
-    },
-    "allowPasswordOverRelay": {
-      "description": "Password sign-in is allowed away from home",
-      "type": "boolean"
-    },
-    "cloneSuspected": {
-      "description": "Frameleaf Cloud saw this server’s identity start from two places",
-      "type": "boolean"
-    },
-    "cloudHost": {
-      "description": "Host of the configured Frameleaf Cloud address",
-      "nullable": true,
-      "type": "string"
-    },
-    "configured": {
-      "description": "FRAMELEAF_CLOUD_URL is set",
-      "type": "boolean"
-    },
-    "dataRegion": {
-      "nullable": true,
-      "type": "string"
-    },
-    "heartbeatFailures": {
-      "description": "Check-ins that failed in a row",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "heartbeatFields": {
-      "description": "Exactly the fields each check-in sends; the \"What this server sends\" panel lists them",
-      "items": {
-        "$ref": "#/components/schemas/CloudHeartbeatField"
-      },
-      "type": "array"
-    },
-    "instanceId": {
-      "description": "This server’s instance ID, once its identity exists",
-      "nullable": true,
-      "type": "string"
-    },
-    "keyFingerprint": {
-      "description": "RFC 7638 thumbprint of this server’s key",
-      "nullable": true,
-      "type": "string"
-    },
-    "lastContactAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "lastError": {
-      "description": "The last link or check-in problem, in plain words",
-      "nullable": true,
-      "type": "string"
-    },
-    "linkRefusal": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudLinkRefusal"
-        }
-      ],
-      "description": "Why Frameleaf Cloud refused the last link attempt, while unlinked; null when it gave no such reason",
-      "nullable": true
-    },
-    "linkResult": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudLinkResult"
-        }
-      ],
-      "nullable": true
-    },
-    "linkTokenConfigured": {
-      "description": "FRAMELEAF_LINK_TOKEN is set",
-      "type": "boolean"
-    },
-    "linkedAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "manageUrl": {
-      "description": "This server’s page on the Frameleaf account site, while linked; opened in a new tab",
-      "nullable": true,
-      "type": "string"
-    },
-    "pending": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudLinkPendingDto"
-        }
-      ],
-      "nullable": true
-    },
-    "permissions": {
-      "$ref": "#/components/schemas/CloudPermissionsDto"
-    },
-    "regionMismatch": {
-      "description": "FC-18: Frameleaf Cloud refused the link because the account keeps its data in another region; lastError carries its message",
-      "nullable": true,
-      "properties": {
-        "accountRegion": {
-          "description": "The data region the Frameleaf account keeps its data in (eu, na)",
-          "type": "string"
-        },
-        "canContinue": {
-          "description": "The approved link is kept: linking again in the account’s region needs no new code",
-          "type": "boolean"
-        },
-        "requestedRegion": {
-          "description": "The data region this server asked for",
-          "nullable": true,
-          "type": "string"
-        }
-      },
-      "required": [
-        "accountRegion",
-        "requestedRegion",
-        "canContinue"
-      ],
-      "type": "object"
-    },
-    "relinkRequested": {
-      "description": "Frameleaf Cloud asked an administrator to link again",
-      "type": "boolean"
-    },
-    "remoteAccessEnabled": {
-      "description": "Remote access is switched on for this linked server",
-      "type": "boolean"
-    },
-    "revoked": {
-      "nullable": true,
-      "properties": {
-        "at": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "signInButtonText": {
-      "description": "The Sign in with Frameleaf button text",
-      "type": "string"
-    },
-    "signInClientId": {
-      "description": "The OpenID client ID for Sign in with Frameleaf",
-      "nullable": true,
-      "type": "string"
-    },
-    "signInInvitedStorageQuota": {
-      "description": "Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "signInIssuer": {
-      "nullable": true,
-      "type": "string"
-    },
-    "signInLinkedAccounts": {
-      "description": "Accounts here linked to a Frameleaf account",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "signInShowOnLocalLogin": {
-      "description": "Sign in with Frameleaf is offered at home too",
-      "type": "boolean"
-    },
-    "state": {
-      "$ref": "#/components/schemas/CloudLinkState"
-    }
-  },
-  "required": [
-    "account",
-    "allowOriginalsOverRelay",
-    "allowPasswordOverRelay",
-    "cloneSuspected",
-    "cloudHost",
-    "configured",
-    "dataRegion",
-    "heartbeatFailures",
-    "heartbeatFields",
-    "instanceId",
-    "keyFingerprint",
-    "lastContactAt",
-    "lastError",
-    "linkRefusal",
-    "linkResult",
-    "linkTokenConfigured",
-    "linkedAt",
-    "manageUrl",
-    "pending",
-    "permissions",
-    "regionMismatch",
-    "relinkRequested",
-    "remoteAccessEnabled",
-    "revoked",
-    "signInButtonText",
-    "signInClientId",
-    "signInInvitedStorageQuota",
-    "signInIssuer",
-    "signInLinkedAccounts",
-    "signInShowOnLocalLogin",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## CloudTourEnding
-
-
-```json
-{
-  "description": "How the tour ended: finished (Done), skipped (Skip tour or Escape), opened-settings (an \"Open …\" link), setup (the server was linked during first-run setup, which has its own summary)",
-  "enum": [
-    "finished",
-    "skipped",
-    "opened-settings",
-    "setup"
-  ],
-  "type": "string"
-}
-```
-
-## CloudTourResponseDto
-
-Related models: [CloudTourEnding](models-09.md#cloudtourending).
-
-```json
-{
-  "properties": {
-    "backupConfigured": {
-      "description": "Cloud backup is set up",
-      "type": "boolean"
-    },
-    "customHostnameVerified": {
-      "description": "Remote access answers on a domain you own, and its DNS is verified",
-      "type": "boolean"
-    },
-    "ending": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudTourEnding"
-        }
-      ],
-      "description": "How you first ended the tour; later endings keep this one",
-      "nullable": true
-    },
-    "offer": {
-      "description": "Open the tour now: this server is linked to a Frameleaf account and you have not seen it",
-      "type": "boolean"
-    },
-    "processingEnabled": {
-      "description": "Frameleaf Cloud processing is switched on",
-      "type": "boolean"
-    },
-    "seen": {
-      "description": "You have seen the tour (or were shown setup’s summary instead)",
-      "type": "boolean"
-    },
-    "seenAt": {
-      "description": "When you first ended the tour",
-      "nullable": true,
-      "type": "string"
-    },
-    "walletAvailableUsd": {
-      "description": "AI Wallet credit available at the last read (US dollars, balance less holds); null before any read",
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    }
-  },
-  "required": [
-    "backupConfigured",
-    "customHostnameVerified",
-    "ending",
-    "offer",
-    "processingEnabled",
-    "seen",
-    "seenAt",
-    "walletAvailableUsd"
-  ],
-  "type": "object"
-}
-```
-
-## CloudTourSeenDto
-
-Related models: [CloudTourEnding](models-09.md#cloudtourending).
-
-```json
-{
-  "properties": {
-    "ending": {
-      "$ref": "#/components/schemas/CloudTourEnding"
-    }
-  },
-  "required": [
-    "ending"
-  ],
-  "type": "object"
-}
-```
-
-## ClusterGroupRequestCreateDto
-
-
-```json
-{
-  "properties": {
-    "userId": {
-      "description": "User to invite into the cluster group",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "userId"
-  ],
   "type": "object"
 }
 ```

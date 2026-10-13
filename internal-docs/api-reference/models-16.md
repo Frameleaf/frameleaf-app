@@ -1,6 +1,393 @@
 # Server API models 16
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## LicenseProductsResponseDto
+
+Related models: [LicenseProductDto](models-15.md#licenseproductdto).
+
+```json
+{
+  "properties": {
+    "backup": {
+      "description": "Cloud backup a plan includes, and the blocks and monthly rate for more",
+      "properties": {
+        "blockTb": {
+          "format": "double",
+          "type": "number"
+        },
+        "includedTb": {
+          "format": "double",
+          "type": "number"
+        },
+        "usdPerTbMonth": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "includedTb",
+        "blockTb",
+        "usdPerTbMonth"
+      ],
+      "type": "object"
+    },
+    "credit": {
+      "description": "AI credit top-ups the store accepts; credit is never discounted",
+      "properties": {
+        "maximumUsd": {
+          "format": "double",
+          "type": "number"
+        },
+        "minimumUsd": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "minimumUsd",
+        "maximumUsd"
+      ],
+      "type": "object"
+    },
+    "currency": {
+      "enum": [
+        "USD"
+      ],
+      "type": "string"
+    },
+    "individualDiscount": {
+      "description": "Share an Individual licence takes off plans, published or bundled like licensedDiscount. Never added to it: the Server licence share applies when both do",
+      "format": "double",
+      "type": "number"
+    },
+    "licensedDiscount": {
+      "description": "Share a Server licence takes off plans: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
+      "format": "double",
+      "type": "number"
+    },
+    "pricesVersion": {
+      "description": "Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot",
+      "type": "string"
+    },
+    "products": {
+      "items": {
+        "$ref": "#/components/schemas/LicenseProductDto"
+      },
+      "type": "array"
+    },
+    "storeUrl": {
+      "description": "The store this server was deployed with; null when there is none",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "backup",
+    "credit",
+    "currency",
+    "individualDiscount",
+    "licensedDiscount",
+    "pricesVersion",
+    "products",
+    "storeUrl"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseResponseDto
+
+Related models: [UserLicense](models-39.md#userlicense).
+
+```json
+{
+  "$ref": "#/components/schemas/UserLicense"
+}
+```
+
+## LicenseSlotDto
+
+Related models: [LicenseKind](models-15.md#licensekind), [LicenseState](models-16.md#licensestate).
+
+```json
+{
+  "properties": {
+    "activatedAt": {
+      "description": "When this server received the certificate",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "When the certificate or its period ends; null for a lifetime key",
+      "nullable": true,
+      "type": "string"
+    },
+    "graceUntil": {
+      "nullable": true,
+      "type": "string"
+    },
+    "keyHint": {
+      "description": "Last four symbols of the key, for a key activation",
+      "nullable": true,
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/LicenseKind"
+    },
+    "refreshedAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "source": {
+      "description": "Activated by key, installed from a file, or from the account",
+      "enum": [
+        "key",
+        "file",
+        "account"
+      ],
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/LicenseState"
+    }
+  },
+  "required": [
+    "activatedAt",
+    "expiresAt",
+    "graceUntil",
+    "keyHint",
+    "kind",
+    "refreshedAt",
+    "source",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## LicenseState
+
+
+```json
+{
+  "description": "none: no licence; active; grace: renewal failed and cloud features keep working until graceUntil; expired: cloud features are paused, local features are unaffected; invalid: the stored certificate no longer verifies",
+  "enum": [
+    "none",
+    "active",
+    "grace",
+    "expired",
+    "invalid"
+  ],
+  "type": "string"
+}
+```
+
+## LicenseStatusResponseDto
+
+Related models: [LicenseEntitlementsDto](models-15.md#licenseentitlementsdto), [LicenseKind](models-15.md#licensekind), [LicenseSlotDto](models-16.md#licenseslotdto), [LicenseState](models-16.md#licensestate).
+
+```json
+{
+  "properties": {
+    "configured": {
+      "description": "Frameleaf Cloud is set up on this server (FRAMELEAF_CLOUD_URL)",
+      "type": "boolean"
+    },
+    "entitlements": {
+      "$ref": "#/components/schemas/LicenseEntitlementsDto"
+    },
+    "expiresAt": {
+      "nullable": true,
+      "type": "string"
+    },
+    "fingerprint": {
+      "description": "What a licence is bound to: this server’s instance ID and key thumbprint",
+      "properties": {
+        "instanceId": {
+          "nullable": true,
+          "type": "string"
+        },
+        "jkt": {
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "instanceId",
+        "jkt"
+      ],
+      "type": "object"
+    },
+    "graceUntil": {
+      "nullable": true,
+      "type": "string"
+    },
+    "key": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LicenseSlotDto"
+        }
+      ],
+      "description": "The supporter key held by this server",
+      "nullable": true
+    },
+    "keyHint": {
+      "nullable": true,
+      "type": "string"
+    },
+    "kind": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LicenseKind"
+        }
+      ],
+      "nullable": true
+    },
+    "licensed": {
+      "description": "A supporter key or plan is active or in grace. A Server licence takes licensedDiscount off plans, an Individual licence individualDiscount (license/products)",
+      "type": "boolean"
+    },
+    "linked": {
+      "description": "This server is linked to a Frameleaf account",
+      "type": "boolean"
+    },
+    "offline": {
+      "description": "The licence came from a file and is not refreshed online",
+      "type": "boolean"
+    },
+    "plan": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LicenseSlotDto"
+        }
+      ],
+      "description": "The Frameleaf Cloud plan held by this server",
+      "nullable": true
+    },
+    "refresh": {
+      "description": "The daily certificate refresh",
+      "properties": {
+        "lastError": {
+          "nullable": true,
+          "type": "string"
+        },
+        "nextRefreshAt": {
+          "nullable": true,
+          "type": "string"
+        },
+        "refreshedAt": {
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "required": [
+        "refreshedAt",
+        "nextRefreshAt",
+        "lastError"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "$ref": "#/components/schemas/LicenseState",
+      "description": "The overall state: the plan’s when there is one, else the key’s"
+    }
+  },
+  "required": [
+    "configured",
+    "entitlements",
+    "expiresAt",
+    "fingerprint",
+    "graceUntil",
+    "key",
+    "keyHint",
+    "kind",
+    "licensed",
+    "linked",
+    "offline",
+    "plan",
+    "refresh",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoCandidateDto
+
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [LivePhotoMatchConfidence](models-16.md#livephotomatchconfidence).
+
+```json
+{
+  "properties": {
+    "confidence": {
+      "$ref": "#/components/schemas/LivePhotoMatchConfidence"
+    },
+    "matchReason": {
+      "description": "Why these two assets are believed to be a separated live photo pair",
+      "type": "string"
+    },
+    "photo": {
+      "$ref": "#/components/schemas/AssetResponseDto"
+    },
+    "video": {
+      "$ref": "#/components/schemas/AssetResponseDto"
+    }
+  },
+  "required": [
+    "confidence",
+    "matchReason",
+    "photo",
+    "video"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoCandidatesResponseDto
+
+Related models: [LivePhotoCandidateDto](models-16.md#livephotocandidatedto).
+
+```json
+{
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/components/schemas/LivePhotoCandidateDto"
+      },
+      "type": "array"
+    },
+    "suggestionsEnabled": {
+      "description": "Library care suggests Live Photo pairs; when false no pairs are looked for",
+      "type": "boolean"
+    },
+    "total": {
+      "description": "Total number of candidate pairs found",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "candidates",
+    "suggestionsEnabled",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## LivePhotoMatchConfidence
+
+
+```json
+{
+  "enum": [
+    "high",
+    "low"
+  ],
+  "type": "string"
+}
+```
 
 ## LivePhotoRelinkDto
 
@@ -368,6 +755,264 @@ Related models: [MachineLearningHardwareAcceleration](models-16.md#machinelearni
     "torchCudaAvailable"
   ],
   "type": "object"
+}
+```
+
+## MailConnectionDto
+
+Related models: [MailConnectionStatus](models-16.md#mailconnectionstatus), [MailSignInProvider](models-16.md#mailsigninprovider).
+
+```json
+{
+  "properties": {
+    "connectedAt": {
+      "description": "When the account was connected",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "email": {
+      "description": "The address of the connected account",
+      "type": "string"
+    },
+    "needsSignInSince": {
+      "description": "When the provider refused to renew access; emails since then were not sent",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "provider": {
+      "$ref": "#/components/schemas/MailSignInProvider"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MailConnectionStatus"
+    }
+  },
+  "required": [
+    "connectedAt",
+    "email",
+    "provider",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## MailConnectionStateDto
+
+Related models: [MailConnectionDto](models-16.md#mailconnectiondto), [MailSignInProvider](models-16.md#mailsigninprovider), [MailSignInState](models-16.md#mailsigninstate), [MailSignInUnavailableReason](models-16.md#mailsigninunavailablereason).
+
+```json
+{
+  "properties": {
+    "available": {
+      "description": "Whether one-click sign-in can be started from this server now",
+      "type": "boolean"
+    },
+    "connection": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MailConnectionDto"
+        }
+      ],
+      "description": "The connected account, or null",
+      "nullable": true
+    },
+    "providers": {
+      "description": "The providers Frameleaf Cloud offers sign-in for",
+      "items": {
+        "$ref": "#/components/schemas/MailSignInProvider"
+      },
+      "type": "array"
+    },
+    "signIn": {
+      "$ref": "#/components/schemas/MailSignInState",
+      "description": "`pending` while a sign-in this server started is waiting, else `none`"
+    },
+    "signInProvider": {
+      "$ref": "#/components/schemas/MailSignInProvider",
+      "description": "The provider of the sign-in that is waiting"
+    },
+    "unavailableReason": {
+      "$ref": "#/components/schemas/MailSignInUnavailableReason"
+    }
+  },
+  "required": [
+    "available",
+    "connection",
+    "providers",
+    "signIn"
+  ],
+  "type": "object"
+}
+```
+
+## MailConnectionStatus
+
+
+```json
+{
+  "description": "Whether the connected mail account can still send",
+  "enum": [
+    "connected",
+    "needs-sign-in"
+  ],
+  "type": "string"
+}
+```
+
+## MailDisconnectResponseDto
+
+Related models: [MailSignInProvider](models-16.md#mailsigninprovider).
+
+```json
+{
+  "properties": {
+    "provider": {
+      "$ref": "#/components/schemas/MailSignInProvider"
+    },
+    "revoked": {
+      "description": "Whether access was also removed at the provider. False for Microsoft, which offers no way to: the administrator removes Frameleaf under the account's app permissions.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "provider",
+    "revoked"
+  ],
+  "type": "object"
+}
+```
+
+## MailSignInCompleteResponseDto
+
+Related models: [MailConnectionDto](models-16.md#mailconnectiondto), [MailSignInState](models-16.md#mailsigninstate).
+
+```json
+{
+  "properties": {
+    "connection": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MailConnectionDto"
+        }
+      ],
+      "description": "The connected account once `state` is `connected`",
+      "nullable": true
+    },
+    "state": {
+      "$ref": "#/components/schemas/MailSignInState"
+    }
+  },
+  "required": [
+    "connection",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## MailSignInProvider
+
+
+```json
+{
+  "description": "A mail provider connected by signing in",
+  "enum": [
+    "gmail",
+    "microsoft"
+  ],
+  "type": "string"
+}
+```
+
+## MailSignInStartDto
+
+Related models: [MailSignInProvider](models-16.md#mailsigninprovider).
+
+```json
+{
+  "properties": {
+    "provider": {
+      "$ref": "#/components/schemas/MailSignInProvider"
+    }
+  },
+  "required": [
+    "provider"
+  ],
+  "type": "object"
+}
+```
+
+## MailSignInStartResponseDto
+
+
+```json
+{
+  "properties": {
+    "authorizationUrl": {
+      "description": "The provider's sign-in page, to open in the administrator's browser",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "When this sign-in can no longer be finished",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "authorizationUrl",
+    "expiresAt"
+  ],
+  "type": "object"
+}
+```
+
+## MailSignInState
+
+
+```json
+{
+  "description": "Where a mail sign-in an administrator started stands",
+  "enum": [
+    "none",
+    "pending",
+    "connected",
+    "denied",
+    "expired"
+  ],
+  "type": "string"
+}
+```
+
+## MailSignInUnavailableReason
+
+
+```json
+{
+  "description": "Why one-click mail sign-in is not offered on this server",
+  "enum": [
+    "not-configured",
+    "not-linked",
+    "cloud-unreachable"
+  ],
+  "type": "string"
+}
+```
+
+## MailTransportType
+
+
+```json
+{
+  "description": "How this server sends email: a mail server entered by hand, Gmail or Microsoft",
+  "enum": [
+    "smtp",
+    "gmail",
+    "microsoft"
+  ],
+  "type": "string"
 }
 ```
 
@@ -884,7 +1529,7 @@ Related models: [MediaHealthBulkResultDto](models-16.md#mediahealthbulkresultdto
 
 ## MediaHealthBulkResultDto
 
-Related models: [MediaHealthStatus](models-16.md#mediahealthstatus).
+Related models: [MediaHealthStatus](models-17.md#mediahealthstatus).
 
 ```json
 {
@@ -941,7 +1586,7 @@ Related models: [MediaHealthStatus](models-16.md#mediahealthstatus).
 
 ## MediaHealthCandidateDto
 
-Related models: [MediaHealthChecksumDto](models-16.md#mediahealthchecksumdto), [MediaHealthRootKind](models-16.md#mediahealthrootkind), [MediaHealthStatus](models-16.md#mediahealthstatus).
+Related models: [MediaHealthChecksumDto](models-16.md#mediahealthchecksumdto), [MediaHealthRootKind](models-16.md#mediahealthrootkind), [MediaHealthStatus](models-17.md#mediahealthstatus).
 
 ```json
 {
@@ -1181,7 +1826,7 @@ Related models: [MediaHealthCandidateChoiceDto](models-16.md#mediahealthcandidat
 
 ## MediaHealthItemDto
 
-Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MediaHealthCandidateDto](models-16.md#mediahealthcandidatedto), [MediaHealthCategory](models-16.md#mediahealthcategory), [MediaHealthChecksumDto](models-16.md#mediahealthchecksumdto), [MediaHealthProvenanceDto](models-16.md#mediahealthprovenancedto), [MediaHealthSeverity](models-16.md#mediahealthseverity), [MediaHealthStatus](models-16.md#mediahealthstatus).
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MediaHealthCandidateDto](models-16.md#mediahealthcandidatedto), [MediaHealthCategory](models-16.md#mediahealthcategory), [MediaHealthChecksumDto](models-16.md#mediahealthchecksumdto), [MediaHealthProvenanceDto](models-16.md#mediahealthprovenancedto), [MediaHealthSeverity](models-16.md#mediahealthseverity), [MediaHealthStatus](models-17.md#mediahealthstatus).
 
 ```json
 {
@@ -1833,510 +2478,6 @@ Related models: [MediaHealthRunResponseDto](models-16.md#mediahealthrunresponsed
     "info",
     "warning",
     "critical"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthStatus
-
-
-```json
-{
-  "description": "Media health status",
-  "enum": [
-    "found",
-    "missing",
-    "candidate",
-    "relinked",
-    "dismissed",
-    "resolved",
-    "unsupported_raw",
-    "corrupt_suspect",
-    "corrupt_confirmed",
-    "trash_queued",
-    "trashed",
-    "delete_queued",
-    "deleted"
-  ],
-  "type": "string"
-}
-```
-
-## MediaHealthSummaryResponseDto
-
-Related models: [MediaHealthActivityDto](models-16.md#mediahealthactivitydto), [MediaHealthCareSettingsDto](models-16.md#mediahealthcaresettingsdto), [MediaHealthOperationDto](models-16.md#mediahealthoperationdto), [MediaHealthQueuesDto](models-16.md#mediahealthqueuesdto), [MediaHealthRunsDto](models-16.md#mediahealthrunsdto).
-
-```json
-{
-  "properties": {
-    "care": {
-      "$ref": "#/components/schemas/MediaHealthCareSettingsDto"
-    },
-    "operation": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/MediaHealthOperationDto"
-        }
-      ],
-      "nullable": true
-    },
-    "queues": {
-      "$ref": "#/components/schemas/MediaHealthQueuesDto"
-    },
-    "recent": {
-      "items": {
-        "$ref": "#/components/schemas/MediaHealthActivityDto"
-      },
-      "type": "array"
-    },
-    "recoveryAvailable": {
-      "description": "At least one recovery location is configured for this reader",
-      "type": "boolean"
-    },
-    "runs": {
-      "$ref": "#/components/schemas/MediaHealthRunsDto"
-    }
-  },
-  "required": [
-    "care",
-    "operation",
-    "queues",
-    "recent",
-    "recoveryAvailable",
-    "runs"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationAggregateDto
-
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "count": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "destination": {
-      "$ref": "#/components/schemas/MediaOperationDestination"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MediaOperationKind"
-    },
-    "oldestCreatedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "count",
-    "destination",
-    "kind",
-    "oldestCreatedAt",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationBulkAction
-
-
-```json
-{
-  "description": "Bulk action a durable media operation applies",
-  "enum": [
-    "favorite",
-    "unfavorite",
-    "archive",
-    "unarchive",
-    "add-to-album",
-    "remove-from-album",
-    "tag",
-    "untag",
-    "change-date",
-    "change-description",
-    "change-location",
-    "mark-sensitive",
-    "unmark-sensitive",
-    "delete",
-    "delete-permanently",
-    "restore",
-    "stack",
-    "unstack",
-    "refresh-thumbnails",
-    "refresh-metadata",
-    "refresh-encoded",
-    "refresh-faces",
-    "relink-live-photo",
-    "resolve-duplicates",
-    "undo-duplicates",
-    "relink-missing-media",
-    "recover-damaged-media",
-    "trash-damaged-media",
-    "apply-classification-rule"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationBulkCreateDto
-
-Related models: [MediaOperationBulkAction](models-16.md#mediaoperationbulkaction), [MediaOperationBulkPayloadDto](models-16.md#mediaoperationbulkpayloaddto).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaOperationBulkAction"
-    },
-    "assetIds": {
-      "description": "The frozen matching set, in order",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50000,
-      "minItems": 1,
-      "type": "array"
-    },
-    "payload": {
-      "$ref": "#/components/schemas/MediaOperationBulkPayloadDto"
-    },
-    "requestId": {
-      "description": "Client idempotency key; submitting the same key again returns the existing operation",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "scope": {
-      "additionalProperties": {},
-      "description": "A record of the view the set came from; never re-resolved",
-      "type": "object"
-    },
-    "submittedTotal": {
-      "description": "The count shown to the person at submit",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "truncated": {
-      "description": "The client could not resolve the whole matching set",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "action",
-    "assetIds"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationBulkItemDto
-
-Related models: [MediaOperationItemStatus](models-17.md#mediaoperationitemstatus).
-
-```json
-{
-  "properties": {
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "message": {
-      "description": "Operator detail from the server",
-      "nullable": true,
-      "type": "string"
-    },
-    "reasonKey": {
-      "description": "Stable key the client turns into a message",
-      "nullable": true,
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationItemStatus"
-    }
-  },
-  "required": [
-    "id",
-    "message",
-    "reasonKey",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationBulkPayloadDto
-
-Related models: [MediaOperationDuplicateGroupDto](models-17.md#mediaoperationduplicategroupdto), [MediaOperationLivePhotoPairDto](models-17.md#mediaoperationlivephotopairdto), [MediaOperationMediaHealthEntryDto](models-17.md#mediaoperationmediahealthentrydto).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "classificationRuleId": {
-      "description": "For `apply-classification-rule`: the rule to apply to the items (FL-60)",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "dateMode": {
-      "enum": [
-        "set",
-        "shift"
-      ],
-      "type": "string"
-    },
-    "dateTimeOriginal": {
-      "type": "string"
-    },
-    "description": {
-      "maxLength": 10000,
-      "type": "string"
-    },
-    "duplicateGroups": {
-      "description": "Duplicate review decisions, one complete group each (FL-61)",
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationDuplicateGroupDto"
-      },
-      "maxItems": 5000,
-      "type": "array"
-    },
-    "latitude": {
-      "format": "double",
-      "maximum": 90,
-      "minimum": -90,
-      "type": "number"
-    },
-    "longitude": {
-      "format": "double",
-      "maximum": 180,
-      "minimum": -180,
-      "type": "number"
-    },
-    "mediaHealth": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationMediaHealthEntryDto"
-      },
-      "maxItems": 1000,
-      "type": "array"
-    },
-    "minutes": {
-      "description": "Relative shift in minutes, for `dateMode: shift`",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "pairs": {
-      "items": {
-        "$ref": "#/components/schemas/MediaOperationLivePhotoPairDto"
-      },
-      "maxItems": 50000,
-      "type": "array"
-    },
-    "primaryId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "stackIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "type": "array"
-    },
-    "tagIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50,
-      "type": "array"
-    },
-    "timeZone": {
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## MediaOperationBulkSummaryDto
-
-Related models: [MediaOperationBulkAction](models-16.md#mediaoperationbulkaction).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/MediaOperationBulkAction"
-    },
-    "failed": {
-      "description": "Items the server attempted and could not apply; a retry covers these",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "itemsTruncated": {
-      "type": "boolean"
-    },
-    "requested": {
-      "description": "Items in the frozen set",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "retried": {
-      "description": "Items that failed and were given their one automatic retry",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "skipped": {
-      "description": "Items refused before anything changed, e.g. no access",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "snapshotTruncated": {
-      "type": "boolean"
-    },
-    "succeeded": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "action",
-    "failed",
-    "itemsTruncated",
-    "requested",
-    "retried",
-    "skipped",
-    "snapshotTruncated",
-    "succeeded"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationCheckpointDto
-
-Related models: [MediaOperationCheckpointState](models-16.md#mediaoperationcheckpointstate).
-
-```json
-{
-  "properties": {
-    "chunkKey": {
-      "description": "Digest over every input to this chunk; the reuse key",
-      "type": "string"
-    },
-    "completedAt": {
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "endTicks": {
-      "description": "Chunk end, in ticks of the timebase",
-      "type": "string"
-    },
-    "id": {
-      "description": "Checkpoint ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "requiresSequentialContext": {
-      "description": "A render may not start inside this chunk",
-      "type": "boolean"
-    },
-    "sequence": {
-      "description": "Chunk order within the render",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "sizeInBytes": {
-      "nullable": true,
-      "type": "string"
-    },
-    "startTicks": {
-      "description": "Chunk start, in ticks of the timebase",
-      "type": "string"
-    },
-    "state": {
-      "$ref": "#/components/schemas/MediaOperationCheckpointState"
-    },
-    "timebase": {
-      "description": "Rational timebase for the tick range, e.g. 30000/1001",
-      "type": "string"
-    }
-  },
-  "required": [
-    "chunkKey",
-    "completedAt",
-    "endTicks",
-    "id",
-    "requiresSequentialContext",
-    "sequence",
-    "sizeInBytes",
-    "startTicks",
-    "state",
-    "timebase"
-  ],
-  "type": "object"
-}
-```
-
-## MediaOperationCheckpointState
-
-
-```json
-{
-  "description": "Media operation checkpoint state",
-  "enum": [
-    "pending",
-    "complete",
-    "invalid"
-  ],
-  "type": "string"
-}
-```
-
-## MediaOperationDestination
-
-
-```json
-{
-  "description": "Media operation destination",
-  "enum": [
-    "local",
-    "lan",
-    "frameleaf-cloud"
   ],
   "type": "string"
 }

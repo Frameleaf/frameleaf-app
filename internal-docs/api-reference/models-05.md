@@ -1,6 +1,6 @@
 # Server API models 5
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AssetDevelopRecipeDto
 
@@ -653,7 +653,7 @@ Related models: [AssetDevelopProposalCoordinates](models-04.md#assetdeveloppropo
 
 ## AssetEditActionItemDto
 
-Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-16.md#lookparameters), [MirrorParameters](models-18.md#mirrorparameters), [RotateParameters](models-30.md#rotateparameters), [SpeedParameters](models-33.md#speedparameters), [StabilizeParameters](models-33.md#stabilizeparameters), [StraightenParameters](models-33.md#straightenparameters), [TextOverlayParameters](models-38.md#textoverlayparameters), [ToggleParameters](models-38.md#toggleparameters), [TrimParameters](models-39.md#trimparameters).
+Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-16.md#lookparameters), [MirrorParameters](models-18.md#mirrorparameters), [RotateParameters](models-30.md#rotateparameters), [SpeedParameters](models-33.md#speedparameters), [StabilizeParameters](models-33.md#stabilizeparameters), [StraightenParameters](models-33.md#straightenparameters), [TextOverlayParameters](models-38.md#textoverlayparameters), [ToggleParameters](models-39.md#toggleparameters), [TrimParameters](models-39.md#trimparameters).
 
 ```json
 {
@@ -713,7 +713,7 @@ Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAct
 
 ## AssetEditActionItemResponseDto
 
-Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-16.md#lookparameters), [MirrorParameters](models-18.md#mirrorparameters), [RotateParameters](models-30.md#rotateparameters), [SpeedParameters](models-33.md#speedparameters), [StabilizeParameters](models-33.md#stabilizeparameters), [StraightenParameters](models-33.md#straightenparameters), [TextOverlayParameters](models-38.md#textoverlayparameters), [ToggleParameters](models-38.md#toggleparameters), [TrimParameters](models-39.md#trimparameters).
+Related models: [AdjustParameters](models-01.md#adjustparameters), [AssetEditAction](models-05.md#asseteditaction), [AudioParameters](models-06.md#audioparameters), [CropParameters](models-10.md#cropparameters), [LookParameters](models-16.md#lookparameters), [MirrorParameters](models-18.md#mirrorparameters), [RotateParameters](models-30.md#rotateparameters), [SpeedParameters](models-33.md#speedparameters), [StabilizeParameters](models-33.md#stabilizeparameters), [StraightenParameters](models-33.md#straightenparameters), [TextOverlayParameters](models-38.md#textoverlayparameters), [ToggleParameters](models-39.md#toggleparameters), [TrimParameters](models-39.md#trimparameters).
 
 ```json
 {
@@ -847,7 +847,7 @@ Related models: [AssetEditsColorPolicy](models-05.md#asseteditscolorpolicy), [De
   "properties": {
     "colorPolicy": {
       "$ref": "#/components/schemas/AssetEditsColorPolicy",
-      "description": "FL-113: what an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged"
+      "description": "What an edited version does with the original's colour. 'tone-map': an HDR original is rendered to SDR and kept as the reference; 'unsupported': this server cannot render an edited version (Dolby Vision profile 5), so saving is refused and the original stays unchanged"
     },
     "colorReason": {
       "description": "Why, in plain words, for the person editing",
@@ -855,7 +855,7 @@ Related models: [AssetEditsColorPolicy](models-05.md#asseteditscolorpolicy), [De
     },
     "decodeRefusal": {
       "$ref": "#/components/schemas/DecodeRefusal",
-      "description": "FL-101: set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing"
+      "description": "Set when this server cannot decode the original at all (a Dolby Vision profile outside the qualified matrix, more than 12 bits per component, an undescribable pixel format). colorPolicy is then 'unsupported' and colorReason says why; saving an edited version is refused before any editing"
     },
     "durationMs": {
       "description": "Duration of the original in milliseconds",
@@ -1732,7 +1732,7 @@ Related models: [AssetJobName](models-05.md#assetjobname).
   "enum": [
     "marked",
     "detected",
-    "immich-locked-folder"
+    "frameleaf-locked-folder"
   ],
   "type": "string"
 }

@@ -1,6 +1,6 @@
 # Server API models 28
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## PreservationItemState
 
@@ -1112,6 +1112,55 @@ Related models: [SuppressionUpdate](models-36.md#suppressionupdate).
 }
 ```
 
+## ProcessingProvenanceEvidence
+
+
+```json
+{
+  "enum": [
+    "client-reported"
+  ],
+  "type": "string"
+}
+```
+
+## ProcessingProvenanceFamily
+
+
+```json
+{
+  "enum": [
+    "anime4k"
+  ],
+  "type": "string"
+}
+```
+
+## ProcessingProvenanceSourceNamespace
+
+
+```json
+{
+  "enum": [
+    "freecut-media"
+  ],
+  "type": "string"
+}
+```
+
+## ProcessingProvenanceVersion
+
+
+```json
+{
+  "enum": [
+    1
+  ],
+  "format": "int32",
+  "type": "integer"
+}
+```
+
 ## PublicConfigDto
 
 Related models: [FrameleafPublicConfigDto](models-12.md#frameleafpublicconfigdto), [PublicConfigFrameleafCloudDto](models-28.md#publicconfigframeleafclouddto), [PublicConfigOAuthDto](models-28.md#publicconfigoauthdto), [PublicConfigPasswordLoginDto](models-28.md#publicconfigpasswordlogindto), [PublicConfigServerDto](models-28.md#publicconfigserverdto), [PublicConfigThemeDto](models-28.md#publicconfigthemedto).
@@ -1601,7 +1650,7 @@ Related models: [PushApnsEnvironment](models-28.md#pushapnsenvironment), [PushPr
 
 ```json
 {
-  "description": "FL-228: an event this server delivers as a push notification",
+  "description": "An event this server delivers as a push notification",
   "enum": [
     "backup-needs-attention",
     "backup-stale",
@@ -1642,7 +1691,7 @@ Related models: [PushEventType](models-28.md#pusheventtype).
 
 ```json
 {
-  "description": "FL-228: the push service a device receives notifications through",
+  "description": "The push service a device receives notifications through",
   "enum": [
     "ios",
     "android"
@@ -1816,7 +1865,7 @@ Related models: [PushUnavailableReason](models-28.md#pushunavailablereason).
 
 ```json
 {
-  "description": "FL-228: why push notifications are unavailable on this server",
+  "description": "Why push notifications are unavailable on this server",
   "enum": [
     "not-configured",
     "not-linked",

@@ -1,6 +1,156 @@
 # Server API models 38
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## SyncTagDeleteV1
+
+
+```json
+{
+  "properties": {
+    "tagId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tagId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncTagV1
+
+
+```json
+{
+  "properties": {
+    "color": {
+      "nullable": true,
+      "type": "string"
+    },
+    "createdAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "parentId": {
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "userId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "value": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "color",
+    "createdAt",
+    "id",
+    "parentId",
+    "updatedAt",
+    "userId",
+    "value"
+  ],
+  "type": "object"
+}
+```
+
+## SyncUserDeleteV1
+
+
+```json
+{
+  "properties": {
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncUserMetadataDeleteV1
+
+Related models: [UserMetadataKey](models-39.md#usermetadatakey).
+
+```json
+{
+  "properties": {
+    "key": {
+      "$ref": "#/components/schemas/UserMetadataKey"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## SyncUserMetadataV1
+
+Related models: [UserMetadataKey](models-39.md#usermetadatakey).
+
+```json
+{
+  "properties": {
+    "key": {
+      "$ref": "#/components/schemas/UserMetadataKey"
+    },
+    "userId": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "value": {
+      "additionalProperties": {},
+      "description": "User metadata value",
+      "type": "object"
+    }
+  },
+  "required": [
+    "key",
+    "userId",
+    "value"
+  ],
+  "type": "object"
+}
+```
 
 ## SyncUserV1
 
@@ -392,6 +542,26 @@ Related models: [SystemConfigHistoryEntryDto](models-38.md#systemconfighistoryen
 }
 ```
 
+## TagMergeDto
+
+
+```json
+{
+  "properties": {
+    "targetId": {
+      "description": "The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "targetId"
+  ],
+  "type": "object"
+}
+```
+
 ## TagResponseDto
 
 
@@ -454,10 +624,29 @@ Related models: [SystemConfigHistoryEntryDto](models-38.md#systemconfighistoryen
       "minimum": 0,
       "type": "integer"
     },
+    "coverAssetIds": {
+      "description": "Up to four assets for a cover: the newest captures tagged with this tag or any tag nested under it",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "endDate": {
+      "description": "End date (latest of the `total` items)",
+      "format": "date-time",
+      "type": "string"
+    },
     "id": {
       "description": "Tag ID",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "startDate": {
+      "description": "Start date (earliest of the `total` items)",
+      "format": "date-time",
       "type": "string"
     },
     "total": {
@@ -469,7 +658,10 @@ Related models: [SystemConfigHistoryEntryDto](models-38.md#systemconfighistoryen
   },
   "required": [
     "count",
+    "coverAssetIds",
+    "endDate",
     "id",
+    "startDate",
     "total"
   ],
   "type": "object"
@@ -2085,242 +2277,6 @@ Related models: [AssetLockReason](models-05.md#assetlockreason), [AssetVisibilit
   "enum": [
     "year",
     "month"
-  ],
-  "type": "string"
-}
-```
-
-## TimelineHighlightResponseDto
-
-
-```json
-{
-  "properties": {
-    "count": {
-      "description": "Number of assets in this year or month, the same as the time buckets report",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "highlightAssetIds": {
-      "description": "The next best assets in capture order (month cards only), never including the key photo",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "keyAssetId": {
-      "description": "Key photo: highest Best Photos score, then highest star rating, then most recent capture",
-      "nullable": true,
-      "type": "string"
-    },
-    "places": {
-      "description": "Up to three most frequent places (city, else state, else country), busiest first. Empty when the viewer may not see locations",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
-    "timeBucket": {
-      "description": "First day of the year or month in YYYY-MM-DD format, as in GET /timeline/buckets",
-      "example": "2024-01-01",
-      "type": "string"
-    }
-  },
-  "required": [
-    "count",
-    "highlightAssetIds",
-    "keyAssetId",
-    "places",
-    "timeBucket"
-  ],
-  "type": "object"
-}
-```
-
-## TimelineOrderedSort
-
-
-```json
-{
-  "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture",
-  "enum": [
-    "filename",
-    "rating"
-  ],
-  "type": "string"
-}
-```
-
-## ToggleParameters
-
-
-```json
-{
-  "properties": {
-    "enabled": {
-      "default": true,
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## ToneMapping
-
-
-```json
-{
-  "description": "Tone mapping",
-  "enum": [
-    "hable",
-    "mobius",
-    "reinhard",
-    "disabled"
-  ],
-  "type": "string"
-}
-```
-
-## TranscodeHWAccel
-
-
-```json
-{
-  "description": "Transcode hardware acceleration",
-  "enum": [
-    "nvenc",
-    "qsv",
-    "vaapi",
-    "rkmpp",
-    "disabled"
-  ],
-  "type": "string"
-}
-```
-
-## TranscodePolicy
-
-
-```json
-{
-  "description": "Transcode policy",
-  "enum": [
-    "all",
-    "optimal",
-    "bitrate",
-    "required",
-    "disabled"
-  ],
-  "type": "string"
-}
-```
-
-## TrashApplyDto
-
-Related models: [TrashReviewAction](models-39.md#trashreviewaction), [UtilityActivityTool](models-40.md#utilityactivitytool).
-
-```json
-{
-  "properties": {
-    "action": {
-      "$ref": "#/components/schemas/TrashReviewAction"
-    },
-    "ids": {
-      "description": "The chosen items, for trash, restore and delete. Ignored by restore-all and empty.",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 50000,
-      "type": "array"
-    },
-    "source": {
-      "$ref": "#/components/schemas/UtilityActivityTool",
-      "description": "The utility the change was made from. A move to the trash or a restore from Large files is kept in its activity history."
-    },
-    "token": {
-      "description": "The token returned by the review",
-      "maxLength": 128,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "action",
-    "token"
-  ],
-  "type": "object"
-}
-```
-
-## TrashItemResponseDto
-
-Related models: [AssetTypeEnum](models-06.md#assettypeenum).
-
-```json
-{
-  "properties": {
-    "fileSizeInByte": {
-      "description": "Size of the original, in bytes, when known",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isLocked": {
-      "description": "Locked media; only listed for its owner in an unlocked session",
-      "type": "boolean"
-    },
-    "isOffline": {
-      "description": "The library scan found this external original missing and manages it; trash actions do not change it",
-      "type": "boolean"
-    },
-    "originalFileName": {
-      "description": "Original file name",
-      "type": "string"
-    },
-    "trashedAt": {
-      "description": "When the item was moved to the trash",
-      "format": "date-time",
-      "nullable": true,
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    }
-  },
-  "required": [
-    "fileSizeInByte",
-    "id",
-    "isLocked",
-    "isOffline",
-    "originalFileName",
-    "trashedAt",
-    "type"
-  ],
-  "type": "object"
-}
-```
-
-## TrashItemSort
-
-
-```json
-{
-  "description": "Trash order: most recently deleted, largest original, or file name",
-  "enum": [
-    "recent",
-    "size",
-    "name"
   ],
   "type": "string"
 }

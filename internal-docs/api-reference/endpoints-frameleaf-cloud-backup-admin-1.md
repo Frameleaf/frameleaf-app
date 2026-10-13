@@ -1,12 +1,12 @@
 # Server API — Frameleaf Cloud backup (admin) 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getBuddyBackupStatus
 
 `GET /api/admin/buddy-backup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L60).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L60).
 
 Get Buddy Backup and hosting status
 
@@ -78,7 +78,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/control`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L214).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L214).
 
 Start, pause, resume, restart or verify Buddy Backup
 
@@ -163,7 +163,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/invitations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L101).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L101).
 
 Invite a Cloud account to pair its Frameleaf server
 
@@ -249,7 +249,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/invitations/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L114).
 
 Accept a Buddy invitation with this hosting capacity
 
@@ -334,7 +334,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/key`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L138).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L138).
 
 Generate and return a new recovery kit once
 
@@ -410,7 +410,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/key/escrow`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L151).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L151).
 
 Encrypt a recovery kit locally with a passphrase
 
@@ -496,7 +496,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/key/escrow/import`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L164).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L164).
 
 Unlock and import an encrypted recovery package locally
 
@@ -582,7 +582,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/key/import`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L185).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L185).
 
 Import a recovery kit on the rebound server
 
@@ -663,7 +663,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/key/rotate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L193).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L193).
 
 Rotate encryption while retaining historical keys
 
@@ -739,7 +739,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/key/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L177).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L177).
 
 Verify the recovery kit the owner saved
 
@@ -820,7 +820,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/preflight`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L68).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L68).
 
 Check backup size, storage and configuration coverage
 
@@ -906,7 +906,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/probe`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L206).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L206).
 
 Verify an encrypted round trip
 
@@ -977,7 +977,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/refresh`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L81).
 
 Refresh the Cloud pairing
 
@@ -1048,7 +1048,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/relationship`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L126).
 
 Confirm, end, or immediately block a pairing
 
@@ -1133,7 +1133,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L243).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L243).
 
 Preview or start a verified restore
 
@@ -1214,7 +1214,7 @@ Complete operation contract:
 
 `POST /api/admin/buddy-backup/restore/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L258).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L258).
 
 Apply staged settings or server recovery in maintenance mode
 
@@ -1299,7 +1299,7 @@ Complete operation contract:
 
 `GET /api/admin/buddy-backup/restores`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L47).
 
 Resume the current owner restore or staged recovery
 
@@ -1375,7 +1375,7 @@ Complete operation contract:
 
 `GET /api/admin/buddy-backup/restores/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L250).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L250).
 
 Get restore or staging progress
 
@@ -1458,7 +1458,7 @@ Complete operation contract:
 
 `PUT /api/admin/buddy-backup/settings`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L89).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L89).
 
 Configure hosting, schedules and transfer limits
 
@@ -1543,7 +1543,7 @@ Complete operation contract:
 
 `GET /api/admin/buddy-backup/snapshots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L226).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L226).
 
 List complete Buddy restore points
 
@@ -1627,7 +1627,7 @@ Complete operation contract:
 
 `GET /api/admin/buddy-backup/snapshots/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/buddy-backup.controller.ts#L235).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/buddy-backup.controller.ts#L235).
 
 Browse a decrypted restore point
 
@@ -1721,13 +1721,13 @@ Complete operation contract:
 
 `DELETE /api/admin/cloud/backup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-admin.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-admin.controller.ts#L105).
 
 Turn cloud backup off
 
 Permission: `adminCloudBackup.update`. Admin only: `true`.
 
-Models: [CloudBackupStatusResponseDto](models-08.md#cloudbackupstatusresponsedto).
+Models: [CloudBackupStatusResponseDto](models-09.md#cloudbackupstatusresponsedto).
 
 Controller access declarations:
 
@@ -1739,7 +1739,8 @@ Controller access declarations:
 @Endpoint({
     operationId: 'turnOffCloudBackup',
     summary: 'Turn cloud backup off',
-    description: 'Stops backing up. The bucket, its backups and the key are kept.',
+    description:
+      'Stops backing up. The bucket, its backups and stored keys are kept; keys held only in memory are cleared.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
 ```
@@ -1748,7 +1749,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "Stops backing up. The bucket, its backups and the key are kept.",
+  "description": "Stops backing up. The bucket, its backups and stored keys are kept; keys held only in memory are cleared.",
   "operationId": "turnOffCloudBackup",
   "parameters": [],
   "responses": {
@@ -1798,13 +1799,13 @@ Complete operation contract:
 
 `GET /api/admin/cloud/backup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-admin.controller.ts#L37).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-admin.controller.ts#L37).
 
 Get the cloud backup status
 
 Permission: `adminCloudBackup.read`. Admin only: `true`.
 
-Models: [CloudBackupStatusResponseDto](models-08.md#cloudbackupstatusresponsedto).
+Models: [CloudBackupStatusResponseDto](models-09.md#cloudbackupstatusresponsedto).
 
 Controller access declarations:
 
@@ -1876,7 +1877,7 @@ Complete operation contract:
 
 `POST /api/admin/cloud/backup/check`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-admin.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-admin.controller.ts#L50).
 
 Check a bucket for cloud backup
 
@@ -1965,13 +1966,13 @@ Complete operation contract:
 
 `DELETE /api/admin/cloud/backup/escrow`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-admin.controller.ts#L265).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-admin.controller.ts#L266).
 
 Remove the key copy from Frameleaf Cloud
 
 Permission: `adminCloudBackup.update`. Admin only: `true`.
 
-Models: [CloudBackupStatusResponseDto](models-08.md#cloudbackupstatusresponsedto).
+Models: [CloudBackupStatusResponseDto](models-09.md#cloudbackupstatusresponsedto).
 
 Controller access declarations:
 
