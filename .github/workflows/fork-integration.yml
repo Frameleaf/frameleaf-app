@@ -54,7 +54,7 @@ jobs:
       - name: Set up the pinned NAS renderer Python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: '3.11.15'
+          python-version: '3.11.17'
       - name: Prepare the pinned TrueNAS rendering library
         run: |
           catalog="$RUNNER_TEMP/truenas-catalog"
@@ -80,7 +80,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          docker create --name fork-integration-mise ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730 /bin/true
+          docker create --name fork-integration-mise ghcr.io/jdx/mise:2026.10.8@sha256:b720f506c21a6bf5f733a3b1cd04361617ac461a597e44f513aa3976dcd71e57 /bin/true
           docker cp fork-integration-mise:/usr/local/bin/mise "$RUNNER_TEMP/mise"
           docker rm fork-integration-mise
           "$RUNNER_TEMP/mise" trust mise.toml
@@ -158,7 +158,7 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.13.0'
-          python-version: '3.12'
+          python-version: '3.12.15'
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups
       - name: Run ML unit tests without model downloads
@@ -170,7 +170,7 @@ jobs:
 
   machine-learning-containers:
     env:
-      FRAMELEAF_CI_PYTHON_IMAGE: mirror.gcr.io/library/python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+      FRAMELEAF_CI_PYTHON_IMAGE: mirror.gcr.io/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
       FRAMELEAF_CI_CUDA_IMAGE: mirror.gcr.io/nvidia/cuda@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04

@@ -39,7 +39,7 @@ jobs:
         with:
           github_token: ${{ github.token }}
           install_args: --locked
-          version: 2026.7.12
+          version: 2026.10.8
       - name: Install server and build the plugin SDK
         run: |-
           mise run //server:install

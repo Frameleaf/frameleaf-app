@@ -38,7 +38,7 @@ test("Studio browser provisioning uses the exact official image and fails closed
   const version = JSON.parse(
     readFileSync(path.join(root, "studio/engine-package-lock.json"), "utf8"),
   ).packages["node_modules/playwright"].version;
-  assert.equal(version, "1.60.0");
+  assert.equal(version, "1.64.0");
   assert.equal(
     step.env.PLAYWRIGHT_BROWSERS_PATH,
     "${{ runner.temp }}/studio-playwright",
@@ -47,7 +47,7 @@ test("Studio browser provisioning uses the exact official image and fails closed
   assert.equal(step["continue-on-error"], undefined);
   assert.ok(
     step.run.includes(
-      `mcr.microsoft.com/playwright:v${version}-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948`,
+      `mcr.microsoft.com/playwright:v${version}-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f`,
     ),
   );
   const directory = mkdtempSync(path.join(tmpdir(), "studio-browser-install-"));
@@ -73,9 +73,9 @@ case "$1" in
     mkdir -p "$3/$folder"
     touch "$3/$folder/INSTALLATION_COMPLETE"
     case "$folder" in
-      chromium-1223) executable=chrome-linux64/chrome ;;
-      chromium_headless_shell-1223) executable=chrome-headless-shell-linux64/chrome-headless-shell ;;
-      ffmpeg-1011) executable=ffmpeg-linux ;;
+      chromium-1248) executable=chrome-linux64/chrome ;;
+      chromium_headless_shell-1248) executable=chrome-headless-shell-linux64/chrome-headless-shell ;;
+      ffmpeg-1013) executable=ffmpeg-linux ;;
       *) exit 42 ;;
     esac
     [ "$BAD_CACHE" != 1 ] || exit 0
@@ -630,7 +630,7 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
     (step) => step.name === "Validate NAS package fixtures",
   );
   assert.ok(python && prepare && fixtures);
-  assert.equal(python.with["python-version"], "3.11.15");
+  assert.equal(python.with["python-version"], "3.11.17");
   assert.match(python.uses, /^actions\/setup-python@[a-f0-9]{40}$/);
   assert.ok(steps.indexOf(python) < steps.indexOf(prepare));
   assert.ok(steps.indexOf(prepare) < steps.indexOf(fixtures));

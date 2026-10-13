@@ -1,4 +1,4 @@
-# Frameleaf-owned renderer lock: CPython 3.11.15, Linux x86_64, no extras.
+# Frameleaf-owned renderer lock: CPython 3.11.17, Linux x86_64, no extras.
 # Version metadata and wheel SHA256 values: https://pypi.org/pypi/NAME/VERSION/json
 # No source distributions; install with --require-hashes --only-binary=:all:.
 Jinja2==3.1.6 --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
