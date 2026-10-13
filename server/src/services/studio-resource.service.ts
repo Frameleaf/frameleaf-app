@@ -56,6 +56,7 @@ import { isRevealedLockReason } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
 import { studioMediaSources } from 'src/utils/studio-export-contract.js';
+import { type StudioRenderFontFile, studioBundledRenderFonts, studioFontFileInputId } from 'src/utils/studio-fonts.js';
 import { STUDIO_IMPORT_VECTOR_MAX_BYTES, studioImportKind } from 'src/utils/studio-imports.js';
 import {
   parseStudioLottieSource,
@@ -127,6 +128,8 @@ export type StudioDeclaredGenerated = {
 export type StudioCatalogEntry = {
   path: string;
   checksum: string;
+  /** A font family's files, when it has more than the one `path` names (weights, styles, subsets). */
+  files?: StudioRenderFontFile[];
   /** Model revision, for the model catalogue. */
   revision?: string;
 };
@@ -199,6 +202,11 @@ export type StudioAuthorizedEntry = {
   grant: 'render' | 'none';
   /** A restored version's library original (FL-115), whose access every preview frame re-checks. */
   assetId?: string;
+  /**
+   * A font family's files (render-worker claim contract, "Fonts"): each is readable under the
+   * entry's grant. `path` and `checksum` above stay the family's regular Latin file.
+   */
+  files?: StudioRenderFontFile[];
 };
 
 export type StudioRefusedReference = {
@@ -405,7 +413,10 @@ export class StudioResourceService extends BaseService {
       );
     }
 
-    const catalog = context.catalog ?? emptyStudioResourceCatalog();
+    // The title families bundled with the server are always in the font catalogue; a job's own
+    // catalogue adds to them and wins for a family it names.
+    const supplied = context.catalog ?? emptyStudioResourceCatalog();
+    const catalog: StudioResourceCatalog = { ...supplied, fonts: { ...studioBundledRenderFonts(), ...supplied.fonts } };
     // FL-86: a bundled entry is loaded only when its reviewed rights admit this destination's use.
     const rightsUse = studioRightsUseFor(context.destination);
     const imports = new Map((context.imports ?? []).map((item) => [item.id, item]));
@@ -516,7 +527,10 @@ export class StudioResourceService extends BaseService {
 
     const authorize = (
       reference: StudioResourceReference,
-      fields: Pick<StudioAuthorizedEntry, 'ownerId' | 'checksum' | 'path' | 'sourceAccess' | 'grant' | 'assetId'>,
+      fields: Pick<
+        StudioAuthorizedEntry,
+        'ownerId' | 'checksum' | 'path' | 'sourceAccess' | 'grant' | 'assetId' | 'files'
+      >,
     ) => {
       entries.push({
         key: studioReferenceKey(reference),
@@ -863,6 +877,7 @@ export class StudioResourceService extends BaseService {
             path: entry.path,
             sourceAccess: 'deployment',
             grant: 'render',
+            ...(entry.files && entry.files.length > 0 && { files: entry.files }),
           });
           break;
         }
@@ -1227,6 +1242,21 @@ export class StudioResourceService extends BaseService {
         token: this.cryptoRepository.signJwt(payload, this.secret, { expiresIn: ttlSeconds }),
         expiresAt,
       });
+      // A font family's other files: one grant each, bound like the entry's own but to the file's
+      // key and checksum, so a worker reads exactly the files the manifest lists.
+      for (const file of entry.files ?? []) {
+        const key = studioFontFileInputId(entry.key, file.file);
+        grants.push({
+          key,
+          kind: entry.kind,
+          id: entry.id,
+          path: file.path,
+          token: this.cryptoRepository.signJwt({ ...payload, key, checksum: file.checksum }, this.secret, {
+            expiresIn: ttlSeconds,
+          }),
+          expiresAt,
+        });
+      }
     }
     return grants;
   }
