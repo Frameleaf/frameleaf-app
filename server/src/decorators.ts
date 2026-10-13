@@ -5,7 +5,6 @@ import { chunk, flatten } from 'lodash-es';
 import { ApiCustomExtension, ApiTag, ImmichWorker, JobName, MetadataKey, QueueName } from 'src/enum.js';
 import { EmitEvent } from 'src/repositories/event.repository.js';
 import { immich_uuid_v7, updated_at } from 'src/schema/functions.js';
-import { setUnion } from 'src/utils/set.js';
 
 const GeneratedUuidV7Column = (options: Omit<ColumnOptions, 'type' | 'default' | 'nullable'> = {}) =>
   Column({ ...options, type: 'uuid', nullable: false, default: () => `${immich_uuid_v7.name}()` });
@@ -104,7 +103,19 @@ export function ChunkedArray(options?: { paramIndex?: number; chunkSize?: number
 }
 
 export function ChunkedSet(options?: { paramIndex?: number; chunkSize?: number }): MethodDecorator {
-  return Chunked({ ...options, mergeFn: (args: Set<any>[]) => setUnion(...args) });
+  return Chunked({
+    ...options,
+    mergeFn: (sets: Set<any>[]) => {
+      // Repeated native unions copy the growing result for every chunk; merge once instead.
+      const result = new Set(sets[0]);
+      for (let index = 1; index < sets.length; index++) {
+        for (const value of sets[index]) {
+          result.add(value);
+        }
+      }
+      return result;
+    },
+  });
 }
 
 const UUID = '00000000-0000-4000-a000-000000000000';
