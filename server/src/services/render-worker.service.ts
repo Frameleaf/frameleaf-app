@@ -255,13 +255,22 @@ type ResolvedManifest =
 
 const artifactInputDigestOf = (operation: MediaOperation, manifest: StudioAuthorizedManifest): string => {
   const sources = manifest.entries
-    .map(({ key, kind, id, ownerId, sourceAccess, checksum }) => ({
+    .map(({ key, kind, id, ownerId, sourceAccess, checksum, files }) => ({
       key,
       kind,
       id,
       ownerId: ownerId ?? null,
       sourceAccess,
       checksum,
+      ...(files && {
+        files: files
+          .map(({ file, checksum: fileChecksum }) => ({
+            inputId: studioFontFileInputId(key, file),
+            checksum: fileChecksum,
+          }))
+          // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Font input identity must not depend on locale or catalogue order.
+          .sort((a, b) => (a.inputId < b.inputId ? -1 : a.inputId > b.inputId ? 1 : 0)),
+      }),
     }))
     // eslint-disable-next-line unicorn/prefer-simple-sort-comparator -- Canonical digest order must not depend on locale.
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
