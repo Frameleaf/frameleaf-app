@@ -8,7 +8,7 @@ import test from "node:test";
 import { deriveOpenApiComparisonBase } from "./prepare-openapi-comparison-base.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.31.0";
+const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.33.0";
 const legacyEmailPattern = String.raw`^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`;
 const equivalentEmailPattern = String.raw`^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$`;
 const base = () => ({

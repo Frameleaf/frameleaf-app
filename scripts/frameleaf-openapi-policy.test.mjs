@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.31.0";
+const oasdiffImage = process.env.OASDIFF_IMAGE ?? "tufin/oasdiff:v1.33.0";
 
 // Hosted-only: CI supplies its fixed mirror; local invocation keeps the existing oasdiff version.
 test("SDK operation renames and omissions fail while additive endpoints pass", () => {

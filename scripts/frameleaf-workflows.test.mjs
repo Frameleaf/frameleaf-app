@@ -1056,7 +1056,7 @@ test("OpenAPI compares immutable same-repository base commits, not the moving ta
   );
   assert.equal(
     w.jobs["check-openapi"].env.OASDIFF_IMAGE,
-    "mirror.gcr.io/tufin/oasdiff@sha256:cc59265b995bd19e1e87cf4302ab70b520f730c33ebdf52e3cfa154fe4a3b2fb",
+    "mirror.gcr.io/tufin/oasdiff@sha256:6263a96dd2ef0726c54e21fea9b8e1607eac4841add0079324b424c1f52b819c",
   );
   assert.equal(
     comparison.run.replace(/\\\n/g, " ").trim().replace(/\s+/g, " "),
