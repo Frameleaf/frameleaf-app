@@ -155,7 +155,7 @@ const claimInput = (
 });
 
 describe(evaluateClaimAdmission.name, () => {
-  it.each([Number.POSITIVE_INFINITY, Number.NaN, Number.MAX_SAFE_INTEGER + 1, 2147483648.5, -1])(
+  it.each([Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, 2_147_483_648.5, -1])(
     'refuses unsafe or non-integer memory %s',
     (gpuMemoryBytes) => {
       expect(evaluateClaimAdmission(claimInput({ session: { gpuMemoryBytes } }))).toEqual({
@@ -176,7 +176,7 @@ describe(evaluateClaimAdmission.name, () => {
     (resolution) => {
       expect(
         evaluateRenderOutput(
-          [{ gpuMemoryBytes: 2147483648, codecs: ['webcodecs-avc'], formats: ['mp4'], colorPrecision: null }],
+          [{ gpuMemoryBytes: 2_147_483_648, codecs: ['webcodecs-avc'], formats: ['mp4'], colorPrecision: null }],
           { format: 'mp4-h264', color: 'preserve', resolution } as never,
         ),
       ).toEqual({ supported: false, refusal: 'insufficient-memory' });
@@ -187,7 +187,7 @@ describe(evaluateClaimAdmission.name, () => {
     (resolution) => {
       expect(
         evaluateClaimAdmission(
-          claimInput({ session: { gpuMemoryBytes: 2147483648 }, operation: { settings: { resolution } } }),
+          claimInput({ session: { gpuMemoryBytes: 2_147_483_648 }, operation: { settings: { resolution } } }),
         ),
       ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
     },
@@ -202,14 +202,14 @@ describe(evaluateClaimAdmission.name, () => {
   it('memory hints can tighten but never lower the known output requirement', () => {
     expect(
       evaluateClaimAdmission(
-        claimInput({ session: { gpuMemoryBytes: 1073741824 }, operation: { snapshot: { gpuMemoryHintBytes: 1 } } }),
+        claimInput({ session: { gpuMemoryBytes: 1_073_741_824 }, operation: { snapshot: { gpuMemoryHintBytes: 1 } } }),
       ),
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });
     expect(
       evaluateClaimAdmission(
         claimInput({
-          session: { gpuMemoryBytes: 2147483648 },
-          operation: { snapshot: { gpuMemoryHintBytes: 2147483649 } },
+          session: { gpuMemoryBytes: 2_147_483_648 },
+          operation: { snapshot: { gpuMemoryHintBytes: 2_147_483_649 } },
         }),
       ),
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient });

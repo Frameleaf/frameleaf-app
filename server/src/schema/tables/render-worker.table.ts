@@ -9,8 +9,8 @@ import {
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
-import type { RenderColorPrecision } from 'src/utils/render-admission.js';
 import type { GpuWorkingBudgetApproval } from 'src/utils/gpu-working-budget-policy.js';
+import type { RenderColorPrecision } from 'src/utils/render-admission.js';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
 import { UserTable } from 'src/schema/tables/user.table.js';

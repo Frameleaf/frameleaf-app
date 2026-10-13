@@ -1,17 +1,17 @@
 import z from 'zod';
 import { MediaOperationKind, RenderWorkerStatus } from 'src/enum.js';
-import { RenderColorPrecision, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
   GpuWorkingBudgetContext,
   GpuWorkingBudgetDecision,
   evaluateGpuWorkingBudget,
 } from 'src/utils/gpu-working-budget.js';
+import { RenderColorPrecision, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 
 const DECIMAL = /^(0|[1-9][0-9]{0,18})$/;
 export const GpuMemoryBytesSchema = z
   .string()
   .regex(DECIMAL)
-  .refine((value) => DECIMAL.test(value) && BigInt(value) <= 9223372036854775807n);
+  .refine((value) => DECIMAL.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const uuid = z.string().regex(/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
 const identity = z

@@ -1,4 +1,3 @@
-import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
@@ -27,6 +26,7 @@ import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cl
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1202,13 +1202,29 @@ describe(MlDestinationService.name, () => {
 
       it.each(['legacy', 'policy', 'expired', 'caps', 'budget'])('does not advertise %s evidence', async (mode) => {
         const value = liveSession();
-        if (mode === 'legacy') value.session.gpuWorkingBudgetEvidence = null;
-        if (mode === 'policy') value.worker.gpuWorkingBudgetApproval = null;
-        if (mode === 'expired')
-          value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
-        if (mode === 'budget') value.session.gpuMemoryBytes = null;
-        if (mode === 'caps')
-          mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+        switch (mode) {
+          case 'legacy': {
+            value.session.gpuWorkingBudgetEvidence = null;
+            break;
+          }
+          case 'policy': {
+            value.worker.gpuWorkingBudgetApproval = null;
+            break;
+          }
+          case 'expired': {
+            value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+            break;
+          }
+          case 'budget': {
+            value.session.gpuMemoryBytes = null;
+            break;
+          }
+          case 'caps': {
+            mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+            // No default
+            break;
+          }
+        }
         mocks.renderWorker.listLiveSessions.mockResolvedValue([value]);
         const result = await sut.getCapabilities();
         expect(result.studio).toMatchObject({ gpuWorker: false, renderWorker: false, render: [] });
