@@ -194,11 +194,32 @@ describe('AssetService', () => {
       expect(assetActions.Edit.$if?.()).toStrictEqual(false);
     });
 
-    it('allows editing the still of a Live Photo', () => {
+    it.each(['jpg', 'heic'])('allows editing the %s still of a Live Photo', (extension) => {
       setOwnerUser();
-      const asset = assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: 'motion', ownerId });
+      const asset = assetFactory.build({
+        type: AssetTypeEnum.Image,
+        livePhotoVideoId: 'motion',
+        ownerId,
+        originalPath: `/upload/photo.${extension}`,
+        originalFileName: `photo.${extension}`,
+        originalMimeType: extension === 'jpg' ? 'image/jpeg' : 'image/heic',
+      });
       expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(true);
     });
+
+    it.each(['gif', 'svg', 'insp'])(
+      'does not allow editing an unsupported %s still with a motion pair',
+      (extension) => {
+        setOwnerUser();
+        const asset = assetFactory.build({
+          type: AssetTypeEnum.Image,
+          livePhotoVideoId: 'motion',
+          ownerId,
+          originalPath: `/upload/photo.${extension}`,
+        });
+        expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(false);
+      },
+    );
 
     it('should not allow editing live-photo companion videos', () => {
       setOwnerUser();
