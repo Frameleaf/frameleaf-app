@@ -17,6 +17,7 @@ uploads
 coverage
 
 packages/**/build
+packages/justified-layout-wasm/target/
 
 vite.config.js.timestamp-*
 .pnpm-store
@@ -24,6 +25,7 @@ vite.config.js.timestamp-*
 .devcontainer/.env*
 *.tsbuildinfo
 *.tsbuildInfo
+.svelte-check/
 
 # Private agent tooling and work products: never force-add these paths.
 .DS_Store
