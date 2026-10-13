@@ -22,6 +22,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   Permission,
+  RenderWorkerRefusalReason,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
@@ -241,6 +242,26 @@ const isWithheld = (operation: Pick<MediaOperation, 'assetId' | 'resultAssetId'>
   (!!operation.assetId && hidden.has(operation.assetId)) ||
   (!!operation.resultAssetId && hidden.has(operation.resultAssetId));
 
+const REFUSAL_REASONS: ReadonlySet<string> = new Set(Object.values(RenderWorkerRefusalReason));
+const NO_ADMISSION_REFUSAL = { lastAdmissionRefusalReason: null, lastAdmissionRefusedAt: null };
+
+/**
+ * Why a queued job was last passed over (FL-95), for its owner. The column is free text, so only a
+ * known refusal code leaves the server: a code names a limit, never a worker, an account or a path.
+ */
+const admissionRefusalOf = (
+  operation: Pick<MediaOperation, 'lastAdmissionRefusalReason' | 'lastAdmissionRefusedAt'>,
+): Pick<MediaOperationDto, 'lastAdmissionRefusalReason' | 'lastAdmissionRefusedAt'> => {
+  const reason = operation.lastAdmissionRefusalReason;
+  if (!reason || !REFUSAL_REASONS.has(reason)) {
+    return NO_ADMISSION_REFUSAL;
+  }
+  return {
+    lastAdmissionRefusalReason: reason as RenderWorkerRefusalReason,
+    lastAdmissionRefusedAt: asIso(operation.lastAdmissionRefusedAt),
+  };
+};
+
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
   const privateWeekly = isPrivateICloudOperation(operation);
@@ -271,6 +292,7 @@ export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<stri
     maxAttempts: operation.maxAttempts,
     autoRetries: operation.autoRetries ?? 0,
     retryAt: asIso(operation.retryAt),
+    ...(privateWeekly ? NO_ADMISSION_REFUSAL : admissionRefusalOf(operation)),
     error: privateWeekly ? null : operation.error,
     errorCode: privateWeekly ? null : operation.errorCode,
     cancelRequestedAt: asIso(operation.cancelRequestedAt),
