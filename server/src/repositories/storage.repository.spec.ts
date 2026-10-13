@@ -1,8 +1,7 @@
-import mockfs from 'mock-fs';
 import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -140,15 +139,15 @@ const tests: Test[] = [
       pathsToCrawl: ['/photos/'],
     },
     files: {
-      '/photos/image.jpg': true,
-      '/photos/image.Jpg': true,
-      '/photos/image.jpG': true,
-      '/photos/image.JPG': true,
-      '/photos/image.jpEg': true,
-      '/photos/image.TIFF': true,
-      '/photos/image.tif': true,
-      '/photos/image.dng': true,
-      '/photos/image.NEF': true,
+      '/photos/image1.jpg': true,
+      '/photos/image2.Jpg': true,
+      '/photos/image3.jpG': true,
+      '/photos/image4.JPG': true,
+      '/photos/image5.jpEg': true,
+      '/photos/image6.TIFF': true,
+      '/photos/image7.tif': true,
+      '/photos/image8.dng': true,
+      '/photos/image9.NEF': true,
     },
   },
   {
@@ -185,26 +184,41 @@ const tests: Test[] = [
 
 describe(StorageRepository.name, () => {
   let sut: StorageRepository;
+  let directory: string;
+  const fixturePath = (path: string) =>
+    path.startsWith(`${cwd}/`) ? join(directory, 'cwd', path.slice(cwd.length)) : join(directory, path);
+  const writeFiles = async (files: Record<string, string>) => {
+    for (const [file, content] of Object.entries(files)) {
+      const path = fixturePath(file);
+      await fs.mkdir(dirname(path), { recursive: true });
+      await fs.writeFile(path, content);
+    }
+  };
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    directory = await fs.mkdtemp(join(tmpdir(), 'frameleaf-storage-'));
     // eslint-disable-next-line no-sparse-arrays
     sut = new StorageRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
   });
 
-  afterEach(() => {
-    // eslint-disable-next-line import-x/no-named-as-default-member
-    mockfs.restore();
+  afterEach(async () => {
+    await fs.rm(directory, { recursive: true, force: true });
   });
 
   describe('crawl', () => {
     for (const { test, options, files } of tests) {
       it(test, async () => {
-        mockfs(Object.fromEntries(Object.keys(files).map((file) => [file, ''])));
+        await writeFiles(Object.fromEntries(Object.keys(files).map((file) => [file, ''])));
 
-        const actual = await sut.crawl(options);
+        const actual = await sut.crawl({
+          ...options,
+          pathsToCrawl: options.pathsToCrawl.map((path) =>
+            isAbsolute(path) ? `${directory}${path}` : relative(cwd, join(directory, 'cwd', path)),
+          ),
+        });
         const expected = Object.entries(files)
           .filter((entry) => entry[1])
-          .map(([file]) => file);
+          .map(([file]) => fixturePath(file));
 
         expect(actual.toSorted()).toEqual(expected.toSorted());
       });
@@ -212,61 +226,63 @@ describe(StorageRepository.name, () => {
   });
 
   it('adds up the bytes of every file under a folder without following symlinks (FL-79)', async () => {
-    mockfs({
+    await writeFiles({
       '/data/thumbs/a/1.webp': 'x'.repeat(100),
       '/data/thumbs/a/b/2.jpeg': 'x'.repeat(50),
       '/data/thumbs/3.webp': 'x'.repeat(7),
       '/elsewhere/big.bin': 'x'.repeat(10_000),
-      // eslint-disable-next-line import-x/no-named-as-default-member
-      '/data/thumbs/link': mockfs.symlink({ path: '/elsewhere' }),
     });
-    await expect(sut.getFolderBytes('/data/thumbs')).resolves.toBe(157);
-    await expect(sut.getFolderBytes('/data/missing')).resolves.toBe(0);
+    await fs.symlink(fixturePath('/elsewhere'), fixturePath('/data/thumbs/link'), 'junction');
+    await expect(sut.getFolderBytes(fixturePath('/data/thumbs'))).resolves.toBe(157);
+    await expect(sut.getFolderBytes(fixturePath('/data/missing'))).resolves.toBe(0);
   });
 
   it('reads a large folder in bounded batches with the same total', async () => {
-    mockfs(Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`/data/encoded-video/${index}.mp4`, 'xx'])));
-    await expect(sut.getFolderBytes('/data/encoded-video', 16)).resolves.toBe(80);
-    await expect(sut.getFolderBytes('/data/encoded-video', 1)).resolves.toBe(80);
+    await writeFiles(
+      Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`/data/encoded-video/${index}.mp4`, 'xx'])),
+    );
+    await expect(sut.getFolderBytes(fixturePath('/data/encoded-video'), 16)).resolves.toBe(80);
+    await expect(sut.getFolderBytes(fixturePath('/data/encoded-video'), 1)).resolves.toBe(80);
   });
 
   it('lists every file below one exact folder, hidden files and links included, without following links (FL-44)', async () => {
-    mockfs({
+    await writeFiles({
       '/data/library/admin/2024/a.jpg': '',
       '/data/library/admin/.hidden.xmp': '',
-      '/data/library/Admin/other-account.jpg': '',
+      '/data/library/Admin-other/other-account.jpg': '',
       '/data/library/admin-2/other-account.jpg': '',
       '/elsewhere/outside.jpg': '',
-      // eslint-disable-next-line import-x/no-named-as-default-member
-      '/data/library/admin/link': mockfs.symlink({ path: '/elsewhere' }),
     });
-    const found = await Array.fromAsync(sut.walkFiles('/data/library/admin'));
-    expect(found.toSorted()).toEqual([
-      '/data/library/admin/.hidden.xmp',
-      '/data/library/admin/2024/a.jpg',
-      '/data/library/admin/link',
-    ]);
+    await fs.symlink(fixturePath('/elsewhere'), fixturePath('/data/library/admin/link'), 'junction');
+    const found = await Array.fromAsync(sut.walkFiles(fixturePath('/data/library/admin')));
+    expect(found.toSorted()).toEqual(
+      ['/data/library/admin/.hidden.xmp', '/data/library/admin/2024/a.jpg', '/data/library/admin/link'].map((file) =>
+        fixturePath(file),
+      ),
+    );
 
-    await expect(Array.fromAsync(sut.walkFiles('/data/library/missing'))).resolves.toEqual([]);
+    await expect(Array.fromAsync(sut.walkFiles(fixturePath('/data/library/missing')))).resolves.toEqual([]);
   });
 
   it('reads the device of a path, or null when it cannot be read', async () => {
-    mockfs({ '/data/thumbs/a.webp': 'x' });
-    await expect(sut.getDevice('/data/thumbs')).resolves.toEqual(expect.any(Number));
-    await expect(sut.getDevice('/data/missing')).resolves.toBeNull();
+    await writeFiles({ '/data/thumbs/a.webp': 'x' });
+    await expect(sut.getDevice(fixturePath('/data/thumbs'))).resolves.toEqual(expect.any(Number));
+    await expect(sut.getDevice(fixturePath('/data/missing'))).resolves.toBeNull();
   });
 
   it('resumes bounded traversal across directories and roots without repeating files or following symlinks', async () => {
-    mockfs({
+    await writeFiles({
       '/first/a/1.jpg': '',
       '/first/a/2.xmp': '',
       '/first/b/3.jpg': '',
       '/first/.hidden/secret.jpg': '',
       '/last/4.jpg': '',
-      // eslint-disable-next-line import-x/no-named-as-default-member
-      '/first/link': mockfs.symlink({ path: '/last' }),
     });
-    let cursor: Array<{ path: string; after?: string }> = [{ path: '/last' }, { path: '/first' }];
+    await fs.symlink(fixturePath('/last'), fixturePath('/first/link'), 'junction');
+    let cursor: Array<{ path: string; after?: string }> = [
+      { path: fixturePath('/last') },
+      { path: fixturePath('/first') },
+    ];
     const found: string[] = [];
     let batches = 0;
     while (cursor.length > 0 && batches++ < 20) {
@@ -277,18 +293,20 @@ describe(StorageRepository.name, () => {
     }
     expect(cursor).toEqual([]);
     expect(batches).toBeGreaterThan(1);
-    expect(found).toEqual(['/first/a/1.jpg', '/first/a/2.xmp', '/first/b/3.jpg', '/last/4.jpg']);
+    expect(found).toEqual(
+      ['/first/a/1.jpg', '/first/a/2.xmp', '/first/b/3.jpg', '/last/4.jpg'].map((file) => fixturePath(file)),
+    );
   });
 
   it('resumes immediately after the last yielded file when a consumer stops mid-directory', async () => {
-    mockfs({ '/root/1.jpg': '', '/root/2.jpg': '', '/root/3.jpg': '' });
-    const cursor = [{ path: '/root' }];
+    await writeFiles({ '/root/1.jpg': '', '/root/2.jpg': '', '/root/3.jpg': '' });
+    const cursor = [{ path: fixturePath('/root') }];
     for await (const file of sut.walkWithCursor(cursor, 10)) {
-      expect(file).toBe('/root/1.jpg');
+      expect(file).toBe(fixturePath('/root/1.jpg'));
       break;
     }
     const remaining = await Array.fromAsync(sut.walkWithCursor(cursor, 10));
-    expect(remaining).toEqual(['/root/2.jpg', '/root/3.jpg']);
+    expect(remaining).toEqual(['/root/2.jpg', '/root/3.jpg'].map((file) => fixturePath(file)));
     expect(cursor).toEqual([]);
   });
 
