@@ -612,3 +612,16 @@ test('source recovery is explicit hosted-only fixed-path metadata with no enviro
   ]) assert.throws(() => sourceRecoveryContext({ ...environment, ...update }, checkout));
   assert.throws(() => sourceRecoveryContext(environment, { ...checkout, parents: ['not-a-sha'] }));
 });
+
+test('headless TypeScript loader is an explicit exact development dependency', async () => {
+  const lock = JSON.parse(await readFile(new URL('../engine-package-lock.json', import.meta.url), 'utf8'));
+  const version = lock.packages[''].devDependencies.tsx;
+  assert.match(version ?? '', /^\d+\.\d+\.\d+$/);
+  assert.equal(lock.packages['node_modules/tsx'].version, version);
+  assert.equal(lock.packages['node_modules/tsx'].dev, true);
+  const configuration = JSON.parse(await readFile(new URL('../engine-build.json', import.meta.url), 'utf8'));
+  const loader = configuration.patches.find((patch) => patch.path === 'patches/0140-explicit-headless-typescript-loader.patch');
+  assert.ok(loader);
+  const patch = await readFile(new URL(`../${loader.path}`, import.meta.url), 'utf8');
+  assert.ok(patch.includes(`+    "tsx": "${version}",`));
+});

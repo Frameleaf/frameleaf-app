@@ -3,7 +3,7 @@
   "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
   "node": "26.11.1",
   "npm": "12.2.0",
-  "lockfileSha256": "d90667444a361ee535cded85c25c4c4836500ad8495a98c8be3473fe7f5dc24b",
+  "lockfileSha256": "68562af46bc9b127c50012bc165cdf2380aeefc7200b0b30c5bbfd1a513c8ac1",
   "patches": [
     {
       "path": "patches/0001-isolated-package.patch",
@@ -674,7 +674,12 @@
       "path": "patches/0139-latest-studio-dependencies.patch",
       "sha256": "61a0d02f54b7510cda14860e5f59ab8124c80f28722ba2f0ce0895ce78c131dd",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62"
+    },
+    {
+      "path": "patches/0140-explicit-headless-typescript-loader.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f6e6e095601d7ffc6bcf74d7bd991d38ba0cf2f3fb7f8c80299ce4f094222167"
     }
   ],
-  "sourceSha256": "3a4c40cf778904175cb94fbaaf255a990f7cddd8fb7e853c7328fc536124374f"
+  "sourceSha256": "f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c"
 }
