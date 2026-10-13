@@ -83,7 +83,7 @@ The generator uses the pinned libUltraHDR 2.0.2 revision and the same
 `UHDR_WRITE_XMP=ON`, `UHDR_WRITE_ISO=ON`, `UHDR_ENABLE_GLES=OFF`,
 `UHDR_ENABLE_HEIF=OFF` build inputs as Linux. No upstream source patches are
 applied. Fixture generation used the addon at `08b683a38d` and libheif 1.23.6;
-Linux tests independently decode the committed outputs with pinned libheif 1.23.3.
+Linux tests independently decode the committed outputs with pinned libheif 1.23.6.
 The JPEG includes both Ultra HDR XMP and ISO metadata; its SDR baseline
 and reconstructed HDR are Display P3. The HEIC is ten-bit PQ, Display P3.
 
@@ -131,7 +131,7 @@ The build carries checksum-pinned decoder-only patches in
 `server/base-image/sources/libheif-hdr.patch` and `libultrahdr-hdr.patch`.
 The libheif port adapts Google's `cmake/patches/libheif_pr1503.patch` at
 LibUltraHDR commit `e5f5a022fe96fc4dc2ee35c19f733a50df807abe` to libheif
-`78c9746aea226b22885e8d35241353ce669c4ea5`, preserving its per-context limits and
+`f81f28ac014b1c28dee483ac45b72c6b05bc421a`, preserving its per-context limits and
 current C API. Adaptive HEIF encoding returns unsupported. The Ultra HDR patch
 validates ICC transfer/primaries, preserves alpha and aligned geometry, imposes
 per-decoder resource limits, and reuses scalar wide-gamut RGB-to-YCbCr conversion
@@ -143,7 +143,6 @@ actual output gamut against D65 RGB/XYZ references. The 48MP resource test uses 
 throughout: comparing raw RGB numbers across different gamuts is invalid. Neither
 synthetic numerical agreement nor successful codec builds establishes physical
 HDR-display or real-camera acceptance; `qualified` remains false.
-
 
 ## ISO 10-bit reconstruction (experimental)
 

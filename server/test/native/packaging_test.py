@@ -17,7 +17,7 @@ class PackagingContract(unittest.TestCase):
             self.assertIn('verify-darktable.mjs', text)
     def test_native_pins_cover_required_submodules_and_lens_database(self):
         pins = json.loads((ROOT/'server/base-image/sources/darktable.json').read_text())
-        self.assertEqual(pins['revision'], '03179f8e080aa9cedebfe14b098b7ba88940a292')
+        self.assertEqual(pins['revision'], '20891f6c6fa7be995e5bf9dff9d1ee5062051773')
         self.assertEqual({x['name'] for x in pins['inputs']}, {'darktable', 'rawspeed', 'whereami', 'opencl', 'lensfun'})
         self.assertTrue(all(len(x['sha256']) == 64 and len(x['revision']) == 40 for x in pins['inputs']))
     def test_cpu_dependencies_and_wheels_have_a_frozen_selection(self):

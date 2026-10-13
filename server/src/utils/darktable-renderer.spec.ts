@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
+  DARKTABLE_RENDERER_VERSION,
   DARKTABLE_TIMEOUT_MS,
   prepareNativeHistory,
   renderDarktable,
@@ -78,7 +79,7 @@ describe('pinned darktable adapter', () => {
     mocks.stats.mockResolvedValue({});
     mocks.exec.mockImplementation(async (_command: string, args: string[]) => {
       if (args[0] === '--version') {
-        return { stdout: 'darktable 5.6.1\n', stderr: '' };
+        return { stdout: 'darktable 5.6.2\n', stderr: '' };
       }
       nativeDirectory = dirname(args[0]);
       if (args[1].endsWith('bootstrap.png')) {
@@ -93,8 +94,14 @@ describe('pinned darktable adapter', () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  it.each(['5.6.0', '5.6.10', '5.6.1+4', '5.8.0'])('rejects engine drift: %s', (version) => {
-    expect(() => verifyDarktableVersion(`darktable ${version}\n`)).toThrow('requires darktable 5.6.1');
+  it.each(['5.6.0', '5.6.1', '5.6.20', '5.6.2+4', '5.8.0'])('rejects engine drift: %s', (version) => {
+    expect(() => verifyDarktableVersion(`darktable ${version}\n`)).toThrow('requires darktable 5.6.2');
+  });
+
+  it('records the new native binary identity while retaining the stored recipe ABI', () => {
+    expect(DARKTABLE_RENDERER_VERSION).toContain(';darktable/5.6.2;20891f6c6fa7be995e5bf9dff9d1ee5062051773;');
+    expect(DARKTABLE_RENDERER_VERSION).not.toContain(';darktable/5.6.1;');
+    expect(recipe.renderer).toBe('darktable/5.6.1');
   });
 
   it('maps EV to the verified native v7 layout without changing other native defaults', () => {
@@ -183,7 +190,7 @@ describe('pinned darktable adapter', () => {
 
   it('does not invoke native rendering after a version mismatch', async () => {
     mocks.exec.mockResolvedValue({ stdout: 'darktable 5.4.1\n' });
-    await expect(renderDarktable(input, recipe)).rejects.toThrow('requires darktable 5.6.1');
+    await expect(renderDarktable(input, recipe)).rejects.toThrow('requires darktable 5.6.2');
     expect(mocks.exec).toHaveBeenCalledOnce();
   });
 
@@ -246,7 +253,7 @@ describe('pinned darktable adapter', () => {
     const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
     mocks.exec.mockImplementation(async (_command, args, options) => {
       if (args[0] === '--version') {
-        return { stdout: 'darktable 5.6.1\n' };
+        return { stdout: 'darktable 5.6.2\n' };
       }
       nativeDirectory = dirname(args[0]);
       await writeFile(args[1], 'partial output');
@@ -280,7 +287,7 @@ describe('pinned darktable adapter', () => {
       await expect(renderDarktable(input, recipe, cancelled.signal)).rejects.toThrow('already cancelled');
       expect(mocks.exec).toHaveBeenCalledOnce();
     } finally {
-      release.resolve({ stdout: 'darktable 5.6.1\n' });
+      release.resolve({ stdout: 'darktable 5.6.2\n' });
       await first;
     }
     await expect(renderDarktable(input, recipe)).resolves.toBeInstanceOf(Buffer);

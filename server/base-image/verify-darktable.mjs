@@ -6,7 +6,7 @@ import { existsSync, readFileSync, readdirSync, statSync, realpathSync, writeFil
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const revision = '03179f8e080aa9cedebfe14b098b7ba88940a292';
+const revision = '20891f6c6fa7be995e5bf9dff9d1ee5062051773';
 const hash = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 const manifestPath = (prefix) => join(prefix, 'share/frameleaf/native-darktable.json');
 function files(path) {
@@ -41,7 +41,7 @@ export function verifyNativeFiles(prefix) {
   const manifest = JSON.parse(readFileSync(manifestPath(prefix), 'utf8'));
   assert.equal(manifest.version, 1);
   assert.equal(manifest.source.revision, revision);
-  assert.equal(manifest.source.version, '5.6.1');
+  assert.equal(manifest.source.version, '5.6.2');
   assert.equal(Object.keys(manifest.source.patches).length, 2);
   for (const name of ['patch-darktable-lens.py', 'patch-darktable-mask-geometry.py'])
     assert.match(manifest.source.patches[name], /^[a-f0-9]{64}$/);
@@ -77,7 +77,7 @@ export function verifyNativeRuntime(prefix, recordPath, packageListPath) {
   const manifest = verifyNativeFiles(prefix);
   assert.match(
     execFileSync(join(prefix, 'bin/darktable-cli'), ['--version'], { encoding: 'utf8', timeout: 15000 }),
-    /darktable(?:-cli)?\s+5\.6\.1(?:\s|$)/i,
+    /darktable(?:-cli)?\s+5\.6\.2(?:\s|$)/i,
   );
   const dependencies = {};
   for (const name of Object.keys(manifest.files)) {
