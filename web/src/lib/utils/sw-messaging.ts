@@ -1,11 +1,9 @@
-import { ServiceWorkerMessenger } from './sw-messenger';
-
 const hasServiceWorker = globalThis.isSecureContext && 'serviceWorker' in navigator;
-const messenger = hasServiceWorker ? new ServiceWorkerMessenger(navigator.serviceWorker) : undefined;
+const serviceWorker = hasServiceWorker ? navigator.serviceWorker : undefined;
 
 export function cancelImageUrl(url: string | undefined | null) {
-  if (!url || !messenger) {
+  if (!url || !hasServiceWorker) {
     return;
   }
-  messenger.send('cancel', { url });
+  serviceWorker!.controller?.postMessage({ type: 'cancel', url });
 }
