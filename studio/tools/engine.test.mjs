@@ -164,10 +164,15 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(approval));
     await writeResourcePolicy(root, engine);
     actual = await policyOf();
-    // Every row, including the bundled runtimes and the commit-pinned TTS rows the owner approved
-    // on 2026-09-29.
+    // The upgraded ONNX payload invalidates its old row approval. Unchanged rows retain theirs.
     for (const [id, entry] of Object.entries(actual)) {
-      assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
+      if (id === 'runtime:onnx-cdn') {
+        const row = manifest.resources.find((resource) => resource.id === id);
+        assert.notEqual(approvalRowDigest(row), approval.resources.find((resource) => resource.id === id).sha256);
+        assert.equal(entry.localRuntime, 'blocked');
+        assert.equal(entry.approvalSha256, null);
+        assert.deepEqual(entry.files, {});
+      } else assert.ok(entry.localRuntime === 'allowed' && /^[a-f0-9]{64}$/.test(entry.approvalSha256), id);
     }
     // Supertonic and every voice are admitted only at their pinned commits.
     const pinned = manifest.resources.filter(({ id }) => /^voice:(kokoro|supertonic)-|^model:supertonic-3$/.test(id));
@@ -199,9 +204,9 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
       'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/af_heart.bin',
     ]) assert.equal(runtime.canUseResource(id), true, id);
     assert.equal(runtime.approvedRevision('model:supertonic-3'), '4402acca094e2ff2b3dff446e0bf915f3fccc462');
-    // Whisper, Parakeet, RIFE and Supertonic run on the re-approved bundled runtimes; the old CDN
-    // locators are nobody's approval any more.
-    for (const id of ['runtime:onnx-cdn', 'runtime:whisper-transformers']) assert.equal(runtime.canUseResource(id), true, id);
+    // Changed ONNX bytes stay blocked pending fresh owner approval; calibrated Whisper JS is unchanged.
+    assert.equal(runtime.canUseResource('runtime:onnx-cdn'), false);
+    assert.equal(runtime.canUseResource('runtime:whisper-transformers'), true);
     assert.equal(runtime.canUseResource('https://esm.sh/@huggingface/transformers@3.8.1?bundle'), false);
     assert.equal(runtime.canUseResource('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260410-5e55544225/dist/ort-wasm-simd-threaded.jsep.wasm'), false);
     for (const id of [

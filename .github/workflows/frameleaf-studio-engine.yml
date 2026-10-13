@@ -100,7 +100,7 @@ jobs:
         with:
           node-version: 26.11.1
       - name: Pin the isolated engine package manager
-        run: npm install --global npm@11.8.0 --ignore-scripts --no-audit --no-fund
+        run: npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
       - name: Verify recovery safeguards
         run: node --test studio/tools/engine.test.mjs studio/tools/resource-download-privacy.test.mjs
       - name: Recover and verify immutable source, then prepare adapted workspace
@@ -142,7 +142,7 @@ jobs:
           STUDIO_WHISPER_TIMING: '1'
           STUDIO_MODEL_CACHE: ${{ runner.temp }}
           STUDIO_WHISPER_REPORT: ${{ runner.temp }}/whisper-timing-report.json
-        run: node --test studio/tools/lib/ephemeral-pipeline.test.mjs studio/tools/whisper-timing.test.mjs
+        run: node --test studio/tools/runtime-pairs.test.mjs studio/tools/lib/ephemeral-pipeline.test.mjs studio/tools/whisper-timing.test.mjs
       - name: Retain genuine Whisper diagnostic provenance
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -168,19 +168,19 @@ jobs:
         # The CfT CDN redirects to a Google bucket that denied this runner's location.
         # Keep the locked browser bytes and host GPU execution; use Microsoft's official image.
         run: |
-          test "$(node -p "require('./node_modules/playwright/package.json').version")" = '1.60.0'
+          test "$(node -p "require('./node_modules/playwright/package.json').version")" = '1.64.0'
           : "${PLAYWRIGHT_BROWSERS_PATH:?}"
           printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
-          container_id=$(docker create --platform linux/amd64 mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948)
+          container_id=$(docker create --platform linux/amd64 mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f)
           trap 'docker rm "$container_id"' EXIT
           mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
-          for browser in chromium-1223 chromium_headless_shell-1223 ffmpeg-1011; do
+          for browser in chromium-1248 chromium_headless_shell-1248 ffmpeg-1013; do
             docker cp "$container_id:/ms-playwright/$browser" "$PLAYWRIGHT_BROWSERS_PATH/"
             test -f "$PLAYWRIGHT_BROWSERS_PATH/$browser/INSTALLATION_COMPLETE"
           done
-          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium-1223/chrome-linux64/chrome"
-          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell"
-          test -x "$PLAYWRIGHT_BROWSERS_PATH/ffmpeg-1011/ffmpeg-linux"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium-1248/chrome-linux64/chrome"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell"
+          test -x "$PLAYWRIGHT_BROWSERS_PATH/ffmpeg-1013/ffmpeg-linux"
           npx --no-install playwright install-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
         run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs studio/tools/render-goldens.test.mjs studio/tools/ascii-reference.test.mjs studio/tools/pixelate-reference.test.mjs studio/tools/geometry-reference.test.mjs studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
