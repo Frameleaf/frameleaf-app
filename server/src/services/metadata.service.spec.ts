@@ -2770,7 +2770,15 @@ describe(MetadataService.name, () => {
         physicalOriginalFileId: 'physical-file',
       })
         .file({ type: AssetFileType.Sidecar, path: '/path/to/master/IMG_123.jpg.xmp' })
-        .exif({ rating: 4 })
+        .exif({
+          rating: 4,
+          description: 'at the lake',
+          dateTimeOriginal: new Date('2025-09-20T21:15:00.000Z'),
+          timeZone: 'America/Edmonton',
+          latitude: 51,
+          longitude: -114,
+          tags: null,
+        })
         .build();
       const sidecarPath = StorageCore.getNestedPath(StorageFolder.Upload, asset.ownerId, `${asset.id}.xmp`);
 
@@ -2780,7 +2788,16 @@ describe(MetadataService.name, () => {
 
       await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(sidecarPath, { Rating: 4 });
+      // it never reads the original's sidecar, so its own carries every field, not only the edited one
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(sidecarPath, {
+        Description: 'at the lake',
+        ImageDescription: 'at the lake',
+        DateTimeOriginal: '2025-09-20T15:15:00.000-06:00',
+        GPSLatitude: 51,
+        GPSLongitude: -114,
+        Rating: 4,
+        TagsList: null,
+      });
       expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
         {
           assetId: asset.id,
