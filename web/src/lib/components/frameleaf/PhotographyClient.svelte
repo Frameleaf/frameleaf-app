@@ -90,7 +90,8 @@
   const approvalRevision = $derived(
     openedOutput ? (openedOutput.approvalPreviewUrl ? openedOutput.revisionId : null) : opened?.approvalRevisionId,
   );
-  const chosenOutputs = $derived(readyOutputs.filter(({ output }) => downloadChoices.includes(output.id)));
+  const downloadChoiceIds = $derived(new Set(downloadChoices));
+  const chosenOutputs = $derived(readyOutputs.filter(({ output }) => downloadChoiceIds.has(output.id)));
   const archiveCount = $derived(readyOutputs.length > 0 ? chosenOutputs.length : downloads.length);
   const archiveParts = $derived(Math.ceil(archiveCount / 1000));
   const cover = $derived(
@@ -1167,7 +1168,7 @@
               {#each readyOutputs as item (item.output.id)}<label
                   ><input
                     type="checkbox"
-                    checked={downloadChoices.includes(item.output.id)}
+                    checked={downloadChoiceIds.has(item.output.id)}
                     onchange={(event) => {
                       downloadChoices = event.currentTarget.checked
                         ? [...downloadChoices, item.output.id]

@@ -232,6 +232,24 @@ it('requests only the exact entitled selected outputs in a ZIP', async () => {
   );
   expect(galleryFile).toHaveBeenCalledWith('shoot', 'scoped', '/zip/zip-id', true);
   expect(screen.queryByText('blocked-id')).toBeNull();
+
+  const print = sizes.find((element) => element.parentElement?.textContent?.includes('Full resolution'))!;
+  await fireEvent.click(web);
+  await fireEvent.click(print);
+  expect(screen.getByRole('button', { name: 'Download selected files' })).toBeDisabled();
+  expect(web).not.toBeChecked();
+  expect(print).not.toBeChecked();
+  await fireEvent.click(web);
+  vi.mocked(galleryRequest).mockResolvedValueOnce({ id: 'web-only' } as never);
+  await fireEvent.click(screen.getByRole('button', { name: 'Download selected files' }));
+  await waitFor(() =>
+    expect(galleryRequest).toHaveBeenLastCalledWith('shoot', 'scoped', '/zip', 'POST', {
+      outputs: [{ captureId: 'capture', outputId: 'web-id' }],
+    }),
+  );
+  expect(web).toBeChecked();
+  expect(print).not.toBeChecked();
+  expect(galleryFile).toHaveBeenLastCalledWith('shoot', 'scoped', '/zip/web-only', true);
 });
 
 it('replaces cached proofs only when the live published generation changes', async () => {
