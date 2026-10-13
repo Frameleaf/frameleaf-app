@@ -205,6 +205,116 @@ describe(StorageRepository.name, () => {
     await fs.rm(directory, { recursive: true, force: true });
   });
 
+  describe('removeEmptyDirs', () => {
+    it('removes empty descendants while retaining files, nonempty directories and the root', async () => {
+      await writeFiles({ '/cleanup/full/keep.jpg': 'original', '/cleanup/.hidden/keep.txt': 'hidden' });
+      await fs.mkdir(fixturePath('/cleanup/empty/nested'), { recursive: true });
+      await sut.removeEmptyDirs(fixturePath('/cleanup'));
+      expect((await fs.stat(fixturePath('/cleanup'))).isDirectory()).toBe(true);
+      await expect(fs.stat(fixturePath('/cleanup/empty'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.readFile(fixturePath('/cleanup/full/keep.jpg'), 'utf8')).resolves.toBe('original');
+      await expect(fs.readFile(fixturePath('/cleanup/.hidden/keep.txt'), 'utf8')).resolves.toBe('hidden');
+    });
+
+    it('removes an empty root only when requested', async () => {
+      await fs.mkdir(fixturePath('/cleanup/empty'), { recursive: true });
+      await sut.removeEmptyDirs(fixturePath('/cleanup'), true);
+      await expect(fs.stat(fixturePath('/cleanup'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('never traverses symlinks or removes regular files', async () => {
+      await writeFiles({ '/outside/keep.jpg': 'outside', '/cleanup/keep.jpg': 'inside' });
+      await fs.mkdir(fixturePath('/outside/empty'));
+      await fs.symlink(fixturePath('/outside'), fixturePath('/cleanup/link'), 'dir');
+      await sut.removeEmptyDirs(fixturePath('/cleanup'), true);
+      await sut.removeEmptyDirs(fixturePath('/cleanup/link'), true);
+      await sut.removeEmptyDirs(fixturePath('/cleanup/keep.jpg'), true);
+      expect((await fs.lstat(fixturePath('/cleanup/link'))).isSymbolicLink()).toBe(true);
+      expect((await fs.stat(fixturePath('/outside/empty'))).isDirectory()).toBe(true);
+      await expect(fs.readFile(fixturePath('/outside/keep.jpg'), 'utf8')).resolves.toBe('outside');
+      await expect(fs.readFile(fixturePath('/cleanup/keep.jpg'), 'utf8')).resolves.toBe('inside');
+    });
+
+    it('propagates missing roots and directory read failures', async () => {
+      await expect(sut.removeEmptyDirs(fixturePath('/missing'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await fs.mkdir(fixturePath('/cleanup'));
+      const denied = Object.assign(new Error('denied'), { code: 'EACCES' });
+      const readdir = vi.spyOn(fs, 'readdir').mockRejectedValueOnce(denied);
+      try {
+        await expect(sut.removeEmptyDirs(fixturePath('/cleanup'))).rejects.toBe(denied);
+      } finally {
+        readdir.mockRestore();
+      }
+    });
+
+    it('rechecks a directory replaced by a symlink before descending', async () => {
+      await fs.mkdir(fixturePath('/cleanup/child'), { recursive: true });
+      await fs.mkdir(fixturePath('/outside/empty'), { recursive: true });
+      const child = fixturePath('/cleanup/child');
+      const original = fs.lstat;
+      let replaced = false;
+      const lstat = vi.spyOn(fs, 'lstat').mockImplementation(async (path) => {
+        if (String(path) === child && !replaced) {
+          replaced = true;
+          await fs.rmdir(child);
+          await fs.symlink(fixturePath('/outside'), child, 'dir');
+        }
+        return original(path);
+      });
+      try {
+        await sut.removeEmptyDirs(fixturePath('/cleanup'), true);
+        expect((await original(child)).isSymbolicLink()).toBe(true);
+        expect((await fs.stat(fixturePath('/outside/empty'))).isDirectory()).toBe(true);
+      } finally {
+        lstat.mockRestore();
+      }
+    });
+
+    it.each(['symlink', 'directory'] as const)(
+      'does not traverse a %s replacement reached during listing',
+      async (kind) => {
+        const root = fixturePath('/cleanup');
+        await fs.mkdir(join(root, 'empty'), { recursive: true });
+        await fs.mkdir(fixturePath('/outside/empty'), { recursive: true });
+        const original = fs.readdir;
+        const readdir = vi.spyOn(fs, 'readdir').mockImplementationOnce(async (...args) => {
+          await fs.rename(root, fixturePath('/moved'));
+          if (kind === 'symlink') {
+            await fs.symlink(fixturePath('/outside'), root, 'dir');
+          } else {
+            await fs.mkdir(join(root, 'empty'), { recursive: true });
+          }
+          return original(...args);
+        });
+        try {
+          await sut.removeEmptyDirs(root, true);
+          expect((await fs.stat(fixturePath('/outside/empty'))).isDirectory()).toBe(true);
+          expect((await fs.stat(fixturePath('/moved/empty'))).isDirectory()).toBe(true);
+          expect((await fs.lstat(root)).isSymbolicLink()).toBe(kind === 'symlink');
+          if (kind === 'directory') {
+            expect((await fs.stat(join(root, 'empty'))).isDirectory()).toBe(true);
+          }
+        } finally {
+          readdir.mockRestore();
+        }
+      },
+    );
+
+    it('leaves a directory when an entry arrives before rmdir', async () => {
+      await fs.mkdir(fixturePath('/cleanup'));
+      const rmdir = vi.spyOn(fs, 'rmdir').mockImplementationOnce(async (path) => {
+        await fs.writeFile(join(String(path), 'new.jpg'), 'new');
+        throw Object.assign(new Error('not empty'), { code: 'ENOTEMPTY' });
+      });
+      try {
+        await expect(sut.removeEmptyDirs(fixturePath('/cleanup'), true)).resolves.toBeUndefined();
+        await expect(fs.readFile(fixturePath('/cleanup/new.jpg'), 'utf8')).resolves.toBe('new');
+      } finally {
+        rmdir.mockRestore();
+      }
+    });
+  });
+
   describe('crawl', () => {
     for (const { test, options, files } of tests) {
       it(test, async () => {

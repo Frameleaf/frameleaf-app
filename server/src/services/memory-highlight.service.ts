@@ -15,7 +15,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
-import { type ImmichReadStream, StorageRepository } from 'src/repositories/storage.repository.js';
+import { type ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository, StudioExportVersion } from 'src/repositories/studio-export.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
@@ -244,7 +244,7 @@ export class MemoryHighlightService {
   }
 
   /** The result, as a download, re-checked like any Studio export result. */
-  async download(auth: AuthDto, run: MemoryExport): Promise<ImmichReadStream> {
+  async download(auth: AuthDto, run: MemoryExport): Promise<ReadStreamResponse> {
     const version = await this.requireResult(auth, run);
     let path: string;
     let contentType = version.outputContentType ?? 'video/mp4';

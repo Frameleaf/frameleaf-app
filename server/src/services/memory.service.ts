@@ -40,7 +40,7 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
@@ -866,7 +866,7 @@ export class MemoryService extends BaseService {
    * file is reachable: the archive lives outside any served folder and its path is never
    * exposed. An expired run is treated as gone rather than served late.
    */
-  async downloadExport(auth: AuthDto, id: string): Promise<ImmichReadStream> {
+  async downloadExport(auth: AuthDto, id: string): Promise<ReadStreamResponse> {
     const run = await this.findExportOrFail(auth, id);
     if (run.format === MemoryExportFormat.Highlight) {
       return this.highlights.download(auth, run as MemoryExport);

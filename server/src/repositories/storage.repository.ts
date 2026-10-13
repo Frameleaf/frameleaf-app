@@ -29,14 +29,14 @@ export interface WatchEvents {
   onError(error: Error): void;
 }
 
-export interface ImmichReadStream {
+export interface ReadStreamResponse {
   stream: Readable;
   type?: string;
   disposition?: string | string[];
   length?: number;
 }
 
-export interface ImmichZipStream extends ImmichReadStream {
+export interface ZipDownloadStream extends ReadStreamResponse {
   addFile: (inputPath: string, filename: string) => void;
   finalize: () => Promise<void>;
 }
@@ -46,7 +46,7 @@ export interface ImmichZipStream extends ImmichReadStream {
  * so far has been written into the archive (so as fast as the client reads it), or once the archive has
  * been closed or has failed, so a producer never prepares more than the reader has consumed.
  */
-export interface ImmichPacedZipStream extends ImmichZipStream {
+export interface PacedZipDownloadStream extends ZipDownloadStream {
   addBuffer: (content: Buffer, filename: string) => void;
   whenIdle: () => Promise<void>;
   /** true once the archive was closed, destroyed or failed before being finalized */
@@ -111,7 +111,7 @@ export class StorageRepository {
     return fs.utimes(filepath, atime, mtime);
   }
 
-  createZipStream(): ImmichZipStream {
+  createZipStream(): ZipDownloadStream {
     const archive = new ZipArchive({ store: true });
 
     const addFile = (input: string, filename: string) => {
@@ -123,7 +123,7 @@ export class StorageRepository {
     return { stream: archive, addFile, finalize };
   }
 
-  createPacedZipStream(): ImmichPacedZipStream {
+  createPacedZipStream(): PacedZipDownloadStream {
     const archive = new ZipArchive({ store: true });
     let pending = 0;
     let closed = false;
@@ -185,7 +185,7 @@ export class StorageRepository {
     return createReadStream(filepath);
   }
 
-  async createReadStream(filepath: string, mimeType?: string | null): Promise<ImmichReadStream> {
+  async createReadStream(filepath: string, mimeType?: string | null): Promise<ReadStreamResponse> {
     const { size } = await fs.stat(filepath);
     await fs.access(filepath, constants.R_OK);
     return {
@@ -276,13 +276,28 @@ export class StorageRepository {
 
   async removeEmptyDirs(directory: string, self: boolean = false) {
     // lstat does not follow symlinks (in contrast to stat)
-    const stats = await fs.lstat(directory);
+    const stats = await fs.lstat(directory, { bigint: true });
     if (!stats.isDirectory()) {
       return;
     }
 
-    const files = await fs.readdir(directory);
-    await Promise.all(files.map((file) => this.removeEmptyDirs(path.join(directory, file), true)));
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    // Do not traverse a replacement reached through the path while its entries were read.
+    const current = await fs.lstat(directory, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    });
+    if (!current?.isDirectory() || current.dev !== stats.dev || current.ino !== stats.ino) {
+      return;
+    }
+    const children: Promise<void>[] = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        children.push(this.removeEmptyDirs(path.join(directory, entry.name), true));
+      }
+    }
+    await Promise.all(children);
 
     if (self) {
       const updated = await fs.readdir(directory);

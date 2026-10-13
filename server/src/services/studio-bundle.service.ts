@@ -28,7 +28,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { ImmichReadStream, StorageRepository } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioBundleUpload, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import {
   STUDIO_BUNDLE_DOCUMENT_RESERVATION,
@@ -387,7 +387,7 @@ export class StudioBundleService {
    * Stream a finished export. Looked up by owner, so this is the only way the file is reachable,
    * and an expired or swept file is gone rather than served late.
    */
-  async downloadExport(auth: AuthDto, operationId: string): Promise<ImmichReadStream> {
+  async downloadExport(auth: AuthDto, operationId: string): Promise<ReadStreamResponse> {
     const operation = await this.findOwnedBundle(auth, operationId);
     await this.requireCarriedItemsVisible(auth, operation);
     if (operation.kind !== MediaOperationKind.StudioBundleExport) {

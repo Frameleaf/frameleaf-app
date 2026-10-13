@@ -11,7 +11,7 @@ import {
 } from 'src/dtos/download.dto.js';
 import { Permission } from 'src/enum.js';
 import { LocationFreeLease } from 'src/repositories/metadata.repository.js';
-import { ImmichPacedZipStream, ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { PacedZipDownloadStream, ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -136,7 +136,7 @@ export class DownloadService extends BaseService {
     return { totalSize, archives };
   }
 
-  async downloadArchive(auth: AuthDto, dto: DownloadArchiveDto): Promise<ImmichReadStream> {
+  async downloadArchive(auth: AuthDto, dto: DownloadArchiveDto): Promise<ReadStreamResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
 
     const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
@@ -203,7 +203,7 @@ export class DownloadService extends BaseService {
    * and listed in a note at the end of the archive.
    */
   private async fillLocationFreeArchive(
-    zip: ImmichPacedZipStream,
+    zip: PacedZipDownloadStream,
     dto: DownloadArchiveDto,
     assetMap: Map<
       string,

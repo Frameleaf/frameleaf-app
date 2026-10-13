@@ -39,7 +39,7 @@ import {
   PreservationRestoreItem,
   PreservationSelection,
 } from 'src/repositories/preservation.repository.js';
-import { ImmichReadStream, StorageRepository } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse, StorageRepository } from 'src/repositories/storage.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
@@ -348,7 +348,7 @@ export class PreservationService {
    * package that is streamed is only as trustworthy as the checksums inside it, which a verification
    * of the downloaded copy checks.
    */
-  async downloadPackage(auth: AuthDto, id: string): Promise<ImmichReadStream> {
+  async downloadPackage(auth: AuthDto, id: string): Promise<ReadStreamResponse> {
     const found = await this.findDownloadable(auth, id);
     const zip = this.storage.createZipStream();
     const root = found.path;
@@ -385,7 +385,7 @@ export class PreservationService {
   }
 
   /** The manifest alone, for a person who wants to read what a package holds before downloading it. */
-  async downloadManifest(auth: AuthDto, id: string): Promise<ImmichReadStream> {
+  async downloadManifest(auth: AuthDto, id: string): Promise<ReadStreamResponse> {
     const found = await this.findDownloadable(auth, id);
     const stream = await this.storage.createReadStream(
       `${found.path}/${PRESERVATION_MANIFEST_ENTRY}`,

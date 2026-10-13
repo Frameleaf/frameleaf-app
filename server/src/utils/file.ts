@@ -5,7 +5,7 @@ import { basename, extname } from 'node:path';
 import { promisify } from 'node:util';
 import { CacheControl } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { onRouteError } from 'src/utils/logger.js';
 
 export function getFileNameWithoutExtension(path: string): string {
@@ -82,6 +82,6 @@ export const sendFile = async (
   }
 };
 
-export const asStreamableFile = ({ stream, type, disposition, length }: ImmichReadStream) => {
+export const asStreamableFile = ({ stream, type, disposition, length }: ReadStreamResponse) => {
   return new StreamableFile(stream, { type, disposition, length });
 };
