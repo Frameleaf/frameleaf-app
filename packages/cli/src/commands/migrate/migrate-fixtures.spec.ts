@@ -445,6 +445,7 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(source.writes()).toEqual([]);
   });
 
+  // Three real migrations can exceed the default timeout on Windows.
   it('interruption then repeat: resumes without re-uploading and ends with a verified pass', async () => {
     const controller = new Controller();
     destination.onUpload = (count) => {
@@ -471,7 +472,7 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(repeated!.ok).toBe(true);
     expect(destination.albums).toHaveLength(2); // no duplicate albums on repeat
     expect(source.writes()).toEqual([]);
-  });
+  }, 15_000);
 
   it('writes a report with owners, hierarchy, physical references and no secrets or local paths', async () => {
     source.failing.add('a3');
