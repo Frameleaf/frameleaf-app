@@ -44,15 +44,14 @@ export const getTimes = (isoDateTimeUtc: string, localUtcOffsetHours: number) =>
   const utcDateTime = fromISODateTimeUTC(isoDateTimeUtc);
   const fileCreatedAt = (utcDateTime as DateTime<true>).toObject();
 
-  // Apply the offset to get the local time
-  // Note: offset is in hours (may be fractional), positive for east of UTC, negative for west
-  const luxonLocalDateTime = utcDateTime.plus({ hours: localUtcOffsetHours });
-  // Return as plain object (keeping the local time but in UTC zone context)
-  const localDateTime = (luxonLocalDateTime.setZone('UTC', { keepLocalTime: true }) as DateTime<true>).toObject();
+  // UTC offsets are elapsed hours; avoid calendar-duration arithmetic for finite offsets.
+  const shiftedDateTime = Number.isFinite(localUtcOffsetHours)
+    ? DateTime.fromMillis(utcDateTime.toMillis() + localUtcOffsetHours * 3_600_000, { zone: 'UTC' })
+    : utcDateTime.plus({ hours: localUtcOffsetHours });
 
   return {
     fileCreatedAt,
-    localDateTime,
+    localDateTime: (shiftedDateTime as DateTime<true>).toObject(),
   };
 };
 

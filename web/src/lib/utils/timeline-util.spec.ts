@@ -1,7 +1,15 @@
-import { DateTime } from 'luxon';
+import { DateTime, Settings } from 'luxon';
+import { get } from 'svelte/store';
 import { locale } from '$lib/stores/preferences.store';
 import { parseUtcDate } from '$lib/utils/date-time';
-import { formatGroupTitle, toTimelineAsset, toISOYearMonthUTC } from '$lib/utils/timeline-util';
+import {
+  formatGroupTitle,
+  getTimes,
+  plainDateTimeCompare,
+  toTimelineAsset,
+  toISOYearMonthUTC,
+  type TimelineDateTime,
+} from '$lib/utils/timeline-util';
 import { assetFactory } from '@test-data/factories/asset-factory';
 
 describe('formatGroupTitle', () => {
@@ -107,5 +115,88 @@ describe('EXIF timeline rating projection', () => {
     [{ rating: null, isRejected: false }, null],
   ])('preserves tile/culling rating for %j', (exifInfo, expected) => {
     expect(toTimelineAsset(assetFactory.build({ exifInfo })).rating).toBe(expected);
+  });
+});
+
+describe('plainDateTimeCompare', () => {
+  const date: TimelineDateTime = { year: 2024, month: 2, day: 29, hour: 23, minute: 59, second: 58, millisecond: 123 };
+
+  it.each(['year', 'month', 'day', 'hour', 'minute', 'second', 'millisecond'] as const)(
+    'compares the %s field in both directions',
+    (field) => {
+      const later = { ...date, [field]: date[field] + 1 };
+      expect(plainDateTimeCompare(true, date, later)).toBe(-1);
+      expect(plainDateTimeCompare(false, date, later)).toBe(1);
+    },
+  );
+
+  it('orders calendar dates before the time of day', () => {
+    const later = { ...date, year: 2025, month: 1, day: 1, hour: 0, minute: 0, second: 0, millisecond: 0 };
+    expect(plainDateTimeCompare(true, date, later)).toBe(-1);
+    expect(plainDateTimeCompare(false, date, later)).toBe(1);
+  });
+
+  it('keeps equal dates tied and does not mutate input', () => {
+    const frozen = Object.freeze({ ...date });
+    expect(plainDateTimeCompare(true, frozen, frozen)).toBe(0);
+    expect(plainDateTimeCompare(false, frozen, frozen)).toBe(0);
+  });
+
+  it('sorts a same-day collection by time in either direction', () => {
+    const dates = [2, 0, 1].map((second) => ({ ...date, second }));
+    expect([...dates].sort(plainDateTimeCompare.bind(undefined, true)).map((date) => date.second)).toEqual([0, 1, 2]);
+    expect([...dates].sort(plainDateTimeCompare.bind(undefined, false)).map((date) => date.second)).toEqual([2, 1, 0]);
+  });
+});
+
+describe('getTimes', () => {
+  let previousLocale = get(locale);
+  beforeEach(() => {
+    previousLocale = get(locale);
+  });
+  afterEach(() => locale.set(previousLocale));
+
+  it.each([
+    [5.75, { year: 2024, month: 3, day: 1, hour: 4, minute: 45, second: 0, millisecond: 123 }],
+    [-3.5, { year: 2024, month: 2, day: 29, hour: 19, minute: 30, second: 0, millisecond: 123 }],
+    [1 / 3_600_000, { year: 2024, month: 2, day: 29, hour: 23, minute: 0, second: 0, millisecond: 124 }],
+    [0, { year: 2024, month: 2, day: 29, hour: 23, minute: 0, second: 0, millisecond: 123 }],
+  ])('applies an offset of %s hours across leap-day boundaries', (offset, expected) => {
+    locale.set('ar-SA');
+    expect(getTimes('2024-02-29T23:00:00.123Z', offset)).toEqual({
+      fileCreatedAt: { year: 2024, month: 2, day: 29, hour: 23, minute: 0, second: 0, millisecond: 123 },
+      localDateTime: expected,
+    });
+  });
+
+  it('normalizes ISO offsets to UTC before applying the local offset', () => {
+    expect(getTimes('2024-01-01T00:15:00.500+05:30', -3.5)).toEqual({
+      fileCreatedAt: { year: 2023, month: 12, day: 31, hour: 18, minute: 45, second: 0, millisecond: 500 },
+      localDateTime: { year: 2023, month: 12, day: 31, hour: 15, minute: 15, second: 0, millisecond: 500 },
+    });
+  });
+
+  it.each(['2024-01-01', '2024-001', '2024-W01-1', '2024-01-01T00:00:00'])(
+    'parses %s as UTC independently of the host zone',
+    (iso) => {
+      const previousZone = Settings.defaultZone;
+      try {
+        Settings.defaultZone = 'America/Edmonton';
+        expect(getTimes(iso, -3.5)).toEqual({
+          fileCreatedAt: { year: 2024, month: 1, day: 1, hour: 0, minute: 0, second: 0, millisecond: 0 },
+          localDateTime: { year: 2023, month: 12, day: 31, hour: 20, minute: 30, second: 0, millisecond: 0 },
+        });
+      } finally {
+        Settings.defaultZone = previousZone;
+      }
+    },
+  );
+
+  it('preserves invalid date and offset behavior', () => {
+    expect(getTimes('invalid', 5.5)).toEqual({ fileCreatedAt: {}, localDateTime: {} });
+    expect(getTimes('invalid', NaN)).toEqual({ fileCreatedAt: {}, localDateTime: {} });
+    expect(() => getTimes('2024-01-01T00:00:00Z', NaN)).toThrow();
+    expect(() => getTimes('2024-01-01T00:00:00Z', Infinity)).toThrow();
+    expect(() => getTimes('2024-01-01T00:00:00Z', -Infinity)).toThrow();
   });
 });
