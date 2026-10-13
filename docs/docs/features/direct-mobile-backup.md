@@ -26,7 +26,14 @@ Use one reliable ordered `frameleaf-upload-v1` data channel. Each text control
 frame is at most 1024 bytes:
 
 ```json
-{"version":1,"type":"append","requestId":"00000000-0000-4000-8000-000000000001","offset":0,"length":65536,"complete":false}
+{
+  "version": 1,
+  "type": "append",
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "offset": 0,
+  "length": 65536,
+  "complete": false
+}
 ```
 
 Send the declared bytes in binary messages of at most 65536 bytes. Only one append
