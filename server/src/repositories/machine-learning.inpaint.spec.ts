@@ -7,7 +7,7 @@ import {
   MachineLearningRepository,
 } from 'src/repositories/machine-learning.repository.js';
 
-const local = 'http://immich-machine-learning:3003';
+const local = 'http://frameleaf-machine-learning:3003';
 const repo = (url = local) => {
   const sut = new MachineLearningRepository(LoggingRepository.create());
   sut.setup({ ...defaults.machineLearning, urls: [url] });

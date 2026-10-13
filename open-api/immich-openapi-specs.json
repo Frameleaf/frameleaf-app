@@ -15903,7 +15903,7 @@
             }
           },
           {
-            "name": "x-immich-hls-pos",
+            "name": "x-frameleaf-hls-pos",
             "required": false,
             "in": "header",
             "schema": {
@@ -16014,7 +16014,7 @@
             }
           },
           {
-            "name": "x-immich-hls-msn",
+            "name": "x-frameleaf-hls-msn",
             "required": false,
             "in": "header",
             "schema": {
@@ -48265,7 +48265,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48502,7 +48512,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48751,7 +48771,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -49001,7 +49031,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -61315,7 +61355,7 @@
         "enum": [
           "marked",
           "detected",
-          "immich-locked-folder"
+          "frameleaf-locked-folder"
         ],
         "type": "string"
       },

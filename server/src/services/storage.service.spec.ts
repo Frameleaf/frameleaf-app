@@ -18,6 +18,52 @@ describe(StorageService.name, () => {
   });
 
   describe('onBootstrap', () => {
+    it('migrates a verified old marker before checking write access', async () => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ storage: { mediaLocation: '/data', importRoots: [], ignoreMountCheckErrors: false } }),
+      );
+      mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
+      mocks.asset.getFileSamples.mockResolvedValue([]);
+      mocks.storage.readFile.mockImplementation((filename) => {
+        if (filename.endsWith('/upload/.frameleaf')) {
+          return Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+        }
+        return Promise.resolve(Buffer.from('existing marker'));
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.storage.readFile).toHaveBeenCalledWith('/data/upload/.immich');
+      expect(mocks.storage.rename).toHaveBeenCalledWith('/data/upload/.immich', '/data/upload/.frameleaf');
+      expect(mocks.storage.overwriteFile).toHaveBeenCalledWith('/data/upload/.frameleaf', expect.any(Buffer));
+      expect(mocks.storage.createFile).not.toHaveBeenCalledWith('/data/upload/.frameleaf', expect.anything());
+    });
+
+    it('refuses to recreate a previously verified marker when neither name exists', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
+      mocks.storage.readFile.mockImplementation((filename) => {
+        if (filename.includes('/upload/'))
+          return Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+        return Promise.resolve(Buffer.from('marker'));
+      });
+
+      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(ImmichStartupError);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.createFile).not.toHaveBeenCalledWith('/data/upload/.frameleaf', expect.anything());
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('does not fall back to an old marker when the Frameleaf marker is unreadable', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
+      mocks.storage.readFile.mockRejectedValue(Object.assign(new Error('denied'), { code: 'EACCES' }));
+
+      await expect(sut.onBootstrap()).rejects.toBeInstanceOf(ImmichStartupError);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.readFile).not.toHaveBeenCalledWith(expect.stringContaining('/.immich'));
+    });
+
     it('should enable mount folder checking', async () => {
       mocks.systemMetadata.get.mockResolvedValue(null);
       mocks.asset.getFileSamples.mockResolvedValue([]);
@@ -53,31 +99,31 @@ describe(StorageService.name, () => {
       // exports (memory highlights, Studio bundles) live under the media location too
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/exports'));
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/exports/.immich'),
+        expect.stringContaining('/data/exports/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/encoded-video/.immich'),
+        expect.stringContaining('/data/encoded-video/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/library/.immich'),
+        expect.stringContaining('/data/library/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/profile/.immich'),
+        expect.stringContaining('/data/profile/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/thumbs/.immich'),
+        expect.stringContaining('/data/thumbs/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/upload/.immich'),
+        expect.stringContaining('/data/upload/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/backups/.immich'),
+        expect.stringContaining('/data/backups/.frameleaf'),
         expect.any(Buffer),
       );
     });
@@ -123,18 +169,18 @@ describe(StorageService.name, () => {
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/backups'));
       expect(mocks.storage.createFile).toHaveBeenCalledTimes(2);
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/library/.immich'),
+        expect.stringContaining('/data/library/.frameleaf'),
         expect.any(Buffer),
       );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
-        expect.stringContaining('/data/backups/.immich'),
+        expect.stringContaining('/data/backups/.frameleaf'),
         expect.any(Buffer),
       );
     });
 
-    it('should throw an error if .immich is missing', async () => {
+    it('should throw an error if .frameleaf is missing', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
-      mocks.storage.readFile.mockRejectedValue(new Error("ENOENT: no such file or directory, open '/app/.immich'"));
+      mocks.storage.readFile.mockRejectedValue(new Error("ENOENT: no such file or directory, open '/app/.frameleaf'"));
 
       await expect(sut.onBootstrap()).rejects.toThrow('Failed to read');
 
@@ -142,10 +188,10 @@ describe(StorageService.name, () => {
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
 
-    it('should throw an error if .immich is present but read-only', async () => {
+    it('should throw an error if .frameleaf is present but read-only', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
       mocks.storage.overwriteFile.mockRejectedValue(
-        new Error("ENOENT: no such file or directory, open '/app/.immich'"),
+        new Error("ENOENT: no such file or directory, open '/app/.frameleaf'"),
       );
 
       await expect(sut.onBootstrap()).rejects.toThrow('Failed to write');
@@ -182,7 +228,7 @@ describe(StorageService.name, () => {
       );
       mocks.asset.getFileSamples.mockResolvedValue([]);
       mocks.storage.overwriteFile.mockRejectedValue(
-        new Error("ENOENT: no such file or directory, open '/app/.immich'"),
+        new Error("ENOENT: no such file or directory, open '/app/.frameleaf'"),
       );
 
       await expect(sut.onBootstrap()).resolves.toBeUndefined();

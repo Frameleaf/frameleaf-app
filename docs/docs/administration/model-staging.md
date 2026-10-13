@@ -14,9 +14,9 @@ Examples below run from the installation directory and use the regular release C
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml config
-docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml stop immich-machine-learning
-docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml run --rm immich-model-staging --task image-description-tagging --type visual --model microsoft/Florence-2-base-ft --options '{"acceleration":"cuda"}'
-docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml up -d immich-machine-learning
+docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml stop frameleaf-machine-learning
+docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml run --rm frameleaf-model-staging --task image-description-tagging --type visual --model microsoft/Florence-2-base-ft --options '{"acceleration":"cuda"}'
+docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml up -d frameleaf-machine-learning
 ```
 
 Stage each configured task and model, including fallback models. Use the task's existing options, especially image-description acceleration. Description caches use the exact resolved repository identity and backend, with built-in artifacts in an immutable revision subdirectory. Existing legacy description directories remain preserved and need one-time restaging. Staging calls acquisition and verification only, without loading a model, custom repository Python or processing media. Existing built-in Florence allowlists, immutable revisions, hashes and attribution are preserved. If a chosen mirror does not serve the pinned files, acquisition fails; it never falls back to another source. For private/custom repositories, use an exact worker-side trust decision where required; inference API selection alone does not grant trust.

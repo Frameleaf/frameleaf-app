@@ -89,8 +89,8 @@ Once you have a new OAuth client application configured, Frameleaf can be config
 | `end_session_endpoint`                               | URL     | (empty)              | Http(s) alternative end session endpoint (logout URI)                                                                                                       |
 | Request timeout                                      | string  | 30,000 (30 seconds)  | Number of milliseconds to wait for http requests to complete before giving up                                                                               |
 | Storage Label Claim                                  | string  | preferred_username   | Claim mapping for the user's storage label**¹**                                                                                                             |
-| Role Claim                                           | string  | immich_role          | Claim mapping for the user's role. (should return "user" or "admin")**¹**                                                                                   |
-| Storage Quota Claim                                  | string  | immich_quota         | Claim mapping for the user's storage**¹**                                                                                                                   |
+| Role Claim                                           | string  | frameleaf_role          | Claim mapping for the user's role. (should return "user" or "admin")**¹**                                                                                   |
+| Storage Quota Claim                                  | string  | frameleaf_quota         | Claim mapping for the user's storage**¹**                                                                                                                   |
 | Default Storage Quota (GiB)                          | number  | 0                    | Default quota for user without storage quota claim (empty for unlimited quota)                                                                              |
 | Button Text                                          | string  | Login with OAuth     | Text for the OAuth button on the web                                                                                                                        |
 | Auto Register                                        | boolean | true                 | When true, will automatically register a user the first time they sign in                                                                                   |
@@ -162,7 +162,7 @@ authentication_backend:
     attributes:
       extra:
         frameleafquota: # The attribute name from LDAP
-          name: 'immich_quota'
+          name: 'frameleaf_quota'
           multi_valued: false
           value_type: 'integer'
 identity_providers:
@@ -172,12 +172,12 @@ identity_providers:
     claims_policies:
       frameleaf_policy:
         custom_claims:
-          immich_quota:
-            attribute: 'immich_quota'
+          frameleaf_quota:
+            attribute: 'frameleaf_quota'
     scopes:
       frameleaf_scope:
         claims:
-          - 'immich_quota'
+          - 'frameleaf_quota'
 
     clients:
       - client_id: 'frameleaf'
@@ -219,7 +219,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Userinfo Signed Response Algorithm | RS256                                                               |
 | End Session Endpoint               | https://auth.example.com/logout?rd=https://photos.example.com/      |
 | Storage Label Claim                | uid                                                                 |
-| Storage Quota Claim                | immich_quota                                                        |
+| Storage Quota Claim                | frameleaf_quota                                                        |
 | Default Storage Quota (GiB)        | 0 (empty for unlimited quota)                                       |
 | Button Text                        | Sign in with Authelia (optional)                                    |
 | Auto Register                      | Enabled (optional)                                                  |
@@ -252,7 +252,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Scope                        | openid email profile                                                |
 | Signing Algorithm            | RS256                                                               |
 | Storage Label Claim          | preferred_username                                                  |
-| Storage Quota Claim          | immich_quota                                                        |
+| Storage Quota Claim          | frameleaf_quota                                                        |
 | Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                                       |
 | Button Text                  | Sign in with Authentik (optional)                                   |
 | Auto Register                | Enabled (optional)                                                  |
@@ -289,7 +289,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Scope                        | openid email profile                                                         |
 | Signing Algorithm            | RS256                                                                        |
 | Storage Label Claim          | preferred_username                                                           |
-| Storage Quota Claim          | immich_quota                                                                 |
+| Storage Quota Claim          | frameleaf_quota                                                                 |
 | Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                                                |
 | Button Text                  | Sign in with Google (optional)                                               |
 | Auto Register                | Enabled (optional)                                                           |
@@ -324,8 +324,8 @@ Configuration of OAuth in Frameleaf System Settings
 | Scope                        | openid email profile                                     |
 | Signing Algorithm            | RS256                                                    |
 | Storage Label Claim          | preferred_username                                       |
-| Role Claim                   | immich_role                                              |
-| Storage Quota Claim          | immich_quota                                             |
+| Role Claim                   | frameleaf_role                                              |
+| Storage Quota Claim          | frameleaf_quota                                             |
 | Default Storage Quota (GiB)  | 0 (empty for unlimited quota)                            |
 | Button Text                  | Sign in with Keycloak (recommended)                      |
 | Auto Register                | Enabled (optional)                                       |
@@ -333,7 +333,9 @@ Configuration of OAuth in Frameleaf System Settings
 | Mobile Redirect URI Override | Disabled                                                 |
 | Mobile Redirect URI          |                                                          |
 
-Role Claim can be managed via Client Role. Remember to create a mapper with claim name `immich_role`.
+Role Claim can be managed via Client Role. Remember to create a mapper with claim name `frameleaf_role`.
+
+New installations default to `frameleaf_role` and `frameleaf_quota`. Existing installations retain their claim mappings, including old defaults omitted from saved settings. File-backed installations retain those defaults while the file matches its approved configuration. Change both the provider mapper and the Frameleaf setting together when adopting these names.
 
 </details>
 

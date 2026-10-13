@@ -32,7 +32,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
                 'services:',
                 '  frameleaf-server:',
                 '    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
-                '  immich-machine-learning:',
+                '  frameleaf-machine-learning:',
                 '    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
                 '  database:',
                 `    image: ${postgres}`,

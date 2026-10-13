@@ -1025,7 +1025,7 @@ describe('TimelineManager', () => {
         timelineAssetFactory.build({
           fileCreatedAt: at,
           visibility: AssetVisibility.Locked,
-          lockReason: AssetLockReason.ImmichLockedFolder,
+          lockReason: AssetLockReason.FrameleafLockedFolder,
         }),
       );
 

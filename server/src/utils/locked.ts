@@ -66,7 +66,7 @@ export const notLockedOrOwnedBy = (lockedOwnerId: string | undefined, assetAlias
 export const REVEALED_LOCK_REASONS: readonly AssetLockReason[] = [
   AssetLockReason.Marked,
   AssetLockReason.Detected,
-  AssetLockReason.ImmichLockedFolder,
+  AssetLockReason.FrameleafLockedFolder,
 ];
 
 /** In memory: whether a lock of this reason is one an ordinary view reveals (`REVEALED_LOCK_REASONS`). */

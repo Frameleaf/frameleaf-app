@@ -426,7 +426,7 @@ describe(TimelineService.name, () => {
         .values(
           [moved.id, movedArchived.id].map((assetId) => ({
             assetId,
-            reason: AssetLockReason.ImmichLockedFolder,
+            reason: AssetLockReason.FrameleafLockedFolder,
             previousVisibility: AssetVisibility.Locked,
           })),
         )
@@ -443,7 +443,7 @@ describe(TimelineService.name, () => {
       expect((await bucket(ordinary, { visibility: AssetVisibility.Timeline })).id).toEqual([plain.id]);
       const timeline = await bucket(elevated, { visibility: AssetVisibility.Timeline });
       expect(new Set(timeline.id)).toEqual(new Set([plain.id, moved.id]));
-      expect(timeline.lockReason[timeline.id.indexOf(moved.id)]).toBe(AssetLockReason.ImmichLockedFolder);
+      expect(timeline.lockReason[timeline.id.indexOf(moved.id)]).toBe(AssetLockReason.FrameleafLockedFolder);
       expect((await bucket(elevated, { visibility: AssetVisibility.Archive })).id).toEqual([movedArchived.id]);
       await expect(sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Timeline })).resolves.toEqual([
         { count: 2, timeBucket: '1970-02-01' },

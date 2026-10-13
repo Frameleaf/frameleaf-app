@@ -49,7 +49,7 @@ export type RemoteAccessPublication = {
 };
 
 /**
- * FL-165: what this server publishes for remote access (`/server/config`, `/.well-known/immich` and
+ * FL-165: what this server publishes for remote access (`/server/config`, `/.well-known/frameleaf` and
  * `GET server/connections`), while it is linked and remote access is on:
  *
  * - the connection candidates the edge worker reported, but the relay name and the custom hostname

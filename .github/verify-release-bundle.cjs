@@ -108,7 +108,7 @@ async function verifyBundle(
       );
     for (const [service, image] of [
       ["frameleaf-server", "frameleaf-server"],
-      ["immich-machine-learning", "frameleaf-machine-learning"],
+      ["frameleaf-machine-learning", "frameleaf-machine-learning"],
     ])
       assert.equal(
         services?.[service]?.image,

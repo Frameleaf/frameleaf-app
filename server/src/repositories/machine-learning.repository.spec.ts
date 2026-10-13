@@ -39,7 +39,7 @@ import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stu
 const qwenModelName = 'Qwen/Qwen2.5-VL-3B-Instruct';
 const florenceModelName = 'microsoft/Florence-2-base-ft';
 
-const localUrl = 'http://immich-machine-learning:3003';
+const localUrl = 'http://frameleaf-machine-learning:3003';
 // The LAN restoration worker's port (FL-72 fixtures keep restoration on its own worker).
 const lanUrl = 'https://workshop.lan:3004';
 
@@ -105,7 +105,7 @@ describe(MachineLearningRepository.name, () => {
   let imagePath: string;
 
   beforeEach(async () => {
-    imagePath = join(tmpdir(), `immich-machine-learning-${randomUUID()}.webp`);
+    imagePath = join(tmpdir(), `frameleaf-machine-learning-${randomUUID()}.webp`);
     await writeFile(imagePath, Buffer.from([0, 1, 2, 3]));
 
     sut = new MachineLearningRepository(LoggingRepository.create());

@@ -5,9 +5,10 @@ services:
       - default
       - ml-inference
 
-  immich-machine-learning:
+  frameleaf-machine-learning:
     networks: !override
-      - ml-inference
+      ml-inference:
+        aliases: [immich-machine-learning]
     ports: !reset []
     # Do not pass the server .env (backup/provisioning credentials) to inference.
     env_file: !override
@@ -25,7 +26,7 @@ services:
     security_opt: !override
       - no-new-privileges:true
 
-  immich-model-staging:
+  frameleaf-model-staging:
     profiles:
       - model-staging
     image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}

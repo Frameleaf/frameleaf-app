@@ -277,7 +277,9 @@ export class Docker {
   ): Promise<void> {
     if (
       !/^frameleaf-[a-f0-9]{12}$/.test(project) ||
-      services.some((s) => !['database', 'redis', 'frameleaf-server', 'immich-machine-learning'].includes(s))
+      services.some(
+        (s) => !['database', 'redis', 'frameleaf-server', 'frameleaf-machine-learning', 'immich-machine-learning'].includes(s),
+      )
     )
       throw new Refusal('invalid_managed_project');
     await this.execute(
@@ -289,7 +291,7 @@ export class Docker {
         '--file',
         'compose.json',
         action,
-        ...(action === 'up' ? ['--detach', '--wait', '--wait-timeout', '900', '--pull', 'never'] : []),
+        ...(action === 'up' ? ['--detach', '--wait', '--wait-timeout', '900', '--pull', 'never', '--remove-orphans'] : []),
         ...services,
       ],
       { cwd: directory, timeout: 1_200_000 },

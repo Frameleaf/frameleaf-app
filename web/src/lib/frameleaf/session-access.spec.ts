@@ -26,7 +26,7 @@ describe('closeSessionModals', () => {
 describe('revealed locks (FL-195)', () => {
   const marked = { visibility: AssetVisibility.Locked, lockReason: AssetLockReason.Marked };
   const detected = { visibility: AssetVisibility.Locked, lockReason: AssetLockReason.Detected };
-  const legacy = { visibility: AssetVisibility.Locked, lockReason: AssetLockReason.ImmichLockedFolder };
+  const legacy = { visibility: AssetVisibility.Locked, lockReason: AssetLockReason.FrameleafLockedFolder };
 
   it('reveals marks and detections in every ordinary view of an unlocked session only', () => {
     for (const options of [

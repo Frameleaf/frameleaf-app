@@ -16,9 +16,23 @@ describe(AppController.name, () => {
     ctx.reset();
   });
 
-  describe('GET /.well-known/immich', () => {
+  describe('GET /.well-known/frameleaf', () => {
+    it('keeps the old discovery path public for installed clients', async () => {
+      const wellKnown = {
+        api: { endpoint: '/api' },
+        frameleaf: { instanceId: null, publicUrl: null, signIn: false },
+      };
+      service.getWellKnown.mockResolvedValue(wellKnown);
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/.well-known/immich');
+
+      expect(status).toBe(200);
+      expect(body).toEqual(wellKnown);
+      expect(ctx.authenticate).not.toHaveBeenCalled();
+    });
+
     it('should not be an authenticated route', async () => {
-      await request(ctx.getHttpServer()).post('/.well-known/immich');
+      await request(ctx.getHttpServer()).post('/.well-known/frameleaf');
       expect(ctx.authenticate).not.toHaveBeenCalled();
     });
 
@@ -30,7 +44,7 @@ describe(AppController.name, () => {
       };
       service.getWellKnown.mockResolvedValue(wellKnown);
 
-      const { status, body } = await request(ctx.getHttpServer()).get('/.well-known/immich');
+      const { status, body } = await request(ctx.getHttpServer()).get('/.well-known/frameleaf');
       expect(status).toBe(200);
       expect(body).toEqual(wellKnown);
     });

@@ -430,7 +430,13 @@ export const PreservationSidecarSchema = z
     isFavorite: z.boolean(),
     visibility: z.enum(['timeline', 'archive', 'hidden']),
     lock: z
-      .object({ reason: z.enum(['marked', 'detected', 'immich-locked-folder']), lockedAt: isoDate.nullable() })
+      .object({
+        reason: z.union([
+          z.enum(['marked', 'detected', 'frameleaf-locked-folder']),
+          z.literal('immich-locked-folder').transform(() => 'frameleaf-locked-folder' as const),
+        ]),
+        lockedAt: isoDate.nullable(),
+      })
       .strict()
       .nullable(),
     location: z
