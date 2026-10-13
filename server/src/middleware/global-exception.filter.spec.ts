@@ -98,8 +98,21 @@ describe('FL-328 server error display contract', () => {
     expect(body).toEqual({ message: 'Internal server error', displayError: serverErrorDisplay(500, {}) });
     respond(new HttpException({ message: secret, code: secret, data: { secret } }, 403), 'request-b', log);
     expect(log.debug).toHaveBeenCalledWith('HttpException(403)');
-    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error');
+    expect(log.error).toHaveBeenCalledExactlyOnceWith('Unknown route error\nError');
     expect(JSON.stringify([body, log.debug.mock.calls, log.error.mock.calls])).not.toContain(secret);
+  });
+
+  it('logs the stack frames of an unexpected error without its message', () => {
+    const log = logger();
+    const secret = 'private-provider-account-a';
+    const error = new TypeError(secret);
+    Object.defineProperty(error, 'stack', {
+      value: `TypeError: ${secret}\n    at render (src/queue/sharp-pool.js:10:5)\n    at next (node:internal)`,
+    });
+    respond(error, 'request-a', log);
+    expect(log.error).toHaveBeenCalledExactlyOnceWith(
+      'Unknown route error\nTypeError\n    at render (src/queue/sharp-pool.js:10:5)\n    at next (node:internal)',
+    );
   });
 
   it('does not reuse another request’s allowed arguments, content or correlation id', () => {

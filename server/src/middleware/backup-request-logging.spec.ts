@@ -103,7 +103,7 @@ describe('backup request diagnostics', () => {
     cloud.storeEscrow.mockRejectedValueOnce(new Error(passphrase));
     const { status, body } = await request(ctx.getHttpServer()).put('/admin/cloud/backup/escrow').send({ passphrase });
     expect(status).toBe(500);
-    expect(log.error).toHaveBeenCalledWith('Unknown route error');
+    expect(log.error).toHaveBeenCalledWith(expect.stringMatching(/^Unknown route error\nError\n/));
     expect(log.verbose).not.toHaveBeenCalled();
     expect(output()).not.toContain(passphrase);
     expect(JSON.stringify(body)).not.toContain(passphrase);
