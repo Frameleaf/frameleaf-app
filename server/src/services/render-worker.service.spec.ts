@@ -955,6 +955,84 @@ describe(RenderWorkerService.name, () => {
         expect(digests[4]).not.toBe(digests[0]);
       });
 
+      it('binds every font file while preserving canonical order and owner provenance', async () => {
+        const initial = studioManifestStub();
+        const font = initial.entries.find((entry) => entry.kind === StudioResourceKind.Font)!;
+        font.files = [
+          {
+            file: 'inter-latin-400-normal.ttf',
+            weight: 400,
+            style: 'normal',
+            subset: 'latin',
+            format: 'ttf',
+            checksum: 'sum-font',
+            path: '/deployment/inter.ttf',
+          },
+          {
+            file: 'inter-latin-ext-700-italic.ttf',
+            weight: 700,
+            style: 'italic',
+            subset: 'latin-ext',
+            format: 'ttf',
+            checksum: 'sum-secondary',
+            path: '/deployment/inter-secondary.ttf',
+          },
+        ];
+        const digests: string[] = [];
+        for (const change of [
+          'original',
+          'reordered',
+          'secondary-checksum',
+          'file-id',
+          'path',
+          'owner',
+          'classification',
+        ]) {
+          const manifest = structuredClone(initial);
+          const entry = manifest.entries.find((item) => item.kind === StudioResourceKind.Font)!;
+          switch (change) {
+            case 'reordered': {
+              entry.files!.reverse();
+              break;
+            }
+            case 'secondary-checksum': {
+              entry.files![1].checksum = 'replacement-secondary';
+              break;
+            }
+            case 'file-id': {
+              entry.files![1].file = 'inter-latin-ext-700-normal.ttf';
+              break;
+            }
+            case 'path': {
+              entry.files![1].path = '/relocated/inter-secondary.ttf';
+              break;
+            }
+            case 'owner': {
+              entry.ownerId = 'different-owner';
+              break;
+            }
+            case 'classification': {
+              entry.sourceAccess = 'project';
+              break;
+            }
+          }
+          studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+          vi.mocked(workers.peekQueued)
+            .mockReset()
+            .mockResolvedValueOnce([studioOp] as never)
+            .mockResolvedValue([]);
+          const claim = await sut.claim(SESSION_A, {} as never);
+          expect(claim).toBeDefined();
+          digests.push(claim!.artifactInputDigest!);
+        }
+        expect(digests[1]).toBe(digests[0]);
+        expect(digests[2]).not.toBe(digests[0]);
+        expect(digests[3]).not.toBe(digests[0]);
+        expect(digests[4]).toBe(digests[0]);
+        expect(digests[5]).not.toBe(digests[0]);
+        expect(digests[6]).not.toBe(digests[0]);
+      });
+
       it('treats a resolver precondition failure (cloud without consent) as an incomplete manifest', async () => {
         studioResources.resolveProjectResources.mockRejectedValue(
           new Error('A cloud destination requires explicit consent'),
