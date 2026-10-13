@@ -43,7 +43,10 @@ export const checkFaceVisibility = (
     };
   }
 
-  const status = faces.map((face) => {
+  const visible: AssetFace[] = [];
+  const hidden: AssetFace[] = [];
+  // eslint-disable-next-line unicorn/no-for-each -- Match map/filter traversal of sparse arrays.
+  faces.forEach((face) => {
     const scaledFace = scale(
       {
         x1: face.boundingBoxX1,
@@ -55,18 +58,14 @@ export const checkFaceVisibility = (
       { width: face.imageWidth, height: face.imageHeight },
     );
 
-    const overlapPercentage = boundingBoxOverlap(scaledFace, crop);
-
-    return {
-      face,
-      isVisible: overlapPercentage >= 0.5,
-    };
+    if (boundingBoxOverlap(scaledFace, crop) >= 0.5) {
+      visible.push(face);
+    } else {
+      hidden.push(face);
+    }
   });
 
-  return {
-    visible: status.filter((s) => s.isVisible).map((s) => s.face),
-    hidden: status.filter((s) => !s.isVisible).map((s) => s.face),
-  };
+  return { visible, hidden };
 };
 
 export const checkOcrVisibility = (
@@ -81,7 +80,10 @@ export const checkOcrVisibility = (
     };
   }
 
-  const status = ocrs.map((ocr) => {
+  const visible: AssetOcrResponseDto[] = [];
+  const hidden: AssetOcrResponseDto[] = [];
+  // eslint-disable-next-line unicorn/no-for-each -- Match map/filter traversal of sparse arrays.
+  ocrs.forEach((ocr) => {
     const ocrBox = scale(
       {
         x1: Math.min(ocr.x1, ocr.x2, ocr.x3, ocr.x4),
@@ -92,16 +94,12 @@ export const checkOcrVisibility = (
       originalAssetDimensions,
     );
 
-    const overlapPercentage = boundingBoxOverlap(ocrBox, crop);
-
-    return {
-      ocr,
-      isVisible: overlapPercentage >= 0.5,
-    };
+    if (boundingBoxOverlap(ocrBox, crop) >= 0.5) {
+      visible.push(ocr);
+    } else {
+      hidden.push(ocr);
+    }
   });
 
-  return {
-    visible: status.filter((s) => s.isVisible).map((s) => s.ocr),
-    hidden: status.filter((s) => !s.isVisible).map((s) => s.ocr),
-  };
+  return { visible, hidden };
 };

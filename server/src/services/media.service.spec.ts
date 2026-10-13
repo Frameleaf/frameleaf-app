@@ -46,6 +46,7 @@ import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-ope
 import { operationExecution } from 'src/utils/execution-signal.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
 import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
@@ -2223,6 +2224,65 @@ describe(MediaService.name, () => {
         ),
       );
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
+    });
+
+    it.each([true, false])('publishes original face and OCR rows for crop=%s', async (cropped) => {
+      const builder = AssetFactory.from().exif({ exifImageWidth: 1000, exifImageHeight: 1000 });
+      if (cropped) {
+        builder.edit({ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 500, height: 500 } });
+      } else {
+        builder.file({ type: AssetFileType.Preview, isEdited: true });
+      }
+      const asset = builder.build();
+      const faces = [
+        AssetFaceFactory.create({
+          assetId: asset.id,
+          imageWidth: 1000,
+          imageHeight: 1000,
+          boundingBoxX1: 600,
+          boundingBoxX2: 700,
+        }),
+        AssetFaceFactory.create({ assetId: asset.id, imageWidth: 1000, imageHeight: 1000, isVisible: false }),
+        AssetFaceFactory.create({ assetId: asset.id, imageWidth: 1000, imageHeight: 1000 }),
+      ].map((face) => ({ ...face, person: null }));
+      const ocrs = faces.map((face) => ({
+        id: newUuid(),
+        assetId: asset.id,
+        isVisible: face.isVisible,
+        text: 'Retained text',
+        updatedAt: new Date(),
+        updateId: newUuid(),
+        boxScore: 0.9,
+        textScore: 0.8,
+        x1: face.boundingBoxX1 / 1000,
+        y1: 0.1,
+        x2: face.boundingBoxX2 / 1000,
+        y2: 0.1,
+        x3: face.boundingBoxX2 / 1000,
+        y3: 0.2,
+        x4: face.boundingBoxX1 / 1000,
+        y4: 0.2,
+      }));
+      const originalFaces = structuredClone(faces);
+      const originalOcrs = structuredClone(ocrs);
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.person.getFaces.mockResolvedValue(faces);
+      mocks.ocr.getByAssetId.mockResolvedValue(ocrs);
+      mocks.media.generateThumbhash.mockResolvedValue(factory.buffer());
+
+      await expect(sut.handleAssetEditThumbnailGeneration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      const visibleFaces = cropped ? [faces[1], faces[2]] : [faces[1]];
+      const hiddenFaces = cropped ? [faces[0]] : [];
+      const visibleOcrs = cropped ? [ocrs[1], ocrs[2]] : [ocrs[1]];
+      const hiddenOcrs = cropped ? [ocrs[0]] : [];
+      expect(mocks.person.getFaces).toHaveBeenCalledWith(asset.id, { viewingUserId: asset.ownerId });
+      expect(mocks.person.updateVisibility).toHaveBeenCalledWith(visibleFaces, hiddenFaces);
+      expect(mocks.ocr.updateOcrVisibilities).toHaveBeenCalledWith(asset.id, visibleOcrs, hiddenOcrs);
+      expect(mocks.person.updateVisibility.mock.calls[0][0][0]).toBe(faces[1]);
+      expect(mocks.ocr.updateOcrVisibilities.mock.calls[0][1][0]).toBe(ocrs[1]);
+      expect(faces).toEqual(originalFaces);
+      expect(ocrs).toEqual(originalOcrs);
     });
 
     describe('as a job in Activity (FL-43)', () => {
