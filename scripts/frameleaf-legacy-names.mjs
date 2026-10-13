@@ -15,7 +15,7 @@ import { flatten, stripComments } from "./frameleaf-branding.mjs";
  *
  * This scan fails on an IMMICH_* variable or an immich-admin / immich-healthcheck command in:
  *
- * - shipped code outside comments (web/src, server/src, packages/cli/src, machine-learning/immich_ml),
+ * - shipped code outside comments (web/src, server/src, packages/cli/src, machine-learning/frameleaf_ml),
  *   which holds the log, error and help messages;
  * - every translation value (i18n/*.json);
  * - the documentation (docs/docs, docs/src), README.md, and the files people install from: the
@@ -61,7 +61,7 @@ export const LEGACY_ALLOWLIST = [
     reason:
       "The alias tables: each deprecated IMMICH_ name next to its FRAMELEAF_ name (server, machine learning, CLI)",
     files:
-      /^(?:server\/src\/utils\/env-aliases\.ts|machine-learning\/immich_ml\/env_aliases\.py|packages\/cli\/src\/env-aliases\.ts)$/,
+      /^(?:server\/src\/utils\/env-aliases\.ts|machine-learning\/frameleaf_ml\/env_aliases\.py|packages\/cli\/src\/env-aliases\.ts)$/,
     allow: ANY_VARIABLE,
   },
   {
@@ -194,7 +194,7 @@ export function findLegacyNameViolations() {
     "web/src",
     "server/src",
     "packages/cli/src",
-    "machine-learning/immich_ml",
+    "machine-learning/frameleaf_ml",
   ).filter((file) => CODE.test(file) && !NOT_SHIPPED.test(file));
   const text = [
     ...tracked("docs/docs", "docs/src").filter((file) => DOC_PAGE.test(file)),

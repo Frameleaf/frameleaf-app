@@ -667,7 +667,7 @@
         "ml:description:microsoft/*",
         "ml:description:florence-community/*"
       ],
-      "source": "Hugging Face cards microsoft/Florence-2-*, microsoft/Phi-3*-vision-* (license: mit); native Florence checkpoints and SHA-256 artifact pins: machine-learning/immich_ml/models/florence-models.json"
+      "source": "Hugging Face cards microsoft/Florence-2-*, microsoft/Phi-3*-vision-* (license: mit); native Florence checkpoints and SHA-256 artifact pins: machine-learning/frameleaf_ml/models/florence-models.json"
     },
     {
       "status": "looked-up",

@@ -8,7 +8,7 @@
  * This script keeps it honest and publishes it:
  *
  * - **Coverage.** Every resource in `studio/dependency-attribution.json` and every model the photo
- *   library's machine learning service can load (`machine-learning/immich_ml/models/constants.py`,
+ *   library's machine learning service can load (`machine-learning/frameleaf_ml/models/constants.py`,
  *   the description model lists and the server defaults) must be credited by some entry.
  * - **Notices.** Every engine and model must name at least one licence text that exists in the
  *   repository and ships with the product (`studio/notices`, `licenses/texts`). Retrieved texts are
@@ -30,8 +30,8 @@ export const DOCS_PATH = 'docs/docs/overview/acknowledgements.md';
 export const NOTICES_PATH = 'licenses/THIRD-PARTY-NOTICES.md';
 const ATTRIBUTION_PATH = 'studio/dependency-attribution.json';
 const PROVENANCE_PATH = 'studio/freecut-provenance.json';
-const ML_CONSTANTS_PATH = 'machine-learning/immich_ml/models/constants.py';
-const ML_DESCRIPTION_PATH = 'machine-learning/immich_ml/models/image_description.py';
+const ML_CONSTANTS_PATH = 'machine-learning/frameleaf_ml/models/constants.py';
+const ML_DESCRIPTION_PATH = 'machine-learning/frameleaf_ml/models/image_description.py';
 const SERVER_CONFIG_PATH = 'server/src/dtos/config.dto.ts';
 const GENERATOR = 'scripts/frameleaf-acknowledgements.mjs';
 

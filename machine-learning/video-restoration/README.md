@@ -32,7 +32,7 @@ The mode names express intention, not a fidelity guarantee.
   The example records are deliberately `pending`.
 - `../Dockerfile.video-restoration` — the worker image, with an optional stage per
   isolated runtime.
-- `../immich_ml/video_restoration/` — the worker: `models.py` (adapters and gate),
+- `../frameleaf_ml/video_restoration/` — the worker: `models.py` (adapters and gate),
   `pipeline.py` (one inference), `app.py` (HTTP), `schemas.py` (wire contract).
 
 ## Smooth motion (RIFE)
@@ -51,7 +51,7 @@ The weights come from the Frameleaf model source (`frameleaf/rife-4.25`, served 
 `source` entry is downloaded with
 
 ```sh
-python -m immich_ml.video_restoration fetch-weights rife-4-25
+python -m frameleaf_ml.video_restoration fetch-weights rife-4-25
 ```
 
 and is moved into place only when it hashes to the manifest's pinned sha256. Downloading never
@@ -214,7 +214,7 @@ limits and native scale; changing those requires a new preview.
 Before inference, a startup handshake identifies the owned worker process; torchrun puts it
 in a separate session, so cleanup signals both groups. Each request then sends its values
 over a private JSON-lines pipe. The bundled
-`immich_ml/video_restoration/runtime_worker.py` runs with the runtime's own Python and
+`frameleaf_ml/video_restoration/runtime_worker.py` runs with the runtime's own Python and
 imports the pinned checkout. RealBasicVSR reuses `init_model(config, checkpoint)` while
 calling upstream `main()` per request. SeedVR2 calls `configure_runner(1)` once, then
 `generation_loop(runner, video_path=..., output_dir=..., seed=..., res_h=..., res_w=..., sp_size=1)`
@@ -227,7 +227,7 @@ into the HTTP worker or passes its bearer token to the model runtime.
 The HTTP handler watches for disconnect while inference runs, terminates the owned model
 groups, and waits for its request thread to finish cleanup before releasing admission. This
 also applies to legacy process commands. Run the worker through
-`python -m immich_ml.video_restoration`: its Uvicorn server stops active models **before**
+`python -m frameleaf_ml.video_restoration`: its Uvicorn server stops active models **before**
 waiting for HTTP requests during SIGTERM shutdown; the later lifespan shutdown also closes
 idle models. Media preprocessing and final encoding retain their existing bounded timeouts.
 

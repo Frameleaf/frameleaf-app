@@ -6,10 +6,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from immich_ml.privacy import disable_telemetry
+from frameleaf_ml.privacy import disable_telemetry
 
 
-@pytest.mark.parametrize("entrypoint", ["immich_ml", "immich_ml.main", "immich_ml.models.image_description"])
+@pytest.mark.parametrize("entrypoint", ["frameleaf_ml", "frameleaf_ml.main", "frameleaf_ml.models.image_description"])
 @pytest.mark.parametrize("offline_flag", [None, "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"])
 def test_entrypoints_override_telemetry_opt_ins(entrypoint: str, offline_flag: str | None) -> None:
     # A fresh interpreter catches import-order regressions that in-process tests
@@ -170,14 +170,14 @@ def test_hub_downloads_remain_available(tmp_path: Path) -> None:
 def test_hugging_face_token_only_goes_to_hugging_face(
     source: str, expected_token: bool | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from immich_ml.config import settings
-    from immich_ml.models.clip.textual import OpenClipTextualEncoder
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.models.clip.textual import OpenClipTextualEncoder
 
     monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
     monkeypatch.delenv("HF_ENDPOINT", raising=False)
     monkeypatch.setattr(settings, "model_source_url", source)
     monkeypatch.setattr(settings, "model_source_token", None)
-    with patch("immich_ml.models.base.snapshot_download") as download:
+    with patch("frameleaf_ml.models.base.snapshot_download") as download:
         OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
 
     assert download.call_args.kwargs["token"] is expected_token
@@ -193,13 +193,13 @@ def test_disabled_token_sends_no_authorization(monkeypatch: pytest.MonkeyPatch) 
 def test_model_source_token_goes_only_to_its_source_and_is_never_shown(monkeypatch: pytest.MonkeyPatch) -> None:
     from pydantic import SecretStr
 
-    from immich_ml.config import settings
-    from immich_ml.models.clip.textual import OpenClipTextualEncoder
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.models.clip.textual import OpenClipTextualEncoder
 
     monkeypatch.setenv("HF_TOKEN", "hugging-face-token-must-stay-home")
     monkeypatch.setattr(settings, "model_source_url", "https://hub-mirror.example.com")
     monkeypatch.setattr(settings, "model_source_token", SecretStr("mirror-token"))
-    with patch("immich_ml.models.base.snapshot_download") as download:
+    with patch("frameleaf_ml.models.base.snapshot_download") as download:
         OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
 
     assert download.call_args.kwargs["token"] == "mirror-token"

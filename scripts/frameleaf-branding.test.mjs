@@ -67,7 +67,7 @@ test("compatibility identifiers and FL-191/FL-192 hosts are not the name", () =>
     "DB_DATABASE_NAME=immich",
     "the immich_fork schema",
     "ImmichLayout and immichApp",
-    "from immich_ml.config import log",
+    "from frameleaf_ml.config import log",
     "image: ghcr.io/immich-app/immich-machine-learning:v3.1.0",
     "https://tiles.immich.cloud/v1/style/light.json",
     "https://huggingface.co/immich-app",

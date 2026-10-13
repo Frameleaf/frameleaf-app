@@ -281,7 +281,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
   );
   assert.match(
     read("machine-learning/Dockerfile"),
-    /^CMD \["python", "-m", "immich_ml"\]$/m,
+    /^CMD \["python", "-m", "frameleaf_ml"\]$/m,
   );
   assert.doesNotMatch(read("machine-learning/Dockerfile"), /AS prod-runpod/);
   assert.ok(

@@ -25,22 +25,22 @@ from PIL import Image
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
-from immich_ml.config import MaxBatchSize, Settings, log, model_source, settings
-from immich_ml.main import load, preload_models
-from immich_ml.models.base import InferenceModel, ModelUnavailableError
-from immich_ml.models.cache import ModelCache
-from immich_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
-from immich_ml.models.clip.visual import OpenClipVisualEncoder
-from immich_ml.models.constants import _PADDLE_MODELS, get_model_source, get_ocr_model_file
-from immich_ml.models.facial_recognition.detection import FaceDetector
-from immich_ml.models.facial_recognition.recognition import FaceRecognizer
-from immich_ml.models.image_description import IMAGE_DESCRIPTION_PROMPT, ImageDescriptionModel
-from immich_ml.models.ocr.detection import TextDetector
-from immich_ml.models.ocr.recognition import TextRecognizer
-from immich_ml.schemas import ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
-from immich_ml.sessions.ann import AnnSession
-from immich_ml.sessions.ort import OrtSession
-from immich_ml.sessions.rknn import RknnSession, run_inference
+from frameleaf_ml.config import MaxBatchSize, Settings, log, model_source, settings
+from frameleaf_ml.main import load, preload_models
+from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
+from frameleaf_ml.models.cache import ModelCache
+from frameleaf_ml.models.clip.textual import MClipTextualEncoder, OpenClipTextualEncoder
+from frameleaf_ml.models.clip.visual import OpenClipVisualEncoder
+from frameleaf_ml.models.constants import _PADDLE_MODELS, get_model_source, get_ocr_model_file
+from frameleaf_ml.models.facial_recognition.detection import FaceDetector
+from frameleaf_ml.models.facial_recognition.recognition import FaceRecognizer
+from frameleaf_ml.models.image_description import IMAGE_DESCRIPTION_PROMPT, ImageDescriptionModel
+from frameleaf_ml.models.ocr.detection import TextDetector
+from frameleaf_ml.models.ocr.recognition import TextRecognizer
+from frameleaf_ml.schemas import ModelFormat, ModelPrecision, ModelSource, ModelTask, ModelType
+from frameleaf_ml.sessions.ann import AnnSession
+from frameleaf_ml.sessions.ort import OrtSession
+from frameleaf_ml.sessions.rknn import RknnSession, run_inference
 
 
 class FakeLock:
@@ -93,7 +93,7 @@ class TestBase:
 
     def test_sets_default_model_format(self, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "ann", True)
-        mocker.patch("immich_ml.sessions.ann.loader.is_available", False)
+        mocker.patch("frameleaf_ml.sessions.ann.loader.is_available", False)
 
         encoder = OpenClipTextualEncoder("ViT-B-32__openai")
 
@@ -101,7 +101,7 @@ class TestBase:
 
     def test_sets_default_model_format_to_armnn_if_available(self, path: mock.Mock, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "ann", True)
-        mocker.patch("immich_ml.sessions.ann.loader.is_available", True)
+        mocker.patch("frameleaf_ml.sessions.ann.loader.is_available", True)
         path.suffix = ".armnn"
 
         encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
@@ -110,7 +110,7 @@ class TestBase:
 
     def test_sets_model_format_kwarg(self, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "ann", False)
-        mocker.patch("immich_ml.sessions.ann.loader.is_available", False)
+        mocker.patch("frameleaf_ml.sessions.ann.loader.is_available", False)
 
         encoder = OpenClipTextualEncoder("ViT-B-32__openai", model_format=ModelFormat.ARMNN)
 
@@ -118,7 +118,7 @@ class TestBase:
 
     def test_sets_default_model_format_to_rknn_if_available(self, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "rknn", True)
-        mocker.patch("immich_ml.sessions.rknn.is_available", True)
+        mocker.patch("frameleaf_ml.sessions.rknn.is_available", True)
 
         encoder = OpenClipTextualEncoder("ViT-B-32__openai")
 
@@ -1100,7 +1100,7 @@ class TestOrtSession:
     def test_sets_provider_options_for_rocm(self, mocker: MockerFixture) -> None:
         model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
         os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
-        mkdir = mocker.patch("immich_ml.sessions.ort.Path.mkdir")
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
 
         session = OrtSession(model_path, providers=["MIGraphXExecutionProvider"])
 
@@ -1117,7 +1117,7 @@ class TestOrtSession:
         model_path = "/cache/ViT-B-32__openai/textual/model.onnx"
         os.environ["MACHINE_LEARNING_DEVICE_ID"] = "1"
         mocker.patch.object(settings, "rocm_precision", ModelPrecision.FP16)
-        mkdir = mocker.patch("immich_ml.sessions.ort.Path.mkdir")
+        mkdir = mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
 
         session = OrtSession(model_path, providers=["MIGraphXExecutionProvider"])
 
@@ -1170,7 +1170,7 @@ class TestOrtSession:
         assert session.sess_options.intra_op_num_threads == 0
 
     def test_sets_default_sess_options_sets_threads_if_non_cpu_and_set_threads(self, mocker: MockerFixture) -> None:
-        mock_settings = mocker.patch("immich_ml.sessions.ort.settings", autospec=True)
+        mock_settings = mocker.patch("frameleaf_ml.sessions.ort.settings", autospec=True)
         mock_settings.model_inter_op_threads = 2
         mock_settings.model_intra_op_threads = 4
 
@@ -1180,7 +1180,7 @@ class TestOrtSession:
         assert session.sess_options.intra_op_num_threads == 4
 
     def test_uses_arena_if_enabled(self, mocker: MockerFixture) -> None:
-        mock_settings = mocker.patch("immich_ml.sessions.ort.settings", autospec=True)
+        mock_settings = mocker.patch("frameleaf_ml.sessions.ort.settings", autospec=True)
         mock_settings.model_inter_op_threads = 0
         mock_settings.model_intra_op_threads = 0
         mock_settings.model_arena = True
@@ -1190,7 +1190,7 @@ class TestOrtSession:
         assert session.sess_options.enable_cpu_mem_arena
 
     def test_does_not_use_arena_if_disabled(self, mocker: MockerFixture) -> None:
-        mock_settings = mocker.patch("immich_ml.sessions.ort.settings", autospec=True)
+        mock_settings = mocker.patch("frameleaf_ml.sessions.ort.settings", autospec=True)
         mock_settings.model_inter_op_threads = 0
         mock_settings.model_intra_op_threads = 0
         mock_settings.model_arena = False
@@ -1212,9 +1212,9 @@ class TestOrtSession:
 
     def test_serializes_rocm_first_run_for_new_input_signature(self, mocker: MockerFixture) -> None:
         lock = FakeLock()
-        get_model_lock = mocker.patch("immich_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
-        mocker.patch("immich_ml.sessions.ort._migraphx_compiled_inputs", set())
-        mocker.patch("immich_ml.sessions.ort.Path.mkdir")
+        get_model_lock = mocker.patch("frameleaf_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
+        mocker.patch("frameleaf_ml.sessions.ort._migraphx_compiled_inputs", set())
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
         session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["MIGraphXExecutionProvider"])
         input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
 
@@ -1228,9 +1228,9 @@ class TestOrtSession:
 
     def test_serializes_rocm_run_for_each_new_input_signature(self, mocker: MockerFixture) -> None:
         lock = FakeLock()
-        mocker.patch("immich_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
-        mocker.patch("immich_ml.sessions.ort._migraphx_compiled_inputs", set())
-        mocker.patch("immich_ml.sessions.ort.Path.mkdir")
+        mocker.patch("frameleaf_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
+        mocker.patch("frameleaf_ml.sessions.ort._migraphx_compiled_inputs", set())
+        mocker.patch("frameleaf_ml.sessions.ort.Path.mkdir")
         session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["MIGraphXExecutionProvider"])
         input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
         new_shape_input_feed = {"input": np.random.rand(2, 3, 224, 224).astype(np.float32)}
@@ -1246,7 +1246,7 @@ class TestOrtSession:
 
     def test_does_not_serialize_non_rocm_run(self, mocker: MockerFixture) -> None:
         lock = FakeLock()
-        get_model_lock = mocker.patch("immich_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
+        get_model_lock = mocker.patch("frameleaf_ml.sessions.ort._migraphx_get_model_lock", return_value=lock)
         session = OrtSession("/cache/ViT-B-32__openai/model.onnx", providers=["CPUExecutionProvider"])
         input_feed = {"input": np.random.rand(1, 3, 224, 224).astype(np.float32)}
 
@@ -1315,8 +1315,8 @@ class TestRknnSession:
     def test_creates_rknn_session(self, rknn_session: mock.Mock, info: mock.Mock, mocker: MockerFixture) -> None:
         model_path = mock.MagicMock(spec=Path)
         tpe = 1
-        mocker.patch("immich_ml.sessions.rknn.soc_name", "rk3566")
-        mocker.patch("immich_ml.sessions.rknn.is_available", True)
+        mocker.patch("frameleaf_ml.sessions.rknn.soc_name", "rk3566")
+        mocker.patch("frameleaf_ml.sessions.rknn.is_available", True)
         RknnSession(model_path)
 
         rknn_session.assert_called_once_with(model_path=model_path.as_posix(), tpes=tpe, func=run_inference)
@@ -1326,7 +1326,7 @@ class TestRknnSession:
     def test_run_rknn(self, rknn_session: mock.Mock, mocker: MockerFixture) -> None:
         rknn_session.return_value.load.return_value = 123
         np_spy = mocker.spy(np, "ascontiguousarray")
-        mocker.patch("immich_ml.sessions.rknn.soc_name", "rk3566")
+        mocker.patch("frameleaf_ml.sessions.rknn.soc_name", "rk3566")
         session = RknnSession(Path("ViT-B-32__openai"))
         [input1, input2] = [np.random.rand(1, 3, 224, 224).astype(np.float32) for _ in range(2)]
         input_feed = {"input.1": input1, "input.2": input2}
@@ -1408,7 +1408,7 @@ class TestCLIP:
 
         mocked = mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
         mocked.run.return_value = [[self.embedding]]
-        mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True)
+        mocker.patch("frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True)
 
         clip_encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="test_cache")
         embedding_str = clip_encoder.predict("test search query")
@@ -1434,7 +1434,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocked = mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
         mocked.run.return_value = [[self.embedding]]
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=[randint(0, 50000) for _ in range(77)])
 
         clip_encoder = OpenClipTextualEncoder("nllb-clip-base-siglip__mrl", cache_dir="test_cache")
@@ -1459,7 +1461,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
 
@@ -1485,7 +1489,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
 
@@ -1510,7 +1516,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
 
@@ -1530,7 +1538,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
 
@@ -1551,7 +1561,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
 
@@ -1572,7 +1584,9 @@ class TestCLIP:
         mocker.patch.object(OpenClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(OpenClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids)
 
@@ -1592,7 +1606,9 @@ class TestCLIP:
         mocker.patch.object(MClipTextualEncoder, "model_cfg", clip_model_cfg)
         mocker.patch.object(MClipTextualEncoder, "tokenizer_cfg", clip_tokenizer_cfg)
         mocker.patch.object(InferenceModel, "_make_session", autospec=True).return_value
-        mock_tokenizer = mocker.patch("immich_ml.models.clip.textual.Tokenizer.from_file", autospec=True).return_value
+        mock_tokenizer = mocker.patch(
+            "frameleaf_ml.models.clip.textual.Tokenizer.from_file", autospec=True
+        ).return_value
         mock_ids = [randint(0, 50000) for _ in range(77)]
         mock_attention_mask = [randint(0, 1) for _ in range(77)]
         mock_tokenizer.encode.return_value = SimpleNamespace(ids=mock_ids, attention_mask=mock_attention_mask)
@@ -1647,11 +1663,11 @@ def expected_landmarks(cell_x: int, cell_y: int) -> np.ndarray:
 def batch_axis(mocker: MockerFixture) -> SimpleNamespace:
     """Patches for the `_add_batch_axis` path: the onnx module it rewrites the model
     through, and the download it would otherwise trigger on load."""
-    mocker.patch("immich_ml.models.base.InferenceModel.download")
+    mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
     return SimpleNamespace(
-        onnx=mocker.patch("immich_ml.models.facial_recognition.recognition.onnx", autospec=True),
+        onnx=mocker.patch("frameleaf_ml.models.facial_recognition.recognition.onnx", autospec=True),
         update_dims=mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.update_inputs_outputs_dims", autospec=True
+            "frameleaf_ml.models.facial_recognition.recognition.update_inputs_outputs_dims", autospec=True
         ),
     )
 
@@ -1706,7 +1722,7 @@ class TestFaceRecognition:
     def test_recognition(self, stub_session: Callable[..., mock.Mock], mocker: MockerFixture) -> None:
         mocker.patch.object(FaceRecognizer, "load")
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=["CPUExecutionProvider"],
         )
         face_recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
@@ -1750,7 +1766,7 @@ class TestFaceRecognition:
     def test_recognition_returns_early_without_faces(self, pil_image: Image.Image, mocker: MockerFixture) -> None:
         mocker.patch.object(FaceRecognizer, "load")
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=["CPUExecutionProvider"],
         )
         face_recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
@@ -1771,7 +1787,7 @@ class TestFaceRecognition:
     ) -> None:
         mocker.patch.object(FaceRecognizer, "load")
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=["CPUExecutionProvider"],
         )
         face_recognizer = FaceRecognizer("buffalo_s", cache_dir="test_cache")
@@ -1795,7 +1811,7 @@ class TestFaceRecognition:
         self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
     ) -> None:
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=["CPUExecutionProvider"],
         )
         ort_session.return_value.get_inputs.return_value = [SimpleNamespace(name="input.1", shape=(1, 3, 224, 224))]
@@ -1829,7 +1845,7 @@ class TestFaceRecognition:
         self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
     ) -> None:
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=["CPUExecutionProvider"],
         )
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
@@ -1875,7 +1891,7 @@ class TestFaceRecognition:
         session = request.getfixturevalue(session_fixture)
         ort_pybind.get_available_openvino_device_ids.return_value = ["CPU"]
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=available_providers,
         )
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = suffix
@@ -1900,7 +1916,7 @@ class TestFaceRecognition:
     def test_ignore_other_custom_max_batch_size(self, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "max_batch_size", MaxBatchSize(ocr=2))
         mocker.patch(
-            "immich_ml.models.facial_recognition.recognition.ort.get_available_providers",
+            "frameleaf_ml.models.facial_recognition.recognition.ort.get_available_providers",
             return_value=["CPUExecutionProvider"],
         )
 
@@ -1948,7 +1964,7 @@ class TestOcr:
         content = b"onnx bytes"
         source = get_ocr_model_file(model_name, model_class.identity[0])
         mocker.patch(
-            "immich_ml.models.ocr.source.get_ocr_model_file",
+            "frameleaf_ml.models.ocr.source.get_ocr_model_file",
             return_value=source._replace(sha256=hashlib.sha256(content).hexdigest()),
         )
         self._serve(snapshot_download, content)
@@ -2037,7 +2053,7 @@ class TestOcr:
         self, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
     ) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
-        mocker.patch("immich_ml.models.base.InferenceModel.download")
+        mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
 
         text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
 
@@ -2045,7 +2061,7 @@ class TestOcr:
 
     def test_set_custom_max_batch_size(self, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
-        mocker.patch("immich_ml.models.base.InferenceModel.download")
+        mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
         mocker.patch.object(settings, "max_batch_size", MaxBatchSize(ocr=4))
 
         text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
@@ -2056,7 +2072,7 @@ class TestOcr:
         self, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
     ) -> None:
         path.return_value.__truediv__.return_value.__truediv__.return_value.suffix = ".onnx"
-        mocker.patch("immich_ml.models.base.InferenceModel.download")
+        mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
         mocker.patch.object(settings, "max_batch_size", MaxBatchSize(facial_recognition=3))
 
         text_recognizer = TextRecognizer("PP-OCRv5_mobile", cache_dir="test_cache")
@@ -2228,7 +2244,7 @@ class TestCache:
         model = await asyncio.wait_for(model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH), timeout=1)
         assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) is model
 
-    @mock.patch("immich_ml.models.cache.SimpleMemoryCache.expire")
+    @mock.patch("frameleaf_ml.models.cache.SimpleMemoryCache.expire")
     async def test_revalidate_get(self, mock_cache_expire: mock.Mock, mock_get_model: mock.Mock) -> None:
         model_cache = ModelCache(revalidate=True)
         await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
@@ -2273,7 +2289,7 @@ class TestCache:
         assert settings.preload.clip.visual == "ViT-B-32__openai"
 
         model_cache = ModelCache()
-        monkeypatch.setattr("immich_ml.main.model_cache", model_cache)
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
 
         await preload_models(settings.preload)
         mock_get_model.assert_has_calls(
@@ -2296,7 +2312,7 @@ class TestCache:
         assert settings.preload.facial_recognition.recognition == "buffalo_s"
 
         model_cache = ModelCache()
-        monkeypatch.setattr("immich_ml.main.model_cache", model_cache)
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
 
         await preload_models(settings.preload)
         mock_get_model.assert_has_calls(
@@ -2317,7 +2333,7 @@ class TestCache:
         assert settings.preload.ocr.recognition == "PP-OCRv5_mobile"
 
         model_cache = ModelCache()
-        monkeypatch.setattr("immich_ml.main.model_cache", model_cache)
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
 
         await preload_models(settings.preload)
         mock_get_model.assert_has_calls(
@@ -2346,7 +2362,7 @@ class TestCache:
         assert settings.preload.ocr.recognition == "PP-OCRv5_mobile"
 
         model_cache = ModelCache()
-        monkeypatch.setattr("immich_ml.main.model_cache", model_cache)
+        monkeypatch.setattr("frameleaf_ml.main.model_cache", model_cache)
 
         await preload_models(settings.preload)
         mock_get_model.assert_has_calls(
@@ -2453,7 +2469,7 @@ class TestLoad:
 
 @pytest.mark.parametrize("size", [(0, 100), (100, 0), (0, 0)])
 def test_predict_rejects_empty_image(size: tuple[int, int], deployed_app: TestClient) -> None:
-    with mock.patch("immich_ml.main.decode_pil", return_value=Image.new("RGB", size)):
+    with mock.patch("frameleaf_ml.main.decode_pil", return_value=Image.new("RGB", size)):
         response = deployed_app.post(
             "http://localhost:3003/predict",
             data={"entries": json.dumps({"clip": {"visual": {"modelName": "ViT-B-32__openai"}}})},
@@ -2487,7 +2503,7 @@ def test_bearer_auth_constant_time_compare() -> None:
     from starlette.responses import PlainTextResponse as _PR
     from starlette.routing import Route
 
-    from immich_ml.main import BearerAuthMiddleware
+    from frameleaf_ml.main import BearerAuthMiddleware
 
     async def home(_req: Any) -> Any:
         return _PR("ok")
@@ -2531,7 +2547,7 @@ def test_bearer_auth_rejects_oversized_header() -> None:
     from starlette.responses import PlainTextResponse as _PR
     from starlette.routing import Route
 
-    from immich_ml.main import BearerAuthMiddleware
+    from frameleaf_ml.main import BearerAuthMiddleware
 
     async def home(_req: Any) -> Any:
         return _PR("ok")
@@ -2553,7 +2569,7 @@ def test_bearer_auth_open_when_no_token() -> None:
     from starlette.responses import PlainTextResponse as _PR
     from starlette.routing import Route
 
-    from immich_ml.main import BearerAuthMiddleware
+    from frameleaf_ml.main import BearerAuthMiddleware
 
     async def home(_req: Any) -> Any:
         return _PR("ok")
@@ -2594,7 +2610,7 @@ def test_options_validation_rejects_unknown_keys(deployed_app: TestClient) -> No
 
 
 def test_options_validation_caps_external_prompt(deployed_app: TestClient) -> None:
-    from immich_ml.schemas import MAX_EXTERNAL_PROMPT_LENGTH
+    from frameleaf_ml.schemas import MAX_EXTERNAL_PROMPT_LENGTH
 
     response = deployed_app.post(
         "http://localhost:3003/predict",
@@ -2649,7 +2665,7 @@ def test_options_validation_accepts_clip_language() -> None:
     # ("ClipOptions language Extra inputs are not permitted").
     from pydantic import ValidationError
 
-    from immich_ml.schemas import validate_options
+    from frameleaf_ml.schemas import validate_options
 
     assert validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {"language": "en-US"}) == {"language": "en-US"}
     # An omitted language still yields an empty option set (exclude_none=True).
@@ -2668,7 +2684,7 @@ def test_options_validation_accepts_ocr_max_resolution() -> None:
     # maxResolution Extra inputs are not permitted").
     from pydantic import ValidationError
 
-    from immich_ml.schemas import validate_options
+    from frameleaf_ml.schemas import validate_options
 
     # 736 is the server default (config.ts); a larger override must also pass.
     assert validate_options(ModelTask.OCR, ModelType.DETECTION, {"maxResolution": 736}) == {"maxResolution": 736}
@@ -2687,7 +2703,7 @@ def test_options_validation_accepts_ocr_max_resolution() -> None:
 
 
 def test_extract_signal_field_returns_bool_for_non_canonical_values() -> None:
-    from immich_ml.models.image_description import ImageDescriptionModel
+    from frameleaf_ml.models.image_description import ImageDescriptionModel
 
     model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
     body = '"safety": {"is_nsfw_likely": "high", "confidence": "high"}'
@@ -2715,7 +2731,7 @@ def test_capabilities_endpoint_requires_bearer_when_token_is_set() -> None:
     from starlette.responses import JSONResponse as _JR
     from starlette.routing import Route
 
-    from immich_ml.main import BearerAuthMiddleware
+    from frameleaf_ml.main import BearerAuthMiddleware
 
     async def caps(_req: Any) -> Any:
         return _JR({"workloads": ["face"]})
@@ -2730,12 +2746,12 @@ def test_capabilities_endpoint_requires_bearer_when_token_is_set() -> None:
 
 def test_hardware_endpoint_reports_cuda(deployed_app: TestClient, monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "immich_ml.main.ort.get_available_providers",
+        "frameleaf_ml.main.ort.get_available_providers",
         lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
-    monkeypatch.setattr("immich_ml.main._torch_cuda_info", lambda: (True, 1))
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (True, 1))
     container = {"image": "cuda", "backend": "CUDA", "gpus": [], "driver": None, "nvidiaError": None, "devices": {}}
-    monkeypatch.setattr("immich_ml.main.container_report", lambda _providers, _ids: container)
+    monkeypatch.setattr("frameleaf_ml.main.container_report", lambda _providers, _ids: container)
 
     response = deployed_app.get("http://localhost:3003/hardware")
 
@@ -2752,11 +2768,11 @@ def test_hardware_endpoint_reports_cuda(deployed_app: TestClient, monkeypatch: M
 
 def test_hardware_endpoint_reports_openvino(deployed_app: TestClient, monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "immich_ml.main.ort.get_available_providers",
+        "frameleaf_ml.main.ort.get_available_providers",
         lambda: ["OpenVINOExecutionProvider", "CPUExecutionProvider"],
     )
-    monkeypatch.setattr("immich_ml.main._openvino_device_ids", lambda _: ["GPU.0", "CPU"])
-    monkeypatch.setattr("immich_ml.main._torch_cuda_info", lambda: (False, 0))
+    monkeypatch.setattr("frameleaf_ml.main._openvino_device_ids", lambda _: ["GPU.0", "CPU"])
+    monkeypatch.setattr("frameleaf_ml.main._torch_cuda_info", lambda: (False, 0))
 
     response = deployed_app.get("http://localhost:3003/hardware")
 
@@ -2853,7 +2869,7 @@ class TestPredictionEndpoints:
 def test_hardware_report_names_the_gpu_torch_uses_and_the_devices_passed_in(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    from immich_ml import hardware_report
+    from frameleaf_ml import hardware_report
 
     monkeypatch.setattr(
         hardware_report,
@@ -2881,7 +2897,7 @@ def test_hardware_report_names_the_gpu_torch_uses_and_the_devices_passed_in(
 def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    from immich_ml import hardware_report
+    from frameleaf_ml import hardware_report
 
     dev = tmp_path / "dri"
     dev.mkdir()
@@ -2915,7 +2931,7 @@ def test_hardware_report_falls_back_to_the_processor_and_lists_render_nodes(
 
 
 def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -> None:
-    from immich_ml import hardware_report
+    from frameleaf_ml import hardware_report
 
     pci = tmp_path / "pci"
     for address, vendor, device_class, vram, render in [
@@ -2953,7 +2969,7 @@ def test_hardware_report_lists_the_host_gpus_from_the_pci_list(tmp_path: Path) -
 
 
 def test_hardware_report_names_rocm_gfx_targets_and_the_override(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
-    from immich_ml import hardware_report
+    from frameleaf_ml import hardware_report
 
     topology = tmp_path / "nodes"
     (topology / "0").mkdir(parents=True)
@@ -2971,7 +2987,7 @@ def test_hardware_report_names_rocm_gfx_targets_and_the_override(tmp_path: Path,
 
 
 def test_hardware_report_reads_the_compute_capability_for_cuda(monkeypatch: MonkeyPatch) -> None:
-    from immich_ml import hardware_report
+    from frameleaf_ml import hardware_report
 
     monkeypatch.setattr(
         hardware_report,

@@ -18,8 +18,8 @@ SERVER = """
 import os, sys, time
 from pathlib import Path
 from types import SimpleNamespace
-from immich_ml.video_restoration import app, __main__ as entrypoint
-from immich_ml.video_restoration.models import RuntimeInvocation, SelectedModel
+from frameleaf_ml.video_restoration import app, __main__ as entrypoint
+from frameleaf_ml.video_restoration.models import RuntimeInvocation, SelectedModel
 from test_video_restoration_runtime import warm_spec, invocation
 from test_video_restoration import TestRegistry, evaluate, passing_record, fake_result
 

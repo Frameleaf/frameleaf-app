@@ -13,13 +13,13 @@ def main() -> None:
     args = parser.parse_args()
     if not args.download:
         os.environ['HF_HUB_OFFLINE'] = '1'
-    import immich_ml  # noqa: F401 -- Privacy initialization precedes the Hub import.
+    import frameleaf_ml  # noqa: F401 -- Privacy initialization precedes the Hub import.
     # isort: split
     from huggingface_hub import snapshot_download
 
-    from immich_ml.config import model_repository_url, model_source_token
-    from immich_ml.models.semantic_mask import MANIFEST, MODEL_NAME
-    from immich_ml.models.semantic_mask_manifest import verify_snapshot
+    from frameleaf_ml.config import model_repository_url, model_source_token
+    from frameleaf_ml.models.semantic_mask import MANIFEST, MODEL_NAME
+    from frameleaf_ml.models.semantic_mask_manifest import verify_snapshot
     cache = args.cache_root / 'semantic-mask' / MODEL_NAME / 'hub'
     endpoint = model_repository_url()
     receipt = []

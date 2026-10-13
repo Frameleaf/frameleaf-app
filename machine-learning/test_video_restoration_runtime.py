@@ -16,9 +16,9 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from immich_ml.video_restoration import media, runtime_worker
-from immich_ml.video_restoration.app import create_app
-from immich_ml.video_restoration.models import (
+from frameleaf_ml.video_restoration import media, runtime_worker
+from frameleaf_ml.video_restoration.app import create_app
+from frameleaf_ml.video_restoration.models import (
     ModelSpec,
     RealBasicVsrAdapter,
     RestorationFailure,
@@ -30,9 +30,9 @@ from immich_ml.video_restoration.models import (
     SelectedModel,
     model_fingerprint,
 )
-from immich_ml.video_restoration.pipeline import AdapterFactory, restore
-from immich_ml.video_restoration.runtime_pool import RuntimePool
-from immich_ml.video_restoration.schemas import RestorationErrorCode, RestorationRequest, RestorationResult
+from frameleaf_ml.video_restoration.pipeline import AdapterFactory, restore
+from frameleaf_ml.video_restoration.runtime_pool import RuntimePool
+from frameleaf_ml.video_restoration.schemas import RestorationErrorCode, RestorationRequest, RestorationResult
 from test_video_restoration import TestRegistry as RegistryFixture
 from test_video_restoration import evaluate, fake_result, make_spec, passing_record, request_payload
 
@@ -99,7 +99,7 @@ def invocation(spec: ModelSpec, tmp_path: Path, source: str, output: str = "resu
 def test_reuses_model_across_chunks_and_reloads_for_config_or_checkpoint(tmp_path: Path) -> None:
     spec = warm_spec(tmp_path)
     pool = RuntimePool()
-    timer_patch = patch("immich_ml.video_restoration.runtime_pool.threading.Timer", wraps=threading.Timer)
+    timer_patch = patch("frameleaf_ml.video_restoration.runtime_pool.threading.Timer", wraps=threading.Timer)
     timers = timer_patch.start()
     try:
         pool(invocation(spec, tmp_path, "chunk-1", "one.json"))
@@ -260,7 +260,7 @@ def test_http_worker_uses_warm_runner_and_closes_on_shutdown(tmp_path: Path, mon
         output.write_bytes(b"restored")
         return fake_result(output), output
 
-    monkeypatch.setattr("immich_ml.video_restoration.app.restore", fake_restore)
+    monkeypatch.setattr("frameleaf_ml.video_restoration.app.restore", fake_restore)
     with TestClient(create_app(registry, work_root=tmp_path, refresh_on_startup=False)) as client:
         for request_id in ("chunk-1", "chunk-2"):
             response = client.post(

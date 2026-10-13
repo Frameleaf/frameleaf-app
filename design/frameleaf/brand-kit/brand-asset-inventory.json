@@ -27,12 +27,12 @@
       "path": "server/package.json"
     },
     {
-      "expectedValue": "immich-ml",
+      "expectedValue": "frameleaf-ml",
       "parser": "toml-project-name",
       "path": "machine-learning/pyproject.toml"
     },
     {
-      "expectedValue": "immich_ml",
+      "expectedValue": "frameleaf_ml",
       "parser": "toml-build-includes",
       "path": "machine-learning/pyproject.toml"
     },

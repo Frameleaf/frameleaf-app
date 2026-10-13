@@ -35,7 +35,7 @@ const SCHEMA_VERSION = '2026-05-22';
 const ROLE_LINE =
   'You are generating a concise searchable image record from computer vision outputs.\n\nUse only visible evidence from the image. If estimating age, use broad apparent age groups only, such as baby, child, teenager, young adult, adult, older adult, or unknown.';
 
-// KEEP IN SYNC WITH: machine-learning/immich_ml/models/image_description.py
+// KEEP IN SYNC WITH: machine-learning/frameleaf_ml/models/image_description.py
 // (the JSON schema portion of IMAGE_DESCRIPTION_PROMPT)
 const JSON_SCHEMA_BLOCK = `Return valid JSON with this schema:
 

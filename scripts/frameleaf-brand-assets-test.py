@@ -146,7 +146,7 @@ class BrandAssetContractTests(unittest.TestCase):
 
         def toml_decoy(root):
             path = root / "machine-learning/pyproject.toml"
-            path.write_text(path.read_text().replace('name = "immich-ml"', '# name = "immich-ml"\nname = "frameleaf-ml"', 1))
+            path.write_text(path.read_text().replace('name = "frameleaf-ml"', '# name = "frameleaf-ml"\nname = "invalid-ml"', 1))
 
         def svelte_decoy(root):
             path = root / "web/src/routes/+layout.svelte"

@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
  *
  * - the name ("Immich", "IMMICH") in shipped code, outside comments and specs: web/src, server/src
  *   (including its log and error strings and the email templates), packages/cli/src and the machine
- *   learning service (machine-learning/immich_ml, whose package name is an identifier);
+ *   learning service (machine-learning/frameleaf_ml, whose package name is an identifier);
  * - the name in every documentation page and the docs config, README.md, CONTRIBUTING.md,
  *   install.sh, the PWA manifest and security.txt;
  * - any spelling of it in a translation value (i18n/*.json, every locale);
@@ -495,7 +495,7 @@ export function findViolations() {
     "web/src",
     "server/src",
     "packages/cli/src",
-    "machine-learning/immich_ml",
+    "machine-learning/frameleaf_ml",
   ).filter((file) => CODE.test(file) && !NOT_SHIPPED.test(file));
   const text = [
     ...tracked("docs/docs", "docs/src").filter((file) => DOC_PAGE.test(file)),

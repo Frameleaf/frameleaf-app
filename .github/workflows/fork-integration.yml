@@ -190,7 +190,7 @@ jobs:
         run: docker build --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models
         run: |
-          docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import immich_ml.models.image_description'
+          docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import frameleaf_ml.models.image_description'
       - name: Verify the CUDA image-description stack without a GPU
         if: matrix.device == 'cuda'
         run: |

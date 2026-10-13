@@ -1,5 +1,5 @@
 [project]
-name = "immich-ml"
+name = "frameleaf-ml"
 version = "3.2.0"
 description = ""
 authors = [{ name = "Hau Tran", email = "alex.tran1502@gmail.com" }]
@@ -97,10 +97,10 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.hatch.build.targets.sdist]
-include = ["immich_ml"]
+include = ["frameleaf_ml"]
 
 [tool.hatch.build.targets.wheel]
-include = ["immich_ml"]
+include = ["frameleaf_ml"]
 
 [build-system]
 requires = ["hatchling"]

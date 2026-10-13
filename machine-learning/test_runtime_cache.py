@@ -3,10 +3,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from immich_ml.config import settings
-from immich_ml.sessions import runtime_cache_dir
-from immich_ml.sessions.ann import AnnSession
-from immich_ml.sessions.ort import OrtSession
+from frameleaf_ml.config import settings
+from frameleaf_ml.sessions import runtime_cache_dir
+from frameleaf_ml.sessions.ann import AnnSession
+from frameleaf_ml.sessions.ort import OrtSession
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def staged_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     model.parent.mkdir()
     model.write_bytes(b"synthetic model")
     monkeypatch.setattr(settings, "model_downloads", False)
-    monkeypatch.setattr("immich_ml.sessions.gettempdir", lambda: str(tmp_path / "runtime"))
+    monkeypatch.setattr("frameleaf_ml.sessions.gettempdir", lambda: str(tmp_path / "runtime"))
     return model
 
 
@@ -63,7 +63,7 @@ def test_accelerator_cache_does_not_write_to_staged_weights(
 
 
 def test_armnn_tuning_and_compiled_cache_are_writable_outside_staged_models(staged_model: Path) -> None:
-    with patch("immich_ml.sessions.ann.Ann", return_value=Mock()) as ann:
+    with patch("frameleaf_ml.sessions.ann.Ann", return_value=Mock()) as ann:
         ann.return_value.load.return_value = 1
         session = AnnSession(staged_model)
         assert not Path(ann.call_args.kwargs["tuning_file"]).is_relative_to(staged_model.parent)

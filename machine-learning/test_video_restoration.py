@@ -19,10 +19,10 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from pydantic import ValidationError
 
-from immich_ml.video_restoration import media
-from immich_ml.video_restoration.app import create_app
-from immich_ml.video_restoration.gpu import parse_gpu_query, parse_memory_used
-from immich_ml.video_restoration.models import (
+from frameleaf_ml.video_restoration import media
+from frameleaf_ml.video_restoration.app import create_app
+from frameleaf_ml.video_restoration.gpu import parse_gpu_query, parse_memory_used
+from frameleaf_ml.video_restoration.models import (
     REQUIRED_EVIDENCE,
     AdapterRun,
     Manifest,
@@ -45,8 +45,8 @@ from immich_ml.video_restoration.models import (
     model_fingerprint,
     render_argv,
 )
-from immich_ml.video_restoration.pipeline import check_source
-from immich_ml.video_restoration.schemas import (
+from frameleaf_ml.video_restoration.pipeline import check_source
+from frameleaf_ml.video_restoration.schemas import (
     RESULT_HEADER,
     DynamicRange,
     GpuDescription,
@@ -860,7 +860,7 @@ class TestWorkerApp:
             output.write_bytes(b"restored video bytes")
             return fake_result(output), output
 
-        monkeypatch.setattr("immich_ml.video_restoration.app.restore", fake_restore)
+        monkeypatch.setattr("frameleaf_ml.video_restoration.app.restore", fake_restore)
 
         response = self.client(tmp_path).post(
             "/restoration/restore",

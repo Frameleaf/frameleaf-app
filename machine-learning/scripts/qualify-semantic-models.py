@@ -29,7 +29,7 @@ def main() -> None:
     socket.create_connection = no_network
     from PIL import Image
     import numpy as np
-    from immich_ml.models.semantic_mask import SemanticMaskModel, MODEL_NAME
+    from frameleaf_ml.models.semantic_mask import SemanticMaskModel, MODEL_NAME
     model = SemanticMaskModel(MODEL_NAME, device=args.device)
     image = Image.open(args.image).convert('RGB')
     assert max(image.size) <= 2048

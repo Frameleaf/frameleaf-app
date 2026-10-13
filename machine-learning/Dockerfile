@@ -154,7 +154,7 @@ RUN echo "hard core 0" >> /etc/security/limits.conf && \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY scripts/healthcheck.py .
-COPY immich_ml immich_ml
+COPY frameleaf_ml frameleaf_ml
 COPY scripts/verify-semantic-runtime.py scripts/provision-semantic-models.py scripts/qualify-semantic-models.py ./scripts/
 # Only CPU/CUDA advertise this native runtime; no weights are fetched during image construction.
 RUN case "$DEVICE" in cpu|cuda) python scripts/verify-semantic-runtime.py ;; esac
@@ -183,6 +183,6 @@ LABEL org.opencontainers.image.source="https://github.com/${BUILD_SOURCE_REPOSIT
 ENV HF_HOME=/cache/hf-cache
 
 ENTRYPOINT ["tini", "--"]
-CMD ["python", "-m", "immich_ml"]
+CMD ["python", "-m", "frameleaf_ml"]
 
 HEALTHCHECK CMD python3 healthcheck.py

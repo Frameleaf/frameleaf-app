@@ -6,16 +6,16 @@ uv = "0.8.15"
 run = "uv sync --locked"
 
 [tasks.lint]
-run = "uv run ruff check immich_ml"
+run = "uv run ruff check frameleaf_ml"
 
 [tasks.test]
-run = "uv run pytest --cov=immich_ml --cov-report term-missing"
+run = "uv run pytest --cov=frameleaf_ml --cov-report term-missing"
 
 [tasks.format]
-run = "uv run ruff format immich_ml"
+run = "uv run ruff format frameleaf_ml"
 
 [tasks.check]
-run = "uv run mypy --strict immich_ml/"
+run = "uv run mypy --strict frameleaf_ml/"
 
 [tasks.ci-unit]
 run = [

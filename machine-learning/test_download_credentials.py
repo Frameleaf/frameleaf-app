@@ -10,11 +10,11 @@ from huggingface_hub.file_download import http_get
 from huggingface_hub.utils._http import default_client_factory
 from pydantic import SecretStr
 
-from immich_ml.config import model_source_token, settings
-from immich_ml.models.florence_manifest import FLORENCE_MODELS
-from immich_ml.models.image_description import ImageDescriptionModel
-from immich_ml.models.nsfw_detection import NsfwDetectionModel
-from immich_ml.privacy import _bind_download_credentials, _download_client
+from frameleaf_ml.config import model_source_token, settings
+from frameleaf_ml.models.florence_manifest import FLORENCE_MODELS
+from frameleaf_ml.models.image_description import ImageDescriptionModel
+from frameleaf_ml.models.nsfw_detection import NsfwDetectionModel
+from frameleaf_ml.privacy import _bind_download_credentials, _download_client
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ def test_public_repository_downloads_never_inherit_a_saved_token(
     monkeypatch.delenv("HF_ENDPOINT", raising=False)
     monkeypatch.setenv("HF_TOKEN", "fake-saved-token-must-not-leave")
     module = "image_description" if model_class is ImageDescriptionModel else "nsfw_detection"
-    with patch(f"immich_ml.models.{module}.snapshot_download") as download:
+    with patch(f"frameleaf_ml.models.{module}.snapshot_download") as download:
         model_class("example/public", acceleration="cuda")._download()
     assert download.call_args.kwargs["token"] is False
     assert download.call_args.kwargs["endpoint"] == "https://huggingface.co"
@@ -155,8 +155,8 @@ def test_pinned_florence_source_credentials_preserve_manifest_contract(
     monkeypatch.setenv("HF_TOKEN", "fake-saved-token-must-not-leave")
     name = "microsoft/Florence-2-base-ft"
     manifest = FLORENCE_MODELS[name]
-    with patch("immich_ml.models.image_description.snapshot_download") as download:
-        with patch("immich_ml.models.image_description.verify_florence_snapshot") as verify:
+    with patch("frameleaf_ml.models.image_description.snapshot_download") as download:
+        with patch("frameleaf_ml.models.image_description.verify_florence_snapshot") as verify:
             model = ImageDescriptionModel(name, acceleration="cuda", device="cpu")
             model._download()
     mirror = endpoint == "https://private-models.example"
@@ -182,7 +182,7 @@ def test_production_factory_preserves_hub_offline_hook() -> None:
 def test_semantic_provisioning_uses_selected_source_without_implicit_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source_kind: str
 ) -> None:
-    from immich_ml.models.semantic_mask import MANIFEST, MODEL_NAME
+    from frameleaf_ml.models.semantic_mask import MANIFEST, MODEL_NAME
 
     private = source_kind != "public"
     endpoint = "https://private-models.example" if private else "https://huggingface.co"
@@ -195,7 +195,7 @@ def test_semantic_provisioning_uses_selected_source_without_implicit_credentials
     monkeypatch.setattr(sys, "argv", ["provision", "--download", "--cache-root", str(tmp_path)])
     (tmp_path / "semantic-mask" / MODEL_NAME / "hub").mkdir(parents=True)
     with patch("huggingface_hub.snapshot_download", return_value=str(tmp_path)) as download:
-        with patch("immich_ml.models.semantic_mask_manifest.verify_snapshot") as verify:
+        with patch("frameleaf_ml.models.semantic_mask_manifest.verify_snapshot") as verify:
             runpy.run_path(str(Path(__file__).parent / "scripts/provision-semantic-models.py"), run_name="__main__")
     assert download.call_count == verify.call_count == len(MANIFEST)
     for call, model in zip(download.call_args_list, MANIFEST, strict=True):

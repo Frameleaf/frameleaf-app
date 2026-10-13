@@ -8,8 +8,8 @@ name: Model Mirror Defaults
       - master/frameleaf-implementation
     paths:
       - server/src/dtos/config.dto.ts
-      - machine-learning/immich_ml/config.py
-      - machine-learning/immich_ml/models/base.py
+      - machine-learning/frameleaf_ml/config.py
+      - machine-learning/frameleaf_ml/models/base.py
       - server/test/model-mirror/**
       - server/test/vitest.config.model-mirror.mjs
       - .github/workflows/model-mirror-defaults.yml
