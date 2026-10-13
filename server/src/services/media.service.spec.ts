@@ -3354,7 +3354,7 @@ describe(MediaService.name, () => {
       expect(plan.command.inputOptions).not.toEqual(expect.arrayContaining(['-init_hw_device']));
       expect(plan.command.outputOptions).toEqual(
         // FL-39: the edited master is never encoded below the master quality cap, whatever the playback crf
-        expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', String(EDITED_MASTER_MAX_CRF)]),
+        expect.arrayContaining(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(EDITED_MASTER_MAX_CRF)]),
       );
       expect(getFilterOption(plan.command.outputOptions)).toBe('crop=300:200:2:4');
     });
@@ -3478,7 +3478,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.not.arrayContaining(['-hwaccel', '-init_hw_device']),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264']),
         }),
       );
       expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
@@ -3604,7 +3604,7 @@ describe(MediaService.name, () => {
         expect(outputOptions[outputOptions.indexOf('-color_trc') + 1]).toBe('smpte2084');
         expect(outputOptions[outputOptions.indexOf('-color_primaries') + 1]).toBe('bt2020');
         // A 10-bit source keeps 10 bits: the H.264 playback codec is promoted rather than flattening it.
-        expect(outputOptions[outputOptions.indexOf('-c:v') + 1]).toBe(VideoCodec.Hevc);
+        expect(outputOptions[outputOptions.indexOf('-c:v') + 1]).toBe('libx265');
         expect(getFilterOption(outputOptions)).toContain('format=yuv420p10le');
       });
 
@@ -4367,7 +4367,7 @@ describe(MediaService.name, () => {
       [true, false, 'invalid-master'].flatMap((accepted) =>
         [false, true].flatMap((copy) =>
           [
-            [TranscodeHardwareAcceleration.Disabled, 'h264'],
+            [TranscodeHardwareAcceleration.Disabled, 'libx264'],
             [TranscodeHardwareAcceleration.Nvenc, 'h264_nvenc'],
             [TranscodeHardwareAcceleration.Qsv, 'h264_qsv'],
             [TranscodeHardwareAcceleration.Vaapi, 'h264_vaapi'],
@@ -4952,7 +4952,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy']),
           twoPass: false,
         }),
       );
@@ -5026,7 +5026,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-maxrate', '4500k', '-bufsize', '9000k']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-maxrate', '4500k', '-bufsize', '9000k']),
           twoPass: false,
         }),
       );
@@ -5041,7 +5041,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-maxrate', '4500k', '-bufsize', '9000k']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-maxrate', '4500k', '-bufsize', '9000k']),
           twoPass: false,
         }),
       );
@@ -5058,7 +5058,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-b:v',
             '3104k',
             '-minrate',
@@ -5080,7 +5080,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy']),
           twoPass: false,
         }),
       );
@@ -5214,7 +5214,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'hevc',
+            'libx265',
             '-threads',
             '1',
             '-x265-params',
@@ -6151,7 +6151,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264']),
           twoPass: false,
         }),
       );
@@ -6170,7 +6170,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264']),
           twoPass: false,
         }),
       );
@@ -6414,7 +6414,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-c:a',
             'copy',
             '-vf',
@@ -6436,7 +6436,7 @@ describe(MediaService.name, () => {
           inputOptions: expect.any(Array),
           outputOptions: expect.arrayContaining([
             '-c:v',
-            'h264',
+            'libx264',
             '-c:a',
             'copy',
             '-vf',
@@ -6456,7 +6456,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy', '-vf', 'format=yuv420p']),
+          outputOptions: expect.arrayContaining(['-c:v', 'libx264', '-c:a', 'copy', '-vf', 'format=yuv420p']),
           twoPass: false,
         }),
       );
@@ -6471,7 +6471,14 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy', '-vf', 'scale=-2:720,format=yuv420p']),
+          outputOptions: expect.arrayContaining([
+            '-c:v',
+            'libx264',
+            '-c:a',
+            'copy',
+            '-vf',
+            'scale=-2:720,format=yuv420p',
+          ]),
           twoPass: false,
         }),
       );

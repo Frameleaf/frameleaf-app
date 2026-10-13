@@ -499,7 +499,7 @@ describe(TranscodingService.name, () => {
         expected: [
           ...baseCommand,
           '-c:v',
-          'hevc',
+          'libx265',
           '-c:a',
           'aac',
           '-tag:v',
@@ -526,7 +526,7 @@ describe(TranscodingService.name, () => {
         expected: [
           ...baseCommand,
           '-c:v',
-          'h264',
+          'libx264',
           '-c:a',
           'aac',
           '-preset',
