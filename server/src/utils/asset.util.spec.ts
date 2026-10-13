@@ -1,12 +1,74 @@
 import type { AccessRepository } from 'src/repositories/access.repository.js';
 import type { IBulkAsset } from 'src/types.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { Permission } from 'src/enum.js';
+import { AssetFileType, Permission } from 'src/enum.js';
 import { checkAccess } from 'src/utils/access.js';
-import { addAssets, removeAssets } from 'src/utils/asset.util.js';
+import { addAssets, getAssetFiles, removeAssets } from 'src/utils/asset.util.js';
+import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
 vi.mock('src/utils/access.js', () => ({ checkAccess: vi.fn() }));
+
+describe('getAssetFiles', () => {
+  const variants = [
+    ['fullsizeFile', AssetFileType.FullSize, false],
+    ['previewFile', AssetFileType.Preview, false],
+    ['thumbnailFile', AssetFileType.Thumbnail, false],
+    ['sidecarFile', AssetFileType.Sidecar, false],
+    ['editedFullsizeFile', AssetFileType.FullSize, true],
+    ['editedPreviewFile', AssetFileType.Preview, true],
+    ['editedThumbnailFile', AssetFileType.Thumbnail, true],
+    ['encodedVideoFile', AssetFileType.EncodedVideo, false],
+  ] as const;
+
+  it('retains every output key when no file is available', () => {
+    const selected = getAssetFiles([]);
+    expect(Object.keys(selected)).toEqual(variants.map(([key]) => key));
+    expect(Object.values(selected).every((file) => file === undefined)).toBe(true);
+  });
+
+  it('returns the first matching objects for each original and edited variant without modifying the input', () => {
+    const first = variants.map(([, type, isEdited]) => AssetFileFactory.create({ type, isEdited }));
+    const duplicates = variants.map(([, type, isEdited]) => AssetFileFactory.create({ type, isEdited }));
+    const files = [...first.toReversed(), ...duplicates];
+    const snapshot = [...files];
+    const selected = getAssetFiles(files);
+    for (const [index, [key]] of variants.entries()) {
+      expect(selected[key]).toBe(first[index]);
+    }
+    expect(files).toEqual(snapshot);
+  });
+
+  it('ignores unsupported variants and preserves missing choices', () => {
+    const preview = AssetFileFactory.create({ type: AssetFileType.Preview, isEdited: false });
+    const selected = getAssetFiles([
+      AssetFileFactory.create({ type: AssetFileType.HdrPreview, isEdited: false }),
+      AssetFileFactory.create({ type: AssetFileType.Sidecar, isEdited: true }),
+      AssetFileFactory.create({ type: AssetFileType.EncodedVideo, isEdited: true }),
+      preview,
+    ]);
+    expect(selected.previewFile).toBe(preview);
+    expect(Object.values(selected).filter((file) => file !== undefined)).toEqual([preview]);
+  });
+
+  it('stops inspecting the tail only when every choice is already found', () => {
+    const files = variants.map(([, type, isEdited]) => AssetFileFactory.create({ type, isEdited }));
+    files.length++;
+    const selected = getAssetFiles(files);
+    expect(Object.values(selected)).toEqual(files.slice(0, 8));
+    const incomplete = files.slice(0, 1);
+    incomplete.length++;
+    expect(() => getAssetFiles(incomplete)).toThrow(TypeError);
+  });
+
+  it('does not treat absent or non-boolean edited flags as an original or edited file', () => {
+    for (const flag of [undefined, null, 0, 1, 'false', 'true']) {
+      const file = AssetFileFactory.create({ type: AssetFileType.FullSize });
+      Reflect.set(file, 'isEdited', flag);
+      expect(Object.values(getAssetFiles([file])).every((selected) => selected === undefined)).toBe(true);
+    }
+  });
+});
 
 describe('bulk asset membership', () => {
   const parentId = 'parent';

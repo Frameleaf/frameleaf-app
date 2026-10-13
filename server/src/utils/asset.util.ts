@@ -17,18 +17,90 @@ export const getAssetFile = (files: AssetFile[], type: AssetFileType, { isEdited
   return files.find((file) => file.type === type && file.isEdited === isEdited);
 };
 
-export const getAssetFiles = (files: AssetFile[]) => ({
-  fullsizeFile: getAssetFile(files, AssetFileType.FullSize, { isEdited: false }),
-  previewFile: getAssetFile(files, AssetFileType.Preview, { isEdited: false }),
-  thumbnailFile: getAssetFile(files, AssetFileType.Thumbnail, { isEdited: false }),
-  sidecarFile: getAssetFile(files, AssetFileType.Sidecar, { isEdited: false }),
+type AssetFileSlot =
+  | 'fullsizeFile'
+  | 'previewFile'
+  | 'thumbnailFile'
+  | 'sidecarFile'
+  | 'editedFullsizeFile'
+  | 'editedPreviewFile'
+  | 'editedThumbnailFile'
+  | 'encodedVideoFile';
 
-  editedFullsizeFile: getAssetFile(files, AssetFileType.FullSize, { isEdited: true }),
-  editedPreviewFile: getAssetFile(files, AssetFileType.Preview, { isEdited: true }),
-  editedThumbnailFile: getAssetFile(files, AssetFileType.Thumbnail, { isEdited: true }),
-
-  encodedVideoFile: getAssetFile(files, AssetFileType.EncodedVideo, { isEdited: false }),
-});
+export const getAssetFiles = (files: AssetFile[]) => {
+  const selected: Record<AssetFileSlot, AssetFile | undefined> = {
+    fullsizeFile: undefined,
+    previewFile: undefined,
+    thumbnailFile: undefined,
+    sidecarFile: undefined,
+    editedFullsizeFile: undefined,
+    editedPreviewFile: undefined,
+    editedThumbnailFile: undefined,
+    encodedVideoFile: undefined,
+  };
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
+    const isEdited = file.isEdited;
+    if (typeof isEdited !== 'boolean') {
+      continue;
+    }
+    switch (file.type) {
+      case AssetFileType.FullSize: {
+        if (isEdited) {
+          selected.editedFullsizeFile ??= file;
+        } else {
+          selected.fullsizeFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.Preview: {
+        if (isEdited) {
+          selected.editedPreviewFile ??= file;
+        } else {
+          selected.previewFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.Thumbnail: {
+        if (isEdited) {
+          selected.editedThumbnailFile ??= file;
+        } else {
+          selected.thumbnailFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.Sidecar: {
+        if (!isEdited) {
+          selected.sidecarFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.EncodedVideo: {
+        if (!isEdited) {
+          selected.encodedVideoFile ??= file;
+        }
+        break;
+      }
+      case AssetFileType.HdrFullSize:
+      case AssetFileType.HdrPreview: {
+        break;
+      }
+    }
+    if (
+      selected.fullsizeFile &&
+      selected.previewFile &&
+      selected.thumbnailFile &&
+      selected.sidecarFile &&
+      selected.editedFullsizeFile &&
+      selected.editedPreviewFile &&
+      selected.editedThumbnailFile &&
+      selected.encodedVideoFile
+    ) {
+      break;
+    }
+  }
+  return selected;
+};
 
 export const addAssets = async (
   auth: AuthDto,
@@ -45,6 +117,7 @@ export const addAssets = async (
   });
 
   const results: BulkIdResponseDto[] = [];
+  const newAssetIds: string[] = [];
   for (const assetId of dto.assetIds) {
     const hasAsset = existingAssetIds.has(assetId);
     if (hasAsset) {
@@ -59,10 +132,10 @@ export const addAssets = async (
     }
 
     existingAssetIds.add(assetId);
+    newAssetIds.push(assetId);
     results.push({ id: assetId, success: true });
   }
 
-  const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
   if (newAssetIds.length > 0) {
     await bulk.addAssetIds(dto.parentId, newAssetIds);
   }
