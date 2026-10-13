@@ -1,13 +1,11 @@
 import { Kysely, sql } from 'kysely';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`UPDATE public.asset_lock SET reason = 'frameleaf-locked-folder' WHERE reason = 'immich-locked-folder'`.execute(
     db,
   );
-  const mlUrl =
-    process.env.FRAMELEAF_MACHINE_LEARNING_URL ||
-    process.env.IMMICH_MACHINE_LEARNING_URL ||
-    'http://immich-machine-learning:3003';
+  const mlUrl = readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_URL') || 'http://immich-machine-learning:3003';
   // Saved settings omit defaults. Materialize the old values so approved configuration epochs still match.
   await sql`
     INSERT INTO public.system_metadata (key, value)
