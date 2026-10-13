@@ -20,9 +20,21 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto
   const spaces = albums.filter((album) => album.kind === AlbumKind.Space);
   const collectionIds = new Set(collections.map(({ id }) => id));
   const plainAlbums = albums.filter((album) => album.kind === AlbumKind.Album);
+  const membersByParent = new Map<string, AlbumResponseDto[]>();
+  for (const album of plainAlbums) {
+    const parentId = album.parentId;
+    if (parentId !== null && collectionIds.has(parentId)) {
+      const members = membersByParent.get(parentId);
+      if (members) {
+        members.push(album);
+      } else {
+        membersByParent.set(parentId, [album]);
+      }
+    }
+  }
 
   const shelves: AlbumCollectionResponseDto[] = collections.map((collection) => {
-    const members = plainAlbums.filter((album) => album.parentId === collection.id);
+    const members = membersByParent.get(collection.id)?.slice() ?? [];
     return {
       collection,
       albums: members,

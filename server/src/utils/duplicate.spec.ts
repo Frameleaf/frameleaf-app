@@ -92,6 +92,34 @@ describe('duplicate utils', () => {
   });
 
   describe('suggestDuplicate', () => {
+    it('keeps the first tied asset reference without changing the input order', () => {
+      const first = jpg('same', 1000);
+      const second = jpg('same', 1000);
+      const inputs = [first, jpg('smaller', 500), second];
+
+      expect(suggestDuplicate(inputs)).toBe(first);
+      expect(inputs[0]).toBe(first);
+      expect(inputs[1].id).toBe('smaller');
+      expect(inputs[2]).toBe(second);
+    });
+
+    it('ranks candidates in a linear number of format reads', () => {
+      let formatReads = 0;
+      const assets = Array.from({ length: 128 }, (_, index) => {
+        const asset = jpg(`asset-${index}`, (index * 73) % 128);
+        Object.defineProperty(asset, 'originalFileName', {
+          get: () => {
+            formatReads++;
+            return 'asset.jpg';
+          },
+        });
+        return asset;
+      });
+
+      expect(suggestDuplicate(assets)?.id).toBe('asset-7');
+      expect(formatReads).toBeLessThanOrEqual(assets.length * 2);
+    });
+
     it('should return undefined for empty list', () => {
       expect(suggestDuplicate([])).toBeUndefined();
     });

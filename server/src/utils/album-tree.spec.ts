@@ -70,6 +70,47 @@ describe(buildAlbumTree.name, () => {
     expect(tree.collections).toEqual([]);
     expect(tree.albums).toEqual([parent, child]);
   });
+
+  it('keeps duplicate shelves independent and preserves empty-parent membership', () => {
+    const first = album({ id: '', kind: AlbumKind.Collection, assetCount: 2 });
+    const second = album({ id: '', kind: AlbumKind.Collection, assetCount: 7 });
+    const child = album({ id: 'child', parentId: '', assetCount: 3 });
+    const inputs = [child, first, second];
+    const tree = buildAlbumTree(inputs);
+
+    expect(tree.collections).toEqual([
+      { collection: first, albums: [child], albumCount: 1, assetCount: 5 },
+      { collection: second, albums: [child], albumCount: 1, assetCount: 10 },
+    ]);
+    expect(tree.albums).toEqual([child]);
+    expect(tree.collections[0].albums[0]).toBe(child);
+    tree.collections[0].albums.pop();
+    expect(tree.collections[1].albums).toEqual([child]);
+    expect(inputs).toEqual([child, first, second]);
+  });
+
+  it('does not rescan each album parent for every collection', () => {
+    let parentReads = 0;
+    const collections = Array.from({ length: 40 }, (_, index) =>
+      album({ id: `collection-${index}`, kind: AlbumKind.Collection }),
+    );
+    const members = Array.from({ length: 80 }, (_, index) => {
+      const member = album({ id: `album-${index}`, parentId: `collection-${index % 40}` });
+      Object.defineProperty(member, 'parentId', {
+        get: () => {
+          parentReads++;
+          return `collection-${index % 40}`;
+        },
+      });
+      return member;
+    });
+
+    const tree = buildAlbumTree([...members, ...collections]);
+
+    expect(tree.collections[0].albums.map(({ id }) => id)).toEqual(['album-0', 'album-40']);
+    expect(tree.albums).toEqual([]);
+    expect(parentReads).toBeLessThanOrEqual(members.length * 4);
+  });
 });
 
 describe(orderAlbumTree.name, () => {

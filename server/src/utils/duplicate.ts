@@ -36,14 +36,27 @@ export const getFormatRank = (asset: AssetResponseDto): number => {
 export const suggestDuplicate = (
   assets: AssetResponseDto[],
   _options: SuggestDuplicateOptions = {},
-): AssetResponseDto | undefined =>
-  assets.toSorted(
-    (a, b) =>
-      getFormatRank(b) - getFormatRank(a) ||
-      (b.exifInfo?.fileSizeInByte ?? 0) - (a.exifInfo?.fileSizeInByte ?? 0) ||
-      getExifCount(b) - getExifCount(a) ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  )[0];
+): AssetResponseDto | undefined => {
+  let best: AssetResponseDto | undefined;
+  for (const asset of assets) {
+    if (asset === undefined) {
+      continue;
+    }
+    if (best === undefined) {
+      best = asset;
+      continue;
+    }
+    const comparison =
+      getFormatRank(best) - getFormatRank(asset) ||
+      (best.exifInfo?.fileSizeInByte ?? 0) - (asset.exifInfo?.fileSizeInByte ?? 0) ||
+      getExifCount(best) - getExifCount(asset) ||
+      (asset.id < best.id ? -1 : asset.id > best.id ? 1 : 0);
+    if (comparison < 0) {
+      best = asset;
+    }
+  }
+  return best;
+};
 
 /**
  * Suggests the best duplicate asset IDs to keep from a list of duplicates.
