@@ -218,7 +218,7 @@ def main():
  checkout_status=command(['/usr/bin/git','-C',str(checkout),'status','--porcelain'])
  assert checkout_status=='','dirty reviewed checkout (first 4096 characters): '+checkout_status[:4096]
  head=command(['/usr/bin/git','-C',str(checkout),'rev-parse','HEAD'])
- recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']=='1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' and len(recipe['patches'])==133
+ recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']=='3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce' and len(recipe['patches'])==133
  assert digest(checkout/'studio/engine-package-lock.json')==recipe['lockfileSha256']
  for patch in recipe['patches']:assert digest(checkout/'studio'/patch['path'])==patch['sha256']
  source=Path(__file__).resolve().parent

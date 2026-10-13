@@ -14,7 +14,7 @@ class SourceChecks(unittest.TestCase):
  def test_exact_current_recipe_and_lock(self):
   data=json.loads((ROOT/'studio/engine-build.json').read_text())
   self.assertEqual(len(data['patches']),133)
-  self.assertEqual(data['sourceSha256'],'1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80')
+  self.assertEqual(data['sourceSha256'],'3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce')
   self.assertEqual(intake.digest(ROOT/'studio/engine-package-lock.json'),data['lockfileSha256'])
   for item in data['patches']:self.assertEqual(intake.digest(ROOT/'studio'/item['path']),item['sha256'])
  def test_unit_scopes_and_limits(self):

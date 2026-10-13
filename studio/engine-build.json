@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-  "node": "24.21.0",
+  "node": "26.11.1",
   "npm": "11.8.0",
-  "lockfileSha256": "5efddf7c35a2600f0228f0b973991838af8996fba8d5591dd7460dc3690a36dc",
+  "lockfileSha256": "8b117f02224f297ba7511ac47f15a29532a38e9a59fa910d55c2aa9236f437f0",
   "patches": [
     {
       "path": "patches/0001-isolated-package.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "ffe6b9980e37480d13fc83c217a2742dfe611eaedc67f41114e6a126664e92d3"
+      "sha256": "eb23cb96777b44a5b37cf099babec9bcdff31fb002010713f07fe8d739fa73b9"
     },
     {
       "path": "patches/0002-stable-worker-sourcemaps.patch",
@@ -671,5 +671,5 @@
       "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
     }
   ],
-  "sourceSha256": "1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80"
+  "sourceSha256": "3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce"
 }

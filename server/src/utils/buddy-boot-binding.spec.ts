@@ -681,7 +681,8 @@ if (parentPort) {
         await writeFile(
           workerFile,
           `import { parentPort } from 'node:worker_threads';
-import { parseWorkerSelection } from ${JSON.stringify(new URL('environment-values.ts', import.meta.url).href)};
+import { tsImport } from ${JSON.stringify(import.meta.resolve('tsx/esm/api'))};
+const { parseWorkerSelection } = await tsImport(${JSON.stringify(new URL('environment-values.ts', import.meta.url).href)}, import.meta.url);
 const result = parseWorkerSelection(process.env).join(',');
 if (parentPort) {
   parentPort.postMessage(result);
@@ -696,10 +697,14 @@ if (parentPort) {
           const worker =
             kind === 'process'
               ? fork(workerFile, [], {
-                  execArgv: ['--experimental-transform-types'],
+                  execArgv: [],
                   stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
                 })
-              : new Worker(workerFile, { execArgv: ['--experimental-transform-types'], stdout: true, stderr: true });
+              : new Worker(workerFile, {
+                  execArgv: [],
+                  stdout: true,
+                  stderr: true,
+                });
           try {
             const signal = AbortSignal.timeout(5000);
             const [[result], [code]] = await Promise.all([

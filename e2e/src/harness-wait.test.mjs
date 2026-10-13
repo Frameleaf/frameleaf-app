@@ -726,7 +726,7 @@ const referenceEnvironment = {
   memoryBytes: 34359738368,
   osVersion: '27.2',
   osBuild: '26B5101f',
-  nodeVersion: 'v24.21.0',
+  nodeVersion: 'v26.11.1',
   playwrightVersion: '1.62.1',
   browserVersion: '151.0.7922.34',
   power: 'AC',
@@ -1122,7 +1122,7 @@ test('performance sampling control prepares once and retains earlier thumbnail r
       createHash,
       () => Buffer.from(`calibration-control-${++generated}`),
       {
-        version: 'v24.21.0',
+        version: 'v26.11.1',
         env: {
           FL139_PERFORMANCE_MODE: 'calibrate',
           FL139_PERFORMANCE_IDENTITY: 'fixture-identity',
@@ -1363,7 +1363,7 @@ test('reference admission control refuses stale or incomplete evidence before SD
         },
       },
       {
-        version: scenario === 'node-drift' ? 'v25.0.0' : 'v24.21.0',
+        version: scenario === 'node-drift' ? 'v25.0.0' : 'v26.11.1',
         env: {
           FL139_PERFORMANCE_MODE: 'calibrate',
           FL139_PERFORMANCE_IDENTITY: 'identity',

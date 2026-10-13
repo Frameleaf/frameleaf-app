@@ -63,7 +63,8 @@ const legacyCompositionSources = new Set([
 export function compositionSourcesFor(sourceSha256) {
   if (
     sourceSha256 === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578' ||
-    sourceSha256 === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80'
+    sourceSha256 === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' ||
+    sourceSha256 === '3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce'
   )
     return {
       ...COMPOSITION_SOURCES,

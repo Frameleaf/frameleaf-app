@@ -248,8 +248,10 @@ class CapabilityStorage {
       let sent = false;
       return new Response(
         new ReadableStream({
-          pull: (controller) => {
+          pull: async (controller) => {
             if (sent) {
+              // Deliver the first chunk before simulating an asynchronous network interruption.
+              await new Promise<void>((resolve) => setImmediate(resolve));
               if (this.expireDownload) {
                 this.clock += 900_000;
                 this.unavailable = true;
