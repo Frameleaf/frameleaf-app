@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
 import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 import { AuthSession } from 'src/database.js';
@@ -1372,9 +1373,9 @@ describe(StudioResourceService.name, () => {
     });
 
     it('reopened relink graph binds the worker manifest to admitted B, while A keeps its own checksum', async () => {
-      // Runtime-only import keeps the production server build independent of the web module.
-      const { relinkMediaGraph } = await import(
-        /* @vite-ignore */ new URL('../../../web/src/lib/frameleaf/studio/media-relink.ts', import.meta.url).href
+      // Node strips the web module's types without SWC loading its app-only tsconfig.
+      const { relinkMediaGraph } = createRequire(import.meta.url)(
+        '../../../web/src/lib/frameleaf/studio/media-relink.ts',
       );
       const a = newUuid();
       const b = newUuid();
