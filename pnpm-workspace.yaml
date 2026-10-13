@@ -85,3 +85,4 @@ minimumReleaseAgeExclude:
 patchedDependencies:
   # Frameleaf Node ESM/CJS backport of https://github.com/porsager/postgres/pull/1168.
   'postgres@3.4.9': packages/patches/postgres@3.4.9.patch
+  werift@0.25.0: packages/patches/werift@0.25.0.patch

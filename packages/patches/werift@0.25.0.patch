@@ -1,0 +1,76 @@
+diff --git a/lib/index.mjs b/lib/index.mjs
+index 0fa37cb3c5ee7ad9c20a51ac589572eb504baf44..f302470b4bb8d7cf6c3216c3692122d0d4d8ae83 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -13540,6 +13540,14 @@ var SCTP = class _SCTP {
+     }
+   }
+   receiveDataChunk(chunk) {
++    // Frameleaf: bound incomplete messages and malicious gaps before any reassembly allocation.
++    if (this.isStopped) return;
++    if (chunk.userData.length === 0 || chunk.userData.length > this.advertisedRwnd ||
++        this.sackMisOrdered.size >= 4096 ||
++        Object.values(this.inboundStreams).reduce((count, stream) => count + stream.reassembly.length, 0) >= 4096) {
++      void this.stop().catch(() => {});
++      return;
++    }
+     this.sackNeeded = true;
+     if (this.markReceived(chunk.tsn)) {
+       this.sackImmediate = true;
+diff --git a/lib/polyfill/dom.mjs b/lib/polyfill/dom.mjs
+index a9f3d0e77061ce672d9d41f11a3c1b115afe28b6..3515dd4e2f8101a2ee412434d3059b0edd4f61bc 100644
+--- a/lib/polyfill/dom.mjs
++++ b/lib/polyfill/dom.mjs
+@@ -13224,6 +13224,14 @@ var SCTP = class _SCTP {
+     }
+   }
+   receiveDataChunk(chunk) {
++    // Frameleaf: bound incomplete messages and malicious gaps before any reassembly allocation.
++    if (this.isStopped) return;
++    if (chunk.userData.length === 0 || chunk.userData.length > this.advertisedRwnd ||
++        this.sackMisOrdered.size >= 4096 ||
++        Object.values(this.inboundStreams).reduce((count, stream) => count + stream.reassembly.length, 0) >= 4096) {
++      void this.stop().catch(() => {});
++      return;
++    }
+     this.sackNeeded = true;
+     if (this.markReceived(chunk.tsn)) {
+       this.sackImmediate = true;
+diff --git a/lib/polyfill/index.mjs b/lib/polyfill/index.mjs
+index a9f3d0e77061ce672d9d41f11a3c1b115afe28b6..3515dd4e2f8101a2ee412434d3059b0edd4f61bc 100644
+--- a/lib/polyfill/index.mjs
++++ b/lib/polyfill/index.mjs
+@@ -13224,6 +13224,14 @@ var SCTP = class _SCTP {
+     }
+   }
+   receiveDataChunk(chunk) {
++    // Frameleaf: bound incomplete messages and malicious gaps before any reassembly allocation.
++    if (this.isStopped) return;
++    if (chunk.userData.length === 0 || chunk.userData.length > this.advertisedRwnd ||
++        this.sackMisOrdered.size >= 4096 ||
++        Object.values(this.inboundStreams).reduce((count, stream) => count + stream.reassembly.length, 0) >= 4096) {
++      void this.stop().catch(() => {});
++      return;
++    }
+     this.sackNeeded = true;
+     if (this.markReceived(chunk.tsn)) {
+       this.sackImmediate = true;
+diff --git a/lib/sctp/src/sctp.js b/lib/sctp/src/sctp.js
+index 3fffcf0029d35c53a724766f5606f10080ea6886..7330507e9bfddc8a1e35050e7c8d1e425528654c 100644
+--- a/lib/sctp/src/sctp.js
++++ b/lib/sctp/src/sctp.js
+@@ -1034,6 +1034,14 @@ class SCTP {
+         }
+     }
+     receiveDataChunk(chunk) {
++    // Frameleaf: bound incomplete messages and malicious gaps before any reassembly allocation.
++    if (this.isStopped) return;
++    if (chunk.userData.length === 0 || chunk.userData.length > this.advertisedRwnd ||
++        this.sackMisOrdered.size >= 4096 ||
++        Object.values(this.inboundStreams).reduce((count, stream) => count + stream.reassembly.length, 0) >= 4096) {
++      void this.stop().catch(() => {});
++      return;
++    }
+         this.sackNeeded = true;
+         if (this.markReceived(chunk.tsn)) {
+             this.sackImmediate = true;
