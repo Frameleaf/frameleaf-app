@@ -147,6 +147,8 @@ const plugins = async () => {
 
 export default async () => ({
   root: here,
+  // Host helpers compile in the engine context too; the web app's Kit tsconfig requires a web install.
+  tsconfig: path.join(engine, 'tsconfig.json'),
   base: '/studio-engine/',
   // Nothing from the engine's public folder ships: its landing images are not Studio, and its
   // bundled TTS model is rights-blocked (FL-86).
