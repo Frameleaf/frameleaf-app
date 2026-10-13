@@ -195,6 +195,7 @@ export default async () => ({
     // push one past the default 5 s on a busy runner. A hang still fails.
     testTimeout: 30_000,
     environment: 'jsdom',
+    execArgv: ['--no-experimental-webstorage'],
     setupFiles: [path.join(engine, 'src/test/setup.ts')],
     include: ['adapters/web/test/**/*.test.ts', ...upstreamSuites],
   },
