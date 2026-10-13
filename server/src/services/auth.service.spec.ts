@@ -844,6 +844,43 @@ describe(AuthService.name, () => {
       });
     });
 
+    it.each(['frameleaf-ios/3.2.0', 'immich-ios/3.2.0'])(
+      'refreshes a new app version without changing authentication: %s',
+      async (userAgent) => {
+        const session = SessionFactory.create();
+        const user = UserFactory.create();
+        mocks.session.update.mockResolvedValue(session);
+        mocks.session.getByToken.mockResolvedValue({
+          id: session.id,
+          updatedAt: new Date(),
+          user,
+          pinExpiresAt: null,
+          appVersion: null,
+        });
+
+        await expect(
+          sut.authenticate({
+            headers: {
+              cookie: 'immich_access_token=auth_token',
+              'user-agent': userAgent,
+              devicemodel: 'phone',
+              devicetype: 'iOS',
+            },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+          }),
+        ).resolves.toEqual({ user, session: { id: session.id, hasElevatedPermission: false } });
+
+        expect(mocks.session.update).toHaveBeenCalledExactlyOnceWith(session.id, {
+          id: session.id,
+          updatedAt: expect.any(Date),
+          appVersion: '3.2.0',
+          deviceType: 'phone',
+          deviceOS: 'iOS',
+        });
+      },
+    );
+
     it('should leave sensitive media to the lock record instead of the session filter (FL-34)', async () => {
       const session = SessionFactory.create();
       const sessionWithToken = {
