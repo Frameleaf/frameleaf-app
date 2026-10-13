@@ -19,22 +19,20 @@ export class SlideshowHistory {
   }
 
   next(): boolean {
-    if (this.index === this.history.length - 1) {
-      return false;
-    }
-
-    this.index++;
-    this.onChange(this.history[this.index]);
-    return true;
+    return this.move(this.index + 1);
   }
 
   previous(): boolean {
-    if (this.index === 0) {
+    return this.move(this.index - 1);
+  }
+
+  private move(index: number): boolean {
+    if (index < 0 || index >= this.history.length) {
       return false;
     }
 
-    this.index--;
-    this.onChange(this.history[this.index]);
+    this.index = index;
+    this.onChange(this.history[index]);
     return true;
   }
 }
