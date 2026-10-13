@@ -65,6 +65,51 @@ the other resource adapters; real render execution and output/checkpoint limits;
 measurements, admission, real-server hosted claim/render evidence and FL-144 editor/lost-ack
 browser acceptance remain open. No capability flags are set by this slice.
 
+## Fonts
+
+A title names its typeface by family (`fontFamily`, graph protocol 14.3.4). The server resolves a
+family from the render font catalogue: the seven title families bundled with the server (graph
+protocol 14.3.5; their decoded TrueType files in `server/resources/studio-fonts`), plus whatever a
+job's own `catalog.fonts` adds, which wins for a family it names. A family in neither is refused
+as `not-bundled`, and a family whose rights row is not approved as `rights-blocked`, exactly as
+before; nothing is ever fetched by URL.
+
+Before this change the catalogue was whatever the job carried, and no job carried one, so every
+title that named a family was refused as `not-bundled` and the claim was never handed out. The
+worker tools themselves have no title adapter yet: `render-worker-image-inputs.mjs` refuses a
+graph with a `text` item (`IMAGE_SOURCE_ADAPTER_ONLY`) and any graph resource it has no adapter
+for (`UNSUPPORTED_GRAPH_RESOURCE`).
+
+**Contract change (additive; manifest `schemaVersion` stays 1).** A `font` resource of a claim
+keeps its fields: `key` (`font:<family>`), `id`, `checksum`, `grant`, and one input whose
+`inputId` is the key. For a bundled family that input and `checksum` are the family's regular
+Latin file (weight 400, upright), so a reader of the one-file shape still gets a usable font. New,
+and optional:
+
+- `resources[].files`: every file of the family, each `{ inputId, file, weight, style, subset,
+  format, checksum }`. `inputId` is `<key>#<file>`; `weight` is 400, 500, 600 or 700; `style` is
+  `normal` or `italic`; `subset` is `latin` or `latin-ext`; `format` is `ttf`; `checksum` is the
+  SHA-256 of the file. No path is ever in a claim.
+- `inputs[]`: one more input per file, with that `inputId`, the resource's `kind` and
+  `resourceId`, and the file's `checksum`. Each has its own read grant, bound to the file's key
+  and checksum, and is redeemed like any other input. An id that the fresh resolution does not
+  issue is not found.
+
+A resource without `files` is the old shape and means one regular face (a job catalogue entry, or
+a server before this change). The version is not bumped because nothing an existing worker reads
+changes meaning, and because a worker without a font adapter already fails closed on any graph
+that references a font or holds a title, as above: it cannot draw a title with the wrong typeface
+by ignoring `files`. A worker that draws titles must load fonts only from these inputs; when a
+title needs a family, weight or glyph the claim does not grant, it refuses the frame.
+
+`render-worker-font-inputs.mjs` is the worker side of the contract: `deriveClaimFonts` checks a
+claim's font resources against its inputs and returns the faces, `verifyFontBytes` checks fetched
+bytes against the named checksum and that they are TrueType, and `facesFor` gives the faces for a
+title's family, weight and style in fallback order (nearest listed weight; the asked style, or
+upright when the family has no italic; `latin` before `latin-ext`). Its tests use the bundled
+files. It is not yet called by the still executor: drawing titles in the worker is the same
+remaining work as the other resource adapters listed above.
+
 ## Whole-export artifact transport (FL-107 prerequisite)
 
 The server owns staging. A worker does not mount a writable server directory or send a filesystem

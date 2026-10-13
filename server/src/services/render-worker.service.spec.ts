@@ -772,6 +772,77 @@ describe(RenderWorkerService.name, () => {
         expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
       });
 
+      it('hands a font family out as its entry plus one input per file, with ids and checksums but no path', async () => {
+        const manifest = studioManifestStub();
+        const font = manifest.entries.find((entry) => entry.key === 'font:inter')!;
+        font.files = [
+          {
+            file: 'inter-latin-400-normal.ttf',
+            weight: 400,
+            style: 'normal',
+            subset: 'latin',
+            format: 'ttf',
+            checksum: 'sum-font',
+            path: '/deployment/fonts/inter.ttf',
+          },
+          {
+            file: 'inter-latin-ext-400-normal.ttf',
+            weight: 400,
+            style: 'normal',
+            subset: 'latin-ext',
+            format: 'ttf',
+            checksum: 'sum-ext',
+            path: '/deployment/fonts/inter-ext.ttf',
+          },
+        ];
+        studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+        const grant = (key: string, path: string) => ({
+          key,
+          kind: StudioResourceKind.Font,
+          id: 'inter',
+          path,
+          token: `t-${key}`,
+          expiresAt: manifest.expiresAt,
+        });
+        studioResources.issueReadGrants.mockReturnValue([
+          grant('font:inter', '/deployment/fonts/inter.ttf'),
+          grant('font:inter#inter-latin-400-normal.ttf', '/deployment/fonts/inter.ttf'),
+          grant('font:inter#inter-latin-ext-400-normal.ttf', '/deployment/fonts/inter-ext.ttf'),
+        ]);
+
+        const claim = await sut.claim(SESSION_A, {} as never);
+
+        expect(claim!.inputs.map((input) => [input.inputId, input.resourceId, input.checksum])).toEqual([
+          ['font:inter', 'inter', 'sum-font'],
+          ['font:inter#inter-latin-400-normal.ttf', 'inter', 'sum-font'],
+          ['font:inter#inter-latin-ext-400-normal.ttf', 'inter', 'sum-ext'],
+        ]);
+        const resources = (claim!.snapshot as { studio: { resources: Array<Record<string, unknown>> } }).studio
+          .resources;
+        expect(resources.find((resource) => resource.key === 'font:inter')!.files).toEqual([
+          {
+            inputId: 'font:inter#inter-latin-400-normal.ttf',
+            file: 'inter-latin-400-normal.ttf',
+            weight: 400,
+            style: 'normal',
+            subset: 'latin',
+            format: 'ttf',
+            checksum: 'sum-font',
+          },
+          {
+            inputId: 'font:inter#inter-latin-ext-400-normal.ttf',
+            file: 'inter-latin-ext-400-normal.ttf',
+            weight: 400,
+            style: 'normal',
+            subset: 'latin-ext',
+            format: 'ttf',
+            checksum: 'sum-ext',
+          },
+        ]);
+        expect(resources.find((resource) => resource.key === 'library-asset:clip-1')).not.toHaveProperty('files');
+        expect(JSON.stringify(claim)).not.toContain('/deployment/fonts/');
+      });
+
       it('refuses, without claiming, a job whose manifest is no longer complete and records why', async () => {
         studioResources.resolveProjectResources.mockResolvedValue({
           manifest: studioManifestStub({ complete: false, refusedCount: 1, entries: [] }),
@@ -1885,6 +1956,60 @@ describe(RenderWorkerService.name, () => {
           backgroundRunner: true,
         });
         expect(mocks.asset.getById).not.toHaveBeenCalled();
+      });
+
+      it('serves one file of a font family by its own input id, and no file the manifest does not list', async () => {
+        const manifest = studioManifestStub();
+        const font = manifest.entries.find((entry) => entry.key === 'font:inter')!;
+        font.files = [
+          {
+            file: 'inter-latin-400-normal.ttf',
+            weight: 400,
+            style: 'normal',
+            subset: 'latin',
+            format: 'ttf',
+            checksum: 'sum-font',
+            path: '/deployment/fonts/inter.ttf',
+          },
+          {
+            file: 'inter-latin-700-italic.ttf',
+            weight: 700,
+            style: 'italic',
+            subset: 'latin',
+            format: 'ttf',
+            checksum: 'sum-bold-italic',
+            path: '/deployment/fonts/inter-700-italic.ttf',
+          },
+        ];
+        studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+        const inputId = 'font:inter#inter-latin-700-italic.ttf';
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified({ kind: StudioResourceKind.Font, id: 'inter', key: inputId, checksum: 'sum-bold-italic' }, ''),
+        );
+
+        const file = await sut.readInput(
+          SESSION_A,
+          studioClaimed.id,
+          studioGrant({ inputId, resourceId: 'inter', token: 'fl90-font-file' }),
+        );
+        expect(file.path).toBe('/deployment/fonts/inter-700-italic.ttf');
+
+        for (const unlisted of [
+          'font:inter#../../package.json',
+          'font:inter#inter-latin-900-normal.ttf',
+          'font:inter#',
+        ]) {
+          studioResources.verifyReadGrant.mockResolvedValue(
+            verified({ kind: StudioResourceKind.Font, id: 'inter', key: unlisted, checksum: null }, ''),
+          );
+          await expect(
+            sut.readInput(
+              SESSION_A,
+              studioClaimed.id,
+              studioGrant({ inputId: unlisted, resourceId: 'inter', token: 'fl90-font-file' }),
+            ),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        }
       });
 
       it('resolves a deployment file from a fresh manifest when FL-90 reports it by reference only', async () => {
