@@ -1,13 +1,15 @@
+from asyncio import Lock
 from typing import Any
 
 from aiocache.backends.memory import SimpleMemoryCache
-from aiocache.lock import OptimisticLock
 from aiocache.plugins import TimingPlugin
 
 from immich_ml.models import from_model_type
 from immich_ml.models.base import InferenceModel
 
 from ..schemas import ModelTask, ModelType, has_profiling
+
+ModelCacheKey = tuple[str, str, str, str, str]
 
 
 class ModelCache:
@@ -32,24 +34,32 @@ class ModelCache:
             plugins.append(TimingPlugin())
 
         self.should_revalidate = revalidate
+        self._create_lock = Lock()
 
         self.cache = SimpleMemoryCache(timeout=timeout, plugins=plugins, namespace=None)
 
     async def get(
         self, model_name: str, model_type: ModelType, model_task: ModelTask, **model_kwargs: Any
     ) -> InferenceModel:
-        key = (
-            f"{model_name}{model_type}{model_task}{model_kwargs.get('device', '')}"
-            f"{model_kwargs.get('acceleration', '')}"
+        key: ModelCacheKey = (
+            model_name,
+            str(model_type),
+            str(model_task),
+            str(model_kwargs.get("device", "")),
+            str(model_kwargs.get("acceleration", "")),
         )
-
-        async with OptimisticLock(self.cache, key) as lock:
-            model: InferenceModel | None = await self.cache.get(key)
-            if model is None:
-                model = from_model_type(model_name, model_type, model_task, **model_kwargs)
-                await lock.cas(model, ttl=model_kwargs.get("ttl", None))
-            elif self.should_revalidate:
-                await self.revalidate(key, model_kwargs.get("ttl", None))
+        ttl = model_kwargs.get("ttl")
+        model: InferenceModel | None = await self.cache.get(key)
+        if model is None:
+            # Serialize synchronous construction and publication, but leave cache hits unlocked.
+            async with self._create_lock:
+                model = await self.cache.get(key)
+                if model is None:
+                    model = from_model_type(model_name, model_type, model_task, **model_kwargs)
+                    await self.cache.set(key, model, ttl=ttl)
+                    return model
+        if self.should_revalidate:
+            await self.revalidate(key, ttl)
         return model
 
     async def get_profiling(self) -> dict[str, float] | None:
@@ -58,6 +68,6 @@ class ModelCache:
 
         return self.cache.profiling
 
-    async def revalidate(self, key: str, ttl: int | None) -> None:
+    async def revalidate(self, key: ModelCacheKey, ttl: int | None) -> None:
         if ttl is not None and key in self.cache._handlers:
             await self.cache.expire(key, ttl)

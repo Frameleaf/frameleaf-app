@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import os
@@ -2113,11 +2114,119 @@ class TestCache:
         assert len(model_cache.cache._cache) == 2
         assert mock_get_model.call_count == 2
 
-    @mock.patch("immich_ml.models.cache.OptimisticLock", autospec=True)
-    async def test_model_ttl(self, mock_lock_cls: mock.Mock, mock_get_model: mock.Mock) -> None:
+    async def test_parallel_misses_create_one_model(self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch) -> None:
+        model_cache = ModelCache(timeout=1)
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        original_get = model_cache.cache.get
+
+        async def yielding_get(*args: Any, **kwargs: Any) -> Any:
+            value = await original_get(*args, **kwargs)
+            await asyncio.sleep(0)
+            return value
+
+        monkeypatch.setattr(model_cache.cache, "get", yielding_get)
+
+        models = await asyncio.gather(*[model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) for _ in range(20)])
+
+        assert mock_get_model.call_count == 1
+        assert all(model is models[0] for model in models)
+
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ({"device": "CPU", "acceleration": "cuda"}, {"device": "GPU", "acceleration": "cuda"}),
+            ({"device": "CPU", "acceleration": "cuda"}, {"device": "CPU", "acceleration": "openvino"}),
+            ({"device": "ab", "acceleration": "c"}, {"device": "a", "acceleration": "bc"}),
+        ],
+    )
+    async def test_cache_identity_fields_do_not_collide(
+        self, mock_get_model: mock.Mock, first: dict[str, str], second: dict[str, str]
+    ) -> None:
         model_cache = ModelCache()
-        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
-        mock_lock_cls.return_value.__aenter__.return_value.cas.assert_called_with(mock.ANY, ttl=100)
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **first)
+        two = await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **second)
+
+        assert one is not two
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **first) is one
+        assert mock_get_model.call_count == 2
+
+    async def test_prediction_options_do_not_split_cache(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100, threshold=0.5)
+        two = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=200, threshold=0.8)
+        assert one is two
+        mock_get_model.assert_called_once()
+
+    async def test_model_ttl(self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch) -> None:
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(loop, "time", lambda: 1000.0)
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100)
+        key = next(iter(model_cache.cache._cache))
+        handler = model_cache.cache._handlers[key]
+        assert handler.when() == 1100.0
+
+        # Fire the expiry callback deterministically, without waiting for wall-clock time.
+        handler._run()
+        handler.cancel()
+        assert key not in model_cache.cache._cache
+        two = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100)
+        assert two is not one
+        assert mock_get_model.call_count == 2
+
+    @pytest.mark.parametrize("revalidate", [False, True])
+    async def test_ttl_refreshes_only_when_enabled(
+        self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch, revalidate: bool
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        now = 1000.0
+        monkeypatch.setattr(loop, "time", lambda: now)
+        model_cache = ModelCache(revalidate=revalidate)
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100)
+        key = next(iter(model_cache.cache._cache))
+        original = model_cache.cache._handlers[key]
+        now = 1050.0
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100) is one
+        assert model_cache.cache._handlers[key].when() == (1150.0 if revalidate else 1100.0)
+        assert original.cancelled() == revalidate
+
+    async def test_revalidation_preserves_no_expiry(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache(revalidate=True)
+        one = await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=0)
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH, ttl=100) is one
+        assert not model_cache.cache._handlers
+
+    async def test_creation_failure_can_retry(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        model = SimpleNamespace()
+        mock_get_model.side_effect = [ValueError("construction failed"), model]
+        with pytest.raises(ValueError, match="construction failed"):
+            await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH)
+        assert not model_cache.cache._cache
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) is model
+
+    async def test_cancelled_cache_write_can_retry(self, mock_get_model: mock.Mock, monkeypatch: MonkeyPatch) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+        started = asyncio.Event()
+        original_set = model_cache.cache.set
+
+        async def blocked_set(*args: Any, **kwargs: Any) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(model_cache.cache, "set", blocked_set)
+        task = asyncio.create_task(model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        monkeypatch.setattr(model_cache.cache, "set", original_set)
+        model = await asyncio.wait_for(model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH), timeout=1)
+        assert await model_cache.get("test", ModelType.VISUAL, ModelTask.SEARCH) is model
 
     @mock.patch("immich_ml.models.cache.SimpleMemoryCache.expire")
     async def test_revalidate_get(self, mock_cache_expire: mock.Mock, mock_get_model: mock.Mock) -> None:
