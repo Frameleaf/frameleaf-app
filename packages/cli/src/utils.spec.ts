@@ -1,9 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { Batcher, CrawlOptions, crawl } from 'src/utils.js';
 import { Mock } from 'vitest';
+
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, platform: vi.fn(actual.platform) };
+});
 
 interface Test {
   test: string;
@@ -286,7 +291,41 @@ describe('crawl', () => {
     directory = await mkdtemp(join(tmpdir(), 'frameleaf-cli-crawl-'));
   });
   afterEach(async () => {
+    vi.mocked(platform).mockReset();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it.each(['images/**', 'images/*.{jpg,png}', 'images/image[12].jpg'])(
+    'should support Windows separators in absolute ignore glob %s',
+    async (pattern) => {
+      await mkdir(join(directory, 'images'));
+      await writeFile(join(directory, 'images', 'image1.jpg'), 'ignored');
+      await writeFile(join(directory, 'image3.jpg'), 'included');
+      vi.mocked(platform).mockReturnValue('win32');
+
+      const actual = await crawl({
+        pathsToCrawl: [directory],
+        exclusionPattern: `${directory.replaceAll('/', '\\')}\\${pattern}`,
+        recursive: true,
+        extensions,
+      });
+
+      expect(actual.map((path) => readContent(path))).toEqual(['included']);
+    },
+  );
+
+  it('should preserve escaped glob characters in Windows ignore patterns', async () => {
+    await writeFile(join(directory, 'image[1].jpg'), 'ignored');
+    await writeFile(join(directory, 'image1.jpg'), 'included');
+    vi.mocked(platform).mockReturnValue('win32');
+
+    const actual = await crawl({
+      pathsToCrawl: [directory],
+      exclusionPattern: String.raw`**/image\[1\].jpg`,
+      extensions,
+    });
+
+    expect(actual.map((path) => readContent(path))).toEqual(['included']);
   });
 
   describe('crawl', () => {

@@ -160,6 +160,9 @@ const convertPathToPatternOnWin = (path: string) => {
 export const crawl = async (options: CrawlOptions): Promise<string[]> => {
   const { extensions: extensionsWithPeriod, recursive, pathsToCrawl, exclusionPattern, includeHidden } = options;
   const extensions = extensionsWithPeriod.map((extension) => extension.replace('.', ''));
+  // Preserve glob escapes while converting native Windows separators.
+  const ignorePattern =
+    platform() === 'win32' ? exclusionPattern?.replaceAll(/\\(?![!()+@[\]{}])/g, '/') : exclusionPattern;
 
   if (pathsToCrawl.length === 0) {
     return [];
@@ -202,7 +205,7 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     absolute: true,
     caseSensitiveMatch: false,
     dot: includeHidden,
-    ignore: [`**/${exclusionPattern}`],
+    ignore: [`**/${ignorePattern}`],
   });
   globbedFiles.push(...crawledFiles);
   return globbedFiles.toSorted();
