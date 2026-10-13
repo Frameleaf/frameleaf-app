@@ -23,6 +23,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getByIds: vitest.fn().mockResolvedValue([]),
     getByIdsWithAllRelationsButStacks: vitest.fn().mockResolvedValue([]),
     getVideoStreamsForDecode: vitest.fn().mockResolvedValue([]),
+    getVideoColor: vitest.fn(),
     getById: vitest.fn(),
     getByChecksum: vitest.fn(),
     getByChecksums: vitest.fn(),

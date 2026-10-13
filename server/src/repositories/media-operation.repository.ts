@@ -167,6 +167,8 @@ const LIST_COLUMNS = [
   'maxAttempts',
   'autoRetries',
   'retryAt',
+  'lastAdmissionRefusalReason',
+  'lastAdmissionRefusedAt',
   'claimToken',
   'claimedBy',
   'claimExpiresAt',

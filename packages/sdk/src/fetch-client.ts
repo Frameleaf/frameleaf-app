@@ -2422,6 +2422,10 @@ export type MediaOperationDto = {
     kind: MediaOperationKind;
     /** What the person sees in Activity; empty when withheld */
     label: string;
+    /** Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed */
+    lastAdmissionRefusalReason?: (RenderWorkerRefusalReason) | null;
+    /** When that worker refused it; null with lastAdmissionRefusalReason */
+    lastAdmissionRefusedAt?: string | null;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
     pausable: boolean;
@@ -7814,6 +7818,10 @@ export type MediaOperationDetailDto = {
     kind: MediaOperationKind;
     /** What the person sees in Activity; empty when withheld */
     label: string;
+    /** Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed */
+    lastAdmissionRefusalReason?: (RenderWorkerRefusalReason) | null;
+    /** When that worker refused it; null with lastAdmissionRefusalReason */
+    lastAdmissionRefusedAt?: string | null;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
     pausable: boolean;
@@ -13222,6 +13230,17 @@ export type StudioMediaFactsDto = {
     assetId: string;
     /** The first audio track codec; its presence places a linked audio clip */
     audioCodec: string | null;
+    /** Bits per component, read from the pixel format of the picture stream; null when unknown */
+    bitDepth: number | null;
+    /** ITU-T H.273 matrix coefficients of the picture stream (2: unspecified); null when none is known */
+    colorMatrixCode: number | null;
+    /** ITU-T H.273 colour primaries of the picture stream (2: unspecified); null when none is known */
+    colorPrimariesCode: number | null;
+    colorTransfer: StudioMediaColorTransfer;
+    /** ITU-T H.273 transfer characteristics of the picture stream (2: unspecified); null when none is known */
+    colorTransferCode: number | null;
+    /** The Dolby Vision profile of the picture stream; null when it has none or none is known */
+    dolbyVisionProfile: number | null;
     /** Length in seconds; 0 for a still; null when unknown */
     durationSeconds: number | null;
     /** frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still */
@@ -29624,6 +29643,26 @@ export enum MediaOperationKind {
     BuddyBackup = "buddy_backup",
     BuddyRestore = "buddy_restore"
 }
+export enum RenderWorkerRefusalReason {
+    InvalidCredential = "invalid_credential",
+    WorkerRevoked = "worker_revoked",
+    SessionExpired = "session_expired",
+    ConformanceStale = "conformance_stale",
+    ConformanceReplayed = "conformance_replayed",
+    EngineDigestMismatch = "engine_digest_mismatch",
+    SoftwareRenderer = "software_renderer",
+    DestinationMismatch = "destination_mismatch",
+    WorkerMismatch = "worker_mismatch",
+    ScopeExceeded = "scope_exceeded",
+    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
+    UserConcurrencyExceeded = "user_concurrency_exceeded",
+    GpuMemoryInsufficient = "gpu_memory_insufficient",
+    WallClockExceeded = "wall_clock_exceeded",
+    OutputBytesExceeded = "output_bytes_exceeded",
+    DestinationUnavailable = "destination_unavailable",
+    ManifestIncomplete = "manifest_incomplete",
+    CodecUnsupported = "codec_unsupported"
+}
 export enum MediaOperationStatus {
     Queued = "queued",
     Preparing = "preparing",
@@ -29663,26 +29702,6 @@ export enum RenderWorkerAuditEvent {
     Revoked = "revoked",
     Updated = "updated",
     DeviceLost = "device_lost"
-}
-export enum RenderWorkerRefusalReason {
-    InvalidCredential = "invalid_credential",
-    WorkerRevoked = "worker_revoked",
-    SessionExpired = "session_expired",
-    ConformanceStale = "conformance_stale",
-    ConformanceReplayed = "conformance_replayed",
-    EngineDigestMismatch = "engine_digest_mismatch",
-    SoftwareRenderer = "software_renderer",
-    DestinationMismatch = "destination_mismatch",
-    WorkerMismatch = "worker_mismatch",
-    ScopeExceeded = "scope_exceeded",
-    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
-    UserConcurrencyExceeded = "user_concurrency_exceeded",
-    GpuMemoryInsufficient = "gpu_memory_insufficient",
-    WallClockExceeded = "wall_clock_exceeded",
-    OutputBytesExceeded = "output_bytes_exceeded",
-    DestinationUnavailable = "destination_unavailable",
-    ManifestIncomplete = "manifest_incomplete",
-    CodecUnsupported = "codec_unsupported"
 }
 export enum Kind2 {
     Individual = "individual"
@@ -31877,6 +31896,12 @@ export enum SharedSpaceEventType {
     Comment = "Comment",
     Reply = "Reply",
     Like = "Like"
+}
+export enum StudioMediaColorTransfer {
+    Sdr = "sdr",
+    Pq = "pq",
+    Hlg = "hlg",
+    Hdr = "hdr"
 }
 export enum StudioMediaFactsSource {
     Probe = "probe",
