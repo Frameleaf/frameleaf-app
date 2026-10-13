@@ -191,6 +191,81 @@ describe('Executor Queue test', function () {
     expect(await next).toBe('next');
   });
 
+  it('starts reentrant submissions immediately when capacity permits, even during draining', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+    let release!: () => void;
+    const first = eq.addTask(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const started: string[] = [];
+    let nested!: Promise<string>;
+    const next = eq.addTask(async () => {
+      started.push('outer');
+      eq.concurrency = 2;
+      nested = eq.addTask(async () => {
+        started.push('inner');
+        return 'inner';
+      });
+      expect(started).toEqual(['outer', 'inner']);
+      eq.clear();
+      return 'outer';
+    });
+    release();
+    await first;
+    expect(started).toEqual(['outer', 'inner']);
+    expect(await next).toBe('outer');
+    expect(await nested).toBe('inner');
+  });
+
+  it.each([1, 4])(
+    'settles a large pending batch of synchronous failures at concurrency %s and can be reused',
+    async (concurrency) => {
+      const eq = new ExecutorQueue({ concurrency });
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const blockers = Array.from({ length: concurrency }, () => eq.addTask(() => blocked));
+      const started: number[] = [];
+      const failures = Array.from({ length: 5000 }, (_, id) => new Error(`failure ${id}`));
+      const settled: unknown[] = [];
+      const tasks = failures.map((error, id) =>
+        eq
+          .addTask(() => {
+            started.push(id);
+            throw error;
+          })
+          .catch((error_: unknown) => {
+            settled.push(error_);
+            return error_;
+          }),
+      );
+      release();
+      await blockers[0];
+      for (let i = 0; i < 20; i++) {
+        await Promise.resolve();
+      }
+      try {
+        // Check settlement before awaiting the batch, so an overflowing implementation cannot hang.
+        expect(settled).toHaveLength(failures.length);
+        expect(started).toEqual(failures.map((_, id) => id));
+        expect(await Promise.all(tasks)).toEqual(failures);
+        let reused = false;
+        const next = eq.addTask(async () => {
+          reused = true;
+          return 'next';
+        });
+        expect(reused).toBe(true);
+        expect(await next).toBe('next');
+      } finally {
+        eq.clear();
+      }
+    },
+  );
+
   it('rejects queued-but-not-started tasks on clear() without touching running ones', async () => {
     const eq = new ExecutorQueue({ concurrency: 1 });
 

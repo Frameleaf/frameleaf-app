@@ -11,6 +11,7 @@ export class ExecutorQueue {
   private queue: Array<QueueEntry | undefined> = [];
   private head = 0;
   private running = 0;
+  private draining = false;
   private _concurrency = 2;
 
   constructor(options?: Options) {
@@ -74,7 +75,19 @@ export class ExecutorQueue {
 
   private taskFinished(): void {
     this.running--;
-    this.tryRun();
+    // Synchronous failures finish before run() returns; drain them without recursive dispatch.
+    if (this.draining) {
+      return;
+    }
+
+    this.draining = true;
+    try {
+      while (this.running < this.concurrency && this.head < this.queue.length) {
+        this.tryRun();
+      }
+    } finally {
+      this.draining = false;
+    }
   }
 
   private tryRun() {
