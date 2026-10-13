@@ -108,12 +108,25 @@ export function mapNormalizedRectToContent(
   bottomRight: Point,
   sizeOrMetrics: Size | ContentMetrics,
 ): Rect {
-  const tl = mapNormalizedToContent(topLeft, sizeOrMetrics);
-  const br = mapNormalizedToContent(bottomRight, sizeOrMetrics);
+  let left: number;
+  let top: number;
+  let right: number;
+  let bottom: number;
+  if ('contentWidth' in sizeOrMetrics) {
+    left = topLeft.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX;
+    top = topLeft.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY;
+    right = bottomRight.x * sizeOrMetrics.contentWidth + sizeOrMetrics.offsetX;
+    bottom = bottomRight.y * sizeOrMetrics.contentHeight + sizeOrMetrics.offsetY;
+  } else {
+    left = topLeft.x * sizeOrMetrics.width;
+    top = topLeft.y * sizeOrMetrics.height;
+    right = bottomRight.x * sizeOrMetrics.width;
+    bottom = bottomRight.y * sizeOrMetrics.height;
+  }
   return {
-    top: tl.y,
-    left: tl.x,
-    width: br.x - tl.x,
-    height: br.y - tl.y,
+    top,
+    left,
+    width: right - left,
+    height: bottom - top,
   };
 }
