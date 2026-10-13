@@ -3,10 +3,10 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import httpx
 import pytest
 from huggingface_hub import constants, hf_hub_download, set_client_factory
 from huggingface_hub.file_download import http_get
+from huggingface_hub.utils import httpx
 from huggingface_hub.utils._http import default_client_factory
 from pydantic import SecretStr
 

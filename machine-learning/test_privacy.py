@@ -126,8 +126,8 @@ def test_openvino_blocks_opted_in_and_forced_reporting() -> None:
 
 
 def test_hub_downloads_remain_available(tmp_path: Path) -> None:
-    import httpx
     from huggingface_hub import hf_hub_download, set_client_factory
+    from huggingface_hub.utils import httpx
 
     requests: list[httpx.Request] = []
 

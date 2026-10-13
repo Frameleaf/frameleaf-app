@@ -3,7 +3,7 @@
 import os
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 
 
 def _bind_download_credentials(request: httpx.Request) -> None:

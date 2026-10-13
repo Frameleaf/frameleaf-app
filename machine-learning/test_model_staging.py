@@ -4,12 +4,12 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import httpx
 import pytest
 from fastapi import HTTPException
 from filelock import FileLock, Timeout
 from huggingface_hub import set_client_factory
 from huggingface_hub.errors import LocalEntryNotFoundError
+from huggingface_hub.utils import httpx
 
 from frameleaf_ml.config import settings
 from frameleaf_ml.main import load

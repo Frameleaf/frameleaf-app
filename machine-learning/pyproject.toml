@@ -6,72 +6,69 @@ authors = [{ name = "Hau Tran", email = "alex.tran1502@gmail.com" }]
 requires-python = ">=3.12,<4.0"
 readme = "README.md"
 dependencies = [
-    "aiocache>=0.12.1,<1.0",
-    "fastapi>=0.95.2,<1.0",
-    "gunicorn>=21.1.0",
-    "huggingface-hub>=1.0,<2.0",
-    "numpy>=2.4.0,<3.0",
-    "onnx>=1.22.0",
-    "opencv-python-headless>=4.7.0.72,<5.0",
-    "orjson>=3.9.5",
-    "pillow>=12.2,<13",
-    "pydantic>=2.0.0,<3",
-    "pydantic-settings>=2.5.2,<3",
-    "python-multipart>=0.0.6,<1.0",
-    "rich>=13.4.2",
-    "tokenizers>=0.15.0,<1.0",
-    "uvicorn[standard]>=0.22.0,<1.0",
-    "rapidocr>=3.1.0",
+    "aiocache>=0.12.3,<1.0",
+    "fastapi>=0.143.0,<1.0",
+    "gunicorn>=26.2.0",
+    "huggingface-hub>=2.2.0,<3.0",
+    "httpx2>=2.13.1,<3",
+    "numpy>=2.5.4,<3.0",
+    "onnx>=1.23.2",
+    "opencv-python-headless>=5.0.0.93,<6.0",
+    "orjson>=3.13.0",
+    "pillow>=12.3.0,<13",
+    "pydantic>=2.14.1,<3",
+    "pydantic-settings>=2.15.0,<3",
+    "python-multipart>=0.0.32,<1.0",
+    "rich>=15.0.0",
+    "tokenizers>=0.23.3,<1.0",
+    "uvicorn[standard]>=0.54.0,<1.0",
+    "rapidocr>=3.10.0",
     # Studio captions (owner decision 2026-10-09): Whisper through CTranslate2. See dependency-metadata.
     "faster-whisper==1.2.1",
 ]
 
 [dependency-groups]
 test = [
-    "httpx>=0.24.1",
-    "pytest>=7.3.1",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "pytest-mock>=3.11.1",
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.16.0",
 ]
 types = [
-    "types-pyyaml>=6.0.12.20241230",
-    "types-requests>=2.32.0.20250306",
-    "types-setuptools>=75.8.2.20250305",
-    "types-simplejson>=3.20.0.20250218",
-    "types-ujson>=5.10.0.20240515",
+    "types-pyyaml>=6.0.12.20260906",
+    "types-requests>=2.33.0.20261006",
+    "types-setuptools>=84.0.0.20261006",
+    "types-simplejson>=4.2.0.20261006",
+    "types-ujson>=5.10.0.20250822",
 ]
 lint = [
-    "mypy>=1.3.0",
-    "ruff>=0.0.272",
+    "mypy>=2.4.0",
+    "ruff>=0.17.0",
     { include-group = "types" },
 ]
-dev = ["locust>=2.15.1", { include-group = "test" }, { include-group = "lint" }]
+dev = ["locust>=2.46.7", { include-group = "test" }, { include-group = "lint" }]
 
 [project.optional-dependencies]
 cpu = [
-    "onnxruntime>=1.23.2,<2",
-    "torch==2.5.1",
-    "torchvision==0.20.1",
-    "transformers==5.16.1",
+    "onnxruntime>=1.31.0,<2",
+    "torch==2.14.1",
+    "torchvision==0.29.1",
+    "transformers==5.19.0",
 ]
 cuda = [
-    "onnxruntime-gpu>=1.23.2,<2",
-    "qwen-vl-utils>=0.0.11,<1",
-    "torch>=2.5,<2.6",
-    # Required by transformers 5.x's Qwen2VLVideoProcessor, which is
-    # eagerly imported during Qwen2.5-VL auto-config even when we only
-    # process still images. Without this, Qwen image description fails
-    # at HTTPException 500 with `ImportError: Qwen2VLVideoProcessor
-    # requires the Torchvision library`. Version pinned to the line
-    # that ships with torch 2.5.x.
-    "torchvision>=0.20,<0.21",
-    "transformers>=5,<6",
+    # PyPI >=1.27 uses CUDA 13; the stable CUDA 12 feed ends at 1.29 (Pascal support).
+    "onnxruntime-gpu==1.29.0",
+    "qwen-vl-utils>=0.0.14,<1",
+    "torch==2.14.1",
+    # Qwen imports its video processor for still images, so Torchvision must match Torch.
+    "torchvision==0.29.1",
+    "transformers==5.19.0",
 ]
-openvino = ["onnxruntime-openvino>=1.24.1,<2", "openvino-genai>=2025.4,<2027"]
-armnn = ["onnxruntime>=1.23.2,<2"]
-rknn = ["onnxruntime>=1.23.2,<2", "rknn-toolkit-lite2>=2.3.0,<3"]
-rocm = ["onnxruntime-migraphx>=1.23.2,<2"]
+openvino = ["onnxruntime-openvino>=1.24.1,<2", "openvino-genai>=2026.4.1.0,<2027"]
+armnn = ["onnxruntime>=1.31.0,<2"]
+rknn = ["onnxruntime>=1.31.0,<2", "rknn-toolkit-lite2>=2.5.0,<3"]
+rocm = ["onnxruntime-migraphx>=1.27.1,<2"]
 
 [tool.uv]
 compile-bytecode = true
@@ -88,12 +85,29 @@ version = "1.2.1"
 requires-dist = ["ctranslate2>=4.0,<5", "huggingface-hub>=0.21", "tokenizers>=0.13,<1", "av>=11", "tqdm"]
 
 [tool.uv.sources]
-torch = [{index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'"}]
-torchvision = [{index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'"}]
+onnxruntime-gpu = {index = "onnxruntime-cuda12", extra = "cuda"}
+torch = [
+    {index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine in 'x86_64 aarch64'"},
+    {index = "pytorch-cuda", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine in 'x86_64 aarch64'"},
+]
+torchvision = [
+    {index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine in 'x86_64 aarch64'"},
+    {index = "pytorch-cuda", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine in 'x86_64 aarch64'"},
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "onnxruntime-cuda12"
+url = "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/"
 explicit = true
 
 [tool.hatch.build.targets.sdist]
@@ -103,7 +117,7 @@ include = ["frameleaf_ml"]
 include = ["frameleaf_ml"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [tool.mypy]
@@ -120,7 +134,6 @@ ignore_missing_imports = true
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
-warn_untyped_fields = true
 
 [tool.ruff]
 line-length = 120

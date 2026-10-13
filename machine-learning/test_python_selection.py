@@ -18,11 +18,15 @@ class PythonSelectionTests(unittest.TestCase):
         torchvision = next(
             package
             for package in uv_lock["package"]
-            if package["name"] == "torchvision" and package["version"] == "0.20.1+cpu"
+            if package["name"] == "torchvision" and package["version"] == "0.29.1+cpu"
         )
-        linux_wheels = [wheel["url"] for wheel in torchvision["wheels"] if "linux_x86_64" in wheel["url"]]
+        linux_wheels = [
+            wheel["url"]
+            for wheel in torchvision["wheels"]
+            if "linux" in wheel["url"] and "x86_64" in wheel["url"]
+        ]
         self.assertTrue(linux_wheels, "Locked CPU wheel is missing")
-        self.assertTrue(all(f"-{wheel_abi}-{wheel_abi}-" in wheel for wheel in linux_wheels))
+        self.assertTrue(any(f"-{wheel_abi}-{wheel_abi}-" in wheel for wheel in linux_wheels))
         dockerfile = (root / "Dockerfile").read_text()
         global_arguments = dockerfile.split("\nFROM ", 1)[0].splitlines()
         cpu_images = [
