@@ -269,6 +269,8 @@ jobs:
           node scripts/frameleaf-studio-evidence.mjs --family transition --report "$RUNNER_TEMP/transition-matrix-report.json" --write
           git diff --exit-code -- studio/conformance.json
       - name: Upstream unit and Node headless contracts
+        env:
+          NODE_OPTIONS: --no-experimental-webstorage
         run: |
           npm --prefix studio/engine run test:run
           npm --prefix studio/engine run headless:test:node

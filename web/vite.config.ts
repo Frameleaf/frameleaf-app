@@ -82,6 +82,7 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{js,ts}'],
     globals: true,
     environment: 'happy-dom',
+    execArgv: ['--no-experimental-webstorage'],
     setupFiles: ['./src/test-data/setup.ts'],
     sequence: {
       hooks: 'list',
