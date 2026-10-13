@@ -1,7 +1,7 @@
 import { createPostgres } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
-import { Stats } from 'node:fs';
+import { Stats, mkdirSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -16,6 +16,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -473,4 +474,93 @@ describe('sidecar writes (FL-195)', () => {
       await narrow.destroy();
     }
   }, 60_000);
+});
+
+describe('partner copy sidecar writes', () => {
+  it("keep the source's time zone and local time when the copy's owner edits it", async () => {
+    const media = await mkdtemp(join(tmpdir(), 'partner-copy-sidecar-'));
+    StorageCore.reset();
+    StorageCore.setMediaLocation(media);
+    const { sut, ctx } = newMediumService(MetadataService, {
+      database: defaultDatabase,
+      real: [
+        AssetRepository,
+        AssetJobRepository,
+        ConfigRepository,
+        DatabaseRepository,
+        MetadataRepository,
+        PartnerOriginRepository,
+        PhysicalFileRepository,
+        SystemMetadataRepository,
+        TagRepository,
+      ],
+      mock: [EventRepository, StorageRepository, LoggingRepository, MapRepository],
+    });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
+    ctx
+      .getMock(MapRepository)
+      .reverseGeocode.mockResolvedValue({ country: 'Canada', state: 'Alberta', city: 'Calgary' });
+    ctx
+      .getMock(StorageRepository)
+      .stat.mockResolvedValue({ size: 1, mtime: new Date(0), mtimeMs: 0, birthtimeMs: 0 } as Stats);
+    ctx.getMock(StorageRepository).checkFileExists.mockResolvedValue(true);
+    ctx.getMock(StorageRepository).mkdirSync.mockImplementation((path) => void mkdirSync(path, { recursive: true }));
+    const metadata = ctx.get(MetadataRepository);
+    const assets = ctx.get(AssetRepository);
+
+    // The camera wrote no zone; the owner's date and location edit lives in her sidecar.
+    const originalPath = join(media, 'IMG_7155995.png');
+    await writeFile(originalPath, newRandomImage());
+    await metadata.writeTags(originalPath, { DateTimeOriginal: '2025:09:20 21:15:00' });
+    await metadata.writeTags(`${originalPath}.xmp`, {
+      DateTimeOriginal: '2025-09-20T15:15:00.000-06:00',
+      GPSLatitude: 51.0605,
+      GPSLongitude: -114.09032,
+    });
+    const { user: taylor } = await ctx.newUser();
+    const { user: jamie } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: taylor.id, sharedWithId: jamie.id });
+    const { asset: source } = await ctx.newAsset({ ownerId: taylor.id, originalPath });
+    await ctx.newExif({ assetId: source.id, fileSizeInByte: 1 });
+    await assets.upsertFile({ assetId: source.id, type: AssetFileType.Sidecar, path: `${originalPath}.xmp` });
+    await sut.handleMetadataExtraction({ id: source.id });
+    const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(source.id);
+
+    const copyId = await ctx.get(PartnerOriginRepository).insertAssetCopy({
+      sourceAssetId: source.id,
+      ownerId: jamie.id,
+      rootOwnerId: taylor.id,
+      partnerSharedById: taylor.id,
+      original: { id: original!.id, path: original!.path },
+    });
+    // Jamie edits the copy's description: its first sidecar is written and the metadata read again.
+    await assets.upsertExif({
+      exif: { assetId: copyId!, description: 'Cake time', lockedProperties: ['description'] },
+      lockedPropertiesBehavior: 'append',
+    });
+    await expect(sut.handleSidecarWrite({ id: copyId! })).resolves.toBe(JobStatus.Success);
+    await sut.handleMetadataExtraction({ id: copyId! });
+
+    const read = (id: string) =>
+      ctx.database
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select(['localDateTime', 'dateTimeOriginal', 'timeZone', 'latitude', 'longitude'])
+        .where('asset.id', '=', id)
+        .executeTakeFirstOrThrow();
+    const expected = await read(source.id);
+    expect(expected).toMatchObject({
+      localDateTime: new Date('2025-09-20T15:15:00.000Z'),
+      dateTimeOriginal: new Date('2025-09-20T21:15:00.000Z'),
+    });
+    expect(expected.timeZone).not.toBeNull();
+    await expect(read(copyId!)).resolves.toEqual(expected);
+    await expect(
+      ctx.database
+        .selectFrom('asset_exif')
+        .select('description')
+        .where('assetId', '=', copyId!)
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ description: 'Cake time' });
+  });
 });
