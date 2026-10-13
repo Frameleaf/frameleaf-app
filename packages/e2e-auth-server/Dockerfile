@@ -2,7 +2,7 @@ ARG NODE_IMAGE=node:26.11.1-trixie-slim@sha256:193fe51b64e77981119c98c2002c9e32a
 FROM ${NODE_IMAGE}
 WORKDIR /usr/src/app
 
-RUN corepack enable
+RUN npm install --global corepack@latest && corepack enable pnpm
 
 COPY package* pnpm* .pnpmfile.cjs ./
 COPY ./packages/patches ./packages/patches/
