@@ -776,7 +776,7 @@ async function* sqlRollback(inputStream: Readable, databaseUsername: string, fen
   }
 }
 
-function createSqlProgressStreams(cb: (progress: number) => void) {
+function createSqlProgressStreams(cb: (progress: number) => void): [PassThrough, Writable] {
   const STDIN_START_MARKER = new TextEncoder().encode('FROM stdin');
   const STDIN_END_MARKER = new TextEncoder().encode(String.raw`\.`);
 
