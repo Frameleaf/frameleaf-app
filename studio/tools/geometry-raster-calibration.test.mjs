@@ -537,3 +537,21 @@ for (const source of [
   }
   assert.equal(JSON.stringify(envelope), original)
 })
+
+test('current prepared source uses its exact Chromium tuple without extending historical browser bindings', () => {
+  const source = JSON.parse(readFileSync(new URL('../engine-build.json', import.meta.url))).sourceSha256
+  for (const fixed of envelope.envelopes) {
+    const current = { ...binding(fixed.backend, source), browser: '156.0.8078.4' }
+    assert.doesNotThrow(() => validateBaseRaster(fixture(fixed), envelope, current))
+    for (const update of [
+      { browser: '148.0.7778.96' },
+      { browser: '156.0.8078.5' },
+      { sourceSha256: source.slice(0, -1) + '0' },
+      { sourceSha256: source99 },
+    ])
+      assert.throws(
+        () => validateBaseRaster(fixture(fixed), envelope, { ...current, ...update }),
+        /RASTER_SOURCE_BROWSER/,
+      )
+  }
+})

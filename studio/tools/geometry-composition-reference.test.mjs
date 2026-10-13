@@ -249,6 +249,7 @@ test('current prepared composition sources match their exact adapted-source bind
   const a = fixture()
   const build = JSON.parse(readFileSync(new URL('../engine-build.json', import.meta.url)))
   a.contract.binding.sourceSha256 = build.sourceSha256
+  a.contract.binding.browser = '156.0.8078.4'
   a.contract.sourceHashes = Object.fromEntries(
     Object.keys(COMPOSITION_SOURCES).map((path) => [
       path,
@@ -268,16 +269,18 @@ test('composition source bindings preserve every admitted legacy row and refuse 
   const admitted = [...raster.matchAll(/binding\.sourceSha256 ===\s*'([a-f0-9]{64})'/g)].map(
     (row) => row[1],
   )
-  assert.equal(admitted.length, 30)
-  assert.equal(new Set(admitted).size, 30)
+  assert.equal(admitted.length, 31)
+  assert.equal(new Set(admitted).size, 31)
   for (const source of admitted) {
     const a = fixture()
     a.contract.binding.sourceSha256 = source
+    if (source === current) a.contract.binding.browser = '156.0.8078.4'
     a.contract.sourceHashes = compositionSourcesFor(source)
     if (
       source === current ||
       source === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' ||
-      source === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578'
+      source === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578' ||
+      source === '3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce'
     )
       assert.deepEqual(a.contract.sourceHashes, compositionSourcesFor(current))
     else assert.equal(a.contract.sourceHashes, COMPOSITION_SOURCES)
@@ -294,6 +297,7 @@ test('composition source bindings reject stale/current cross-binding and every t
   const actual = compositionSourcesFor(current)
   const a = fixture()
   a.contract.binding.sourceSha256 = current
+  a.contract.binding.browser = '156.0.8078.4'
   assert.throws(() => render(a), /composition pass source hashes/)
   a.contract.sourceHashes = actual
   a.contract.binding.sourceSha256 =

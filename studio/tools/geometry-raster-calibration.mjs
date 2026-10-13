@@ -110,7 +110,7 @@ export function validateBaseRaster(capture, envelope, binding) {
     if (!condition) throw Error('RASTER_' + label)
   }
   check(
-    binding.browser === '148.0.7778.96' &&
+    (binding.browser === '148.0.7778.96' &&
       (binding.sourceSha256 ===
         'e38c2512b0ac3b16f37488192687977440f0e083bac4e4456b71e0adf5c00689' ||
         binding.sourceSha256 ===
@@ -170,7 +170,10 @@ export function validateBaseRaster(capture, envelope, binding) {
         binding.sourceSha256 ===
           '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' ||
         binding.sourceSha256 ===
-          '3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce'),
+          '3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce')) ||
+      (binding.browser === '156.0.8078.4' &&
+        binding.sourceSha256 ===
+          'f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c'),
     'SOURCE_BROWSER',
   )
   check(
