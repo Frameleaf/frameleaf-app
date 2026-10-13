@@ -5,7 +5,7 @@ import { ZodSerializationException, ZodValidationException } from 'nestjs-zod';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { FrameleafSetupErrorCode } from 'src/dtos/frameleaf-server-setup.dto.js';
-import { ImmichHeader } from 'src/enum.js';
+import { RequestHeader } from 'src/enum.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { setupRefusal } from 'src/utils/frameleaf-setup-gate.js';
@@ -45,7 +45,7 @@ describe('FL-328 server error display contract', () => {
     expect(res.status).toHaveBeenCalledWith(input.status);
     expect(body).toEqual(expected);
     expect(res.header).toHaveBeenCalledWith({
-      [ImmichHeader.CorrelationId]: 'request-a',
+      [RequestHeader.CorrelationId]: 'request-a',
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
     });
@@ -133,7 +133,7 @@ describe('FL-328 server error display contract', () => {
     expect(a.body.displayError.args).toEqual({ attemptsLeft: 2 });
     expect(b.body.displayError.args).toEqual({ attemptsLeft: 0 });
     expect(JSON.stringify(b.body)).not.toContain('Account A');
-    expect(b.res.header).toHaveBeenCalledWith(expect.objectContaining({ [ImmichHeader.CorrelationId]: 'request-b' }));
+    expect(b.res.header).toHaveBeenCalledWith(expect.objectContaining({ [RequestHeader.CorrelationId]: 'request-b' }));
   });
 
   it.each([{ headersSent: true }, { destroyed: true, complete: false }, { code: 'ECONNABORTED' }])(

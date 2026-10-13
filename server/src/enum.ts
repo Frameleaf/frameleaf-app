@@ -17,7 +17,7 @@ export enum AuthType {
   OAuth = 'oauth',
 }
 
-export enum ImmichCookie {
+export enum AuthCookie {
   AccessToken = 'immich_access_token',
   MaintenanceToken = 'immich_maintenance_token',
   AuthType = 'immich_auth_type',
@@ -27,7 +27,7 @@ export enum ImmichCookie {
   OAuthCodeVerifier = 'immich_oauth_code_verifier',
 }
 
-export enum ImmichHeader {
+export enum RequestHeader {
   ApiKey = 'x-api-key',
   UserToken = 'x-immich-user-token',
   SessionToken = 'x-immich-session-token',
@@ -45,7 +45,7 @@ export enum ImmichHeader {
   FrameleafViaAuth = 'x-frameleaf-via-auth',
 }
 
-export enum ImmichQuery {
+export enum RequestQuery {
   SharedLinkKey = 'key',
   SharedLinkSlug = 'slug',
   ApiKey = 'apiKey',

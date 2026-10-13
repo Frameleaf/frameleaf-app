@@ -29,7 +29,7 @@ export function getFiles(files: UploadFiles) {
   };
 }
 
-type ImmichMulterFile = Express.Multer.File & { uuid: string };
+type UploadMulterFile = Express.Multer.File & { uuid: string };
 
 interface Callback<T> {
   (error: Error): void;
@@ -105,7 +105,7 @@ export class FileUploadInterceptor implements NestInterceptor {
     });
 
     try {
-      (file as ImmichMulterFile).uuid = randomUUID();
+      (file as UploadMulterFile).uuid = randomUUID();
 
       const uploadRequest = asUploadRequest(request, file);
 

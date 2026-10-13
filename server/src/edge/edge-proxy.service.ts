@@ -12,7 +12,7 @@ import {
   buddyBackupRequestAllowed,
   buddyRecoveryRequestAllowed,
 } from 'src/edge/buddy-recovery.js';
-import { ImmichHeader } from 'src/enum.js';
+import { RequestHeader } from 'src/enum.js';
 import { stripFrameleafHeaders } from 'src/middleware/frameleaf-via.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -87,8 +87,8 @@ export const upstreamHeaders = (
     'x-forwarded-for': arrival.clientIp,
     'x-forwarded-proto': 'https',
     ...(host && { 'x-forwarded-host': host }),
-    [ImmichHeader.FrameleafVia]: arrival.via,
-    [ImmichHeader.FrameleafViaAuth]: secret,
+    [RequestHeader.FrameleafVia]: arrival.via,
+    [RequestHeader.FrameleafViaAuth]: secret,
   };
 };
 

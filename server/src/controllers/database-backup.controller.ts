@@ -27,7 +27,7 @@ import {
   DatabaseBackupUploadDto,
 } from 'src/dtos/database-backup.dto.js';
 import { FrameleafSetupCodeDto } from 'src/dtos/frameleaf-server-setup.dto.js';
-import { ApiTag, ImmichCookie, Permission } from 'src/enum.js';
+import { ApiTag, AuthCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, GetLoginDetails, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -145,7 +145,7 @@ export class DatabaseBackupController {
     });
     return respondWithCookie(res, undefined, {
       isSecure: loginDetails.isSecure,
-      values: [{ key: ImmichCookie.MaintenanceToken, value: jwt }],
+      values: [{ key: AuthCookie.MaintenanceToken, value: jwt }],
     });
   }
 

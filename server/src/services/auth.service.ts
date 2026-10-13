@@ -27,7 +27,7 @@ import {
   SignUpDto,
 } from 'src/dtos/auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
+import { AdminAuditAction, AuthCookie, AuthType, JobName, Permission, RequestHeader, RequestQuery } from 'src/enum.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
@@ -655,14 +655,14 @@ export class AuthService extends BaseService {
     { headers, queryParams }: Omit<ValidateRequest, 'metadata'>,
     refreshElevation = true,
   ): Promise<AuthDto> {
-    const shareKey = (headers[ImmichHeader.SharedLinkKey] || queryParams[ImmichQuery.SharedLinkKey]) as string;
-    const shareSlug = (headers[ImmichHeader.SharedLinkSlug] || queryParams[ImmichQuery.SharedLinkSlug]) as string;
-    const session = (headers[ImmichHeader.UserToken] ||
-      headers[ImmichHeader.SessionToken] ||
-      queryParams[ImmichQuery.SessionKey] ||
+    const shareKey = (headers[RequestHeader.SharedLinkKey] || queryParams[RequestQuery.SharedLinkKey]) as string;
+    const shareSlug = (headers[RequestHeader.SharedLinkSlug] || queryParams[RequestQuery.SharedLinkSlug]) as string;
+    const session = (headers[RequestHeader.UserToken] ||
+      headers[RequestHeader.SessionToken] ||
+      queryParams[RequestQuery.SessionKey] ||
       this.getBearerToken(headers) ||
       this.getCookieToken(headers)) as string;
-    const apiKey = (headers[ImmichHeader.ApiKey] || queryParams[ImmichQuery.ApiKey]) as string;
+    const apiKey = (headers[RequestHeader.ApiKey] || queryParams[RequestQuery.ApiKey]) as string;
 
     if (shareKey) {
       return this.validateSharedLinkKey(shareKey);
@@ -920,17 +920,17 @@ export class AuthService extends BaseService {
 
   private getCookieToken(headers: IncomingHttpHeaders): string | null {
     const cookies = parse(headers.cookie || '');
-    return cookies[ImmichCookie.AccessToken] || null;
+    return cookies[AuthCookie.AccessToken] || null;
   }
 
   private getCookieOauthState(headers: IncomingHttpHeaders): string | null {
     const cookies = parse(headers.cookie || '');
-    return cookies[ImmichCookie.OAuthState] || null;
+    return cookies[AuthCookie.OAuthState] || null;
   }
 
   private getCookieCodeVerifier(headers: IncomingHttpHeaders): string | null {
     const cookies = parse(headers.cookie || '');
-    return cookies[ImmichCookie.OAuthCodeVerifier] || null;
+    return cookies[AuthCookie.OAuthCodeVerifier] || null;
   }
 
   async validateSharedLinkKey(key: string | string[]): Promise<AuthDto> {

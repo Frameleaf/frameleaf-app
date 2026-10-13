@@ -1,6 +1,6 @@
 import { Writable } from 'node:stream';
 import type { CookieOptions, Response } from 'express';
-import { ImmichCookie } from 'src/enum.js';
+import { AuthCookie } from 'src/enum.js';
 import { ClientDisconnectedError, respondWithCookie, respondWithoutCookie, waitForDrain } from 'src/utils/response.js';
 
 const createResponse = () => {
@@ -23,18 +23,18 @@ describe('respondWithCookie', () => {
   )('preserves every cookie policy for %j', ({ isSecure, rememberMe }) => {
     const { res, events } = createResponse();
     const body = { signedIn: true };
-    const values = Object.values(ImmichCookie).map((key) => ({ key, value: null }));
+    const values = Object.values(AuthCookie).map((key) => ({ key, value: null }));
     expect(respondWithCookie(res, body, { isSecure, rememberMe, values })).toBe(body);
 
     const authenticationAge = rememberMe === false ? undefined : 34_560_000_000;
     const expectedAges = {
-      [ImmichCookie.AccessToken]: authenticationAge,
-      [ImmichCookie.AuthType]: authenticationAge,
-      [ImmichCookie.IsAuthenticated]: authenticationAge,
-      [ImmichCookie.OAuthState]: 34_560_000_000,
-      [ImmichCookie.OAuthCodeVerifier]: 34_560_000_000,
-      [ImmichCookie.MaintenanceToken]: 86_400_000,
-      [ImmichCookie.SharedLinkToken]: 86_400_000,
+      [AuthCookie.AccessToken]: authenticationAge,
+      [AuthCookie.AuthType]: authenticationAge,
+      [AuthCookie.IsAuthenticated]: authenticationAge,
+      [AuthCookie.OAuthState]: 34_560_000_000,
+      [AuthCookie.OAuthCodeVerifier]: 34_560_000_000,
+      [AuthCookie.MaintenanceToken]: 86_400_000,
+      [AuthCookie.SharedLinkToken]: 86_400_000,
     };
     expect(events).toEqual([
       ...values.map(({ key, value }) => [
@@ -44,7 +44,7 @@ describe('respondWithCookie', () => {
         {
           path: '/',
           sameSite: 'lax',
-          httpOnly: key !== ImmichCookie.IsAuthenticated,
+          httpOnly: key !== AuthCookie.IsAuthenticated,
           secure: isSecure,
           maxAge: expectedAges[key],
         },
@@ -55,7 +55,7 @@ describe('respondWithCookie', () => {
 
   it('leaves the cache alone for an empty response or cookies unrelated to sign-in', () => {
     const { res, setHeader } = createResponse();
-    const keys = Object.values(ImmichCookie).filter((key) => key !== ImmichCookie.AccessToken);
+    const keys = Object.values(AuthCookie).filter((key) => key !== AuthCookie.AccessToken);
     for (const key of keys) {
       respondWithCookie(res, undefined, { isSecure: false, values: [{ key, value: 'value' }] });
     }
@@ -65,7 +65,7 @@ describe('respondWithCookie', () => {
 
   it('keeps option mutations inside their existing cookie groups and response', () => {
     const { res, cookie } = createResponse();
-    const keys = [ImmichCookie.AuthType, ImmichCookie.AccessToken, ImmichCookie.IsAuthenticated];
+    const keys = [AuthCookie.AuthType, AuthCookie.AccessToken, AuthCookie.IsAuthenticated];
     cookie.mockImplementation((_key, _value, options) => {
       options.path = '/changed';
     });
@@ -94,7 +94,7 @@ describe('respondWithCookie', () => {
     expect(() =>
       respondWithCookie(res, undefined, {
         isSecure: false,
-        values: [{ key: ImmichCookie.AccessToken, value: 'token' }],
+        values: [{ key: AuthCookie.AccessToken, value: 'token' }],
       }),
     ).toThrow(error);
     expect(setHeader).not.toHaveBeenCalled();
@@ -102,17 +102,17 @@ describe('respondWithCookie', () => {
 });
 
 describe('respondWithoutCookie', () => {
-  it.each<ImmichCookie[]>([
+  it.each<AuthCookie[]>([
     [],
-    [ImmichCookie.OAuthState],
-    [ImmichCookie.AccessToken, ImmichCookie.AuthType, ImmichCookie.AccessToken],
+    [AuthCookie.OAuthState],
+    [AuthCookie.AccessToken, AuthCookie.AuthType, AuthCookie.AccessToken],
   ])('clears cookies in order and only clears the cache for an access token: %j', (...cookies) => {
     const { res, events } = createResponse();
     const body = { signedOut: true };
     expect(respondWithoutCookie(res, body, cookies)).toBe(body);
     expect(events).toEqual([
       ...cookies.map((key) => ['clearCookie', key]),
-      ...(cookies.includes(ImmichCookie.AccessToken) ? [['header', 'Clear-Site-Data', '"cache"']] : []),
+      ...(cookies.includes(AuthCookie.AccessToken) ? [['header', 'Clear-Site-Data', '"cache"']] : []),
     ]);
   });
 
@@ -122,7 +122,7 @@ describe('respondWithoutCookie', () => {
     clearCookie.mockImplementation(() => {
       throw error;
     });
-    expect(() => respondWithoutCookie(res, undefined, [ImmichCookie.AccessToken])).toThrow(error);
+    expect(() => respondWithoutCookie(res, undefined, [AuthCookie.AccessToken])).toThrow(error);
     expect(setHeader).not.toHaveBeenCalled();
   });
 });

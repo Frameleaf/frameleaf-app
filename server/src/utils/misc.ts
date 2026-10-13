@@ -15,7 +15,7 @@ import picomatch from 'picomatch';
 import { CLIP_MODEL_INFO, JOBS_ASSET_PAGINATION_SIZE, endpointTags, serverVersion } from 'src/constants.js';
 import { extraModels } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { ApiCustomExtension, ImmichCookie, ImmichHeader, MetadataKey } from 'src/enum.js';
+import { ApiCustomExtension, AuthCookie, MetadataKey, RequestHeader } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 type OperationObject = NonNullable<OpenAPIObject['paths'][string]['get']>;
@@ -370,12 +370,12 @@ export const useSwagger = (app: INestApplication, { write }: { write: boolean })
       type: 'http',
       scheme: 'bearer',
     })
-    .addCookieAuth(ImmichCookie.AccessToken)
+    .addCookieAuth(AuthCookie.AccessToken)
     .addApiKey(
       {
         type: 'apiKey',
         in: 'header',
-        name: ImmichHeader.ApiKey,
+        name: RequestHeader.ApiKey,
       },
       MetadataKey.ApiKeySecurity,
     )

@@ -11,11 +11,11 @@ import { EnvSchema } from 'src/dtos/env.dto.js';
 import {
   DatabaseExtension,
   ImmichEnvironment,
-  ImmichHeader,
   ImmichTelemetry,
   ImmichWorker,
   LogFormat,
   LogLevel,
+  RequestHeader,
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
 import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
@@ -257,9 +257,9 @@ const getEnv = (): EnvData => {
           mount: true,
           generateId: true,
           setup: (cls, req: Request, res: Response) => {
-            const cid = req.header(ImmichHeader.CorrelationId) || cls.get(CLS_ID);
+            const cid = req.header(RequestHeader.CorrelationId) || cls.get(CLS_ID);
             cls.set(CLS_ID, cid);
-            res.header(ImmichHeader.CorrelationId, cid);
+            res.header(RequestHeader.CorrelationId, cid);
           },
         },
       },

@@ -14,7 +14,7 @@ import { isIP } from 'node:net';
 import { Observable, catchError, from, map, mergeMap, throwError } from 'rxjs';
 import type { Request, Response } from 'express';
 import type { FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
-import { ImmichCookie, ImmichEnvironment, ImmichHeader, ImmichQuery, MetadataKey } from 'src/enum.js';
+import { AuthCookie, ImmichEnvironment, MetadataKey, RequestHeader, RequestQuery } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -194,13 +194,13 @@ const presentedCredential = (request: Request): string | undefined => {
   const cookies = (request.cookies ?? {}) as Record<string, unknown>;
   const query = (request.query ?? {}) as Record<string, unknown>;
   return (
-    text(headers[ImmichHeader.UserToken]) ??
-    text(headers[ImmichHeader.SessionToken]) ??
-    text(query[ImmichQuery.SessionKey]) ??
+    text(headers[RequestHeader.UserToken]) ??
+    text(headers[RequestHeader.SessionToken]) ??
+    text(query[RequestQuery.SessionKey]) ??
     (bearer?.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() || undefined : undefined) ??
-    text(cookies[ImmichCookie.AccessToken]) ??
-    text(headers[ImmichHeader.ApiKey]) ??
-    text(query[ImmichQuery.ApiKey])
+    text(cookies[AuthCookie.AccessToken]) ??
+    text(headers[RequestHeader.ApiKey]) ??
+    text(query[RequestQuery.ApiKey])
   );
 };
 
@@ -213,8 +213,8 @@ export const rateLimitPrincipal = (request: Request, principal: RateLimitPrincip
     }
     case 'shared-link': {
       const query = (request.query ?? {}) as Record<string, unknown>;
-      const key = text(request.headers[ImmichHeader.SharedLinkKey]) ?? text(query[ImmichQuery.SharedLinkKey]);
-      const slug = text(request.headers[ImmichHeader.SharedLinkSlug]) ?? text(query[ImmichQuery.SharedLinkSlug]);
+      const key = text(request.headers[RequestHeader.SharedLinkKey]) ?? text(query[RequestQuery.SharedLinkKey]);
+      const slug = text(request.headers[RequestHeader.SharedLinkSlug]) ?? text(query[RequestQuery.SharedLinkSlug]);
       if (key) {
         return `key:${key}`;
       }

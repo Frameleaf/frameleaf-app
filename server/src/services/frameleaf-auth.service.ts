@@ -28,7 +28,7 @@ import {
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, DatabaseLock, ImmichCookie, NotificationLevel, NotificationType } from 'src/enum.js';
+import { AdminAuditAction, AuthCookie, DatabaseLock, NotificationLevel, NotificationType } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -715,11 +715,11 @@ export class FrameleafAuthService extends BaseService {
 
   private async exchange(config: OAuthConfig, dto: OAuthCallbackDto, headers: IncomingHttpHeaders) {
     const cookies = parse(headers.cookie || '');
-    const expectedState = dto.state ?? cookies[ImmichCookie.OAuthState];
+    const expectedState = dto.state ?? cookies[AuthCookie.OAuthState];
     if (!expectedState?.length) {
       throw new BadRequestException('OAuth state is missing');
     }
-    const codeVerifier = dto.codeVerifier ?? cookies[ImmichCookie.OAuthCodeVerifier];
+    const codeVerifier = dto.codeVerifier ?? cookies[AuthCookie.OAuthCodeVerifier];
     if (!codeVerifier?.length) {
       throw new BadRequestException('OAuth code verifier is missing');
     }

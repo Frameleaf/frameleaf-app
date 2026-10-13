@@ -35,7 +35,7 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import { type AuthDto } from 'src/dtos/auth.dto.js';
 import { VideoEditVersionParamsDto } from 'src/dtos/editing.dto.js';
-import { ApiTag, CacheControl, ImmichHeader, Permission, RouteKey } from 'src/enum.js';
+import { ApiTag, CacheControl, Permission, RequestHeader, RouteKey } from 'src/enum.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor.js';
@@ -87,7 +87,7 @@ export class AssetMediaController {
   @UseInterceptors(AssetUploadInterceptor, FileUploadInterceptor)
   @ApiConsumes('multipart/form-data')
   @ApiHeader({
-    name: ImmichHeader.Checksum,
+    name: RequestHeader.Checksum,
     description:
       'SHA-256 checksum (preferred) or SHA-1 checksum (legacy) for duplicate detection before upload; hex or base64-encoded',
     required: false,

@@ -1,7 +1,7 @@
 import { CookieOptions, Response } from 'express';
 import { Writable } from 'node:stream';
 import { CookieResponse } from 'src/dtos/auth.dto.js';
-import { ImmichCookie } from 'src/enum.js';
+import { AuthCookie } from 'src/enum.js';
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 const AUTH_COOKIE_MAX_AGE = 400 * DAY_IN_MILLISECONDS;
@@ -52,33 +52,33 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values,
 
   const authentication = { ...defaults, maxAge: rememberMe === false ? undefined : defaults.maxAge };
 
-  const cookieOptions: Record<ImmichCookie, CookieOptions> = {
-    [ImmichCookie.AuthType]: authentication,
-    [ImmichCookie.AccessToken]: authentication,
-    [ImmichCookie.MaintenanceToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
-    [ImmichCookie.OAuthState]: defaults,
-    [ImmichCookie.OAuthCodeVerifier]: defaults,
+  const cookieOptions: Record<AuthCookie, CookieOptions> = {
+    [AuthCookie.AuthType]: authentication,
+    [AuthCookie.AccessToken]: authentication,
+    [AuthCookie.MaintenanceToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
+    [AuthCookie.OAuthState]: defaults,
+    [AuthCookie.OAuthCodeVerifier]: defaults,
     // no httpOnly so that the client can know the auth state
-    [ImmichCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
-    [ImmichCookie.SharedLinkToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
+    [AuthCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
+    [AuthCookie.SharedLinkToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
   };
 
   for (const { key, value } of values) {
     const options = cookieOptions[key];
     res.cookie(key, value, options);
   }
-  if (values.some(({ key }) => key === ImmichCookie.AccessToken)) {
+  if (values.some(({ key }) => key === AuthCookie.AccessToken)) {
     clearBrowserCache(res);
   }
 
   return body;
 };
 
-export const respondWithoutCookie = <T>(res: Response, body: T, cookies: ImmichCookie[]) => {
+export const respondWithoutCookie = <T>(res: Response, body: T, cookies: AuthCookie[]) => {
   for (const cookie of cookies) {
     res.clearCookie(cookie);
   }
-  if (cookies.includes(ImmichCookie.AccessToken)) {
+  if (cookies.includes(AuthCookie.AccessToken)) {
     clearBrowserCache(res);
   }
 
