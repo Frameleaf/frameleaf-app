@@ -1586,3 +1586,60 @@ test('preparation refuses an existing checkpoint without appending to it and res
   assert.equal(fixture.result().progressWrites.length, 0);
   assert.equal(fixture.result().sdkDefaults.signal, undefined);
 });
+
+test('performance sampling failure stops after cleanup and retains both failure phases', async () => {
+  for (const cleanupFails of [false, true]) {
+    let measure;
+    let created = 0;
+    let closed = 0;
+    const attachments = [];
+    const measurementError = new Error('measurement refused');
+    const cleanupError = new Error('cleanup refused');
+    const register = Object.assign(
+      (name, callback) => {
+        if (name.startsWith('records startup')) measure = callback;
+      },
+      {
+        describe: (_name, run) => run(),
+        beforeAll: () => {},
+        setTimeout: () => {},
+        info: () => ({ attach: async (name, options) => attachments.push({ name, body: JSON.parse(options.body) }) }),
+      },
+    );
+    const script = stripTypeScriptTypes(source.replace(/^import .*;\n/gm, ''));
+    new Function('test', 'process', 'setTimeout', 'clearTimeout', script)(
+      register,
+      { env: { FL139_PERFORMANCE_MODE: 'validate' } },
+      () => 1,
+      () => {},
+    );
+    await assert.rejects(
+      measure({
+        browser: {
+          newContext: async () => {
+            created++;
+            return {
+              newPage: async () => {
+                throw measurementError;
+              },
+              close: async () => {
+                closed++;
+                if (cleanupFails) throw cleanupError;
+              },
+            };
+          },
+        },
+        baseURL: 'http://127.0.0.1:2285',
+      }),
+      (error) => error === (cleanupFails ? cleanupError : measurementError),
+    );
+    assert.equal(created, 1);
+    assert.equal(closed, 1);
+    const report = attachments.find(({ name }) => name === 'performance-report.json').body;
+    assert.equal(report.complete, false);
+    assert.deepEqual(
+      report.failures.map(({ phase }) => phase),
+      cleanupFails ? ['measurement', 'context-cleanup'] : ['measurement'],
+    );
+  }
+});

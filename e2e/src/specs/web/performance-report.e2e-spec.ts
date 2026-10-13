@@ -25,7 +25,9 @@ const REFERENCE_CONTEXT = {
 } as const;
 
 const performanceSchedule = (mode: string) => {
-  if (!['report', 'calibrate', 'validate'].includes(mode)) throw new Error('Invalid performance mode');
+  if (!['report', 'calibrate', 'validate'].includes(mode)) {
+    throw new Error('Invalid performance mode');
+  }
   const warmups = mode === 'report' ? 0 : 3;
   const measured = mode === 'calibrate' ? 30 : mode === 'validate' ? 3 : 1;
   return Array.from({ length: warmups + measured }, (_, index) => ({
@@ -65,9 +67,9 @@ const validateMeasurements = (report: Measurement) => {
     values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0) ||
     report.firstThumbnailMs <= 0 ||
     !scroll ||
-    !Number.isInteger(scroll.frames) ||
+    !Number.isSafeInteger(scroll.frames) ||
     scroll.frames <= 0 ||
-    !Number.isInteger(scroll.longFrames) ||
+    !Number.isSafeInteger(scroll.longFrames) ||
     scroll.longFrames > scroll.frames ||
     scroll.worstFrameMs < scroll.medianFrameMs ||
     !diagnostics ||
@@ -127,8 +129,9 @@ const validateProfileAdmission = (profile: Record<string, unknown>) => {
     new Date(profile.measuredAt).toISOString() !== profile.measuredAt ||
     !/^[a-f0-9]{64}$/.test(String(profile.datasetSha256)) ||
     !/^[a-f0-9]{64}$/.test(String(profile.rootApprovalReceiptSha256))
-  )
+  ) {
     throw new Error('Invalid baseline evidence');
+  }
 };
 
 const compareMeasurements = (report: Measurement, profile: Record<string, unknown>) => {
@@ -199,7 +202,7 @@ const validateReferenceIdentity = (identity: Record<string, unknown>, observed: 
     ) ||
     keys
       .filter((key) => !numericKeys.includes(key))
-      .some((key) => typeof environment[key] !== 'string' || !String(environment[key]).trim()) ||
+      .some((key) => typeof environment[key] !== 'string' || !environment[key].trim()) ||
     keys.filter((key) => key.endsWith('Sha256')).some((key) => !/^[a-f0-9]{64}$/.test(String(environment[key]))) ||
     ['imageSha256', 'webManifestSha256'].some((key) => !/^[a-f0-9]{64}$/.test(String(application[key]))) ||
     !/^[a-f0-9]{40}$/.test(String(application.sourceCommit)) ||
@@ -207,12 +210,14 @@ const validateReferenceIdentity = (identity: Record<string, unknown>, observed: 
     !application.webIdentity ||
     identity.environmentSha256 !==
       createHash('sha256')
-        .update(JSON.stringify(Object.entries(environment).sort(([a], [b]) => a.localeCompare(b))))
+        .update(JSON.stringify(Object.entries(environment).toSorted(([a], [b]) => a.localeCompare(b))))
         .digest('hex')
   ) {
     throw new Error('Invalid reference identity');
   }
-  if (keys.some((key) => environment[key] !== observed[key])) throw new Error('Reference environment mismatch');
+  if (keys.some((key) => environment[key] !== observed[key])) {
+    throw new Error('Reference environment mismatch');
+  }
   const contextIdentity = {
     viewportWidth: REFERENCE_CONTEXT.viewport.width,
     viewportHeight: REFERENCE_CONTEXT.viewport.height,
@@ -223,8 +228,9 @@ const validateReferenceIdentity = (identity: Record<string, unknown>, observed: 
     colorScheme: REFERENCE_CONTEXT.colorScheme,
     cachePolicy: 'cold-context-warm-stack',
   };
-  if (Object.entries(contextIdentity).some(([key, value]) => environment[key] !== value))
+  if (Object.entries(contextIdentity).some(([key, value]) => environment[key] !== value)) {
     throw new Error('Reference context mismatch');
+  }
 };
 
 type PreparedThumbnail = {
@@ -243,18 +249,19 @@ const validatePreparedThumbnails = (thumbnails: PreparedThumbnail[], assetIds: s
     thumbnails.some(
       (thumbnail, index) =>
         thumbnail.assetId !== assetIds[index] ||
-        !Number.isInteger(thumbnail.width) ||
+        !Number.isSafeInteger(thumbnail.width) ||
         thumbnail.width <= 0 ||
-        !Number.isInteger(thumbnail.height) ||
+        !Number.isSafeInteger(thumbnail.height) ||
         thumbnail.height <= 0 ||
-        !Number.isInteger(thumbnail.bytes) ||
+        !Number.isSafeInteger(thumbnail.bytes) ||
         thumbnail.bytes <= 0 ||
         thumbnail.bytes > 1024 * 1024 ||
         !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(thumbnail.contentType) ||
         !/^[a-f0-9]{64}$/.test(thumbnail.sha256),
     )
-  )
+  ) {
     throw new Error('Invalid prepared thumbnails');
+  }
 };
 
 test.describe('performance report (FL-139)', () => {
@@ -270,20 +277,29 @@ test.describe('performance report (FL-139)', () => {
     performanceSchedule(mode);
     if (mode !== 'report') {
       const path = process.env.FL139_PERFORMANCE_IDENTITY;
-      if (!path) throw new Error('Missing admitted reference identity');
+      if (!path) {
+        throw new Error('Missing admitted reference identity');
+      }
       const file = lstatSync(path);
-      if (!file.isFile() || file.isSymbolicLink() || file.size > 128 * 1024)
+      if (!file.isFile() || file.isSymbolicLink() || file.size > 128 * 1024) {
         throw new Error('Invalid reference identity file');
+      }
       identity = JSON.parse(readFileSync(path, 'utf8'));
       const observedPath = process.env.FL139_PERFORMANCE_OBSERVED;
-      if (!observedPath || observedPath === path) throw new Error('Missing current reference observations');
+      if (!observedPath || observedPath === path) {
+        throw new Error('Missing current reference observations');
+      }
       const observedFile = lstatSync(observedPath);
-      if (!observedFile.isFile() || observedFile.isSymbolicLink() || observedFile.size > 128 * 1024)
+      if (!observedFile.isFile() || observedFile.isSymbolicLink() || observedFile.size > 128 * 1024) {
         throw new Error('Invalid reference observation file');
+      }
       const receipt = JSON.parse(readFileSync(observedPath, 'utf8'));
-      if (!Number.isFinite(receipt.observedAt) || Math.abs(Date.now() - receipt.observedAt) > 30_000)
+      if (!Number.isFinite(receipt.observedAt) || Math.abs(Date.now() - receipt.observedAt) > 30_000) {
         throw new Error('Stale reference observations');
-      if (!identity || !receipt.environment) throw new Error('Invalid reference identity');
+      }
+      if (!identity || !receipt.environment) {
+        throw new Error('Invalid reference identity');
+      }
       validateReferenceIdentity(identity, {
         ...receipt.environment,
         nodeVersion: process.version,
@@ -291,16 +307,23 @@ test.describe('performance report (FL-139)', () => {
       });
       if (mode === 'validate') {
         const profilePath = process.env.FL139_PERFORMANCE_PROFILE;
-        if (!profilePath) throw new Error('Missing reviewed reference profile');
+        if (!profilePath) {
+          throw new Error('Missing reviewed reference profile');
+        }
         const profileFile = lstatSync(profilePath);
-        if (!profileFile.isFile() || profileFile.isSymbolicLink() || profileFile.size > 128 * 1024)
+        if (!profileFile.isFile() || profileFile.isSymbolicLink() || profileFile.size > 128 * 1024) {
           throw new Error('Invalid performance profile');
+        }
         const profileBytes = readFileSync(profilePath);
         profile = JSON.parse(profileBytes.toString('utf8'));
         profileSha256 = createHash('sha256').update(profileBytes).digest('hex');
-        if (!profile) throw new Error('Invalid performance profile');
+        if (!profile) {
+          throw new Error('Invalid performance profile');
+        }
         validateProfileAdmission(profile);
-        if (profile.environmentSha256 !== identity.environmentSha256) throw new Error('Reference environment mismatch');
+        if (profile.environmentSha256 !== identity.environmentSha256) {
+          throw new Error('Reference environment mismatch');
+        }
       }
     }
     const deadline = Date.now() + PREPARATION_TIMEOUT;
@@ -308,14 +331,16 @@ test.describe('performance report (FL-139)', () => {
     const remainingPreparation = () => {
       signal.throwIfAborted();
       const remaining = deadline - Date.now();
-      if (remaining <= 0) throw new Error('Preparation deadline');
+      if (remaining <= 0) {
+        throw new Error('Preparation deadline');
+      }
       return remaining;
     };
     const progressPath = test.info().outputPath('performance-dataset-progress.ndjson');
     const previousSignal = defaults.signal;
     defaults.signal = previousSignal ? AbortSignal.any([previousSignal, signal]) : signal;
     const assets: { assetId: string; sourceSha256: string }[] = [];
-    let thumbnails: PreparedThumbnail[] = [];
+    const thumbnails: PreparedThumbnail[] = [];
     const fileDate = '2026-10-01T00:00:00.000Z';
     let complete = false;
     let progressCreated = false;
@@ -379,13 +404,17 @@ test.describe('performance report (FL-139)', () => {
               await page.evaluate(
                 async ({ assetId, deadline }) => {
                   const remaining = deadline - Date.now();
-                  if (remaining <= 0) throw new Error('Thumbnail evidence deadline');
+                  if (remaining <= 0) {
+                    throw new Error('Thumbnail evidence deadline');
+                  }
                   const signal = AbortSignal.timeout(remaining);
                   const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}/thumbnail?size=thumbnail`, {
                     credentials: 'include',
                     signal,
                   });
-                  if (!response.ok || !response.body) throw new Error('Thumbnail evidence HTTP failure');
+                  if (!response.ok || !response.body) {
+                    throw new Error('Thumbnail evidence HTTP failure');
+                  }
                   const reader = response.body.getReader();
                   const chunks: Uint8Array[] = [];
                   let bytes = 0;
@@ -393,9 +422,13 @@ test.describe('performance report (FL-139)', () => {
                     while (true) {
                       signal.throwIfAborted();
                       const chunk = await reader.read();
-                      if (chunk.done) break;
+                      if (chunk.done) {
+                        break;
+                      }
                       bytes += chunk.value.byteLength;
-                      if (bytes > 1024 * 1024) throw new Error('Thumbnail evidence size');
+                      if (bytes > 1024 * 1024) {
+                        throw new Error('Thumbnail evidence size');
+                      }
                       chunks.push(chunk.value);
                     }
                   } catch (error) {
@@ -404,14 +437,16 @@ test.describe('performance report (FL-139)', () => {
                   } finally {
                     reader.releaseLock();
                   }
-                  if (!bytes) throw new Error('Thumbnail evidence size');
+                  if (!bytes) {
+                    throw new Error('Thumbnail evidence size');
+                  }
                   const data = new Uint8Array(bytes);
                   let offset = 0;
                   for (const chunk of chunks) {
                     data.set(chunk, offset);
                     offset += chunk.byteLength;
                   }
-                  const contentType = response.headers.get('content-type')?.split(';')[0] ?? '';
+                  const contentType = response.headers.get('content-type')?.split(';', 1)[0] ?? '';
                   const bitmap = await createImageBitmap(new Blob([data], { type: contentType }));
                   try {
                     const digest = await crypto.subtle.digest('SHA-256', data);
@@ -443,13 +478,15 @@ test.describe('performance report (FL-139)', () => {
       datasetSha256 = createHash('sha256')
         .update(JSON.stringify(assets.map((asset) => asset.sourceSha256)))
         .digest('hex');
-      if (mode === 'validate' && profile?.datasetSha256 !== datasetSha256)
+      if (mode === 'validate' && profile?.datasetSha256 !== datasetSha256) {
         throw new Error('Reference dataset mismatch');
+      }
       complete = true;
     } finally {
       defaults.signal = previousSignal;
-      if (progressCreated)
+      if (progressCreated) {
         appendFileSync(progressPath, JSON.stringify({ kind: 'status', complete, datasetSha256 }) + '\n');
+      }
       await test.info().attach('performance-dataset.json', {
         body: JSON.stringify({ complete, width: 32, height: 32, fileDate, datasetSha256, assets, thumbnails }),
         contentType: 'application/json',
@@ -464,10 +501,13 @@ test.describe('performance report (FL-139)', () => {
     const failures: { index: number; phase: string; errorType: string }[] = [];
     try {
       for (const sample of schedule) {
-        if (sample.pauseBeforeMs) await new Promise((resolve) => setTimeout(resolve, sample.pauseBeforeMs));
+        if (sample.pauseBeforeMs) {
+          await new Promise((resolve) => setTimeout(resolve, sample.pauseBeforeMs));
+        }
         let context: BrowserContext | undefined;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let expired = false;
+        let iterationFailure: { error: unknown } | undefined;
         try {
           await Promise.race([
             (async () => {
@@ -531,7 +571,9 @@ test.describe('performance report (FL-139)', () => {
                     scroller.scrollTop = from + ((target - from) * step) / 30;
                     await new Promise((resolve) => requestAnimationFrame(resolve));
                   }
-                  if (target !== 0) diagnostics.bottom = scroller.scrollTop;
+                  if (target !== 0) {
+                    diagnostics.bottom = scroller.scrollTop;
+                  }
                 }
                 diagnostics.back = scroller.scrollTop;
                 running = false;
@@ -567,10 +609,13 @@ test.describe('performance report (FL-139)', () => {
               try {
                 validateMeasurements(report);
                 if (mode === 'validate' && !sample.warmup) {
-                  if (!profile) throw new Error('Missing reviewed reference profile');
+                  if (!profile) {
+                    throw new Error('Missing reviewed reference profile');
+                  }
                   report.failedFields = compareMeasurements(report, profile);
-                  if (report.failedFields.length)
+                  if (report.failedFields.length > 0) {
                     throw new Error('Reference ceiling exceeded: ' + report.failedFields.join(', '));
+                  }
                 }
                 expect(firstThumbnailMs).toBeGreaterThan(0);
                 expect(scroll.frames).toBeGreaterThan(0);
@@ -596,9 +641,11 @@ test.describe('performance report (FL-139)', () => {
             phase: 'measurement',
             errorType: error instanceof Error ? error.name : 'unknown',
           });
-          throw error;
+          iterationFailure = { error };
         } finally {
-          if (timer !== undefined) clearTimeout(timer);
+          if (timer !== undefined) {
+            clearTimeout(timer);
+          }
           try {
             await context?.close();
           } catch (error) {
@@ -607,15 +654,18 @@ test.describe('performance report (FL-139)', () => {
               phase: 'context-cleanup',
               errorType: error instanceof Error ? error.name : 'unknown',
             });
-            throw error;
+            iterationFailure = { error };
           }
+        }
+        if (iterationFailure) {
+          throw iterationFailure.error;
         }
       }
     } finally {
       await test.info().attach('performance-report.json', {
         body: JSON.stringify(
           {
-            ...(reports.at(-1) ?? {}),
+            ...reports.at(-1),
             mode,
             profileSha256,
             rootApprovalReceiptSha256: profile?.rootApprovalReceiptSha256,
