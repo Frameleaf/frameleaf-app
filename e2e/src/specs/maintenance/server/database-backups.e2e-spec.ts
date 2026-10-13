@@ -135,7 +135,7 @@ describe('/admin/database-backups', () => {
       });
     }, 70_000);
 
-    it.sequential('should not work when the server is configured', async () => {
+    it('should not work when the server is configured', { concurrent: false }, async () => {
       const { status, body } = await request(app)
         .post('/admin/database-backups/start-restore')
         .send({ code: setupCode });
@@ -144,7 +144,7 @@ describe('/admin/database-backups', () => {
       expect(body).toEqual(errorDto.badRequest('Admin setup is not available'));
     });
 
-    it.sequential('should enter maintenance mode in "database restore mode"', async () => {
+    it('should enter maintenance mode in "database restore mode"', { concurrent: false }, async () => {
       await utils.resetDatabase(); // reset database before running this test
 
       // FL-292: starting a restore on an unclaimed server takes the setup code, like admin sign-up.
@@ -220,7 +220,7 @@ describe('/admin/database-backups', () => {
       await utils.connectDatabase();
     });
 
-    it.sequential('should restore a backup', { timeout: 60_000 }, async () => {
+    it('should restore a backup', { concurrent: false, timeout: 60_000 }, async () => {
       const filename = await utils.createBackup(admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -272,9 +272,9 @@ describe('/admin/database-backups', () => {
         .toBeFalsy();
     });
 
-    it.sequential(
+    it(
       'refuses a noncanonical source before changing the current database',
-      { timeout: 60_000 },
+      { concurrent: false, timeout: 60_000 },
       async () => {
         const filename = 'noncanonical.sql';
         await utils.putTextFile('SELECT 1;\n-- PostgreSQL database dump complete\n', `/data/backups/${filename}`);
@@ -314,7 +314,7 @@ describe('/admin/database-backups', () => {
       },
     );
 
-    it.sequential('fail to restore a corrupted backup', { timeout: 60_000 }, async () => {
+    it('fail to restore a corrupted backup', { concurrent: false, timeout: 60_000 }, async () => {
       const filename = await utils.prepareTestBackup('corrupted', admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -379,7 +379,7 @@ describe('/admin/database-backups', () => {
       await waitForServerRestart();
     });
 
-    it.sequential('rollback to restore point if backup is missing admin', { timeout: 120_000 }, async () => {
+    it('rollback to restore point if backup is missing admin', { concurrent: false, timeout: 120_000 }, async () => {
       const filename = await utils.prepareTestBackup('empty', admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -457,7 +457,7 @@ describe('/admin/database-backups', () => {
     });
 
     // FL-81: a backup from a newer server cannot be migrated down; it is refused before anything changes.
-    it.sequential('refuses a backup made by a newer server', { timeout: 60_000 }, async () => {
+    it('refuses a backup made by a newer server', { concurrent: false, timeout: 60_000 }, async () => {
       const created = await utils.createBackup(admin.accessToken);
       const filename = created.replace(/-v.+-pg/, '-v999.0.0-pg');
       expect(filename).not.toBe(created);
@@ -493,7 +493,7 @@ describe('/admin/database-backups', () => {
     });
 
     // FL-81: while a restore runs, a second restore or End (which would restart the worker mid-restore) is refused.
-    it.sequential('refuses conflicting actions while a restore runs', { timeout: 60_000 }, async () => {
+    it('refuses conflicting actions while a restore runs', { concurrent: false, timeout: 60_000 }, async () => {
       const filename = await utils.createBackup(admin.accessToken);
 
       const { status, headers } = await request(app)
