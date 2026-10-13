@@ -219,9 +219,9 @@ FROM ${NODE_IMAGE} AS base-server-prod
 ARG DEBIAN_FRONTEND=noninteractive
 
 # renovate: datasource=custom.intel-igc depName=intel/intel-graphics-compiler
-ARG IGC_VERSION=2.38.2+22051
+ARG IGC_VERSION=2.41.5+22716
 # renovate: datasource=custom.intel-opencl-icd depName=intel/compute-runtime
-ARG COMPUTE_RUNTIME_VERSION=26.27.39122.11-0
+ARG COMPUTE_RUNTIME_VERSION=26.35.39758.10-0
 # renovate: datasource=custom.intel-gmmlib depName=intel/compute-runtime
 ARG GMMLIB_VERSION=22.10.0
 
@@ -291,9 +291,9 @@ RUN . /etc/os-release && \
   'c1e1ecdfe2064c047c552651cfdcdafc504f2033afafba65654338b880048b67  intel-igc-core_1.0.17537.24_amd64.deb' \
   'dd016400f87fa2b6a9fa9fbcca7eb4a2629174a29de679709f9bec5cede88b0e  intel-igc-opencl_1.0.17537.24_amd64.deb' \
   'bbe71e4f414259e06a10cde72c29a2bd78d41b2bb2f6f8463b1806797fe66e85  intel-opencl-icd-legacy1_24.35.30872.36_amd64.deb' \
-  '3dbcbe4e716d62e9bd43a4a476d724cf772b4581dbcdd096d70df382e7ccad7e  intel-igc-core-2_2.38.2+22051_amd64.deb' \
-  'e265d191590efd5491bfbbd148c144fdd40aea51e0b57f8651130d2da20b8186  intel-igc-opencl-2_2.38.2+22051_amd64.deb' \
-  '6e447a783c99fb5634df298c135a81165be07db98672df96cdf413d22f3e6ac4  intel-opencl-icd_26.27.39122.11-0_amd64.deb' \
+  '0a6e64a663ae65a0fa02d6912ae3b6b37cf85b90c21cc423fd9fef70aaf4f628  intel-igc-core-2_2.41.5+22716_amd64.deb' \
+  '779e1b9e88098eb25711e9a8f67c2752665bad22f134aa40ed5649f6e1b87058  intel-igc-opencl-2_2.41.5+22716_amd64.deb' \
+  '61712caaddeba3d38e4f79e2a0fb23fea25596ca2d72c3144c6eea2331ec4301  intel-opencl-icd_26.35.39758.10-0_amd64.deb' \
   '6031a63d6e8a12ce61c14efc15f2c8e727061286e3820b8594e6d00615e04d54  libigdgmm12_22.10.0_amd64.deb' \
   > intel-drivers.sha256 && \
   sha256sum --strict -c intel-drivers.sha256 && \
