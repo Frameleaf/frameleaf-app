@@ -20,8 +20,10 @@ export const onRouteError = (req: Request | undefined, res: Response, error: Err
   }
 
   if (error instanceof Error) {
-    // Error text and stacks can contain credentials, provider bodies and another account's content.
-    logger.error('Unknown route error');
+    // Error text can contain credentials, provider bodies and another account's content, so log only
+    // the error class and the stack frames (code locations), never the message.
+    const frames = (error.stack ?? '').split('\n').filter((line) => line.trimStart().startsWith('at '));
+    logger.error(['Unknown route error', error.name, ...frames].join('\n'));
     return { canWrite: true };
   }
 
