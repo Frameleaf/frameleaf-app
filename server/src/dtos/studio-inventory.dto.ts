@@ -113,6 +113,32 @@ const StudioMediaFactsSchema = z
       .describe('Whether the original has an audio track; null when it could not be read'),
     audioCodec: z.string().nullable().describe('The first audio track codec; its presence places a linked audio clip'),
     videoCodec: z.string().nullable(),
+    colorTransfer: z
+      .enum(['sdr', 'pq', 'hlg', 'hdr'])
+      .describe(
+        "The Studio media record's colorTransfer (graph protocol 3.5), from the stored picture stream: hdr for any Dolby Vision profile, whatever its transfer; otherwise pq for H.273 transfer 16 and hlg for 18; sdr for anything else, for a still, and when nothing is known",
+      )
+      .meta({ id: 'StudioMediaColorTransfer' }),
+    colorTransferCode: z
+      .int()
+      .nullable()
+      .describe('ITU-T H.273 transfer characteristics of the picture stream (2: unspecified); null when none is known'),
+    colorPrimariesCode: z
+      .int()
+      .nullable()
+      .describe('ITU-T H.273 colour primaries of the picture stream (2: unspecified); null when none is known'),
+    colorMatrixCode: z
+      .int()
+      .nullable()
+      .describe('ITU-T H.273 matrix coefficients of the picture stream (2: unspecified); null when none is known'),
+    bitDepth: z
+      .int()
+      .nullable()
+      .describe('Bits per component, read from the pixel format of the picture stream; null when unknown'),
+    dolbyVisionProfile: z
+      .int()
+      .nullable()
+      .describe('The Dolby Vision profile of the picture stream; null when it has none or none is known'),
     source: z
       .enum(['probe', 'stored'])
       .describe(

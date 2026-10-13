@@ -9,6 +9,7 @@ import {
   MediaOperationItemStatusSchema,
   MediaOperationKindSchema,
   MediaOperationStatusSchema,
+  RenderWorkerRefusalReasonSchema,
 } from 'src/enum.js';
 import { BULK_MAX_ITEMS } from 'src/utils/bulk-operation.js';
 import { DUPLICATE_DECISION_MAX_GROUPS } from 'src/utils/duplicate-review.js';
@@ -210,6 +211,18 @@ export const MediaOperationSchema = z
       .meta({ format: 'date-time' })
       .nullable()
       .describe('When a job waiting for its automatic retry may run again'),
+    /** Optional like `cloudJob`: additive for clients built before it. The server always answers it. */
+    lastAdmissionRefusalReason: RenderWorkerRefusalReasonSchema.nullable()
+      .optional()
+      .describe(
+        'Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed',
+      ),
+    lastAdmissionRefusedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .optional()
+      .describe('When that worker refused it; null with lastAdmissionRefusalReason'),
     error: z
       .string()
       .nullable()
