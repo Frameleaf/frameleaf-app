@@ -175,6 +175,8 @@ describe('secret request body exclusion', () => {
     '/api/admin/buddy-backup/key/verify',
     '/api/admin/config/credentials/smtp-password',
     '/ADMIN/BUDDY-BACKUP/KEY/IMPORT/',
+    '/api/assets/uploads/00000000-0000-4000-8000-000000000001/direct',
+    '/ASSETS/UPLOADS/00000000-0000-4000-8000-000000000001/DIRECT/',
   ])('excludes arbitrary bodies for %s on success and failure', async (path) => {
     for (const failed of [false, true]) {
       const log = { setContext: vi.fn(), debug: vi.fn(), verbose: vi.fn() };

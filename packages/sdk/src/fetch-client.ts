@@ -4175,6 +4175,10 @@ export type LivePhotoUploadResultDto = {
     still: AssetUploadResultDto;
     video: AssetUploadResultDto;
 };
+export type AssetUploadDirectDescriptionDto = {
+    sdp: string;
+    version: number;
+};
 export type ExifResponseDto = {
     /** Bits per sample */
     bitsPerSample?: number | null;
@@ -19314,6 +19318,26 @@ export function appendAssetUploadResource({ uploadComplete, uploadDraftInteropVe
             "Upload-Offset": uploadOffset
         })
     }));
+}
+/**
+ * Negotiate a resource-scoped direct upload data channel
+ */
+export function negotiateAssetUploadDirect({ id, assetUploadDirectDescriptionDto }: {
+    id: string;
+    assetUploadDirectDescriptionDto: AssetUploadDirectDescriptionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadDirectDescriptionDto;
+    } | {
+        status: 429;
+    } | {
+        status: 503;
+    }>(`/assets/uploads/${encodeURIComponent(id)}/direct`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetUploadDirectDescriptionDto
+    })));
 }
 /**
  * Recover a completed upload result

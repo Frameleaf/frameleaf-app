@@ -34,6 +34,7 @@ const redactUrlQuery = (url: string) => {
 };
 
 /** CLD-004: routes whose query string is never recorded, whatever its parameters are called. */
+const DIRECT_UPLOAD_ROUTE = /^\/(?:api\/)?assets\/uploads\/[^/]+\/direct\/?(?:[?#]|$)/i;
 const QUERYLESS_ROUTES = /^\/(?:link|api\/(?:admin\/license|license|users\/me\/license))(?:[/?#]|$)/;
 
 // Secret routes can carry numeric key maps, opaque recovery packages or a credential named `value`.
@@ -45,7 +46,7 @@ export const redactLogUrl = (url: string) => {
   if (queryStart === -1) {
     return url;
   }
-  if (QUERYLESS_ROUTES.test(url)) {
+  if (QUERYLESS_ROUTES.test(url) || DIRECT_UPLOAD_ROUTE.test(url)) {
     return redactUrlQuery(url);
   }
   const params = new URLSearchParams(url.slice(queryStart + 1));
@@ -98,7 +99,12 @@ export class LoggingInterceptor implements NestInterceptor {
         const { statusCode } = res;
 
         this.logger.debug(`${method} ${redactLogUrl(url)} ${statusCode} ${duration}ms ${ip}`);
-        if (!BODYLESS_ROUTES.test(req.route?.path ?? req.path) && req.body && Object.keys(req.body).length > 0) {
+        if (
+          !BODYLESS_ROUTES.test(req.route?.path ?? req.path) &&
+          !DIRECT_UPLOAD_ROUTE.test(req.path) &&
+          req.body &&
+          Object.keys(req.body).length > 0
+        ) {
           this.logger.verbose(JSON.stringify(req.body, replacer));
         }
       }),
