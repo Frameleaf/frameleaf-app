@@ -34,7 +34,8 @@ def main():
     init_model(sys.argv[1], sys.argv[2])
     if sys.argv[3] == 'blocked':
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        Path('active-pid').write_text(str(os.getpid()))
+        Path('active-pid.tmp').write_text(str(os.getpid()))
+        Path('active-pid.tmp').replace('active-pid')
         time.sleep(90)
 if __name__ == '__main__':
     main()

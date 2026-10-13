@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
@@ -94,6 +95,52 @@ def invocation(spec: ModelSpec, tmp_path: Path, source: str, output: str = "resu
             "weight:generator": str(tmp_path / "generator.pth"),
         }
     )
+
+
+def test_process_cancellation_leaves_stderr_to_its_communication_owner(tmp_path: Path) -> None:
+    call = RuntimeInvocation(
+        [
+            sys.executable,
+            "-c",
+            "import signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "sys.stderr.write('ready\\n'); sys.stderr.flush(); time.sleep(30)",
+        ],
+        tmp_path,
+        dict(os.environ),
+        30,
+    )
+    pool = RuntimePool()
+    communicating = threading.Event()
+    release = threading.Event()
+    processes: list[subprocess.Popen[bytes]] = []
+    original = subprocess.Popen.communicate
+
+    def hold_communication(process: subprocess.Popen[bytes], *args: Any, **kwargs: Any) -> Any:
+        if process.args == call.argv:
+            assert process.stderr is not None
+            assert process.stderr.readline() == b"ready\n"
+            processes.append(process)
+            communicating.set()
+            assert release.wait(10)
+        return original(process, *args, **kwargs)
+
+    with (
+        patch.object(subprocess.Popen, "communicate", hold_communication),
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        pending = executor.submit(pool, call)
+        try:
+            assert communicating.wait(5)
+            pool.cancel()
+            process = processes[0]
+            assert process.poll() is not None
+            assert process.stderr is not None and not process.stderr.closed
+        finally:
+            release.set()
+            pool.cancel()
+            with pytest.raises(RestorationFailure, match="cancelled"):
+                pending.result(timeout=5)
+        assert process.stderr.closed
 
 
 def test_reuses_model_across_chunks_and_reloads_for_config_or_checkpoint(tmp_path: Path) -> None:

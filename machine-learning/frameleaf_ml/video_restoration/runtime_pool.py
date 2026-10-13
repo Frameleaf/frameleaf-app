@@ -108,7 +108,8 @@ class RuntimePool:
                     with suppress(subprocess.TimeoutExpired):
                         process.wait(timeout=1)
             process.wait()
-            for pipe in (process.stdin, process.stdout, process.stderr):
+            # The one-shot communication thread owns stderr until its poll has returned.
+            for pipe in (process.stdin, process.stdout):
                 if pipe is not None:
                     with suppress(OSError):
                         pipe.close()
@@ -143,6 +144,9 @@ class RuntimePool:
             raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, f"runtime communication failed: {error}")
         finally:
             self.close()
+            if process.stderr is not None:
+                with suppress(OSError):
+                    process.stderr.close()
 
     def __call__(self, invocation: RuntimeInvocation) -> RuntimeOutcome:
         with self._call_lock:
