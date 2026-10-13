@@ -21,11 +21,11 @@ class FaceDetector(InferenceModel):
         scores, boxes, kps = decode_scrfd(heads, DET_SIZE)
 
         candidates = scores >= minScore
-        scores, boxes, kps = scores[candidates], boxes[candidates] / scale, kps[candidates] / scale
+        scores, boxes = scores[candidates], boxes[candidates] / scale
         keep = nms(boxes, scores)
 
         return {
             "boxes": boxes[keep].round(),
             "scores": scores[keep],
-            "landmarks": kps[keep].reshape(-1, 5, 2),
+            "landmarks": kps.reshape(-1, 5, 2)[np.flatnonzero(candidates)[keep]] / scale,
         }
