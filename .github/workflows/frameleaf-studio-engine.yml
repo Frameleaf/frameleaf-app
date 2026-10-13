@@ -133,6 +133,8 @@ jobs:
         run: node studio/tools/allocation-audit.mjs
       - name: Install locked dependencies without lifecycle scripts
         run: npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+      - name: Verify file URL sourcemap fidelity
+        run: node --test studio/tools/stable-file-url-sourcemaps.test.mjs
       # Test-only FL-103 red packet. Preparation must first admit the exact
       # adapted source digest from a genuine hosted recovery receipt.
       - name: Channel preservation after a clip gain edit (FL-103)
@@ -278,7 +280,7 @@ jobs:
           npm --prefix studio/engine run headless:test:node
       - name: Build and attest the isolated engine
         run: |
-          npm --prefix studio/engine run build
+          npm --prefix studio/engine run build -- --config ../tools/engine-build.config.mjs
           node studio/tools/engine.mjs attest
           cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
       - name: Frameleaf adapter tests (FL-88, FL-92)
@@ -345,7 +347,7 @@ jobs:
           rm -rf studio/engine
           node studio/tools/engine.mjs prepare
           npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
-          npm --prefix studio/engine run build
+          npm --prefix studio/engine run build -- --config ../tools/engine-build.config.mjs
           node studio/tools/engine.mjs attest
           node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const first = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/frameleaf-build-first.json")); const second = JSON.parse(fs.readFileSync("studio/engine/frameleaf-build.json")); assert.deepEqual(second.artifacts, first.artifacts); assert.equal(second.artifactSha256, first.artifactSha256); assert.equal(second.sourceSha256, first.sourceSha256); console.log("Reproduced", second.artifactSha256);'
           node studio/tools/feature-manifest.mjs --check

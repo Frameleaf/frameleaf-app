@@ -18,6 +18,7 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 // The engine's own chunking rules: they exist to keep production builds free of circular-chunk
 // initialisation errors, so the adapter build must split the engine exactly the same way.
 import engineConfig, { stableAssetSourcemapsPlugin } from '../../engine/vite.config.ts'
+import { stableFileUrlSourcemapsPlugin } from '../../tools/stable-file-url-sourcemaps.mjs'
 // The manifest speaks the host's protocol version, so a stale build is refused rather than downgraded.
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '../../../web/src/lib/frameleaf/studio/frame-protocol.ts'
 
@@ -142,6 +143,7 @@ const plugins = async () => {
     frameManifest(),
     // The engine's fix for asset handles in sourcemaps, so the shipped build reproduces too.
     stableAssetSourcemapsPlugin(),
+    stableFileUrlSourcemapsPlugin(),
   ]
 }
 
