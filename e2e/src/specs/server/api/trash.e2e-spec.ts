@@ -67,59 +67,70 @@ describe('/trash', () => {
       expect(existsSync(before.originalPath)).toBe(false);
     });
 
-    it('should empty the trash with archived assets', async () => {
-      const { id: assetId } = await utils.createAsset(admin.accessToken);
-      await utils.waitForAllQueuesFinish(admin.accessToken);
-      await utils.archiveAssets(admin.accessToken, [assetId]);
-      await utils.deleteAssets(admin.accessToken, [assetId]);
+    it(
+      'should empty the trash with archived assets',
+      { timeout: process.env.CI ? 210_000 : 50_000 },
+      async ({ signal }) => {
+        const { id: assetId } = await utils.createAsset(admin.accessToken, undefined, { signal });
+        await utils.waitForAllQueuesFinish(admin.accessToken, signal);
+        await utils.archiveAssets(admin.accessToken, [assetId]);
+        await utils.deleteAssets(admin.accessToken, [assetId]);
 
-      const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
-      expect(before).toStrictEqual(expect.objectContaining({ id: assetId, isTrashed: true, isArchived: true }));
+        const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
+        expect(before).toStrictEqual(expect.objectContaining({ id: assetId, isTrashed: true, isArchived: true }));
 
-      const { status, body } = await request(app)
-        .post('/trash/empty')
-        .set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(200);
-      expect(body).toEqual({ count: 1 });
+        const { status, body } = await request(app)
+          .post('/trash/empty')
+          .set('Authorization', `Bearer ${admin.accessToken}`);
+        expect(status).toBe(200);
+        expect(body).toEqual({ count: 1 });
 
-      await utils.waitForWebsocketEvent({ event: 'assetDelete', id: assetId });
+        // The deletion event is emitted by queued file cleanup, after the asset-removal jobs.
+        await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask', undefined, signal);
+        await utils.waitForWebsocketEvent({ event: 'assetDelete', id: assetId, signal });
 
-      const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
-      expect(after.total).toBe(0);
+        const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
+        expect(after.total).toBe(0);
 
-      expect(existsSync(before.originalPath)).toBe(false);
-    });
+        expect(existsSync(before.originalPath)).toBe(false);
+      },
+    );
 
-    it('should remove offline assets', async () => {
-      utils.createImageFile(`${testAssetDir}/temp/trash-empty/offline/offline.png`);
+    it('should remove offline assets', { timeout: process.env.CI ? 210_000 : 70_000 }, async ({ signal }) => {
+      const fixtureFolder = `temp/trash-empty-${randomUUID()}`;
+      utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
 
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/trash-empty/offline`],
-      });
+      try {
+        const library = await utils.createLibrary(admin.accessToken, {
+          ownerId: admin.userId,
+          importPaths: [`${testAssetDirInternal}/${fixtureFolder}/offline`],
+        });
 
-      await utils.scan(admin.accessToken, library.id);
+        await utils.scan(admin.accessToken, library.id, signal);
 
-      const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
-      expect(assets.items.length).toBe(1);
-      const asset = assets.items[0];
+        const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
+        expect(assets.items.length).toBe(1);
+        const asset = assets.items[0];
 
-      await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
+        await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
 
-      await utils.scan(admin.accessToken, library.id);
+        await utils.scan(admin.accessToken, library.id, signal);
 
-      const assetBefore = await utils.getAssetInfo(admin.accessToken, asset.id);
-      expect(assetBefore).toMatchObject({ isTrashed: true, isOffline: true });
+        const assetBefore = await utils.getAssetInfo(admin.accessToken, asset.id);
+        expect(assetBefore).toMatchObject({ isTrashed: true, isOffline: true });
 
-      utils.createImageFile(`${testAssetDir}/temp/trash-empty/offline/offline.png`);
+        utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
 
-      const { status } = await request(app).post('/trash/empty').set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(200);
+        const { status } = await request(app).post('/trash/empty').set('Authorization', `Bearer ${admin.accessToken}`);
+        expect(status).toBe(200);
 
-      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
+        await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask', undefined, signal);
 
-      const assetAfter = await utils.getAssetInfo(admin.accessToken, asset.id);
-      expect(assetAfter).toMatchObject({ isTrashed: true, isOffline: true });
+        const assetAfter = await utils.getAssetInfo(admin.accessToken, asset.id);
+        expect(assetAfter).toMatchObject({ isTrashed: true, isOffline: true });
+      } finally {
+        utils.removeImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      }
     });
 
     it.skip('should not delete offline assets from disk', async () => {
