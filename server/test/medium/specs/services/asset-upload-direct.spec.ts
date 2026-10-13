@@ -1,3 +1,4 @@
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -273,6 +274,75 @@ describe('direct peer and actual native resource publication', () => {
       result: { id: final.result!.id, status: 'duplicate', sha256: sha256.toString('hex') },
     });
     expect(await db.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute()).toHaveLength(1);
+    await direct.onShutdown();
+    for (const refusal of [new UnauthorizedException(), new ForbiddenException()]) {
+      const interrupted = await native.create(
+        auth,
+        {
+          'upload-draft-interop-version': '9',
+          'upload-complete': '?0',
+          'content-type': 'image/jpeg',
+          'upload-length': String(payload.length),
+          'repr-digest': `sha-256=:${sha256.toString('base64')}:`,
+          'asset-metadata': Buffer.from(
+            JSON.stringify({
+              filename: 'synthetic.jpg',
+              fileCreatedAt: new Date().toISOString(),
+              fileModifiedAt: new Date().toISOString(),
+            }),
+          ).toString('base64url'),
+        },
+        Readable.from([]),
+        () => {},
+      );
+      const authenticate = authentication.authenticate.bind(authentication);
+      const authorization = vi
+        .spyOn(authentication, 'authenticate')
+        .mockImplementationOnce(authenticate)
+        .mockImplementationOnce(authenticate)
+        .mockRejectedValueOnce(refusal);
+      const eofPeer = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false });
+      peers.push(eofPeer);
+      const eofChannel = eofPeer.createDataChannel(DIRECT_UPLOAD_CHANNEL, { ordered: true });
+      await eofPeer.setLocalDescription(await eofPeer.createOffer());
+      const eofAnswer = await direct.negotiate(
+        auth,
+        interrupted.resource.id,
+        { version: 1, sdp: eofPeer.localDescription!.sdp },
+        headers,
+      );
+      const eofOpened = eofChannel.stateChange.watch((state) => state === 'open', 10_000);
+      await eofPeer.setRemoteDescription({ type: 'answer', sdp: eofAnswer.sdp });
+      await eofOpened;
+      const response = eofChannel.onMessage.asPromise(10_000);
+      const requestId = randomUUID();
+      eofChannel.send(
+        JSON.stringify({ version: 1, type: 'append', requestId, offset: 0, length: payload.length, complete: true }),
+      );
+      eofChannel.send(payload.subarray(0, 65_536));
+      eofChannel.send(payload.subarray(65_536));
+      const [message] = await response;
+      expect(JSON.parse(String(message))).toEqual({
+        version: 1,
+        type: 'error',
+        requestId,
+        status: refusal.getStatus(),
+      });
+      expect(authorization).toHaveBeenCalledTimes(3);
+      authorization.mockRestore();
+      const retained = await native.head(auth, interrupted.resource.id);
+      expect(retained).toMatchObject({
+        state: 'receiving',
+        offset: payload.length,
+        verifiedChecksum: null,
+        resultAssetId: null,
+        ingested: false,
+      });
+      const [part] = await repo.parts(undefined, retained.id);
+      expect(await readFile(part.path)).toEqual(payload);
+      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute()).toHaveLength(1);
+      await direct.onShutdown();
+    }
     await authContext.get(SessionRepository).delete(session.id);
     const client = new RTCPeerConnection({ iceServers: [], iceUseIpv6: false });
     peers.push(client);

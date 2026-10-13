@@ -167,12 +167,18 @@ export class AssetUploadDirectService {
         }
         const body = Buffer.concat(batch.bytes, batch.received);
         batch.bytes = [];
+        let eofFailure: unknown;
         const source = Readable.from(
           (async function* () {
             if (closed || failed) throw new ServiceUnavailableException();
             if (body.length > 0) yield body;
             // A credential revoked while bytes arrived cannot trigger native publication at EOF.
-            await authenticate();
+            try {
+              await authenticate();
+            } catch (error) {
+              eofFailure = error;
+              throw error;
+            }
             if (closed || failed) throw new ServiceUnavailableException();
           })(),
         );
@@ -187,6 +193,8 @@ export class AssetUploadDirectService {
           },
           source,
         );
+        // Native interruption retains bytes; it must not turn an EOF authorization refusal into an ACK.
+        if (eofFailure !== undefined) throw eofFailure;
         if (closed || failed) return;
         channel!.send(
           JSON.stringify({
