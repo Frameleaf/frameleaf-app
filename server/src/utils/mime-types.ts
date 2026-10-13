@@ -79,10 +79,6 @@ const heifImage: Record<string, string[]> = Object.fromEntries(
   Object.entries(image).filter(([key]) => heifImageExtensions.has(key)),
 );
 
-const extensionOverrides: Record<string, string> = {
-  'image/jpeg': '.jpg',
-};
-
 const transparentCapableExtensions = new Set([
   '.avif',
   '.bmp',
@@ -140,12 +136,6 @@ const isType = (filename: string, r: Record<string, string[]>) =>
 const lookup = (filename: string) =>
   types[getFilenameExtension(filename).toLowerCase()]?.[0] ?? 'application/octet-stream';
 
-const toExtension = (mimeType: string) => {
-  return (
-    extensionOverrides[mimeType] || Object.entries(types).find(([, mimeTypes]) => mimeTypes.includes(mimeType))?.[0]
-  );
-};
-
 export const mimeTypes = {
   image,
   profile,
@@ -167,8 +157,6 @@ export const mimeTypes = {
   isRaw: (filename: string) => isType(filename, raw),
   isHeic: (filename: string) => heicExtensions.has(getFilenameExtension(filename).toLowerCase()),
   lookup,
-  /** return an extension (including a leading `.`) for a mime-type */
-  toExtension,
   assetType: (filename: string) => {
     const contentType = lookup(filename);
     if (contentType.startsWith('image/')) {
