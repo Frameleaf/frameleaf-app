@@ -1,8 +1,10 @@
 import { CookieOptions, Response } from 'express';
-import { Duration } from 'luxon';
 import { Writable } from 'node:stream';
 import { CookieResponse } from 'src/dtos/auth.dto.js';
 import { ImmichCookie } from 'src/enum.js';
+
+const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
+const AUTH_COOKIE_MAX_AGE = 400 * DAY_IN_MILLISECONDS;
 
 export class ClientDisconnectedError extends Error {}
 
@@ -45,7 +47,7 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values,
     sameSite: 'lax',
     httpOnly: true,
     secure: isSecure,
-    maxAge: Duration.fromObject({ days: 400 }).toMillis(),
+    maxAge: AUTH_COOKIE_MAX_AGE,
   };
 
   const authentication = { ...defaults, maxAge: rememberMe === false ? undefined : defaults.maxAge };
@@ -53,12 +55,12 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values,
   const cookieOptions: Record<ImmichCookie, CookieOptions> = {
     [ImmichCookie.AuthType]: authentication,
     [ImmichCookie.AccessToken]: authentication,
-    [ImmichCookie.MaintenanceToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
+    [ImmichCookie.MaintenanceToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
     [ImmichCookie.OAuthState]: defaults,
     [ImmichCookie.OAuthCodeVerifier]: defaults,
     // no httpOnly so that the client can know the auth state
     [ImmichCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
-    [ImmichCookie.SharedLinkToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
+    [ImmichCookie.SharedLinkToken]: { ...defaults, maxAge: DAY_IN_MILLISECONDS },
   };
 
   for (const { key, value } of values) {
