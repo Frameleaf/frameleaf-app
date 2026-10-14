@@ -5,16 +5,14 @@ import {
   TakeoutSourceKind,
   TakeoutState,
   TakeoutWarning,
+  type TakeoutCountsDto,
   type TakeoutItemResponseDto,
-  type TakeoutResponseDto,
   type TakeoutSourceResponseDto,
 } from '@frameleaf/sdk';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  canRetryScan,
-  canReviewTakeout,
   collectPages,
   findStagedArchive,
   isTakeoutBusy,
@@ -25,9 +23,9 @@ import {
   takeoutImportOptions,
   takeoutProgress,
   takeoutReportCsv,
-  takeoutReportJson,
   takeoutSourcesStaged,
-  takeoutStage,
+  takeoutStep,
+  takeoutView,
 } from '$lib/frameleaf/takeout';
 
 const source = (overrides: Partial<TakeoutSourceResponseDto> = {}): TakeoutSourceResponseDto => ({
@@ -70,14 +68,46 @@ const item = (overrides: Partial<TakeoutItemResponseDto> = {}): TakeoutItemRespo
   ...overrides,
 });
 
-describe('takeout stages', () => {
-  it('maps the import phase to the prototype’s Stage, Scan and Reconcile', () => {
-    expect(takeoutStage()).toBe('stage');
-    expect(takeoutStage({ phase: TakeoutPhase.Sources })).toBe('stage');
-    expect(takeoutStage({ phase: TakeoutPhase.Scanning })).toBe('scan');
-    expect(takeoutStage({ phase: TakeoutPhase.Review })).toBe('reconcile');
-    expect(takeoutStage({ phase: TakeoutPhase.Importing })).toBe('reconcile');
-    expect(takeoutStage({ phase: TakeoutPhase.Completed })).toBe('reconcile');
+const counts = (review = 0) => ({ review }) as TakeoutCountsDto;
+const at = (
+  phase: TakeoutPhase,
+  state: TakeoutState,
+  extra: { sources?: TakeoutSourceResponseDto[]; review?: number } = {},
+) => ({
+  phase,
+  state,
+  sources: extra.sources ?? [source()],
+  counts: counts(extra.review),
+});
+
+describe('takeout screens', () => {
+  it('opens on the start screen, then uploads, checks and imports', () => {
+    expect(takeoutView(undefined)).toBe('start');
+    expect(takeoutView(at(TakeoutPhase.Sources, TakeoutState.Sources, { sources: [] }))).toBe('upload');
+    expect(takeoutView(at(TakeoutPhase.Scanning, TakeoutState.Scanning))).toBe('checking');
+    expect(takeoutView(at(TakeoutPhase.Scanning, TakeoutState.Queued))).toBe('checking');
+    expect(takeoutView(at(TakeoutPhase.Review, TakeoutState.Review))).toBe('ready');
+    expect(takeoutView(at(TakeoutPhase.Importing, TakeoutState.Paused))).toBe('importing');
+    expect(takeoutView(at(TakeoutPhase.Completed, TakeoutState.Completed))).toBe('done');
+    expect(takeoutView(at(TakeoutPhase.Importing, TakeoutState.Failed))).toBe('done');
+  });
+
+  it('says an upload left part-way stopped, unless this page is sending it now', () => {
+    const partial = at(TakeoutPhase.Sources, TakeoutState.Sources, { sources: [source({ received: 40 })] });
+    expect(takeoutView(partial)).toBe('stopped');
+    expect(takeoutView(partial, true)).toBe('upload');
+  });
+
+  it('asks again after a check that stopped, and holds back photos the owner wanted to choose for', () => {
+    expect(takeoutView(at(TakeoutPhase.Scanning, TakeoutState.Failed))).toBe('check-failed');
+    expect(takeoutView(at(TakeoutPhase.Completed, TakeoutState.Completed, { review: 3 }))).toBe('unclear');
+  });
+
+  it('places each screen under Upload, Check or Import', () => {
+    expect(takeoutStep('stopped')).toBe(0);
+    expect(takeoutStep('check-failed')).toBe(1);
+    expect(takeoutStep('unclear')).toBe(2);
+    expect(takeoutStep('done')).toBe(3);
   });
 
   it('keeps watching while the server is moving, and not while it waits for the owner', () => {
@@ -86,14 +116,6 @@ describe('takeout stages', () => {
     expect(isTakeoutMoving(TakeoutState.Paused)).toBe(false);
     expect(isTakeoutBusy(TakeoutState.Paused)).toBe(true);
     expect(isTakeoutBusy(TakeoutState.Review)).toBe(false);
-  });
-
-  it('allows review only after the scan and while no job is working', () => {
-    expect(canReviewTakeout({ phase: TakeoutPhase.Review, state: TakeoutState.Review })).toBe(true);
-    expect(canReviewTakeout({ phase: TakeoutPhase.Importing, state: TakeoutState.Failed })).toBe(true);
-    expect(canReviewTakeout({ phase: TakeoutPhase.Importing, state: TakeoutState.Importing })).toBe(false);
-    expect(canReviewTakeout({ phase: TakeoutPhase.Scanning, state: TakeoutState.Failed })).toBe(false);
-    expect(canRetryScan({ phase: TakeoutPhase.Scanning, state: TakeoutState.Cancelled })).toBe(true);
   });
 
   it('knows when every archive is on the server', () => {
@@ -121,6 +143,7 @@ describe('takeout stages', () => {
       albums: true,
       sidecarReview: true,
       updateMatchedMetadata: false,
+      includeTrashed: true,
     };
     expect(
       takeoutImportOptions(options, [
@@ -208,7 +231,7 @@ describe(resumeTakeoutArchive.name, () => {
   });
 });
 
-describe('reconciliation report', () => {
+describe('import report', () => {
   it('writes one CSV row per item and neutralises spreadsheet formulas', () => {
     const csv = takeoutReportCsv([
       item(),
@@ -224,21 +247,6 @@ describe('reconciliation report', () => {
     expect(lines[0]).toBe('path,source,kind,state,assetId,albums,warnings,error');
     expect(lines[1]).toBe('Trip/IMG_1.jpg,takeout-001.zip,image,imported,asset,Trip,,');
     expect(lines[2]).toBe(`"'=HYPERLINK(""x"")",takeout-001.zip,image,failed,,Trip,no_sidecar,"Album, membership"`);
-  });
-
-  it('says how many Locked items a report from a locked session leaves out', () => {
-    const takeout = {
-      id: 'import',
-      name: 'Import',
-      state: TakeoutState.Completed,
-      counts: {},
-      sources: [source()],
-      options: {},
-    } as unknown as TakeoutResponseDto;
-    const report = JSON.parse(takeoutReportJson(takeout, [item()], [], 3));
-    expect(report.lockedItemsOmitted).toBe(3);
-    expect(report.items).toHaveLength(1);
-    expect(report.import.sources[0]).toEqual({ name: 'takeout.zip', kind: 'zip', size: 100, rejected: 0 });
   });
 
   it('collects every page of a listing', async () => {

@@ -6,14 +6,16 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Next,
   Param,
   Post,
   Put,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -37,9 +39,11 @@ import {
   TakeoutVerifyChunkDto,
 } from 'src/dtos/takeout.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { TAKEOUT_CHUNK_BYTES } from 'src/repositories/takeout-staging.repository.js';
 import { TakeoutService } from 'src/services/takeout.service.js';
+import { sendFile } from 'src/utils/file.js';
 
 const history = () => new HistoryBuilder().added('v3.0.0').alpha('v3.0.0');
 
@@ -53,7 +57,10 @@ const history = () => new HistoryBuilder().added('v3.0.0').alpha('v3.0.0');
 @ApiTags(ApiTag.Assets)
 @Controller('takeout')
 export class TakeoutController {
-  constructor(private service: TakeoutService) {}
+  constructor(
+    private service: TakeoutService,
+    private logger: LoggingRepository,
+  ) {}
 
   @Get()
   @Authenticated({ permission: Permission.AssetUpload })
@@ -221,6 +228,23 @@ export class TakeoutController {
     @Query() query: TakeoutItemQueryDto,
   ): Promise<TakeoutItemsResponseDto> {
     return this.service.items(auth, id, query);
+  }
+
+  @Get(':id/items/:itemId/preview')
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Preview a photo waiting in a Google Photos import',
+    description: 'A small WebP made from the staged file of a photo not yet in the library.',
+    history: history(),
+  })
+  async getTakeoutItemPreview(
+    @Auth() auth: AuthDto,
+    @Param() { id, itemId }: TakeoutItemParamsDto,
+    @Res() response: Response,
+    @Next() next: NextFunction,
+  ): Promise<void> {
+    await sendFile(response, next, () => this.service.preview(auth, id, itemId), this.logger);
   }
 
   @Put(':id/items/:itemId')
