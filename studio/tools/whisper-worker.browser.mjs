@@ -62,6 +62,8 @@ export async function cleanupWhisperRun(report, closes, removeCache, persistRepo
 // Importing the cleanup check cannot start a browser or download model payloads.
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 assert.equal(process.env.STUDIO_WHISPER_BROWSER, '1', 'Explicit approved tiny-model download authorization required');
+const expectedBackend = process.env.STUDIO_WHISPER_BROWSER_EXPECT_BACKEND;
+if (expectedBackend) assert.ok(['wasm', 'webgpu'].includes(expectedBackend), 'Invalid expected Whisper backend');
 const studio = path.resolve(import.meta.dirname, '..');
 const engine = path.join(studio, 'engine');
 const require = createRequire(path.join(engine, 'package.json'));
@@ -252,6 +254,10 @@ try {
   }
 
   assert.ok(measured.progress.some(e=>e.stage==='preparing'&&e.progress===1));assert.ok(measured.runtime.some(e=>['wasm','webgpu'].includes(e.backend)));
+  if (expectedBackend) {
+    assert.ok(measured.runtime.some(event=>event.backend===expectedBackend), 'Requested initial backend must execute');
+    assert.ok(measured.offline.runtime.some(event=>event.backend===expectedBackend), 'Requested offline backend must execute');
+  }
   assert.equal(measured.cancel.triggered,true);assert.equal(measured.cancel.poolRecreated,true);assert.equal(measured.cancel.done,false);assert.deepEqual(measured.cancel.segments,[]);
   assert.equal(measured.stored.length,7);for(const entry of measured.stored){assert.ok(exact.has(entry.url));assert.equal(entry.sha256,exact.get(entry.url).sha256)}
   assert.ok(report.workerEvents.some(e=>e.event==='created'&&e.url.includes('whisper.worker')));assert.ok(report.workerEvents.some(e=>e.event==='closed'&&e.url.includes('whisper.worker')));

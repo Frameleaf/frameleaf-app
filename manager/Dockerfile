@@ -8,7 +8,7 @@ RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM ${NODE_IMAGE}
 ARG TARGETARCH
-RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker-cli docker-compose restic openssl ca-certificates util-linux curl && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends docker-cli docker-compose restic openssl ca-certificates util-linux curl acl attr && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /usr/local/lib/docker/cli-plugins \
     && ln -s /usr/bin/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose \
     && docker --version && docker compose version
@@ -24,7 +24,7 @@ WORKDIR /app/manager
 COPY --from=build /app/manager/node_modules /app/node_modules
 COPY --from=build /app/manager/build ./build
 COPY --from=build /app/manager/ui/dist ./ui/dist
-COPY manager/release-worker.cjs manager/entrypoint.sh ./
+COPY manager/release-worker.cjs manager/media-copy.cjs manager/entrypoint.sh ./
 COPY .github/frameleaf-release.cjs .github/verify-release-bundle.cjs /app/.github/
 COPY cosign.pub /app/cosign.pub
 ENV NODE_ENV=production

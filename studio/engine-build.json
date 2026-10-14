@@ -674,7 +674,12 @@
       "path": "patches/0139-microphone-terminal-notification.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "9edae1a6575c3231e891cade718274278249cd575be0d3239d3ea3ba0565bab1"
+    },
+    {
+      "path": "patches/0140-whisper-no-adapter-fallback.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e8b6418c2e9a64d8a7ed2018059e655823f78244d69d68a37957e8feae99b54b"
     }
   ],
-  "sourceSha256": "de67658c3f4c3eb30aaa5afdcea62c79993d8375c1923931a9dd36316b550db6"
+  "sourceSha256": "11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d"
 }

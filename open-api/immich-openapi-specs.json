@@ -38104,6 +38104,51 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/server/library-setup/manager-access": {
+      "get": {
+        "operationId": "getManagerAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagerAccessDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Configured Frameleaf Manager link for Storage",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/library-setup/sync": {
       "post": {
         "operationId": "syncLibrarySetup",
@@ -73927,6 +73972,50 @@
         ],
         "type": "string"
       },
+      "GpuWorkingBudgetBackend": {
+        "enum": [
+          "hardware"
+        ],
+        "type": "string"
+      },
+      "GpuWorkingBudgetBindingMethod": {
+        "enum": [
+          "same-export-device"
+        ],
+        "type": "string"
+      },
+      "GpuWorkingBudgetHeadroomBytes": {
+        "enum": [
+          "536870912"
+        ],
+        "type": "string"
+      },
+      "GpuWorkingBudgetMeasuredBytes": {
+        "enum": [
+          "2147483648"
+        ],
+        "type": "string"
+      },
+      "GpuWorkingBudgetMetric": {
+        "enum": [
+          "measured-usable-gpu-working-budget-v1"
+        ],
+        "type": "string"
+      },
+      "GpuWorkingBudgetStatus": {
+        "enum": [
+          "passed"
+        ],
+        "type": "string"
+      },
+      "GpuWorkingBudgetTopology": {
+        "enum": [
+          "unified",
+          "dedicated",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "HardwareBackend": {
         "enum": [
           "CUDA",
@@ -80797,6 +80886,20 @@
           "usage",
           "usagePhysical",
           "videos"
+        ],
+        "type": "object"
+      },
+      "ManagerAccessDto": {
+        "properties": {
+          "url": {
+            "description": "Deployment-configured HTTPS Manager origin, or null when unavailable. Requires separate Manager sign-in; configuration is not a reachability check.",
+            "format": "uri",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
         ],
         "type": "object"
       },
@@ -106667,10 +106770,120 @@
             "type": "array"
           },
           "gpuMemoryBytes": {
-            "description": "GPU memory measured by the conformance check",
+            "description": "Raw measured usable GPU working budget M, in bytes",
             "nullable": true,
-            "pattern": "^\\d+$",
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
             "type": "string"
+          },
+          "gpuWorkingBudgetEvidence": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "bindingMethod": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetBindingMethod"
+              },
+              "browserIdentity": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "buildDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "completedAt": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "deviceLifetimeId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                "type": "string"
+              },
+              "encoderEvidenceDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "engineDigest": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "hardwareBackend": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetBackend"
+              },
+              "headroomBytes": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetHeadroomBytes"
+              },
+              "measuredBytes": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetMeasuredBytes"
+              },
+              "measurementId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                "type": "string"
+              },
+              "metric": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetMetric"
+              },
+              "outputReceiptDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "pressureEnvelopeDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "profileDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "receiptDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetStatus"
+              },
+              "topology": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetTopology"
+              },
+              "topologyEvidenceDigest": {
+                "nullable": true,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "validUntil": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "workerId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "metric",
+              "profileDigest",
+              "measurementId",
+              "receiptDigest",
+              "workerId",
+              "engineDigest",
+              "buildDigest",
+              "browserIdentity",
+              "deviceLifetimeId",
+              "bindingMethod",
+              "topology",
+              "topologyEvidenceDigest",
+              "hardwareBackend",
+              "encoderEvidenceDigest",
+              "pressureEnvelopeDigest",
+              "outputReceiptDigest",
+              "measuredBytes",
+              "headroomBytes",
+              "completedAt",
+              "validUntil",
+              "status"
+            ],
+            "type": "object"
           },
           "softwareRenderer": {
             "description": "True when the renderer is a software or fallback device",
@@ -107069,8 +107282,175 @@
           },
           "gpuMemoryBytes": {
             "nullable": true,
-            "pattern": "^\\d+$",
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
             "type": "string"
+          },
+          "gpuWorkingBudgetApproval": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "codecs": {
+                    "items": {
+                      "maxLength": 60,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  },
+                  "colorPrecision": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "dolbyVision": {
+                        "type": "boolean"
+                      },
+                      "hdr10": {
+                        "type": "boolean"
+                      },
+                      "maxBitDepth": {
+                        "maximum": 16,
+                        "minimum": 8,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maxBitDepth",
+                      "hdr10",
+                      "dolbyVision"
+                    ],
+                    "type": "object"
+                  },
+                  "formats": {
+                    "items": {
+                      "maxLength": 30,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "codecs",
+                  "formats",
+                  "colorPrecision"
+                ],
+                "type": "object"
+              },
+              "evidence": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindingMethod": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetBindingMethod"
+                  },
+                  "browserIdentity": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "buildDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "completedAt": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  },
+                  "deviceLifetimeId": {
+                    "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                    "type": "string"
+                  },
+                  "encoderEvidenceDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "engineDigest": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "hardwareBackend": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetBackend"
+                  },
+                  "headroomBytes": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetHeadroomBytes"
+                  },
+                  "measuredBytes": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetMeasuredBytes"
+                  },
+                  "measurementId": {
+                    "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                    "type": "string"
+                  },
+                  "metric": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetMetric"
+                  },
+                  "outputReceiptDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "pressureEnvelopeDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "profileDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "receiptDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetStatus"
+                  },
+                  "topology": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetTopology"
+                  },
+                  "topologyEvidenceDigest": {
+                    "nullable": true,
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "validUntil": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "profileDigest",
+                  "measurementId",
+                  "receiptDigest",
+                  "engineDigest",
+                  "buildDigest",
+                  "browserIdentity",
+                  "deviceLifetimeId",
+                  "bindingMethod",
+                  "topology",
+                  "topologyEvidenceDigest",
+                  "hardwareBackend",
+                  "encoderEvidenceDigest",
+                  "pressureEnvelopeDigest",
+                  "outputReceiptDigest",
+                  "measuredBytes",
+                  "headroomBytes",
+                  "completedAt",
+                  "validUntil",
+                  "status"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "evidence",
+              "capabilities"
+            ],
+            "type": "object"
           },
           "kinds": {
             "description": "Operation kinds this worker may claim",
@@ -107151,9 +107531,177 @@
             "type": "string"
           },
           "gpuMemoryBytes": {
-            "description": "GPU memory the worker was qualified with, in bytes",
+            "description": "Administrator ceiling A in bytes; never a measurement",
             "nullable": true,
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
             "type": "string"
+          },
+          "gpuWorkingBudgetApproval": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "codecs": {
+                    "items": {
+                      "maxLength": 60,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  },
+                  "colorPrecision": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "dolbyVision": {
+                        "type": "boolean"
+                      },
+                      "hdr10": {
+                        "type": "boolean"
+                      },
+                      "maxBitDepth": {
+                        "maximum": 16,
+                        "minimum": 8,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maxBitDepth",
+                      "hdr10",
+                      "dolbyVision"
+                    ],
+                    "type": "object"
+                  },
+                  "formats": {
+                    "items": {
+                      "maxLength": 30,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "codecs",
+                  "formats",
+                  "colorPrecision"
+                ],
+                "type": "object"
+              },
+              "evidence": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindingMethod": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetBindingMethod"
+                  },
+                  "browserIdentity": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "buildDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "completedAt": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  },
+                  "deviceLifetimeId": {
+                    "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                    "type": "string"
+                  },
+                  "encoderEvidenceDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "engineDigest": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "hardwareBackend": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetBackend"
+                  },
+                  "headroomBytes": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetHeadroomBytes"
+                  },
+                  "measuredBytes": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetMeasuredBytes"
+                  },
+                  "measurementId": {
+                    "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                    "type": "string"
+                  },
+                  "metric": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetMetric"
+                  },
+                  "outputReceiptDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "pressureEnvelopeDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "profileDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "receiptDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetStatus"
+                  },
+                  "topology": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetTopology"
+                  },
+                  "topologyEvidenceDigest": {
+                    "nullable": true,
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "validUntil": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "profileDigest",
+                  "measurementId",
+                  "receiptDigest",
+                  "engineDigest",
+                  "buildDigest",
+                  "browserIdentity",
+                  "deviceLifetimeId",
+                  "bindingMethod",
+                  "topology",
+                  "topologyEvidenceDigest",
+                  "hardwareBackend",
+                  "encoderEvidenceDigest",
+                  "pressureEnvelopeDigest",
+                  "outputReceiptDigest",
+                  "measuredBytes",
+                  "headroomBytes",
+                  "completedAt",
+                  "validUntil",
+                  "status"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "evidence",
+              "capabilities"
+            ],
+            "type": "object"
           },
           "id": {
             "description": "Render worker ID",
@@ -107585,6 +108133,122 @@
             "format": "date-time",
             "type": "string"
           },
+          "gpuMemoryBytes": {
+            "description": "Qualified session budget Q, in bytes",
+            "nullable": true,
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
+            "type": "string"
+          },
+          "gpuWorkingBudgetEvidence": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "bindingMethod": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetBindingMethod"
+              },
+              "browserIdentity": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "buildDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "completedAt": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "deviceLifetimeId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                "type": "string"
+              },
+              "encoderEvidenceDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "engineDigest": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "hardwareBackend": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetBackend"
+              },
+              "headroomBytes": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetHeadroomBytes"
+              },
+              "measuredBytes": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetMeasuredBytes"
+              },
+              "measurementId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                "type": "string"
+              },
+              "metric": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetMetric"
+              },
+              "outputReceiptDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "pressureEnvelopeDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "profileDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "receiptDigest": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetStatus"
+              },
+              "topology": {
+                "$ref": "#/components/schemas/GpuWorkingBudgetTopology"
+              },
+              "topologyEvidenceDigest": {
+                "nullable": true,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "validUntil": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              },
+              "workerId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "metric",
+              "profileDigest",
+              "measurementId",
+              "receiptDigest",
+              "workerId",
+              "engineDigest",
+              "buildDigest",
+              "browserIdentity",
+              "deviceLifetimeId",
+              "bindingMethod",
+              "topology",
+              "topologyEvidenceDigest",
+              "hardwareBackend",
+              "encoderEvidenceDigest",
+              "pressureEnvelopeDigest",
+              "outputReceiptDigest",
+              "measuredBytes",
+              "headroomBytes",
+              "completedAt",
+              "validUntil",
+              "status"
+            ],
+            "type": "object"
+          },
           "heartbeatIntervalMs": {
             "description": "How often the worker should heartbeat a held claim",
             "maximum": 9007199254740991,
@@ -107741,8 +108405,175 @@
           },
           "gpuMemoryBytes": {
             "nullable": true,
-            "pattern": "^\\d+$",
+            "pattern": "^(0|[1-9][0-9]{0,18})$",
             "type": "string"
+          },
+          "gpuWorkingBudgetApproval": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "codecs": {
+                    "items": {
+                      "maxLength": 60,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  },
+                  "colorPrecision": {
+                    "additionalProperties": false,
+                    "nullable": true,
+                    "properties": {
+                      "dolbyVision": {
+                        "type": "boolean"
+                      },
+                      "hdr10": {
+                        "type": "boolean"
+                      },
+                      "maxBitDepth": {
+                        "maximum": 16,
+                        "minimum": 8,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "maxBitDepth",
+                      "hdr10",
+                      "dolbyVision"
+                    ],
+                    "type": "object"
+                  },
+                  "formats": {
+                    "items": {
+                      "maxLength": 30,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "codecs",
+                  "formats",
+                  "colorPrecision"
+                ],
+                "type": "object"
+              },
+              "evidence": {
+                "additionalProperties": false,
+                "properties": {
+                  "bindingMethod": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetBindingMethod"
+                  },
+                  "browserIdentity": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "buildDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "completedAt": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  },
+                  "deviceLifetimeId": {
+                    "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                    "type": "string"
+                  },
+                  "encoderEvidenceDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "engineDigest": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "hardwareBackend": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetBackend"
+                  },
+                  "headroomBytes": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetHeadroomBytes"
+                  },
+                  "measuredBytes": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetMeasuredBytes"
+                  },
+                  "measurementId": {
+                    "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+                    "type": "string"
+                  },
+                  "metric": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetMetric"
+                  },
+                  "outputReceiptDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "pressureEnvelopeDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "profileDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "receiptDigest": {
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetStatus"
+                  },
+                  "topology": {
+                    "$ref": "#/components/schemas/GpuWorkingBudgetTopology"
+                  },
+                  "topologyEvidenceDigest": {
+                    "nullable": true,
+                    "pattern": "^[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "validUntil": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "profileDigest",
+                  "measurementId",
+                  "receiptDigest",
+                  "engineDigest",
+                  "buildDigest",
+                  "browserIdentity",
+                  "deviceLifetimeId",
+                  "bindingMethod",
+                  "topology",
+                  "topologyEvidenceDigest",
+                  "hardwareBackend",
+                  "encoderEvidenceDigest",
+                  "pressureEnvelopeDigest",
+                  "outputReceiptDigest",
+                  "measuredBytes",
+                  "headroomBytes",
+                  "completedAt",
+                  "validUntil",
+                  "status"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "evidence",
+              "capabilities"
+            ],
+            "type": "object"
           },
           "kinds": {
             "items": {
