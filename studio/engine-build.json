@@ -669,7 +669,12 @@
       "path": "patches/0138-number-input-text-commit-lifecycle.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
+    },
+    {
+      "path": "patches/0139-microphone-terminal-notification.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9edae1a6575c3231e891cade718274278249cd575be0d3239d3ea3ba0565bab1"
     }
   ],
-  "sourceSha256": "1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80"
+  "sourceSha256": "de67658c3f4c3eb30aaa5afdcea62c79993d8375c1923931a9dd36316b550db6"
 }
