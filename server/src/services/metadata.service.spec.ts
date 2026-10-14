@@ -252,6 +252,64 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it.each([false, true])(
+      'starts publication writes concurrently and awaits their completion (faces: %s)',
+      async (faces) => {
+        const asset = AssetFactory.create();
+        const writes = Promise.withResolvers<void>();
+        const assetStarted = Promise.withResolvers<void>();
+        const exifStarted = Promise.withResolvers<void>();
+        const facesStarted = Promise.withResolvers<void>();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: faces } } });
+        mockReadTags(makeFaceTags());
+        mocks.asset.update.mockImplementation(async () => {
+          assetStarted.resolve();
+          await writes.promise;
+          return;
+        });
+        mocks.asset.upsertExif.mockImplementation(async () => {
+          exifStarted.resolve();
+          await writes.promise;
+        });
+        mocks.person.getDistinctNames.mockImplementation(async () => {
+          facesStarted.resolve();
+          await writes.promise;
+          return [];
+        });
+        const extraction = sut.handleMetadataExtraction({ id: asset.id });
+        try {
+          await Promise.all([assetStarted.promise, exifStarted.promise, ...(faces ? [facesStarted.promise] : [])]);
+          expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+          expect(mocks.event.emit).not.toHaveBeenCalled();
+          if (!faces) {
+            expect(mocks.person.getDistinctNames).not.toHaveBeenCalled();
+          }
+        } finally {
+          writes.resolve();
+          await extraction;
+        }
+        expect(mocks.asset.upsertJobStatus).toHaveBeenCalledOnce();
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetMetadataExtracted',
+          expect.objectContaining({ assetId: asset.id }),
+        );
+      },
+    );
+
+    it('preserves synchronous asset-write errors and does not start later writes', async () => {
+      const asset = AssetFactory.create();
+      const failure = new Error('asset write rejected');
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.update.mockImplementation(() => {
+        throw failure;
+      });
+      await expect(sut.handleMetadataExtraction({ id: asset.id })).rejects.toBe(failure);
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('persists image encoding through existing source-checked metadata publication', async () => {
       const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC' });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));

@@ -44,7 +44,6 @@ import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFaceImportEnabled } from 'src/utils/misc.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
-import { Tasks } from 'src/utils/tasks.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
 const POSTGRES_INT_MIN = -2_147_483_648;
@@ -451,9 +450,7 @@ export class MetadataService extends BaseService {
       if (!current || !current.checksum.equals(asset.checksum) || current.originalPath !== asset.originalPath) {
         throw new Error('Metadata source changed before publication');
       }
-      const tasks = new Tasks();
-
-      tasks.push(
+      const tasks = [
         () =>
           this.assetRepository.update({
             id: asset.id,
@@ -480,13 +477,13 @@ export class MetadataService extends BaseService {
           });
           await this.applyTagList(asset, previous?.tags ?? []);
         },
-      );
+      ];
 
       if (isFaceImportEnabled(metadata) && this.hasTaggedFaces(exifTags)) {
         tasks.push(() => this.applyTaggedFaces(asset, exifTags));
       }
 
-      await tasks.all();
+      await Promise.all(tasks.map((task) => task()));
 
       if (exifData.livePhotoCID) {
         await this.linkLivePhotos(asset, exifData);
