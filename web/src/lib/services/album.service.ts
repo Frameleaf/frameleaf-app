@@ -66,19 +66,40 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
 };
 
 export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], { notify }: { notify: boolean }) => {
+  const owner = authManager.authenticated ? authManager.user.id : undefined;
+  const sharedLink = authManager.isSharedLink;
+  const params = { ...authManager.params };
+  const isCurrent = () => {
+    const currentOwner = authManager.authenticated ? authManager.user.id : undefined;
+    return (
+      owner === currentOwner &&
+      sharedLink === authManager.isSharedLink &&
+      params.key === authManager.params.key &&
+      params.slug === authManager.params.slug
+    );
+  };
   const $t = await getFormatter();
+  if (!isCurrent()) {
+    return false;
+  }
 
   try {
     if (albumIds.length === 1) {
       const albumId = albumIds[0];
-      const results = await addToAlbum({ ...authManager.params, id: albumId, bulkIdsDto: { ids: assetIds } });
+      const results = await addToAlbum({ ...params, id: albumId, bulkIdsDto: { ids: assetIds } });
+      if (!isCurrent()) {
+        return false;
+      }
       if (notify) {
         notifyAddToAlbum($t, albumId, assetIds, results);
       }
     }
 
     if (albumIds.length > 1) {
-      const results = await addToAlbums({ ...authManager.params, albumsAddAssetsDto: { albumIds, assetIds } });
+      const results = await addToAlbums({ ...params, albumsAddAssetsDto: { albumIds, assetIds } });
+      if (!isCurrent()) {
+        return false;
+      }
       if (notify) {
         notifyAddToAlbums($t, albumIds, assetIds, results);
       }
@@ -87,6 +108,9 @@ export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], 
     eventManager.emit('AlbumAddAssets', { assetIds, albumIds });
     return true;
   } catch (error) {
+    if (!isCurrent()) {
+      return false;
+    }
     handleError(error, $t('errors.error_adding_assets_to_album'));
     return false;
   }
