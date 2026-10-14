@@ -1,4 +1,24 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import type { WaitContext } from './harness-wait.js';
+
 export type QueuePauseSnapshot = { name: string; paused: boolean }[];
+
+/** The transaction callback acknowledges rollback before exposing a PostgreSQL deadlock abort. */
+export const retryResetTransaction = async (context: WaitContext, transaction: () => Promise<void>) => {
+  for (;;) {
+    context.remaining();
+    try {
+      await transaction();
+      context.remaining();
+      return;
+    } catch (error) {
+      if ((error as { code?: string })?.code !== '40P01') {
+        throw error;
+      }
+    }
+    await sleep(Math.min(100, context.remaining()), undefined, { signal: context.signal });
+  }
+};
 
 /** Restoration is inside the reset's ownership and follows mutation, including a failed mutation. */
 export const resetWhilePaused = async (driver: {
