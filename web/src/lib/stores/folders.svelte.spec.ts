@@ -40,6 +40,7 @@ describe('foldersStore', () => {
     const first = foldersStore.fetchTree();
     const second = foldersStore.fetchTree();
 
+    await vi.waitFor(() => expect(getFolderSummary).toHaveBeenCalledTimes(1));
     resolveRows!([row('/photos/2026', 2, 10)]);
 
     const [firstTree, secondTree] = await Promise.all([first, second]);
@@ -96,6 +97,8 @@ describe('foldersStore', () => {
 
     const tree = foldersStore.fetchTree();
     const files = foldersStore.fetchAssetsByPath('/a');
+    await vi.waitFor(() => expect(getFolderSummary).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(1));
     foldersStore.clearCache();
     resolveRows!([row('/private', 1, 1)]);
     resolveAssets!([]);
