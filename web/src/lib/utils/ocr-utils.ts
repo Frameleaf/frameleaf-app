@@ -1,13 +1,8 @@
-import { clamp } from 'lodash-es';
 import type { OcrBoundingBox } from '$lib/stores/ocr.svelte';
-import { mapNormalizedToContent, type Point, type Size } from '$lib/utils/container-utils';
+import type { Point, Size } from '$lib/utils/container-utils';
 
 export type { Point } from '$lib/utils/container-utils';
-
-const distance = (p1: Point, p2: Point) => Math.hypot(p2.x - p1.x, p2.y - p1.y);
-
 export type VerticalMode = 'none' | 'cjk' | 'rotated';
-
 export type OcrBox = {
   id: string;
   points: Point[];
@@ -17,57 +12,56 @@ export type OcrBox = {
 };
 
 const CJK_PATTERN =
-  /[\u{3000}-\u{303F}\u{3040}-\u{309F}\u{30A0}-\u{30FF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{AC00}-\u{D7AF}\u{FF00}-\u{FFEF}]/u;
-
+  /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\u{3000}-\u{303F}\u{AC00}-\u{D7AF}\u{FF00}-\u{FFEF}]/u;
 const VERTICAL_ASPECT_RATIO = 1.5;
+const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+const containsCjk = (text: string) => CJK_PATTERN.test(text);
 
-const containsCjk = (text: string): boolean => CJK_PATTERN.test(text);
+const getVerticalMode = (width: number, height: number, text: string): VerticalMode =>
+  height / width >= VERTICAL_ASPECT_RATIO ? (containsCjk(text) ? 'cjk' : 'rotated') : 'none';
 
-const getVerticalMode = (width: number, height: number, text: string): VerticalMode => {
-  if (height / width < VERTICAL_ASPECT_RATIO) {
-    return 'none';
-  }
-  return containsCjk(text) ? 'cjk' : 'rotated';
-};
-
-/**
- * Calculate bounding box transform from OCR points. Result matrix can be used as input for css matrix3d.
- * @param points - Array of 4 corner points of the bounding box
- * @returns 4x4 matrix to transform the div with text onto the polygon defined by the corner points, and size to set on the source div.
- */
+/** Maps the four corners of a text rectangle to its image quadrilateral in CSS matrix3d order. */
 export const calculateBoundingBoxMatrix = (points: Point[]): Size & { matrix: number[] } => {
-  const [topLeft, topRight, bottomRight, bottomLeft] = points;
+  const [origin, right, opposite, bottom] = points;
+  const width = Math.max(distance(origin, right), distance(bottom, opposite));
+  const height = Math.max(distance(origin, bottom), distance(right, opposite));
+  const rightX = right.x - opposite.x;
+  const rightY = right.y - opposite.y;
+  const bottomX = bottom.x - opposite.x;
+  const bottomY = bottom.y - opposite.y;
+  const determinant = rightX * bottomY - bottomX * rightY;
 
-  const width = Math.max(distance(topLeft, topRight), distance(bottomLeft, bottomRight));
-  const height = Math.max(distance(topLeft, bottomLeft), distance(topRight, bottomRight));
+  if (!width || !height || !determinant || !Number.isFinite(determinant)) {
+    return { width: 0, height: 0, matrix: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, origin.x, origin.y, 0, 1] };
+  }
 
-  const dx1 = topRight.x - bottomRight.x;
-  const dx2 = bottomLeft.x - bottomRight.x;
-  const dx3 = topLeft.x - topRight.x + bottomRight.x - bottomLeft.x;
+  const skewX = origin.x - right.x + opposite.x - bottom.x;
+  const skewY = origin.y - right.y + opposite.y - bottom.y;
+  const perspectiveX = (skewX * bottomY - bottomX * skewY) / determinant;
+  const perspectiveY = (rightX * skewY - skewX * rightY) / determinant;
 
-  const dy1 = topRight.y - bottomRight.y;
-  const dy2 = bottomLeft.y - bottomRight.y;
-  const dy3 = topLeft.y - topRight.y + bottomRight.y - bottomLeft.y;
-
-  const det = dx1 * dy2 - dx2 * dy1;
-  const a13 = (dx3 * dy2 - dx2 * dy3) / det;
-  const a23 = (dx1 * dy3 - dx3 * dy1) / det;
-
-  const a11 = (1 + a13) * topRight.x - topLeft.x;
-  const a21 = (1 + a23) * bottomLeft.x - topLeft.x;
-
-  const a12 = (1 + a13) * topRight.y - topLeft.y;
-  const a22 = (1 + a23) * bottomLeft.y - topLeft.y;
-
-  // prettier-ignore
-  const matrix = [
-    a11 / width, a12 / width, 0, a13 / width,
-    a21 / height, a22 / height, 0, a23 / height,
-    0, 0, 1, 0,
-    topLeft.x, topLeft.y, 0, 1,
-  ];
-
-  return { matrix, width, height };
+  return {
+    width,
+    height,
+    matrix: [
+      ((1 + perspectiveX) * right.x - origin.x) / width,
+      ((1 + perspectiveX) * right.y - origin.y) / width,
+      0,
+      perspectiveX / width,
+      ((1 + perspectiveY) * bottom.x - origin.x) / height,
+      ((1 + perspectiveY) * bottom.y - origin.y) / height,
+      0,
+      perspectiveY / height,
+      0,
+      0,
+      1,
+      0,
+      origin.x,
+      origin.y,
+      0,
+      1,
+    ],
+  };
 };
 
 const BORDER_SIZE = 4;
@@ -77,29 +71,19 @@ const REFERENCE_FONT_SIZE = 100;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 96;
 const FALLBACK_FONT = `${REFERENCE_FONT_SIZE}px sans-serif`;
-
 let sharedCanvasContext: CanvasRenderingContext2D | null = null;
 let resolvedFont: string | undefined;
 
 const getCanvasContext = (): CanvasRenderingContext2D | null => {
-  if (sharedCanvasContext !== null) {
-    return sharedCanvasContext;
-  }
-  const canvas = document.createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (!context) {
-    return null;
-  }
-  sharedCanvasContext = context;
+  sharedCanvasContext ??= document.createElement('canvas').getContext('2d');
   return sharedCanvasContext;
 };
 
 const getReferenceFont = (): string => {
-  if (resolvedFont !== undefined) {
-    return resolvedFont;
+  if (resolvedFont === undefined) {
+    const family = globalThis.getComputedStyle?.(document.documentElement).getPropertyValue('--font-sans').trim();
+    resolvedFont = family ? `${REFERENCE_FONT_SIZE}px ${family}` : FALLBACK_FONT;
   }
-  const fontFamily = globalThis.getComputedStyle?.(document.documentElement).getPropertyValue('--font-sans').trim();
-  resolvedFont = fontFamily ? `${REFERENCE_FONT_SIZE}px ${fontFamily}` : FALLBACK_FONT;
   return resolvedFont;
 };
 
@@ -109,85 +93,74 @@ export const calculateFittedFontSize = (
   boxHeight: number,
   verticalMode: VerticalMode,
 ): number => {
-  const isVertical = verticalMode === 'cjk' || verticalMode === 'rotated';
-  const availableWidth = boxWidth - (isVertical ? VERTICAL_PADDING : HORIZONTAL_PADDING);
-  const availableHeight = boxHeight - (isVertical ? HORIZONTAL_PADDING : VERTICAL_PADDING);
-
+  const vertical = verticalMode !== 'none';
+  const width = boxWidth - (vertical ? VERTICAL_PADDING : HORIZONTAL_PADDING);
+  const height = boxHeight - (vertical ? HORIZONTAL_PADDING : VERTICAL_PADDING);
+  const fitWidth = verticalMode === 'rotated' ? height : width;
+  const fitHeight = verticalMode === 'rotated' ? width : height;
   const context = getCanvasContext();
-
-  if (verticalMode === 'cjk') {
-    if (!context) {
-      const fontSize = Math.min(availableWidth, availableHeight / text.length);
-      return clamp(fontSize, MIN_FONT_SIZE, MAX_FONT_SIZE);
-    }
-
-    context.font = getReferenceFont();
-
-    let maxCharWidth = 0;
-    let totalCharHeight = 0;
-    for (const character of text) {
-      const metrics = context.measureText(character);
-      const charWidth = metrics.width;
-      const charHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-      maxCharWidth = Math.max(maxCharWidth, charWidth);
-      totalCharHeight += Math.max(charWidth, charHeight);
-    }
-
-    const scaleFromWidth = (availableWidth / maxCharWidth) * REFERENCE_FONT_SIZE;
-    const scaleFromHeight = (availableHeight / totalCharHeight) * REFERENCE_FONT_SIZE;
-    return clamp(Math.min(scaleFromWidth, scaleFromHeight), MIN_FONT_SIZE, MAX_FONT_SIZE);
-  }
-
-  const fitWidth = verticalMode === 'rotated' ? availableHeight : availableWidth;
-  const fitHeight = verticalMode === 'rotated' ? availableWidth : availableHeight;
+  let fitted: number;
 
   if (!context) {
-    return clamp((1.4 * fitWidth) / text.length, MIN_FONT_SIZE, MAX_FONT_SIZE);
+    const characters = Array.from(text).length;
+    fitted = verticalMode === 'cjk' ? Math.min(width, height / characters) : (1.4 * fitWidth) / characters;
+  } else {
+    context.font = getReferenceFont();
+    let measuredWidth = 0;
+    let measuredHeight = 0;
+    if (verticalMode === 'cjk') {
+      for (const character of text) {
+        const metric = context.measureText(character);
+        measuredWidth = Math.max(measuredWidth, metric.width);
+        measuredHeight += Math.max(metric.width, metric.actualBoundingBoxAscent + metric.actualBoundingBoxDescent);
+      }
+    } else {
+      const metric = context.measureText(text);
+      measuredWidth = metric.width;
+      measuredHeight = metric.actualBoundingBoxAscent + metric.actualBoundingBoxDescent;
+    }
+    fitted = Math.min(fitWidth / measuredWidth, fitHeight / measuredHeight) * REFERENCE_FONT_SIZE;
   }
 
-  // Unsupported in Safari iOS <16.6; falls back to default canvas font, giving less accurate but functional sizing
-  context.font = getReferenceFont();
-
-  const metrics = context.measureText(text);
-  const measuredWidth = metrics.width;
-  const measuredHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-
-  const scaleFromWidth = (fitWidth / measuredWidth) * REFERENCE_FONT_SIZE;
-  const scaleFromHeight = (fitHeight / measuredHeight) * REFERENCE_FONT_SIZE;
-
-  return clamp(Math.min(scaleFromWidth, scaleFromHeight), MIN_FONT_SIZE, MAX_FONT_SIZE);
+  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, fitted));
 };
 
+/** Own the display points; retain the server's text, identifiers and confidence without mutation. */
 export const getOcrBoundingBoxes = (ocrData: OcrBoundingBox[], imageSize: Size): OcrBox[] => {
   const boxes: OcrBox[] = [];
-  for (const ocr of ocrData) {
+  for (const region of ocrData) {
     const points = [
-      { x: ocr.x1, y: ocr.y1 },
-      { x: ocr.x2, y: ocr.y2 },
-      { x: ocr.x3, y: ocr.y3 },
-      { x: ocr.x4, y: ocr.y4 },
-    ].map((point) => mapNormalizedToContent(point, imageSize));
-
-    const boxWidth = Math.max(distance(points[0], points[1]), distance(points[3], points[2]));
-    const boxHeight = Math.max(distance(points[0], points[3]), distance(points[1], points[2]));
-
+      { x: region.x1 * imageSize.width, y: region.y1 * imageSize.height },
+      { x: region.x2 * imageSize.width, y: region.y2 * imageSize.height },
+      { x: region.x3 * imageSize.width, y: region.y3 * imageSize.height },
+      { x: region.x4 * imageSize.width, y: region.y4 * imageSize.height },
+    ];
+    const width = Math.max(distance(points[0], points[1]), distance(points[3], points[2]));
+    const height = Math.max(distance(points[0], points[3]), distance(points[1], points[2]));
     boxes.push({
-      id: ocr.id,
+      id: region.id,
       points,
-      text: ocr.text,
-      confidence: ocr.textScore,
-      verticalMode: getVerticalMode(boxWidth, boxHeight, ocr.text),
+      text: region.text,
+      confidence: region.textScore,
+      verticalMode: getVerticalMode(width, height, region.text),
     });
   }
 
+  boxes.sort((a, b) => a.points[0].y - b.points[0].y);
   const rowThreshold = imageSize.height * 0.02;
-  boxes.sort((a, b) => {
-    const yDifference = a.points[0].y - b.points[0].y;
-    if (Math.abs(yDifference) < rowThreshold) {
-      return a.points[0].x - b.points[0].x;
+  for (let start = 0; start < boxes.length;) {
+    let end = start + 1;
+    const anchor = boxes[start].points[0].y;
+    while (end < boxes.length && boxes[end].points[0].y - anchor < rowThreshold) {
+      end++;
     }
-    return yDifference;
-  });
-
+    if (end - start > 1) {
+      const row = boxes.slice(start, end).sort((a, b) => a.points[0].x - b.points[0].x);
+      for (let offset = 0; offset < row.length; offset++) {
+        boxes[start + offset] = row[offset];
+      }
+    }
+    start = end;
+  }
   return boxes;
 };
