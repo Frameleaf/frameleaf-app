@@ -541,14 +541,12 @@ export class BaseService {
    * the service that made the change, after it succeeded. Recording never undoes or fails the change
    * it records: if the insert fails, the change stands and the failure is logged.
    */
-  /** FL-292: what the setup code gate needs (`src/utils/frameleaf-setup-gate.ts`). */
+  /** FL-292: what the new-server claim gate needs (`src/utils/frameleaf-setup-gate.ts`). */
   protected get setupGate(): SetupGateDeps {
     return {
       configRepository: this.configRepository,
-      cryptoRepository: this.cryptoRepository,
       databaseRepository: this.databaseRepository,
       logger: this.logger,
-      systemMetadataRepository: this.systemMetadataRepository,
       userRepository: this.userRepository,
     };
   }

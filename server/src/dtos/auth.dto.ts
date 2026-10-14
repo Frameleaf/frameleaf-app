@@ -77,12 +77,6 @@ const LogoutResponseSchema = z
 const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
-    setupTicket: z
-      .string()
-      .trim()
-      .max(256)
-      .optional()
-      .describe('From the Frameleaf app: a setup ticket from POST server/setup/code, from the same device'),
   })
   .meta({ id: 'SignUpDto' });
 

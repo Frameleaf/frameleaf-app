@@ -240,7 +240,7 @@ function fakeServer({
       return json({ major, minor, patch });
     }
     if (route === "/auth/admin-sign-up") {
-      assert.equal(JSON.parse(init.body).setupCode, "ABCD-2345");
+      assert.equal(JSON.parse(init.body).setupCode, undefined);
       return json({ id: "u" }, 201);
     }
     if (route === "/auth/login") {
@@ -267,8 +267,6 @@ function fakeServer({
   };
 }
 const execFake = (service, command) => {
-  if (service === "frameleaf-server" && command.includes("setup-code"))
-    return "ABCD-2345\n";
   if (service === "frameleaf-server" && /proc\/net/.test(command.join(" ")))
     return "  sl\n";
   if (service === "frameleaf-server")
