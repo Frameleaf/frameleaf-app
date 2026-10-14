@@ -669,7 +669,12 @@
       "path": "patches/0138-number-input-text-commit-lifecycle.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
+    },
+    {
+      "path": "patches/0139-whisper-no-adapter-fallback.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "e8b6418c2e9a64d8a7ed2018059e655823f78244d69d68a37957e8feae99b54b"
     }
   ],
-  "sourceSha256": "1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80"
+  "sourceSha256": "e2821a958f1da55ac5f03b641b9e2f18fe82d0e283ef63e5149cb1b31045215b"
 }

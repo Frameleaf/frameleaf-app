@@ -680,3 +680,7 @@ beside project templates, canvas settings and first-media matching. Canvas/FPS
 changes retain stored colour settings; placing PQ/HLG media, including nested
 compositions, makes the project HDR. Import alone does not, and export colour is
 chosen separately. The existing MIT notice covers the adapted UI and tests.
+
+## Whisper without a GPU adapter
+
+Patch `0139-whisper-no-adapter-fallback.patch` checks for an available WebGPU adapter before the first Whisper model session. When none is available, it selects WASM directly: the pinned Transformers runtime retains a failed first-session promise, so trying an unavailable GPU first prevents the later WASM retry. The existing model, artifact verification, word timing and worker lifecycle remain in use. The real-worker browser check can require either backend with `STUDIO_WHISPER_BROWSER_EXPECT_BACKEND=wasm` or `webgpu`; both its initial and offline runs must execute that backend. Broader model and browser qualification remains separate.
