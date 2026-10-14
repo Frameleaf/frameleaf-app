@@ -8,7 +8,7 @@ import en from '../../../../../../i18n/en.json';
 
 /**
  * FL-83: Command Center → Backup & import → "Google Photos & server imports". As in the prototype,
- * "Preview import workflow" opens the "Import Google Photos" workflow in place, as a wide dialog;
+ * "Import from Google Photos…" opens the import flow in place, as a wide dialog;
  * the address says it is open (and on which import), so links and reloads land in it.
  */
 
@@ -68,7 +68,7 @@ describe('TakeoutSettingsSection', () => {
     render(TakeoutSettingsSection);
     const dialog = screen.getByRole('dialog', { name: en.frameleaf_takeout_title });
     expect(await within(dialog).findByRole('link', { name: /Family export/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading', { name: en.frameleaf_takeout_start_heading })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: en.frameleaf_takeout_previous_heading })).toBeInTheDocument();
     expect(sdkMock.getTakeoutImport).not.toHaveBeenCalled();
   });
 
@@ -77,9 +77,7 @@ describe('TakeoutSettingsSection', () => {
     at('area=backup&section=takeout&workflow=import&import=import-1');
     render(TakeoutSettingsSection);
     const dialog = screen.getByRole('dialog', { name: en.frameleaf_takeout_title });
-    expect(
-      await within(dialog).findByRole('heading', { name: en.frameleaf_takeout_stage_heading }),
-    ).toBeInTheDocument();
+    expect(await within(dialog).findByText(en.frameleaf_takeout_archives_help)).toBeInTheDocument();
     expect(sdkMock.getTakeoutImport).toHaveBeenCalledWith({ id: 'import-1' });
   });
 

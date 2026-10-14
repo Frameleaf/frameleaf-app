@@ -1,35 +1,44 @@
 # Import Google Photos
 
-**Import Google Photos** brings a Google Takeout export into your library: the original files, the dates they were taken, descriptions, locations, favorites, archived photos, Locked Folder photos and album memberships. Open it from **Settings → Google Photos & server imports → Preview import workflow**, from the administrator's **Import & protection** settings, or by searching for it.
+**Import from Google Photos** brings a Google Takeout export into your library: the original files, the dates they were taken, descriptions, locations, favorites, archived photos, Locked Folder photos, Live Photos and album memberships. Open it from **Settings → Google Photos & server imports → Import from Google Photos…**, from the administrator's **Import & protection** settings, or by searching for it.
 
-The wizard has three stages: **Stage**, **Scan** and **Reconcile**.
+An import has three steps, **Upload**, **Check** and **Import**, and moves on by itself: you choose the ZIP files and press **Import** once.
 
-## Stage
+:::tip Large libraries
+Only the upload needs the page open. Once every file is uploaded, checking and importing run on the server, so with a large library you're free to close your browser and come back when the import is complete. Progress also shows in **Activity**.
+:::
 
-Choose every ZIP file from one Takeout export. Each archive is uploaded in parts; if the upload stops (the browser closed, the network dropped), choose the same files again and it carries on where it stopped. Every part already on the server is compared with the file you chose before anything is added, so a different file with the same name is refused rather than mixed in.
+## Upload
+
+Download every ZIP file of one Takeout export before you start, and choose them all at once. Google spreads a photo's details, such as its date, place and albums, across different ZIP files, so importing only some of them can leave photos without their details.
+
+Each archive is uploaded in parts. If the upload stops (the browser closed, the network dropped), open the import again and choose the same files: it carries on where it stopped. Every part already on the server is compared with the file you chose before anything is added, so a different file with the same name is refused rather than mixed in.
 
 An archive is refused when your storage quota or the server's free space could not hold it.
 
-Administrators can import from a folder on the server instead of uploading, but only from a folder inside one of the locations the server operator permitted with `FRAMELEAF_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
+Administrators can import from a folder on the server instead of uploading, under **Import from a folder on this server**, but only from a folder inside one of the locations the server operator permitted with `FRAMELEAF_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
 
-## Scan
+## Check
 
-The server reads each archive, stages its files under generated names and matches every photo and video with its metadata sidecar, including localized folder names, Google's shortened sidecar names and sidecars that ended up in a different archive of the same export. The scan runs on the server: you can close the page. It shows in **Activity** and the running-jobs panel, with a total that grows as the archives are read, and can be paused, resumed or stopped there or in the wizard.
+The check starts as soon as the last file is uploaded. The server reads each archive and matches every photo and video with its details, including localized folder names, Google's shortened file names and details that ended up in a different archive of the same export. A photo and a video that share a name in the same folder are kept together as a Live Photo.
+
+When Google sent two sets of details for one photo, Frameleaf chooses the most likely: the set whose title is the photo's own name, then the one with the most details.
 
 Entries that could escape a folder (an unsafe name or a link), encrypted entries and damaged data are refused and counted, never staged.
 
-## Reconcile
+## Import
 
-- **Review** lists every photo and video. Where several sidecars disagree, choose one or import without one; any item can be skipped or brought back.
-- **Live Photos** lists photos and videos that share a name in the same folder. Link only the ones that belong together; both files are kept either way.
-- **Albums** chooses which export folders become albums. Google's automatic year folders are off by default.
-- **Import options** chooses what to bring over. **Recreate album memberships** adds photos already in your library to their albums too. **Review ambiguous sidecars** holds disputed items until you decide; switched off, they import with only the file's own details.
-- **Report** summarizes what was imported, matched, skipped, unresolved and failed, and downloads the full reconciliation report as JSON or CSV.
+When the check finishes, the import shows what it found: new photos and videos, photos already in your library, albums and Live Photos. Before you press **Import**, you can:
 
-**Import** runs on the server like the scan. Each file is copied into your library and checked against what the scan recorded; the files in your export are never changed. A photo that is already in your library (the same file, by checksum) is matched instead of copied again, keeps its own date and details, and only gains what it is missing when you turn on **Fill in missing details on photos already in your library**. Running an import again, or retrying one, never creates a second copy of anything.
+- turn off **Keep album memberships**, or choose which albums are made; Google's automatic year folders are never made into albums
+- turn on **Fill in missing details on photos you already have**
+- bring in the photos that were in your Google Photos trash, which are left out otherwise
+- when some photos came with two sets of details, choose **Let me choose for these**: those photos wait while everything else is imported, then you pick the right details for any you know, and the rest get the most likely ones
 
-Photos from Google's Locked Folder go into Locked, and are locked before anything else is written to them. While your session is locked, the wizard only says how many items go into Locked; unlock it to review them.
+Each file is copied into your library; the files in your export are never changed. A photo that is already in your library (the same file, by checksum) is not copied again: it joins its albums, keeps its own date and details, and only gains what it is missing when you fill in missing details. Running an import again, or retrying one, never creates a second copy of anything.
 
-Every step that fails is retried once automatically, and items that failed are given one more attempt before they are reported. You can retry again from the wizard or from Activity.
+Photos from Google's Locked Folder go into Locked, and are locked before anything else is written to them. While your session is locked, the import only says how many photos go into Locked.
 
-**Delete import** removes the import and its staged copies once nothing is running. Everything it brought into your library stays there.
+Every step that fails is retried once automatically. When the import finishes, it lists anything that could not be added, with **Try again**, and **Download report** saves a CSV of every photo and what happened to it.
+
+**Cancel import** removes the import and what was uploaded for it. Everything it already brought into your library stays there.

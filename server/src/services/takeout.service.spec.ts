@@ -143,8 +143,8 @@ describe(TakeoutService.name, () => {
       removeSource: vi.fn(),
       setPhase: vi.fn(),
       setOptions: vi.fn(),
-      countReview: vi.fn().mockResolvedValue({ total: 0, locked: 0 }),
       releaseReview: vi.fn(),
+      includeTrashed: vi.fn(),
       counts: vi.fn().mockResolvedValue({ ...emptyCounts }),
       albums: vi.fn().mockResolvedValue([]),
       matchSummary: vi.fn().mockResolvedValue({ newAssets: 0, matchedOriginals: 0 }),
@@ -385,31 +385,28 @@ describe(TakeoutService.name, () => {
       operations = [operationOf('scan', MediaOperationStatus.Completed)];
     });
 
-    it('holds the import while flagged items are unresolved', async () => {
-      repository.countReview.mockResolvedValue({ total: 3, locked: 0 });
-      await expect(sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS })).rejects.toThrow(
-        'Resolve the flagged items before importing',
-      );
-      expect(repository.insertOperation).not.toHaveBeenCalled();
+    it('imports everything else while disputed items wait, when sidecar review is on', async () => {
+      await sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS, sidecarReview: true });
+
+      expect(repository.releaseReview).not.toHaveBeenCalled();
+      expect(repository.setPhase).toHaveBeenCalledWith(tx, importId, 'importing');
     });
 
-    it('asks a locked session to unlock Locked when only Locked items are flagged', async () => {
-      repository.countReview.mockResolvedValue({ total: 2, locked: 2 });
-      await expect(sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS })).rejects.toThrow(
-        'Unlock Locked',
-      );
-    });
-
-    it('imports disputed items without a sidecar when sidecar review is switched off', async () => {
-      repository.countReview.mockResolvedValue({ total: 3, locked: 0 });
-      await sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS, sidecarReview: false });
+    it('imports disputed items with their chosen sidecar when sidecar review is off', async () => {
+      await sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS });
 
       expect(repository.releaseReview).toHaveBeenCalledWith(tx, importId);
+      expect(repository.includeTrashed).not.toHaveBeenCalled();
       expect(repository.insertOperation).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({ snapshot: { importId, action: 'import' } }),
       );
       expect(repository.setPhase).toHaveBeenCalledWith(tx, importId, 'importing');
+    });
+
+    it('brings in photos from the Google Photos trash when asked', async () => {
+      await sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS, includeTrashed: true });
+      expect(repository.includeTrashed).toHaveBeenCalledWith(tx, importId);
     });
 
     it('keeps the owner’s choices on the import, where every run and retry reads them', async () => {
