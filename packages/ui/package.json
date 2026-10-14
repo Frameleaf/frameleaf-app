@@ -31,6 +31,10 @@
     "./persisted": {
       "types": "./dist/state/persisted.d.ts",
       "default": "./dist/state/persisted.js"
+    },
+    "./common": {
+      "types": "./dist/utilities/common.d.ts",
+      "default": "./dist/utilities/common.js"
     }
   },
   "peerDependencies": {
