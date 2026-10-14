@@ -333,55 +333,65 @@ it('uses the saved explicit block order across pagination and keeps filtered-emp
   await waitFor(() => expect(galleryMedia).toHaveBeenCalledWith('shoot', 'capture-100', 'thumbnail', 'scoped'));
 });
 
-it.each([false, true])('offers explicit bounded ZIP parts for 1500 photographs (outputs: %s)', async (outputs) => {
-  const configured = structuredClone(view);
-  configured.photos = Array.from({ length: 1500 }, (_, index) => ({
-    ...view.photos[0],
-    id: `capture-${index}`,
-    number: index + 1,
-    canDownload: true,
-    ...(outputs && {
-      outputs: [
-        {
-          id: `output-${index}`,
-          label: 'Print',
-          kind: 'print' as const,
-          revisionId: 'approved',
-          approved: true,
-          clientApprovalRequired: false,
-          ready: true,
-          renderStatus: 'ready' as const,
-          branded: false,
-          exportSpec: { format: 'jpeg' as const, quality: 90 as const, maxEdge: 65_535 },
-          url: '/not-used',
-          approvalPreviewUrl: null,
-          canDownload: true,
-          blockedReason: null,
-        },
-      ],
-    }),
-  }));
-  vi.mocked(galleryRequest)
-    .mockResolvedValueOnce(configured)
-    .mockResolvedValueOnce({ id: 'part-two' } as never);
-  vi.mocked(galleryFile).mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-  render(PhotographyClient, { galleryId: 'shoot' });
-  await fireEvent.click(await screen.findByRole('button', { name: 'Download part 2 (500 files)' }));
-  await waitFor(() =>
-    expect(galleryRequest).toHaveBeenCalledWith(
-      'shoot',
-      'scoped',
-      '/zip',
-      'POST',
-      outputs
-        ? {
-            outputs: configured.photos
-              .slice(1000)
-              .map((photo) => ({ captureId: photo.id, outputId: photo.outputs![0].id })),
-          }
-        : { captureIds: configured.photos.slice(1000).map((photo) => photo.id) },
-    ),
-  );
-  expect(galleryFile).toHaveBeenCalledWith('shoot', 'scoped', '/zip/part-two', true);
-});
+// The first render builds 1500 output checkboxes (~1.3 s locally), so loaded CI runners exceed the 5 s default.
+// A second ZIP part needs more than 1000 files, so the workload cannot shrink.
+const largeGalleryTimeout = 20_000;
+
+it.each([false, true])(
+  'offers explicit bounded ZIP parts for 1500 photographs (outputs: %s)',
+  async (outputs) => {
+    const configured = structuredClone(view);
+    configured.photos = Array.from({ length: 1500 }, (_, index) => ({
+      ...view.photos[0],
+      id: `capture-${index}`,
+      number: index + 1,
+      canDownload: true,
+      ...(outputs && {
+        outputs: [
+          {
+            id: `output-${index}`,
+            label: 'Print',
+            kind: 'print' as const,
+            revisionId: 'approved',
+            approved: true,
+            clientApprovalRequired: false,
+            ready: true,
+            renderStatus: 'ready' as const,
+            branded: false,
+            exportSpec: { format: 'jpeg' as const, quality: 90 as const, maxEdge: 65_535 },
+            url: '/not-used',
+            approvalPreviewUrl: null,
+            canDownload: true,
+            blockedReason: null,
+          },
+        ],
+      }),
+    }));
+    vi.mocked(galleryRequest)
+      .mockResolvedValueOnce(configured)
+      .mockResolvedValueOnce({ id: 'part-two' } as never);
+    vi.mocked(galleryFile).mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(PhotographyClient, { galleryId: 'shoot' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Download part 2 (500 files)' }, { timeout: largeGalleryTimeout }),
+    );
+    await waitFor(() =>
+      expect(galleryRequest).toHaveBeenCalledWith(
+        'shoot',
+        'scoped',
+        '/zip',
+        'POST',
+        outputs
+          ? {
+              outputs: configured.photos
+                .slice(1000)
+                .map((photo) => ({ captureId: photo.id, outputId: photo.outputs![0].id })),
+            }
+          : { captureIds: configured.photos.slice(1000).map((photo) => photo.id) },
+      ),
+    );
+    expect(galleryFile).toHaveBeenCalledWith('shoot', 'scoped', '/zip/part-two', true);
+  },
+  largeGalleryTimeout,
+);
