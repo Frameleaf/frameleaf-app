@@ -113,8 +113,18 @@ jobs:
             actual="sha256:$(gzip -dc "$archive/layout/blobs/sha256/${layer#sha256:}" | sha256sum | cut -d' ' -f1)"
             [[ "$actual" == "$diffid" ]]
           done
+          # The runtime archive's own manifest must carry this OCI config.
+          mkdir "$archive/runtime-layout"
+          tar -xf "$archive/runtime.tar" -C "$archive/runtime-layout"
+          runtime_digest=$(jq -er '.manifests | select(length == 1) | .[0].digest' "$archive/runtime-layout/index.json")
+          runtime_manifest="$archive/runtime-layout/blobs/sha256/${runtime_digest#sha256:}"
+          [[ "sha256:$(sha256sum "$runtime_manifest" | cut -d' ' -f1)" == "$runtime_digest" ]]
+          [[ "$(jq -er '.config.digest' "$runtime_manifest")" == "$config" ]]
           docker load --input "$archive/runtime.tar"
-          [[ "$(docker image inspect frameleaf-cli:ci --format '{{.Id}}')" == "$config" ]]
+          # The classic image store names an image by its config digest, the containerd store
+          # (Namespace runners) by its manifest digest.
+          image_id=$(docker image inspect frameleaf-cli:ci --format '{{.Id}}')
+          [[ "$image_id" == "$config" || "$image_id" == "$runtime_digest" ]]
           # Docker executes uncompressed layers: bind every ordered diffID to the OCI config.
           docker image inspect frameleaf-cli:ci --format '{{json .RootFS.Layers}}' > "$archive/runtime-rootfs.json"
           jq -e --slurpfile runtime "$archive/runtime-rootfs.json" '.rootfs.diff_ids==$runtime[0]' "$config_file" > /dev/null
@@ -136,7 +146,7 @@ jobs:
             --slurpfile rootfs "$archive/runtime-rootfs.json" --arg digest "$digest" --arg config "$config" --arg archiveSha "$(sha256sum image.tar | cut -d' ' -f1)" \
             '{sourceCommit:$source,repository:$repository,runId:$run,runAttempt:$attempt,architecture:$architecture,
               digest:$digest,configDigest:$config,rootfsDiffIds:$rootfs[0],archiveSha256:$archiveSha,smoke:"passed"}' > receipt.json
-          rm -rf layout
+          rm -rf layout runtime-layout
       - name: Retain tested archives and receipt
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
