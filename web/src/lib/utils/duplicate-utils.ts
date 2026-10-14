@@ -60,7 +60,12 @@ type MetadataFieldDefinition = {
   icon: string;
   titleKey: Translations;
   keys: readonly string[];
-  render: (asset: AssetResponseDto, $t: MessageFormatter, locale: string | undefined) => string;
+  render: (
+    asset: AssetResponseDto,
+    $t: MessageFormatter,
+    locale: string | undefined,
+    captureDateTime: () => ReturnType<typeof getDateTime>,
+  ) => string;
   tooltip?: (asset: AssetResponseDto, $t: MessageFormatter) => string;
 };
 
@@ -106,8 +111,8 @@ const metadataFields = [
     icon: mdiCalendar,
     titleKey: 'date_time_original',
     keys: ['dateTimeOriginal'],
-    render: (asset, $t, locale) => {
-      const dateTime = getDateTime(asset);
+    render: (_asset, $t, locale, captureDateTime) => {
+      const dateTime = captureDateTime();
       return dateTime
         ? dateTime.toLocaleString(
             {
@@ -128,7 +133,7 @@ const metadataFields = [
     icon: mdiEarth,
     titleKey: 'timezone',
     keys: ['timeZone'],
-    render: (asset, $t) => getDateTime(asset)?.offsetNameShort ?? $t('unknown'),
+    render: (_asset, $t, _locale, captureDateTime) => captureDateTime()?.offsetNameShort ?? $t('unknown'),
   },
   {
     icon: mdiClockEditOutline,
@@ -239,39 +244,60 @@ export type DifferingMetadataFields = Partial<Record<MetadataFieldKey, boolean>>
 
 export const metadataKeys: readonly MetadataFieldKey[] = metadataFields.flatMap(({ keys }) => keys);
 
-export const countDifferingMetadataItems = (differing: DifferingMetadataFields): number =>
-  metadataFields.filter(({ keys }) => keys.some((k) => differing[k as MetadataFieldKey])).length;
+export const countDifferingMetadataItems = (differing: DifferingMetadataFields): number => {
+  let count = 0;
+  for (const { keys } of metadataFields) {
+    for (const key of keys) {
+      if (differing[key]) {
+        count++;
+        break;
+      }
+    }
+  }
+  return count;
+};
 
-export const getAllMetadataItems = (asset: AssetResponseDto, $t: MessageFormatter, locale: string | undefined) =>
-  metadataFields.map((field) => ({
+export const getAllMetadataItems = (asset: AssetResponseDto, $t: MessageFormatter, locale: string | undefined) => {
+  let dateTime: ReturnType<typeof getDateTime> | undefined;
+  const captureDateTime = () => (dateTime ??= getDateTime(asset));
+  return metadataFields.map((field) => ({
     icon: field.icon,
     title: $t(field.titleKey),
-    render: field.render(asset, $t, locale),
+    render: field.render(asset, $t, locale, captureDateTime),
     tooltip: 'tooltip' in field ? field.tooltip(asset, $t) : undefined,
     keys: field.keys,
   }));
+};
 
-const normalizeForComparison = (key: MetadataFieldKey, value: unknown): unknown => {
-  if (value === null || value === undefined) {
-    return value;
+const normalizeForComparison = (key: MetadataFieldKey, value: unknown, dates: Map<string, string | null>): unknown => {
+  switch (key) {
+    case 'fileCreatedAt':
+    case 'fileModifiedAt':
+    case 'dateTimeOriginal':
+    case 'modifyDate': {
+      const iso = String(value);
+      let normalized = dates.get(iso);
+      if (normalized === undefined) {
+        const dateTime = DateTime.fromISO(iso);
+        normalized = dateTime.isValid ? dateTime.toISO() : iso;
+        dates.set(iso, normalized);
+      }
+      return normalized;
+    }
+    case 'fNumber': {
+      return typeof value === 'number' ? Number(value.toFixed(1)) : value;
+    }
+    case 'latitude':
+    case 'longitude': {
+      return typeof value === 'number' ? Number(value.toFixed(4)) : value;
+    }
+    case 'focalLength': {
+      return typeof value === 'number' ? Number(value.toFixed(2)) : value;
+    }
+    default: {
+      return value;
+    }
   }
-
-  if (['fileCreatedAt', 'fileModifiedAt', 'dateTimeOriginal', 'modifyDate'].includes(key)) {
-    const dateTime = DateTime.fromISO(String(value));
-    return dateTime.isValid ? dateTime.toISO() : String(value);
-  }
-
-  if (key === 'fNumber' && typeof value === 'number') {
-    return Number(value.toFixed(1));
-  }
-  if ((key === 'latitude' || key === 'longitude') && typeof value === 'number') {
-    return Number(value.toFixed(4));
-  }
-  if (key === 'focalLength' && typeof value === 'number') {
-    return Number(value.toFixed(2));
-  }
-
-  return value;
 };
 
 const getValueForAsset = (asset: AssetResponseDto, key: MetadataFieldKey): unknown => {
@@ -302,18 +328,26 @@ const getValueForAsset = (asset: AssetResponseDto, key: MetadataFieldKey): unkno
 
 export const computeDifferingMetadataFields = (assets: AssetResponseDto[]): DifferingMetadataFields => {
   const diffs: DifferingMetadataFields = {};
+  const dates = new Map<string, string | null>();
 
   for (const key of metadataKeys) {
-    const uniqueValues = new Set<unknown>();
+    let first: unknown;
+    let hasValue = false;
+    diffs[key] = false;
 
     for (const asset of assets) {
       const value = getValueForAsset(asset, key);
       if (value !== undefined && value !== null) {
-        uniqueValues.add(normalizeForComparison(key, value));
+        const normalized = normalizeForComparison(key, value, dates);
+        if (!hasValue) {
+          first = normalized;
+          hasValue = true;
+        } else if (first !== normalized && !Object.is(first, normalized)) {
+          diffs[key] = true;
+          break;
+        }
       }
     }
-
-    diffs[key] = uniqueValues.size > 1;
   }
 
   return diffs;
