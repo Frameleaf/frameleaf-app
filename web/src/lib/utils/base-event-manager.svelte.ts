@@ -12,49 +12,53 @@ export type EventItem<E extends EventsBase, T extends keyof E = keyof E> = {
 let count = 1;
 const nextId = () => count++;
 
-const noop = () => {};
-
 export class BaseEventManager<Events extends EventsBase> {
   #callbacks = new Map<keyof Events, EventItem<Events>[]>();
   // Listener reads and subscription writes keep the original global Svelte dependency.
   #revision = $state.raw(0);
 
   on(subscriptions: EventMap<Events>): () => void {
-    const cleanups = Object.entries(subscriptions).map(([event, callback]) =>
-      this.#onEvent(event as keyof Events, callback as EventCallback<Events, keyof Events>),
-    );
+    const items: EventItem<Events>[] = [];
+    for (const [event, callback] of Object.entries(subscriptions)) {
+      const item = this.#onEvent(event as keyof Events, callback as EventCallback<Events, keyof Events>);
+      if (item) {
+        items.push(item);
+      }
+    }
 
     return () => {
-      for (const cleanup of cleanups) {
-        cleanup();
+      for (const item of items) {
+        this.#offEvent(item);
       }
     };
   }
 
-  #onEvent<T extends keyof Events>(event: T, callback?: EventCallback<Events, T>) {
+  #onEvent(event: keyof Events, callback?: EventCallback<Events, keyof Events>) {
     if (!callback) {
-      return noop;
+      return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const item = { id: nextId(), event, callback } as EventItem<Events, any>;
+    const item = { id: nextId(), event, callback };
     this.#callbacks.set(event, [...(this.#callbacks.get(event) ?? []), item]);
     this.#revision++;
 
-    return () => {
-      const remaining = (this.#callbacks.get(event) ?? []).filter((current) => current.id !== item.id);
-      if (remaining.length > 0) {
-        this.#callbacks.set(event, remaining);
-      } else {
-        this.#callbacks.delete(event);
-      }
-      this.#revision++;
-    };
+    return item;
+  }
+
+  #offEvent(item: EventItem<Events>) {
+    const remaining = (this.#callbacks.get(item.event) ?? []).filter((current) => current.id !== item.id);
+    if (remaining.length > 0) {
+      this.#callbacks.set(item.event, remaining);
+    } else {
+      this.#callbacks.delete(item.event);
+    }
+    this.#revision++;
   }
 
   emit<T extends keyof Events>(event: T, ...params: Events[T]) {
     const listeners = this.getListeners(event);
-    for (const listener of listeners) {
+    for (const item of listeners) {
+      const listener = item.callback as EventCallback<Events, T>;
       void listener(...params);
     }
   }
@@ -66,6 +70,6 @@ export class BaseEventManager<Events extends EventsBase> {
 
   private getListeners<T extends keyof Events>(event: T) {
     void this.#revision;
-    return (this.#callbacks.get(event) ?? []).map((item) => item.callback as EventCallback<Events, T>);
+    return this.#callbacks.get(event) ?? [];
   }
 }
