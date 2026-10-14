@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { Refusal, releaseTag, sha256, type NasManifest } from './contracts.js';
 
 const require = createRequire(import.meta.url);
-const { INSTALL_FILES } = require('../../.github/frameleaf-release.cjs') as { INSTALL_FILES: string[] };
+const { MANAGER_ASSETS } = require('../../.github/frameleaf-release.cjs') as { MANAGER_ASSETS: string[] };
 const REPOSITORY = 'https://api.github.com/repos/Frameleaf/frameleaf-app';
 export type VerifiedRelease = {
   directory: string;
@@ -45,8 +45,11 @@ export class Releases {
           !r.draft &&
           !r.prerelease &&
           releaseTag.safeParse(r.tag_name).success &&
-          offered(r.body ?? '', this.seed, r.tag_name),
+          offered(r.body ?? '', this.seed, r.tag_name) &&
+          MANAGER_ASSETS.every((name) => r.assets?.some((asset: any) => asset.name === name)),
       )
+      // GitHub does not list releases in publication order.
+      .sort((a: any, b: any) => String(b.published_at).localeCompare(String(a.published_at)))
       .map((r: any) => ({ tag: r.tag_name, publishedAt: r.published_at, notes: String(r.body ?? '').slice(0, 32000) }));
   }
   async eligible(tag: string): Promise<any> {
@@ -61,7 +64,7 @@ export class Releases {
     const directory = join(this.root, randomUUID());
     await mkdir(directory, { recursive: true, mode: 0o700 });
     try {
-      for (const name of [...INSTALL_FILES, 'nas-manifest.json', 'release-manifest.json', 'SHA256SUMS']) {
+      for (const name of MANAGER_ASSETS) {
         const asset = metadata.assets?.find((a: any) => a.name === name);
         if (
           !asset ||
