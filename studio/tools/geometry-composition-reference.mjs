@@ -63,7 +63,10 @@ const legacyCompositionSources = new Set([
 export function compositionSourcesFor(sourceSha256) {
   if (
     sourceSha256 === 'fbff0121cec558d07244fa17d2959b148a5ac2c840ae3b7185c7f5ca9809c578' ||
-    sourceSha256 === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80'
+    sourceSha256 === '1acc086ce7d5ae97e50f010b7de4c8f540af195c506fb73573e66aacbad9ae80' ||
+    // Reviewed microphone/Whisper patches leave all composition producers unchanged.
+    sourceSha256 === 'de67658c3f4c3eb30aaa5afdcea62c79993d8375c1923931a9dd36316b550db6' ||
+    sourceSha256 === 'e2821a958f1da55ac5f03b641b9e2f18fe82d0e283ef63e5149cb1b31045215b'
   )
     return {
       ...COMPOSITION_SOURCES,

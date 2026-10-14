@@ -75,7 +75,7 @@ describe(MlDestinationService.name, () => {
           ...defaults,
           machineLearning: {
             ...defaults.machineLearning,
-            urls: ['http://immich-machine-learning:3003'],
+            urls: ['http://frameleaf-machine-learning:3003'],
             availabilityChecks: { ...defaults.machineLearning.availabilityChecks, enabled: false },
           },
         },
@@ -85,7 +85,7 @@ describe(MlDestinationService.name, () => {
       expect(mocks.mlDestination.create).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: MlDestinationKind.Local,
-          url: 'http://immich-machine-learning:3003',
+          url: 'http://frameleaf-machine-learning:3003',
           workloads: [
             MlWorkload.Face,
             MlWorkload.Clip,
@@ -181,7 +181,7 @@ describe(MlDestinationService.name, () => {
       });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
 
-      await bootWith(['http://immich-machine-learning:3003']);
+      await bootWith(['http://frameleaf-machine-learning:3003']);
 
       expect(mocks.mlDestination.update).toHaveBeenCalledTimes(1);
       expect(mocks.mlDestination.update).toHaveBeenCalledWith(second.id, { enabled: false });
@@ -206,7 +206,7 @@ describe(MlDestinationService.name, () => {
       });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
 
-      await bootWith(['http://immich-machine-learning:3003']);
+      await bootWith(['http://frameleaf-machine-learning:3003']);
       expect(mocks.mlDestination.update).toHaveBeenCalledWith(removed.id, { enabled: true });
 
       vi.clearAllMocks();
@@ -220,7 +220,7 @@ describe(MlDestinationService.name, () => {
         updatedAt: new Date(),
       });
 
-      await bootWith(['http://immich-machine-learning:3003']);
+      await bootWith(['http://frameleaf-machine-learning:3003']);
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
 

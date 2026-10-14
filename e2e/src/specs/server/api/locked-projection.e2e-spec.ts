@@ -242,7 +242,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       .expect(204);
     // a detection and an item from the old Locked folder, as the detector and the upgrade write them
     await utils.setAssetLock(detected.id, 'detected');
-    await utils.setAssetLock(legacy.id, 'immich-locked-folder');
+    await utils.setAssetLock(legacy.id, 'frameleaf-locked-folder');
 
     // FL-326: shared once every lock and rule is in place, so each copy is inserted as locked as its
     // source (the locks above are written directly, without the event that re-mirrors existing copies)

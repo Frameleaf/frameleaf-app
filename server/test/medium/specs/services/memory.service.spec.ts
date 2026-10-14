@@ -523,7 +523,7 @@ describe(MemoryService.name, () => {
       // an item moved from the old Locked folder, revealed like any other lock once unlocked
       await ctx.database
         .insertInto('asset_lock')
-        .values({ assetId: moved.id, reason: AssetLockReason.ImmichLockedFolder })
+        .values({ assetId: moved.id, reason: AssetLockReason.FrameleafLockedFolder })
         .execute();
 
       const ids = (memories: { id: string }[]) => memories.map(({ id }) => id).toSorted();

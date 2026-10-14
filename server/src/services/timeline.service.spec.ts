@@ -418,7 +418,7 @@ describe(TimelineService.name, () => {
       await expect(
         sut.getTimeBuckets(authStub.admin, {
           visibility: AssetVisibility.Locked,
-          lockReason: AssetLockReason.ImmichLockedFolder,
+          lockReason: AssetLockReason.FrameleafLockedFolder,
         }),
       ).rejects.toThrow();
       expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();

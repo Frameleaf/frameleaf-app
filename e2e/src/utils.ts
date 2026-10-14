@@ -82,7 +82,12 @@ import { loginDto, signupDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { ownedWait, settlePendingWaits } from 'src/harness-context.js';
 import { assertResetExecutionsStopped, drainAfterExecutorStop } from 'src/harness-reset-executions.mjs';
-import { resetLockSettings, resetWhilePaused, type QueuePauseSnapshot } from 'src/harness-reset.js';
+import {
+  resetLockSettings,
+  resetWhilePaused,
+  retryResetTransaction,
+  type QueuePauseSnapshot,
+} from 'src/harness-reset.js';
 import {
   EventJournal,
   pollRequest,
@@ -710,68 +715,69 @@ export const utils = {
       throw new Error('Invalid reset table name');
     }
     await utils.drainQueues(
-      async (db, context) => {
-        const timeout = Math.min(1000, context.remaining());
-        await db.query('BEGIN');
-        try {
-          const settings = resetLockSettings(timeout);
-          await db.query(settings.text, settings.values);
-          if (selected.includes('system_metadata')) {
-            // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
-            // stable server identity and future operational metadata survive ordinary test resets.
-            // MediaLocation must survive too: a restarted worker needs it to validate files created after reset.
-            await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [
-              [
-                'facial-recognition-state',
-                'memories-state',
-                'admin-onboarding',
-                'maintenance-mode',
-                'version-check-state',
-                'physical-deduplication-migration',
-                'frameleaf-cloud-link',
-                'frameleaf-service-discovery',
-                'frameleaf-ml-wallet',
-                'frameleaf-license',
-                'frameleaf-pricing',
-                'frameleaf-ml-suspension',
-                'frameleaf-cloud-backup',
-                'frameleaf-remote-access',
-                'frameleaf-remote-access-test',
-                'hardware-check',
-                'frameleaf-cloud-migration-notice',
-                'frameleaf-cloud-description-queue',
-                'frameleaf-cloud-description-estimates',
-                'frameleaf-cloud-ml-job-estimates',
-                'integrity-checksum-checkpoint',
-                'locked-detections-state',
-                'system-config-history',
-                'integrity-check-runs',
-                'backup-restore-verification',
-                'frameleaf-setup',
-              ],
-            ]);
-          }
-          const dataTables = selected.filter((table) => table !== 'system_metadata');
-          if (partial) {
-            for (const table of dataTables) {
-              context.remaining();
-              await db.query(`DELETE FROM "${table}"`);
-            }
-          } else if (dataTables.length > 0) {
-            context.remaining();
-            await db.query(`TRUNCATE ${dataTables.map((table) => `"${table}"`).join(', ')} CASCADE`);
-          }
-          context.remaining();
-          await db.query('COMMIT');
-        } catch (error) {
+      (db, context) =>
+        retryResetTransaction(context, async () => {
+          const timeout = Math.min(1000, context.remaining());
+          await db.query('BEGIN');
           try {
-            await db.query('ROLLBACK');
-          } catch (error_) {
-            throw new AggregateError([error, error_], 'Fixture reset and rollback failed', { cause: error_ });
+            const settings = resetLockSettings(timeout);
+            await db.query(settings.text, settings.values);
+            if (selected.includes('system_metadata')) {
+              // Delete fixture configuration only. Coordinator cursors, attempt/worker stopped proof,
+              // stable server identity and future operational metadata survive ordinary test resets.
+              // MediaLocation must survive too: a restarted worker needs it to validate files created after reset.
+              await db.query('DELETE FROM system_metadata WHERE key = ANY($1::text[])', [
+                [
+                  'facial-recognition-state',
+                  'memories-state',
+                  'admin-onboarding',
+                  'maintenance-mode',
+                  'version-check-state',
+                  'physical-deduplication-migration',
+                  'frameleaf-cloud-link',
+                  'frameleaf-service-discovery',
+                  'frameleaf-ml-wallet',
+                  'frameleaf-license',
+                  'frameleaf-pricing',
+                  'frameleaf-ml-suspension',
+                  'frameleaf-cloud-backup',
+                  'frameleaf-remote-access',
+                  'frameleaf-remote-access-test',
+                  'hardware-check',
+                  'frameleaf-cloud-migration-notice',
+                  'frameleaf-cloud-description-queue',
+                  'frameleaf-cloud-description-estimates',
+                  'frameleaf-cloud-ml-job-estimates',
+                  'integrity-checksum-checkpoint',
+                  'locked-detections-state',
+                  'system-config-history',
+                  'integrity-check-runs',
+                  'backup-restore-verification',
+                  'frameleaf-setup',
+                ],
+              ]);
+            }
+            const dataTables = selected.filter((table) => table !== 'system_metadata');
+            if (partial) {
+              for (const table of dataTables) {
+                context.remaining();
+                await db.query(`DELETE FROM "${table}"`);
+              }
+            } else if (dataTables.length > 0) {
+              context.remaining();
+              await db.query(`TRUNCATE ${dataTables.map((table) => `"${table}"`).join(', ')} CASCADE`);
+            }
+            context.remaining();
+            await db.query('COMMIT');
+          } catch (error) {
+            try {
+              await db.query('ROLLBACK');
+            } catch (error_) {
+              throw new AggregateError([error, error_], 'Fixture reset and rollback failed', { cause: error_ });
+            }
+            throw error;
           }
-          throw error;
-        }
-      },
+        }),
       signal,
       selected.includes('system_metadata'),
     );
@@ -1023,13 +1029,13 @@ export const utils = {
    * FL-195: a lock record as a sensitive-content detection or the upgrade from the old Locked folder
    * writes it, which no endpoint can create on demand.
    */
-  setAssetLock: async (assetId: string, reason: 'marked' | 'detected' | 'immich-locked-folder') => {
+  setAssetLock: async (assetId: string, reason: 'marked' | 'detected' | 'frameleaf-locked-folder') => {
     const db = await utils.connectDatabase();
 
     await db.query(
       `INSERT INTO asset_lock ("assetId", reason, "previousVisibility") VALUES ($1, $2, $3)
        ON CONFLICT ("assetId") DO UPDATE SET reason = excluded.reason, "previousVisibility" = excluded."previousVisibility"`,
-      [assetId, reason, reason === 'immich-locked-folder' ? 'locked' : null],
+      [assetId, reason, reason === 'frameleaf-locked-folder' ? 'locked' : null],
     );
   },
 

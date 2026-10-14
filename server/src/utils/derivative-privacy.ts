@@ -46,7 +46,7 @@ export type DerivativePrivacy = {
 const LOCK_REASON_STRENGTH: Readonly<Record<AssetLockReason, number>> = {
   [AssetLockReason.Detected]: 1,
   [AssetLockReason.Marked]: 2,
-  [AssetLockReason.ImmichLockedFolder]: 3,
+  [AssetLockReason.FrameleafLockedFolder]: 3,
 };
 
 export const strongestLockReason = (reasons: ReadonlyArray<AssetLockReason | null>): AssetLockReason | null => {

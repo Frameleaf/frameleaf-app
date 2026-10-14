@@ -21,15 +21,15 @@ test('Docker and NAS inference workers receive no server environment or private 
   const { load } = createRequire(path.resolve(__dirname, '../../server/package.json'))('js-yaml');
   for (const name of ['docker-compose.yml', 'docker-compose.prod.yml', 'docker-compose.rootless.yml']) {
     const compose = load(fs.readFileSync(path.resolve(__dirname, '../../docker', name), 'utf8'));
-    const ml = compose.services['immich-machine-learning'];
+    const ml = compose.services['frameleaf-machine-learning'];
     assert.deepEqual(ml.env_file, [{ path: '.env.ml', required: false }], name);
     assert(ml.volumes.every((mount) => mount.endsWith(':/cache')), name);
     assert.deepEqual(compose.services['frameleaf-server'].env_file, ['.env'], name);
   }
   // The development file uses Compose's !reset tag, so compare its ML service alone.
   const dev = fs.readFileSync(path.resolve(__dirname, '../../docker/docker-compose.dev.yml'), 'utf8');
-  const ml = load(dev.match(/^  immich-machine-learning:\n[\s\S]*?(?=^  \S|$(?![\s\S]))/m)[0]);
-  assert.deepEqual(ml['immich-machine-learning'].env_file, [{ path: '.env.ml', required: false }]);
+  const ml = load(dev.match(/^  frameleaf-machine-learning:\n[\s\S]*?(?=^  \S|$(?![\s\S]))/m)[0]);
+  assert.deepEqual(ml['frameleaf-machine-learning'].env_file, [{ path: '.env.ml', required: false }]);
   const template = fs.readFileSync(path.join(__dirname, 'unraid/frameleaf-ml.xml.in'), 'utf8');
   assert.doesNotMatch(template, /DB_PASSWORD|FRAMELEAF_IDENTITY_DIR|docker\.sock|Target="\/data"/);
   assert.match(template, /Target="\/cache"/);

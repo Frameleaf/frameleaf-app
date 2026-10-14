@@ -37,12 +37,12 @@ describe('unionDerivativePrivacy', () => {
       OWNER,
       [
         source({ lockReason: AssetLockReason.Detected }),
-        source({ assetId: 'b', lockReason: AssetLockReason.ImmichLockedFolder }),
+        source({ assetId: 'b', lockReason: AssetLockReason.FrameleafLockedFolder }),
         source({ assetId: 'c', lockReason: AssetLockReason.Marked }),
       ],
       { nsfwHiding: false },
     );
-    expect(privacy.lockReason).toBe(AssetLockReason.ImmichLockedFolder);
+    expect(privacy.lockReason).toBe(AssetLockReason.FrameleafLockedFolder);
   });
 
   it('makes the result sensitive when any source is, and locks it as detected only while detections are hidden', () => {
@@ -82,7 +82,7 @@ describe('satisfiesDerivativePrivacy', () => {
     const required = { lockReason: AssetLockReason.Marked, sensitive: true };
     expect(satisfiesDerivativePrivacy({ lockReason: AssetLockReason.Marked, sensitive: true }, required)).toBe(true);
     expect(
-      satisfiesDerivativePrivacy({ lockReason: AssetLockReason.ImmichLockedFolder, sensitive: true }, required),
+      satisfiesDerivativePrivacy({ lockReason: AssetLockReason.FrameleafLockedFolder, sensitive: true }, required),
     ).toBe(true);
     expect(satisfiesDerivativePrivacy({ lockReason: AssetLockReason.Detected, sensitive: true }, required)).toBe(false);
     expect(satisfiesDerivativePrivacy({ lockReason: null, sensitive: true }, required)).toBe(false);

@@ -31,6 +31,38 @@ beforeAll(async () => {
 });
 
 describe(CloudBackupIndexRepository.name, () => {
+  it('persists unknown expired receipts as pruned and never adopts them as retained again', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const expired = {
+      key: 'm/20261012T030000Z.json.gz',
+      createdAt: new Date('2026-10-12T03:00:00.000Z'),
+      databaseKey: null,
+      assetCount: 0,
+      fileCount: 0,
+      bytes: 0,
+    };
+    await expect(sut.adoptManifests(bucket, [expired], 'pruned')).resolves.toBe(1);
+    await expect(sut.getManifestKeys(bucket, [expired.key])).resolves.toEqual(new Set([expired.key]));
+    await expect(sut.getManifestKeys(bucket, [expired.key], 'pruned')).resolves.toEqual(new Set([expired.key]));
+    await expect(sut.listKeptManifests(bucket)).resolves.toEqual([]);
+    await expect(sut.adoptManifests(bucket, [expired])).resolves.toBe(0);
+    await sut.markManifests(bucket, [expired.key], 'degraded');
+    await expect(sut.listKeptManifests(bucket)).resolves.toEqual([]);
+  });
+
+  it('expires a signed snapshot whose index was left running without letting verification revive it', async () => {
+    const { sut } = setup();
+    const bucket = `https://s3.example.test/${randomUUID()}`;
+    const key = 'm/20261012T030000Z.json.gz';
+    await sut.createManifest({ bucket, key, operationId: randomUUID() });
+    await expect(sut.getManifestKeys(bucket, [key], 'pruned')).resolves.toEqual(new Set());
+    await expect(sut.markManifests(bucket, [key], 'pruned')).resolves.toBe(1);
+    await expect(sut.getManifestKeys(bucket, [key], 'pruned')).resolves.toEqual(new Set([key]));
+    await sut.markManifests(bucket, [key], 'degraded');
+    await expect(sut.listKeptManifests(bucket)).resolves.toEqual([]);
+  });
+
   it('installs feature tables in the real canonical baseline', async () => {
     await expectCanonicalTables(defaultDatabase, [
       'cloud_backup_object',

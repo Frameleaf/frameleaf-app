@@ -1,6 +1,11 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { AssetMediaStatusSchema } from 'src/dtos/asset-media-response.dto.js';
+import { DirectUploadDescriptionSchema } from 'src/utils/asset-upload-direct.js';
+
+export class AssetUploadDirectDescriptionDto extends createZodDto(
+  DirectUploadDescriptionSchema.meta({ id: 'AssetUploadDirectDescriptionDto' }),
+) {}
 
 export class AssetUploadResultDto extends createZodDto(
   z

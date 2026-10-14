@@ -34,7 +34,7 @@ const entry = (overrides: Partial<WorkerInventoryEntryDto> = {}): WorkerInventor
   name: 'This server',
   kind: MlDestinationKind.Local,
   role: MlWorkerRole.LibraryAnalysis,
-  url: 'http://immich-machine-learning:3003',
+  url: 'http://frameleaf-machine-learning:3003',
   configured: true,
   enabled: true,
   readiness: MlWorkerReadiness.ModelReady,
@@ -136,7 +136,7 @@ describe('the machine-learning URL list (prototype worker-settings rules)', () =
 
 describe('inventory sections (FL-72)', () => {
   const inventory = {
-    configuredUrls: ['http://immich-machine-learning:3003', 'http://second:3003'],
+    configuredUrls: ['http://frameleaf-machine-learning:3003', 'http://second:3003'],
     entries: [
       entry(),
       entry({ id: 'old', url: 'http://removed:3003', configured: false }),
@@ -170,7 +170,7 @@ describe('inventory sections (FL-72)', () => {
     const sections = inventorySections(inventory);
 
     expect(sections.endpoints.map(({ index, url, entry }) => [index, url, entry?.id ?? null])).toEqual([
-      [0, 'http://immich-machine-learning:3003', 'local'],
+      [0, 'http://frameleaf-machine-learning:3003', 'local'],
       [1, 'http://second:3003', null],
     ]);
     expect(sections.libraryWorkers.map(({ id }) => id)).toEqual(['old', 'lan', 'pod']);

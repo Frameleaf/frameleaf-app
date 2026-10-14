@@ -6,6 +6,7 @@ import {
   Delete,
   Get,
   Head,
+  HttpCode,
   Options,
   Param,
   Patch,
@@ -19,12 +20,14 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  AssetUploadDirectDescriptionDto,
   AssetUploadResultDto,
   LivePhotoUploadCommitDto,
   LivePhotoUploadResultDto,
 } from 'src/dtos/asset-upload-resource.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -32,7 +35,41 @@ import { UUIDParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.Assets)
 @Controller('assets/uploads')
 export class AssetUploadResourceController {
-  constructor(private service: AssetUploadResourceService) {}
+  constructor(
+    private service: AssetUploadResourceService,
+    private direct: AssetUploadDirectService,
+  ) {}
+
+  @Post(':id/direct')
+  @HttpCode(200)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiResponse({ status: 200, type: AssetUploadDirectDescriptionDto })
+  @ApiResponse({ status: 429, description: 'Direct peer capacity unavailable' })
+  @ApiResponse({ status: 503, description: 'Direct negotiation unavailable; native HTTPS resume is retained' })
+  @Endpoint({
+    summary: 'Negotiate a resource-scoped direct upload data channel',
+    description:
+      'Version 1 complete data-only offer/answer; native upload ownership, durable offsets and receipts remain authoritative.',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  async negotiateAssetUploadDirect(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AssetUploadDirectDescriptionDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.direct.negotiate(
+      auth,
+      id,
+      dto,
+      req.headers,
+      Object.fromEntries(
+        Object.entries(req.query).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      ),
+    );
+  }
 
   private requestHeaders(req: Request) {
     const single = new Set([

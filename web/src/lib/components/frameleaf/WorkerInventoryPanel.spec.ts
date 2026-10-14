@@ -26,7 +26,7 @@ const entry = (overrides: Partial<WorkerInventoryEntryDto> = {}): WorkerInventor
   name: 'This server',
   kind: MlDestinationKind.Local,
   role: MlWorkerRole.LibraryAnalysis,
-  url: 'http://immich-machine-learning:3003',
+  url: 'http://frameleaf-machine-learning:3003',
   configured: true,
   enabled: true,
   readiness: MlWorkerReadiness.Cpu,
@@ -113,13 +113,13 @@ const inventory = (overrides: Partial<WorkerInventoryResponseDto> = {}): WorkerI
   ],
   libraryBacklog: 13,
   machineLearningEnabled: true,
-  configuredUrls: ['http://immich-machine-learning:3003'],
+  configuredUrls: ['http://frameleaf-machine-learning:3003'],
   checkedAt: new Date().toISOString(),
   ...overrides,
 });
 
 const config = {
-  machineLearning: { enabled: true, urls: ['http://immich-machine-learning:3003'] },
+  machineLearning: { enabled: true, urls: ['http://frameleaf-machine-learning:3003'] },
 } as unknown as AdminConfigDto;
 
 describe('WorkerInventoryPanel (FL-72)', () => {
@@ -185,7 +185,7 @@ describe('WorkerInventoryPanel (FL-72)', () => {
       expect(sdkMock.updateConfig).toHaveBeenCalledWith({
         adminConfigDto: expect.objectContaining({
           machineLearning: expect.objectContaining({
-            urls: ['http://immich-machine-learning:3003', 'http://study:3003'],
+            urls: ['http://frameleaf-machine-learning:3003', 'http://study:3003'],
           }),
         }),
       }),
@@ -198,7 +198,7 @@ describe('WorkerInventoryPanel (FL-72)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Add endpoint' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add ML endpoint' });
     await fireEvent.input(within(dialog).getByLabelText('Endpoint URL'), {
-      target: { value: 'http://immich-machine-learning:3003' },
+      target: { value: 'http://frameleaf-machine-learning:3003' },
     });
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 

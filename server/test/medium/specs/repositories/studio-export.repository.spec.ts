@@ -1608,7 +1608,7 @@ describe(StudioExportRepository.name, () => {
       await expect(context.sut.getForOwner(id, user.id, locked)).resolves.toEqual(expect.objectContaining({ id }));
 
       // a lock written after the render, by a path that does not propagate it: judged at read time
-      await sql`INSERT INTO asset_lock ("assetId", reason) VALUES (${sources[0].id}::uuid, 'immich-locked-folder')`.execute(
+      await sql`INSERT INTO asset_lock ("assetId", reason) VALUES (${sources[0].id}::uuid, 'frameleaf-locked-folder')`.execute(
         defaultDatabase,
       );
       await expect(context.sut.getForOwner(id, user.id, locked)).resolves.toBeUndefined();

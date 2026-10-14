@@ -20,8 +20,8 @@
     "nest": "nest",
     "start:dev": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --watch --",
     "start:debug": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && nest start --debug 0.0.0.0:9230 --watch --",
-    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && eslint \"src/**/*.ts\" \"test/**/*.ts\" --max-warnings 0",
-    "lint:fix": "pnpm run lint --fix",
+    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && eslint \"src/**/*.ts\" --max-warnings 0 && eslint \"test/**/*.ts\" --max-warnings 0",
+    "lint:fix": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && eslint \"src/**/*.ts\" --max-warnings 0 --fix && eslint \"test/**/*.ts\" --max-warnings 0 --fix",
     "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && tsc --noEmit",
     "check:code": "pnpm run format && pnpm run lint && pnpm run check",
     "check:all": "pnpm run check:code && pnpm run test:cov",
@@ -118,6 +118,7 @@
     "ua-parser-js": "^2.0.0",
     "uuid": "^14.0.0",
     "validator": "^13.12.0",
+    "werift": "0.25.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

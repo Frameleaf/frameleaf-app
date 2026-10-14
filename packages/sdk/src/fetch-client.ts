@@ -4274,6 +4274,10 @@ export type LivePhotoUploadResultDto = {
     still: AssetUploadResultDto;
     video: AssetUploadResultDto;
 };
+export type AssetUploadDirectDescriptionDto = {
+    sdp: string;
+    version: number;
+};
 export type ExifResponseDto = {
     /** Bits per sample */
     bitsPerSample?: number | null;
@@ -14627,6 +14631,7 @@ export type TakeoutOptionsResponseDto = {
     dates: boolean;
     descriptions: boolean;
     favorites: boolean;
+    includeTrashed: boolean;
     locations: boolean;
     selectedAlbums?: string[];
     sidecarReview: boolean;
@@ -14712,11 +14717,13 @@ export type TakeoutOptionsDto = {
     descriptions?: boolean;
     /** Bring over favorites */
     favorites?: boolean;
+    /** Bring in photos that were in the Google Photos trash; otherwise they are skipped */
+    includeTrashed?: boolean;
     /** Bring over locations */
     locations?: boolean;
     /** Album folders to recreate; omitted means every folder that is not a year folder */
     selectedAlbums?: string[];
-    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
+    /** Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar */
     sidecarReview?: boolean;
     /** Fill metadata missing from photos already in the library; values already there are never replaced */
     updateMatchedMetadata?: boolean;
@@ -19463,6 +19470,26 @@ export function appendAssetUploadResource({ uploadComplete, uploadDraftInteropVe
     }));
 }
 /**
+ * Negotiate a resource-scoped direct upload data channel
+ */
+export function negotiateAssetUploadDirect({ id, assetUploadDirectDescriptionDto }: {
+    id: string;
+    assetUploadDirectDescriptionDto: AssetUploadDirectDescriptionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadDirectDescriptionDto;
+    } | {
+        status: 429;
+    } | {
+        status: 503;
+    }>(`/assets/uploads/${encodeURIComponent(id)}/direct`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetUploadDirectDescriptionDto
+    })));
+}
+/**
  * Recover a completed upload result
  */
 export function getAssetUploadResourceResult({ id }: {
@@ -20225,13 +20252,13 @@ export function endSession({ id, key, sessionId, slug }: {
 /**
  * Get HLS media playlist
  */
-export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xImmichHlsPos }: {
+export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xFrameleafHlsPos }: {
     id: string;
     key?: string;
     sessionId: string;
     slug?: string;
     variantIndex: number;
-    xImmichHlsPos?: number;
+    xFrameleafHlsPos?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -20242,21 +20269,21 @@ export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xImmi
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-immich-hls-pos": xImmichHlsPos
+            "x-frameleaf-hls-pos": xFrameleafHlsPos
         })
     }));
 }
 /**
  * Get HLS segment or init file
  */
-export function getSegment({ filename, id, key, sessionId, slug, variantIndex, xImmichHlsMsn }: {
+export function getSegment({ filename, id, key, sessionId, slug, variantIndex, xFrameleafHlsMsn }: {
     filename: string;
     id: string;
     key?: string;
     sessionId: string;
     slug?: string;
     variantIndex: number;
-    xImmichHlsMsn?: number;
+    xFrameleafHlsMsn?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -20267,7 +20294,7 @@ export function getSegment({ filename, id, key, sessionId, slug, variantIndex, x
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-immich-hls-msn": xImmichHlsMsn
+            "x-frameleaf-hls-msn": xFrameleafHlsMsn
         })
     }));
 }
@@ -28014,6 +28041,20 @@ export function resolveTakeoutItem({ id, itemId, takeoutResolveDto }: {
     })));
 }
 /**
+ * Preview a photo waiting in a Google Photos import
+ */
+export function getTakeoutItemPreview({ id, itemId }: {
+    id: string;
+    itemId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/takeout/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/preview`, {
+        ...opts
+    }));
+}
+/**
  * List possible Live Photos in a Google Photos import
  */
 export function getTakeoutPairs({ id, limit, offset, state }: {
@@ -28074,7 +28115,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28127,7 +28168,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28180,7 +28221,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28235,7 +28276,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, da
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -32560,7 +32601,7 @@ export enum TimeBucketDateType {
 export enum AssetLockReason {
     Marked = "marked",
     Detected = "detected",
-    ImmichLockedFolder = "immich-locked-folder"
+    FrameleafLockedFolder = "frameleaf-locked-folder"
 }
 export enum AssetOrderBy {
     TakenAt = "takenAt",

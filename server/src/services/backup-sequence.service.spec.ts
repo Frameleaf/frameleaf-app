@@ -159,6 +159,32 @@ describe('the one backup schedule (FL-362)', () => {
       expect(stored.state?.run).toMatchObject({ place: 'cloud', results: { local: 'done', buddy: 'failed' } });
     });
 
+    it.each(['buddy', 'cloud'] as const)(
+      'keeps waiting when the running %s backup status is unreadable',
+      async (place) => {
+        const { sut, mocks, order, stored, buddy, cloud } = setup();
+        await sut.handleStart();
+        if (place === 'cloud') {
+          buddy.busy = false;
+          await sut.move();
+        }
+        const before = structuredClone(stored.state);
+        const status = place === 'buddy' ? mocks.buddyBackup.sequenceStatus : mocks.cloudBackup.sequenceStatus;
+        status.mockRejectedValueOnce(new Error('Backup status unavailable'));
+
+        await expect(sut.move()).rejects.toThrow('Backup status unavailable');
+        expect(stored.state).toEqual(before);
+        expect(order).toEqual(place === 'buddy' ? ['local', 'buddy'] : ['local', 'buddy', 'cloud']);
+
+        // A later successful read resumes the same run without starting the backup again.
+        buddy.busy = false;
+        cloud.busy = false;
+        await sut.move();
+        expect(order).toEqual(['local', 'buddy', 'cloud']);
+        expect(stored.state?.run?.place ?? null).toBe(place === 'buddy' ? 'cloud' : null);
+      },
+    );
+
     it('still backs up the others when the library data copy fails', async () => {
       const { sut, mocks, order, stored } = setup();
       mocks.databaseBackup.handleBackupDatabase.mockRejectedValue(new Error('disk full'));

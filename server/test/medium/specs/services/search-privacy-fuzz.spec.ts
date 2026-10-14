@@ -138,7 +138,7 @@ const library = async (ctx: Context) => {
   const trashed = await add(owner.id, 'trashed', { deletedAt: new Date() });
   const marked = await add(owner.id, 'marked', {}, AssetLockReason.Marked);
   const detected = await add(owner.id, 'detected', {}, AssetLockReason.Detected);
-  const folder = await add(owner.id, 'folder', {}, AssetLockReason.ImmichLockedFolder);
+  const folder = await add(owner.id, 'folder', {}, AssetLockReason.FrameleafLockedFolder);
   const motion = await add(owner.id, 'motion', { type: AssetType.Video, visibility: AssetVisibility.Hidden });
   const still = await add(owner.id, 'still', { livePhotoVideoId: motion });
   const lockedMotion = await add(owner.id, 'lockedmotion', {
