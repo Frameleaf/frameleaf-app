@@ -8,13 +8,19 @@
     let active = true;
     void getManagerAccess()
       .then((value) => {
-        if (active) url = value.url;
+        if (active) {
+          url = value.url;
+        }
       })
       .catch(() => {
-        if (active) url = null;
+        if (active) {
+          url = null;
+        }
       })
       .finally(() => {
-        if (active) checked = true;
+        if (active) {
+          checked = true;
+        }
       });
     return () => {
       active = false;
