@@ -960,8 +960,8 @@ test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
   assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=frameleaf$/m);
   const workflow = load(read(".github/workflows/postgres.yml"));
   assert.deepEqual(workflow.jobs.build.strategy.matrix.runner, [
-    "ubuntu-24.04",
-    "ubuntu-24.04-arm",
+    "nscloud-ubuntu-24.04-amd64-8x16",
+    "nscloud-ubuntu-24.04-arm64-8x16",
   ]);
   const probe = workflow.jobs.build.steps.find(
     (step) => step.name === "Verify PostgreSQL and extension versions",

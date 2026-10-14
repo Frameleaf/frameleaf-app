@@ -217,7 +217,10 @@ function validateBuildInput(env) {
   return spec.platforms.map((platform) => ({
     platform,
     architecture: platform.split("/")[1],
-    runner: platform === "linux/amd64" ? "ubuntu-24.04" : "ubuntu-24.04-arm",
+    runner:
+      platform === "linux/amd64"
+        ? "nscloud-ubuntu-24.04-amd64-8x16"
+        : "nscloud-ubuntu-24.04-arm64-8x16",
   }));
 }
 function validateIndex(index, spec, sha) {
