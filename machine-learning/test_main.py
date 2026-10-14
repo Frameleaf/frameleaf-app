@@ -329,6 +329,17 @@ class TestImageDescriptionModel:
 
         assert model.hf_model_name == "microsoft/Phi-3.5-vision-instruct"
 
+    def test_fails_before_downloading_when_openvino_genai_is_missing(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("immich_ml.models.image_description.find_spec", lambda _: None)
+        download = mock.Mock()
+        monkeypatch.setattr("immich_ml.models.image_description.snapshot_download", download)
+
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino")
+
+        with pytest.raises(ImportError, match="openvino-genai"):
+            model._download()
+        download.assert_not_called()
+
     def test_auto_uses_cuda_backend_when_available(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setattr(ImageDescriptionModel, "_cuda_available", lambda _: True)
 

@@ -222,7 +222,7 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('describeImage', () => {
-    it('does not retry the Florence fallback model unless CUDA acceleration is selected', async () => {
+    it('does not retry the Florence fallback model when OpenVINO acceleration is selected', async () => {
       const fetch = vi.fn().mockResolvedValue(new Response('error', { status: 500, statusText: 'Internal Error' }));
       vi.stubGlobal('fetch', fetch);
 
@@ -239,6 +239,26 @@ describe(MachineLearningRepository.name, () => {
       const formData = fetch.mock.calls[0][1].body as FormData;
       const entries = JSON.parse(String(formData.get('entries')));
       expect(entries[ModelTask.IMAGE_DESCRIPTION][ModelType.VISUAL].modelName).toBe(qwenModelName);
+    });
+
+    it('retries the Florence fallback model with automatic acceleration (CPU-only worker)', async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('error', { status: 500, statusText: 'Internal Error' }))
+        .mockResolvedValueOnce(jsonResponse(description));
+      vi.stubGlobal('fetch', fetch);
+
+      const result = await sut.describeImage(selection(MlDestinationKind.Local, localUrl), imagePath, {
+        modelName: qwenModelName,
+        fallbackModelName: florenceModelName,
+        acceleration: MachineLearningHardwareAcceleration.Auto,
+        device: 'AUTO',
+      });
+
+      expect(result.description).toBe('A beach scene.');
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const retry = JSON.parse(String((fetch.mock.calls[1][1].body as FormData).get('entries')));
+      expect(retry[ModelTask.IMAGE_DESCRIPTION][ModelType.VISUAL].modelName).toBe(florenceModelName);
     });
 
     it('retries the fallback model on the same local destination with CUDA acceleration', async () => {
