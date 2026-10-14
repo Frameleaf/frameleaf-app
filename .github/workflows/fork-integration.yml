@@ -45,6 +45,7 @@ jobs:
           node .github/check-jira.cjs
           node scripts/frameleaf-distribution-gates.mjs
           node --test docker/frameleaf-delivery.test.mjs
+          node --test server/base-image/native-runtime-packages.test.mjs
           node --test \
             .github/native-raw.test.cjs \
             .github/frameleaf-release.test.cjs \

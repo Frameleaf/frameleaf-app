@@ -187,7 +187,8 @@ COPY --from=base-server-darktable /usr/local/bin/darktable /usr/local/bin/darkta
 COPY --from=base-server-darktable /usr/local/share/ /usr/local/share/
 COPY server/base-image/verify-darktable.mjs server/base-image/verify-darktable-develop.mjs /build/
 COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
-RUN apt-update-strict && xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt
+# Cached build versions are ABI minimums; retain newer installed security updates.
+RUN apt-update-strict && test -s /build/darktable-runtime-packages.txt && sed -E 's/^([^=]+)=(.+)$/"\1 (>= \2)"/' /build/darktable-runtime-packages.txt > /tmp/darktable-runtime-dependencies.txt && xargs -r apt-get satisfy --no-install-recommends -yqq < /tmp/darktable-runtime-dependencies.txt && rm /tmp/darktable-runtime-dependencies.txt
 
 ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
 
@@ -271,7 +272,7 @@ RUN . /etc/os-release && \
   libwebpmux3 \
   libhwy1t64 \
   libaom3 && \
-  xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt && \
+  test -s /build/darktable-runtime-packages.txt && sed -E 's/^([^=]+)=(.+)$/"\1 (>= \2)"/' /build/darktable-runtime-packages.txt > /tmp/darktable-runtime-dependencies.txt && xargs -r apt-get satisfy --no-install-recommends -yqq < /tmp/darktable-runtime-dependencies.txt && rm /tmp/darktable-runtime-dependencies.txt && \
   ./ffmpeg.sh && \
   if [ $(arch) = "x86_64" ]; then \
   # Old driver
