@@ -45,6 +45,9 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: Manager (${{ matrix.architecture }})
     if: github.repository == 'Frameleaf/frameleaf-app'
+    # GitHub-hosted: Namespace Docker 29.3.0-namespace ignores read-only on the
+    # /proc/1/mountinfo bind mount, which Manager's host-mount check requires.
+    # Move back to Namespace once it honours read-only binds (FL-24).
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     strategy:
@@ -65,6 +68,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Install independent Manager dependencies
         run: npm ci --prefix manager --ignore-scripts
+      - name: Install filesystem metadata tools for copy verification
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends acl attr
       - name: Types and Svelte
         run: npm run check --prefix manager
       - name: Security, ownership, recovery and policy tests
@@ -195,7 +200,7 @@ jobs:
     needs: manager
     environment: production
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/frameleaf-manager-release') }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 45
     permissions:
       contents: write

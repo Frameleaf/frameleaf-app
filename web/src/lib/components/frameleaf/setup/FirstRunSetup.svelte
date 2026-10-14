@@ -283,8 +283,11 @@
   });
 
   let firstStep = true;
+  // A derived number, not `setup.step`: every keystroke replaces `setup`, which would re-run this
+  // effect and pull focus to the heading mid-typing.
+  const stepIndex = $derived(setup.step);
   $effect(() => {
-    void setup.step;
+    void stepIndex;
     void accountPart;
     errors = {};
     formError = '';

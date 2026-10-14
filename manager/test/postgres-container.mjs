@@ -98,6 +98,26 @@ try {
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
+  const hostMount = JSON.parse(docker('inspect', names.manager))[0].Mounts.find(
+    (mount) => mount.Destination === '/run/frameleaf-host/mountinfo',
+  );
+  const kernelMountOptions = evaluate(
+    `import {readFile} from 'node:fs/promises'; const entry=(await readFile('/proc/self/mountinfo','utf8')).split(String.fromCharCode(10)).find(line=>line.split(' ')[4]==='/run/frameleaf-host/mountinfo'); process.stdout.write(entry?.split(' ')[5] ?? 'missing');`,
+  );
+  // Report only this public kernel-file bind, never container environment or operator mounts.
+  console.log(JSON.stringify({
+    hostMountInformation: hostMount && {
+      type: hostMount.Type,
+      source: hostMount.Source,
+      target: hostMount.Destination,
+      readOnly: !hostMount.RW,
+      kernelMountOptions,
+    },
+  }));
+  assert.equal(hostMount?.Type, 'bind', 'Manager requires bind-mounted host mount evidence');
+  assert.equal(hostMount.Source, '/proc/1/mountinfo');
+  assert.equal(hostMount.RW, false, 'Runner Docker must preserve the requested read-only host bind');
+  assert.ok(kernelMountOptions.split(',').includes('ro'), 'Kernel must enforce read-only host mount evidence');
   const first = evaluate(
     storage + `process.stdout.write(await storage.allocate(${JSON.stringify(root)}, '${firstId}', 1));`,
   );

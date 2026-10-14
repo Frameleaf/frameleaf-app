@@ -10,10 +10,12 @@ import {
   LibrarySetupStatusDto,
   WarmLibrarySetupDto,
 } from 'src/dtos/frameleaf-library-setup.dto.js';
+import { ManagerAccessDto } from 'src/dtos/frameleaf-manager-access.dto.js';
 import { ApiTag, Permission, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { SyncService } from 'src/services/sync.service.js';
+import { managerAccessUrl } from 'src/utils/frameleaf-manager-access.js';
 
 const history = new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
 
@@ -58,6 +60,12 @@ export const LIBRARY_SETUP_SYNC_TYPES = [
 @ApiTags(ApiTag.Server)
 @Controller('server/library-setup')
 export class FrameleafLibrarySetupController {
+  @Get('manager-access')
+  @Authenticated({ admin: true })
+  @Endpoint({ operationId: 'getManagerAccess', summary: 'Configured Frameleaf Manager link for Storage', history })
+  managerAccess(): ManagerAccessDto {
+    return { url: managerAccessUrl() };
+  }
   constructor(
     private setup: FrameleafLibrarySetupService,
     private sync: SyncService,

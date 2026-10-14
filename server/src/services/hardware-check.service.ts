@@ -4,6 +4,7 @@ import { HardwareCheck, HardwareCheckResponseDto } from 'src/dtos/hardware-check
 import { MlDestinationKind, MlWorkerRole, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   ContainerTest,
   MlContainerReport,
@@ -150,14 +151,21 @@ export class HardwareCheckService extends BaseService {
       this.renderWorkerRepository.listWorkers(),
       this.renderWorkerRepository.listLiveSessions(),
     ]);
+    const evaluated = await Promise.all(
+      sessions.map(async (entry) => ({
+        ...entry,
+        budget: evaluateApprovedRenderSession({
+          ...entry,
+          capabilities: await this.renderWorkerRepository.getSessionCapabilities(entry.session.id),
+          now: new Date(),
+        }),
+      })),
+    );
     const render = renderWorkers
       .filter((worker) => worker.status === RenderWorkerStatus.Active)
       .map((worker) => {
-        const live = sessions
-          .filter((entry) => entry.worker.id === worker.id)
-          .map((entry) => entry.session)
-          .toSorted((a, b) => Number(b.gpuMemoryBytes ?? 0) - Number(a.gpuMemoryBytes ?? 0));
-        return renderWorkerCheckFrom(worker, live[0] ?? null);
+        const qualified = evaluated.find((entry) => entry.worker.id === worker.id && entry.budget.valid);
+        return renderWorkerCheckFrom(worker, qualified?.budget.valid ? qualified.budget : null);
       });
     const restoration = await Promise.all(
       this.restorationDestinations(destinations).map(async (row) =>

@@ -11,7 +11,7 @@ permissions:
 jobs:
   installation:
     if: github.repository == 'Frameleaf/frameleaf-app'
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     steps:
       - name: Find the version-matched installation bundle
         run: |
