@@ -158,6 +158,11 @@ class Api {
         health: c.State.Health?.Status ?? 'unknown',
       })),
       storageRoots: (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').filter(Boolean),
+      retainedMedia: store
+        .history()
+        .filter((o) => o.kind === 'move-library')
+        .map((o) => store.get(`retained-media:${o.id}`))
+        .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
       appUrl: installation ? new URL(`http://${new URL(origin!).hostname}:${installation.port}`).origin : null,
@@ -268,6 +273,22 @@ class Api {
       .strict()
       .parse(input);
     return operations.reviewRestore(snapshot, databaseRoot);
+  }
+  @Post('review-move') reviewMove(@Body() input: unknown) {
+    const { root } = z
+      .object({ root: z.string().min(1).max(4096) })
+      .strict()
+      .parse(input);
+    return operations.reviewMove(root);
+  }
+  @Post('move-library') moveLibrary(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.move(id, key).id };
+  }
+  @Post('stop-move') async stopMove(@Body() input: unknown) {
+    const { id } = z.object({ id: z.string().uuid() }).strict().parse(input);
+    await operations.stopMove(id);
+    return { requested: true };
   }
   @Post('restore') restore(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);

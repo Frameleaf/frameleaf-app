@@ -31,6 +31,46 @@ Manager creates a dedicated read-only database role on the stopped source, with 
 
 Verified offline import prepares a durable regeneration run for metadata, thumbnails, search and face data, including person thumbnails. The first Manager setup releases it once the photo application has an administrator and its processing settings are ready. Manager shows progress and work that needs attention while processing continues in the background. Finishing setup does not mark regeneration complete. Restarts reuse the same run and saved progress rather than creating another run; failed or cancelled work is not automatically retried. Standalone CLI imports do not wait for Manager setup.
 
+## Moving media to another drive
+
+Starting a move is currently refused: the server has no accepted write-fence and
+lease-drain contract. The review can check a destination, but its Move button is
+unavailable. The journalled copy/recovery flow below is guarded source work, not
+an enabled or physically qualified release.
+
+Under **Storage**, choose **Move photos to a bigger drive**, select an explicitly
+mounted destination and check it before starting. Manager supports one writable
+bind-mounted media folder; named volumes, external/read-only mappings, symlinks,
+hard links, special files and nested filesystems require a separate move plan.
+PostgreSQL, Manager state and database backups remain in their original locations.
+
+Manager stops and fences managed writers, saves a verified database recovery point,
+copies into a new folder and independently compares the complete file inventory,
+SHA-256 checksums, POSIX metadata, ACLs and extended attributes. Its isolated copy helper uses the exact local
+Manager image with no network access. The reviewed host mount identities and actual
+application bind mapping must still match before the library is made available.
+Failures retain the operation lock, original files and any partial destination.
+
+**Stop safely** requests cancellation before the new stack is started. When the
+helper has exited, **Cancel safely** returns to the original mapping. Interrupted
+operations can resume their durable steps. A folder created without a completed
+ownership receipt is retained and refused; cancel and start a fresh move instead
+of adopting or deleting it.
+
+The original copy is retained after a successful move and shown under Storage.
+Once the new stack may have accepted writes, returning to the old copy is refused:
+use another verified move or a complete restore. Manager never deletes the old
+copy automatically. Keep an independent media backup: Manager's database recovery
+point contains no photos or videos. Moving to a different server remains a complete
+backup/restore operation, not a database-only restore described as a library move.
+
+The app's Storage page opens the deployment-configured HTTPS Manager origin and
+requires a separate Manager sign-in. A standalone server keeps the advanced
+migration checklist. Existing installations acquire the link when their Compose
+configuration is regenerated with the updated Manager. Configuration alone does
+not prove Manager is reachable. Real NAS disk/ACL and installed-release qualification
+is required before treating this source feature as an accepted deployment.
+
 ## Backup scope
 
 Manager backs up the database and recovery configuration, including required secrets, in an encrypted Restic repository. It does **not** back up photos, videos or external libraries. Import reuses a verified Immich database recovery backup no more than 24 hours old and skips creating another recovery backup. Import still takes a current logical dump after Immich's writers stop. The frozen reader then imports the stopped source into the fresh canonical database; an older recovery backup is never used as the live import database.

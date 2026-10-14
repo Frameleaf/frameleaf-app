@@ -85,7 +85,7 @@ const dashboard = {
     processors: 8,
   },
   backupRoot: '/fixture/backup',
-  storageRoots: ['/fixture/media'],
+  storageRoots: ['/fixture/media', '/fixture/new-drive'],
   databaseStorage: { suggestedPath: '/fixture/appdata', roots: ['/fixture/appdata'] },
   installation,
   operations: [],
@@ -133,7 +133,29 @@ await page.route('**/manager-api/**', async (route) => {
       },
     ];
   else if (path === 'logs') value = { logs: 'Application ready\npassword=[redacted]' };
-  else if (path === 'review-update')
+  else if (path === 'review-move')
+    value = { available: true, id: '019aa111-1111-7111-8111-111111111111', root: body.root, files: 2, bytes: 4096 };
+  else if (path === 'move-library') {
+    dashboard.operations = [
+      {
+        id: 'move-operation',
+        kind: 'move-library',
+        state: 'running',
+        step: 'move-copy',
+        completed: ['move-stop-writers', 'move-checkpoint', 'move-fence-stack', 'move-freeze'],
+        error: null,
+        canStop: true,
+        canCancel: false,
+      },
+    ];
+    value = { id: 'move-operation' };
+  } else if (path === 'stop-move') {
+    dashboard.operations[0].state = 'failed';
+    dashboard.operations[0].error = 'media_move_cancelled';
+    dashboard.operations[0].canCancel = true;
+    dashboard.operations[0].canStop = false;
+    value = { requested: true };
+  } else if (path === 'review-update')
     value = { id: 'update-review', from: installation.release, to: body.tag, recovery: 'Database only' };
   else if (path === 'review-restore')
     value = {
@@ -253,6 +275,21 @@ try {
     await nav('Storage');
     assert.equal(await page.getByRole('progressbar').count(), 1);
     await screenshot('storage');
+  });
+  await check('library move requires review and backup acknowledgement, then stops safely', async () => {
+    await page.getByLabel('New drive', { exact: true }).selectOption('/fixture/new-drive');
+    await mainButton('Check this drive').click();
+    await page.getByText('2 files', { exact: false }).waitFor();
+    assert.equal(await mainButton('Move the library').isDisabled(), true);
+    await page.getByRole('checkbox', { name: /I have a separate backup/ }).check();
+    await mainButton('Move the library').click();
+    await mainButton('Stop safely').waitFor();
+    assert.equal(requests.findLast((r) => r.path === 'review-move').body.root, '/fixture/new-drive');
+    await mainButton('Stop safely').click();
+    await mainButton('Cancel safely').waitFor();
+    assert.ok(requests.some((r) => r.path === 'stop-move'));
+    dashboard.operations = [];
+    await refresh();
   });
   await check('backups, protected downloads and installed restore review', async () => {
     await nav('Backups');

@@ -8,7 +8,7 @@ import en from '../../../../../../i18n/en.json';
 /**
  * FL-75: Settings → Storage & originals → "Move or export your library" opens the template's
  * "Plan a library move" workflow (Source, Preflight, Review). It shows the command-line steps
- * and opens the audit report read-only. No request is made and no key is typed into the page.
+ * and opens the audit report read-only. Only Manager link discovery runs; no write or key entry occurs.
  */
 
 const admin = en.admin;
@@ -41,8 +41,16 @@ const toReview = async () => {
 
 beforeEach(() => {
   addMessages('dev', en);
-  vi.spyOn(globalThis, 'fetch');
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ url: null }));
 });
+
+const expectOnlyManagerDiscovery = () => {
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const [url, options] = vi.mocked(fetch).mock.calls[0];
+  expect(url).toBe('/api/server/library-setup/manager-access');
+  expect(options?.method ?? 'GET').toBe('GET');
+  expect(options?.body).toBeUndefined();
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -78,7 +86,7 @@ describe('MigrationSettingsSection', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent(admin.frameleaf_migration_checklist_final);
-    expect(fetch).not.toHaveBeenCalled();
+    expectOnlyManagerDiscovery();
   });
 
   it('keeps API keys in the terminal, never in the page', async () => {
@@ -106,7 +114,7 @@ describe('MigrationSettingsSection', () => {
 
     await fireEvent.click(within(report).getByRole('button', { name: /Albums/ }));
     expect(within(report).queryByText('Lake morning.jpg')).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
+    expectOnlyManagerDiscovery();
   });
 
   it('shows a pass for a clean report', async () => {

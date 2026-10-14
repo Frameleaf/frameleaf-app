@@ -38104,6 +38104,51 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/server/library-setup/manager-access": {
+      "get": {
+        "operationId": "getManagerAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagerAccessDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Configured Frameleaf Manager link for Storage",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/library-setup/sync": {
       "post": {
         "operationId": "syncLibrarySetup",
@@ -80841,6 +80886,20 @@
           "usage",
           "usagePhysical",
           "videos"
+        ],
+        "type": "object"
+      },
+      "ManagerAccessDto": {
+        "properties": {
+          "url": {
+            "description": "Deployment-configured HTTPS Manager origin, or null when unavailable. Requires separate Manager sign-in; configuration is not a reachability check.",
+            "format": "uri",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
         ],
         "type": "object"
       },
