@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Transaction } from 'kysely';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -20,10 +22,18 @@ import {
   TakeoutSourceResponseDto,
   TakeoutVerifyChunkDto,
 } from 'src/dtos/takeout.dto.js';
-import { MediaOperationDestination, MediaOperationKind, Permission } from 'src/enum.js';
+import {
+  CacheControl,
+  Colorspace,
+  ImageFormat,
+  MediaOperationDestination,
+  MediaOperationKind,
+  Permission,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import {
   TAKEOUT_STAGING_RESERVE_BYTES,
   TakeoutStagingError,
@@ -41,6 +51,7 @@ import {
 import { DB } from 'src/schema/index.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { checkAccess } from 'src/utils/access.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import {
   TAKEOUT_BUSY_STATES,
@@ -106,6 +117,7 @@ export class TakeoutService {
     private mediaOperations: MediaOperationService,
     private access: AccessRepository,
     private config: ConfigRepository,
+    private media: MediaRepository,
   ) {
     this.logger.setContext(TakeoutService.name);
   }
@@ -456,6 +468,40 @@ export class TakeoutService {
       }),
     );
     return this.get(auth, id);
+  }
+
+  /**
+   * A small preview of a photo still waiting to be imported, made from its staged file, so the owner
+   * can see which photo they are choosing details for. Only photos not yet in the library have one;
+   * Locked items need an unlocked session, as everywhere else in the import.
+   */
+  async preview(auth: AuthDto, id: string, itemId: string): Promise<ImmichFileResponse> {
+    this.requireSession(auth);
+    await this.findOwned(auth, id);
+    const item = await this.repository.getItem(id, itemId);
+    if (!item || item.kind !== 'image' || item.assetId || (item.withheld && !getLockedOwnerId(auth))) {
+      throw new NotFoundException('No preview for this item');
+    }
+    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-takeout-preview-'));
+    const release = () => void rm(directory, { recursive: true, force: true });
+    try {
+      const output = path.join(directory, 'preview.webp');
+      await this.media.generateThumbnail(
+        item.path,
+        { format: ImageFormat.Webp, quality: 80, size: 320, colorspace: Colorspace.Srgb, processInvalidImages: false },
+        output,
+      );
+      return new ImmichFileResponse({
+        path: output,
+        contentType: 'image/webp',
+        cacheControl: CacheControl.PrivateWithCache,
+        release,
+      });
+    } catch (error) {
+      release();
+      this.logger.warn(`No preview for Google Photos import item ${itemId}: ${error}`);
+      throw new NotFoundException('No preview for this item');
+    }
   }
 
   async pairs(auth: AuthDto, id: string, query: TakeoutPairQueryDto): Promise<TakeoutPairsResponseDto> {

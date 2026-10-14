@@ -11634,7 +11634,7 @@
   "frameleaf_takeout_title": "Import from Google Photos",
   "frameleaf_takeout_try_again": "Try again",
   "frameleaf_takeout_unclear_body": "Google sent two sets of details for these. Choose the right one for any you know; the rest get the most likely details.",
-  "frameleaf_takeout_unclear_heading": "{done} photos are in. {count, plural, one {# needs a look} other {# need a look}}.",
+  "frameleaf_takeout_unclear_heading": "{done, plural, =0 {} one {# photo is in.} other {# photos are in.}} {count, plural, one {# photo needs a look} other {# photos need a look}}.",
   "frameleaf_takeout_unclear_more": "And {count, plural, one {# more} other {# more}}.",
   "frameleaf_takeout_unclear_title": "Let me choose for {count, plural, one {# photo} other {# photos}} with two sets of details",
   "frameleaf_takeout_upload_done": "Archives uploaded",

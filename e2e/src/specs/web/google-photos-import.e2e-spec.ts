@@ -166,6 +166,10 @@ test.describe('Google Photos import (FL-144)', () => {
     await dialog.getByRole('button', { name: 'Import 1 photo' }).click();
     await waitForState(auth, takeout.id, 'completed', 60_000);
 
+    // The photo itself is shown, made small by the server from the staged file.
+    const preview = dialog.locator('legend img');
+    await expect(preview).toHaveAttribute('src', `/api/takeout/${takeout.id}/items/${item.id}/preview`);
+    await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
     await dialog.getByRole('radio', { name: /Chosen description/ }).check();
     await dialog.getByRole('button', { name: 'Add 1 photo' }).click();
     await expect

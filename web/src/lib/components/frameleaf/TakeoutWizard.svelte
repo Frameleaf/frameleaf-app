@@ -41,6 +41,7 @@
     createTakeoutImport,
     deleteTakeoutImport,
     getTakeoutImport,
+    getBaseUrl,
     getTakeoutItems,
     getTakeoutPairs,
     getTakeoutRoots,
@@ -59,7 +60,7 @@
     type TakeoutRootDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCheck } from '@mdi/js';
+  import { mdiCheck, mdiImageOffOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -121,6 +122,7 @@
   // Photos to check, and what did not make it
   let unclear = $state<TakeoutItemResponseDto[]>([]);
   let choices = $state<Record<string, string>>({});
+  let noPreview = $state<Record<string, boolean>>({});
   let failed = $state<TakeoutItemResponseDto[]>([]);
   let cancelOpen = $state(false);
 
@@ -463,6 +465,10 @@
         : $t('frameleaf_takeout_candidate_place'),
     ].join(' · ');
 
+  /** The staged photo, made small by the server; the browser's sign-in cookie authorises it. */
+  const previewUrl = (item: TakeoutItemResponseDto) =>
+    `${getBaseUrl()}/takeout/${current?.id}/items/${item.id}/preview`;
+
   const importTone = (state: TakeoutState) => {
     if (state === TakeoutState.Failed) {
       return 'danger';
@@ -750,14 +756,21 @@
     <div class="note-box warn" role="status">
       <strong>
         {$t('frameleaf_takeout_unclear_heading', {
-          values: { done: counts(current.counts.imported + current.counts.matched), count: current.counts.review },
+          values: { done: current.counts.imported + current.counts.matched, count: current.counts.review },
         })}
       </strong>
       <p>{$t('frameleaf_takeout_unclear_body')}</p>
     </div>
     {#each unclear as item (item.id)}
       <fieldset class="unclear">
-        <legend>{item.path}</legend>
+        <legend>
+          {#if noPreview[item.id]}
+            <span class="preview none" aria-hidden="true"><Icon icon={mdiImageOffOutline} size="24" /></span>
+          {:else}
+            <img class="preview" src={previewUrl(item)} alt="" onerror={() => (noPreview[item.id] = true)} />
+          {/if}
+          <span class="name">{item.path}</span>
+        </legend>
         {#each item.candidates as candidate (candidate.id)}
           <label class="candidate" class:on={choices[item.id] === candidate.id}>
             <input type="radio" name={item.id} value={candidate.id} bind:group={choices[item.id]} />
@@ -1093,9 +1106,23 @@
     border: 0;
   }
   .unclear legend {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     margin-bottom: 0.5rem;
-    font-weight: 600;
-    overflow-wrap: anywhere;
+  }
+  .preview {
+    flex: none;
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: var(--fl-radius-control);
+    object-fit: cover;
+    background: var(--fl-raised);
+  }
+  .preview.none {
+    display: grid;
+    place-items: center;
+    color: var(--fl-muted);
   }
   .candidate {
     display: flex;

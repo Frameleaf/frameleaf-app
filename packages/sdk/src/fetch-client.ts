@@ -27894,6 +27894,20 @@ export function resolveTakeoutItem({ id, itemId, takeoutResolveDto }: {
     })));
 }
 /**
+ * Preview a photo waiting in a Google Photos import
+ */
+export function getTakeoutItemPreview({ id, itemId }: {
+    id: string;
+    itemId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/takeout/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/preview`, {
+        ...opts
+    }));
+}
+/**
  * List possible Live Photos in a Google Photos import
  */
 export function getTakeoutPairs({ id, limit, offset, state }: {
