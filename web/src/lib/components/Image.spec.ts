@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import Image from '$lib/components/Image.svelte';
 import { cancelImageUrl } from '$lib/utils/sw-messaging';
 
@@ -10,6 +10,15 @@ describe('Image component', () => {
   beforeEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    cleanup();
+    if (vi.isFakeTimers()) {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it('renders an img element when src is provided', () => {
@@ -110,5 +119,75 @@ describe('Image component', () => {
     const img = baseElement.querySelector('img')!;
     expect(img.getAttribute('alt')).toBe('test alt');
     expect(img.getAttribute('draggable')).toBe('false');
+  });
+
+  it('replaces the image and restarts when the source changes', async () => {
+    const onStart = vi.fn();
+    const { baseElement, rerender } = render(Image, { src: '/first.jpg', onStart });
+    const first = baseElement.querySelector('img')!;
+    await rerender({ src: '/second.jpg' });
+    const second = baseElement.querySelector('img')!;
+    expect(second.getAttribute('src')).toBe('/second.jpg');
+    expect(second).not.toBe(first);
+    expect(onStart).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes an undefined source and can load again', async () => {
+    const { baseElement, rerender } = render(Image, { src: '/first.jpg' });
+    await rerender({ src: undefined });
+    expect(baseElement.querySelector('img')).toBeNull();
+    await rerender({ src: '/second.jpg' });
+    expect(baseElement.querySelector('img')!.getAttribute('src')).toBe('/second.jpg');
+  });
+
+  it('ignores late events from the replaced image', async () => {
+    const onLoad = vi.fn();
+    const onError = vi.fn();
+    const { baseElement, rerender } = render(Image, { src: '/first.jpg', onLoad, onError });
+    const first = baseElement.querySelector('img')!;
+    await rerender({ src: '/second.jpg' });
+    await fireEvent.load(first);
+    await fireEvent.error(first);
+    expect(onLoad).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    await fireEvent.load(baseElement.querySelector('img')!);
+    expect(onLoad).toHaveBeenCalledOnce();
+  });
+
+  it('keeps shared ownership when one component changes its source', async () => {
+    vi.useFakeTimers();
+    const first = render(Image, { src: '/shared.jpg' });
+    const second = render(Image, { src: '/shared.jpg' });
+    await first.rerender({ src: '/replacement.jpg' });
+    vi.runAllTimers();
+    expect(cancelImageUrl).not.toHaveBeenCalled();
+    second.unmount();
+    vi.runAllTimers();
+    expect(cancelImageUrl).toHaveBeenCalledExactlyOnceWith('/shared.jpg');
+    first.unmount();
+    vi.runAllTimers();
+    expect(vi.mocked(cancelImageUrl).mock.calls).toEqual([['/shared.jpg'], ['/replacement.jpg']]);
+  });
+
+  it('does not cancel a URL that is reacquired before its deferred cancellation', async () => {
+    vi.useFakeTimers();
+    const { rerender, unmount } = render(Image, { src: '/reused.jpg' });
+    await rerender({ src: undefined });
+    await rerender({ src: '/reused.jpg' });
+    vi.runAllTimers();
+    expect(cancelImageUrl).not.toHaveBeenCalled();
+    unmount();
+    vi.runAllTimers();
+    expect(cancelImageUrl).toHaveBeenCalledExactlyOnceWith('/reused.jpg');
+  });
+
+  it('sends one cancellation per URL after rapid source reuse and unmount', async () => {
+    vi.useFakeTimers();
+    const { rerender, unmount } = render(Image, { src: '/cycled.jpg' });
+    await rerender({ src: '/intermediate.jpg' });
+    await rerender({ src: '/cycled.jpg' });
+    unmount();
+    vi.runAllTimers();
+    expect(vi.mocked(cancelImageUrl).mock.calls).toEqual([['/cycled.jpg'], ['/intermediate.jpg']]);
   });
 });

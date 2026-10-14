@@ -3,6 +3,7 @@
   // destroyed element also fails every other element still loading it, including one that replaces
   // it in the same update. Only the last one may cancel. loadImage() loads are not counted here.
   const mounted = new Map<string, number>();
+  const cancelling = new Set<string>();
 </script>
 
 <script lang="ts">
@@ -26,61 +27,71 @@
   let destroyed = false;
 
   $effect(() => {
-    if (src === undefined || capturedSource !== undefined) {
+    const source = src;
+    capturedSource = source;
+    loaded = false;
+    if (source === undefined) {
       return;
     }
 
-    capturedSource = src;
-    mounted.set(src, (mounted.get(src) ?? 0) + 1);
     untrack(() => {
       onStart?.();
     });
+    if (destroyed) {
+      return;
+    }
+    mounted.set(source, (mounted.get(source) ?? 0) + 1);
+    return () => {
+      const remaining = (mounted.get(source) ?? 1) - 1;
+      if (remaining > 0) {
+        mounted.set(source, remaining);
+        return;
+      }
+      mounted.delete(source);
+      if (cancelling.has(source)) {
+        return;
+      }
+      cancelling.add(source);
+      // A replacement in the same update may still need this shared request.
+      setTimeout(() => {
+        cancelling.delete(source);
+        if (!mounted.has(source)) {
+          cancelImageUrl(source);
+        }
+      }, 0);
+    };
   });
 
   onDestroy(() => {
     destroyed = true;
-    const source = capturedSource;
-    if (source === undefined) {
-      return;
-    }
-    const remaining = (mounted.get(source) ?? 1) - 1;
-    if (remaining > 0) {
-      mounted.set(source, remaining);
-      return;
-    }
-    mounted.delete(source);
-    // A replacement mounted in the same update joins the request still in flight, so look again
-    // once that update has finished.
-    setTimeout(() => {
-      if (!mounted.has(source)) {
-        cancelImageUrl(source);
-      }
-    }, 0);
   });
 
-  const completeLoad = () => {
-    if (destroyed) {
+  const completeLoad = (image: HTMLImageElement) => {
+    if (destroyed || image !== ref || src !== capturedSource || image.getAttribute('src') !== capturedSource) {
       return;
     }
     loaded = true;
     onLoad?.();
   };
 
-  const handleLoad = () => {
-    if (destroyed || !src) {
+  const handleLoad = (event: Event) => {
+    const image = event.currentTarget as HTMLImageElement;
+    if (destroyed || !src || image !== ref || image.getAttribute('src') !== src) {
       return;
     }
 
-    if (isFirefox && ref) {
-      ref.decode().then(completeLoad).catch(completeLoad);
+    if (isFirefox) {
+      const complete = () => completeLoad(image);
+      image.decode().then(complete).catch(complete);
       return;
     }
 
-    completeLoad();
+    completeLoad(image);
   };
 
-  const handleError = () => {
-    if (destroyed || !src) {
+  const handleError = (event: Event) => {
+    const image = event.currentTarget as HTMLImageElement;
+    if (destroyed || !src || image !== ref || image.getAttribute('src') !== src) {
       return;
     }
     onError?.(new Error(`Failed to load image: ${src}`));

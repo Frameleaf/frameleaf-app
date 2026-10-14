@@ -164,7 +164,12 @@ export default defineConfig({
     svelteTesting(),
   ],
   optimizeDeps: {
-    entries: ['src/**/*.{svelte,ts,html}'],
+    entries: [
+      'src/**/*.{svelte,ts,html}',
+      '!src/**/*.{test,spec}.{js,ts}',
+      '!src/**/__{test,tests,mocks}__/**',
+      '!src/test-data/**',
+    ],
   },
   test: {
     name: 'web:unit',
