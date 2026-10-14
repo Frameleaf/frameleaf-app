@@ -287,6 +287,43 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
     expect(screen.getByRole('button', { name: en.frameleaf_dedup_mark_reviewed })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: en.frameleaf_dedup_apply })).toBeNull();
   });
+
+  it('offers Apply after reviewing a plan for the page-chosen account without a saved account', async () => {
+    api.getPhysicalDeduplicationPreview.mockResolvedValue(preview());
+    api.reviewPhysicalDeduplicationPlan.mockResolvedValue({
+      fingerprint: plan().fingerprint,
+      excludedRetainedAssetIds: [],
+      reviewToken: 'review-token',
+      copies: 1,
+      hiddenCopies: 0,
+      estimatedBytes: 2048,
+    });
+    render(PhysicalDedupManager, { users, initial: preview({ savedMasterUserId: null, plan: plan() }) });
+
+    expect(screen.queryByText(en.frameleaf_dedup_apply_blocked_no_saved_master)).toBeNull();
+    expect(screen.getByText(/The shared files stay with the account chosen above/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_mark_reviewed }));
+    expect(api.reviewPhysicalDeduplicationPlan).toHaveBeenCalledWith({
+      physicalDeduplicationReviewRequestDto: { fingerprint: plan().fingerprint, excludedRetainedAssetIds: [] },
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_dedup_apply })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_apply }));
+    const confirm = screen.getByRole('button', { name: en.frameleaf_dedup_apply_confirm });
+    expect(confirm).toBeDisabled();
+    expect(api.applyPhysicalDeduplicationPlan).not.toHaveBeenCalled();
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Type APPLY PD-ABABABAB to confirm' }), {
+      target: { value: 'APPLY PD-ABABABAB' },
+    });
+    await fireEvent.click(confirm);
+    expect(api.applyPhysicalDeduplicationPlan).toHaveBeenCalledWith({
+      physicalDeduplicationApplyRequestDto: {
+        fingerprint: plan().fingerprint,
+        reviewToken: 'review-token',
+        excludedRetainedAssetIds: [],
+        confirmation: 'APPLY PD-ABABABAB',
+      },
+    });
+  });
 });
 
 describe('PhysicalDedupManager verification (FL-73)', () => {

@@ -4978,7 +4978,7 @@
   "frameleaf_dedup_plan_running": "Scanning…",
   "frameleaf_dedup_prepare": "Prepare preview plan",
   "frameleaf_dedup_prepare_new": "Prepare new plan",
-  "frameleaf_dedup_preview_uses_chosen": "Previews use the account chosen above; <link>save a retained account</link> before applying a plan.",
+  "frameleaf_dedup_preview_uses_chosen": "The shared files stay with the account chosen above. Everyone keeps their photos.",
   "frameleaf_dedup_reason_already_shared": "Already uses a shared original",
   "frameleaf_dedup_reason_external_library": "External-library file",
   "frameleaf_dedup_reason_missing_size": "File size unavailable",
