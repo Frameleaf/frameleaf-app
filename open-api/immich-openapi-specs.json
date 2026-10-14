@@ -121923,6 +121923,11 @@
             "description": "Bring over favorites",
             "type": "boolean"
           },
+          "includeTrashed": {
+            "default": false,
+            "description": "Bring in photos that were in the Google Photos trash; otherwise they are skipped",
+            "type": "boolean"
+          },
           "locations": {
             "default": true,
             "description": "Bring over locations",
@@ -121938,8 +121943,8 @@
             "type": "array"
           },
           "sidecarReview": {
-            "default": true,
-            "description": "Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar",
+            "default": false,
+            "description": "Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar",
             "type": "boolean"
           },
           "updateMatchedMetadata": {
@@ -121967,6 +121972,9 @@
           "favorites": {
             "type": "boolean"
           },
+          "includeTrashed": {
+            "type": "boolean"
+          },
           "locations": {
             "type": "boolean"
           },
@@ -121989,6 +121997,7 @@
           "dates",
           "descriptions",
           "favorites",
+          "includeTrashed",
           "locations",
           "sidecarReview",
           "updateMatchedMetadata"

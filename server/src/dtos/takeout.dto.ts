@@ -93,12 +93,18 @@ export const TakeoutOptionsSchema = z
       .describe('Recreate album memberships, including for photos already in the library'),
     sidecarReview: z
       .boolean()
-      .default(true)
-      .describe('Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar'),
+      .default(false)
+      .describe(
+        'Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar',
+      ),
     updateMatchedMetadata: z
       .boolean()
       .default(false)
       .describe('Fill metadata missing from photos already in the library; values already there are never replaced'),
+    includeTrashed: z
+      .boolean()
+      .default(false)
+      .describe('Bring in photos that were in the Google Photos trash; otherwise they are skipped'),
     selectedAlbums: z
       .array(z.string().max(4096))
       .max(20_000)
@@ -120,6 +126,7 @@ const TakeoutOptionsResponseSchema = z
     albums: z.boolean(),
     sidecarReview: z.boolean(),
     updateMatchedMetadata: z.boolean(),
+    includeTrashed: z.boolean(),
     selectedAlbums: z.array(z.string()).optional(),
   })
   .meta({ id: 'TakeoutOptionsResponseDto' });

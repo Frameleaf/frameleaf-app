@@ -7,7 +7,7 @@ import {
   uploadTakeoutArchiveChunk,
   type LoginResponseDto,
 } from '@frameleaf/sdk';
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { crc32 } from 'node:zlib';
 import { makeRandomImage } from 'src/generators.js';
@@ -55,6 +55,20 @@ const zip = (entries: { name: string; data: Buffer }[]) => {
   return Buffer.concat([...parts, index, end]);
 };
 
+const waitForState = (auth: { headers: Record<string, string> }, id: string, state: string, timeout = 30_000) =>
+  expect
+    .poll(
+      async () => {
+        const result = await getTakeoutImport({ id }, auth);
+        return result.state;
+      },
+      { timeout },
+    )
+    .toBe(state);
+
+const sidecar = (description: string) =>
+  Buffer.from(JSON.stringify({ title: 'IMG_1.png', description, photoTakenTime: { timestamp: '1700000000' } }));
+
 test.describe('Google Photos import (FL-144)', () => {
   let admin: LoginResponseDto;
 
@@ -64,7 +78,16 @@ test.describe('Google Photos import (FL-144)', () => {
     admin = await utils.adminSetup();
   });
 
-  test('verifies staged bytes and resumes an archive after a page reload', async ({ context, page }) => {
+  const openImport = async (context: BrowserContext, page: Page, id: string) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto(`/user-settings?area=backup&section=takeout&workflow=import&import=${id}`);
+    return page.getByRole('dialog', { name: 'Import from Google Photos' });
+  };
+
+  test('verifies staged bytes, resumes an archive after a page reload, then checks by itself', async ({
+    context,
+    page,
+  }) => {
     const auth = { headers: asBearerAuth(admin.accessToken) };
     const bytes = Buffer.from('original-archive-bytes-for-resume');
     const name = 'takeout-001.zip';
@@ -78,13 +101,11 @@ test.describe('Google Photos import (FL-144)', () => {
       auth,
     );
 
-    await utils.setAuthCookies(context, admin.accessToken);
-    await page.goto(`/user-settings?area=backup&section=takeout&workflow=import&import=${takeout.id}`);
-    const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
-    await expect(dialog.getByRole('heading', { name: 'Stage' })).toBeVisible();
-    await expect(dialog.getByText(name)).toBeVisible();
+    const dialog = await openImport(context, page, takeout.id);
+    await expect(dialog.getByText('The upload stopped at 0 of 1 files')).toBeVisible();
+    await expect(dialog.getByText('Keep this page open until the upload finishes')).toBeVisible();
     await page.reload();
-    await expect(dialog.getByText(name)).toBeVisible();
+    await expect(dialog.getByText('The upload stopped at 0 of 1 files')).toBeVisible();
 
     const chooser = dialog.locator('input[type="file"]');
     const wrongBytes = Buffer.from(bytes);
@@ -97,24 +118,25 @@ test.describe('Google Photos import (FL-144)', () => {
     expect(incompleteImport.sources[0].received).toBe(8);
 
     await chooser.setInputFiles({ name, mimeType: 'application/zip', buffer: bytes });
-    await expect(dialog.getByRole('status').filter({ hasText: 'Archives uploaded' })).toContainText(
-      'Archives uploaded',
-    );
     await expect
       .poll(async () => {
-        const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
-        return currentImport.sources[0].received;
+        const result = await getTakeoutImport({ id: takeout.id }, auth);
+        return result.sources[0].received;
       })
       .toBe(bytes.length);
-    await expect(dialog.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    // The check starts by itself once every file is in; nothing to press.
+    await expect
+      .poll(async () => {
+        const result = await getTakeoutImport({ id: takeout.id }, auth);
+        return result.phase;
+      })
+      .not.toBe('sources');
   });
 
-  test('reviews conflicting sidecars and downloads the reconciled report', async ({ context, page }) => {
-    test.setTimeout(60_000);
+  test('picks the most likely details, and lets the owner choose instead', async ({ context, page }) => {
+    test.setTimeout(90_000);
     const auth = { headers: asBearerAuth(admin.accessToken) };
     const mediaPath = 'Takeout/Google Photos/Trip/IMG_1.png';
-    const sidecar = (description: string) =>
-      Buffer.from(JSON.stringify({ title: 'IMG_1.png', description, photoTakenTime: { timestamp: '1700000000' } }));
     const bytes = zip([
       { name: mediaPath, data: makeRandomImage() },
       { name: `${mediaPath}.json`, data: sidecar('First description') },
@@ -130,65 +152,46 @@ test.describe('Google Photos import (FL-144)', () => {
       { ...auth, headers: { ...auth.headers, 'Content-Type': 'application/octet-stream' } },
     );
 
-    await utils.setAuthCookies(context, admin.accessToken);
-    await page.goto(`/user-settings?area=backup&section=takeout&workflow=import&import=${takeout.id}`);
-    const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
-    await dialog.getByRole('button', { name: 'Continue' }).click();
+    // Every archive is on the server, so opening the import starts the check.
+    const dialog = await openImport(context, page, takeout.id);
+    await waitForState(auth, takeout.id, 'review');
+
+    const { items } = await getTakeoutItems({ id: takeout.id }, auth);
+    const item = items[0];
+    expect(item.candidates).toHaveLength(2);
+    expect(item.sidecarId).not.toBeNull();
+    const chosen = item.candidates.find((candidate) => candidate.metadata.description === 'Chosen description')!;
+
+    await dialog.getByRole('switch', { name: /Let me choose for 1 photo/ }).click();
+    await dialog.getByRole('button', { name: 'Import 1 photo' }).click();
+    await waitForState(auth, takeout.id, 'completed', 60_000);
+
+    await dialog.getByRole('radio', { name: /Chosen description/ }).check();
+    await dialog.getByRole('button', { name: 'Add 1 photo' }).click();
     await expect
       .poll(
         async () => {
-          const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
-          return currentImport.state;
+          const result = await getTakeoutItems({ id: takeout.id }, auth);
+          return result.items[0];
         },
-        { timeout: 30_000 },
+        {
+          timeout: 60_000,
+        },
       )
-      .toBe('review');
-    await expect(dialog.getByRole('group', { name: 'Import details' })).toBeVisible();
-    await expect(
-      dialog.getByText('Several metadata sidecars disagree. Choose one, or import without one.'),
-    ).toBeVisible();
-
-    const takeoutItems = await getTakeoutItems({ id: takeout.id }, auth);
-    const item = takeoutItems.items[0];
-    expect(item.candidates).toHaveLength(2);
-    const chosen = item.candidates.find((candidate) => candidate.metadata.description === 'Chosen description');
-    expect(chosen).toBeDefined();
-    await dialog.getByLabel('Metadata sidecar').selectOption(chosen!.id);
-    await dialog.getByRole('button', { name: 'Use this choice' }).click();
-    await expect
-      .poll(async () => {
-        const currentItems = await getTakeoutItems({ id: takeout.id }, auth);
-        return currentItems.items[0].state;
-      })
-      .toBe('ready');
-
-    await page.reload();
-    await expect(dialog.getByText('Chosen description', { exact: true })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Report' }).click();
-    const jsonEvent = page.waitForEvent('download');
-    await dialog.getByRole('button', { name: 'Download report (JSON)' }).click();
-    const jsonDownload = await jsonEvent;
-    expect(jsonDownload.suggestedFilename()).toMatch(/^google-photos-import-\d{4}-\d{2}-\d{2}-report\.json$/);
-    const report = JSON.parse(await readFile(await jsonDownload.path(), 'utf8'));
-    expect(report.import.id).toBe(takeout.id);
-    expect(report.items).toHaveLength(1);
-    expect(report.items[0]).toMatchObject({ path: 'Trip/IMG_1.png', state: 'ready', sidecarId: chosen!.id });
-    expect(report.items[0].metadata.description).toBe('Chosen description');
+      .toMatchObject({ state: 'imported', sidecarId: chosen.id });
+    await expect(dialog.getByText('1 photo added')).toBeVisible({ timeout: 30_000 });
 
     const csvEvent = page.waitForEvent('download');
-    await dialog.getByRole('button', { name: 'Download report (CSV)' }).click();
+    await dialog.getByRole('button', { name: 'Download report' }).click();
     const csvDownload = await csvEvent;
-    expect(csvDownload.suggestedFilename()).toMatch(/-report\.csv$/);
-    expect(await readFile(await csvDownload.path(), 'utf8')).toContain('Trip/IMG_1.png,takeout.zip,image,ready,');
+    expect(csvDownload.suggestedFilename()).toMatch(/^google-photos-import-\d{4}-\d{2}-\d{2}-report\.csv$/);
+    expect(await readFile(await csvDownload.path(), 'utf8')).toContain('Trip/IMG_1.png,takeout.zip,image,imported,');
   });
 
-  test('reviews Live Photo pairs from split archives and keeps each decision after reload', async ({
-    context,
-    page,
-  }) => {
+  test('links Live Photos from split archives without asking', async ({ context, page }) => {
     test.setTimeout(60_000);
     const auth = { headers: asBearerAuth(admin.accessToken) };
-    const takeout = await createTakeoutImport({ takeoutCreateDto: { name: 'Live Photo review' } }, auth);
+    const takeout = await createTakeoutImport({ takeoutCreateDto: { name: 'Live Photos' } }, auth);
     const stills = zip(
       ['Trip', 'Other'].map((folder) => ({
         name: `Takeout/Google Photos/${folder}/IMG_1.png`,
@@ -215,19 +218,8 @@ test.describe('Google Photos import (FL-144)', () => {
       );
     }
 
-    await utils.setAuthCookies(context, admin.accessToken);
-    await page.goto(`/user-settings?area=backup&section=takeout&workflow=import&import=${takeout.id}`);
-    const dialog = page.getByRole('dialog', { name: 'Import Google Photos' });
-    await dialog.getByRole('button', { name: 'Continue' }).click();
-    await expect
-      .poll(
-        async () => {
-          const currentImport = await getTakeoutImport({ id: takeout.id }, auth);
-          return currentImport.state;
-        },
-        { timeout: 30_000 },
-      )
-      .toBe('review');
+    const dialog = await openImport(context, page, takeout.id);
+    await waitForState(auth, takeout.id, 'review');
 
     const { items } = await getTakeoutItems({ id: takeout.id }, auth);
     expect(items).toHaveLength(4);
@@ -242,27 +234,9 @@ test.describe('Google Photos import (FL-144)', () => {
       const folder = pair.photoPath.split('/', 1)[0];
       expect(pair.photoItemId).toBe(byPath.get(`${folder}/IMG_1.png`)?.id);
       expect(pair.videoItemId).toBe(byPath.get(`${folder}/IMG_1.MP4`)?.id);
-      expect(pair.state).toBe('suggested');
+      expect(pair.state).toBe('approved');
     }
-
-    const tabs = dialog.getByRole('group', { name: 'Import details' });
-    await tabs.getByRole('button', { name: 'Live Photos' }).click();
-    const trip = dialog.locator('li').filter({ hasText: 'Trip/IMG_1.png' });
-    const other = dialog.locator('li').filter({ hasText: 'Other/IMG_1.png' });
-    await expect(trip.getByText('Trip/IMG_1.MP4')).toBeVisible();
-    await expect(other.getByText('Other/IMG_1.MP4')).toBeVisible();
-    await trip.getByRole('button', { name: 'These belong together' }).click();
-    await other.getByRole('button', { name: 'Keep separate' }).click();
-    await expect
-      .poll(async () => {
-        const currentPairs = await getTakeoutPairs({ id: takeout.id }, auth);
-        return Object.fromEntries(currentPairs.pairs.map((pair) => [pair.photoPath, pair.state]));
-      })
-      .toEqual({ 'Other/IMG_1.png': 'skipped', 'Trip/IMG_1.png': 'approved' });
-
-    await page.reload();
-    await tabs.getByRole('button', { name: 'Live Photos' }).click();
-    await expect(trip.getByText('Linked together')).toBeVisible();
-    await expect(other.getByText('Kept separate')).toBeVisible();
+    const live = dialog.locator('dl div').filter({ hasText: 'Live Photos' });
+    await expect(live.locator('dd')).toContainText('2');
   });
 });

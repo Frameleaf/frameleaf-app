@@ -14484,6 +14484,7 @@ export type TakeoutOptionsResponseDto = {
     dates: boolean;
     descriptions: boolean;
     favorites: boolean;
+    includeTrashed: boolean;
     locations: boolean;
     selectedAlbums?: string[];
     sidecarReview: boolean;
@@ -14569,11 +14570,13 @@ export type TakeoutOptionsDto = {
     descriptions?: boolean;
     /** Bring over favorites */
     favorites?: boolean;
+    /** Bring in photos that were in the Google Photos trash; otherwise they are skipped */
+    includeTrashed?: boolean;
     /** Bring over locations */
     locations?: boolean;
     /** Album folders to recreate; omitted means every folder that is not a year folder */
     selectedAlbums?: string[];
-    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
+    /** Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar */
     sidecarReview?: boolean;
     /** Fill metadata missing from photos already in the library; values already there are never replaced */
     updateMatchedMetadata?: boolean;

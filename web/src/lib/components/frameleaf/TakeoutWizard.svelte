@@ -1,48 +1,44 @@
+<script lang="ts" module>
+  /**
+   * Files chosen on the start screen, handed to the wizard that opens on the new import: creating the
+   * import moves the hosting dialog to it, which mounts a fresh wizard.
+   */
+  let handoff: { id: string; files: File[] } | undefined;
+</script>
+
 <script lang="ts">
-  import { locale } from '$lib/stores/preferences.store';
   import { goto } from '$app/navigation';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import {
-    canRetryScan,
-    canReviewTakeout,
     collectPages,
     findStagedArchive,
-    isTakeoutBusy,
     isTakeoutMoving,
     resumeTakeoutArchive,
-    TAKEOUT_STAGES,
     takeoutImportOptions,
-    takeoutItemStateKey,
-    takeoutNeedsReview,
-    takeoutPairStateKey,
     takeoutProgress,
     takeoutReportCsv,
     takeoutReportFileName,
-    takeoutReportJson,
     takeoutSourcesStaged,
-    takeoutStage,
     takeoutStateKey,
+    takeoutStep,
     TakeoutUploadError,
-    takeoutWarningKey,
+    takeoutView,
     type TakeoutArchiveProgress,
-    type TakeoutStage,
   } from '$lib/frameleaf/takeout';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     controlTakeoutImport,
     createTakeoutArchive,
     createTakeoutImport,
-    decideTakeoutPair,
-    deleteTakeoutArchive,
     deleteTakeoutImport,
     getTakeoutImport,
     getTakeoutItems,
@@ -51,36 +47,32 @@
     resolveTakeoutItem,
     scanTakeoutImport,
     startTakeoutImport,
-    TakeoutAction,
     TakeoutControlAction,
     TakeoutItemState,
     TakeoutPairState,
-    TakeoutPhase,
     TakeoutSourceKind,
     TakeoutState,
     uploadTakeoutArchiveChunk,
     verifyTakeoutArchiveChunk,
     type TakeoutItemResponseDto,
-    type TakeoutItemsResponseDto,
-    type TakeoutPairResponseDto,
     type TakeoutResponseDto,
     type TakeoutRootDto,
   } from '@frameleaf/sdk';
-  import { onMount, untrack } from 'svelte';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiCheck } from '@mdi/js';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
-   * The Google Photos import wizard (FL-65), ported from the prototype's `Import Google Photos`
-   * workflow: the same three stages — Stage, Scan, Reconcile — the same facts (Source, New photos
-   * and videos, Matched originals, Needs review), and the same closing notice when flagged items
-   * remain. Everything the prototype simulated is a server request here. As in the prototype it is
-   * the body of a wide Command Center dialog (FL-83, `TakeoutSettingsSection`), which carries the
-   * title.
+   * One Google Photos import (FL-65), approved as the prototype's Google Photos import flow
+   * (frameleaf-prototype `settings-v2/library/google-import.jsx`): Upload → Check → Import, moving on
+   * by itself so the owner chooses the ZIP files and presses Import once. It is the body of a wide
+   * Command Center dialog (FL-83, `TakeoutSettingsSection`), which carries the title.
    *
-   * Staging archives needs this page open; it resumes by checking every byte already on the server.
-   * Scanning and importing are background jobs on the server, shown in Activity and the running-jobs
-   * panel as well, and this page only watches them. Items going into Locked are never listed here
-   * unless Locked is unlocked; the server only gives their number.
+   * Only the upload needs this page open; it resumes by checking every byte already on the server.
+   * Checking and importing are background jobs on the server, so every later screen says a large
+   * library can be left and come back to. Items going into Locked are never listed here unless Locked
+   * is unlocked; the server only gives their number.
    */
 
   let {
@@ -90,109 +82,91 @@
   }: {
     imports?: TakeoutResponseDto[];
     current?: TakeoutResponseDto;
-    /** Closes the Command Center dialog that hosts the wizard (Cancel, Done). */
+    /** Closes the Command Center dialog that hosts the wizard. */
     onClose?: () => void;
   } = $props();
 
   /**
-   * Moves the hosting dialog to another import, or to the list. The host reads the import from the
+   * Moves the hosting dialog to another import, or to the start. The host reads the import from the
    * address and loads it from the server, so the page's own data is never reloaded.
    */
   const openImport = (id?: string) =>
     goto(Route.takeout(id ? { import: id } : undefined), { noScroll: true, keepFocus: true });
   const close = () => (onClose ? onClose() : history.back());
 
-  type ReconcileTab = 'review' | 'live-photos' | 'albums' | 'options' | 'report';
-  const PAGE = 50;
+  const SHOWN = 50;
 
   let current = $state<TakeoutResponseDto | undefined>(initial);
   let busy = $state(false);
   let error = $state('');
   let announcement = $state('');
+  let fileInput = $state<HTMLInputElement>();
 
   // Start
-  let name = $state($t('frameleaf_takeout_default_name'));
-  let source = $state('archives');
   let roots = $state<TakeoutRootDto[]>([]);
   let rootId = $state('');
   let folder = $state('');
 
-  // Stage
+  // Upload
   let upload = $state<TakeoutArchiveProgress>();
+  let uploadStarted = $state<{ at: number; bytes: number }>();
   let uploadController: AbortController | undefined;
 
-  // Reconcile
-  let viewing = $state<TakeoutStage | undefined>();
-  let tab = $state<ReconcileTab>('review');
-  let itemFilter = $state<string>(initial && initial.counts.review > 0 ? TakeoutItemState.Review : '');
-  let offset = $state(0);
-  let page = $state<TakeoutItemsResponseDto>({ items: [], total: 0, hiddenLocked: 0 });
-  let sidecarChoice = $state<Record<string, string>>({});
-  let pairs = $state<TakeoutPairResponseDto[]>([]);
-  let pairOffset = $state(0);
-  let pairTotal = $state(0);
+  // Ready
   let options = $state<TakeoutResponseDto['options']>();
   let selectedAlbums = $state<Record<string, boolean>>({});
-  let deleteOpen = $state(false);
-  let loadGeneration = 0;
+  let livePhotos = $state(0);
+  let trashed = $state(0);
+
+  // Photos to check, and what did not make it
+  let unclear = $state<TakeoutItemResponseDto[]>([]);
+  let choices = $state<Record<string, string>>({});
+  let failed = $state<TakeoutItemResponseDto[]>([]);
+  let cancelOpen = $state(false);
 
   const isAdmin = $derived(authManager.user.isAdmin);
-  const serverStage = $derived(takeoutStage(current));
-  const stage = $derived(viewing ?? serverStage);
-  const stageIndex = $derived(TAKEOUT_STAGES.indexOf(stage));
-  const busyJob = $derived(!!current && isTakeoutBusy(current.state));
-  const reviewable = $derived(!!current && canReviewTakeout(current));
+  const view = $derived(takeoutView(current, !!upload));
+  const step = $derived(takeoutStep(view));
+  const fromFolder = $derived(current?.sources.some((source) => source.kind === TakeoutSourceKind.Directory) ?? false);
+  const zips = $derived(current?.sources.filter((source) => source.kind === TakeoutSourceKind.Zip) ?? []);
   const progress = $derived(current ? takeoutProgress(current) : undefined);
-  const needsReview = $derived(current ? takeoutNeedsReview(current) : 0);
-  const blocked = $derived(!!current && !!options?.sidecarReview && current.counts.review > 0);
-  const pendingImport = $derived(
-    !!current && current.counts.ready + current.counts.failed + current.counts.importing + current.counts.review > 0,
+  const albumCount = $derived(current?.albums.filter((album) => selectedAlbums[album.folder]).length ?? 0);
+  const toImport = $derived(current ? current.counts.newAssets + (options?.includeTrashed ? trashed : 0) : 0);
+
+  /** Bytes on the server, counting the archive this page is sending right now as it goes. */
+  const uploaded = $derived(
+    zips.reduce(
+      (total, zip) => total + (upload?.phase === 'uploading' && upload.name === zip.name ? upload.bytes : zip.received),
+      0,
+    ),
   );
-  const zipSources = $derived(current?.sources.filter((item) => item.kind === TakeoutSourceKind.Zip) ?? []);
-  const folderSource = $derived(current?.sources.find((item) => item.kind === TakeoutSourceKind.Directory));
-  const staged = $derived(!!current && takeoutSourcesStaged(current.sources));
-
-  const stageLabel: Record<TakeoutStage, string> = $derived({
-    stage: $t('frameleaf_takeout_stage_stage'),
-    scan: $t('frameleaf_takeout_stage_scan'),
-    reconcile: $t('frameleaf_takeout_stage_reconcile'),
-  });
-
-  const sourceFact = $derived.by(() => {
-    if (!current) {
-      return '';
-    }
-    if (folderSource) {
-      return $t('frameleaf_takeout_source_folder_value', { values: { name: folderSource.name } });
-    }
-    return $t('frameleaf_takeout_source_archives_count', { values: { count: zipSources.length } });
-  });
-
-  const counted = $derived(
-    !!current && current.phase !== TakeoutPhase.Sources && current.phase !== TakeoutPhase.Scanning,
-  );
-
-  $effect(() => {
-    if (!current || options) {
+  const uploadSize = $derived(zips.reduce((total, zip) => total + zip.size, 0));
+  const zipsDone = $derived(zips.filter((zip) => zip.received === zip.size).length);
+  const minutesLeft = $derived.by(() => {
+    if (!uploadStarted || upload?.phase !== 'uploading') {
       return;
     }
-
-    options = { ...current.options };
-    selectedAlbums = Object.fromEntries(current.albums.map((album) => [album.folder, album.selected]));
+    const seconds = (Date.now() - uploadStarted.at) / 1000;
+    const rate = (uploaded - uploadStarted.bytes) / seconds;
+    return seconds > 5 && rate > 0 ? Math.max(1, Math.round((uploadSize - uploaded) / rate / 60)) : undefined;
   });
 
-  const say = (message: string) => {
-    announcement = message;
-  };
+  const stepLabels = $derived([
+    fromFolder ? $t('frameleaf_takeout_step_folder') : $t('frameleaf_takeout_step_upload'),
+    $t('frameleaf_takeout_step_check'),
+    $t('frameleaf_takeout_step_import'),
+  ]);
 
-  const messageOf = (failure: unknown) => {
-    if (failure instanceof TakeoutUploadError) {
-      return $t(failure.key);
-    }
-    return getServerErrorMessage(failure) ?? $t('frameleaf_takeout_error_generic');
-  };
+  const counts = (value: number) => value.toLocaleString($locale);
+  const bytes = (value: number) => formatBytes(value);
+  const say = (message: string) => (announcement = message);
 
-  /** Run a request; any failure is shown on the page, and the import is re-read from the server. */
+  const messageOf = (failure: unknown) =>
+    failure instanceof TakeoutUploadError
+      ? $t(failure.key)
+      : (getServerErrorMessage(failure) ?? $t('frameleaf_takeout_error_generic'));
+
+  /** Run a request; any failure is shown on the page. */
   const run = async (action: () => Promise<unknown>) => {
     busy = true;
     error = '';
@@ -207,64 +181,77 @@
     }
   };
 
+  const adopt = (next: TakeoutResponseDto) => {
+    const moved = !current || next.state !== current.state || next.phase !== current.phase;
+    current = next;
+    if (moved || !options) {
+      options = { ...next.options };
+      selectedAlbums = Object.fromEntries(next.albums.map((album) => [album.folder, album.selected]));
+    }
+    if (moved) {
+      say($t(takeoutStateKey(next.state)));
+    }
+  };
+
   const refresh = async () => {
     if (!current) {
       return;
     }
+
     const id = current.id;
     const next = await getTakeoutImport({ id });
     if (current?.id === id) {
-      const moved = next.phase !== current.phase;
-      current = next;
-      if (moved) {
-        viewing = undefined;
-        options = { ...next.options };
-        selectedAlbums = Object.fromEntries(next.albums.map((album) => [album.folder, album.selected]));
-        say($t(takeoutStateKey(next.state)));
-      }
+      adopt(next);
     }
   };
 
-  const loadItems = async () => {
-    if (!current) {
-      return;
-    }
-    const request = ++loadGeneration;
-    const result = await getTakeoutItems({
-      id: current.id,
-      offset,
-      limit: PAGE,
-      state: (itemFilter as TakeoutItemState) || undefined,
-    });
-    if (request === loadGeneration) {
-      page = result;
-      sidecarChoice = Object.fromEntries(result.items.map((item) => [item.id, item.sidecarId ?? '']));
-    }
-  };
-
-  const loadPairs = async () => {
+  /** What each screen needs beyond the import itself. */
+  const loadDetails = async () => {
     if (!current) {
       return;
     }
     const id = current.id;
-    const result = await getTakeoutPairs({ id, offset: pairOffset, limit: PAGE });
-    if (current?.id === id) {
-      pairs = result.pairs;
-      pairTotal = result.total;
+    switch (view) {
+      case 'ready': {
+        const [pairs, skipped] = await Promise.all([
+          getTakeoutPairs({ id, state: TakeoutPairState.Approved, limit: 1 }),
+          getTakeoutItems({ id, state: TakeoutItemState.Skipped, limit: 1 }),
+        ]);
+        livePhotos = pairs.total;
+        trashed = skipped.total;
+
+        break;
+      }
+      case 'unclear': {
+        const page = await getTakeoutItems({ id, state: TakeoutItemState.Review, limit: SHOWN });
+        unclear = page.items;
+        choices = Object.fromEntries(page.items.map((item) => [item.id, item.sidecarId ?? '']));
+
+        break;
+      }
+      case 'done': {
+        const [pairs, page] = await Promise.all([
+          getTakeoutPairs({ id, state: TakeoutPairState.Linked, limit: 1 }),
+          getTakeoutItems({ id, state: TakeoutItemState.Failed, limit: SHOWN }),
+        ]);
+        livePhotos = pairs.total;
+        failed = page.items;
+
+        break;
+      }
+      // No default
     }
   };
 
   $effect(() => {
-    if (!current || stage !== 'reconcile' || busyJob) {
-      return;
-    }
-    // Read again whenever the import itself changes on the server; paging and filters load on demand.
-    void current.updatedAt;
-    untrack(() => {
-      void loadItems().catch(() => {});
-      void loadPairs().catch(() => {});
-    });
+    void view;
+    void current?.updatedAt;
+    void loadDetails().catch(() => {});
   });
+
+  if (initial) {
+    adopt(initial);
+  }
 
   onMount(() => {
     if (isAdmin) {
@@ -274,6 +261,14 @@
           rootId = result.roots[0]?.id ?? '';
         })
         .catch(() => {});
+    }
+    if (current && handoff?.id === current.id) {
+      const { files } = handoff;
+      handoff = undefined;
+      void uploadFiles(files);
+    } else if (current && view === 'upload' && takeoutSourcesStaged(current.sources)) {
+      // Everything arrived but the check never started (the page closed in between).
+      void check();
     }
     const timer = setInterval(() => {
       if (!document.hidden && current && isTakeoutMoving(current.state)) {
@@ -289,34 +284,66 @@
     };
   });
 
+  const defaultName = () =>
+    $t('frameleaf_takeout_default_name', {
+      values: { date: new Date().toLocaleDateString($locale, { day: 'numeric', month: 'long' }) },
+    });
+
   /* Start ------------------------------------------------------------- */
 
-  const create = () =>
-    run(async () => {
-      const created = await createTakeoutImport({
-        takeoutCreateDto: source === 'folder' ? { name, rootId, directory: folder.trim() } : { name },
-      });
+  const chooseFiles = () => fileInput?.click();
+
+  const filesChosen = (list: FileList | null) => {
+    const files = Array.from(list ?? []);
+    if (files.length === 0) {
+      return;
+    }
+    if (current) {
+      void uploadFiles(files);
+      return;
+    }
+    void run(async () => {
+      const created = await createTakeoutImport({ takeoutCreateDto: { name: defaultName() } });
+      handoff = { id: created.id, files };
       // The host is keyed by the import, so this opens a fresh wizard on the new one.
       await openImport(created.id);
     });
+  };
 
-  /* Stage ------------------------------------------------------------- */
-
-  const uploadFiles = (files: FileList | null) =>
+  const importFolder = () =>
     run(async () => {
-      if (!files?.length || !current) {
+      const created = await createTakeoutImport({
+        takeoutCreateDto: { name: defaultName(), rootId, directory: folder.trim() },
+      });
+      await scanTakeoutImport({ id: created.id });
+      await openImport(created.id);
+    });
+
+  /* Upload, then check ------------------------------------------------ */
+
+  const check = () =>
+    run(async () => {
+      if (current) {
+        adopt(await scanTakeoutImport({ id: current.id }));
+      }
+    });
+
+  const uploadFiles = (files: File[]) =>
+    run(async () => {
+      if (!current) {
         return;
       }
       uploadController = new AbortController();
       const signal = uploadController.signal;
       const importId = current.id;
       try {
-        for (const file of Array.from(files)) {
+        for (const file of files) {
           signal.throwIfAborted();
           if (!file.name.toLowerCase().endsWith('.zip')) {
             throw new TakeoutUploadError('frameleaf_takeout_error_not_zip');
           }
           await refresh();
+          uploadStarted ??= { at: Date.now(), bytes: uploaded };
           const archive =
             findStagedArchive(current?.sources ?? [], file) ??
             (await createTakeoutArchive({
@@ -329,9 +356,9 @@
             {
               verify: (takeoutVerifyChunkDto) =>
                 verifyTakeoutArchiveChunk({ id: importId, archiveId: archive.id, takeoutVerifyChunkDto }),
-              upload: (chunkOffset, bytes) =>
+              upload: (chunkOffset, chunk) =>
                 uploadTakeoutArchiveChunk(
-                  { id: importId, archiveId: archive.id, offset: chunkOffset, body: bytes },
+                  { id: importId, archiveId: archive.id, offset: chunkOffset, body: chunk },
                   { headers: { 'Content-Type': 'application/octet-stream' }, signal },
                 ),
             },
@@ -340,90 +367,60 @@
           );
           await refresh();
         }
-        say($t('frameleaf_takeout_upload_done'));
       } finally {
         uploadController = undefined;
         upload = undefined;
+        uploadStarted = undefined;
         await refresh().catch(() => {});
       }
-    });
-
-  const removeArchive = (archiveId: string) =>
-    run(async () => {
-      if (!current) {
-        return;
+      // Every file is in: the check starts by itself.
+      if (current && takeoutSourcesStaged(current.sources)) {
+        say($t('frameleaf_takeout_upload_done'));
+        adopt(await scanTakeoutImport({ id: current.id }));
       }
-      await deleteTakeoutArchive({ id: current.id, archiveId });
-      await refresh();
     });
 
-  const scan = () =>
-    run(async () => {
-      if (!current) {
-        return;
-      }
-      current = await scanTakeoutImport({ id: current.id });
-      viewing = undefined;
-      say($t(takeoutStateKey(current.state)));
-    });
+  /* Import ------------------------------------------------------------ */
 
-  /* Jobs -------------------------------------------------------------- */
-
-  const control = (action: TakeoutControlAction) =>
-    run(async () => {
-      if (!current) {
-        return;
-      }
-      current = await controlTakeoutImport({ id: current.id, takeoutControlDto: { action } });
-      say($t(takeoutStateKey(current.state)));
-    });
-
-  /* Reconcile --------------------------------------------------------- */
-
-  const resolve = (item: TakeoutItemResponseDto, decision: { skip?: boolean; useChoice?: boolean }) =>
-    run(async () => {
-      if (!current) {
-        return;
-      }
-      const choice = sidecarChoice[item.id];
-      current = await resolveTakeoutItem({
-        id: current.id,
-        itemId: item.id,
-        takeoutResolveDto: decision.skip === undefined ? { sidecarId: choice || null } : { skip: decision.skip },
-      });
-      await loadItems();
-    });
-
-  const decidePair = (pair: TakeoutPairResponseDto, approve: boolean) =>
-    run(async () => {
-      if (!current) {
-        return;
-      }
-      await decideTakeoutPair({
-        id: current.id,
-        takeoutPairDecisionDto: { photoItemId: pair.photoItemId, videoItemId: pair.videoItemId, approve },
-      });
-      await loadPairs();
-      await refresh();
-    });
-
-  const startImport = () =>
+  const startImport = (overrides: Partial<TakeoutResponseDto['options']> = {}) =>
     run(async () => {
       if (!current || !options) {
         return;
       }
-      current = await startTakeoutImport({
-        id: current.id,
-        takeoutOptionsDto: takeoutImportOptions(
-          options,
-          current.albums.map((album) => ({ folder: album.folder, selected: selectedAlbums[album.folder] ?? false })),
-        ),
-      });
-      viewing = undefined;
-      say($t(takeoutStateKey(current.state)));
+      adopt(
+        await startTakeoutImport({
+          id: current.id,
+          takeoutOptionsDto: takeoutImportOptions(
+            { ...options, ...overrides },
+            current.albums.map((album) => ({ folder: album.folder, selected: selectedAlbums[album.folder] ?? false })),
+          ),
+        }),
+      );
     });
 
-  const download = (format: 'json' | 'csv') =>
+  const control = (action: TakeoutControlAction) =>
+    run(async () => {
+      if (current) {
+        adopt(await controlTakeoutImport({ id: current.id, takeoutControlDto: { action } }));
+      }
+    });
+
+  /** The photos the owner chose details for; the rest import with the most likely ones. */
+  const addUnclear = () =>
+    run(async () => {
+      if (!current) {
+        return;
+      }
+      for (const item of unclear) {
+        const choice = choices[item.id];
+        if (choice && choice !== item.sidecarId) {
+          await resolveTakeoutItem({ id: current.id, itemId: item.id, takeoutResolveDto: { sidecarId: choice } });
+        }
+      }
+      await startImport({ sidecarReview: false });
+    });
+
+  const download = () =>
     run(async () => {
       if (!current) {
         return;
@@ -433,79 +430,38 @@
         const result = await getTakeoutItems({ id, offset: from, limit });
         return { entries: result.items, total: result.total };
       });
-      if (format === 'csv') {
-        downloadBlob(new Blob([takeoutReportCsv(items)], { type: 'text/csv' }), takeoutReportFileName(current, 'csv'));
-        return;
-      }
-      const livePhotos = await collectPages(async (from, limit) => {
-        const result = await getTakeoutPairs({ id, offset: from, limit });
-        return { entries: result.pairs, total: result.total };
-      });
-      downloadBlob(
-        new Blob([takeoutReportJson(current, items, livePhotos, page.hiddenLocked)], { type: 'application/json' }),
-        takeoutReportFileName(current, 'json'),
-      );
+      downloadBlob(new Blob([takeoutReportCsv(items)], { type: 'text/csv' }), takeoutReportFileName(current, 'csv'));
     });
 
-  const remove = () =>
+  const cancelImport = () =>
     run(async () => {
       if (!current) {
         return;
       }
+      uploadController?.abort();
       await deleteTakeoutImport({ id: current.id });
-      deleteOpen = false;
+      cancelOpen = false;
       await openImport();
     });
 
-  /* Footer ------------------------------------------------------------ */
+  /* Words ------------------------------------------------------------- */
 
-  const primary = $derived.by((): { label: string; disabled: boolean; action: () => void } => {
-    if (!current) {
-      return { label: $t('frameleaf_takeout_continue'), disabled: busy || !name.trim(), action: () => void create() };
-    }
-    if (viewing && TAKEOUT_STAGES.indexOf(viewing) < TAKEOUT_STAGES.indexOf(serverStage)) {
-      const next = TAKEOUT_STAGES[TAKEOUT_STAGES.indexOf(viewing) + 1];
-      return {
-        label: $t('frameleaf_takeout_continue'),
-        disabled: false,
-        action: () => (viewing = next === serverStage ? undefined : next),
-      };
-    }
-    if (serverStage === 'stage') {
-      return {
-        label: $t('frameleaf_takeout_continue'),
-        disabled: busy || !!upload || !staged,
-        action: () => void scan(),
-      };
-    }
-    if (serverStage === 'scan') {
-      return canRetryScan(current)
-        ? { label: $t('frameleaf_takeout_scan_again'), disabled: busy || !staged, action: () => void scan() }
-        : { label: $t('frameleaf_takeout_continue'), disabled: true, action: () => {} };
-    }
-    if (current.state === TakeoutState.Completed && !pendingImport) {
-      return { label: $t('frameleaf_takeout_done'), disabled: false, action: close };
-    }
-    const label =
-      current.state === TakeoutState.Failed || current.state === TakeoutState.Cancelled
-        ? $t('frameleaf_takeout_import_again')
-        : current.state === TakeoutState.Completed
-          ? $t('frameleaf_takeout_import_remaining')
-          : $t('frameleaf_takeout_import');
-    return { label, disabled: busy || !reviewable || blocked, action: () => void startImport() };
-  });
+  const takenAt = (value?: string | null) =>
+    value
+      ? $t('frameleaf_takeout_candidate_taken', {
+          values: { date: new Date(value).toLocaleString($locale, { dateStyle: 'long', timeStyle: 'short' }) },
+        })
+      : $t('frameleaf_takeout_candidate_no_date');
 
-  const secondary = () => {
-    if (!current || stageIndex === 0) {
-      close();
-      return;
-    }
-    viewing = TAKEOUT_STAGES[stageIndex - 1];
-  };
-
-  const bytes = (value: number) => formatBytes(value);
-  const counts = (value: number) => value.toLocaleString($locale);
-  const stepDone = (index: number) => !!current && index < TAKEOUT_STAGES.indexOf(serverStage);
+  const candidateDetail = (metadata: TakeoutItemResponseDto['metadata']) =>
+    [
+      metadata.description
+        ? $t('frameleaf_takeout_candidate_description', { values: { text: metadata.description.slice(0, 80) } })
+        : $t('frameleaf_takeout_candidate_no_description'),
+      metadata.latitude === undefined || metadata.latitude === null
+        ? $t('frameleaf_takeout_candidate_no_place')
+        : $t('frameleaf_takeout_candidate_place'),
+    ].join(' · ');
 
   const importTone = (state: TakeoutState) => {
     if (state === TakeoutState.Failed) {
@@ -513,133 +469,111 @@
     }
     return state === TakeoutState.Completed ? 'teal' : 'neutral';
   };
-
-  const itemTone = (state: TakeoutItemState) => {
-    switch (state) {
-      case TakeoutItemState.Failed: {
-        return 'danger';
-      }
-      case TakeoutItemState.Review: {
-        return 'warning';
-      }
-      case TakeoutItemState.Imported:
-      case TakeoutItemState.Matched: {
-        return 'teal';
-      }
-      default: {
-        return 'neutral';
-      }
-    }
-  };
-
-  const PAUSABLE: readonly TakeoutState[] = [TakeoutState.Queued, TakeoutState.Scanning, TakeoutState.Importing];
-  const canPause = $derived(!!current && PAUSABLE.includes(current.state));
-  const canSkip = (item: TakeoutItemResponseDto) =>
-    item.state === TakeoutItemState.Ready || item.state === TakeoutItemState.Failed;
-
-  const progressText = $derived.by(() => {
-    if (!current || !progress || progress.total === null) {
-      return $t('frameleaf_takeout_waiting');
-    }
-    const key =
-      current.action === TakeoutAction.Scan ? 'frameleaf_takeout_scan_progress' : 'frameleaf_takeout_import_progress';
-    return $t(key, { values: { done: counts(progress.done), total: counts(progress.total) } });
-  });
-
-  const newAssetsFact = $derived(
-    current && counted
-      ? counts(current.counts.newAssets + current.counts.imported)
-      : $t('frameleaf_takeout_not_counted'),
-  );
 </script>
 
+{#snippet leaveNote(uploading: boolean)}
+  <div class="note-box" role="note">
+    <strong>
+      {uploading ? $t('frameleaf_takeout_keep_open_title') : $t('frameleaf_takeout_leave_title')}
+    </strong>
+    <p>{uploading ? $t('frameleaf_takeout_keep_open_body') : $t('frameleaf_takeout_leave_body')}</p>
+  </div>
+{/snippet}
+
+{#snippet bar(label: string, done: number, total: number, text: string, note?: string)}
+  <div class="bar">
+    <p>
+      <strong>{text}</strong>{#if note}<span> · {note}</span>{/if}
+    </p>
+    <progress aria-label={label} max={Math.max(total, 1)} value={done}></progress>
+  </div>
+{/snippet}
+
 <div class="fl-takeout">
-  <!-- The hosting dialog carries the title; the stepper and intro follow it as in the prototype. -->
+  <!-- The hosting dialog carries the title. -->
   <ol class="stepper" aria-label={$t('frameleaf_takeout_steps_label')}>
-    {#each TAKEOUT_STAGES as item, index (item)}
-      <li aria-current={stage === item ? 'step' : undefined} class:done={stepDone(index)}>
-        <span>{index + 1}</span>{stageLabel[item]}
+    {#each stepLabels as label, index (index)}
+      <li aria-current={index === step ? 'step' : undefined} class:done={index < step}>
+        <span aria-hidden="true">
+          {#if index < step}<Icon icon={mdiCheck} size="14" />{:else}{index + 1}{/if}
+        </span>{label}
       </li>
     {/each}
   </ol>
 
-  <div class="head">
-    <p class="intro">{$t('frameleaf_takeout_intro')}</p>
-    {#if current}
-      <a class="all" href={Route.takeout()}>{$t('frameleaf_takeout_all_imports')}</a>
-    {/if}
-  </div>
+  <input
+    bind:this={fileInput}
+    class="sr-only"
+    type="file"
+    accept=".zip,application/zip"
+    multiple
+    tabindex="-1"
+    aria-hidden="true"
+    onchange={(event) => {
+      filesChosen(event.currentTarget.files);
+      event.currentTarget.value = '';
+    }}
+  />
 
   {#if error}
     <p class="alert" role="alert">{error}</p>
   {/if}
   <p class="sr-only" role="status" aria-live="polite">{announcement}</p>
 
-  {#if !current}
-    <section class="panel">
-      <h2>{$t('frameleaf_takeout_start_heading')}</h2>
-      <form
-        class="form"
-        onsubmit={(event) => {
-          event.preventDefault();
-          primary.action();
-        }}
-      >
-        <label>
-          {$t('frameleaf_takeout_name_label')}
-          <input bind:value={name} required maxlength="200" />
-        </label>
-        {#if isAdmin}
-          <SegmentedControl
-            label={$t('frameleaf_takeout_source_label')}
-            options={[
-              { value: 'archives', label: $t('frameleaf_takeout_source_archives') },
-              { value: 'folder', label: $t('frameleaf_takeout_source_folder') },
-            ]}
-            bind:value={source}
-          />
-        {/if}
-        {#if source === 'folder'}
-          {#if roots.length === 0}
-            <p class="note">{$t('frameleaf_takeout_no_roots')}</p>
-          {:else}
-            <label>
-              {$t('frameleaf_takeout_root_label')}
-              <select bind:value={rootId}>
-                {#each roots as root (root.id)}
-                  <option value={root.id}>{root.path}</option>
-                {/each}
-              </select>
-            </label>
-            <label>
-              {$t('frameleaf_takeout_folder_label')}
-              <input bind:value={folder} maxlength="4096" placeholder="Takeout" />
-            </label>
-            <p class="note">{$t('frameleaf_takeout_folder_help')}</p>
-          {/if}
-        {:else}
-          <p class="note">{$t('frameleaf_takeout_archives_help')}</p>
-        {/if}
-      </form>
-    </section>
+  {#if view === 'start'}
+    <ol class="intro">
+      <li>
+        <strong>{$t('frameleaf_takeout_step_upload')}</strong>{$t('frameleaf_takeout_start_step_upload')}
+      </li>
+      <li><strong>{$t('frameleaf_takeout_step_check')}</strong>{$t('frameleaf_takeout_start_step_check')}</li>
+      <li>
+        <strong>{$t('frameleaf_takeout_step_import')}</strong>{$t('frameleaf_takeout_start_step_import')}
+      </li>
+    </ol>
+    <div class="note-box warn" role="note">
+      <strong>{$t('frameleaf_takeout_all_files_title')}</strong>
+      <p>{$t('frameleaf_takeout_all_files_body')}</p>
+    </div>
 
-    <section class="panel">
+    {#if isAdmin}
+      <details class="more">
+        <summary>{$t('frameleaf_takeout_folder_summary')}</summary>
+        {#if roots.length === 0}
+          <p class="muted">{$t('frameleaf_takeout_no_roots')}</p>
+        {:else}
+          <p class="muted">{$t('frameleaf_takeout_folder_help')}</p>
+          <label>
+            {$t('frameleaf_takeout_root_label')}
+            <select bind:value={rootId}>
+              {#each roots as root (root.id)}
+                <option value={root.id}>{root.path}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            {$t('frameleaf_takeout_folder_label')}
+            <input bind:value={folder} maxlength="4096" placeholder="Takeout" />
+          </label>
+          <div>
+            <Button disabled={busy || !rootId} onclick={importFolder}>{$t('frameleaf_takeout_import_folder')}</Button>
+          </div>
+        {/if}
+      </details>
+    {/if}
+
+    <section class="imports">
       <h2>{$t('frameleaf_takeout_previous_heading')}</h2>
       {#if imports.length === 0}
-        <p class="note">{$t('frameleaf_takeout_previous_empty')}</p>
+        <p class="muted">{$t('frameleaf_takeout_previous_empty')}</p>
       {:else}
-        <ul class="imports">
+        <ul>
           {#each imports as entry (entry.id)}
             <li>
               <a href={Route.takeout({ import: entry.id })}>
-                <span class="import-name">{entry.name}</span>
-                <span class="meta">
+                <strong>{entry.name}</strong>
+                <span class="muted">
                   {$t('frameleaf_takeout_import_summary', {
-                    values: {
-                      imported: entry.counts.imported,
-                      matched: entry.counts.matched,
-                      items: entry.counts.items,
-                    },
+                    values: { imported: entry.counts.imported, matched: entry.counts.matched },
                   })}
                 </span>
               </a>
@@ -653,517 +587,310 @@
         </ul>
       {/if}
     </section>
-  {:else}
+  {:else if current && (view === 'upload' || view === 'stopped')}
+    {#if view === 'stopped'}
+      <div class="note-box warn" role="status">
+        <strong>
+          {$t('frameleaf_takeout_stopped_title', { values: { done: zipsDone, total: zips.length } })}
+        </strong>
+        <p>{$t('frameleaf_takeout_stopped_body')}</p>
+      </div>
+    {/if}
+    {#if zips.length > 0}
+      {@render bar(
+        $t('frameleaf_takeout_upload_label'),
+        uploaded,
+        uploadSize,
+        $t('frameleaf_takeout_uploaded', { values: { done: bytes(uploaded), total: bytes(uploadSize) } }),
+        upload?.phase === 'verifying'
+          ? $t('frameleaf_takeout_verifying', { values: { name: upload.name } })
+          : minutesLeft === undefined
+            ? undefined
+            : $t('frameleaf_takeout_minutes_left', { values: { count: minutesLeft } }),
+      )}
+    {:else}
+      <p>{$t('frameleaf_takeout_archives_help')}</p>
+    {/if}
+    {@render leaveNote(true)}
+    {#if zips.length > 0}
+      <details class="more">
+        <summary>{$t('frameleaf_takeout_files_count', { values: { count: zips.length } })}</summary>
+        <ul class="files">
+          {#each zips as zip (zip.id)}
+            <li>
+              <span class="name">{zip.name}</span>
+              <span class="muted">
+                {zip.received === zip.size
+                  ? $t('frameleaf_takeout_file_uploaded')
+                  : $t('frameleaf_takeout_archive_progress', {
+                      values: { received: bytes(zip.received), size: bytes(zip.size) },
+                    })}
+              </span>
+            </li>
+          {/each}
+        </ul>
+      </details>
+    {/if}
+  {:else if current && view === 'checking'}
+    {@render bar(
+      $t('frameleaf_takeout_check_label'),
+      progress?.done ?? 0,
+      progress?.total ?? 0,
+      progress?.total
+        ? $t('frameleaf_takeout_scan_progress', {
+            values: { done: counts(progress.done), total: counts(progress.total) },
+          })
+        : $t('frameleaf_takeout_waiting'),
+      $t('frameleaf_takeout_check_note'),
+    )}
+    {@render leaveNote(false)}
+  {:else if current && view === 'check-failed'}
+    <div class="note-box warn" role="status">
+      <strong>{$t('frameleaf_takeout_check_failed_title')}</strong>
+      <p>{current.error ?? $t('frameleaf_takeout_error_generic')}</p>
+    </div>
+  {:else if current && view === 'ready' && options}
     <dl class="facts">
-      <dt>{$t('frameleaf_takeout_fact_source')}</dt>
-      <dd>{sourceFact}</dd>
-      <dt>{$t('frameleaf_takeout_fact_new')}</dt>
-      <dd>{newAssetsFact}</dd>
-      <dt>{$t('frameleaf_takeout_fact_matched')}</dt>
-      <dd>
-        {counted
-          ? $t('frameleaf_takeout_matched_value', { values: { count: counts(current.counts.matchedOriginals) } })
-          : $t('frameleaf_takeout_not_counted')}
-      </dd>
-      <dt>{$t('frameleaf_takeout_fact_review')}</dt>
-      <dd>
-        {#if !counted}
-          {$t('frameleaf_takeout_not_counted')}
-        {:else if needsReview === 0}
-          {$t('frameleaf_takeout_review_none')}
-        {:else}
-          {$t('frameleaf_takeout_review_value', {
-            values: { sidecars: current.counts.review, pairs: current.counts.suggestedPairs },
-          })}
-        {/if}
-      </dd>
+      <div>
+        <dt>{$t('frameleaf_takeout_fact_new')}</dt>
+        <dd>{counts(toImport)}<small>{$t('frameleaf_takeout_fact_new_detail')}</small></dd>
+      </div>
+      <div>
+        <dt>{$t('frameleaf_takeout_fact_already')}</dt>
+        <dd>
+          {counts(current.counts.matchedOriginals)}<small>
+            {options.albums
+              ? $t('frameleaf_takeout_fact_already_detail')
+              : $t('frameleaf_takeout_fact_already_skipped')}
+          </small>
+        </dd>
+      </div>
+      <div>
+        <dt>{$t('frameleaf_takeout_fact_albums')}</dt>
+        <dd>
+          {options.albums ? counts(albumCount) : $t('frameleaf_takeout_fact_albums_none')}<small>
+            {$t('frameleaf_takeout_fact_albums_detail')}
+          </small>
+        </dd>
+      </div>
+      <div>
+        <dt>{$t('frameleaf_takeout_fact_live')}</dt>
+        <dd>{counts(livePhotos)}<small>{$t('frameleaf_takeout_fact_live_detail')}</small></dd>
+      </div>
     </dl>
 
-    {#if current.counts.hiddenLocked > 0}
-      <p class="note locked">
-        {$t('frameleaf_takeout_hidden_locked', { values: { count: current.counts.hiddenLocked } })}
-      </p>
-    {/if}
-    {#if current.counts.rejected > 0}
-      <p class="note">{$t('frameleaf_takeout_rejected_entries', { values: { count: current.counts.rejected } })}</p>
-    {/if}
-
-    {#if busyJob || current.state === TakeoutState.Failed || current.state === TakeoutState.Cancelled}
-      <section class="panel job" aria-live="polite">
-        <div class="job-head">
-          <h2>{$t(takeoutStateKey(current.state))}</h2>
-          <div class="actions">
-            {#if current.state === TakeoutState.Paused}
-              <Button disabled={busy} onclick={() => control(TakeoutControlAction.Resume)}>
-                {$t('frameleaf_takeout_resume')}
-              </Button>
-            {:else if canPause}
-              <Button disabled={busy} onclick={() => control(TakeoutControlAction.Pause)}>
-                {$t('frameleaf_takeout_pause')}
-              </Button>
-            {/if}
-            {#if busyJob && current.state !== TakeoutState.Cancelling}
-              <Button variant="quiet" disabled={busy} onclick={() => control(TakeoutControlAction.Cancel)}>
-                {$t('frameleaf_takeout_stop')}
-              </Button>
-            {/if}
-            <a class="link" href={Route.activity({ filter: 'running' })}>{$t('frameleaf_takeout_open_activity')}</a>
-          </div>
-        </div>
-        {#if busyJob && progress}
-          <progress max="100" value={progress.percent ?? undefined} aria-label={$t('frameleaf_takeout_progress_label')}
-          ></progress>
-          <p class="meta">{progressText}</p>
-          <p class="note">{$t('frameleaf_takeout_background_note')}</p>
-        {/if}
-        {#if current.error && (current.state === TakeoutState.Failed || current.state === TakeoutState.Cancelled)}
-          <p class="alert">{current.error}</p>
-        {/if}
-      </section>
-    {/if}
-
-    {#if stage === 'stage'}
-      <section class="panel">
-        <h2>{$t('frameleaf_takeout_stage_heading')}</h2>
-        {#if folderSource}
-          <p>{$t('frameleaf_takeout_source_folder_value', { values: { name: folderSource.name } })}</p>
-        {/if}
-        {#if zipSources.length > 0}
-          <ul class="archives">
-            {#each zipSources as archive (archive.id)}
+    <div class="choices">
+      <SettingToggle
+        title={$t('frameleaf_takeout_option_albums')}
+        subtitle={options.albums ? $t('frameleaf_takeout_option_albums_on') : $t('frameleaf_takeout_option_albums_off')}
+        bind:checked={options.albums}
+      />
+      {#if options.albums && current.albums.length > 0}
+        <details class="more">
+          <summary>
+            {$t('frameleaf_takeout_choose_albums', { values: { selected: albumCount, total: current.albums.length } })}
+          </summary>
+          <ul class="albums">
+            {#each current.albums as album (album.folder)}
               <li>
-                <div class="archive-head">
-                  <span class="import-name">{archive.name}</span>
-                  <span class="meta">
-                    {$t('frameleaf_takeout_archive_progress', {
-                      values: { received: bytes(archive.received), size: bytes(archive.size) },
-                    })}
-                  </span>
-                  {#if (serverStage === 'stage' || canRetryScan(current)) && !upload}
-                    <Button
-                      variant="quiet"
-                      disabled={busy}
-                      label={$t('frameleaf_takeout_archive_remove', { values: { name: archive.name } })}
-                      onclick={() => removeArchive(archive.id)}
-                    >
-                      {$t('frameleaf_takeout_remove')}
-                    </Button>
-                  {/if}
-                </div>
-                <progress
-                  max={Math.max(archive.size, 1)}
-                  value={archive.received}
-                  aria-label={$t('frameleaf_takeout_archive_progress_label', { values: { name: archive.name } })}
-                ></progress>
+                <label>
+                  <input type="checkbox" bind:checked={selectedAlbums[album.folder]} />
+                  <span class="name">{album.name}</span>
+                  <span class="muted">{$t('frameleaf_takeout_album_count', { values: { count: album.count } })}</span>
+                </label>
               </li>
             {/each}
           </ul>
-        {/if}
-        {#if serverStage === 'stage' || canRetryScan(current)}
-          {#if !folderSource}
-            <label class="file">
-              <span>{$t('frameleaf_takeout_choose_archives')}</span>
-              <input
-                type="file"
-                accept=".zip,application/zip"
-                multiple
-                disabled={busy}
-                onchange={(event) => {
-                  void uploadFiles(event.currentTarget.files);
-                  event.currentTarget.value = '';
-                }}
-              />
-            </label>
-          {/if}
-          {#if upload}
-            <div class="upload" role="status">
-              <p>
-                {$t(upload.phase === 'verifying' ? 'frameleaf_takeout_verifying' : 'frameleaf_takeout_uploading', {
-                  values: { name: upload.name },
-                })}
-              </p>
-              <progress max={Math.max(upload.total, 1)} value={upload.bytes}></progress>
-              <Button onclick={() => uploadController?.abort()}>{$t('frameleaf_takeout_pause_upload')}</Button>
-            </div>
-          {/if}
-          <p class="note">{$t('frameleaf_takeout_keep_open')}</p>
-        {/if}
-      </section>
-    {:else if stage === 'scan'}
-      <section class="panel">
-        <h2>{$t('frameleaf_takeout_scan_heading')}</h2>
-        <p>{$t('frameleaf_takeout_scan_help')}</p>
-        {#if serverStage !== 'scan'}
-          <p class="meta">
-            {$t('frameleaf_takeout_scan_summary', {
-              values: { files: counts(current.counts.files), items: counts(current.counts.items) },
-            })}
-          </p>
-        {/if}
-      </section>
-    {:else}
-      <section class="panel">
-        <SegmentedControl
-          label={$t('frameleaf_takeout_tabs_label')}
-          options={[
-            { value: 'review', label: $t('frameleaf_takeout_tab_review'), hint: String(current.counts.review) },
-            {
-              value: 'live-photos',
-              label: $t('frameleaf_takeout_tab_live_photos'),
-              hint: String(current.counts.suggestedPairs),
-            },
-            { value: 'albums', label: $t('frameleaf_takeout_tab_albums') },
-            { value: 'options', label: $t('frameleaf_takeout_tab_options') },
-            { value: 'report', label: $t('frameleaf_takeout_tab_report') },
-          ]}
-          value={tab}
-          onChange={(value) => (tab = value as ReconcileTab)}
-        />
-
-        {#if tab === 'review'}
-          <div class="toolbar">
-            <label>
-              {$t('frameleaf_takeout_filter_label')}
-              <select
-                bind:value={itemFilter}
-                onchange={() => {
-                  offset = 0;
-                  void run(loadItems);
-                }}
-              >
-                <option value="">{$t('frameleaf_takeout_filter_all')}</option>
-                {#each Object.values(TakeoutItemState) as state (state)}
-                  <option value={state}>{$t(takeoutItemStateKey(state))}</option>
-                {/each}
-              </select>
-            </label>
-          </div>
-          {#if page.hiddenLocked > 0}
-            <p class="note locked">{$t('frameleaf_takeout_hidden_locked', { values: { count: page.hiddenLocked } })}</p>
-          {/if}
-          {#if page.items.length === 0}
-            <p class="note">{$t('frameleaf_takeout_items_empty')}</p>
-          {:else}
-            <ul class="items">
-              {#each page.items as item (item.id)}
-                <li>
-                  <div class="item-head">
-                    <span class="import-name">{item.path}</span>
-                    <Badge
-                      value={$t(takeoutItemStateKey(item.state))}
-                      label={$t(takeoutItemStateKey(item.state))}
-                      tone={itemTone(item.state)}
-                    />
-                  </div>
-                  <p class="meta">
-                    {item.source}{#if item.metadata.takenAt}
-                      · {new Date(item.metadata.takenAt).toLocaleString($locale)}{/if}{#if item.albums.length > 0}
-                      · {item.albums.join(', ')}{/if}
-                  </p>
-                  {#if item.metadata.description}
-                    <p class="description">{item.metadata.description}</p>
-                  {/if}
-                  {#each item.warnings as warning (warning)}
-                    <p class="warning">{$t(takeoutWarningKey(warning))}</p>
-                  {/each}
-                  {#if item.error}
-                    <p class="alert">{item.error}</p>
-                  {/if}
-                  {#if reviewable && item.state === TakeoutItemState.Review}
-                    <div class="decision">
-                      <label>
-                        {$t('frameleaf_takeout_sidecar_label')}
-                        <select bind:value={sidecarChoice[item.id]}>
-                          <option value="">{$t('frameleaf_takeout_sidecar_none')}</option>
-                          {#each item.candidates as candidate (candidate.id)}
-                            <option value={candidate.id}>
-                              {candidate.path}{candidate.metadata.takenAt
-                                ? ` · ${new Date(candidate.metadata.takenAt).toLocaleString($locale)}`
-                                : ''}{candidate.metadata.description
-                                ? ` · ${candidate.metadata.description.slice(0, 80)}`
-                                : ''}
-                            </option>
-                          {/each}
-                        </select>
-                      </label>
-                      <Button variant="primary" disabled={busy} onclick={() => resolve(item, { useChoice: true })}>
-                        {$t('frameleaf_takeout_use_choice')}
-                      </Button>
-                      <Button disabled={busy} onclick={() => resolve(item, { skip: true })}>
-                        {$t('frameleaf_takeout_skip')}
-                      </Button>
-                    </div>
-                  {:else if reviewable && canSkip(item)}
-                    <div class="decision">
-                      <Button variant="quiet" disabled={busy} onclick={() => resolve(item, { skip: true })}>
-                        {$t('frameleaf_takeout_skip')}
-                      </Button>
-                    </div>
-                  {:else if reviewable && item.state === TakeoutItemState.Skipped}
-                    <div class="decision">
-                      <Button disabled={busy} onclick={() => resolve(item, { skip: false })}>
-                        {$t('frameleaf_takeout_include')}
-                      </Button>
-                    </div>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-          <div class="pager">
-            <Button
-              disabled={busy || offset === 0}
-              onclick={() => {
-                offset = Math.max(0, offset - PAGE);
-                void run(loadItems);
-              }}
-            >
-              {$t('frameleaf_takeout_previous')}
-            </Button>
-            <span class="meta">
-              {$t('frameleaf_takeout_page_range', {
-                values: {
-                  from: page.total === 0 ? 0 : offset + 1,
-                  to: Math.min(offset + PAGE, page.total),
-                  total: page.total,
-                },
-              })}
-            </span>
-            <Button
-              disabled={busy || offset + PAGE >= page.total}
-              onclick={() => {
-                offset += PAGE;
-                void run(loadItems);
-              }}
-            >
-              {$t('frameleaf_takeout_next')}
-            </Button>
-          </div>
-        {:else if tab === 'live-photos'}
-          <p class="note">{$t('frameleaf_takeout_pair_reason')}</p>
-          {#if pairs.length === 0}
-            <p class="note">{$t('frameleaf_takeout_pairs_empty')}</p>
-          {:else}
-            <ul class="items">
-              {#each pairs as pair (`${pair.photoItemId}:${pair.videoItemId}`)}
-                <li>
-                  <div class="item-head">
-                    <span class="import-name">{pair.photoPath}</span>
-                    <Badge
-                      value={$t(takeoutPairStateKey(pair.state))}
-                      label={$t(takeoutPairStateKey(pair.state))}
-                      tone="neutral"
-                    />
-                  </div>
-                  <p class="meta">{pair.videoPath}</p>
-                  {#if pair.error}
-                    <p class="alert">{pair.error}</p>
-                  {/if}
-                  {#if reviewable && pair.state !== TakeoutPairState.Linked}
-                    <div class="decision">
-                      <Button
-                        variant={pair.state === TakeoutPairState.Approved ? 'default' : 'primary'}
-                        pressed={pair.state === TakeoutPairState.Approved}
-                        disabled={busy}
-                        onclick={() => decidePair(pair, true)}
-                      >
-                        {$t('frameleaf_takeout_pair_link')}
-                      </Button>
-                      <Button
-                        pressed={pair.state === TakeoutPairState.Skipped}
-                        disabled={busy}
-                        onclick={() => decidePair(pair, false)}
-                      >
-                        {$t('frameleaf_takeout_pair_separate')}
-                      </Button>
-                    </div>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-          <div class="pager">
-            <Button
-              disabled={busy || pairOffset === 0}
-              onclick={() => {
-                pairOffset = Math.max(0, pairOffset - PAGE);
-                void run(loadPairs);
-              }}
-            >
-              {$t('frameleaf_takeout_previous')}
-            </Button>
-            <span class="meta">
-              {$t('frameleaf_takeout_page_range', {
-                values: {
-                  from: pairTotal === 0 ? 0 : pairOffset + 1,
-                  to: Math.min(pairOffset + PAGE, pairTotal),
-                  total: pairTotal,
-                },
-              })}
-            </span>
-            <Button
-              disabled={busy || pairOffset + PAGE >= pairTotal}
-              onclick={() => {
-                pairOffset += PAGE;
-                void run(loadPairs);
-              }}
-            >
-              {$t('frameleaf_takeout_next')}
-            </Button>
-          </div>
-        {:else if tab === 'albums'}
-          <p class="note">{$t('frameleaf_takeout_albums_help')}</p>
-          {#if current.albums.length === 0}
-            <p class="note">{$t('frameleaf_takeout_albums_empty')}</p>
-          {:else}
-            <ul class="albums">
-              {#each current.albums as album (album.folder)}
-                <li>
-                  <label>
-                    <input
-                      type="checkbox"
-                      bind:checked={selectedAlbums[album.folder]}
-                      disabled={!reviewable || !options?.albums}
-                    />
-                    <span class="import-name">{album.name}</span>
-                    <span class="meta">
-                      {$t('frameleaf_takeout_album_count', { values: { count: album.count } })}{#if album.year}
-                        · {$t('frameleaf_takeout_album_year')}{/if}
-                    </span>
-                  </label>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {:else if tab === 'options' && options}
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_albums')}
-            subtitle={$t('frameleaf_takeout_option_albums_help')}
-            bind:checked={options.albums}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_sidecar_review')}
-            subtitle={$t('frameleaf_takeout_option_sidecar_review_help')}
-            bind:checked={options.sidecarReview}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_dates')}
-            bind:checked={options.dates}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_locations')}
-            bind:checked={options.locations}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_descriptions')}
-            bind:checked={options.descriptions}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_favorites')}
-            bind:checked={options.favorites}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_archive')}
-            bind:checked={options.archive}
-            disabled={!reviewable}
-          />
-          <SettingToggle
-            title={$t('frameleaf_takeout_option_matched')}
-            subtitle={$t('frameleaf_takeout_option_matched_help')}
-            bind:checked={options.updateMatchedMetadata}
-            disabled={!reviewable}
-          />
-          <p class="note">{$t('frameleaf_takeout_locked_note')}</p>
-        {:else if tab === 'report'}
-          <dl class="report">
-            <dt>{$t('frameleaf_takeout_item_imported')}</dt>
-            <dd>{counts(current.counts.imported)}</dd>
-            <dt>{$t('frameleaf_takeout_item_matched')}</dt>
-            <dd>{counts(current.counts.matched)}</dd>
-            <dt>{$t('frameleaf_takeout_item_skipped')}</dt>
-            <dd>{counts(current.counts.skipped)}</dd>
-            <dt>{$t('frameleaf_takeout_report_unresolved')}</dt>
-            <dd>{counts(current.counts.review + current.counts.unresolvedPairs)}</dd>
-            <dt>{$t('frameleaf_takeout_item_failed')}</dt>
-            <dd>{counts(current.counts.failed)}</dd>
-          </dl>
-          <div class="actions">
-            <Button disabled={busy} onclick={() => download('json')}>{$t('frameleaf_takeout_download_json')}</Button>
-            <Button disabled={busy} onclick={() => download('csv')}>{$t('frameleaf_takeout_download_csv')}</Button>
-          </div>
-        {/if}
-      </section>
-
-      {#if reviewable && blocked}
-        <p class="notice">{$t('frameleaf_takeout_flagged_notice')}</p>
-      {:else if current.state === TakeoutState.Completed && !pendingImport}
-        <p class="notice done">{$t('frameleaf_takeout_completed_notice')}</p>
+          <p class="muted">{$t('frameleaf_takeout_year_folders')}</p>
+        </details>
       {/if}
+      <SettingToggle
+        title={$t('frameleaf_takeout_option_matched')}
+        subtitle={$t('frameleaf_takeout_option_matched_help')}
+        bind:checked={options.updateMatchedMetadata}
+      />
+      {#if current.counts.review > 0}
+        <SettingToggle
+          title={$t('frameleaf_takeout_unclear_title', { values: { count: current.counts.review } })}
+          subtitle={options.sidecarReview
+            ? $t('frameleaf_takeout_option_unclear_on')
+            : $t('frameleaf_takeout_option_unclear_off')}
+          bind:checked={options.sidecarReview}
+        />
+      {/if}
+      {#if trashed > 0}
+        <label class="tick">
+          <input type="checkbox" bind:checked={options.includeTrashed} />
+          <span>
+            <strong>{$t('frameleaf_takeout_option_trash', { values: { count: trashed } })}</strong>
+            <small>{$t('frameleaf_takeout_option_trash_help')}</small>
+          </span>
+        </label>
+      {/if}
+    </div>
+
+    {#if current.counts.hiddenLocked > 0}
+      <p class="muted">{$t('frameleaf_takeout_locked_count', { values: { count: current.counts.hiddenLocked } })}</p>
+    {/if}
+    {@render leaveNote(false)}
+  {:else if current && view === 'importing'}
+    {@render bar(
+      $t('frameleaf_takeout_import_label'),
+      progress?.done ?? 0,
+      progress?.total ?? 0,
+      progress?.total
+        ? $t('frameleaf_takeout_import_progress', {
+            values: { done: counts(progress.done), total: counts(progress.total) },
+          })
+        : $t('frameleaf_takeout_waiting'),
+      current.state === TakeoutState.Paused ? $t('frameleaf_takeout_state_paused') : undefined,
+    )}
+    {@render leaveNote(false)}
+  {:else if current && view === 'unclear'}
+    <div class="note-box warn" role="status">
+      <strong>
+        {$t('frameleaf_takeout_unclear_heading', {
+          values: { done: counts(current.counts.imported + current.counts.matched), count: current.counts.review },
+        })}
+      </strong>
+      <p>{$t('frameleaf_takeout_unclear_body')}</p>
+    </div>
+    {#each unclear as item (item.id)}
+      <fieldset class="unclear">
+        <legend>{item.path}</legend>
+        {#each item.candidates as candidate (candidate.id)}
+          <label class="candidate" class:on={choices[item.id] === candidate.id}>
+            <input type="radio" name={item.id} value={candidate.id} bind:group={choices[item.id]} />
+            <span>
+              <strong>{takenAt(candidate.metadata.takenAt)}</strong>
+              <small>{candidateDetail(candidate.metadata)}</small>
+            </span>
+          </label>
+        {/each}
+      </fieldset>
+    {/each}
+    {#if current.counts.review > unclear.length}
+      <p class="muted">
+        {$t('frameleaf_takeout_unclear_more', { values: { count: current.counts.review - unclear.length } })}
+      </p>
+    {/if}
+    {#if current.counts.hiddenLocked > 0}
+      <p class="muted">{$t('frameleaf_takeout_locked_count', { values: { count: current.counts.hiddenLocked } })}</p>
+    {/if}
+  {:else if current && view === 'done'}
+    {#if current.state === TakeoutState.Completed}
+      <div class="note-box good" role="status">
+        <strong>{$t('frameleaf_takeout_done_title', { values: { count: current.counts.imported } })}</strong>
+        <p>
+          {$t('frameleaf_takeout_done_body', {
+            values: { matched: current.counts.matched, albums: albumCount, live: livePhotos },
+          })}
+        </p>
+      </div>
+    {:else}
+      <div class="note-box warn" role="status">
+        <strong>{$t('frameleaf_takeout_stopped_import_title')}</strong>
+        <p>{current.error ?? $t('frameleaf_takeout_stopped_import_body')}</p>
+        {#if current.counts.failed === 0}
+          <div>
+            <Button disabled={busy} onclick={() => startImport()}>{$t('frameleaf_takeout_try_again')}</Button>
+          </div>
+        {/if}
+      </div>
+    {/if}
+    {#if current.counts.failed > 0}
+      <section class="failed">
+        <div class="failed-head">
+          <h2>{$t('frameleaf_takeout_failed_heading', { values: { count: current.counts.failed } })}</h2>
+          <Button disabled={busy} onclick={() => startImport()}>{$t('frameleaf_takeout_try_again')}</Button>
+        </div>
+        <ul class="files">
+          {#each failed as item (item.id)}
+            <li>
+              <span class="name">{item.path}</span>
+              <span class="muted">{item.error ?? $t('frameleaf_takeout_error_generic')}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
     {/if}
   {/if}
 
   <footer class="footer">
-    {#if current && !busyJob}
-      <Button variant="quiet" disabled={busy} onclick={() => (deleteOpen = true)}>
-        {$t('frameleaf_takeout_delete')}
+    {#if view === 'start'}
+      <Button onclick={close}>{$t('frameleaf_takeout_cancel')}</Button>
+      <Button variant="primary" disabled={busy} onclick={chooseFiles}>{$t('frameleaf_takeout_choose_zips')}</Button>
+    {:else if view === 'upload' && upload}
+      <Button onclick={() => (cancelOpen = true)}>{$t('frameleaf_takeout_cancel_import')}</Button>
+      <Button onclick={() => uploadController?.abort()}>{$t('frameleaf_takeout_pause_upload')}</Button>
+    {:else if view === 'upload' || view === 'stopped'}
+      <Button disabled={busy} onclick={() => (cancelOpen = true)}>{$t('frameleaf_takeout_cancel_import')}</Button>
+      {#if !fromFolder}
+        <Button variant="primary" disabled={busy} onclick={chooseFiles}>{$t('frameleaf_takeout_choose_zips')}</Button>
+      {/if}
+    {:else if view === 'checking'}
+      <Button variant="primary" onclick={close}>{$t('frameleaf_takeout_close')}</Button>
+    {:else if view === 'check-failed'}
+      <Button disabled={busy} onclick={() => (cancelOpen = true)}>{$t('frameleaf_takeout_cancel_import')}</Button>
+      <Button variant="primary" disabled={busy} onclick={check}>{$t('frameleaf_takeout_check_again')}</Button>
+    {:else if view === 'ready'}
+      <Button disabled={busy} onclick={() => (cancelOpen = true)}>{$t('frameleaf_takeout_cancel_import')}</Button>
+      <Button variant="primary" disabled={busy} onclick={() => startImport()}>
+        {$t('frameleaf_takeout_import_count', { values: { count: toImport } })}
       </Button>
+    {:else if view === 'importing'}
+      {#if current?.state === TakeoutState.Paused}
+        <Button disabled={busy} onclick={() => control(TakeoutControlAction.Resume)}>
+          {$t('frameleaf_takeout_resume')}
+        </Button>
+      {:else}
+        <Button
+          disabled={busy || current?.state === TakeoutState.Cancelling}
+          onclick={() => control(TakeoutControlAction.Pause)}
+        >
+          {$t('frameleaf_takeout_pause')}
+        </Button>
+      {/if}
+      <Button variant="primary" onclick={close}>{$t('frameleaf_takeout_close')}</Button>
+    {:else if view === 'unclear'}
+      <Button onclick={close}>{$t('frameleaf_takeout_later')}</Button>
+      <Button variant="primary" disabled={busy} onclick={addUnclear}>
+        {$t('frameleaf_takeout_add_count', { values: { count: current?.counts.review ?? 0 } })}
+      </Button>
+    {:else}
+      <Button disabled={busy} onclick={download}>{$t('frameleaf_takeout_download_report')}</Button>
+      <Button variant="primary" onclick={close}>{$t('frameleaf_takeout_done')}</Button>
     {/if}
-    <span class="spacer"></span>
-    <Button onclick={secondary}>
-      {stageIndex === 0 || !current ? $t('frameleaf_takeout_cancel') : $t('frameleaf_takeout_back')}
-    </Button>
-    <Button variant="primary" disabled={primary.disabled} onclick={primary.action}>{primary.label}</Button>
   </footer>
 </div>
 
-<Dialog title={$t('frameleaf_takeout_delete_confirm_title')} closeLabel={$t('cancel')} bind:open={deleteOpen}>
-  <p>{$t('frameleaf_takeout_delete_confirm_body')}</p>
+<Dialog title={$t('frameleaf_takeout_cancel_confirm_title')} closeLabel={$t('cancel')} bind:open={cancelOpen}>
+  <p>{$t('frameleaf_takeout_cancel_confirm_body')}</p>
   <div class="dialog-actions">
-    <Button onclick={() => (deleteOpen = false)}>{$t('cancel')}</Button>
-    <Button variant="primary" disabled={busy} onclick={remove}>{$t('frameleaf_takeout_delete_confirm')}</Button>
+    <Button onclick={() => (cancelOpen = false)}>{$t('frameleaf_takeout_keep_going')}</Button>
+    <Button variant="danger" disabled={busy} onclick={cancelImport}>{$t('frameleaf_takeout_cancel_import')}</Button>
   </div>
 </Dialog>
 
 <style>
   .fl-takeout {
     display: grid;
-    gap: 1rem;
+    gap: 1.5rem;
     color: var(--fl-text);
     font-size: var(--fl-font-size);
-  }
-  .head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
   }
   h2 {
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
   }
-  .intro,
-  .meta,
-  .note {
+  p {
     margin: 0;
+  }
+  .muted,
+  small {
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-  }
-  .intro {
-    font-size: var(--fl-font-size);
-  }
-  .all,
-  .link {
-    color: var(--fl-text);
-    font-size: var(--fl-font-small);
-    text-decoration: underline;
   }
   .stepper {
     display: flex;
@@ -1199,116 +926,93 @@
     border-color: var(--fl-accent);
   }
   .stepper li.done > span {
+    color: var(--fl-teal);
     border-color: var(--fl-teal);
   }
-  .facts,
-  .report {
+  .intro {
     display: grid;
-    grid-template-columns: 8.125rem 1fr;
-    gap: 0.75rem 1rem;
-    margin: 0.5rem 0;
-  }
-  .facts dt,
-  .report dt {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .facts dd,
-  .report dd {
+    gap: 0.75rem;
     margin: 0;
-    font-size: var(--fl-font-small);
-    line-height: 1.7;
+    padding: 0;
+    list-style: none;
   }
-  .panel {
+  .intro li {
     display: grid;
-    gap: 0.875rem;
-    padding: 1rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
-    background: var(--fl-raised);
-  }
-  .form {
-    display: grid;
-    gap: 0.875rem;
-  }
-  label {
-    display: grid;
-    gap: var(--fl-space-2);
-    font-size: var(--fl-font-small);
-  }
-  input:not([type='checkbox'], [type='file']),
-  select {
-    min-width: 0;
-    padding: 0.4375rem var(--fl-space-3);
-    color: var(--fl-text);
-    background: var(--fl-canvas);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-  }
-  .file input {
-    color: var(--fl-muted);
-  }
-  .alert {
-    margin: 0;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--fl-danger);
-    border-radius: var(--fl-radius-control);
-    color: var(--fl-text);
-    font-size: var(--fl-font-small);
-  }
-  .warning {
-    margin: 0;
-    font-size: var(--fl-font-small);
-    color: var(--fl-warning);
-  }
-  .notice {
-    margin: 0;
-    padding: 0.625rem 0.75rem;
+    gap: 0.25rem;
+    padding: 0.75rem 1rem;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
+  }
+  .bar {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .bar span {
+    color: var(--fl-muted);
     font-size: var(--fl-font-small);
-  }
-  .locked {
-    padding-inline-start: 0.5rem;
-    border-inline-start: 2px solid var(--fl-border);
-  }
-  .job-head,
-  .item-head,
-  .archive-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .actions,
-  .decision,
-  .pager,
-  .dialog-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .decision label {
-    flex: 1 1 16rem;
-  }
-  .pager {
-    justify-content: space-between;
-  }
-  .dialog-actions {
-    justify-content: flex-end;
-    margin-top: 1rem;
   }
   progress {
     width: 100%;
     height: 0.375rem;
     accent-color: var(--fl-accent);
   }
-  .imports,
-  .archives,
-  .items,
+  .note-box {
+    display: grid;
+    gap: 0.375rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+  }
+  .note-box p {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .note-box.warn {
+    border-color: var(--fl-warning);
+  }
+  .note-box.good {
+    border-color: var(--fl-teal);
+  }
+  .alert {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--fl-danger);
+    border-radius: var(--fl-radius-control);
+    font-size: var(--fl-font-small);
+  }
+  .more {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .more summary {
+    cursor: pointer;
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+  }
+  .more[open] > :not(summary) {
+    margin-top: 0.75rem;
+  }
+  label {
+    display: grid;
+    gap: 0.5rem;
+    font-size: var(--fl-font-small);
+  }
+  input:not([type='checkbox'], [type='radio'], [type='file']),
+  select {
+    min-width: 0;
+    padding: 0.4375rem 0.75rem;
+    color: var(--fl-text);
+    background: var(--fl-canvas);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .imports {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .imports ul,
+  .files,
   .albums {
     display: grid;
     gap: 0.5rem;
@@ -1316,32 +1020,31 @@
     padding: 0;
     list-style: none;
   }
-  .imports li,
-  .archives li,
-  .items li {
+  .imports li {
     display: grid;
-    gap: 0.375rem;
-    padding: 0.625rem 0.75rem;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }
-  .imports li {
-    grid-template-columns: 1fr auto;
-    align-items: center;
-  }
   .imports a {
     display: grid;
-    gap: 0.125rem;
+    gap: 0.25rem;
     color: inherit;
     text-decoration: none;
   }
-  .import-name {
+  .files li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    font-size: var(--fl-font-small);
+  }
+  .name {
     font-weight: 600;
     overflow-wrap: anywhere;
-  }
-  .description {
-    margin: 0;
-    font-size: var(--fl-font-small);
   }
   .albums label {
     display: flex;
@@ -1349,22 +1052,94 @@
     align-items: center;
     gap: 0.5rem;
   }
-  .toolbar {
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 1rem 1.5rem;
+    margin: 0;
+  }
+  .facts dt {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .facts dd {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0.25rem 0 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  .facts small {
+    font-weight: 400;
+  }
+  .choices {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .tick {
     display: flex;
-    justify-content: flex-end;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .tick span {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .unclear {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .unclear legend {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .candidate {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    cursor: pointer;
+  }
+  .candidate.on {
+    border-color: var(--fl-accent);
+  }
+  .candidate span {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .failed {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .failed-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
   }
   .footer {
     position: sticky;
     bottom: 0;
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 0.5rem;
     padding: 0.75rem 0 0;
     background: var(--fl-panel);
     border-top: 1px solid var(--fl-border);
   }
-  .spacer {
-    flex: 1;
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
   }
   .sr-only {
     position: absolute;
@@ -1373,16 +1148,5 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
     white-space: nowrap;
-  }
-  @media (max-width: 40rem) {
-    .facts,
-    .report {
-      grid-template-columns: 1fr;
-      gap: 0.25rem;
-    }
-    .facts dd,
-    .report dd {
-      margin-bottom: 0.5rem;
-    }
   }
 </style>

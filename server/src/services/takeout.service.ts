@@ -314,16 +314,13 @@ export class TakeoutService {
           throw new TakeoutConflict('This import is not ready to import yet');
         }
         await this.repository.setOptions(tx, id, options);
-        if (options.sidecarReview) {
-          const review = await this.repository.countReview(tx, id);
-          if (review.total > 0 && review.total === review.locked && !getLockedOwnerId(auth)) {
-            throw new TakeoutConflict('Unlock Locked to resolve the flagged items before importing.');
-          }
-          if (review.total > 0) {
-            throw new TakeoutConflict('Review complete. Resolve the flagged items before importing.');
-          }
-        } else {
+        // With review on, items whose sidecars disagree wait for the owner while everything else
+        // imports; otherwise they import with the sidecar chosen for them.
+        if (!options.sidecarReview) {
           await this.repository.releaseReview(tx, id);
+        }
+        if (options.includeTrashed) {
+          await this.repository.includeTrashed(tx, id);
         }
         const stopped = state === 'failed' || state === 'cancelled';
         const previous = row.phase === 'importing' && stopped ? operation : undefined;

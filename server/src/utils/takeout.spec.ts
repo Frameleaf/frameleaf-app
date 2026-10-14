@@ -12,6 +12,7 @@ import {
   takeoutEntryPath,
   takeoutLivePhotoKey,
   takeoutMatchedPatch,
+  takeoutMostLikelySidecar,
   takeoutScannedItem,
   takeoutStableId,
   takeoutState,
@@ -204,14 +205,26 @@ describe('takeoutScannedItem', () => {
     });
   });
 
-  it('holds disagreeing sidecars for review', () => {
+  it('marks disagreeing sidecars for review with the most likely one already chosen', () => {
     const item = takeoutScannedItem({
       name: 'photo.jpg',
       folder: 'Trip',
-      candidates: [candidate('a', { description: 'one' }), candidate('b', { description: 'two' })],
+      candidates: [candidate('a', { description: 'one' }), candidate('b', { description: 'two', favorite: true })],
       invalidSidecar: false,
     });
-    expect(item).toMatchObject({ state: 'review', sidecarId: null, warnings: ['ambiguous_sidecar'] });
+    expect(item).toMatchObject({
+      state: 'review',
+      sidecarId: 'b',
+      metadata: { description: 'two', favorite: true },
+      warnings: ['ambiguous_sidecar'],
+    });
+  });
+
+  it('prefers the sidecar whose Google title is the file’s own name', () => {
+    const named = { id: 'a', metadata: { title: 'photo.jpg' } };
+    const fuller = { id: 'b', metadata: { title: 'other.jpg', description: 'x', favorite: true } };
+    expect(takeoutMostLikelySidecar('photo.jpg', [fuller, named])).toBe(named);
+    expect(takeoutMostLikelySidecar('photo.jpg', [])).toBeUndefined();
   });
 
   it('keeps an item locked when any candidate or the folder says Locked Folder', () => {
