@@ -630,9 +630,6 @@ importers:
 
   packages/ui:
     dependencies:
-      '@internationalized/date':
-        specifier: ^3.12.4
-        version: 3.12.4
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -654,9 +651,6 @@ importers:
       svelte:
         specifier: ^5.57.2
         version: 5.57.2(@typescript-eslint/types@8.71.2)
-      svelte-highlight:
-        specifier: ^7.23.1
-        version: 7.23.1
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
@@ -11422,9 +11416,6 @@ packages:
 
   svelte-gestures@5.2.2:
     resolution: {integrity: sha512-Y+chXPaSx8OsPoFppUwPk8PJzgrZ7xoDJKXeiEc7JBqyKKzXer9hlf8F9O34eFuAWB4/WQEvccACvyBplESL7A==}
-
-  svelte-highlight@7.23.1:
-    resolution: {integrity: sha512-7LAEocg8U4YxPRZhIdc6sCU4Vlum7SBe557Aaz6CD4VlCoHlaYIhFz+663lQJWzSSdj3vgz3sY0wEm1AuknAfw==}
 
   svelte-i18n@4.0.1:
     resolution: {integrity: sha512-jaykGlGT5PUaaq04JWbJREvivlCnALtT+m87Kbm0fxyYHynkQaxQMnIKHLm2WeIuBRoljzwgyvz0Z6/CMwfdmQ==}
@@ -24606,8 +24597,6 @@ snapshots:
       '@floating-ui/dom': 1.8.0
 
   svelte-gestures@5.2.2: {}
-
-  svelte-highlight@7.23.1: {}
 
   svelte-i18n@4.0.1(svelte@5.57.2(@typescript-eslint/types@8.71.2)):
     dependencies:

@@ -6,11 +6,64 @@ import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import dotenv from 'dotenv';
 import { visualizer } from 'rollup-plugin-visualizer';
+import type { compile } from 'svelte/compiler';
 import { defineConfig, type Plugin, type ProxyOptions, type UserConfig } from 'vite';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 dotenv.config({ quiet: true });
+
+const retainSvelteCss = (): Plugin => {
+  type SvelteCss = NonNullable<ReturnType<typeof compile>['css']> & { meta?: { vite?: Record<string, unknown> } };
+  const environments = new WeakMap<object, Map<string, SvelteCss>>();
+  return {
+    name: 'frameleaf-svelte-css-cache',
+    enforce: 'post',
+    configResolved(config) {
+      const compiler = config.plugins.find((candidate) => candidate.name === 'vite-plugin-svelte:compile');
+      const hook = compiler?.transform;
+      const handler = typeof hook === 'function' ? hook : hook?.handler;
+      if (!compiler || !handler) {
+        return;
+      }
+      const transform: NonNullable<Plugin['transform']> = async function (code, id, options) {
+        const result = await handler.call(this, code, id, options);
+        const filename = id.split('?', 1)[0];
+        if (filename.endsWith('.svelte') && !id.includes('type=style') && result && typeof result === 'object') {
+          let styles = environments.get(this.environment);
+          if (!styles) {
+            environments.set(this.environment, (styles = new Map()));
+          }
+          const css = result.meta?.svelte?.css as SvelteCss | undefined;
+          if (css) {
+            styles.set(filename, css);
+          } else {
+            styles.delete(filename);
+          }
+        }
+        return result;
+      };
+      compiler.transform = typeof hook === 'function' ? transform : { ...hook, handler: transform };
+    },
+    load(id) {
+      const match = /^(.*\.svelte)\?svelte&type=style(?:&|$)/.exec(id);
+      const cached = match && environments.get(this.environment)?.get(match[1]);
+      if (!cached) {
+        return;
+      }
+      // Module resets can retire metadata before the virtual stylesheet is requested.
+      const { hasGlobal, ...css } = cached;
+      return {
+        ...css,
+        moduleType: 'css',
+        meta:
+          hasGlobal === false
+            ? { ...css.meta, vite: { ...css.meta?.vite, cssScopeTo: [match[1], 'default'] } }
+            : css.meta,
+      };
+    },
+  };
+};
 
 /**
  * FL-139: regenerates the full MDI icon-path lookup as a static JSON asset, fetched lazily by
@@ -25,7 +78,7 @@ dotenv.config({ quiet: true });
 const mdiIconPaths = (): Plugin => ({
   name: 'frameleaf-mdi-icon-paths',
   async buildStart() {
-    const mdi = (await import('@mdi/js')) as Record<string, string>;
+    const mdi = await import('@mdi/js');
     const paths = Object.fromEntries(Object.entries(mdi).filter(([name]) => name !== 'default'));
     await writeFile(path.resolve(import.meta.dirname, 'static/mdi-icon-paths.json'), JSON.stringify(paths));
   },
@@ -67,6 +120,7 @@ export default defineConfig({
     proxy,
   },
   plugins: [
+    retainSvelteCss(),
     mdiIconPaths(),
     enhancedImages(),
     tailwindcss(),
