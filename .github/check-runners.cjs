@@ -23,6 +23,22 @@ const supported = new Set([
   "nscloud-ubuntu-24.04-arm64-8x16",
   "nscloud-windows-2022-amd64-8x16",
 ]);
+// FL-24 hybrid: only these exact jobs stay on GitHub-hosted runners until Namespace can run them.
+const hostedLinux = ["ubuntu-24.04", "ubuntu-24.04-arm"];
+const hosted = new Map([
+  // Namespace Docker 29.3.0-namespace ignores read-only on the /proc/1/mountinfo bind,
+  // which Manager's host-mount check requires.
+  ["manager.yml/manager", hostedLinux],
+  // Namespace ARM64 E2E runs hit repeated reset, readiness and Playwright timeouts. The image
+  // job hands each suite a per-runner artifact, so it follows the suites.
+  ["test.yml/e2e-image", hostedLinux],
+  ["test.yml/e2e-tests-server-cli", hostedLinux],
+  ["test.yml/e2e-tests-web", hostedLinux],
+  ["test.yml/success-check-e2e", "ubuntu-24.04"],
+  // No Namespace runner ever picked up nscloud-windows-2022-amd64-8x16.
+  ["test.yml/cli-unit-tests-win", "windows-latest"],
+]);
+const hostedSeen = new Set();
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
   assert(
@@ -56,6 +72,28 @@ for (const [file, workflow] of Object.entries(workflows)) {
         fs.existsSync(path.resolve(__dirname, "..", job.uses)),
         `${label}: missing local workflow`,
       );
+    } else if (hosted.has(label)) {
+      const expected = hosted.get(label);
+      if (Array.isArray(expected)) {
+        assert.equal(job["runs-on"], "${{ matrix.runner }}", label);
+        assert.deepEqual(
+          job.strategy?.matrix?.runner,
+          expected,
+          `${label}: hosted runner matrix changed`,
+        );
+        assert(
+          (job.strategy.matrix.include ?? []).every((row) =>
+            expected.includes(row.runner),
+          ),
+          `${label}: hosted runner matrix adds a runner`,
+        );
+      } else
+        assert.equal(
+          job["runs-on"],
+          expected,
+          `${label}: hosted runner changed`,
+        );
+      hostedSeen.add(label);
     } else if (job["runs-on"] === "${{ matrix.runner }}") {
       if (
         file === "local-multi-runner-build.yml" &&
@@ -115,6 +153,11 @@ for (const [file, workflow] of Object.entries(workflows)) {
     count++;
   }
 }
+assert.deepEqual(
+  [...hostedSeen].sort(),
+  [...hosted.keys()].sort(),
+  "Every GitHub-hosted exception must name an existing job",
+);
 const webSteps = workflows["test.yml"].jobs["e2e-tests-web"].steps;
 const browserInstall = webSteps.findIndex(
   (step) => step.name === "Install Playwright Browsers",
