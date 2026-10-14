@@ -9,6 +9,7 @@
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
   import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
+  import CustomStyles from './CustomStyles.svelte';
   import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
@@ -292,6 +293,8 @@
 </script>
 
 <OnEvents {onWebsocketConnect} />
+
+<CustomStyles pathname={page.url.pathname} />
 
 <VersionAnnouncement />
 

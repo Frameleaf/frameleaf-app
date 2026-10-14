@@ -114,7 +114,18 @@ const moveRefusals: Record<string, string> = {
   media_move_cancelled_original_retained: 'The original folder is in use. Any partial copy was kept.',
   media_copy_still_running: 'The copy helper is still running. Stop safely and wait for it to exit before recovery.',
 };
-export const readable = (value: string) => stepNames[value] ?? moveRefusals[value] ?? value.replaceAll(/[_-]/g, ' ');
+const refusals: Record<string, string> = {
+  release_service_unavailable: 'Manager could not reach GitHub to check Frameleaf releases. Check this server can reach github.com, then try again.',
+  release_not_eligible: 'This Frameleaf release is not offered to this server. Choose another release.',
+  release_bundle_missing: 'This Frameleaf release is missing installation files Manager needs. Choose a newer release.',
+  release_download_failed: 'Manager could not download this release. Check the network connection, then try again.',
+  release_asset_size_mismatch: 'A release file did not download completely. Try again.',
+  release_verification_timeout: 'Checking the release took too long. Try again.',
+  release_verification_failed: 'This release did not pass signature and checksum verification, so Manager will not use it.',
+  release_architecture_unavailable: 'This release has no images for this server’s processor type.',
+};
+export const readable = (value: string) =>
+  stepNames[value] ?? moveRefusals[value] ?? refusals[value] ?? value.replaceAll(/[_-]/g, ' ');
 export function operationProgress(operation: JournalOperation, backupSkipped = false) {
   const ids = [
     ...new Set([...(plans[operation.kind] ?? []), ...operation.completed, ...(operation.step ? [operation.step] : [])]),

@@ -613,7 +613,8 @@ describe(TakeoutWorkerService.name, () => {
           albums: ['Trip'],
         }),
       );
-      expect(repository.recordPair).toHaveBeenCalledWith(importId, 'p', 'v');
+      // The only photo and video sharing the name: linked without asking.
+      expect(repository.recordPair).toHaveBeenCalledWith(importId, 'p', 'v', true);
     });
   });
 });

@@ -589,9 +589,12 @@ export class TakeoutWorkerService {
       if (clips.length === 0 || stills.length * clips.length > MAX_PAIR_COMBINATIONS) {
         continue;
       }
+      // One photo and one video with the same name is a Live Photo and is linked without asking; any
+      // other combination is only suggested.
+      const unambiguous = stills.length === 1 && clips.length === 1;
       for (const still of stills) {
         for (const clip of clips) {
-          await this.repository.recordPair(importId, still.id, clip.id);
+          await this.repository.recordPair(importId, still.id, clip.id, unambiguous);
         }
       }
     }

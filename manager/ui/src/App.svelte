@@ -159,7 +159,7 @@
       : ['Installation', 'Library & settings', 'Database backup', 'Import'],
   );
   const lastImportStep = $derived(importSteps.length - 1);
-  const availableUpdates = $derived(releases.filter((item) => item.tag !== installation?.release));
+  const availableUpdates = $derived(installation ? releases.filter((item) => item.tag !== installation.release) : []);
   const latestBackup = $derived(snapshots[0]);
 
   function qrSvg(url: string) {
