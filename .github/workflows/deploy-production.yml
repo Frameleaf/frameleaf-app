@@ -58,7 +58,7 @@ jobs:
   candidate:
     name: Verify the verified candidate
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/fork/main' || inputs.dry-run)
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
       actions: read
@@ -95,11 +95,12 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        runner:
+          [nscloud-ubuntu-24.04-amd64-8x16, nscloud-ubuntu-24.04-arm64-8x16]
         include:
-          - runner: ubuntu-24.04
+          - runner: nscloud-ubuntu-24.04-amd64-8x16
             architecture: amd64
-          - runner: ubuntu-24.04-arm
+          - runner: nscloud-ubuntu-24.04-arm64-8x16
             architecture: arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -128,7 +129,7 @@ jobs:
     name: Promote, sign and publish
     needs: [candidate, deploy-test]
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     environment: production
     permissions:
       contents: write
@@ -172,7 +173,7 @@ jobs:
   flags-plan:
     name: Plan ${{ inputs.action }} (read only)
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release'
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
       packages: read
@@ -195,7 +196,7 @@ jobs:
     name: Apply ${{ inputs.action }}
     needs: flags-plan
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     environment: production
     permissions:
       contents: write

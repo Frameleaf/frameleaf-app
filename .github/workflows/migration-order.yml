@@ -17,7 +17,7 @@ jobs:
   migration-order:
     name: Verify migration ORDER
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && !github.event.created }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 20
     permissions:
       contents: read

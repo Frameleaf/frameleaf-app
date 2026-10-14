@@ -39,7 +39,7 @@ jobs:
     env:
       OASDIFF_IMAGE: mirror.gcr.io/tufin/oasdiff@sha256:6263a96dd2ef0726c54e21fea9b8e1607eac4841add0079324b424c1f52b819c
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 15
     permissions:
       contents: read

@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     defaults:
       run:
         working-directory: ./docs

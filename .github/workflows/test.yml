@@ -34,7 +34,7 @@ jobs:
   script-unit-tests:
     name: Scripts unit tests
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     steps:
@@ -91,7 +91,7 @@ jobs:
   server-unit-tests:
     name: Test & Lint Server
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     env:
@@ -135,7 +135,7 @@ jobs:
   cli-unit-tests:
     name: Unit Test CLI
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     defaults:
@@ -159,6 +159,7 @@ jobs:
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    # GitHub-hosted: no Namespace runner ever picked up nscloud-windows-2022-amd64-8x16 (FL-24).
     runs-on: windows-latest
     permissions:
       contents: read
@@ -191,7 +192,7 @@ jobs:
   web-lint:
     name: Lint Web
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     defaults:
@@ -232,7 +233,7 @@ jobs:
   web-unit-tests:
     name: Test Web
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     defaults:
@@ -276,7 +277,7 @@ jobs:
   i18n-tests:
     name: Test i18n
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     steps:
@@ -313,7 +314,7 @@ jobs:
   e2e-tests-lint:
     name: End-to-End Lint
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     defaults:
@@ -356,7 +357,7 @@ jobs:
     # spec except the listed scale specs, which server-medium-scale-tests runs beside it.
     name: Medium Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
       packages: read
@@ -440,7 +441,7 @@ jobs:
     # more), with a database of their own.
     name: Medium Scale Tests (Server)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
       packages: read
@@ -581,6 +582,8 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
     name: End-to-End Image
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    # GitHub-hosted: on Namespace ARM64 these suites hit repeated reset, readiness and
+    # Playwright timeouts (FL-24); move back once they pass there.
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -631,6 +634,8 @@ jobs:
     name: End-to-End Tests (Server & CLI)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     needs: e2e-image
+    # GitHub-hosted: on Namespace ARM64 these suites hit repeated reset, readiness and
+    # Playwright timeouts (FL-24); move back once they pass there.
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -942,6 +947,8 @@ jobs:
     name: End-to-End Tests (Web)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     needs: e2e-image
+    # GitHub-hosted: on Namespace ARM64 these suites hit repeated reset, readiness and
+    # Playwright timeouts (FL-24); move back once they pass there.
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -981,8 +988,16 @@ jobs:
         run: pnpm install --frozen-lockfile
         if: ${{ !cancelled() }}
       - name: Install Playwright Browsers
-        run: pnpm exec playwright install chromium --only-shell
+        run: pnpm exec playwright install --with-deps chromium --only-shell
         if: ${{ !cancelled() }}
+      - name: Verify Playwright browser launch
+        timeout-minutes: 1
+        run: |
+          node --input-type=module <<'NODE'
+          import { chromium } from '@playwright/test';
+          const browser = await chromium.launch({ timeout: 15000 });
+          await browser.close();
+          NODE
       - name: Configure public Docker Hub mirror
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
@@ -1087,6 +1102,7 @@ jobs:
       - e2e-tests-web
     permissions:
       contents: read
+    # GitHub-hosted with the E2E jobs it aggregates (FL-24).
     runs-on: ubuntu-24.04
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
     steps:
@@ -1103,7 +1119,7 @@ jobs:
   ml-unit-tests:
     name: Unit Test ML
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     defaults:
@@ -1126,7 +1142,7 @@ jobs:
   github-files-formatting:
     name: .github Files Formatting
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     defaults:
@@ -1167,7 +1183,7 @@ jobs:
   shellcheck:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: ShellCheck
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     steps:
@@ -1182,7 +1198,7 @@ jobs:
   generated-api-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: OpenAPI Clients
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     steps:
@@ -1235,7 +1251,7 @@ jobs:
   sql-schema-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: SQL Schema Checks
-    runs-on: ubuntu-24.04
+    runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
     steps:
