@@ -13,7 +13,6 @@ describe('Manager Storage link', () => {
     expect(managerAccessUrl(managed)).toBeNull();
   });
   it.each([
-    // eslint-disable-next-line unicorn/prefer-https -- this negative case must reject insecure Manager links.
     'http://nas.example',
     'https://user:password@nas.example',
     'https://nas.example/path',
