@@ -4,10 +4,6 @@
    * `settings-v2/server/server-updates.jsx`): named for what it is, with a switch so styling can be
    * turned off without deleting the text (`theme.customCssEnabled`), and who it is for and the risk
    * said in one notice.
-   *
-   * The prototype also promises that settings pages never use custom styling. That needs the web
-   * app to load the style sheet differently, so the page only says what is true today: turning the
-   * switch off, saved from any page that still works, puts the standard look back.
    */
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
