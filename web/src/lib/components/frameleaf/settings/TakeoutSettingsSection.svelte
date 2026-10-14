@@ -20,13 +20,11 @@
   import { t } from 'svelte-i18n';
 
   /**
-   * The settings entry to Google Photos imports (FL-65), the prototype's "Google Photos & server
-   * imports" section in Backup & import. Its "Preview import workflow" action opens the import
-   * workflow in place (FL-83), as the prototype's wide "Import Google Photos" dialog
-   * (`CommandCenter.jsx` `showWorkflow` / `workflows.import`). The address says the dialog is open
-   * (`workflow=import`) and on which import (`import`), so the old `/takeout` page, links from
-   * elsewhere and a reload all land in it. The wizard's two switches ("Recreate album memberships",
-   * "Review ambiguous sidecars") are choices made for each import there, where they apply.
+   * The settings entry to Google Photos imports (FL-65). Its "Import from Google Photos…" action opens
+   * the import flow in place (FL-83) as a wide dialog, the prototype's Google Photos import flow. The
+   * address says the dialog is open (`workflow=import`) and on which import (`import`), so the old
+   * `/takeout` page, links from elsewhere and a reload all land in it. The choices for an import are
+   * made in the flow, on its "Ready to import" screen.
    *
    * The imports are read from the server every time the dialog opens or moves to another import;
    * nothing about an import lives in the browser.
