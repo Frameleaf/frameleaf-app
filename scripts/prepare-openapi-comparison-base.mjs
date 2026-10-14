@@ -12,6 +12,8 @@ const reviewedBaseSha256 = new Set([
   "bcb48357fe0c4808d196da4993330c72e4db5201f03018f0c9b0e00c4e7c4057",
   // PR140 ba3c033f8e retains the same point DTO and email constraints after Takeout updates.
   "ede05156bcab7a9f84ef01ae067bd7e6441b76be1eee9ce9df84572d66456a39",
+  // PR140 e4b9aaff retains the reviewed tuple validator and email constraints.
+  "30bca38017a67e688d75dfefe41d781c85da6580ea2975c81caad1b52e0c31bf",
 ]);
 const pointPointers = [
   "/components/schemas/AssetDevelopStroke/properties/points/items",
