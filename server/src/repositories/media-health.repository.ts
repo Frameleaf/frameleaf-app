@@ -1129,7 +1129,12 @@ export class MediaHealthRepository {
           })
           .where('id', '=', asset.id)
           .execute();
-        if (asset.physicalOriginalFileId) {
+        // A row already at the path may be one an earlier relink left behind with no owner (or an owner that
+        // moved off it). The relinked asset takes it, or it would lose its sidecar and metadata as a copy.
+        await sql`UPDATE public.physical_file SET "canonicalAssetId" = ${asset.id}::uuid
+          WHERE id = ${physicalId}::uuid AND NOT EXISTS (SELECT 1 FROM public.asset
+            WHERE id = physical_file."canonicalAssetId" AND "originalPath" = ${recoveredPath})`.execute(trx);
+        if (asset.physicalOriginalFileId && asset.physicalOriginalFileId !== physicalId) {
           await sql`UPDATE public.physical_file SET "canonicalAssetId" = (SELECT id FROM public.asset WHERE "physicalOriginalFileId" = ${asset.physicalOriginalFileId}::uuid ORDER BY id LIMIT 1)
             WHERE id = ${asset.physicalOriginalFileId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
         }
