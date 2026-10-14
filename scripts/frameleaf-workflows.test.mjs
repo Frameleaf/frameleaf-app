@@ -1214,6 +1214,11 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
   assert.match(smoke, /\.layers\[\]\.digest/);
   assert.match(smoke, /gzip -dc/);
   assert.match(smoke, /paste .*oci-layer-digests.*oci-diffids/);
+  // the runtime archive's manifest carries the OCI config (containerd stores name images by it)
+  assert.match(
+    smoke,
+    /jq -er '\.config\.digest' "\$runtime_manifest"\)" == "\$config"/,
+  );
   assert.match(smoke, /frameleaf-cli:ci --version/);
   assert.match(smoke, /frameleaf-cli:ci migrate --help/);
   assert.match(smoke, /if docker run.*invalid-command/);
