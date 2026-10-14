@@ -7,10 +7,17 @@ class ModalManager {
     open(Component, ...props) {
         let modal = {};
         let onClose;
+        let closing;
         const deferred = new Promise((resolve) => {
-            onClose = async (...args) => {
-                await unmount(modal);
-                resolve(args[0]);
+            onClose = (...args) => {
+                closing ??= Promise.resolve().then(() => unmount(modal)).then(
+                    () => resolve(args[0]),
+                    (error) => {
+                        closing = undefined;
+                        throw error;
+                    },
+                );
+                return closing;
             };
             modal = mount(Component, {
                 target: document.body,
