@@ -6,8 +6,8 @@ import CustomStyles from './CustomStyles.svelte';
 const stylesheet = () => document.head.querySelector('link[href="/custom.css"]');
 
 beforeAll(() => {
-  (window as unknown as Window).happyDOM.settings.disableCSSFileLoading = true;
-  (window as unknown as Window).happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
+  (globalThis as unknown as Window).happyDOM.settings.disableCSSFileLoading = true;
+  (globalThis as unknown as Window).happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
 });
 
 it.each(['/user-settings', '/user-settings/', '/admin', '/admin/system-settings', '/admin/users'])(
