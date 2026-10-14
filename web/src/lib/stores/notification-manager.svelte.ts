@@ -31,7 +31,6 @@ class NotificationStore {
         }
         this.clear();
         this.#userId = id;
-        return this.refresh();
       },
     });
   }

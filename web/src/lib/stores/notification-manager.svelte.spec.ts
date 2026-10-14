@@ -5,7 +5,7 @@ import { notificationManager } from './notification-manager.svelte';
 const events = vi.hoisted<{
   AuthLogin?: (user: { userId: string }) => Promise<void>;
   AuthLogout?: () => void;
-  AuthUserLoaded?: (user: { id: string }) => Promise<void> | undefined;
+  AuthUserLoaded?: (user: { id: string }) => void;
 }>(() => ({}));
 const handleError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/managers/event-manager.svelte', () => ({
@@ -172,7 +172,8 @@ it('does not send a delete or cancel an active refresh for an absent notificatio
 
 it('retires old reads and dismiss rollback when AuthUserLoaded changes identity', async () => {
   sdkMock.getNotifications.mockResolvedValueOnce([notification('account-a')]);
-  await events.AuthUserLoaded?.({ id: 'a' });
+  events.AuthUserLoaded?.({ id: 'a' });
+  await notificationManager.refresh();
   const read = deferred<NotificationDto[]>();
   const write = deferred<never>();
   sdkMock.getNotifications.mockReturnValueOnce(read.promise);
@@ -180,9 +181,9 @@ it('retires old reads and dismiss rollback when AuthUserLoaded changes identity'
   sdkMock.deleteNotification.mockReturnValueOnce(write.promise);
   const dismiss = notificationManager.dismiss('account-a');
   sdkMock.getNotifications.mockResolvedValueOnce([notification('account-b')]);
-  const changed = events.AuthUserLoaded?.({ id: 'b' });
+  events.AuthUserLoaded?.({ id: 'b' });
   expect(notificationManager.notifications).toEqual([]);
-  await changed;
+  await notificationManager.refresh();
   write.reject(new Error('old-account write failed'));
   await expect(dismiss).rejects.toThrow('old-account write failed');
   read.resolve([notification('account-a')]);
@@ -192,8 +193,9 @@ it('retires old reads and dismiss rollback when AuthUserLoaded changes identity'
 
 it('does not clear or re-read notifications when AuthUserLoaded repeats the same identity', async () => {
   sdkMock.getNotifications.mockResolvedValueOnce([notification('account-a')]);
-  await events.AuthUserLoaded?.({ id: 'a' });
-  await events.AuthUserLoaded?.({ id: 'a' });
+  events.AuthUserLoaded?.({ id: 'a' });
+  await notificationManager.refresh();
+  events.AuthUserLoaded?.({ id: 'a' });
   expect(sdkMock.getNotifications).toHaveBeenCalledTimes(1);
   expect(notificationManager.notifications.map(({ id }) => id)).toEqual(['account-a']);
 });
@@ -269,4 +271,26 @@ it('lets the new account refresh immediately without waiting for previous-accoun
   write.resolve(notification('old'));
   await mutation;
   expect(notificationManager.notifications.map(({ id }) => id)).toEqual(['new']);
+});
+
+it('does not read private notifications when a public frame observes the signed-in visitor', async () => {
+  sdkMock.getNotifications.mockResolvedValue([]);
+  events.AuthUserLoaded?.({ id: 'visitor' });
+  events.AuthUserLoaded?.({ id: 'other-visitor' });
+  expect(sdkMock.getNotifications).not.toHaveBeenCalled();
+});
+
+it('retires a previous account read on identity load without starting another private request', async () => {
+  notificationManager.notifications = [notification('previous-account')];
+  const response = deferred<NotificationDto[]>();
+  sdkMock.getNotifications.mockReturnValueOnce(response.promise).mockResolvedValue([]);
+  const pending = notificationManager.refresh();
+  const signal = sdkMock.getNotifications.mock.calls[0][1]?.signal;
+  events.AuthUserLoaded?.({ id: 'visitor' });
+  expect(signal?.aborted).toBe(true);
+  expect(notificationManager.notifications).toEqual([]);
+  response.resolve([notification('previous-account')]);
+  await pending;
+  expect(sdkMock.getNotifications).toHaveBeenCalledTimes(1);
+  expect(notificationManager.notifications).toEqual([]);
 });
