@@ -7,6 +7,9 @@ const {
   VARIANTS,
   SOURCE,
   INSTALL_FILES,
+  MANAGER_ASSETS,
+  missingManagerAssets,
+  checkReleaseAssets,
   validateBuildInput,
   validateIndex,
   validateImageConfig,
@@ -852,6 +855,34 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
   }
 });
 
+test("Manager asset check names every asset Manager downloads that a release lacks", async () => {
+  // The asset list published on frameleaf-v3.2.0-15, which Manager refused with release_bundle_missing.
+  const published = [
+    "docker-compose.rootless.yml",
+    "docker-compose.yml",
+    "example.env",
+    "hwaccel.ml.yml",
+    "hwaccel.transcoding.yml",
+    "release-manifest.json",
+    "SHA256SUMS",
+    "supported-versions.json",
+  ].map((name) => ({ name }));
+  assert.deepEqual(missingManagerAssets({ assets: published }), [
+    "docker-compose.ml-isolated.yml",
+    "nas-manifest.json",
+  ]);
+  assert.deepEqual(
+    missingManagerAssets({ assets: MANAGER_ASSETS.map((name) => ({ name })) }),
+    [],
+  );
+  await assert.rejects(
+    checkReleaseAssets("frameleaf-v3.2.0-15", async () => ({
+      assets: published,
+    })),
+    /missing Manager assets: docker-compose\.ml-isolated\.yml, nas-manifest\.json/,
+  );
+});
+
 test("registry reads reject errors and oversized chunked responses without printing credentials", async () => {
   await assert.rejects(
     checkedResponse(new Response("denied", { status: 403 })),
@@ -1353,13 +1384,13 @@ test("promotion refuses a bundle whose database or CLI image is not published", 
             image: "ghcr.io/frameleaf/frameleaf-server",
             suffix: "",
             digest: digest(3),
-            platforms: ["linux/amd64"],
+            platforms: ["linux/amd64", "linux/arm64"],
           },
           {
             image: "ghcr.io/frameleaf/frameleaf-machine-learning",
             suffix: "",
             digest: digest(4),
-            platforms: ["linux/amd64"],
+            platforms: ["linux/amd64", "linux/arm64"],
           },
         ],
       },
