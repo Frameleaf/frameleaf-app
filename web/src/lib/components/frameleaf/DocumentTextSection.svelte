@@ -389,7 +389,7 @@
             rereadPending = false;
             // the boxes drawn over the photo come from the recognized text, which was just replaced
             assetCacheManager.invalidateAsset(assetId);
-            await ocrManager.getAssetOcr(assetId);
+            await ocrManager.getAssetOcr(assetId, true);
             return;
           }
           if (attempt + 1 < DOCUMENT_REREAD_POLL_LIMIT) {
