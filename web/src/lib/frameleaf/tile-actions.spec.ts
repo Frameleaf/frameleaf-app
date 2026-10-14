@@ -42,7 +42,7 @@ describe('tile quick actions (FL-33, T-4)', () => {
         more: true,
       });
       expect(tileActionAvailability(revealed, { ...context, locked: true }).favorite).toBe(false);
-      const legacy = asset({ visibility: AssetVisibility.Locked, lockReason: AssetLockReason.ImmichLockedFolder });
+      const legacy = asset({ visibility: AssetVisibility.Locked, lockReason: AssetLockReason.FrameleafLockedFolder });
       // FL-195 follow-up: an item moved from the old Locked folder is revealed too
       expect(tileActionAvailability(legacy, context).favorite).toBe(true);
     } finally {

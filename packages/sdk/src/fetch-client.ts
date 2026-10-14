@@ -2422,6 +2422,10 @@ export type MediaOperationDto = {
     kind: MediaOperationKind;
     /** What the person sees in Activity; empty when withheld */
     label: string;
+    /** Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed */
+    lastAdmissionRefusalReason?: (RenderWorkerRefusalReason) | null;
+    /** When that worker refused it; null with lastAdmissionRefusalReason */
+    lastAdmissionRefusedAt?: string | null;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
     pausable: boolean;
@@ -4170,6 +4174,10 @@ export type LivePhotoUploadCommitDto = {
 export type LivePhotoUploadResultDto = {
     still: AssetUploadResultDto;
     video: AssetUploadResultDto;
+};
+export type AssetUploadDirectDescriptionDto = {
+    sdp: string;
+    version: number;
 };
 export type ExifResponseDto = {
     /** Bits per sample */
@@ -7814,6 +7822,10 @@ export type MediaOperationDetailDto = {
     kind: MediaOperationKind;
     /** What the person sees in Activity; empty when withheld */
     label: string;
+    /** Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed */
+    lastAdmissionRefusalReason?: (RenderWorkerRefusalReason) | null;
+    /** When that worker refused it; null with lastAdmissionRefusalReason */
+    lastAdmissionRefusedAt?: string | null;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
     pausable: boolean;
@@ -12146,7 +12158,7 @@ export type SearchLandmarkResponseDto = {
     city: string | null;
     /** Country most of these photos and videos were taken in */
     country: string | null;
-    /** The latest photo or video here, for use as a cover */
+    /** The best photo or video here (by the Best Photos score, landscape preferred), for use as a cover */
     coverAssetId: string;
     /** Local capture time of the earliest photo or video here */
     firstTakenAt: string;
@@ -13222,6 +13234,17 @@ export type StudioMediaFactsDto = {
     assetId: string;
     /** The first audio track codec; its presence places a linked audio clip */
     audioCodec: string | null;
+    /** Bits per component, read from the pixel format of the picture stream; null when unknown */
+    bitDepth: number | null;
+    /** ITU-T H.273 matrix coefficients of the picture stream (2: unspecified); null when none is known */
+    colorMatrixCode: number | null;
+    /** ITU-T H.273 colour primaries of the picture stream (2: unspecified); null when none is known */
+    colorPrimariesCode: number | null;
+    colorTransfer: StudioMediaColorTransfer;
+    /** ITU-T H.273 transfer characteristics of the picture stream (2: unspecified); null when none is known */
+    colorTransferCode: number | null;
+    /** The Dolby Vision profile of the picture stream; null when it has none or none is known */
+    dolbyVisionProfile: number | null;
     /** Length in seconds; 0 for a still; null when unknown */
     durationSeconds: number | null;
     /** frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still */
@@ -14461,6 +14484,7 @@ export type TakeoutOptionsResponseDto = {
     dates: boolean;
     descriptions: boolean;
     favorites: boolean;
+    includeTrashed: boolean;
     locations: boolean;
     selectedAlbums?: string[];
     sidecarReview: boolean;
@@ -14546,11 +14570,13 @@ export type TakeoutOptionsDto = {
     descriptions?: boolean;
     /** Bring over favorites */
     favorites?: boolean;
+    /** Bring in photos that were in the Google Photos trash; otherwise they are skipped */
+    includeTrashed?: boolean;
     /** Bring over locations */
     locations?: boolean;
     /** Album folders to recreate; omitted means every folder that is not a year folder */
     selectedAlbums?: string[];
-    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
+    /** Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar */
     sidecarReview?: boolean;
     /** Fill metadata missing from photos already in the library; values already there are never replaced */
     updateMatchedMetadata?: boolean;
@@ -19297,6 +19323,26 @@ export function appendAssetUploadResource({ uploadComplete, uploadDraftInteropVe
     }));
 }
 /**
+ * Negotiate a resource-scoped direct upload data channel
+ */
+export function negotiateAssetUploadDirect({ id, assetUploadDirectDescriptionDto }: {
+    id: string;
+    assetUploadDirectDescriptionDto: AssetUploadDirectDescriptionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetUploadDirectDescriptionDto;
+    } | {
+        status: 429;
+    } | {
+        status: 503;
+    }>(`/assets/uploads/${encodeURIComponent(id)}/direct`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetUploadDirectDescriptionDto
+    })));
+}
+/**
  * Recover a completed upload result
  */
 export function getAssetUploadResourceResult({ id }: {
@@ -20059,13 +20105,13 @@ export function endSession({ id, key, sessionId, slug }: {
 /**
  * Get HLS media playlist
  */
-export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xImmichHlsPos }: {
+export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xFrameleafHlsPos }: {
     id: string;
     key?: string;
     sessionId: string;
     slug?: string;
     variantIndex: number;
-    xImmichHlsPos?: number;
+    xFrameleafHlsPos?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -20076,21 +20122,21 @@ export function getMediaPlaylist({ id, key, sessionId, slug, variantIndex, xImmi
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-immich-hls-pos": xImmichHlsPos
+            "x-frameleaf-hls-pos": xFrameleafHlsPos
         })
     }));
 }
 /**
  * Get HLS segment or init file
  */
-export function getSegment({ filename, id, key, sessionId, slug, variantIndex, xImmichHlsMsn }: {
+export function getSegment({ filename, id, key, sessionId, slug, variantIndex, xFrameleafHlsMsn }: {
     filename: string;
     id: string;
     key?: string;
     sessionId: string;
     slug?: string;
     variantIndex: number;
-    xImmichHlsMsn?: number;
+    xFrameleafHlsMsn?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -20101,7 +20147,7 @@ export function getSegment({ filename, id, key, sessionId, slug, variantIndex, x
     }))}`, {
         ...opts,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-immich-hls-msn": xImmichHlsMsn
+            "x-frameleaf-hls-msn": xFrameleafHlsMsn
         })
     }));
 }
@@ -27848,6 +27894,20 @@ export function resolveTakeoutItem({ id, itemId, takeoutResolveDto }: {
     })));
 }
 /**
+ * Preview a photo waiting in a Google Photos import
+ */
+export function getTakeoutItemPreview({ id, itemId }: {
+    id: string;
+    itemId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/takeout/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/preview`, {
+        ...opts
+    }));
+}
+/**
  * List possible Live Photos in a Google Photos import
  */
 export function getTakeoutPairs({ id, limit, offset, state }: {
@@ -27908,7 +27968,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -27961,7 +28021,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28014,7 +28074,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -28069,7 +28129,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, da
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
-    lockReason?: AssetLockReason;
+    lockReason?: AssetLockReason | "immich-locked-folder";
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -29624,6 +29684,26 @@ export enum MediaOperationKind {
     BuddyBackup = "buddy_backup",
     BuddyRestore = "buddy_restore"
 }
+export enum RenderWorkerRefusalReason {
+    InvalidCredential = "invalid_credential",
+    WorkerRevoked = "worker_revoked",
+    SessionExpired = "session_expired",
+    ConformanceStale = "conformance_stale",
+    ConformanceReplayed = "conformance_replayed",
+    EngineDigestMismatch = "engine_digest_mismatch",
+    SoftwareRenderer = "software_renderer",
+    DestinationMismatch = "destination_mismatch",
+    WorkerMismatch = "worker_mismatch",
+    ScopeExceeded = "scope_exceeded",
+    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
+    UserConcurrencyExceeded = "user_concurrency_exceeded",
+    GpuMemoryInsufficient = "gpu_memory_insufficient",
+    WallClockExceeded = "wall_clock_exceeded",
+    OutputBytesExceeded = "output_bytes_exceeded",
+    DestinationUnavailable = "destination_unavailable",
+    ManifestIncomplete = "manifest_incomplete",
+    CodecUnsupported = "codec_unsupported"
+}
 export enum MediaOperationStatus {
     Queued = "queued",
     Preparing = "preparing",
@@ -29663,26 +29743,6 @@ export enum RenderWorkerAuditEvent {
     Revoked = "revoked",
     Updated = "updated",
     DeviceLost = "device_lost"
-}
-export enum RenderWorkerRefusalReason {
-    InvalidCredential = "invalid_credential",
-    WorkerRevoked = "worker_revoked",
-    SessionExpired = "session_expired",
-    ConformanceStale = "conformance_stale",
-    ConformanceReplayed = "conformance_replayed",
-    EngineDigestMismatch = "engine_digest_mismatch",
-    SoftwareRenderer = "software_renderer",
-    DestinationMismatch = "destination_mismatch",
-    WorkerMismatch = "worker_mismatch",
-    ScopeExceeded = "scope_exceeded",
-    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
-    UserConcurrencyExceeded = "user_concurrency_exceeded",
-    GpuMemoryInsufficient = "gpu_memory_insufficient",
-    WallClockExceeded = "wall_clock_exceeded",
-    OutputBytesExceeded = "output_bytes_exceeded",
-    DestinationUnavailable = "destination_unavailable",
-    ManifestIncomplete = "manifest_incomplete",
-    CodecUnsupported = "codec_unsupported"
 }
 export enum Kind2 {
     Individual = "individual"
@@ -31878,6 +31938,12 @@ export enum SharedSpaceEventType {
     Reply = "Reply",
     Like = "Like"
 }
+export enum StudioMediaColorTransfer {
+    Sdr = "sdr",
+    Pq = "pq",
+    Hlg = "hlg",
+    Hdr = "hdr"
+}
 export enum StudioMediaFactsSource {
     Probe = "probe",
     Stored = "stored"
@@ -32365,7 +32431,7 @@ export enum TimeBucketDateType {
 export enum AssetLockReason {
     Marked = "marked",
     Detected = "detected",
-    ImmichLockedFolder = "immich-locked-folder"
+    FrameleafLockedFolder = "frameleaf-locked-folder"
 }
 export enum AssetOrderBy {
     TakenAt = "takenAt",

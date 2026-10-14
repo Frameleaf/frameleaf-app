@@ -33,35 +33,37 @@ The folders considered for these checks include: `upload/`, `library/`, `thumbs/
 
 When Frameleaf starts, it performs a series of checks in order to validate that it can read and write files to the volume mounts used by the storage system. If it cannot perform all the required operations, it will fail to start. The checks include:
 
-- Creating an initial hidden file (`.immich`) in each folder
-- Reading a hidden file (`.immich`) in each folder
-- Overwriting a hidden file (`.immich`) in each folder
+- Creating an initial hidden file (`.frameleaf`) in each folder
+- Reading a hidden file (`.frameleaf`) in each folder
+- Overwriting a hidden file (`.frameleaf`) in each folder
+
+On upgrade, an existing readable `.immich` marker is renamed to `.frameleaf` before the write check. If both markers are missing from a folder that was already verified, startup still fails; the rename never recreates a marker on a missing mount. Maintenance recognizes either name when inspecting an installation before startup.
 
 The checks are designed to catch the following situations:
 
 - Incorrect permissions (cannot read/write files)
-- Missing volume mount (`.immich` files should exist, but are missing)
+- Missing volume mount (`.frameleaf` files should exist, but are missing)
 
 ### Common issues
 
 :::note
-`.immich` files serve as markers and help keep track of volume mounts being used by Frameleaf. Except for the situations listed below, they should never be manually created or deleted.
+`.frameleaf` files serve as markers and help keep track of volume mounts being used by Frameleaf. Except for the situations listed below, they should never be manually created or deleted.
 :::
 
-#### Missing `.immich` files
+#### Missing `.frameleaf` files
 
 ```
 Verifying system mount folder checks (enabled=true)
 ...
-ENOENT: no such file or directory, open 'upload/encoded-video/.immich'
+ENOENT: no such file or directory, open 'upload/encoded-video/.frameleaf'
 ```
 
-The above error messages show that the server has previously (successfully) written `.immich` files to each folder, but now does not detect them. This could be because any of the following:
+The above error messages show that the server has previously (successfully) written `.frameleaf` files to each folder, but now does not detect them. This could be because any of the following:
 
 - Permission error - unable to read the file, but it exists
 - File does not exist - volume mount has changed and should be corrected
-- File does not exist - user manually deleted it and should be manually re-created (`touch .immich`)
-- File does not exist - user restored from a backup, but did not restore each folder (user should restore all folders or manually create `.immich` in any missing folders)
+- File does not exist - user manually deleted it and should be manually re-created (`touch .frameleaf`)
+- File does not exist - user restored from a backup, but did not restore each folder (user should restore all folders or manually create `.frameleaf` in any missing folders)
 
 ### Ignoring the checks
 

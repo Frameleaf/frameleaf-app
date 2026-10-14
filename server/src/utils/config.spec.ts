@@ -1,5 +1,6 @@
 import { cloneDeep } from 'lodash-es';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/dtos/config.dto.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import {
@@ -10,6 +11,13 @@ import {
   updateConfig,
   withEffectiveConfigWrite,
 } from 'src/utils/config.js';
+import { canonicalJson } from 'src/utils/object.js';
+import {
+  applyRecoveryMlOverlay,
+  recoveryAuthorityDigest,
+  recoveryMlConfigOf,
+} from 'src/utils/recovery-ml-authority.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
 describe('getConfigRevision (FL-66 settings revision)', () => {
@@ -101,6 +109,85 @@ describe('canonical system configuration storage', () => {
     expect(config.trash.days).toBe(defaults.trash.days + 1);
     expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.SystemConfig);
   });
+
+  it('preserves approved file defaults on upgrade and still refuses an unrelated file edit', async () => {
+    const legacy = cloneDeep(defaults);
+    legacy.machineLearning.urls = ['http://immich-machine-learning:3003'];
+    legacy.oauth.roleClaim = 'immich_role';
+    legacy.oauth.storageQuotaClaim = 'immich_quota';
+    legacy.oauth.enabled = true;
+    legacy.oauth.issuerUrl = 'https://issuer.example';
+    legacy.oauth.clientId = 'existing-provider';
+    const partial = { oauth: { enabled: true, issuerUrl: legacy.oauth.issuerUrl, clientId: legacy.oauth.clientId } };
+    const epoch = {
+      format: 1 as const,
+      epoch: 1,
+      sourceKind: 'file' as const,
+      digest: createHash('sha256').update(canonicalJson(legacy)).digest('hex'),
+      trashEnabled: legacy.trash.enabled,
+    };
+    mocks.config.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
+    mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify(partial));
+    mocks.systemMetadata.getEffectiveConfigEpoch.mockResolvedValue(epoch);
+
+    expect(await readConfig(repos())).toEqual(legacy);
+    expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+
+    mocks.systemMetadata.readFile.mockResolvedValue(
+      JSON.stringify({ ...partial, trash: { days: legacy.trash.days + 1 } }),
+    );
+    const restarted = getMocks().config;
+    restarted.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
+    await expect(readConfig({ ...repos(), configRepo: restarted as never })).rejects.toThrow(
+      'effective_config_activation_required',
+    );
+  });
+
+  it.each([false, true])(
+    'preserves restored file authority with an explicit canonical ML environment URL: %s',
+    async (explicit) => {
+      vi.stubEnv('FRAMELEAF_MACHINE_LEARNING_URL', explicit ? 'http://frameleaf-machine-learning:3003' : '');
+      vi.stubEnv('IMMICH_MACHINE_LEARNING_URL', '');
+      try {
+        const legacy = cloneDeep(defaults);
+        legacy.machineLearning.urls = [
+          explicit ? 'http://frameleaf-machine-learning:3003' : 'http://immich-machine-learning:3003',
+        ];
+        legacy.oauth.roleClaim = 'immich_role';
+        legacy.oauth.storageQuotaClaim = 'immich_quota';
+        const binding = {
+          format: 1 as const,
+          recoveryId: '11111111-1111-4111-8111-111111111111',
+          preparedPlanDigest: 'a'.repeat(64),
+          replacementIdentity: 'b'.repeat(64),
+        };
+        const overlay = {
+          ...binding,
+          rawDigest: recoveryAuthorityDigest(legacy),
+          rawAuthorityDigest: recoveryAuthorityDigest(recoveryMlConfigOf(legacy)),
+          authority: { ...recoveryMlConfigOf(legacy), urls: ['http://replacement:3003'] },
+        };
+        const effective = applyRecoveryMlOverlay(legacy, overlay);
+        metadata.set(SystemMetadataKey.FrameleafRecoveryMlAuthority, { ...binding, quarantine: {} });
+        mocks.config.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'restored-settings.json' });
+        mocks.systemMetadata.readFile.mockResolvedValue('{}');
+        mocks.systemMetadata.getEffectiveConfigEpoch.mockResolvedValue({
+          format: 1,
+          epoch: 2,
+          sourceKind: 'file',
+          digest: createHash('sha256').update(canonicalJson(effective)).digest('hex'),
+          trashEnabled: effective.trash.enabled,
+          recoveryMl: overlay,
+          recoveryMlBinding: binding,
+        });
+
+        expect(await readConfig(repos())).toEqual(effective);
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it('round-trips a canonical save while keeping unrelated metadata and write-only credentials', async () => {
     const history = { entries: [{ id: 'history-is-separate' }] };

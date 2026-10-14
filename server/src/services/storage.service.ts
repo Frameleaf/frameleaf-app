@@ -213,9 +213,17 @@ export class StorageService extends BaseService {
   }
 
   private async verifyReadAccess(folder: StorageFolder) {
-    const { internalPath, externalPath } = this.getMountFilePaths(folder);
+    const { folderPath, internalPath, externalPath } = this.getMountFilePaths(folder);
     try {
-      await this.storageRepository.readFile(internalPath);
+      try {
+        await this.storageRepository.readFile(internalPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        // A verified old marker proves the mount exists; never manufacture one on a missing mount.
+        const legacyPath = join(folderPath, '.immich');
+        await this.storageRepository.readFile(legacyPath);
+        await this.storageRepository.rename(legacyPath, internalPath);
+      }
     } catch (error) {
       this.logger.error(`Failed to read (${internalPath}): ${error}`);
       throw new ImmichStartupError(`Failed to read: "${externalPath} (${internalPath}) - ${docsMessage}"`);
@@ -249,8 +257,8 @@ export class StorageService extends BaseService {
 
   private getMountFilePaths(folder: StorageFolder) {
     const folderPath = StorageCore.getBaseFolder(folder);
-    const internalPath = join(folderPath, '.immich');
-    const externalPath = `<UPLOAD_LOCATION>/${folder}/.immich`;
+    const internalPath = join(folderPath, '.frameleaf');
+    const externalPath = `<UPLOAD_LOCATION>/${folder}/.frameleaf`;
 
     return { folderPath, internalPath, externalPath };
   }

@@ -1036,6 +1036,18 @@ export class AssetRepository {
       .where('assetId', '=', anyUuid(ids))
       .execute();
   }
+  /**
+   * FL-348: the persisted colour description of this asset's picture stream, as metadata extraction
+   * kept it. An asset with no picture stream, or one not extracted yet, has no row.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getVideoColor(id: string) {
+    return this.db
+      .selectFrom('asset_video')
+      .select(['colorTransfer', 'colorPrimaries', 'colorMatrix', 'pixelFormat', 'dvProfile'])
+      .where('assetId', '=', id)
+      .executeTakeFirst();
+  }
   /** Which of these assets are locked (FL-34: the lock record), whoever owns them. */
   @ChunkedSet()
   async getLockedAssetIds(ids: string[]): Promise<Set<string>> {

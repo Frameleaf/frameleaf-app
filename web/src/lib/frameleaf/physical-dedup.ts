@@ -387,18 +387,16 @@ export const applyStatusKey = (
   }
 };
 
-export type DedupApplyBlockedReason =
-  'disabled' | 'no-saved-master' | 'master-mismatch' | 'applied' | 'no-shares' | 'running' | 'applying';
+export type DedupApplyBlockedReason = 'disabled' | 'applied' | 'no-shares' | 'running' | 'applying';
 
 /**
  * Why a plan cannot be applied right now. Mirrors the server: applying requires the feature to be
- * enabled, a saved retained account, a preview produced for exactly that account, at least one copy
- * to share with these decisions, and no other plan being applied.
+ * enabled, at least one copy to share with these decisions, and no other plan being applied.
+ * The plan names its retained account; `planStaleReason` checks the account chosen on the page.
  */
 export const applyBlockedReason = ({
   plan,
   enabled,
-  savedMasterUserId,
   running,
   applying,
   applied,
@@ -406,7 +404,6 @@ export const applyBlockedReason = ({
 }: {
   plan: Pick<PhysicalDeduplicationPlanDto, 'mode' | 'masterUserId'>;
   enabled: boolean;
-  savedMasterUserId: string | null;
   running: boolean;
   applying: boolean;
   applied: boolean;
@@ -423,12 +420,6 @@ export const applyBlockedReason = ({
   }
   if (!enabled) {
     return 'disabled';
-  }
-  if (!savedMasterUserId) {
-    return 'no-saved-master';
-  }
-  if (plan.masterUserId !== savedMasterUserId) {
-    return 'master-mismatch';
   }
   if (selectedCopies === 0) {
     return 'no-shares';

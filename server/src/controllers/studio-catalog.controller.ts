@@ -82,7 +82,7 @@ export class StudioCatalogController {
   @Endpoint({
     summary: 'Get the Studio media facts of an asset',
     description:
-      'What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.',
+      'What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so. It also answers the colour of the picture stream as metadata extraction stored it: `colorTransfer` (`hdr` for any Dolby Vision profile, else `pq` for H.273 transfer 16, `hlg` for 18, `sdr` otherwise), the H.273 codes, the bit depth and the Dolby Vision profile. A native client that cannot read the stream itself marks its media record from it.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   getStudioMediaFacts(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<StudioMediaFactsDto> {

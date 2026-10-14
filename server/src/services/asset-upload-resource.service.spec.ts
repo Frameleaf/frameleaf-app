@@ -288,7 +288,7 @@ describe('resumable asset byte commit boundaries', () => {
       ingested: false,
       verifiedChecksum: createHash('sha256').update('abcd').digest(),
     });
-    const controller = new AssetUploadResourceController(harness.service);
+    const controller = new AssetUploadResourceController(harness.service, undefined as never);
     const app = express();
     app.patch('/uploads/test', (req, res) => {
       void controller.appendAssetUploadResource(auth, { id: harness.row().id }, req, res).catch((error: unknown) => {

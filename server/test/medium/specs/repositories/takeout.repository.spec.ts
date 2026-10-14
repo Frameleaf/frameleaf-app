@@ -285,4 +285,34 @@ describe(TakeoutRepository.name, () => {
     await expect(sut.retryFailed(row.id)).resolves.toBe(1);
     expect((await sut.pendingItems(row.id, 50)).map((item) => item.id)).toEqual([failed]);
   });
+
+  it('imports unclear photos with their chosen details, and trashed photos only when asked', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const unclear = await seedItem(sut, row.id, source.id, { name: 'IMG_1.jpg' });
+    const trashed = await seedItem(sut, row.id, source.id, { name: 'IMG_2.jpg' });
+    const chosen = { title: 'IMG_1.jpg', description: 'most likely' };
+    await defaultDatabase
+      .updateTable('takeout_item')
+      .set({ state: 'review', sidecarId: unclear, metadata: chosen as never })
+      .where('id', '=', unclear)
+      .execute();
+    await defaultDatabase
+      .updateTable('takeout_item')
+      .set({ state: 'skipped', warnings: ['trashed'] as never })
+      .where('id', '=', trashed)
+      .execute();
+
+    await sut.withImport(user.id, row.id, (tx) => sut.releaseReview(tx, row.id));
+    await expect(sut.getItem(row.id, unclear)).resolves.toMatchObject({
+      state: 'ready',
+      sidecarId: unclear,
+      metadata: chosen,
+    });
+    await expect(sut.getItem(row.id, trashed)).resolves.toMatchObject({ state: 'skipped' });
+
+    await sut.withImport(user.id, row.id, (tx) => sut.includeTrashed(tx, row.id));
+    await expect(sut.getItem(row.id, trashed)).resolves.toMatchObject({ state: 'ready' });
+  });
 });

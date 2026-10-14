@@ -41,7 +41,7 @@ import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stu
 
 beforeEach(() => vi.restoreAllMocks());
 
-const endpoint = { url: 'http://immich-machine-learning:3003' };
+const endpoint = { url: 'http://frameleaf-machine-learning:3003' };
 
 const deps = (overrides: {
   destination?: typeof mlDestinationStub.local | undefined;
@@ -807,7 +807,7 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
   });
 
   it('refuses restoration on the endpoint a library workload is routed to, even under another name', async () => {
-    const sameUrl = { ...mlDestinationStub.lan, url: 'http://immich-machine-learning:3003/' };
+    const sameUrl = { ...mlDestinationStub.lan, url: 'http://frameleaf-machine-learning:3003/' };
     const d = conflictDeps(
       [mlDestinationStub.local, sameUrl],
       [{ workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id }],

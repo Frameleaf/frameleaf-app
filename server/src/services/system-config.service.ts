@@ -291,7 +291,7 @@ export class SystemConfigService extends BaseService {
   }
 
   /**
-   * FL-161: `/.well-known/immich`, which apps read to find the API, with what the Frameleaf apps need
+   * FL-161: `/.well-known/frameleaf`, which apps read to find the API, with what the Frameleaf apps need
    * to find this server again: its instance id and published address while it is linked, and whether
    * Sign in with Frameleaf is available.
    */

@@ -221,7 +221,7 @@ export class BackupSequenceService {
       const place: BackupSequencePlace = run.place;
       let result: BackupSequenceRun['results'][BackupSequencePlace];
       if (run.begun) {
-        if (await this.isBusy(place).catch(() => false)) {
+        if (await this.isBusy(place)) {
           return;
         }
         result = 'done';

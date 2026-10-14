@@ -26,6 +26,12 @@ When you first select albums for backup, Frameleaf calculates a checksum for eac
 
 By default, Frameleaf will only upload photos and videos when connected to Wi-Fi. You can change this behavior in the backup options: open the backup page, then its settings, and allow cellular data separately for photos and for videos.
 
+Native foreground backup keeps direct HTTPS first and can use a resource-scoped
+WebRTC data channel when its HTTPS route would otherwise use the relay. A failed
+direct connection resumes the same upload over permitted HTTPS after reading its
+durable offset. See [Direct mobile backup](./direct-mobile-backup.md) for the
+protocol, relay policy and background limitations.
+
 ### Backup album synchronization
 
 Turn this on with **Sync albums** in the backup options. When enabled, Frameleaf automatically creates albums on the server that mirror the albums on your mobile device. Photos and videos are organized into these server-side albums to match your device's album structure, making it easy to find and browse your content the same way you do on your phone.

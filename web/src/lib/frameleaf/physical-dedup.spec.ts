@@ -406,25 +406,22 @@ describe('Frameleaf physical deduplication helpers', () => {
     const allowed = {
       plan: plan(),
       enabled: true,
-      savedMasterUserId: 'taylor',
       running: false,
       applying: false,
       applied: false,
       selectedCopies: 2,
     };
 
-    it('allows applying a preview prepared for the saved retained account', () => {
+    it('allows applying a preview prepared for the account chosen on the page', () => {
       expect(applyBlockedReason(allowed)).toBeNull();
     });
 
-    it('blocks while a job runs, after an apply, when disabled, without a saved account, and on a mismatch', () => {
+    it('blocks while a job runs, after an apply, when disabled, and without copies to merge', () => {
       expect(applyBlockedReason({ ...allowed, running: true })).toBe('running');
       expect(applyBlockedReason({ ...allowed, plan: plan({ mode: PhysicalDeduplicationPlanMode.Apply }) })).toBe(
         'applied',
       );
       expect(applyBlockedReason({ ...allowed, enabled: false })).toBe('disabled');
-      expect(applyBlockedReason({ ...allowed, savedMasterUserId: null })).toBe('no-saved-master');
-      expect(applyBlockedReason({ ...allowed, savedMasterUserId: 'jamie' })).toBe('master-mismatch');
       expect(applyBlockedReason({ ...allowed, selectedCopies: 0 })).toBe('no-shares');
     });
 
@@ -433,27 +430,23 @@ describe('Frameleaf physical deduplication helpers', () => {
       expect(applyBlockedReason({ ...allowed, applied: true })).toBe('applied');
     });
 
-    it('still lets a preview for a page-chosen account be reviewed, but not applied', () => {
-      const reason = applyBlockedReason({ ...allowed, savedMasterUserId: null });
-      expect(reason).toBe('no-saved-master');
-      expect(blocksReview(reason)).toBe(false);
+    it('lets a preview for a page-chosen account be reviewed and applied', () => {
+      expect(blocksReview(applyBlockedReason(allowed))).toBe(false);
       expect(blocksReview('applying')).toBe(true);
       expect(blocksReview('no-shares')).toBe(true);
     });
 
-    it('never lets a page-chosen retained account stand in for the saved one', () => {
-      // The preview was prepared against Jamie on the page; nothing is saved.
+    it('does not require the retired global retained-account setting', () => {
       expect(
         applyBlockedReason({
           plan: plan({ masterUserId: 'jamie' }),
           enabled: true,
-          savedMasterUserId: null,
           running: false,
           applying: false,
           applied: false,
           selectedCopies: 2,
         }),
-      ).toBe('no-saved-master');
+      ).toBeNull();
     });
   });
 

@@ -139,7 +139,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   machineLearning: {
     enabled: true,
-    urls: ['http://immich-machine-learning:3003'],
+    urls: ['http://frameleaf-machine-learning:3003'],
     availabilityChecks: {
       enabled: true,
       interval: 30_000,
@@ -289,8 +289,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     timeout: 30_000,
     allowInsecureRequests: false,
     storageLabelClaim: 'preferred_username',
-    storageQuotaClaim: 'immich_quota',
-    roleClaim: 'immich_role',
+    storageQuotaClaim: 'frameleaf_quota',
+    roleClaim: 'frameleaf_role',
   },
   passwordLogin: {
     enabled: true,
@@ -615,7 +615,7 @@ describe(SystemConfigService.name, () => {
       });
     });
 
-    it('publishes the instance id, public address and sign-in in /.well-known/immich while linked (FL-161)', async () => {
+    it('publishes the instance id, public address and sign-in in /.well-known/frameleaf while linked (FL-161)', async () => {
       await expect(sut.getWellKnown()).resolves.toEqual({
         api: { endpoint: '/api' },
         frameleaf: { instanceId: 'instance-1', publicUrl: 'https://r.label.frameleaf.test', signIn: true },

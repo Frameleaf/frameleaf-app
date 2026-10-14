@@ -22,14 +22,17 @@ describe('upload resource protocol headers over HTTP', () => {
       end: vi.fn(),
       writeInformation: vi.fn(),
     };
-    const controller = new AssetUploadResourceController({
-      limits: () => Promise.resolve({ maxSize: 10, maxAppendSize: 10, maxAge: 86_400, maxActive: 4 }),
-      head: () => Promise.resolve(resource),
-      create: (_auth: unknown, _headers: unknown, _input: unknown, resume: (row: AssetUploadResource) => void) => {
-        resume(resource);
-        return Promise.resolve({ resource });
-      },
-    } as never);
+    const controller = new AssetUploadResourceController(
+      {
+        limits: () => Promise.resolve({ maxSize: 10, maxAppendSize: 10, maxAge: 86_400, maxActive: 4 }),
+        head: () => Promise.resolve(resource),
+        create: (_auth: unknown, _headers: unknown, _input: unknown, resume: (row: AssetUploadResource) => void) => {
+          resume(resource);
+          return Promise.resolve({ resource });
+        },
+      } as never,
+      undefined as never,
+    );
     await controller.getAssetUploadResourceLimits(res as never);
     expect(headers.get('Upload-Limit')).toBe('max-size=10, max-append-size=10, max-age=86400, min-size=1');
     await controller.createAssetUploadResource(
@@ -53,18 +56,21 @@ describe('upload resource protocol headers over HTTP', () => {
       maxSize: 8,
       maxAppendSize: 8,
     } as AssetUploadResource;
-    const controller = new AssetUploadResourceController({
-      head: () => Promise.resolve(resource),
-      append: () =>
-        Promise.reject(
-          new ConflictException({
-            message: 'Upload offset does not match',
-            expectedOffset: 8,
-            providedOffset: 0,
-            type: 'https://iana.org/assignments/http-problem-types#mismatching-upload-offset',
-          }),
-        ),
-    } as never);
+    const controller = new AssetUploadResourceController(
+      {
+        head: () => Promise.resolve(resource),
+        append: () =>
+          Promise.reject(
+            new ConflictException({
+              message: 'Upload offset does not match',
+              expectedOffset: 8,
+              providedOffset: 0,
+              type: 'https://iana.org/assignments/http-problem-types#mismatching-upload-offset',
+            }),
+          ),
+      } as never,
+      undefined as never,
+    );
     const app = express();
     app.head('/uploads/test', (_req, res) => {
       void controller.getAssetUploadResourceOffset({} as never, { id: 'test' }, res);

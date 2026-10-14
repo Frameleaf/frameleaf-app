@@ -448,7 +448,7 @@
   inset: 0;
   transition: transform var(--fl-motion) var(--fl-ease);
 }
-.ed-media > img {
+.ed-media > :is(img, video, canvas) {
   position: absolute;
   left: 50%;
   top: 50%;

@@ -351,7 +351,7 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
     await writeFile(
       join(releaseDirectory, 'docker-compose.yml'),
       JSON.stringify({
-        services: { database: {}, 'frameleaf-server': {}, 'immich-machine-learning': {} },
+        services: { database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {} },
       }),
     );
     const liveSettings = {
@@ -377,7 +377,7 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
       f.events.push('start-frameleaf');
       assert.deepEqual(targetSettings, {
         ...liveSettings,
-        machineLearning: { enabled: false, urls: ['http://immich-machine-learning:3003'] },
+        machineLearning: { enabled: false, urls: ['http://frameleaf-machine-learning:3003'] },
       });
     };
     const internal = f.operations as unknown as {

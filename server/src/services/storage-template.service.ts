@@ -319,12 +319,12 @@ export class StorageTemplateService extends BaseService {
     }
   }
 
-  /** Whether the media folder holding `file` is mounted: its mount-check file (`.immich`) is there. */
+  /** Whether the media folder holding `file` is mounted: its mount-check file (`.frameleaf`) is there. */
   private async isMediaFolderReachable(file: string): Promise<boolean> {
     for (const folder of Object.values(StorageFolder)) {
       const base = StorageCore.getBaseFolder(folder);
       if (file.startsWith(`${base}/`)) {
-        return (await this.getFileState(path.join(base, '.immich'))) === 'present';
+        return (await this.getFileState(path.join(base, '.frameleaf'))) === 'present';
       }
     }
     return false;

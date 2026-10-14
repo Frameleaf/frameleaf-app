@@ -214,6 +214,18 @@ from
 where
   "assetId" = any ($1::uuid[])
 
+-- AssetRepository.getVideoColor
+select
+  "colorTransfer",
+  "colorPrimaries",
+  "colorMatrix",
+  "pixelFormat",
+  "dvProfile"
+from
+  "asset_video"
+where
+  "assetId" = $1
+
 -- AssetRepository.getByIdsWithAllRelationsButStacks
 select
   "asset".*,

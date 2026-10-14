@@ -328,7 +328,7 @@ describe(StudioResourceService.name, () => {
       mocks.asset.getLockReasons.mockResolvedValue([
         { assetId: marked.id, reason: AssetLockReason.Marked, lockedAt: new Date() },
         { assetId: detected.id, reason: AssetLockReason.Detected, lockedAt: new Date() },
-        { assetId: legacy.id, reason: AssetLockReason.ImmichLockedFolder, lockedAt: new Date() },
+        { assetId: legacy.id, reason: AssetLockReason.FrameleafLockedFolder, lockedAt: new Date() },
       ]);
       allowOwned(marked.id, detected.id, legacy.id);
       const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };
@@ -1530,15 +1530,88 @@ describe(StudioResourceService.name, () => {
   });
 
   describe('fonts, models and presets', () => {
+    it('resolves the seven bundled title families with every file, without a job catalogue', async () => {
+      for (const family of [
+        'Inter',
+        'Inter Tight',
+        'Anton',
+        'Bebas Neue',
+        'Orbitron',
+        'Playfair Display',
+        'Space Grotesk',
+      ]) {
+        admit(`font:${family}`);
+        const { manifest, refused } = await sut.resolveProjectResources(
+          auth,
+          context(sequenceWith({ kind: 'title', fontFamily: family })),
+        );
+        expect(refused).toEqual([]);
+        expect(manifest.complete).toBe(true);
+        const entry = manifest.entries.find((item) => item.kind === StudioResourceKind.Font)!;
+        expect(entry).toMatchObject({ id: family, grant: 'render', sourceAccess: 'deployment', ownerId: null });
+        // The old one-file shape is the family's regular Latin file; `files` lists them all.
+        const regular = entry.files!.find(
+          (file) => file.weight === 400 && file.style === 'normal' && file.subset === 'latin',
+        )!;
+        expect(entry.path).toBe(regular.path);
+        expect(entry.checksum).toBe(regular.checksum);
+        expect(entry.files!.length).toBeGreaterThanOrEqual(2);
+        for (const file of entry.files!) {
+          expect(file.format).toBe('ttf');
+          expect(file.checksum).toMatch(/^[a-f0-9]{64}$/);
+          expect(file.path.replaceAll('\\', '/')).toMatch(new RegExp(`/server/resources/studio-fonts/${file.file}$`));
+        }
+      }
+    });
+
+    it('issues one read grant per bundled font file, each bound to its own key and checksum', async () => {
+      admit('font:Anton');
+      const { manifest } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ kind: 'title', fontFamily: 'Anton' })),
+      );
+      const entry = manifest.entries.find((item) => item.kind === StudioResourceKind.Font)!;
+      const grants = sut.issueReadGrants(manifest, { workerId: 'worker-1' });
+      expect(grants.map((grant) => grant.key)).toEqual([
+        entry.key,
+        ...entry.files!.map((file) => `${entry.key}#${file.file}`),
+      ]);
+      expect(grants.slice(1).map((grant) => grant.path)).toEqual(entry.files!.map((file) => file.path));
+    });
+
+    it('still refuses a bundled family whose rights are blocked, and lets a job catalogue replace one', async () => {
+      block('font:Inter');
+      const graph = sequenceWith({ kind: 'title', fontFamily: 'Inter' });
+      const blocked = await sut.resolveProjectResources(auth, context(graph));
+      expect(blocked.refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
+        [StudioResourceKind.Font, 'Inter', StudioRefusalReason.RightsBlocked],
+      ]);
+      admit('font:Inter');
+      const catalog = {
+        fonts: { Inter: { path: '/job/Inter.ttf', checksum: 'job' } },
+        models: {},
+        luts: {},
+        audio: {},
+      };
+      const replaced = await sut.resolveProjectResources(auth, context(graph, { catalog }));
+      expect(replaced.manifest.entries[0]).toMatchObject({ path: '/job/Inter.ttf', checksum: 'job' });
+      expect(replaced.manifest.entries[0]).not.toHaveProperty('files');
+    });
+
     it('resolves fonts and models only from the catalogue and presets only from the registry', async () => {
       const graph = sequenceWith(
         { kind: 'title', fontFamily: 'Inter', style: 'Minimal', animation: 'Wiggle' },
         { kind: 'voice', modelId: 'kokoro-v1' },
       );
 
-      const bare = await sut.resolveProjectResources(auth, context(graph));
+      // A family the server does not bundle resolves only from a job's own catalogue.
+      const unbundled = sequenceWith(
+        { kind: 'title', fontFamily: 'Roboto', style: 'Minimal', animation: 'Wiggle' },
+        { kind: 'voice', modelId: 'kokoro-v1' },
+      );
+      const bare = await sut.resolveProjectResources(auth, context(unbundled));
       expect(bare.refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
-        [StudioResourceKind.Font, 'Inter', StudioRefusalReason.NotBundled],
+        [StudioResourceKind.Font, 'Roboto', StudioRefusalReason.NotBundled],
         [StudioResourceKind.Preset, 'Wiggle', StudioRefusalReason.UnknownPreset],
         [StudioResourceKind.Model, 'kokoro-v1', StudioRefusalReason.NotBundled],
       ]);

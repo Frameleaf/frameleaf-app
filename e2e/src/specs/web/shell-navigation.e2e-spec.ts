@@ -103,9 +103,12 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           await page.waitForURL(
             (url) => url.pathname === '/auth/pin-prompt' && url.searchParams.get('continue') === href,
           );
+          // The redirect changes the address before the PIN page finishes rendering.
+          await expect(page.getByRole('heading', { name: 'Create a PIN', exact: true })).toBeVisible();
           await expect(errorTitle(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));
+          await expect(rail(page)).toBeVisible();
           return;
         }
         await page.waitForURL(at(href));
@@ -116,6 +119,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           await expect(page.getByRole('navigation', { name: 'Settings navigation' })).toBeVisible();
           await page.goBack();
           await page.waitForURL(at(previous));
+          await expect(rail(page)).toBeVisible();
           return;
         }
         if (name === 'Photography') {
@@ -123,6 +127,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           await expect(rail(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));
+          await expect(rail(page)).toBeVisible();
           return;
         }
         if (name === 'Support Frameleaf') {
@@ -131,6 +136,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           await expect(rail(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));
+          await expect(rail(page)).toBeVisible();
           return;
         }
         await expect(railLink(page, name)).toHaveAttribute('aria-current', 'page');

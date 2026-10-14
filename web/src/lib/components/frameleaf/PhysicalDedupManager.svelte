@@ -8,9 +8,8 @@
    * exactly that reviewed plan as a durable job (`applyPhysicalDeduplicationPlan`).
    *
    * Rules carried over from the server contract:
-   * - A preview may retain originals in an account chosen here when none is saved.
-   * - Applying always uses the saved `physicalDeduplication.masterUserId`; the server refuses
-   *   otherwise, and the page mirrors that refusal before offering the action.
+   * - A preview retains originals in the account chosen here. Applying uses that reviewed plan's
+   *   account; the server checks that it still exists. There is no saved global retained account.
    * - Each group can be left as it is. The review binds those decisions to the plan, and changing a
    *   decision after the review asks for a new review.
    * - Anything that changed since the preview is refused (409); the page then shows the current
@@ -35,7 +34,6 @@
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import {
     applyBlockedReason,
     applyForPlan,
@@ -169,7 +167,6 @@
       ? applyBlockedReason({
           plan,
           enabled: preview.enabled,
-          savedMasterUserId: preview.savedMasterUserId,
           running: preview.running,
           applying: preview.applying,
           applied,
@@ -431,12 +428,6 @@
       case 'disabled': {
         return $t('frameleaf_dedup_apply_blocked_disabled');
       }
-      case 'no-saved-master': {
-        return $t('frameleaf_dedup_apply_blocked_no_saved_master');
-      }
-      case 'master-mismatch': {
-        return $t('frameleaf_dedup_apply_blocked_master_mismatch', { values: { name: plan?.masterUserName ?? '' } });
-      }
       case 'no-shares': {
         return $t('frameleaf_dedup_apply_blocked_no_shares');
       }
@@ -531,11 +522,7 @@
         ? $t('frameleaf_dedup_scope_all_body')
         : $t('frameleaf_dedup_scope_one_body', { values: { name: nameOf(scope) } })}
       {#if !masterSaved}
-        <FormatMessage key="frameleaf_dedup_preview_uses_chosen">
-          {#snippet children({ message })}
-            <button type="button" class="text-button" onclick={openOwnerSetting}>{message}</button>
-          {/snippet}
-        </FormatMessage>
+        {$t('frameleaf_dedup_preview_uses_chosen')}
       {/if}
     </span>
   </p>
@@ -1644,15 +1631,6 @@
   .scope-note :global(svg) {
     flex-shrink: 0;
     margin-block-start: 0.125rem;
-  }
-  .text-button {
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--fl-accent);
-    font: inherit;
-    text-decoration: underline;
-    cursor: pointer;
   }
   .config-error {
     display: flex;

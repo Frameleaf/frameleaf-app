@@ -261,6 +261,8 @@ export class MapRepository {
    */
   private async importLandmarks(): Promise<boolean> {
     const { resourcePaths } = this.configRepository.getEnv();
+    const startedAt = performance.now();
+    this.logger.log('Restoring bundled landmark places');
     try {
       const landmarks: Insertable<LandmarkTable>[] = [];
       const areas: Insertable<LandmarkAreaTable>[] = [];
@@ -293,7 +295,9 @@ export class MapRepository {
             .execute();
         }
       });
-      this.logger.log(`Imported ${landmarks.length} landmarks`);
+      this.logger.log(
+        `Imported ${landmarks.length} landmarks in ${((performance.now() - startedAt) / 1000).toFixed(2)}s`,
+      );
       return landmarks.length > 0;
     } catch (error) {
       this.logger.warn(`Landmarks were not imported: ${error}`);

@@ -134,7 +134,7 @@ export class FrameleafLibrarySetupService {
         }
         const { config, revision } = await this.config.getAdminConfigWithRevision();
         config.machineLearning.enabled = ml === 'true';
-        config.machineLearning.urls = ['http://immich-machine-learning:3003'];
+        config.machineLearning.urls = ['http://frameleaf-machine-learning:3003'];
         await this.config.updateAdminConfigWithRevision({ config, expectedRevision: revision });
         processingChoiceApplied = true;
       }
