@@ -671,10 +671,15 @@
       "sha256": "07921f9a153608f6d6cb6c9d889c18134ab672e2d08fbb101393ba4f498ae3b5"
     },
     {
-      "path": "patches/0139-whisper-no-adapter-fallback.patch",
+      "path": "patches/0139-microphone-terminal-notification.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9edae1a6575c3231e891cade718274278249cd575be0d3239d3ea3ba0565bab1"
+    },
+    {
+      "path": "patches/0140-whisper-no-adapter-fallback.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "e8b6418c2e9a64d8a7ed2018059e655823f78244d69d68a37957e8feae99b54b"
     }
   ],
-  "sourceSha256": "e2821a958f1da55ac5f03b641b9e2f18fe82d0e283ef63e5149cb1b31045215b"
+  "sourceSha256": "11c977ef51aaf616ae0a0e7be1ff1ecf33ba0ebac8e155d3fc2e2454223a5a0d"
 }

@@ -681,6 +681,17 @@ changes retain stored colour settings; placing PQ/HLG media, including nested
 compositions, makes the project HDR. Import alone does not, and export colour is
 chosen separately. The existing MIT notice covers the adapted UI and tests.
 
+## Microphone capture ending (FL-103)
+
+Patch `0139-microphone-terminal-notification.patch` finalizes a current voiceover
+when the browser or device stops capture, including a paused take. The existing
+recording controller retains the final audio, stops playback, and applies its
+project/workspace ownership, save-error and single-undo rules. A cancelled take's
+late stop cannot finalize a replacement recording. The existing Freecut MIT
+notice covers these adapted sources and regression tests. Synthetic terminal-event
+and ownership tests do not qualify physical device replacement or browser latency;
+full audio and STU-305 acceptance remain open.
+
 ## Whisper without a GPU adapter
 
-Patch `0139-whisper-no-adapter-fallback.patch` checks for an available WebGPU adapter before the first Whisper model session. When none is available, it selects WASM directly: the pinned Transformers runtime retains a failed first-session promise, so trying an unavailable GPU first prevents the later WASM retry. The existing model, artifact verification, word timing and worker lifecycle remain in use. The real-worker browser check can require either backend with `STUDIO_WHISPER_BROWSER_EXPECT_BACKEND=wasm` or `webgpu`; both its initial and offline runs must execute that backend. Broader model and browser qualification remains separate.
+Patch `0140-whisper-no-adapter-fallback.patch` checks for an available WebGPU adapter before the first Whisper model session. When none is available, it selects WASM directly: the pinned Transformers runtime retains a failed first-session promise, so trying an unavailable GPU first prevents the later WASM retry. The existing model, artifact verification, word timing and worker lifecycle remain in use. The real-worker browser check can require either backend with `STUDIO_WHISPER_BROWSER_EXPECT_BACKEND=wasm` or `webgpu`; both its initial and offline runs must execute that backend. Broader model and browser qualification remains separate.
