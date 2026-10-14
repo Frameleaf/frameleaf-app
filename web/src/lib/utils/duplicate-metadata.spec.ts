@@ -127,15 +127,15 @@ describe('duplicate metadata contracts', () => {
     const first = withExif({
       fNumber: 2.81,
       focalLength: 35.001,
-      latitude: 1.234_561,
-      longitude: -2.345_671,
+      latitude: 1.234561,
+      longitude: -2.345671,
       iso: 100,
     });
     const equal = withExif({
       fNumber: 2.82,
       focalLength: 35.002,
-      latitude: 1.234_562,
-      longitude: -2.345_672,
+      latitude: 1.234562,
+      longitude: -2.345672,
       iso: 100,
     });
     expect(computeDifferingMetadataFields([first, equal])).toMatchObject({
@@ -156,11 +156,9 @@ describe('duplicate metadata contracts', () => {
   });
 
   it('preserves SameValueZero equality for numeric fields', () => {
-    expect(computeDifferingMetadataFields([withExif({ iso: Number.NaN }), withExif({ iso: Number.NaN })]).iso).toBe(
-      false,
-    );
+    expect(computeDifferingMetadataFields([withExif({ iso: NaN }), withExif({ iso: NaN })]).iso).toBe(false);
     expect(computeDifferingMetadataFields([withExif({ iso: -0 }), withExif({ iso: 0 })]).iso).toBe(false);
-    expect(computeDifferingMetadataFields([withExif({ iso: Number.NaN }), withExif({ iso: 0 })]).iso).toBe(true);
+    expect(computeDifferingMetadataFields([withExif({ iso: NaN }), withExif({ iso: 0 })]).iso).toBe(true);
   });
 
   it('counts multi-key location and GPS rows only once', () => {

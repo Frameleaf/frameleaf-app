@@ -248,7 +248,8 @@ export const countDifferingMetadataItems = (differing: DifferingMetadataFields):
   let count = 0;
   for (const { keys } of metadataFields) {
     for (const key of keys) {
-      if (differing[key]) {
+      const isDifferent = differing[key];
+      if (isDifferent) {
         count++;
         break;
       }
