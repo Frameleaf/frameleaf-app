@@ -151,7 +151,7 @@
   let setup = $state<SetupState>(initial);
   // svelte-ignore state_referenced_locally
   let signedIn = $state(authenticated);
-  let secrets = $state({ email: '', password: '', confirm: '', setupCode: '' });
+  let secrets = $state({ email: '', password: '', confirm: '' });
   let errors = $state<Record<string, string>>({});
   let formError = $state('');
   let direction = $state(1);
@@ -366,13 +366,11 @@
           email,
           password: secrets.password,
           name: choices.adminName.trim(),
-          setupCode: secrets.setupCode.trim(),
         },
       });
       await login({ loginCredentialDto: { email, password: secrets.password } });
       secrets.password = '';
       secrets.confirm = '';
-      secrets.setupCode = '';
       // The administrator exists, so this step is passed. Save the step after it before loading the
       // session: signing in re-verifies the session and redraws the page (SessionPrivacyGuard), and
       // setup then resumes from the saved copy at the library, not at the account form.
@@ -552,9 +550,7 @@
       !choices.accountCreated &&
       (choices.signIn === 'local' || !frameleafSignIn),
   );
-  const fieldErrors = $derived(
-    ['setupCode', 'name', 'email', 'password', 'confirm'].filter((field) => errors[field]).length,
-  );
+  const fieldErrors = $derived(['name', 'email', 'password', 'confirm'].filter((field) => errors[field]).length);
   const hours = $derived(reindexHours(items, choices.model, perHour));
   const options = $derived(processingOptions(setup));
   const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
@@ -1119,30 +1115,6 @@
                         <Icon icon={mdiAlertCircleOutline} size="16" aria-hidden={true} />
                         <span>{$t('frameleaf_setup_form_errors', { values: { count: fieldErrors } })}</span>
                       </p>
-                    {/if}
-                    <!-- First, so the owner knows what to fetch from the server before choosing a password. -->
-                    <div class="auth-field">
-                      <label for="frs-setup-code">{$t('frameleaf_setup_claim_code')}</label>
-                      <input
-                        id="frs-setup-code"
-                        class="frs-setup-code"
-                        autocomplete="one-time-code"
-                        autocapitalize="characters"
-                        spellcheck="false"
-                        maxlength="9"
-                        placeholder="XXXX-XXXX"
-                        aria-describedby={errors.setupCode
-                          ? 'frs-setup-code-note frs-setup-code-error'
-                          : 'frs-setup-code-note'}
-                        aria-invalid={errors.setupCode ? true : undefined}
-                        bind:value={secrets.setupCode}
-                      />
-                    </div>
-                    <p id="frs-setup-code-note" class="auth-note frs-field-note">
-                      {$t('frameleaf_setup_claim_code_note')}
-                    </p>
-                    {#if errors.setupCode}
-                      <p id="frs-setup-code-error" class="auth-error frs-field-error">{errors.setupCode}</p>
                     {/if}
                     <div class="auth-field">
                       <label for="frs-name">{$t('frameleaf_auth_name')}</label>

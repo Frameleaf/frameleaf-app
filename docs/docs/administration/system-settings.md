@@ -227,7 +227,7 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 
 ## Setting up a new server
 
-A new server has no administrator. Until it has one, it shows a **setup code** (eight letters and digits, shown as `XXXX-XXXX`) on its console and in its log every time it starts, with a QR code of the same value for the Frameleaf app to scan. The code is the proof that you control the server. Whoever reaches the server first can't claim it without the code, from the app or from the web page.
+A new server has no administrator. Until it has one, it shows a **setup code** (eight letters and digits, shown as `XXXX-XXXX`) on its console and in its log every time it starts, with a QR code of the same value for the Frameleaf app to scan. The Frameleaf app asks for it as proof that you control the server. The web page doesn't: it only works from the home network, so set the server up from there before anyone else on that network reaches it.
 
 - **Where to find it:**
   - With Docker Compose: `docker compose logs frameleaf-server` (or `docker logs frameleaf_server`), or print it again with `docker compose exec frameleaf-server frameleaf-admin setup-code`.
@@ -238,9 +238,9 @@ A new server has no administrator. Until it has one, it shows a **setup code** (
 - **Keeping it private:** the code is only as private as the server's console and log. It is printed to the console whatever the log level. Once the server is set up it is worthless.
 - **Onboarding:** whether the first-run onboarding is finished is reported by `GET /api/server/config` (`isOnboarded`), so the app can say so.
 
-There are three ways to claim a new server, and each needs the code:
+There are three ways to claim a new server:
 
-- **Web page:** the first-run page asks for the code together with the administrator's name, email and password.
+- **Web page:** the first-run page asks for the administrator's name, email and password, without the code.
 - **Frameleaf app, with a Frameleaf account:** the app checks the code and gets a short-lived, single-use setup ticket. With the ticket it hands the server a single-use link token (`fll_…`) and the name you chose, and the server links itself exactly as with `FRAMELEAF_LINK_TOKEN`. The Frameleaf account that made the token owns the server. That account's first Sign in with Frameleaf creates the administrator, with no server password. Only that account can become the first administrator.
 - **Frameleaf app, with a password:** the app can instead create the administrator with an email and password, for a server without Frameleaf Cloud.
 

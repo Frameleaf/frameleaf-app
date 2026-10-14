@@ -478,12 +478,12 @@ export class AuthService extends BaseService {
   }
 
   /**
-   * `POST auth/admin-sign-up`: the first administrator. FL-292: only from the home network, and
-   * only with the setup code shown on the server's console and in its log (or a setup ticket the
-   * Frameleaf app got with it), so whoever reaches a new server first cannot take it.
+   * `POST auth/admin-sign-up`: the first administrator, only from the home network. FL-292: with a
+   * setup ticket the Frameleaf app got with the setup code; the web setup sends none and needs no code.
    */
   async adminSignUp(dto: SignUpDto, client: SetupClient): Promise<UserAdminResponseDto> {
-    return withSetupProof(this.setupGate, { code: dto.setupCode, ticket: dto.setupTicket }, client, async () => {
+    const proof = dto.setupTicket ? { ticket: dto.setupTicket } : { noCode: true };
+    return withSetupProof(this.setupGate, proof, client, async () => {
       const admin = await this.createUser({
         isAdmin: true,
         email: dto.email,
