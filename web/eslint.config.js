@@ -67,6 +67,7 @@ export default typescriptEslint.config(
       '**/node_modules',
       'build',
       '.svelte-kit',
+      'static/studio-engine',
       'package',
       '**/.env',
       '**/.env.*',

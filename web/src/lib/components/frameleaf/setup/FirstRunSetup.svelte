@@ -262,15 +262,13 @@
   });
 
   // Saved after every change: here always, on the server once an administrator is signed in.
-  let saveTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const snapshot = $state.snapshot(setup) as SetupState;
     saveLocalSetup(snapshot);
     if (!signedIn || snapshot.completed) {
       return;
     }
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
+    const saveTimer = setTimeout(() => {
       updateFrameleafSetup({
         frameleafSetupUpdateDto: {
           flow: snapshot.flow === 'new' ? FrameleafSetupFlow.New : FrameleafSetupFlow.Existing,
@@ -280,6 +278,7 @@
         // this browser's copy still resumes; the next change tries again
       });
     }, 300);
+    return () => clearTimeout(saveTimer);
   });
 
   let firstStep = true;
