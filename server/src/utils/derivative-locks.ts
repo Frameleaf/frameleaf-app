@@ -42,7 +42,7 @@ export const lockDerivedResults = async (db: Kysely<DB>, assetIds: string[]): Pr
         AND version.state = ${StudioExportVersionState.Published}
       ORDER BY version.id,
         CASE asset_lock.reason
-          WHEN ${AssetLockReason.ImmichLockedFolder} THEN 3
+          WHEN ${AssetLockReason.FrameleafLockedFolder} THEN 3
           WHEN ${AssetLockReason.Marked} THEN 2
           ELSE 1
         END DESC

@@ -1511,7 +1511,7 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   machineLearning: {
     enabled: readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_ENABLED') !== 'false',
-    urls: [readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_URL') || 'http://immich-machine-learning:3003'],
+    urls: [readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_URL') || 'http://frameleaf-machine-learning:3003'],
     availabilityChecks: {
       enabled: true,
       timeout: 2000,
@@ -1586,8 +1586,8 @@ export const defaults = Object.freeze<SystemConfig>({
     signingAlgorithm: 'RS256',
     profileSigningAlgorithm: 'none',
     storageLabelClaim: 'preferred_username',
-    storageQuotaClaim: 'immich_quota',
-    roleClaim: 'immich_role',
+    storageQuotaClaim: 'frameleaf_quota',
+    roleClaim: 'frameleaf_role',
     tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod.ClientSecretPost,
     timeout: 30_000,
     allowInsecureRequests: false,

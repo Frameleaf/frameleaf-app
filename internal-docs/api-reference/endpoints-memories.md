@@ -1,18 +1,18 @@
 # Server API — Memories
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchMemories
 
 `GET /api/memories`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L42).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L42).
 
 Retrieve memories
 
 Permission: `memory.read`. Admin only: `false`.
 
-Models: [MemoryResponseDto](models-17.md#memoryresponsedto), [MemorySearchOrder](models-17.md#memorysearchorder), [MemoryType](models-17.md#memorytype).
+Models: [MemoryResponseDto](models-17.md#memoryresponsedto), [MemorySearchOrder](models-17.md#memorysearchorder), [MemoryType](models-18.md#memorytype).
 
 Controller access declarations:
 
@@ -193,7 +193,7 @@ Complete operation contract:
 
 `POST /api/memories`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L54).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L54).
 
 Create a memory
 
@@ -283,7 +283,7 @@ Complete operation contract:
 
 `GET /api/memories/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L124).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L124).
 
 Retrieve memory exports
 
@@ -369,7 +369,7 @@ Complete operation contract:
 
 `DELETE /api/memories/exports/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L160).
 
 Delete a memory export
 
@@ -442,7 +442,7 @@ Complete operation contract:
 
 `GET /api/memories/exports/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L136).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L136).
 
 Retrieve a memory export
 
@@ -523,7 +523,7 @@ Complete operation contract:
 
 `POST /api/memories/exports/{id}/cancel`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L147).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L147).
 
 Cancel a memory export
 
@@ -606,7 +606,7 @@ Complete operation contract:
 
 `GET /api/memories/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L185).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L185).
 
 Download a memory export
 
@@ -689,7 +689,7 @@ Complete operation contract:
 
 `POST /api/memories/exports/{id}/library`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L172).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L172).
 
 Save a memory highlight to the library
 
@@ -772,13 +772,13 @@ Complete operation contract:
 
 `DELETE /api/memories/show-less`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L104).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L104).
 
 Remove a memories show-less rule
 
 Permission: `memory.update`. Admin only: `false`.
 
-Models: [MemoryShowLessDto](models-17.md#memoryshowlessdto), [MemoryShowLessResponseDto](models-17.md#memoryshowlessresponsedto).
+Models: [MemoryShowLessDto](models-17.md#memoryshowlessdto), [MemoryShowLessResponseDto](models-18.md#memoryshowlessresponsedto).
 
 Controller access declarations:
 
@@ -857,13 +857,13 @@ Complete operation contract:
 
 `GET /api/memories/show-less`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L79).
 
 Retrieve memories show-less rules
 
 Permission: `memory.read`. Admin only: `false`.
 
-Models: [MemoryShowLessResponseDto](models-17.md#memoryshowlessresponsedto).
+Models: [MemoryShowLessResponseDto](models-18.md#memoryshowlessresponsedto).
 
 Controller access declarations:
 
@@ -931,13 +931,13 @@ Complete operation contract:
 
 `POST /api/memories/show-less`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L91).
 
 Show less of a person, pet, date or kind of memory
 
 Permission: `memory.update`. Admin only: `false`.
 
-Models: [MemoryShowLessDto](models-17.md#memoryshowlessdto), [MemoryShowLessResponseDto](models-17.md#memoryshowlessresponsedto).
+Models: [MemoryShowLessDto](models-17.md#memoryshowlessdto), [MemoryShowLessResponseDto](models-18.md#memoryshowlessresponsedto).
 
 Controller access declarations:
 
@@ -1016,13 +1016,13 @@ Complete operation contract:
 
 `GET /api/memories/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L66).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L66).
 
 Retrieve memories statistics
 
 Permission: `memory.statistics`. Admin only: `false`.
 
-Models: [MemorySearchOrder](models-17.md#memorysearchorder), [MemoryStatisticsResponseDto](models-17.md#memorystatisticsresponsedto), [MemoryType](models-17.md#memorytype).
+Models: [MemorySearchOrder](models-17.md#memorysearchorder), [MemoryStatisticsResponseDto](models-18.md#memorystatisticsresponsedto), [MemoryType](models-18.md#memorytype).
 
 Controller access declarations:
 
@@ -1199,7 +1199,7 @@ Complete operation contract:
 
 `DELETE /api/memories/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L261).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L261).
 
 Delete a memory
 
@@ -1281,7 +1281,7 @@ Complete operation contract:
 
 `GET /api/memories/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L220).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L220).
 
 Retrieve a memory
 
@@ -1371,13 +1371,13 @@ Complete operation contract:
 
 `PUT /api/memories/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L231).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L231).
 
 Update a memory
 
 Permission: `memory.update`. Admin only: `false`.
 
-Models: [MemoryResponseDto](models-17.md#memoryresponsedto), [MemoryUpdateDto](models-17.md#memoryupdatedto).
+Models: [MemoryResponseDto](models-17.md#memoryresponsedto), [MemoryUpdateDto](models-18.md#memoryupdatedto).
 
 Controller access declarations:
 
@@ -1482,7 +1482,7 @@ Complete operation contract:
 
 `DELETE /api/memories/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L288).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L288).
 
 Remove assets from a memory
 
@@ -1586,7 +1586,7 @@ Complete operation contract:
 
 `PUT /api/memories/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L273).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L273).
 
 Add assets to a memory
 
@@ -1689,7 +1689,7 @@ Complete operation contract:
 
 `POST /api/memories/{id}/exports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/memory.controller.ts#L203).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/memory.controller.ts#L203).
 
 Export a memory
 

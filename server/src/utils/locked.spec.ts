@@ -70,18 +70,18 @@ describe('the one Locked predicate (FL-34)', () => {
     expect(REVEALED_LOCK_REASONS).toEqual([
       AssetLockReason.Marked,
       AssetLockReason.Detected,
-      AssetLockReason.ImmichLockedFolder,
+      AssetLockReason.FrameleafLockedFolder,
     ]);
-    expect(isRevealedLockReason(AssetLockReason.ImmichLockedFolder)).toBe(true);
+    expect(isRevealedLockReason(AssetLockReason.FrameleafLockedFolder)).toBe(true);
     expect(isRevealedLockReason(null)).toBe(false);
     const revealed = compile(revealedLockScope('owner-1', 'asset'));
-    expect(revealed.sql).toContain(`asset_lock.reason in ('marked', 'detected', 'immich-locked-folder')`);
+    expect(revealed.sql).toContain(`asset_lock.reason in ('marked', 'detected', 'frameleaf-locked-folder')`);
     expect(revealed.parameters).toEqual(['owner-1']);
     expect(compile(revealedLockScope(undefined, 'asset')).sql).toBe(compile(isNotLocked('asset')).sql);
 
     const timeline = compile(visibilityIs(AssetVisibility.Timeline, 'asset', 'owner-1')).sql;
     expect(timeline).toContain(`"asset"."visibility" = 'timeline'`);
-    expect(timeline).toContain(`asset_lock.reason in ('marked', 'detected', 'immich-locked-folder')`);
+    expect(timeline).toContain(`asset_lock.reason in ('marked', 'detected', 'frameleaf-locked-folder')`);
   });
 
   it('shows ordinary reads only unlocked Timeline and Archive media', () => {

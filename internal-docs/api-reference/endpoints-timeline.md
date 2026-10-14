@@ -1,12 +1,12 @@
 # Server API — Timeline
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getTimeBucket
 
 `GET /api/timeline/bucket`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/timeline.controller.ts#L33).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/timeline.controller.ts#L33).
 
 Get time bucket
 
@@ -108,7 +108,17 @@ Complete operation contract:
       "in": "query",
       "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
       "schema": {
-        "$ref": "#/components/schemas/AssetLockReason"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AssetLockReason"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "immich-locked-folder"
+            ]
+          }
+        ]
       }
     },
     {
@@ -274,7 +284,7 @@ Complete operation contract:
 
 `GET /api/timeline/buckets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/timeline.controller.ts#L22).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/timeline.controller.ts#L22).
 
 Get time buckets
 
@@ -374,7 +384,17 @@ Complete operation contract:
       "in": "query",
       "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
       "schema": {
-        "$ref": "#/components/schemas/AssetLockReason"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AssetLockReason"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "immich-locked-folder"
+            ]
+          }
+        ]
       }
     },
     {
@@ -533,13 +553,13 @@ Complete operation contract:
 
 `GET /api/timeline/highlights`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/timeline.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/timeline.controller.ts#L62).
 
 Get timeline highlights
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimelineHighlightGrouping](models-38.md#timelinehighlightgrouping), [TimelineHighlightResponseDto](models-38.md#timelinehighlightresponsedto).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimelineHighlightGrouping](models-38.md#timelinehighlightgrouping), [TimelineHighlightResponseDto](models-39.md#timelinehighlightresponsedto).
 
 Controller access declarations:
 
@@ -654,7 +674,17 @@ Complete operation contract:
       "in": "query",
       "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
       "schema": {
-        "$ref": "#/components/schemas/AssetLockReason"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AssetLockReason"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "immich-locked-folder"
+            ]
+          }
+        ]
       }
     },
     {
@@ -813,13 +843,13 @@ Complete operation contract:
 
 `GET /api/timeline/ordered`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/timeline.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/timeline.controller.ts#L48).
 
 Get the timeline in a flat order
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-38.md#timebucketassetresponsedto), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimelineOrderedSort](models-38.md#timelineorderedsort).
+Models: [AssetLockReason](models-05.md#assetlockreason), [AssetOrder](models-06.md#assetorder), [AssetOrderBy](models-06.md#assetorderby), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [TimeBucketAssetResponseDto](models-38.md#timebucketassetresponsedto), [TimeBucketDateType](models-38.md#timebucketdatetype), [TimelineOrderedSort](models-39.md#timelineorderedsort).
 
 Controller access declarations:
 
@@ -936,7 +966,17 @@ Complete operation contract:
       "in": "query",
       "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
       "schema": {
-        "$ref": "#/components/schemas/AssetLockReason"
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AssetLockReason"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "immich-locked-folder"
+            ]
+          }
+        ]
       }
     },
     {

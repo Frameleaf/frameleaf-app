@@ -137,7 +137,7 @@ If your docker container is running on a different subnet then update accordingl
 
 ## Step 3. Add network to each service
 
-Add the network to each service (frameleaf-server, immich-machine-learning, database):
+Add the network to each service (frameleaf-server, frameleaf-machine-learning, database):
 
 ```yaml
 services:
@@ -146,7 +146,7 @@ services:
     networks:
       - frameleaf-network
 
-  immich-machine-learning:
+  frameleaf-machine-learning:
     # other config options
     networks:
       - frameleaf-network

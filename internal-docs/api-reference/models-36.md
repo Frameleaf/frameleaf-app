@@ -1,10 +1,391 @@
 # Server API models 36
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## StudioSourceFileDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "base64": {
+      "maxLength": 25165824,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$",
+      "type": "string"
+    },
+    "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "pattern": "^(?!\\/)(?!.*(?:\\\\|\\/\\/|(?:^|\\/)\\.\\.?(?:\\/|$)|[\\u0000-\\u001f\\u007f]))[^/]+(?:\\/[^/]+)*$",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base64",
+    "path",
+    "sha256"
+  ],
+  "type": "object"
+}
+```
+
+## StudioSourceParentDto
+
+Related models: [StudioSourceParentKind](models-36.md#studiosourceparentkind).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "checksum": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/StudioSourceParentKind"
+    }
+  },
+  "required": [
+    "checksum",
+    "id",
+    "kind"
+  ],
+  "type": "object"
+}
+```
+
+## StudioSourceParentKind
+
+
+```json
+{
+  "enum": [
+    "project-import",
+    "vector-graphic"
+  ],
+  "type": "string"
+}
+```
+
+## StudioSourceResolutionDto
+
+Related models: [StudioSourceFileDto](models-36.md#studiosourcefiledto), [StudioSourceParentDto](models-36.md#studiosourceparentdto), [StudioSourceSelectionDto](models-36.md#studiosourceselectiondto).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "archive": {
+      "type": "boolean"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/components/schemas/StudioSourceFileDto"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array"
+    },
+    "graphDigest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "manifestDigest": {
+      "description": "SHA-256 of canonical JSON containing every result field except files.base64 and manifestDigest",
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "parent": {
+      "$ref": "#/components/schemas/StudioSourceParentDto"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "selection": {
+      "$ref": "#/components/schemas/StudioSourceSelectionDto"
+    }
+  },
+  "required": [
+    "archive",
+    "expiresAt",
+    "files",
+    "graphDigest",
+    "manifestDigest",
+    "parent",
+    "projectId",
+    "revision",
+    "selection"
+  ],
+  "type": "object"
+}
+```
+
+## StudioSourceResolutionRequestDto
+
+Related models: [StudioSourceParentDto](models-36.md#studiosourceparentdto), [StudioSourceSelectionDto](models-36.md#studiosourceselectiondto).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "graphDigest": {
+      "description": "Exact acknowledged saved envelope digest",
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "parent": {
+      "$ref": "#/components/schemas/StudioSourceParentDto"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "selection": {
+      "$ref": "#/components/schemas/StudioSourceSelectionDto"
+    }
+  },
+  "required": [
+    "graphDigest",
+    "parent",
+    "revision",
+    "selection"
+  ],
+  "type": "object"
+}
+```
+
+## StudioSourceSelectionDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "animationId": {
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "type": "string"
+    },
+    "themeId": {
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## StudioTimeDto
+
+
+```json
+{
+  "properties": {
+    "den": {
+      "description": "Denominator",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "num": {
+      "description": "Numerator; zero is the start of the sequence",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "den",
+    "num"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionCreateDto
+
+
+```json
+{
+  "properties": {
+    "clipId": {
+      "description": "A video or audio clip on the main timeline of the head revision",
+      "pattern": "^[\\w-]{1,128}$",
+      "type": "string"
+    },
+    "destinationId": {
+      "description": "The machine-learning destination to run on, named explicitly",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "language": {
+      "description": "A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language",
+      "maxLength": 35,
+      "minLength": 2,
+      "type": "string"
+    }
+  },
+  "required": [
+    "clipId",
+    "destinationId",
+    "language"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionCue
+
+Related models: [StudioTranscriptionTime](models-36.md#studiotranscriptiontime).
+
+```json
+{
+  "properties": {
+    "end": {
+      "$ref": "#/components/schemas/StudioTranscriptionTime"
+    },
+    "start": {
+      "$ref": "#/components/schemas/StudioTranscriptionTime"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "end",
+    "start",
+    "text"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionDto
+
+Related models: [MediaOperationStatus](models-17.md#mediaoperationstatus), [StudioTranscriptionResultDto](models-36.md#studiotranscriptionresultdto).
+
+```json
+{
+  "properties": {
+    "clipId": {
+      "pattern": "^[\\w-]{1,128}$",
+      "type": "string"
+    },
+    "destinationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "error": {
+      "nullable": true,
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "language": {
+      "description": "The language asked for (`auto` or a BCP 47 tag)",
+      "type": "string"
+    },
+    "progress": {
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "result": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioTranscriptionResultDto"
+        }
+      ],
+      "description": "Present once the job has completed",
+      "nullable": true
+    },
+    "revision": {
+      "description": "The revision whose clip was transcribed",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    }
+  },
+  "required": [
+    "clipId",
+    "destinationId",
+    "error",
+    "id",
+    "language",
+    "progress",
+    "projectId",
+    "result",
+    "revision",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## StudioTranscriptionQueuedDto
+
+Related models: [MediaOperationStatus](models-17.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "id": {
+      "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    }
+  },
+  "required": [
+    "id",
+    "status"
+  ],
+  "type": "object"
+}
+```
 
 ## StudioTranscriptionResultDto
 
-Related models: [StudioTranscriptionCue](models-35.md#studiotranscriptioncue), [StudioTranscriptionWord](models-36.md#studiotranscriptionword).
+Related models: [StudioTranscriptionCue](models-36.md#studiotranscriptioncue), [StudioTranscriptionWord](models-36.md#studiotranscriptionword).
 
 ```json
 {
@@ -1746,153 +2127,6 @@ Related models: [SyncAssetTagV1](models-36.md#syncassettagv1).
     "deletedAt",
     "isOffline",
     "status"
-  ],
-  "type": "object"
-}
-```
-
-## SyncAssetV1
-
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility).
-
-```json
-{
-  "properties": {
-    "checksum": {
-      "description": "Checksum",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "Uploaded to Frameleaf at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "deletedAt": {
-      "description": "Deleted at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "duration": {
-      "description": "Duration",
-      "nullable": true,
-      "type": "string"
-    },
-    "fileCreatedAt": {
-      "description": "File created at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "fileModifiedAt": {
-      "description": "File modified at",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "height": {
-      "description": "Asset height",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isEdited": {
-      "description": "Is edited",
-      "type": "boolean"
-    },
-    "isFavorite": {
-      "description": "Is favorite",
-      "type": "boolean"
-    },
-    "libraryId": {
-      "description": "Library ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "livePhotoVideoId": {
-      "description": "Live photo video ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "localDateTime": {
-      "description": "Local date time",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "originalFileName": {
-      "description": "Original file name",
-      "type": "string"
-    },
-    "ownerId": {
-      "description": "Owner ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "stackId": {
-      "description": "Stack ID",
-      "nullable": true,
-      "type": "string"
-    },
-    "thumbhash": {
-      "description": "Thumbhash",
-      "nullable": true,
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    },
-    "visibility": {
-      "$ref": "#/components/schemas/AssetVisibility"
-    },
-    "width": {
-      "description": "Asset width",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "checksum",
-    "createdAt",
-    "deletedAt",
-    "duration",
-    "fileCreatedAt",
-    "fileModifiedAt",
-    "height",
-    "id",
-    "isEdited",
-    "isFavorite",
-    "libraryId",
-    "livePhotoVideoId",
-    "localDateTime",
-    "originalFileName",
-    "ownerId",
-    "stackId",
-    "thumbhash",
-    "type",
-    "visibility",
-    "width"
   ],
   "type": "object"
 }

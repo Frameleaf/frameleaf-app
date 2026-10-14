@@ -1,12 +1,12 @@
 # Server API — Render workers 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getRenderStreamSignal
 
 `POST /api/render-workers/operations/{id}/stream`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L420).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L421).
 
 Read the signalling of a claimed preview stream
 
@@ -27,7 +27,7 @@ Controller access declarations:
 @Endpoint({
     summary: 'Read the signalling of a claimed preview stream',
     description:
-      "FL-96. What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
+      "What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
     history: history(),
   })
 ```
@@ -36,7 +36,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "FL-96. What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
+  "description": "What the worker holding a Studio preview stream must do now: stop (`close`), offer for the current negotiation (`offerNeeded`), or connect with the browser's answer, which carries the server's bitrate bound. Poll at least every two seconds while streaming.",
   "operationId": "getRenderStreamSignal",
   "parameters": [
     {
@@ -103,7 +103,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/stream/offer`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L438).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L440).
 
 Offer a claimed preview stream
 
@@ -124,7 +124,7 @@ Controller access declarations:
 @Endpoint({
     summary: 'Offer a claimed preview stream',
     description:
-      'FL-96. The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.',
+      'The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.',
     history: history(),
   })
 ```
@@ -133,7 +133,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "FL-96. The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.",
+  "description": "The complete session description (non-trickle ICE) for the current negotiation: one send-only video and one control data channel. One offer per negotiation per claim.",
   "operationId": "offerRenderStream",
   "parameters": [
     {
@@ -200,7 +200,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/validate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L351).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L351).
 
 Begin validating a claimed operation
 
@@ -296,7 +296,7 @@ Complete operation contract:
 
 `GET /api/render-workers/remote-references`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L456).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L458).
 
 List what this worker must stop or delete
 
@@ -375,7 +375,7 @@ Complete operation contract:
 
 `POST /api/render-workers/remote-references/{id}/acknowledge`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L471).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L473).
 
 Acknowledge a remote reference
 

@@ -127,7 +127,7 @@ export const adminConfigDefaults = {
   },
   machineLearning: {
     enabled: true,
-    urls: ['http://immich-machine-learning:3003'],
+    urls: ['http://frameleaf-machine-learning:3003'],
     availabilityChecks: {
       enabled: true,
       timeout: 2000,
@@ -278,8 +278,8 @@ export const adminConfigDefaults = {
     signingAlgorithm: 'RS256',
     profileSigningAlgorithm: 'none',
     storageLabelClaim: 'preferred_username',
-    storageQuotaClaim: 'immich_quota',
-    roleClaim: 'immich_role',
+    storageQuotaClaim: 'frameleaf_quota',
+    roleClaim: 'frameleaf_role',
     tokenEndpointAuthMethod: 'client_secret_post',
     timeout: 30_000,
     allowInsecureRequests: false,

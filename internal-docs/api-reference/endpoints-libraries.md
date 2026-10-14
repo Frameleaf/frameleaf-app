@@ -1,12 +1,12 @@
 # Server API — Libraries
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllLibraries
 
 `GET /api/libraries`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L31).
 
 Retrieve libraries
 
@@ -108,7 +108,7 @@ Complete operation contract:
 
 `POST /api/libraries`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L58).
 
 Create a library
 
@@ -198,7 +198,7 @@ Complete operation contract:
 
 `GET /api/libraries/managed-uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L46).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L46).
 
 Retrieve managed upload statistics
 
@@ -273,7 +273,7 @@ Complete operation contract:
 
 `DELETE /api/libraries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L111).
 
 Delete a library
 
@@ -356,7 +356,7 @@ Complete operation contract:
 
 `GET /api/libraries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L69).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L69).
 
 Retrieve a library
 
@@ -447,7 +447,7 @@ Complete operation contract:
 
 `PUT /api/libraries/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L81).
 
 Update a library
 
@@ -559,7 +559,7 @@ Complete operation contract:
 
 `GET /api/libraries/{id}/removal`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L173).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L173).
 
 Review a library removal
 
@@ -642,7 +642,7 @@ Complete operation contract:
 
 `POST /api/libraries/{id}/removal`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L186).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L186).
 
 Remove a library
 
@@ -729,7 +729,7 @@ Complete operation contract:
 
 `DELETE /api/libraries/{id}/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L160).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L160).
 
 Cancel a library scan
 
@@ -804,7 +804,7 @@ Complete operation contract:
 
 `POST /api/libraries/{id}/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L148).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L148).
 
 Scan a library
 
@@ -887,7 +887,7 @@ Complete operation contract:
 
 `GET /api/libraries/{id}/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L136).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L136).
 
 Retrieve library statistics
 
@@ -979,7 +979,7 @@ Complete operation contract:
 
 `POST /api/libraries/{id}/validate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/library.controller.ts#L123).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/library.controller.ts#L123).
 
 Validate library settings
 

@@ -232,7 +232,7 @@ test("Compose routes fixture and all transitive bases with exact original fallba
     fallback("FRAMELEAF_CI_POSTGRES_IMAGE", "postgres"),
   );
   for (const [file, service] of [
-    ["ml", "immich-machine-learning-fixture"],
+    ["ml", "frameleaf-machine-learning-fixture"],
     ["frameleaf-cloud", "frameleaf-cloud-fixture"],
     ["icloud-bridge", "icloud-bridge-fixture"],
   ]) {

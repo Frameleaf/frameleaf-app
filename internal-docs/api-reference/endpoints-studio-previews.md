@@ -1,18 +1,18 @@
 # Server API — Studio previews
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## openStudioPreviewStream
 
 `POST /api/studio/preview-streams`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview-stream.controller.ts#L29).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview-stream.controller.ts#L29).
 
 Open a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto), [StudioPreviewStreamOpenDto](models-34.md#studiopreviewstreamopendto).
+Models: [StudioPreviewStreamDto](models-35.md#studiopreviewstreamdto), [StudioPreviewStreamOpenDto](models-35.md#studiopreviewstreamopendto).
 
 Controller access declarations:
 
@@ -92,13 +92,13 @@ Complete operation contract:
 
 `DELETE /api/studio/preview-streams/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview-stream.controller.ts#L89).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview-stream.controller.ts#L89).
 
 Close a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamDto](models-35.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -178,13 +178,13 @@ Complete operation contract:
 
 `GET /api/studio/preview-streams/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview-stream.controller.ts#L45).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview-stream.controller.ts#L45).
 
 Get a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamDto](models-35.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -264,13 +264,13 @@ Complete operation contract:
 
 `PUT /api/studio/preview-streams/{id}/answer`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview-stream.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview-stream.controller.ts#L57).
 
 Answer a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamAnswerDto](models-34.md#studiopreviewstreamanswerdto), [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamAnswerDto](models-34.md#studiopreviewstreamanswerdto), [StudioPreviewStreamDto](models-35.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -360,13 +360,13 @@ Complete operation contract:
 
 `POST /api/studio/preview-streams/{id}/reconnect`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview-stream.controller.ts#L73).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview-stream.controller.ts#L73).
 
 Reconnect a Studio preview stream
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [StudioPreviewStreamDto](models-34.md#studiopreviewstreamdto).
+Models: [StudioPreviewStreamDto](models-35.md#studiopreviewstreamdto).
 
 Controller access declarations:
 
@@ -447,7 +447,7 @@ Complete operation contract:
 
 `POST /api/studio/previews`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L42).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview.controller.ts#L42).
 
 Request a Studio preview frame
 
@@ -533,7 +533,7 @@ Complete operation contract:
 
 `DELETE /api/studio/previews/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L104).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview.controller.ts#L104).
 
 Cancel a Studio preview
 
@@ -651,7 +651,7 @@ Complete operation contract:
 
 `GET /api/studio/previews/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L55).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview.controller.ts#L55).
 
 Get a Studio preview
 
@@ -746,7 +746,7 @@ Complete operation contract:
 
 `GET /api/studio/previews/{id}/frame`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-preview.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-preview.controller.ts#L70).
 
 View a Studio preview frame
 

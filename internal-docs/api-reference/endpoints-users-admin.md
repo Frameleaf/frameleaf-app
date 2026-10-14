@@ -1,12 +1,12 @@
 # Server API — Users (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## listAllBackupDevices
 
 `GET /api/admin/backup-devices`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/backup-device.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/backup-device.controller.ts#L114).
 
 List backup device metadata across users
 
@@ -101,7 +101,7 @@ Complete operation contract:
 
 `GET /api/admin/users`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L30).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L30).
 
 Search users
 
@@ -205,7 +205,7 @@ Complete operation contract:
 
 `POST /api/admin/users`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L41).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L41).
 
 Create a user
 
@@ -295,7 +295,7 @@ Complete operation contract:
 
 `DELETE /api/admin/users/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L93).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L93).
 
 Delete a user
 
@@ -396,7 +396,7 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L52).
 
 Retrieve a user
 
@@ -487,7 +487,7 @@ Complete operation contract:
 
 `PUT /api/admin/users/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L63).
 
 Update a user
 
@@ -599,7 +599,7 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}/calendar-heatmap`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L108).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L108).
 
 Retrieve calendar heatmap activity
 
@@ -719,10 +719,9 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}/history`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L127).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L126).
 
-FL-76: the account detail's Activity tab. What administrators did to this account and its
-libraries, newest first, recorded by the services that made each change.
+Retrieve user history
 
 Permission: `adminUser.read`. Admin only: `true`.
 
@@ -806,7 +805,7 @@ Complete operation contract:
       "api_key": []
     }
   ],
-  "summary": "FL-76: the account detail's Activity tab. What administrators did to this account and its\nlibraries, newest first, recorded by the services that made each change.",
+  "summary": "Retrieve user history",
   "tags": [
     "Users (admin)"
   ],
@@ -830,7 +829,7 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}/pin-code`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L171).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L169).
 
 Retrieve whether a user has a PIN
 
@@ -917,7 +916,7 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}/preferences`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L200).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L198).
 
 Retrieve user preferences
 
@@ -1008,13 +1007,13 @@ Complete operation contract:
 
 `PUT /api/admin/users/{id}/preferences`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L211).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L209).
 
 Update user preferences
 
 Permission: `adminUser.update`. Admin only: `true`.
 
-Models: [UserPreferencesResponseDto](models-39.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-39.md#userpreferencesupdatedto).
+Models: [UserPreferencesResponseDto](models-39.md#userpreferencesresponsedto), [UserPreferencesUpdateDto](models-40.md#userpreferencesupdatedto).
 
 Controller access declarations:
 
@@ -1120,7 +1119,7 @@ Complete operation contract:
 
 `POST /api/admin/users/{id}/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L241).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L239).
 
 Restore a deleted user
 
@@ -1212,7 +1211,7 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}/sessions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L143).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L142).
 
 Retrieve user sessions
 
@@ -1306,11 +1305,9 @@ Complete operation contract:
 
 `DELETE /api/admin/users/{id}/sessions/{sessionId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L159).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L157).
 
-FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
-own sessions, so an administrator could never revoke a foreign session through it. This is
-the explicit, audited admin path the account detail's Security tab needs instead.
+Delete a user session
 
 Permission: `adminSession.delete`. Admin only: `true`.
 
@@ -1373,7 +1370,7 @@ Complete operation contract:
       "api_key": []
     }
   ],
-  "summary": "FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's\nown sessions, so an administrator could never revoke a foreign session through it. This is\nthe explicit, audited admin path the account detail's Security tab needs instead.",
+  "summary": "Delete a user session",
   "tags": [
     "Users (admin)"
   ],
@@ -1397,7 +1394,7 @@ Complete operation contract:
 
 `GET /api/admin/users/{id}/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/user-admin.controller.ts#L185).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/user-admin.controller.ts#L183).
 
 Retrieve user statistics
 

@@ -1,6 +1,225 @@
 # Server API models 18
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## MemoryShowLessResponseDto
+
+Related models: [MemoryShowLessKind](models-17.md#memoryshowlesskind).
+
+```json
+{
+  "properties": {
+    "createdAt": {
+      "description": "When the rule was added",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MemoryShowLessKind"
+    },
+    "name": {
+      "description": "The person's or pet's name, for person and pet rules",
+      "nullable": true,
+      "type": "string"
+    },
+    "value": {
+      "description": "A person or pet id, a date as 'MM-dd', or a memory type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "kind",
+    "name",
+    "value"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryStatisticsResponseDto
+
+
+```json
+{
+  "properties": {
+    "total": {
+      "description": "Total number of memories",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryStoryPlaceDto
+
+
+```json
+{
+  "properties": {
+    "city": {
+      "description": "City",
+      "nullable": true,
+      "type": "string"
+    },
+    "country": {
+      "description": "Country",
+      "nullable": true,
+      "type": "string"
+    },
+    "state": {
+      "description": "State or region",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "city",
+    "country",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## MemoryType
+
+
+```json
+{
+  "description": "Memory type",
+  "enum": [
+    "on_this_day",
+    "event_story",
+    "year_in_review",
+    "pet_story",
+    "birthday",
+    "person_recap"
+  ],
+  "type": "string"
+}
+```
+
+## MemoryUpdateDto
+
+
+```json
+{
+  "properties": {
+    "assetOrder": {
+      "description": "The memory's items in the order the owner chose; items not listed follow in capture order",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 5000,
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "isHidden": {
+      "description": "Hide the memory from the memories list; false restores it",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    },
+    "isSaved": {
+      "description": "Is memory saved",
+      "type": "boolean"
+    },
+    "memoryAt": {
+      "description": "Memory date",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "seenAt": {
+      "description": "Date when memory was seen",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "title": {
+      "description": "The owner's own title for the memory; null returns to the generated one",
+      "maxLength": 200,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v3",
+          "state": "Added"
+        }
+      ]
+    }
+  },
+  "type": "object"
+}
+```
+
+## MergePersonDto
+
+
+```json
+{
+  "properties": {
+    "ids": {
+      "description": "Person IDs to merge",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+}
+```
+
+## MergeSuggestionsResponseDto
+
+Related models: [PersonMergeSuggestionDto](models-19.md#personmergesuggestiondto).
+
+```json
+{
+  "properties": {
+    "suggestions": {
+      "description": "Suggested pairs of people that may be the same person",
+      "items": {
+        "$ref": "#/components/schemas/PersonMergeSuggestionDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "suggestions"
+  ],
+  "type": "object"
+}
+```
 
 ## MetadataSearchDto
 
@@ -1871,176 +2090,6 @@ Related models: [MlCapabilityDestinationDto](models-18.md#mlcapabilitydestinatio
     "destinations",
     "routedDestinationId",
     "workload"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkloadRouteDto
-
-Related models: [MlWorkload](models-18.md#mlworkload).
-
-```json
-{
-  "properties": {
-    "destinationId": {
-      "description": "Destination the workload is routed to, or null when unrouted",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "workload": {
-      "$ref": "#/components/schemas/MlWorkload"
-    }
-  },
-  "required": [
-    "destinationId",
-    "workload"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkloadRouteUpdateDto
-
-
-```json
-{
-  "properties": {
-    "destinationId": {
-      "description": "Destination to route the workload to; null removes the route",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "destinationId"
-  ],
-  "type": "object"
-}
-```
-
-## MlWorkloadRoutesResponseDto
-
-Related models: [MlWorkloadRouteDto](models-18.md#mlworkloadroutedto).
-
-```json
-{
-  "properties": {
-    "routes": {
-      "items": {
-        "$ref": "#/components/schemas/MlWorkloadRouteDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "routes"
-  ],
-  "type": "object"
-}
-```
-
-## MoveAlbumDto
-
-
-```json
-{
-  "properties": {
-    "collectionId": {
-      "description": "Collection to move the album into, or null to take it out so it stands on its own",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "expectedParentId": {
-      "description": "Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "collectionId"
-  ],
-  "type": "object"
-}
-```
-
-## NotificationCreateDto
-
-Related models: [NotificationLevel](models-19.md#notificationlevel), [NotificationType](models-19.md#notificationtype).
-
-```json
-{
-  "properties": {
-    "data": {
-      "additionalProperties": {},
-      "description": "Additional notification data",
-      "type": "object"
-    },
-    "description": {
-      "description": "Notification description",
-      "nullable": true,
-      "type": "string"
-    },
-    "level": {
-      "$ref": "#/components/schemas/NotificationLevel"
-    },
-    "readAt": {
-      "description": "Date when notification was read",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "nullable": true,
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "title": {
-      "description": "Notification title",
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/NotificationType"
-    },
-    "userId": {
-      "description": "User ID to send notification to",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "title",
-    "userId"
-  ],
-  "type": "object"
-}
-```
-
-## NotificationDeleteAllDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Notification IDs to delete",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
   ],
   "type": "object"
 }

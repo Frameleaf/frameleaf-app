@@ -36,6 +36,7 @@ const upstream = {
 
 const proxy: Record<string, string | ProxyOptions> = {
   '/api': upstream,
+  '/.well-known/frameleaf': upstream,
   '/.well-known/immich': upstream,
   '/custom.css': upstream,
 };

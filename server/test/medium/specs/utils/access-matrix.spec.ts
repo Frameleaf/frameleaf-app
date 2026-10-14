@@ -196,7 +196,7 @@ const library = async (ctx: Context) => {
   };
   await lock(items.lockedMarked, AssetLockReason.Marked);
   await lock(items.lockedDetected, AssetLockReason.Detected);
-  await lock(items.lockedFolder, AssetLockReason.ImmichLockedFolder);
+  await lock(items.lockedFolder, AssetLockReason.FrameleafLockedFolder);
   // Only the still carries the lock row: its motion part is as private as the still (FL-34).
   await lock(items.lockedLiveStill, AssetLockReason.Marked);
 

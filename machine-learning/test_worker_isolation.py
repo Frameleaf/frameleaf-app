@@ -50,8 +50,8 @@ def test_isolated_compose_preserves_peers_and_excludes_server_secrets(tmp_path: 
         check=True,
     )
     config = json.loads(result.stdout)
-    worker = config["services"]["immich-machine-learning"]
-    staging = config["services"]["immich-model-staging"]
+    worker = config["services"]["frameleaf-machine-learning"]
+    staging = config["services"]["frameleaf-model-staging"]
     assert set(worker["networks"]) == {"ml-inference"}
     assert set(staging["networks"]) == {"ml-downloads"}
     assert set(config["services"]["frameleaf-server"]["networks"]) == {"ml-inference", "default"}

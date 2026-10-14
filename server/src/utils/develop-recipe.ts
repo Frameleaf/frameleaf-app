@@ -926,7 +926,8 @@ export function planDevelopDetail(
   if (params.clarity > 0) {
     const amount = params.clarity / 100;
     const minEdge = Math.max(1, Math.min(output.width, output.height));
-    plan.clarity = { sigma: round(clamp(minEdge / 160, 2, 24), 2), m1: 0, m2: round(amount * 1.4, 2) };
+    // sharp's sharpen() rejects sigma above 10, so frames with a short edge over 1600 px share the 10 px radius
+    plan.clarity = { sigma: round(clamp(minEdge / 160, 2, 10), 2), m1: 0, m2: round(amount * 1.4, 2) };
   }
   return plan;
 }

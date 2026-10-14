@@ -1,6 +1,291 @@
 # Server API models 14
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## ICloudCoverageDto
+
+Related models: [ICloudCoverageSampleDto](models-14.md#icloudcoveragesampledto).
+
+```json
+{
+  "properties": {
+    "deviceKey": {
+      "description": "This device's backup identity (the backup device registry's deviceKey)",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "samples": {
+      "description": "Sampled items: some old, some recent, some in albums",
+      "items": {
+        "$ref": "#/components/schemas/ICloudCoverageSampleDto"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "deviceKey",
+    "samples"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageResponseDto
+
+Related models: [ICloudCoverageConnectionDto](models-13.md#icloudcoverageconnectiondto).
+
+```json
+{
+  "properties": {
+    "connections": {
+      "items": {
+        "$ref": "#/components/schemas/ICloudCoverageConnectionDto"
+      },
+      "type": "array"
+    },
+    "identityMatching": {
+      "description": "False when identity matching is switched off: no connection can then be shown to cover the library",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "connections",
+    "identityMatching"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageSampleDto
+
+
+```json
+{
+  "properties": {
+    "cloudIdentifier": {
+      "description": "PHCloudIdentifier.stringValue, as the device reports it",
+      "maxLength": 512,
+      "minLength": 1,
+      "type": "string"
+    },
+    "creationDate": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "originalFilename": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "type": "string"
+    },
+    "pixelHeight": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "pixelWidth": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "uti": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "cloudIdentifier"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudCoverageScopeKind
+
+
+```json
+{
+  "description": "Whole libraries, or only some albums",
+  "enum": [
+    "libraries",
+    "albums"
+  ],
+  "type": "string"
+}
+```
+
+## ICloudEditBaselineDto
+
+Related models: [ICloudEditDeviceHolderKind](models-14.md#icloudeditdeviceholderkind), [ICloudEditOriginalRevertKind](models-14.md#icloudeditoriginalrevertkind), [ICloudEditRetentionPolicy](models-14.md#icloudeditretentionpolicy), [ICloudEditSyncHolderKind](models-14.md#icloudeditsyncholderkind).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "expectedGeneration": {
+      "maximum": 2147483646,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "holder": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "$ref": "#/components/schemas/ICloudEditDeviceHolderKind"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "$ref": "#/components/schemas/ICloudEditSyncHolderKind"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "intent": {
+      "description": "Explicit local original-primary policy transition, separate from administrative baseline acceptance; binds the current immutable publication and explicit retention choice",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "$ref": "#/components/schemas/ICloudEditOriginalRevertKind"
+            },
+            "expectedPublicationId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "retention": {
+              "$ref": "#/components/schemas/ICloudEditRetentionPolicy"
+            }
+          },
+          "required": [
+            "kind",
+            "expectedPublicationId",
+            "retention"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "nativeVersion": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "receiptId": {
+      "description": "An accessible owned stored source identity with verified current asset digest",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "sourceIncarnation": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "takeOver": {
+      "default": false,
+      "description": "Only bypasses the 72-hour wait for an unhealthy source",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "expectedGeneration",
+    "holder",
+    "nativeVersion",
+    "receiptId",
+    "requestId",
+    "sourceIncarnation"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudEditDecisionResponseDto
+
+
+```json
+{
+  "properties": {
+    "decisionId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "evidenceType": {
+      "enum": [
+        "administrative"
+      ],
+      "type": "string"
+    },
+    "generation": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "versionId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decisionId",
+    "evidenceType",
+    "generation",
+    "versionId"
+  ],
+  "type": "object"
+}
+```
+
+## ICloudEditDeviceHolderKind
+
+
+```json
+{
+  "enum": [
+    "device"
+  ],
+  "type": "string"
+}
+```
 
 ## ICloudEditEvidenceResponseDto
 
@@ -1725,306 +2010,5 @@ Related models: [EnrichmentStaleReason](models-11.md#enrichmentstalereason).
     "checksum_mismatch"
   ],
   "type": "string"
-}
-```
-
-## IntegrityReportResponseDto
-
-Related models: [IntegrityReport](models-14.md#integrityreport).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "properties": {
-          "id": {
-            "description": "Integrity report item id",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          },
-          "path": {
-            "description": "Integrity report item path",
-            "type": "string"
-          },
-          "type": {
-            "$ref": "#/components/schemas/IntegrityReport"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "path"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "nextCursor": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "items"
-  ],
-  "type": "object"
-}
-```
-
-## IntegrityReportSummaryResponseDto
-
-
-```json
-{
-  "properties": {
-    "checksum_mismatch": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "missing_file": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "untracked_file": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "checksum_mismatch",
-    "missing_file",
-    "untracked_file"
-  ],
-  "type": "object"
-}
-```
-
-## ItemShareChangeDto
-
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "description": "The items (your own) to share or stop sharing",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    },
-    "userIds": {
-      "description": "The people in this library to share them with, or to stop sharing them with",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 100,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "assetIds",
-    "userIds"
-  ],
-  "type": "object"
-}
-```
-
-## ItemShareChangeResponseDto
-
-Related models: [ItemShareResponseDto](models-14.md#itemshareresponsedto).
-
-```json
-{
-  "properties": {
-    "added": {
-      "description": "Shares this change added",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "link": {
-      "description": "Where recipients open what is shared with them: the Public server URL when set, otherwise the direct-connection address (or a custom hostname pointed at it); null when the server has no address",
-      "nullable": true,
-      "type": "string"
-    },
-    "removed": {
-      "description": "Shares this change removed",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "shares": {
-      "description": "Every share of these items after the change",
-      "items": {
-        "$ref": "#/components/schemas/ItemShareResponseDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "added",
-    "link",
-    "removed",
-    "shares"
-  ],
-  "type": "object"
-}
-```
-
-## ItemShareQueryDto
-
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "description": "The items (your own) to list the shares of",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 1000,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "assetIds"
-  ],
-  "type": "object"
-}
-```
-
-## ItemShareReceivedDto
-
-Related models: [AssetResponseDto](models-06.md#assetresponsedto), [UserResponseDto](models-39.md#userresponsedto).
-
-```json
-{
-  "properties": {
-    "asset": {
-      "$ref": "#/components/schemas/AssetResponseDto",
-      "description": "The shared item"
-    },
-    "id": {
-      "description": "Share ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "owner": {
-      "$ref": "#/components/schemas/UserResponseDto",
-      "description": "Who shared it"
-    },
-    "sharedAt": {
-      "description": "When it was shared",
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "asset",
-    "id",
-    "owner",
-    "sharedAt"
-  ],
-  "type": "object"
-}
-```
-
-## ItemShareReceivedResponseDto
-
-Related models: [ItemShareReceivedDto](models-14.md#itemsharereceiveddto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "description": "Items shared with you, newest share first",
-      "items": {
-        "$ref": "#/components/schemas/ItemShareReceivedDto"
-      },
-      "type": "array"
-    },
-    "link": {
-      "description": "The address of this list, as sent in share notifications",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "items",
-    "link"
-  ],
-  "type": "object"
-}
-```
-
-## ItemShareResponseDto
-
-Related models: [UserResponseDto](models-39.md#userresponsedto).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "The shared item",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "When it was shared",
-      "format": "date-time",
-      "type": "string"
-    },
-    "id": {
-      "description": "Share ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "sharedWith": {
-      "$ref": "#/components/schemas/UserResponseDto",
-      "description": "Who the item is shared with"
-    }
-  },
-  "required": [
-    "assetId",
-    "createdAt",
-    "id",
-    "sharedWith"
-  ],
-  "type": "object"
-}
-```
-
-## JobCreateDto
-
-Related models: [ManualJobName](models-16.md#manualjobname).
-
-```json
-{
-  "properties": {
-    "name": {
-      "$ref": "#/components/schemas/ManualJobName"
-    }
-  },
-  "required": [
-    "name"
-  ],
-  "type": "object"
 }
 ```

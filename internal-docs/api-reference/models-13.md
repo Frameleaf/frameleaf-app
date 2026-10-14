@@ -1,6 +1,546 @@
 # Server API models 13
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## HdrAssetDevelopRecipe
+
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "blacks": {
+      "default": 0,
+      "description": "Black point",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "brilliance": {
+      "default": 0,
+      "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "clarity": {
+      "default": 0,
+      "description": "Local contrast in the midtones",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "cleanup": {
+      "default": [],
+      "description": "Clean Up operations, applied in order to the original before every other step",
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopCleanup"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "contrast": {
+      "default": 0,
+      "description": "Contrast around middle grey",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "crop": {
+      "$ref": "#/components/schemas/KnownAssetDevelopCrop",
+      "default": {
+        "h": 1,
+        "w": 1,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "dehaze": {
+      "default": 0,
+      "description": "Haze removal (positive) or addition (negative)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "exposure": {
+      "default": 0,
+      "description": "Exposure in EV; each whole stop doubles the light",
+      "format": "double",
+      "maximum": 2,
+      "minimum": -2,
+      "type": "number"
+    },
+    "flipHorizontal": {
+      "default": false,
+      "description": "Mirror left to right",
+      "type": "boolean"
+    },
+    "flipVertical": {
+      "default": false,
+      "description": "Mirror top to bottom",
+      "type": "boolean"
+    },
+    "grain": {
+      "default": 0,
+      "description": "Film grain amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "hdr": {
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "intent": {
+          "default": "preserve",
+          "enum": [
+            "preserve"
+          ],
+          "type": "string"
+        },
+        "referenceWhite": {
+          "default": 203,
+          "enum": [
+            203
+          ],
+          "format": "int32",
+          "type": "integer"
+        },
+        "sdrToneMapper": {
+          "default": "libultrahdr/2.0.2",
+          "enum": [
+            "libultrahdr/2.0.2"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "default": 1,
+          "enum": [
+            1
+          ],
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "highlights": {
+      "default": 0,
+      "description": "Highlight recovery (negative) or lift (positive)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "masks": {
+      "default": [],
+      "description": "Selective adjustments, applied in order after the global develop",
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopMask"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "noiseReduction": {
+      "default": 0,
+      "description": "Luminance noise reduction amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "perspective": {
+      "$ref": "#/components/schemas/AssetDevelopPerspective",
+      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
+    },
+    "preset": {
+      "$ref": "#/components/schemas/AssetDevelopPreset",
+      "default": "Original"
+    },
+    "presetStrength": {
+      "default": 100,
+      "description": "How much of the preset is applied, as a percentage",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "renderer": {
+      "default": "frameleaf-develop-hdr/1",
+      "enum": [
+        "frameleaf-develop-hdr/1"
+      ],
+      "type": "string"
+    },
+    "rotation": {
+      "default": 0,
+      "description": "Quarter-turn rotation in degrees, clockwise",
+      "maximum": 270,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "saturation": {
+      "default": 0,
+      "description": "Global saturation",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "shadows": {
+      "default": 0,
+      "description": "Shadow lift (positive) or deepening (negative)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "sharpen": {
+      "default": 0,
+      "description": "Detail sharpening amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "straighten": {
+      "default": 0,
+      "description": "Straighten angle in degrees, applied before the crop",
+      "format": "double",
+      "maximum": 45,
+      "minimum": -45,
+      "type": "number"
+    },
+    "temperature": {
+      "default": 0,
+      "description": "Warm (positive) or cool (negative) white balance shift",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "tint": {
+      "default": 0,
+      "description": "Magenta (positive) or green (negative) tint",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "version": {
+      "enum": [
+        3
+      ],
+      "format": "int32",
+      "type": "integer"
+    },
+    "vibrance": {
+      "default": 0,
+      "description": "Saturation weighted towards muted colours",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "vignette": {
+      "default": 0,
+      "description": "Darkened (positive) or lightened (negative) edges",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "whites": {
+      "default": 0,
+      "description": "White point",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "type": "object"
+}
+```
+
+## HdrAssetDevelopRecipeV4
+
+Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "blacks": {
+      "default": 0,
+      "description": "Black point",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "brilliance": {
+      "default": 0,
+      "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "clarity": {
+      "default": 0,
+      "description": "Local contrast in the midtones",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "cleanup": {
+      "default": [],
+      "description": "Clean Up operations, applied in order to the original before every other step",
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopCleanup"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "contrast": {
+      "default": 0,
+      "description": "Contrast around middle grey",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "crop": {
+      "$ref": "#/components/schemas/KnownAssetDevelopCrop",
+      "default": {
+        "h": 1,
+        "w": 1,
+        "x": 0,
+        "y": 0
+      }
+    },
+    "dehaze": {
+      "default": 0,
+      "description": "Haze removal (positive) or addition (negative)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "exposure": {
+      "default": 0,
+      "description": "Exposure in EV; each whole stop doubles the light",
+      "format": "double",
+      "maximum": 2,
+      "minimum": -2,
+      "type": "number"
+    },
+    "flipHorizontal": {
+      "default": false,
+      "description": "Mirror left to right",
+      "type": "boolean"
+    },
+    "flipVertical": {
+      "default": false,
+      "description": "Mirror top to bottom",
+      "type": "boolean"
+    },
+    "grain": {
+      "default": 0,
+      "description": "Film grain amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "hdr": {
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "intent": {
+          "default": "preserve",
+          "enum": [
+            "preserve"
+          ],
+          "type": "string"
+        },
+        "referenceWhite": {
+          "default": 203,
+          "enum": [
+            203
+          ],
+          "format": "int32",
+          "type": "integer"
+        },
+        "sdrToneMapper": {
+          "default": "libultrahdr/2.0.2-frameleaf.2",
+          "enum": [
+            "libultrahdr/2.0.2-frameleaf.2"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "default": 2,
+          "enum": [
+            2
+          ],
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "highlights": {
+      "default": 0,
+      "description": "Highlight recovery (negative) or lift (positive)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "masks": {
+      "default": [],
+      "description": "Selective adjustments, applied in order after the global develop",
+      "items": {
+        "$ref": "#/components/schemas/AssetDevelopMask"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "noiseReduction": {
+      "default": 0,
+      "description": "Luminance noise reduction amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "perspective": {
+      "$ref": "#/components/schemas/AssetDevelopPerspective",
+      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
+    },
+    "preset": {
+      "$ref": "#/components/schemas/AssetDevelopPreset",
+      "default": "Original"
+    },
+    "presetStrength": {
+      "default": 100,
+      "description": "How much of the preset is applied, as a percentage",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "renderer": {
+      "default": "frameleaf-develop-hdr/2",
+      "enum": [
+        "frameleaf-develop-hdr/2"
+      ],
+      "type": "string"
+    },
+    "rotation": {
+      "default": 0,
+      "description": "Quarter-turn rotation in degrees, clockwise",
+      "maximum": 270,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "saturation": {
+      "default": 0,
+      "description": "Global saturation",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "shadows": {
+      "default": 0,
+      "description": "Shadow lift (positive) or deepening (negative)",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "sharpen": {
+      "default": 0,
+      "description": "Detail sharpening amount",
+      "format": "double",
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "straighten": {
+      "default": 0,
+      "description": "Straighten angle in degrees, applied before the crop",
+      "format": "double",
+      "maximum": 45,
+      "minimum": -45,
+      "type": "number"
+    },
+    "temperature": {
+      "default": 0,
+      "description": "Warm (positive) or cool (negative) white balance shift",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "tint": {
+      "default": 0,
+      "description": "Magenta (positive) or green (negative) tint",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "version": {
+      "enum": [
+        4
+      ],
+      "format": "int32",
+      "type": "integer"
+    },
+    "vibrance": {
+      "default": 0,
+      "description": "Saturation weighted towards muted colours",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "vignette": {
+      "default": 0,
+      "description": "Darkened (positive) or lightened (negative) edges",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    },
+    "whites": {
+      "default": 0,
+      "description": "White point",
+      "format": "double",
+      "maximum": 100,
+      "minimum": -100,
+      "type": "number"
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "type": "object"
+}
+```
 
 ## HdrAssetDevelopRecipeV5
 
@@ -20,7 +560,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     },
     "brilliance": {
       "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
       "format": "double",
       "maximum": 100,
       "minimum": -100,
@@ -36,7 +576,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     },
     "cleanup": {
       "default": [],
-      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+      "description": "Clean Up operations, applied in order to the original before every other step",
       "items": {
         "$ref": "#/components/schemas/AssetDevelopCleanup"
       },
@@ -290,7 +830,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     },
     "brilliance": {
       "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
       "format": "double",
       "maximum": 100,
       "minimum": -100,
@@ -306,7 +846,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     },
     "cleanup": {
       "default": [],
-      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+      "description": "Clean Up operations, applied in order to the original before every other step",
       "items": {
         "$ref": "#/components/schemas/AssetDevelopCleanup"
       },
@@ -1492,7 +2032,7 @@ Related models: [ICloudControlAction](models-13.md#icloudcontrolaction).
 
 ## ICloudCoverageConnectionDto
 
-Related models: [ICloudConnectionHealth](models-13.md#icloudconnectionhealth), [ICloudCoverageScopeKind](models-13.md#icloudcoveragescopekind).
+Related models: [ICloudConnectionHealth](models-13.md#icloudconnectionhealth), [ICloudCoverageScopeKind](models-14.md#icloudcoveragescopekind).
 
 ```json
 {
@@ -1589,290 +2129,5 @@ Related models: [ICloudConnectionHealth](models-13.md#icloudconnectionhealth), [
     "unhealthySince"
   ],
   "type": "object"
-}
-```
-
-## ICloudCoverageDto
-
-Related models: [ICloudCoverageSampleDto](models-13.md#icloudcoveragesampledto).
-
-```json
-{
-  "properties": {
-    "deviceKey": {
-      "description": "This device's backup identity (the backup device registry's deviceKey)",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "samples": {
-      "description": "Sampled items: some old, some recent, some in albums",
-      "items": {
-        "$ref": "#/components/schemas/ICloudCoverageSampleDto"
-      },
-      "maxItems": 200,
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "deviceKey",
-    "samples"
-  ],
-  "type": "object"
-}
-```
-
-## ICloudCoverageResponseDto
-
-Related models: [ICloudCoverageConnectionDto](models-13.md#icloudcoverageconnectiondto).
-
-```json
-{
-  "properties": {
-    "connections": {
-      "items": {
-        "$ref": "#/components/schemas/ICloudCoverageConnectionDto"
-      },
-      "type": "array"
-    },
-    "identityMatching": {
-      "description": "False when identity matching is switched off: no connection can then be shown to cover the library",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "connections",
-    "identityMatching"
-  ],
-  "type": "object"
-}
-```
-
-## ICloudCoverageSampleDto
-
-
-```json
-{
-  "properties": {
-    "cloudIdentifier": {
-      "description": "PHCloudIdentifier.stringValue, as the device reports it",
-      "maxLength": 512,
-      "minLength": 1,
-      "type": "string"
-    },
-    "creationDate": {
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "originalFilename": {
-      "maxLength": 1024,
-      "minLength": 1,
-      "type": "string"
-    },
-    "pixelHeight": {
-      "maximum": 1000000,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "pixelWidth": {
-      "maximum": 1000000,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "uti": {
-      "maxLength": 256,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "cloudIdentifier"
-  ],
-  "type": "object"
-}
-```
-
-## ICloudCoverageScopeKind
-
-
-```json
-{
-  "description": "Whole libraries, or only some albums",
-  "enum": [
-    "libraries",
-    "albums"
-  ],
-  "type": "string"
-}
-```
-
-## ICloudEditBaselineDto
-
-Related models: [ICloudEditDeviceHolderKind](models-13.md#icloudeditdeviceholderkind), [ICloudEditOriginalRevertKind](models-14.md#icloudeditoriginalrevertkind), [ICloudEditRetentionPolicy](models-14.md#icloudeditretentionpolicy), [ICloudEditSyncHolderKind](models-14.md#icloudeditsyncholderkind).
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "expectedGeneration": {
-      "maximum": 2147483646,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "holder": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "$ref": "#/components/schemas/ICloudEditDeviceHolderKind"
-            },
-            "id": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          "required": [
-            "kind",
-            "id"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "$ref": "#/components/schemas/ICloudEditSyncHolderKind"
-            },
-            "id": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          "required": [
-            "kind",
-            "id"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "intent": {
-      "description": "Explicit local original-primary policy transition, separate from administrative baseline acceptance; binds the current immutable publication and explicit retention choice",
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "$ref": "#/components/schemas/ICloudEditOriginalRevertKind"
-            },
-            "expectedPublicationId": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "retention": {
-              "$ref": "#/components/schemas/ICloudEditRetentionPolicy"
-            }
-          },
-          "required": [
-            "kind",
-            "expectedPublicationId",
-            "retention"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "nativeVersion": {
-      "maxLength": 256,
-      "minLength": 1,
-      "type": "string"
-    },
-    "receiptId": {
-      "description": "An accessible owned stored source identity with verified current asset digest",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "requestId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "sourceIncarnation": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "takeOver": {
-      "default": false,
-      "description": "Only bypasses the 72-hour wait for an unhealthy source",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "expectedGeneration",
-    "holder",
-    "nativeVersion",
-    "receiptId",
-    "requestId",
-    "sourceIncarnation"
-  ],
-  "type": "object"
-}
-```
-
-## ICloudEditDecisionResponseDto
-
-
-```json
-{
-  "properties": {
-    "decisionId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "evidenceType": {
-      "enum": [
-        "administrative"
-      ],
-      "type": "string"
-    },
-    "generation": {
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "versionId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "decisionId",
-    "evidenceType",
-    "generation",
-    "versionId"
-  ],
-  "type": "object"
-}
-```
-
-## ICloudEditDeviceHolderKind
-
-
-```json
-{
-  "enum": [
-    "device"
-  ],
-  "type": "string"
 }
 ```

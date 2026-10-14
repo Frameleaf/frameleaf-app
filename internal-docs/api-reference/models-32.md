@@ -1,6 +1,6 @@
 # Server API models 32
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## SearchResponseDto
 
@@ -1258,9 +1258,24 @@ Related models: [AlbumResponseDto](models-02.md#albumresponsedto), [AssetRespons
       "description": "Allow uploads",
       "type": "boolean"
     },
+    "assetCount": {
+      "description": "Number of assets the link shares: its own for an individual link, the album's for an album link",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
     "assets": {
       "items": {
         "$ref": "#/components/schemas/AssetResponseDto"
+      },
+      "type": "array"
+    },
+    "coverAssetIds": {
+      "description": "Up to four assets for a cover: an album's chosen cover and then its newest, or an individual link's first",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
       },
       "type": "array"
     },
@@ -1330,7 +1345,9 @@ Related models: [AlbumResponseDto](models-02.md#albumresponsedto), [AssetRespons
   "required": [
     "allowDownload",
     "allowUpload",
+    "assetCount",
     "assets",
+    "coverAssetIds",
     "createdAt",
     "description",
     "expiresAt",
@@ -1446,7 +1463,7 @@ Related models: [SharedSpaceEventResponseDto](models-32.md#sharedspaceeventrespo
 
 ## SharedSpaceAlbumResponseDto
 
-Related models: [UserResponseDto](models-39.md#userresponsedto).
+Related models: [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {
@@ -1568,7 +1585,7 @@ Related models: [SharedSpaceAlbumResponseDto](models-32.md#sharedspacealbumrespo
 
 ## SharedSpaceCommentResponseDto
 
-Related models: [UserResponseDto](models-39.md#userresponsedto).
+Related models: [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {
@@ -1694,7 +1711,7 @@ Related models: [SharedSpaceCommentResponseDto](models-32.md#sharedspacecommentr
 
 ## SharedSpaceEventResponseDto
 
-Related models: [SharedSpaceEventType](models-32.md#sharedspaceeventtype), [UserResponseDto](models-39.md#userresponsedto).
+Related models: [SharedSpaceEventType](models-32.md#sharedspaceeventtype), [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {
@@ -1815,7 +1832,7 @@ Related models: [SharedSpaceEventType](models-32.md#sharedspaceeventtype), [User
 
 ## SharedSpaceMemberResponseDto
 
-Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-39.md#userresponsedto).
+Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {
@@ -1961,7 +1978,7 @@ Related models: [PersonResponseDto](models-19.md#personresponsedto), [SharedSpac
 
 ## SharedSpacePersonResponseDto
 
-Related models: [UserResponseDto](models-39.md#userresponsedto).
+Related models: [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {

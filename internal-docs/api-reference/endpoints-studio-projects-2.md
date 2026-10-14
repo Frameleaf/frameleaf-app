@@ -1,12 +1,12 @@
 # Server API — Studio projects 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## photographyList
 
 `GET /api/photography/workflows`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L152).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L152).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -62,7 +62,7 @@ Complete operation contract:
 
 `GET /api/photography/workflows/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L159).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L159).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -127,7 +127,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/approvals`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L256).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L256).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -202,7 +202,7 @@ Complete operation contract:
 
 `PUT /api/photography/workflows/{id}/assembly`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L211).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L211).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -277,7 +277,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/captures/{captureId}/retry-processing`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L199).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L199).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -360,7 +360,7 @@ Complete operation contract:
 
 `PUT /api/photography/workflows/{id}/config`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L166).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L166).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -435,7 +435,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/intake`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L192).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L192).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -510,7 +510,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/orders`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L237).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L237).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -585,7 +585,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/orders/{orderId}/payment`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L244).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L244).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -668,7 +668,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L173).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L173).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -743,7 +743,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/presets/{presetId}/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L180).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L180).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -826,7 +826,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/publish`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L263).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L263).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -901,7 +901,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/recipients`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L218).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L218).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -976,7 +976,7 @@ Complete operation contract:
 
 `PATCH /api/photography/workflows/{id}/recipients/{recipientId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L225).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L225).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -1059,7 +1059,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L270).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L270).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -1134,7 +1134,7 @@ Complete operation contract:
 
 `POST /api/photography/workflows/{id}/studio-presets/{presetId}/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photography-workflow.controller.ts#L79).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photography-workflow.controller.ts#L79).
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
@@ -1217,7 +1217,7 @@ Complete operation contract:
 
 `GET /api/studio/assets/{id}/media-facts`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-catalog.controller.ts#L80).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-catalog.controller.ts#L80).
 
 Get the Studio media facts of an asset
 
@@ -1235,7 +1235,7 @@ Controller access declarations:
 @Endpoint({
     summary: 'Get the Studio media facts of an asset',
     description:
-      'What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.',
+      'What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so. It also answers the colour of the picture stream as metadata extraction stored it: `colorTransfer` (`hdr` for any Dolby Vision profile, else `pq` for H.273 transfer 16, `hlg` for 18, `sdr` otherwise), the H.273 codes, the bit depth and the Dolby Vision profile. A native client that cannot read the stream itself marks its media record from it.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
 ```
@@ -1244,7 +1244,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.",
+  "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so. It also answers the colour of the picture stream as metadata extraction stored it: `colorTransfer` (`hdr` for any Dolby Vision profile, else `pq` for H.273 transfer 16, `hlg` for 18, `sdr` otherwise), the H.273 codes, the bit depth and the Dolby Vision profile. A native client that cannot read the stream itself marks its media record from it.",
   "operationId": "getStudioMediaFacts",
   "parameters": [
     {
@@ -1304,7 +1304,7 @@ Complete operation contract:
 
 `GET /api/studio/bundles/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L172).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-bundle.controller.ts#L203).
 
 Download a Studio bundle
 
@@ -1391,7 +1391,7 @@ Complete operation contract:
 
 `POST /api/studio/bundles/imports`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L148).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-bundle.controller.ts#L179).
 
 Import a Studio bundle
 
@@ -1477,7 +1477,7 @@ Complete operation contract:
 
 `GET /api/studio/bundles/operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-bundle.controller.ts#L192).
 
 Get a Studio bundle job
 
@@ -1562,7 +1562,7 @@ Complete operation contract:
 
 `POST /api/studio/bundles/uploads`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-bundle.controller.ts#L136).
 
 Upload a Studio bundle
 
@@ -1652,7 +1652,7 @@ Complete operation contract:
 
 `DELETE /api/studio/bundles/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L136).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-bundle.controller.ts#L167).
 
 Discard an uploaded Studio bundle
 
@@ -1729,7 +1729,7 @@ Complete operation contract:
 
 `GET /api/studio/bundles/uploads/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-bundle.controller.ts#L125).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-bundle.controller.ts#L156).
 
 Get an uploaded Studio bundle
 
@@ -1814,7 +1814,7 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-export.controller.ts#L81).
 
 Get a Studio export
 
@@ -1899,7 +1899,7 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}/download`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-export.controller.ts#L92).
 
 Download a Studio export kept with its project
 
@@ -1986,7 +1986,7 @@ Complete operation contract:
 
 `GET /api/studio/exports/{id}/subtitle`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-export.controller.ts#L111).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-export.controller.ts#L111).
 
 Download the owner-private SRT sibling
 
@@ -2062,81 +2062,6 @@ Complete operation contract:
     },
     {
       "version": "v3.0.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-state": "Alpha"
-}
-```
-
-## getStudioFonts
-
-`GET /api/studio/fonts`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-catalog.controller.ts#L45).
-
-List the title fonts bundled with this server
-
-Permission: `See authentication declaration`. Admin only: `false`.
-
-Models: [StudioFontCatalogDto](models-34.md#studiofontcatalogdto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.StudioProjects)
-@Controller('studio')
-@Get('fonts')
-@Authenticated()
-@Endpoint({
-    summary: 'List the title fonts bundled with this server',
-    description:
-      'The title font families a native Studio client draws (graph protocol 14.3.5): each family as a graph names it, its package, version, licence and copyright line, and every bundled file with its weight, style, Unicode subset, format, size and SHA-256. Each font is listed twice: as WOFF2, and decoded to TTF for a client that cannot load WOFF2. The files are served by GET /studio/fonts/{sha256}.',
-    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "The title font families a native Studio client draws (graph protocol 14.3.5): each family as a graph names it, its package, version, licence and copyright line, and every bundled file with its weight, style, Unicode subset, format, size and SHA-256. Each font is listed twice: as WOFF2, and decoded to TTF for a client that cannot load WOFF2. The files are served by GET /studio/fonts/{sha256}.",
-  "operationId": "getStudioFonts",
-  "parameters": [],
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/StudioFontCatalogDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "List the title fonts bundled with this server",
-  "tags": [
-    "Studio projects"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
       "state": "Alpha"
     }
   ],

@@ -12390,6 +12390,79 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/uploads/{id}/direct": {
+      "post": {
+        "description": "Version 1 complete data-only offer/answer; native upload ownership, durable offsets and receipts remain authoritative.",
+        "operationId": "negotiateAssetUploadDirect",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "description": "Direct peer capacity unavailable"
+          },
+          "503": {
+            "description": "Direct negotiation unavailable; native HTTPS resume is retained"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Negotiate a resource-scoped direct upload data channel",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/uploads/{id}/result": {
       "get": {
         "operationId": "getAssetUploadResourceResult",
@@ -15830,7 +15903,7 @@
             }
           },
           {
-            "name": "x-immich-hls-pos",
+            "name": "x-frameleaf-hls-pos",
             "required": false,
             "in": "header",
             "schema": {
@@ -15941,7 +16014,7 @@
             }
           },
           {
-            "name": "x-immich-hls-msn",
+            "name": "x-frameleaf-hls-msn",
             "required": false,
             "in": "header",
             "schema": {
@@ -47907,6 +47980,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/takeout/{id}/items/{itemId}/preview": {
+      "get": {
+        "description": "A small WebP made from the staged file of a photo not yet in the library.",
+        "operationId": "getTakeoutItemPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a photo waiting in a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/takeout/{id}/live-photos": {
       "get": {
         "operationId": "getTakeoutPairs",
@@ -48192,7 +48333,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48429,7 +48580,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48678,7 +48839,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48928,7 +49099,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -61242,7 +61423,7 @@
         "enum": [
           "marked",
           "detected",
-          "immich-locked-folder"
+          "frameleaf-locked-folder"
         ],
         "type": "string"
       },
@@ -62694,6 +62875,26 @@
           "reject"
         ],
         "type": "string"
+      },
+      "AssetUploadDirectDescriptionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "sdp": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sdp",
+          "version"
+        ],
+        "type": "object"
       },
       "AssetUploadResultDto": {
         "properties": {
@@ -122562,6 +122763,11 @@
             "description": "Bring over favorites",
             "type": "boolean"
           },
+          "includeTrashed": {
+            "default": false,
+            "description": "Bring in photos that were in the Google Photos trash; otherwise they are skipped",
+            "type": "boolean"
+          },
           "locations": {
             "default": true,
             "description": "Bring over locations",
@@ -122577,8 +122783,8 @@
             "type": "array"
           },
           "sidecarReview": {
-            "default": true,
-            "description": "Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar",
+            "default": false,
+            "description": "Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar",
             "type": "boolean"
           },
           "updateMatchedMetadata": {
@@ -122606,6 +122812,9 @@
           "favorites": {
             "type": "boolean"
           },
+          "includeTrashed": {
+            "type": "boolean"
+          },
           "locations": {
             "type": "boolean"
           },
@@ -122628,6 +122837,7 @@
           "dates",
           "descriptions",
           "favorites",
+          "includeTrashed",
           "locations",
           "sidecarReview",
           "updateMatchedMetadata"

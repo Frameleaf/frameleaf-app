@@ -1,6 +1,6 @@
 # Server API models 2
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AdminConfigMachineLearningDto
 
@@ -797,6 +797,7 @@ Related models: [AdminConfigSmtpTransportDto](models-02.md#adminconfigsmtptransp
 
 ## AdminConfigSmtpTransportDto
 
+Related models: [MailTransportType](models-16.md#mailtransporttype).
 
 ```json
 {
@@ -826,6 +827,10 @@ Related models: [AdminConfigSmtpTransportDto](models-02.md#adminconfigsmtptransp
     "secure": {
       "description": "Whether to use secure connection (TLS/SSL)",
       "type": "boolean"
+    },
+    "type": {
+      "$ref": "#/components/schemas/MailTransportType",
+      "default": "smtp"
     },
     "username": {
       "description": "SMTP username",
@@ -927,6 +932,11 @@ Related models: [AdminConfigTemplateEmailsDto](models-02.md#adminconfigtemplatee
     "customCss": {
       "description": "Custom CSS for theming",
       "type": "string"
+    },
+    "customCssEnabled": {
+      "default": true,
+      "description": "Serve the custom CSS to the web app",
+      "type": "boolean"
     }
   },
   "required": [
@@ -1328,7 +1338,7 @@ Related models: [AlbumKind](models-02.md#albumkind), [AlbumUserResponseDto](mode
     },
     "origin": {
       "$ref": "#/components/schemas/PartnerOriginDto",
-      "description": "FL-326: present on your own album when partner sharing copied it from another library"
+      "description": "Present on your own album when partner sharing copied it from another library"
     },
     "parentId": {
       "description": "Collection this album belongs to (null = top-level)",
@@ -1860,7 +1870,7 @@ Related models: [AlbumUserRole](models-02.md#albumuserrole).
 
 ## AlbumUserResponseDto
 
-Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-39.md#userresponsedto).
+Related models: [AlbumUserRole](models-02.md#albumuserrole), [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {

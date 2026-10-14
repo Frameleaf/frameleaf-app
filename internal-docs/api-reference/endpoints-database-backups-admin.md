@@ -1,12 +1,12 @@
 # Server API — Database Backups (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteDatabaseBackup
 
 `DELETE /api/admin/database-backups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L103).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L118).
 
 Delete database backup
 
@@ -85,7 +85,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L51).
 
 List database backups
 
@@ -161,7 +161,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups/restore-verification`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L60).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L75).
 
 Get backup restore verification
 
@@ -237,7 +237,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/restore-verification`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L71).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L86).
 
 Record a backup restore test
 
@@ -320,11 +320,87 @@ Complete operation contract:
 }
 ```
 
+## getBackupSchedule
+
+`GET /api/admin/database-backups/schedule`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L63).
+
+Get the backup schedule
+
+Permission: `maintenance`. Admin only: `true`.
+
+Models: [BackupScheduleResponseDto](models-06.md#backupscheduleresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.DatabaseBackups)
+@Controller('admin/database-backups')
+@Get('schedule')
+@Endpoint({
+    summary: 'Get the backup schedule',
+    description: 'The schedule backups start on, the places a run visits one after another, and the run in progress',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+@Authenticated({ permission: Permission.Maintenance, admin: true })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "The schedule backups start on, the places a run visits one after another, and the run in progress",
+  "operationId": "getBackupSchedule",
+  "parameters": [],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/BackupScheduleResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Get the backup schedule",
+  "tags": [
+    "Database Backups (admin)"
+  ],
+  "x-immich-admin-only": true,
+  "x-immich-history": [
+    {
+      "version": "v3",
+      "state": "Added"
+    },
+    {
+      "version": "v3",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "maintenance",
+  "x-immich-state": "Alpha"
+}
+```
+
 ## startDatabaseRestoreFlow
 
 `POST /api/admin/database-backups/start-restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L129).
 
 Start database backup restore flow
 
@@ -391,7 +467,7 @@ Complete operation contract:
 
 `POST /api/admin/database-backups/upload`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L137).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L152).
 
 Upload database backup
 
@@ -474,7 +550,7 @@ Complete operation contract:
 
 `GET /api/admin/database-backups/{filename}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/database-backup.controller.ts#L86).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/database-backup.controller.ts#L101).
 
 Download database backup
 

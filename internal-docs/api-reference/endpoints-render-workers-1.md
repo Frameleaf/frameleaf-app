@@ -1,12 +1,12 @@
 # Server API — Render workers 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## listRenderWorkers
 
 `GET /api/admin/render-workers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L88).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L88).
 
 List render workers
 
@@ -84,7 +84,7 @@ Complete operation contract:
 
 `POST /api/admin/render-workers`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L99).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L99).
 
 Enrol a render worker
 
@@ -171,7 +171,7 @@ Complete operation contract:
 
 `GET /api/admin/render-workers/audit`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L153).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L153).
 
 Search the render worker audit trail
 
@@ -272,7 +272,7 @@ Complete operation contract:
 
 `GET /api/admin/render-workers/compatibility`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L165).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L165).
 
 Get render worker compatibility
 
@@ -348,7 +348,7 @@ Complete operation contract:
 
 `GET /api/admin/render-workers/limits`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L115).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L115).
 
 Get render limits
 
@@ -424,7 +424,7 @@ Complete operation contract:
 
 `PUT /api/admin/render-workers/limits`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L127).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L127).
 
 Set render limits
 
@@ -509,7 +509,7 @@ Complete operation contract:
 
 `DELETE /api/admin/render-workers/limits/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L141).
 
 Remove an account’s render limits
 
@@ -587,7 +587,7 @@ Complete operation contract:
 
 `DELETE /api/admin/render-workers/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L203).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L203).
 
 Revoke a render worker
 
@@ -666,7 +666,7 @@ Complete operation contract:
 
 `GET /api/admin/render-workers/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L177).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L177).
 
 Get a render worker
 
@@ -752,7 +752,7 @@ Complete operation contract:
 
 `PUT /api/admin/render-workers/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L188).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L188).
 
 Update a render worker
 
@@ -848,7 +848,7 @@ Complete operation contract:
 
 `POST /api/render-workers/admission`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L246).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L246).
 
 Admit a render worker
 
@@ -924,7 +924,7 @@ Complete operation contract:
 
 `POST /api/render-workers/claims`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L259).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L259).
 
 Claim the next admitted operation
 
@@ -1011,7 +1011,7 @@ Complete operation contract:
 
 `GET /api/render-workers/operations/{id}/artifacts/{sequence}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L504).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L506).
 
 Read a verified whole-export artifact under the current claim
 
@@ -1132,7 +1132,7 @@ Complete operation contract:
 
 `PUT /api/render-workers/operations/{id}/artifacts/{sequence}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L487).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L489).
 
 Upload a whole-export artifact
 
@@ -1284,7 +1284,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/cancel-ack`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L403).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L403).
 
 Acknowledge a cancellation
 
@@ -1380,7 +1380,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/checkpoints`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L316).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L316).
 
 Plan a render checkpoint
 
@@ -1476,7 +1476,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/checkpoints/{sequence}/complete`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L333).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L333).
 
 Complete a render checkpoint
 
@@ -1583,7 +1583,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/complete`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L368).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L368).
 
 Complete a claimed operation
 
@@ -1680,7 +1680,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/fail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L386).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L386).
 
 Fail a claimed operation
 
@@ -1776,7 +1776,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/heartbeat`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L281).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L281).
 
 Heartbeat a claimed operation
 
@@ -1873,7 +1873,7 @@ Complete operation contract:
 
 `GET /api/render-workers/operations/{id}/inputs/{grant}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L523).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L525).
 
 Read an operation input
 
@@ -1969,7 +1969,7 @@ Complete operation contract:
 
 `POST /api/render-workers/operations/{id}/progress`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/render-worker.controller.ts#L299).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/render-worker.controller.ts#L299).
 
 Report progress on a claimed operation
 

@@ -37,7 +37,10 @@ services:
     healthcheck:
       disable: false
 
-  immich-machine-learning:
+  frameleaf-machine-learning:
+    networks:
+      default:
+        aliases: [immich-machine-learning]
     container_name: frameleaf_machine_learning
     image: frameleaf-machine-learning:local
     # extends:

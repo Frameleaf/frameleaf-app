@@ -1,6 +1,276 @@
 # Server API models 7
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## BestPhotoAssetResponseDto
+
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-07.md#bestphotoscoredto), [ExifResponseDto](models-12.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [LandmarkSummaryDto](models-15.md#landmarksummarydto), [PartnerOriginDto](models-19.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-38.md#tagresponsedto), [UserResponseDto](models-40.md#userresponsedto).
+
+```json
+{
+  "properties": {
+    "bestPhotoScore": {
+      "$ref": "#/components/schemas/BestPhotoScoreDto"
+    },
+    "checksum": {
+      "description": "Base64-encoded file checksum. SHA-256 (44 chars) for assets uploaded after the SHA-256 transition; SHA-1 (28 chars) for legacy assets. Use the asset `checksumAlgorithm` field to disambiguate when length-based detection is insufficient.",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "The UTC timestamp when the asset was originally uploaded to Frameleaf.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "duplicateId": {
+      "description": "Duplicate group ID",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "duration": {
+      "description": "Video/gif duration in milliseconds (null for static images)",
+      "maximum": 2147483647,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "exifInfo": {
+      "$ref": "#/components/schemas/ExifResponseDto"
+    },
+    "fileCreatedAt": {
+      "description": "The actual UTC timestamp when the file was created/captured, preserving timezone information. This is the authoritative timestamp for chronological sorting within timeline groups. Combined with timezone data, this can be used to determine the exact moment the photo was taken.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "fileModifiedAt": {
+      "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "hasMetadata": {
+      "description": "Whether asset has metadata",
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Asset height",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "id": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "imageEncoding": {
+      "$ref": "#/components/schemas/ImageEncodingInfo",
+      "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+    },
+    "imageRenditions": {
+      "description": "Available current still renditions; omitted when file evidence was not loaded",
+      "properties": {
+        "hdrFullsize": {
+          "type": "boolean"
+        },
+        "hdrPreview": {
+          "type": "boolean"
+        },
+        "sdrFullsize": {
+          "type": "boolean"
+        },
+        "sdrPreview": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sdrPreview",
+        "sdrFullsize",
+        "hdrPreview",
+        "hdrFullsize"
+      ],
+      "type": "object"
+    },
+    "isArchived": {
+      "description": "Is archived",
+      "type": "boolean"
+    },
+    "isEdited": {
+      "description": "Is edited",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v2.5.0",
+          "state": "Added"
+        },
+        {
+          "version": "v2.5.0",
+          "state": "Beta"
+        }
+      ],
+      "x-immich-state": "Beta"
+    },
+    "isFavorite": {
+      "description": "Is favorite",
+      "type": "boolean"
+    },
+    "isOffline": {
+      "description": "Is offline",
+      "type": "boolean"
+    },
+    "isTrashed": {
+      "description": "Is trashed",
+      "type": "boolean"
+    },
+    "landmarks": {
+      "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
+      "items": {
+        "$ref": "#/components/schemas/LandmarkSummaryDto"
+      },
+      "type": "array"
+    },
+    "libraryId": {
+      "description": "Library ID",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v1",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "livePhotoVideoId": {
+      "description": "Live photo video ID",
+      "nullable": true,
+      "type": "string"
+    },
+    "localDateTime": {
+      "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "origin": {
+      "$ref": "#/components/schemas/PartnerOriginDto",
+      "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+    },
+    "originalFileName": {
+      "description": "Original file name",
+      "type": "string"
+    },
+    "originalMimeType": {
+      "description": "Original MIME type",
+      "type": "string"
+    },
+    "originalPath": {
+      "description": "Original file path",
+      "type": "string"
+    },
+    "owner": {
+      "$ref": "#/components/schemas/UserResponseDto"
+    },
+    "ownerId": {
+      "description": "Owner user ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "people": {
+      "items": {
+        "$ref": "#/components/schemas/PersonResponseDto"
+      },
+      "type": "array"
+    },
+    "resized": {
+      "description": "Is resized",
+      "type": "boolean",
+      "x-immich-history": [
+        {
+          "version": "v1",
+          "state": "Added"
+        },
+        {
+          "version": "v1.113.0",
+          "state": "Deprecated"
+        }
+      ],
+      "x-immich-state": "Deprecated"
+    },
+    "stack": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AssetStackResponseDto"
+        }
+      ],
+      "nullable": true
+    },
+    "tags": {
+      "items": {
+        "$ref": "#/components/schemas/TagResponseDto"
+      },
+      "type": "array"
+    },
+    "thumbhash": {
+      "description": "Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting.",
+      "nullable": true,
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/AssetTypeEnum"
+    },
+    "updatedAt": {
+      "description": "The UTC timestamp when the asset record was last updated in the database. This is automatically maintained by the database and reflects when any field in the asset was last modified.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "visibility": {
+      "$ref": "#/components/schemas/AssetVisibility"
+    },
+    "width": {
+      "description": "Asset width",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "bestPhotoScore",
+    "checksum",
+    "createdAt",
+    "duration",
+    "fileCreatedAt",
+    "fileModifiedAt",
+    "hasMetadata",
+    "height",
+    "id",
+    "isArchived",
+    "isEdited",
+    "isFavorite",
+    "isOffline",
+    "isTrashed",
+    "localDateTime",
+    "originalFileName",
+    "originalPath",
+    "ownerId",
+    "thumbhash",
+    "type",
+    "updatedAt",
+    "visibility",
+    "width"
+  ],
+  "type": "object"
+}
+```
 
 ## BestPhotoScoreDto
 
@@ -94,7 +364,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## BestPhotosResponseDto
 
-Related models: [BestPhotoAssetResponseDto](models-06.md#bestphotoassetresponsedto).
+Related models: [BestPhotoAssetResponseDto](models-07.md#bestphotoassetresponsedto).
 
 ```json
 {
@@ -1903,392 +2173,5 @@ Related models: [CastMediaKind](models-07.md#castmediakind).
     "kind"
   ],
   "type": "object"
-}
-```
-
-## CastMediaUrlResponseDto
-
-Related models: [CastMediaKind](models-07.md#castmediakind).
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "The one item this URL serves",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "expiresAt": {
-      "description": "When the URL stops working (15 minutes after it was issued)",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/CastMediaKind"
-    },
-    "path": {
-      "description": "The signed URL path (`/api/cast/{token}`), relative to the server origin. Prefix the server address the Cast receiver can reach. Works without a session token or cookies until `expiresAt`; never contains a session token.",
-      "type": "string"
-    }
-  },
-  "required": [
-    "assetId",
-    "expiresAt",
-    "kind",
-    "path"
-  ],
-  "type": "object"
-}
-```
-
-## CastResponse
-
-
-```json
-{
-  "properties": {
-    "adminDisabled": {
-      "description": "Whether an administrator has turned casting off for this user",
-      "type": "boolean"
-    },
-    "gCastEnabled": {
-      "description": "Whether Google Cast is enabled (always false while an administrator has turned casting off)",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "adminDisabled",
-    "gCastEnabled"
-  ],
-  "type": "object"
-}
-```
-
-## CastUpdate
-
-
-```json
-{
-  "properties": {
-    "adminDisabled": {
-      "description": "Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences",
-      "type": "boolean"
-    },
-    "gCastEnabled": {
-      "description": "Whether Google Cast is enabled",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-}
-```
-
-## ChangePasswordDto
-
-
-```json
-{
-  "properties": {
-    "invalidateSessions": {
-      "default": false,
-      "description": "Invalidate all other sessions",
-      "type": "boolean"
-    },
-    "newPassword": {
-      "description": "New password (min 8 characters)",
-      "example": "password",
-      "minLength": 8,
-      "type": "string"
-    },
-    "password": {
-      "description": "Current password",
-      "example": "password",
-      "type": "string"
-    }
-  },
-  "required": [
-    "newPassword",
-    "password"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationApplyDto
-
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "description": "Items from the plan; empty records the check when nothing changed",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 500,
-      "type": "array"
-    }
-  },
-  "required": [
-    "assetIds"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationApplyResponseDto
-
-
-```json
-{
-  "properties": {
-    "added": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "lastAppliedAt": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "removed": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "suggested": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "unchanged": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "added",
-    "lastAppliedAt",
-    "removed",
-    "suggested",
-    "unchanged"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationContributionDto
-
-Related models: [ClassificationMatchDecision](models-07.md#classificationmatchdecision), [ClassificationTagDto](models-08.md#classificationtagdto).
-
-```json
-{
-  "properties": {
-    "albumId": {
-      "type": "string"
-    },
-    "albumName": {
-      "type": "string"
-    },
-    "archived": {
-      "description": "True when this rule archived the item",
-      "type": "boolean"
-    },
-    "decision": {
-      "$ref": "#/components/schemas/ClassificationMatchDecision"
-    },
-    "ruleId": {
-      "type": "string"
-    },
-    "score": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "tag": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/ClassificationTagDto"
-        }
-      ],
-      "description": "The tag this rule added, when it added one",
-      "nullable": true
-    }
-  },
-  "required": [
-    "albumId",
-    "albumName",
-    "archived",
-    "decision",
-    "ruleId",
-    "score",
-    "tag"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationDecisionDto
-
-Related models: [ClassificationReviewDecision](models-08.md#classificationreviewdecision).
-
-```json
-{
-  "properties": {
-    "assetIds": {
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 500,
-      "minItems": 1,
-      "type": "array"
-    },
-    "decision": {
-      "$ref": "#/components/schemas/ClassificationReviewDecision"
-    }
-  },
-  "required": [
-    "assetIds",
-    "decision"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationDecisionResponseDto
-
-
-```json
-{
-  "properties": {
-    "skipped": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "updated": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "skipped",
-    "updated"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationMatchDecision
-
-
-```json
-{
-  "description": "What became of an asset a classification rule matched",
-  "enum": [
-    "matched",
-    "suggested",
-    "accepted",
-    "rejected"
-  ],
-  "type": "string"
-}
-```
-
-## ClassificationMatchDto
-
-Related models: [ClassificationMatchDecision](models-07.md#classificationmatchdecision).
-
-```json
-{
-  "properties": {
-    "archiveContributed": {
-      "type": "boolean"
-    },
-    "assetId": {
-      "type": "string"
-    },
-    "decision": {
-      "$ref": "#/components/schemas/ClassificationMatchDecision"
-    },
-    "score": {
-      "format": "double",
-      "nullable": true,
-      "type": "number"
-    },
-    "tagContributed": {
-      "type": "boolean"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "type": "string"
-    }
-  },
-  "required": [
-    "archiveContributed",
-    "assetId",
-    "decision",
-    "score",
-    "tagContributed",
-    "updatedAt"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationMatchPageDto
-
-Related models: [ClassificationMatchDto](models-07.md#classificationmatchdto).
-
-```json
-{
-  "properties": {
-    "items": {
-      "items": {
-        "$ref": "#/components/schemas/ClassificationMatchDto"
-      },
-      "type": "array"
-    },
-    "nextPage": {
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "nullable": true,
-      "type": "integer"
-    },
-    "total": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "items",
-    "nextPage",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## ClassificationMediaType
-
-
-```json
-{
-  "description": "Which media a classification rule considers",
-  "enum": [
-    "any",
-    "photo",
-    "video"
-  ],
-  "type": "string"
 }
 ```

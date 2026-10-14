@@ -1,6 +1,176 @@
 # Server API models 19
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## MlWorkloadRouteDto
+
+Related models: [MlWorkload](models-18.md#mlworkload).
+
+```json
+{
+  "properties": {
+    "destinationId": {
+      "description": "Destination the workload is routed to, or null when unrouted",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "workload": {
+      "$ref": "#/components/schemas/MlWorkload"
+    }
+  },
+  "required": [
+    "destinationId",
+    "workload"
+  ],
+  "type": "object"
+}
+```
+
+## MlWorkloadRouteUpdateDto
+
+
+```json
+{
+  "properties": {
+    "destinationId": {
+      "description": "Destination to route the workload to; null removes the route",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "destinationId"
+  ],
+  "type": "object"
+}
+```
+
+## MlWorkloadRoutesResponseDto
+
+Related models: [MlWorkloadRouteDto](models-19.md#mlworkloadroutedto).
+
+```json
+{
+  "properties": {
+    "routes": {
+      "items": {
+        "$ref": "#/components/schemas/MlWorkloadRouteDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "routes"
+  ],
+  "type": "object"
+}
+```
+
+## MoveAlbumDto
+
+
+```json
+{
+  "properties": {
+    "collectionId": {
+      "description": "Collection to move the album into, or null to take it out so it stands on its own",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "expectedParentId": {
+      "description": "Where the client last saw the album (its collection, or null for on its own). When given and the album has been moved since, the move is refused with 409 instead of undoing the other change.",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collectionId"
+  ],
+  "type": "object"
+}
+```
+
+## NotificationCreateDto
+
+Related models: [NotificationLevel](models-19.md#notificationlevel), [NotificationType](models-19.md#notificationtype).
+
+```json
+{
+  "properties": {
+    "data": {
+      "additionalProperties": {},
+      "description": "Additional notification data",
+      "type": "object"
+    },
+    "description": {
+      "description": "Notification description",
+      "nullable": true,
+      "type": "string"
+    },
+    "level": {
+      "$ref": "#/components/schemas/NotificationLevel"
+    },
+    "readAt": {
+      "description": "Date when notification was read",
+      "example": "2024-01-01T00:00:00.000Z",
+      "format": "date-time",
+      "nullable": true,
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "title": {
+      "description": "Notification title",
+      "type": "string"
+    },
+    "type": {
+      "$ref": "#/components/schemas/NotificationType"
+    },
+    "userId": {
+      "description": "User ID to send notification to",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "userId"
+  ],
+  "type": "object"
+}
+```
+
+## NotificationDeleteAllDto
+
+
+```json
+{
+  "properties": {
+    "ids": {
+      "description": "Notification IDs to delete",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+}
+```
 
 ## NotificationDto
 
@@ -611,8 +781,9 @@ Related models: [OwnerBackupDeletionDateState](models-19.md#ownerbackupdeletiond
       "type": "array"
     },
     "manifestKey": {
+      "description": "The backup run’s manifest in the bucket",
       "maxLength": 300,
-      "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+      "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
       "type": "string"
     }
   },
@@ -830,7 +1001,7 @@ Related models: [PartnerBackfillDto](models-19.md#partnerbackfilldto), [UserAvat
           "$ref": "#/components/schemas/PartnerBackfillDto"
         }
       ],
-      "description": "FL-326: copy progress of the library shared this way; null when it was never copied",
+      "description": "Copy progress of the library shared this way; null when it was never copied",
       "nullable": true
     },
     "email": {
@@ -1393,7 +1564,7 @@ Related models: [PeopleUpdateItem](models-19.md#peopleupdateitem).
 
 ## PersonCorrectionDto
 
-Related models: [FaceEvidenceDto](models-11.md#faceevidencedto), [PersonCorrectionAction](models-19.md#personcorrectionaction), [PersonCorrectionPersonDto](models-19.md#personcorrectionpersondto).
+Related models: [FaceEvidenceDto](models-12.md#faceevidencedto), [PersonCorrectionAction](models-19.md#personcorrectionaction), [PersonCorrectionPersonDto](models-19.md#personcorrectionpersondto).
 
 ```json
 {
@@ -1563,7 +1734,7 @@ Related models: [PersonCorrectionDto](models-19.md#personcorrectiondto).
 
 ## PersonMergeSuggestionDto
 
-Related models: [FaceEvidenceDto](models-11.md#faceevidencedto), [PersonResponseDto](models-19.md#personresponsedto).
+Related models: [FaceEvidenceDto](models-12.md#faceevidencedto), [PersonResponseDto](models-19.md#personresponsedto).
 
 ```json
 {
@@ -2114,157 +2285,6 @@ Related models: [PetCandidateResponseDto](models-19.md#petcandidateresponsedto),
     "modelRevision",
     "petId",
     "score"
-  ],
-  "type": "object"
-}
-```
-
-## PetCandidateReviewDto
-
-
-```json
-{
-  "properties": {
-    "expectedChecksum": {
-      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "petId": {
-      "description": "Pet to assign instead of the proposed one",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PetCreateDto
-
-Related models: [PetSpecies](models-20.md#petspecies).
-
-```json
-{
-  "properties": {
-    "birthDate": {
-      "description": "Pet date of birth",
-      "format": "date",
-      "nullable": true,
-      "type": "string"
-    },
-    "featuredAssetId": {
-      "description": "Asset used as the pet thumbnail",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "isFavorite": {
-      "description": "Mark as favorite",
-      "type": "boolean"
-    },
-    "isHidden": {
-      "description": "Pet visibility (hidden)",
-      "type": "boolean"
-    },
-    "name": {
-      "description": "Pet name",
-      "maxLength": 100,
-      "type": "string"
-    },
-    "species": {
-      "$ref": "#/components/schemas/PetSpecies",
-      "default": "other"
-    }
-  },
-  "type": "object"
-}
-```
-
-## PetMergeDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Pet IDs to merge into this pet",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "minItems": 1,
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
-  ],
-  "type": "object"
-}
-```
-
-## PetObservationCreateDto
-
-
-```json
-{
-  "properties": {
-    "assetId": {
-      "description": "Asset the pet appears in",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "boundingBoxX1": {
-      "description": "Region X1, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "boundingBoxX2": {
-      "description": "Region X2, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "boundingBoxY1": {
-      "description": "Region Y1, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "boundingBoxY2": {
-      "description": "Region Y2, in source pixels",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "expectedChecksum": {
-      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
-      "maxLength": 200,
-      "minLength": 1,
-      "type": "string"
-    },
-    "imageHeight": {
-      "description": "Height of the image the region was drawn on",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "imageWidth": {
-      "description": "Width of the image the region was drawn on",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "assetId"
   ],
   "type": "object"
 }

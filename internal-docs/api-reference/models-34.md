@@ -1,6 +1,6 @@
 # Server API models 34
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## StringPatternFilter
 
@@ -564,7 +564,7 @@ Related models: [StudioRenderEvidenceDto](models-35.md#studiorenderevidencedto).
       "type": "boolean"
     },
     "render": {
-      "description": "FL-42: per destination, what qualified render sessions verified (memory, codecs, colour precision)",
+      "description": "Per destination, what qualified render sessions verified (memory, codecs, colour precision)",
       "items": {
         "$ref": "#/components/schemas/StudioRenderEvidenceDto"
       },
@@ -671,7 +671,7 @@ Related models: [StudioRenderEvidenceDto](models-35.md#studiorenderevidencedto).
 
 ## StudioCommentCreateDto
 
-Related models: [StudioTimeDto](models-35.md#studiotimedto).
+Related models: [StudioTimeDto](models-36.md#studiotimedto).
 
 ```json
 {
@@ -706,7 +706,7 @@ Related models: [StudioTimeDto](models-35.md#studiotimedto).
 
 ## StudioCommentDto
 
-Related models: [StudioTimeDto](models-35.md#studiotimedto).
+Related models: [StudioTimeDto](models-36.md#studiotimedto).
 
 ```json
 {
@@ -852,7 +852,7 @@ Related models: [StudioCommentDto](models-34.md#studiocommentdto).
 
 ## StudioExportCreateDto
 
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioExportAudio](models-34.md#studioexportaudio), [StudioExportColor](models-34.md#studioexportcolor), [StudioExportFormat](models-34.md#studioexportformat), [StudioExportMastering](models-34.md#studioexportmastering), [StudioExportQuality](models-34.md#studioexportquality), [StudioExportRangeDto](models-34.md#studioexportrangedto), [StudioExportResolution](models-34.md#studioexportresolution), [StudioExportSmoothMotionDto](models-34.md#studioexportsmoothmotiondto), [StudioExportSubtitleMode](models-34.md#studioexportsubtitlemode).
+Related models: [MediaOperationDestination](models-17.md#mediaoperationdestination), [StudioExportAudio](models-34.md#studioexportaudio), [StudioExportColor](models-34.md#studioexportcolor), [StudioExportFormat](models-34.md#studioexportformat), [StudioExportMastering](models-34.md#studioexportmastering), [StudioExportQuality](models-34.md#studioexportquality), [StudioExportRangeDto](models-34.md#studioexportrangedto), [StudioExportResolution](models-34.md#studioexportresolution), [StudioExportSmoothMotionDto](models-34.md#studioexportsmoothmotiondto), [StudioExportSubtitleMode](models-34.md#studioexportsubtitlemode).
 
 ```json
 {
@@ -1169,7 +1169,7 @@ Related models: [StudioExportAudio](models-34.md#studioexportaudio), [StudioExpo
 
 ```json
 {
-  "description": "FL-162: Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
+  "description": "Smooth motion of the exported video as its own job after it is published. The export itself always renders at home; a Frameleaf Cloud job is confirmed and billed on its own.",
   "properties": {
     "destinationId": {
       "description": "Where the Smooth motion job runs; Frameleaf Cloud is confirmed separately",
@@ -1230,7 +1230,7 @@ Related models: [StudioExportAudio](models-34.md#studioexportaudio), [StudioExpo
 
 ## StudioExportVersionDto
 
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioExportScope](models-34.md#studioexportscope), [StudioExportSettingsDto](models-34.md#studioexportsettingsdto), [StudioExportVersionState](models-34.md#studioexportversionstate).
+Related models: [MediaOperationDestination](models-17.md#mediaoperationdestination), [StudioExportScope](models-34.md#studioexportscope), [StudioExportSettingsDto](models-34.md#studioexportsettingsdto), [StudioExportVersionState](models-34.md#studioexportversionstate).
 
 ```json
 {
@@ -1598,9 +1598,181 @@ Related models: [StudioFontFormat](models-34.md#studiofontformat), [StudioFontSt
 }
 ```
 
+## StudioImportPublicationCancelDto
+
+Related models: [StudioImportPublicationCancelStatus](models-34.md#studioimportpublicationcancelstatus), [StudioImportPublicationDto](models-34.md#studioimportpublicationdto).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "receipt": {
+      "$ref": "#/components/schemas/StudioImportPublicationDto"
+    },
+    "status": {
+      "$ref": "#/components/schemas/StudioImportPublicationCancelStatus"
+    }
+  },
+  "required": [
+    "receipt",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## StudioImportPublicationCancelStatus
+
+
+```json
+{
+  "enum": [
+    "cancelled",
+    "already-published"
+  ],
+  "type": "string"
+}
+```
+
+## StudioImportPublicationDto
+
+Related models: [StudioImportPublicationState](models-34.md#studioimportpublicationstate), [StudioProjectImportDto](models-35.md#studioprojectimportdto).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "cleanupPending": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "importId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "imported": {
+      "$ref": "#/components/schemas/StudioProjectImportDto"
+    },
+    "publicationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/StudioImportPublicationState"
+    }
+  },
+  "required": [
+    "cleanupPending",
+    "createdAt",
+    "expiresAt",
+    "importId",
+    "publicationId",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## StudioImportPublicationPageDto
+
+Related models: [StudioImportPublicationDto](models-34.md#studioimportpublicationdto).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/StudioImportPublicationDto"
+      },
+      "maxItems": 100,
+      "type": "array"
+    },
+    "nextCursor": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "nullable": true,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "items",
+    "nextCursor"
+  ],
+  "type": "object"
+}
+```
+
+## StudioImportPublicationRegisterDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "importId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "publicationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "importId",
+    "publicationId"
+  ],
+  "type": "object"
+}
+```
+
+## StudioImportPublicationState
+
+
+```json
+{
+  "enum": [
+    "registered",
+    "preparing",
+    "published",
+    "aborted"
+  ],
+  "type": "string"
+}
+```
+
+## StudioMediaColorTransfer
+
+
+```json
+{
+  "description": "The Studio media record's colorTransfer (graph protocol 3.5), from the stored picture stream: hdr for any Dolby Vision profile, whatever its transfer; otherwise pq for H.273 transfer 16 and hlg for 18; sdr for anything else, for a still, and when nothing is known",
+  "enum": [
+    "sdr",
+    "pq",
+    "hlg",
+    "hdr"
+  ],
+  "type": "string"
+}
+```
+
 ## StudioMediaFactsDto
 
-Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaFactsSource](models-34.md#studiomediafactssource), [StudioRationalDto](models-35.md#studiorationaldto).
+Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaColorTransfer](models-34.md#studiomediacolortransfer), [StudioMediaFactsSource](models-34.md#studiomediafactssource), [StudioRationalDto](models-35.md#studiorationaldto).
 
 ```json
 {
@@ -1614,6 +1786,44 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaFactsSo
       "description": "The first audio track codec; its presence places a linked audio clip",
       "nullable": true,
       "type": "string"
+    },
+    "bitDepth": {
+      "description": "Bits per component, read from the pixel format of the picture stream; null when unknown",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "colorMatrixCode": {
+      "description": "ITU-T H.273 matrix coefficients of the picture stream (2: unspecified); null when none is known",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "colorPrimariesCode": {
+      "description": "ITU-T H.273 colour primaries of the picture stream (2: unspecified); null when none is known",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "colorTransfer": {
+      "$ref": "#/components/schemas/StudioMediaColorTransfer"
+    },
+    "colorTransferCode": {
+      "description": "ITU-T H.273 transfer characteristics of the picture stream (2: unspecified); null when none is known",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "dolbyVisionProfile": {
+      "description": "The Dolby Vision profile of the picture stream; null when it has none or none is known",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
     },
     "durationSeconds": {
       "description": "Length in seconds; 0 for a still; null when unknown",
@@ -1679,6 +1889,12 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaFactsSo
   "required": [
     "assetId",
     "audioCodec",
+    "bitDepth",
+    "colorMatrixCode",
+    "colorPrimariesCode",
+    "colorTransfer",
+    "colorTransferCode",
+    "dolbyVisionProfile",
     "durationSeconds",
     "fps",
     "frameCount",
@@ -1711,7 +1927,7 @@ Related models: [AssetTypeEnum](models-06.md#assettypeenum), [StudioMediaFactsSo
 
 ## StudioPreviewDto
 
-Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [StudioPreviewStatus](models-34.md#studiopreviewstatus), [StudioPreviewTimeDto](models-34.md#studiopreviewtimedto).
+Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [StudioPreviewStatus](models-34.md#studiopreviewstatus), [StudioPreviewTimeDto](models-35.md#studiopreviewtimedto).
 
 ```json
 {
@@ -1877,7 +2093,7 @@ Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [Stud
 
 ## StudioPreviewRequestDto
 
-Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [StudioPreviewTimeDto](models-34.md#studiopreviewtimedto).
+Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [StudioPreviewTimeDto](models-35.md#studiopreviewtimedto).
 
 ```json
 {
@@ -2058,218 +2274,5 @@ Related models: [StudioPreviewDto](models-34.md#studiopreviewdto).
     "maxWidth"
   ],
   "type": "object"
-}
-```
-
-## StudioPreviewStreamCloseReason
-
-
-```json
-{
-  "description": "Why a closed session closed",
-  "enum": [
-    "closed",
-    "superseded",
-    "revoked",
-    "stale-revision",
-    "expired",
-    "worker-lost",
-    "failed"
-  ],
-  "type": "string"
-}
-```
-
-## StudioPreviewStreamDto
-
-Related models: [StudioPreviewStreamBoundsDto](models-34.md#studiopreviewstreamboundsdto), [StudioPreviewStreamCloseReason](models-34.md#studiopreviewstreamclosereason), [StudioPreviewStreamState](models-34.md#studiopreviewstreamstate), [StudioPreviewTimeDto](models-34.md#studiopreviewtimedto).
-
-```json
-{
-  "properties": {
-    "bounds": {
-      "$ref": "#/components/schemas/StudioPreviewStreamBoundsDto"
-    },
-    "closeReason": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioPreviewStreamCloseReason"
-        }
-      ],
-      "nullable": true
-    },
-    "currentRevision": {
-      "description": "The stored head, when the session closed as stale",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "expiresAt": {
-      "description": "The hard end of this session",
-      "format": "date-time",
-      "type": "string"
-    },
-    "id": {
-      "description": "Stream session ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "keepaliveMs": {
-      "description": "Poll at least this often, or the session is closed",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "negotiation": {
-      "description": "The offer/answer round; an answer must name it",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "offer": {
-      "description": "The worker's offer for this round, while it waits for an answer",
-      "maxLength": 65536,
-      "minLength": 1,
-      "nullable": true,
-      "type": "string"
-    },
-    "projectId": {
-      "type": "string"
-    },
-    "revision": {
-      "description": "The stored project revision this session plays",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "start": {
-      "$ref": "#/components/schemas/StudioPreviewTimeDto",
-      "description": "Where playback starts"
-    },
-    "state": {
-      "$ref": "#/components/schemas/StudioPreviewStreamState"
-    }
-  },
-  "required": [
-    "bounds",
-    "closeReason",
-    "currentRevision",
-    "expiresAt",
-    "id",
-    "keepaliveMs",
-    "negotiation",
-    "offer",
-    "projectId",
-    "revision",
-    "start",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewStreamOpenDto
-
-Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [StudioPreviewTimeDto](models-34.md#studiopreviewtimedto).
-
-```json
-{
-  "properties": {
-    "projectId": {
-      "description": "Studio project to play",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "quality": {
-      "$ref": "#/components/schemas/StudioPreviewQuality"
-    },
-    "revision": {
-      "description": "Stored project revision to play; a superseded revision is refused",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "time": {
-      "$ref": "#/components/schemas/StudioPreviewTimeDto"
-    },
-    "viewportHeight": {
-      "maximum": 7680,
-      "minimum": 16,
-      "type": "integer"
-    },
-    "viewportWidth": {
-      "maximum": 7680,
-      "minimum": 16,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "projectId",
-    "quality",
-    "revision",
-    "time",
-    "viewportHeight",
-    "viewportWidth"
-  ],
-  "type": "object"
-}
-```
-
-## StudioPreviewStreamState
-
-
-```json
-{
-  "description": "Where the session is",
-  "enum": [
-    "queued",
-    "negotiating",
-    "offered",
-    "answered",
-    "closed"
-  ],
-  "type": "string"
-}
-```
-
-## StudioPreviewTimeDto
-
-
-```json
-{
-  "properties": {
-    "denominator": {
-      "description": "Time denominator; must be positive",
-      "pattern": "^-?\\d{1,16}$",
-      "type": "string"
-    },
-    "numerator": {
-      "description": "Time numerator, in seconds over the denominator",
-      "pattern": "^-?\\d{1,16}$",
-      "type": "string"
-    }
-  },
-  "required": [
-    "denominator",
-    "numerator"
-  ],
-  "type": "object"
-}
-```
-
-## StudioProjectAccess
-
-
-```json
-{
-  "description": "`owner` may write; `reviewer` reaches the project through a shared space, read-only",
-  "enum": [
-    "owner",
-    "reviewer"
-  ],
-  "type": "string"
 }
 ```

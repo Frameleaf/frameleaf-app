@@ -423,7 +423,7 @@ test("the stack is ready only when all three services are healthy, and a stopped
   const row = (Service, Health, State = "running") =>
     JSON.stringify({ Service, State, Health });
   const all = (health) =>
-    ["frameleaf-server", "immich-machine-learning", "database"]
+    ["frameleaf-server", "frameleaf-machine-learning", "database"]
       .map((s) => row(s, health))
       .join("\n");
   assert.deepEqual(serviceStates(`[${row("database", "healthy")}]`), [

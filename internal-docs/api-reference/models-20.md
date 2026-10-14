@@ -1,6 +1,157 @@
 # Server API models 20
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## PetCandidateReviewDto
+
+
+```json
+{
+  "properties": {
+    "expectedChecksum": {
+      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "petId": {
+      "description": "Pet to assign instead of the proposed one",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PetCreateDto
+
+Related models: [PetSpecies](models-20.md#petspecies).
+
+```json
+{
+  "properties": {
+    "birthDate": {
+      "description": "Pet date of birth",
+      "format": "date",
+      "nullable": true,
+      "type": "string"
+    },
+    "featuredAssetId": {
+      "description": "Asset used as the pet thumbnail",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "isFavorite": {
+      "description": "Mark as favorite",
+      "type": "boolean"
+    },
+    "isHidden": {
+      "description": "Pet visibility (hidden)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Pet name",
+      "maxLength": 100,
+      "type": "string"
+    },
+    "species": {
+      "$ref": "#/components/schemas/PetSpecies",
+      "default": "other"
+    }
+  },
+  "type": "object"
+}
+```
+
+## PetMergeDto
+
+
+```json
+{
+  "properties": {
+    "ids": {
+      "description": "Pet IDs to merge into this pet",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+}
+```
+
+## PetObservationCreateDto
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "Asset the pet appears in",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "boundingBoxX1": {
+      "description": "Region X1, in source pixels",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "boundingBoxX2": {
+      "description": "Region X2, in source pixels",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "boundingBoxY1": {
+      "description": "Region Y1, in source pixels",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "boundingBoxY2": {
+      "description": "Region Y2, in source pixels",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "expectedChecksum": {
+      "description": "Checksum of the original the decision was made on (base64); refused with 409 when it changed",
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "imageHeight": {
+      "description": "Height of the image the region was drawn on",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "imageWidth": {
+      "description": "Width of the image the region was drawn on",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "assetId"
+  ],
+  "type": "object"
+}
+```
 
 ## PetObservationResponseDto
 

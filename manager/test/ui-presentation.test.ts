@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { operationProgress, canCancel, serviceState, formatBytes } from '../ui/src/presentation.js';
+import { operationProgress, canCancel, serviceState, formatBytes, readable } from '../ui/src/presentation.js';
 
 test('operation timelines use journal steps and never infer successful completion from an error', () => {
   const operation = {
@@ -33,4 +33,9 @@ test('a running container without a health check is not presented as verified he
   assert.equal(serviceState({ running: false, health: 'healthy' }), 'Stopped');
   assert.equal(formatBytes(null), 'Unavailable');
   assert.equal(formatBytes(1024 ** 3), '1 GB');
+});
+
+test('release refusals read as sentences', () => {
+  assert.match(readable('release_bundle_missing'), /^This Frameleaf release is missing installation files/);
+  assert.equal(readable('download-images'), 'Download the verified image set');
 });

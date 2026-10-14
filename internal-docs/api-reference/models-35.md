@@ -1,6 +1,219 @@
 # Server API models 35
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## StudioPreviewStreamCloseReason
+
+
+```json
+{
+  "description": "Why a closed session closed",
+  "enum": [
+    "closed",
+    "superseded",
+    "revoked",
+    "stale-revision",
+    "expired",
+    "worker-lost",
+    "failed"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewStreamDto
+
+Related models: [StudioPreviewStreamBoundsDto](models-34.md#studiopreviewstreamboundsdto), [StudioPreviewStreamCloseReason](models-35.md#studiopreviewstreamclosereason), [StudioPreviewStreamState](models-35.md#studiopreviewstreamstate), [StudioPreviewTimeDto](models-35.md#studiopreviewtimedto).
+
+```json
+{
+  "properties": {
+    "bounds": {
+      "$ref": "#/components/schemas/StudioPreviewStreamBoundsDto"
+    },
+    "closeReason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/StudioPreviewStreamCloseReason"
+        }
+      ],
+      "nullable": true
+    },
+    "currentRevision": {
+      "description": "The stored head, when the session closed as stale",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "expiresAt": {
+      "description": "The hard end of this session",
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stream session ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "keepaliveMs": {
+      "description": "Poll at least this often, or the session is closed",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "negotiation": {
+      "description": "The offer/answer round; an answer must name it",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "offer": {
+      "description": "The worker's offer for this round, while it waits for an answer",
+      "maxLength": 65536,
+      "minLength": 1,
+      "nullable": true,
+      "type": "string"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "revision": {
+      "description": "The stored project revision this session plays",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "start": {
+      "$ref": "#/components/schemas/StudioPreviewTimeDto",
+      "description": "Where playback starts"
+    },
+    "state": {
+      "$ref": "#/components/schemas/StudioPreviewStreamState"
+    }
+  },
+  "required": [
+    "bounds",
+    "closeReason",
+    "currentRevision",
+    "expiresAt",
+    "id",
+    "keepaliveMs",
+    "negotiation",
+    "offer",
+    "projectId",
+    "revision",
+    "start",
+    "state"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStreamOpenDto
+
+Related models: [StudioPreviewQuality](models-34.md#studiopreviewquality), [StudioPreviewTimeDto](models-35.md#studiopreviewtimedto).
+
+```json
+{
+  "properties": {
+    "projectId": {
+      "description": "Studio project to play",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "quality": {
+      "$ref": "#/components/schemas/StudioPreviewQuality"
+    },
+    "revision": {
+      "description": "Stored project revision to play; a superseded revision is refused",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "time": {
+      "$ref": "#/components/schemas/StudioPreviewTimeDto"
+    },
+    "viewportHeight": {
+      "maximum": 7680,
+      "minimum": 16,
+      "type": "integer"
+    },
+    "viewportWidth": {
+      "maximum": 7680,
+      "minimum": 16,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "projectId",
+    "quality",
+    "revision",
+    "time",
+    "viewportHeight",
+    "viewportWidth"
+  ],
+  "type": "object"
+}
+```
+
+## StudioPreviewStreamState
+
+
+```json
+{
+  "description": "Where the session is",
+  "enum": [
+    "queued",
+    "negotiating",
+    "offered",
+    "answered",
+    "closed"
+  ],
+  "type": "string"
+}
+```
+
+## StudioPreviewTimeDto
+
+
+```json
+{
+  "properties": {
+    "denominator": {
+      "description": "Time denominator; must be positive",
+      "pattern": "^-?\\d{1,16}$",
+      "type": "string"
+    },
+    "numerator": {
+      "description": "Time numerator, in seconds over the denominator",
+      "pattern": "^-?\\d{1,16}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "denominator",
+    "numerator"
+  ],
+  "type": "object"
+}
+```
+
+## StudioProjectAccess
+
+
+```json
+{
+  "description": "`owner` may write; `reviewer` reaches the project through a shared space, read-only",
+  "enum": [
+    "owner",
+    "reviewer"
+  ],
+  "type": "string"
+}
+```
 
 ## StudioProjectCreateDto
 
@@ -46,7 +259,7 @@ Related models: [StudioProjectEnvelopeDto](models-35.md#studioprojectenvelopedto
 
 ## StudioProjectDetailDto
 
-Related models: [StudioProjectAccess](models-34.md#studioprojectaccess), [StudioProjectEnvelopeDto](models-35.md#studioprojectenvelopedto), [StudioProjectLeaseDto](models-35.md#studioprojectleasedto), [StudioProjectResourcesDto](models-35.md#studioprojectresourcesdto), [StudioProjectShelf](models-35.md#studioprojectshelf).
+Related models: [StudioProjectAccess](models-35.md#studioprojectaccess), [StudioProjectEnvelopeDto](models-35.md#studioprojectenvelopedto), [StudioProjectLeaseDto](models-35.md#studioprojectleasedto), [StudioProjectResourcesDto](models-35.md#studioprojectresourcesdto), [StudioProjectShelf](models-35.md#studioprojectshelf).
 
 ```json
 {
@@ -267,7 +480,7 @@ Related models: [StudioCommandSummaryDto](models-34.md#studiocommandsummarydto).
 
 ## StudioProjectDto
 
-Related models: [StudioProjectAccess](models-34.md#studioprojectaccess), [StudioProjectLeaseDto](models-35.md#studioprojectleasedto), [StudioProjectShelf](models-35.md#studioprojectshelf).
+Related models: [StudioProjectAccess](models-35.md#studioprojectaccess), [StudioProjectLeaseDto](models-35.md#studioprojectleasedto), [StudioProjectShelf](models-35.md#studioprojectshelf).
 
 ```json
 {
@@ -482,6 +695,17 @@ Related models: [StudioProjectRevisionDto](models-35.md#studioprojectrevisiondto
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       "type": "string"
+    },
+    "processingProvenance": {
+      "description": "Processing provenance JSON, encoded exactly once; outputSha256 is server-only",
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "publicationId": {
+      "description": "Already registered publication id; required with provenance",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
     }
   },
   "required": [
@@ -494,7 +718,7 @@ Related models: [StudioProjectRevisionDto](models-35.md#studioprojectrevisiondto
 
 ## StudioProjectImportDto
 
-Related models: [StudioProjectImportKind](models-35.md#studioprojectimportkind).
+Related models: [RetainedProcessingProvenance](models-30.md#retainedprocessingprovenance), [StudioProjectImportKind](models-35.md#studioprojectimportkind).
 
 ```json
 {
@@ -531,6 +755,9 @@ Related models: [StudioProjectImportKind](models-35.md#studioprojectimportkind).
     },
     "kind": {
       "$ref": "#/components/schemas/StudioProjectImportKind"
+    },
+    "processingProvenance": {
+      "$ref": "#/components/schemas/RetainedProcessingProvenance"
     },
     "sizeBytes": {
       "description": "Size in bytes",
@@ -808,7 +1035,7 @@ Related models: [StudioUnsupportedSourceDto](models-36.md#studiounsupportedsourc
       "type": "boolean"
     },
     "hdrProxySources": {
-      "description": "FL-97: the hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made",
+      "description": "The hdrSources whose Studio HDR intermediate is ready, so the editor reads their real HDR pixels (GET /assets/{id}/video/studio-hdr). The others are being made",
       "items": {
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -817,7 +1044,7 @@ Related models: [StudioUnsupportedSourceDto](models-36.md#studiounsupportedsourc
       "type": "array"
     },
     "hdrSources": {
-      "description": "FL-97 owner decision: placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
+      "description": "Placed library videos whose original is HDR (PQ or HLG transfer, or Dolby Vision). A project that places one is an HDR project. Only sources that resolved for the acting account are named",
       "items": {
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -826,7 +1053,7 @@ Related models: [StudioUnsupportedSourceDto](models-36.md#studiounsupportedsourc
       "type": "array"
     },
     "hiddenSources": {
-      "description": "FL-195 follow-up: the owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
+      "description": "The owner's own library items this project places that are hidden from this session (Locked, or matched by a Locked rule, while the session is locked). The project keeps them; the editor hides their clips rather than showing missing media. The owner's only; empty for a reviewer",
       "items": {
         "format": "uuid",
         "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -841,7 +1068,7 @@ Related models: [StudioUnsupportedSourceDto](models-36.md#studiounsupportedsourc
       "type": "integer"
     },
     "unsupportedSources": {
-      "description": "FL-101: placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
+      "description": "Placed videos this server cannot decode, refused as 'unsupported-source' when admitted. The owner's only; empty for a reviewer",
       "items": {
         "$ref": "#/components/schemas/StudioUnsupportedSourceDto"
       },
@@ -1118,7 +1345,7 @@ Related models: [StudioProjectLeaseDto](models-35.md#studioprojectleasedto), [St
           "$ref": "#/components/schemas/StudioProjectResourcesDto"
         }
       ],
-      "description": "FL-101: how the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run",
+      "description": "How the sources of a newly written revision resolved; absent when nothing was written, null when the resolution could not run",
       "nullable": true
     },
     "revision": {
@@ -1322,7 +1549,7 @@ Related models: [StudioExportFormat](models-34.md#studioexportformat).
 
 ## StudioRenderEvidenceDto
 
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [StudioRenderCandidateDto](models-35.md#studiorendercandidatedto).
+Related models: [MediaOperationDestination](models-17.md#mediaoperationdestination), [StudioRenderCandidateDto](models-35.md#studiorendercandidatedto).
 
 ```json
 {
@@ -1915,192 +2142,6 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Asse
     "projectId",
     "sourceRevision",
     "width"
-  ],
-  "type": "object"
-}
-```
-
-## StudioTimeDto
-
-
-```json
-{
-  "properties": {
-    "den": {
-      "description": "Denominator",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "num": {
-      "description": "Numerator; zero is the start of the sequence",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "den",
-    "num"
-  ],
-  "type": "object"
-}
-```
-
-## StudioTranscriptionCreateDto
-
-
-```json
-{
-  "properties": {
-    "clipId": {
-      "description": "A video or audio clip on the main timeline of the head revision",
-      "pattern": "^[\\w-]{1,128}$",
-      "type": "string"
-    },
-    "destinationId": {
-      "description": "The machine-learning destination to run on, named explicitly",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "language": {
-      "description": "A BCP 47 language tag such as `en` or `pt-BR`, or `auto` to detect the language",
-      "maxLength": 35,
-      "minLength": 2,
-      "type": "string"
-    }
-  },
-  "required": [
-    "clipId",
-    "destinationId",
-    "language"
-  ],
-  "type": "object"
-}
-```
-
-## StudioTranscriptionCue
-
-Related models: [StudioTranscriptionTime](models-36.md#studiotranscriptiontime).
-
-```json
-{
-  "properties": {
-    "end": {
-      "$ref": "#/components/schemas/StudioTranscriptionTime"
-    },
-    "start": {
-      "$ref": "#/components/schemas/StudioTranscriptionTime"
-    },
-    "text": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "end",
-    "start",
-    "text"
-  ],
-  "type": "object"
-}
-```
-
-## StudioTranscriptionDto
-
-Related models: [MediaOperationStatus](models-17.md#mediaoperationstatus), [StudioTranscriptionResultDto](models-36.md#studiotranscriptionresultdto).
-
-```json
-{
-  "properties": {
-    "clipId": {
-      "pattern": "^[\\w-]{1,128}$",
-      "type": "string"
-    },
-    "destinationId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-      "type": "string"
-    },
-    "error": {
-      "nullable": true,
-      "type": "string"
-    },
-    "id": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "language": {
-      "description": "The language asked for (`auto` or a BCP 47 tag)",
-      "type": "string"
-    },
-    "progress": {
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "projectId": {
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "result": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/StudioTranscriptionResultDto"
-        }
-      ],
-      "description": "Present once the job has completed",
-      "nullable": true
-    },
-    "revision": {
-      "description": "The revision whose clip was transcribed",
-      "maximum": 9007199254740991,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "clipId",
-    "destinationId",
-    "error",
-    "id",
-    "language",
-    "progress",
-    "projectId",
-    "result",
-    "revision",
-    "status"
-  ],
-  "type": "object"
-}
-```
-
-## StudioTranscriptionQueuedDto
-
-Related models: [MediaOperationStatus](models-17.md#mediaoperationstatus).
-
-```json
-{
-  "properties": {
-    "id": {
-      "description": "The job id; follow it in Activity (`/media-operations/{id}`)",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "status": {
-      "$ref": "#/components/schemas/MediaOperationStatus"
-    }
-  },
-  "required": [
-    "id",
-    "status"
   ],
   "type": "object"
 }

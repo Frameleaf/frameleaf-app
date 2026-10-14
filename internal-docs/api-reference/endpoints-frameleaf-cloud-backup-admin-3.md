@@ -1,12 +1,12 @@
 # Server API — Frameleaf Cloud backup (admin) 3
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getOwnBackupThumbnail
 
 `GET /api/users/me/cloud-backup/history/{id}/thumbnail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-owner.controller.ts#L105).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-owner.controller.ts#L105).
 
 Read an authorized kept backup thumbnail
 
@@ -62,9 +62,10 @@ Complete operation contract:
       "name": "manifestKey",
       "required": true,
       "in": "query",
+      "description": "The backup run’s manifest in the bucket",
       "schema": {
         "maxLength": 300,
-        "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+        "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
         "type": "string"
       }
     },
@@ -131,7 +132,7 @@ Complete operation contract:
 
 `POST /api/users/me/cloud-backup/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-owner.controller.ts#L57).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-owner.controller.ts#L57).
 
 Restore own items from a chosen kept backup
 
@@ -212,7 +213,7 @@ Complete operation contract:
 
 `GET /api/users/me/cloud-backup/setup`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cloud-backup-owner.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cloud-backup-owner.controller.ts#L44).
 
 Get the cloud backup setup progress
 

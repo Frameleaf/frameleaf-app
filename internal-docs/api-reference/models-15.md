@@ -1,6 +1,307 @@
 # Server API models 15
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## IntegrityReportResponseDto
+
+Related models: [IntegrityReport](models-14.md#integrityreport).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "properties": {
+          "id": {
+            "description": "Integrity report item id",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "path": {
+            "description": "Integrity report item path",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "nextCursor": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "type": "object"
+}
+```
+
+## IntegrityReportSummaryResponseDto
+
+
+```json
+{
+  "properties": {
+    "checksum_mismatch": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "missing_file": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "untracked_file": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "checksum_mismatch",
+    "missing_file",
+    "untracked_file"
+  ],
+  "type": "object"
+}
+```
+
+## ItemShareChangeDto
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "The items (your own) to share or stop sharing",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "userIds": {
+      "description": "The people in this library to share them with, or to stop sharing them with",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "assetIds",
+    "userIds"
+  ],
+  "type": "object"
+}
+```
+
+## ItemShareChangeResponseDto
+
+Related models: [ItemShareResponseDto](models-15.md#itemshareresponsedto).
+
+```json
+{
+  "properties": {
+    "added": {
+      "description": "Shares this change added",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "link": {
+      "description": "Where recipients open what is shared with them: the Public server URL when set, otherwise the direct-connection address (or a custom hostname pointed at it); null when the server has no address",
+      "nullable": true,
+      "type": "string"
+    },
+    "removed": {
+      "description": "Shares this change removed",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "shares": {
+      "description": "Every share of these items after the change",
+      "items": {
+        "$ref": "#/components/schemas/ItemShareResponseDto"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "added",
+    "link",
+    "removed",
+    "shares"
+  ],
+  "type": "object"
+}
+```
+
+## ItemShareQueryDto
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "The items (your own) to list the shares of",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "assetIds"
+  ],
+  "type": "object"
+}
+```
+
+## ItemShareReceivedDto
+
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [UserResponseDto](models-40.md#userresponsedto).
+
+```json
+{
+  "properties": {
+    "asset": {
+      "$ref": "#/components/schemas/AssetResponseDto",
+      "description": "The shared item"
+    },
+    "id": {
+      "description": "Share ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "owner": {
+      "$ref": "#/components/schemas/UserResponseDto",
+      "description": "Who shared it"
+    },
+    "sharedAt": {
+      "description": "When it was shared",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset",
+    "id",
+    "owner",
+    "sharedAt"
+  ],
+  "type": "object"
+}
+```
+
+## ItemShareReceivedResponseDto
+
+Related models: [ItemShareReceivedDto](models-15.md#itemsharereceiveddto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "description": "Items shared with you, newest share first",
+      "items": {
+        "$ref": "#/components/schemas/ItemShareReceivedDto"
+      },
+      "type": "array"
+    },
+    "link": {
+      "description": "The address of this list, as sent in share notifications",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "items",
+    "link"
+  ],
+  "type": "object"
+}
+```
+
+## ItemShareResponseDto
+
+Related models: [UserResponseDto](models-40.md#userresponsedto).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "The shared item",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "createdAt": {
+      "description": "When it was shared",
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "description": "Share ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "sharedWith": {
+      "$ref": "#/components/schemas/UserResponseDto",
+      "description": "Who the item is shared with"
+    }
+  },
+  "required": [
+    "assetId",
+    "createdAt",
+    "id",
+    "sharedWith"
+  ],
+  "type": "object"
+}
+```
+
+## JobCreateDto
+
+Related models: [ManualJobName](models-16.md#manualjobname).
+
+```json
+{
+  "properties": {
+    "name": {
+      "$ref": "#/components/schemas/ManualJobName"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}
+```
 
 ## JobName
 
@@ -91,6 +392,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
     "FrameleafLicenseRefresh",
     "CloudMlDescriptionBatch",
     "CloudBackupSchedule",
+    "BackupSequence",
     "CloudBackupVerify",
     "PushDeliver",
     "PushBackupStaleCheck",
@@ -626,7 +928,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     },
     "brilliance": {
       "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+      "description": "Opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
       "format": "double",
       "maximum": 100,
       "minimum": -100,
@@ -642,7 +944,7 @@ Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetD
     },
     "cleanup": {
       "default": [],
-      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+      "description": "Clean Up operations, applied in order to the original before every other step",
       "items": {
         "$ref": "#/components/schemas/AssetDevelopCleanup"
       },
@@ -1732,386 +2034,5 @@ Related models: [LicenseLinkCodeKind](models-15.md#licenselinkcodekind).
     "storeUrl"
   ],
   "type": "object"
-}
-```
-
-## LicenseProductsResponseDto
-
-Related models: [LicenseProductDto](models-15.md#licenseproductdto).
-
-```json
-{
-  "properties": {
-    "backup": {
-      "description": "Cloud backup a plan includes, and the blocks and monthly rate for more",
-      "properties": {
-        "blockTb": {
-          "format": "double",
-          "type": "number"
-        },
-        "includedTb": {
-          "format": "double",
-          "type": "number"
-        },
-        "usdPerTbMonth": {
-          "format": "double",
-          "type": "number"
-        }
-      },
-      "required": [
-        "includedTb",
-        "blockTb",
-        "usdPerTbMonth"
-      ],
-      "type": "object"
-    },
-    "credit": {
-      "description": "AI credit top-ups the store accepts; credit is never discounted",
-      "properties": {
-        "maximumUsd": {
-          "format": "double",
-          "type": "number"
-        },
-        "minimumUsd": {
-          "format": "double",
-          "type": "number"
-        }
-      },
-      "required": [
-        "minimumUsd",
-        "maximumUsd"
-      ],
-      "type": "object"
-    },
-    "currency": {
-      "enum": [
-        "USD"
-      ],
-      "type": "string"
-    },
-    "licensedDiscount": {
-      "description": "Share taken off plans on a licensed server: what Frameleaf Cloud last published, else the bundled share. Never AI credit or extra backup",
-      "format": "double",
-      "type": "number"
-    },
-    "pricesVersion": {
-      "description": "Version of the plan prices in force: published by Frameleaf Cloud, else the bundled snapshot",
-      "type": "string"
-    },
-    "products": {
-      "items": {
-        "$ref": "#/components/schemas/LicenseProductDto"
-      },
-      "type": "array"
-    },
-    "storeUrl": {
-      "description": "The store this server was deployed with; null when there is none",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "backup",
-    "credit",
-    "currency",
-    "licensedDiscount",
-    "pricesVersion",
-    "products",
-    "storeUrl"
-  ],
-  "type": "object"
-}
-```
-
-## LicenseResponseDto
-
-Related models: [UserLicense](models-39.md#userlicense).
-
-```json
-{
-  "$ref": "#/components/schemas/UserLicense"
-}
-```
-
-## LicenseSlotDto
-
-Related models: [LicenseKind](models-15.md#licensekind), [LicenseState](models-15.md#licensestate).
-
-```json
-{
-  "properties": {
-    "activatedAt": {
-      "description": "When this server received the certificate",
-      "type": "string"
-    },
-    "expiresAt": {
-      "description": "When the certificate or its period ends; null for a lifetime key",
-      "nullable": true,
-      "type": "string"
-    },
-    "graceUntil": {
-      "nullable": true,
-      "type": "string"
-    },
-    "keyHint": {
-      "description": "Last four symbols of the key, for a key activation",
-      "nullable": true,
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/LicenseKind"
-    },
-    "refreshedAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "source": {
-      "description": "Activated by key, installed from a file, or from the account",
-      "enum": [
-        "key",
-        "file",
-        "account"
-      ],
-      "type": "string"
-    },
-    "state": {
-      "$ref": "#/components/schemas/LicenseState"
-    }
-  },
-  "required": [
-    "activatedAt",
-    "expiresAt",
-    "graceUntil",
-    "keyHint",
-    "kind",
-    "refreshedAt",
-    "source",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## LicenseState
-
-
-```json
-{
-  "description": "none: no licence; active; grace: renewal failed and cloud features keep working until graceUntil; expired: cloud features are paused, local features are unaffected; invalid: the stored certificate no longer verifies",
-  "enum": [
-    "none",
-    "active",
-    "grace",
-    "expired",
-    "invalid"
-  ],
-  "type": "string"
-}
-```
-
-## LicenseStatusResponseDto
-
-Related models: [LicenseEntitlementsDto](models-15.md#licenseentitlementsdto), [LicenseKind](models-15.md#licensekind), [LicenseSlotDto](models-15.md#licenseslotdto), [LicenseState](models-15.md#licensestate).
-
-```json
-{
-  "properties": {
-    "configured": {
-      "description": "Frameleaf Cloud is set up on this server (FRAMELEAF_CLOUD_URL)",
-      "type": "boolean"
-    },
-    "entitlements": {
-      "$ref": "#/components/schemas/LicenseEntitlementsDto"
-    },
-    "expiresAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "fingerprint": {
-      "description": "What a licence is bound to: this server’s instance ID and key thumbprint",
-      "properties": {
-        "instanceId": {
-          "nullable": true,
-          "type": "string"
-        },
-        "jkt": {
-          "nullable": true,
-          "type": "string"
-        }
-      },
-      "required": [
-        "instanceId",
-        "jkt"
-      ],
-      "type": "object"
-    },
-    "graceUntil": {
-      "nullable": true,
-      "type": "string"
-    },
-    "key": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/LicenseSlotDto"
-        }
-      ],
-      "description": "The supporter key held by this server",
-      "nullable": true
-    },
-    "keyHint": {
-      "nullable": true,
-      "type": "string"
-    },
-    "kind": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/LicenseKind"
-        }
-      ],
-      "nullable": true
-    },
-    "licensed": {
-      "description": "A supporter key or plan is active or in grace; plans then cost less by licensedDiscount on license/products",
-      "type": "boolean"
-    },
-    "linked": {
-      "description": "This server is linked to a Frameleaf account",
-      "type": "boolean"
-    },
-    "offline": {
-      "description": "The licence came from a file and is not refreshed online",
-      "type": "boolean"
-    },
-    "plan": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/LicenseSlotDto"
-        }
-      ],
-      "description": "The Frameleaf Cloud plan held by this server",
-      "nullable": true
-    },
-    "refresh": {
-      "description": "The daily certificate refresh",
-      "properties": {
-        "lastError": {
-          "nullable": true,
-          "type": "string"
-        },
-        "nextRefreshAt": {
-          "nullable": true,
-          "type": "string"
-        },
-        "refreshedAt": {
-          "nullable": true,
-          "type": "string"
-        }
-      },
-      "required": [
-        "refreshedAt",
-        "nextRefreshAt",
-        "lastError"
-      ],
-      "type": "object"
-    },
-    "state": {
-      "$ref": "#/components/schemas/LicenseState",
-      "description": "The overall state: the plan’s when there is one, else the key’s"
-    }
-  },
-  "required": [
-    "configured",
-    "entitlements",
-    "expiresAt",
-    "fingerprint",
-    "graceUntil",
-    "key",
-    "keyHint",
-    "kind",
-    "licensed",
-    "linked",
-    "offline",
-    "plan",
-    "refresh",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoCandidateDto
-
-Related models: [AssetResponseDto](models-06.md#assetresponsedto), [LivePhotoMatchConfidence](models-15.md#livephotomatchconfidence).
-
-```json
-{
-  "properties": {
-    "confidence": {
-      "$ref": "#/components/schemas/LivePhotoMatchConfidence"
-    },
-    "matchReason": {
-      "description": "Why these two assets are believed to be a separated live photo pair",
-      "type": "string"
-    },
-    "photo": {
-      "$ref": "#/components/schemas/AssetResponseDto"
-    },
-    "video": {
-      "$ref": "#/components/schemas/AssetResponseDto"
-    }
-  },
-  "required": [
-    "confidence",
-    "matchReason",
-    "photo",
-    "video"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoCandidatesResponseDto
-
-Related models: [LivePhotoCandidateDto](models-15.md#livephotocandidatedto).
-
-```json
-{
-  "properties": {
-    "candidates": {
-      "items": {
-        "$ref": "#/components/schemas/LivePhotoCandidateDto"
-      },
-      "type": "array"
-    },
-    "suggestionsEnabled": {
-      "description": "Library care suggests Live Photo pairs; when false no pairs are looked for",
-      "type": "boolean"
-    },
-    "total": {
-      "description": "Total number of candidate pairs found",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "candidates",
-    "suggestionsEnabled",
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## LivePhotoMatchConfidence
-
-
-```json
-{
-  "enum": [
-    "high",
-    "low"
-  ],
-  "type": "string"
 }
 ```

@@ -19,7 +19,7 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   id: '11111111-1111-4111-8111-111111111111',
   kind: MlDestinationKind.Local,
   name: 'This server',
-  url: 'http://immich-machine-learning:3003',
+  url: 'http://frameleaf-machine-learning:3003',
   authTokenConfigured: false,
   enabled: true,
   workloads: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment],
@@ -126,7 +126,7 @@ describe('MlDestinationsPanel (FL-110)', () => {
 
     const local = screen.getByRole('listitem', { name: 'This server' });
     expect(within(local).getByText('Healthy')).toBeInTheDocument();
-    expect(within(local).getByText('http://immich-machine-learning:3003')).toBeInTheDocument();
+    expect(within(local).getByText('http://frameleaf-machine-learning:3003')).toBeInTheDocument();
 
     const row = screen.getByRole('listitem', { name: 'Frameleaf Cloud' });
     expect(within(row).getByText('Consent needed')).toBeInTheDocument();

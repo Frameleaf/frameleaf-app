@@ -1,6 +1,6 @@
 # Complete Frameleaf server API reference
 
-Contract snapshot: `84601cc0814d82ddfcf113a25e4046c930dd64b8`, API `3.2.0`. This reference covers **857 OpenAPI operations**, **1576 schemas**, and **24 deliberately excluded controller routes**.
+Contract snapshot: `3674dd2d103d87bf1dc40ef71a63b86a29ce810a`, API `3.2.0`. This reference covers **869 OpenAPI operations**, **1610 schemas**, and **25 deliberately excluded controller routes**.
 
 Start with [authentication and mobile workflows](auth-mobile.md) and [streaming, workers and other protocols](protocols.md), then the [complete worker wire models](worker-wire-models.md). Separate Frameleaf Cloud control-plane contracts are maintained with the Cloud service. Server URLs are relative to your installation, not the Cloud account host. This complete internal reference is kept outside the public documentation build; it includes administrative, Cloud integration and worker contracts.
 
@@ -93,21 +93,21 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 3: AnalyticsHostDto through AskSearchDto](models-03.md)
 - [Models 4: AskSearchPlanDto through AssetDevelopProposalCoordinates](models-04.md)
 - [Models 5: AssetDevelopRecipeDto through AssetOcrResponseDto](models-05.md)
-- [Models 6: AssetOrder through BestPhotoAssetResponseDto](models-06.md)
-- [Models 7: BestPhotoScoreDto through ClassificationMediaType](models-07.md)
-- [Models 8: ClassificationPlanResponseDto through CloudMlCatalogResponseDto](models-08.md)
-- [Models 9: CloudMlConnection through ClusterGroupRequestCreateDto](models-09.md)
-- [Models 10: ClusterGroupRequestResponseDto through DocumentFieldStatus](models-10.md)
-- [Models 11: DocumentLineDto through FoldersUpdate](models-11.md)
-- [Models 12: FrameleafAccountLinkResponseDto through HdrAssetDevelopRecipeV4](models-12.md)
-- [Models 13: HdrAssetDevelopRecipeV5 through ICloudEditDeviceHolderKind](models-13.md)
-- [Models 14: ICloudEditEvidenceResponseDto through JobCreateDto](models-14.md)
-- [Models 15: JobName through LivePhotoMatchConfidence](models-15.md)
-- [Models 16: LivePhotoRelinkDto through MediaOperationDestination](models-16.md)
-- [Models 17: MediaOperationDetailDto through MergeSuggestionsResponseDto](models-17.md)
-- [Models 18: MetadataSearchDto through NotificationDeleteAllDto](models-18.md)
-- [Models 19: NotificationDto through PetObservationCreateDto](models-19.md)
-- [Models 20: PetObservationResponseDto through PhotographyChoicesDto](models-20.md)
+- [Models 6: AssetOrder through BackupSequencePlace](models-06.md)
+- [Models 7: BestPhotoAssetResponseDto through CastMediaUrlCreateDto](models-07.md)
+- [Models 8: CastMediaUrlResponseDto through CloudBackupSetupDto](models-08.md)
+- [Models 9: CloudBackupStatusResponseDto through CloudSignInUpdateDto](models-09.md)
+- [Models 10: CloudStatusResponseDto through DevelopPresetSettingsDto](models-10.md)
+- [Models 11: DevelopPresetSettingsUpdateDto through EventStoryDto](models-11.md)
+- [Models 12: ExifResponseDto through HardwareWorkloadUnavailable](models-12.md)
+- [Models 13: HdrAssetDevelopRecipe through ICloudCoverageConnectionDto](models-13.md)
+- [Models 14: ICloudCoverageDto through IntegrityReport](models-14.md)
+- [Models 15: IntegrityReportResponseDto through LicenseProductDto](models-15.md)
+- [Models 16: LicenseProductsResponseDto through MediaHealthSeverity](models-16.md)
+- [Models 17: MediaHealthStatus through MemoryShowLessKind](models-17.md)
+- [Models 18: MemoryShowLessResponseDto through MlWorkloadCapabilityDto](models-18.md)
+- [Models 19: MlWorkloadRouteDto through PetCandidateResponseDto](models-19.md)
+- [Models 20: PetCandidateReviewDto through PhotographyChoicesDto](models-20.md)
 - [Models 21: PhotographyGalleryDto through PhotographyIntakeDto](models-21.md)
 - [Models 22: PhotographyInvitationDto through PhotographyInvitationDto](models-22.md)
 - [Models 23: PhotographyLogoCandidatesDto through PhotographyRenditionPreviewDto](models-23.md)
@@ -121,13 +121,13 @@ Start with [authentication and mobile workflows](auth-mobile.md) and [streaming,
 - [Models 31: SearchFacetsDto through SearchOrderField](models-31.md)
 - [Models 32: SearchResponseDto through SharedSpacePersonResponseDto](models-32.md)
 - [Models 33: SharedSpacePreviewResponseDto through StringFilterNullable](models-33.md)
-- [Models 34: StringPatternFilter through StudioProjectAccess](models-34.md)
-- [Models 35: StudioProjectCreateDto through StudioTranscriptionQueuedDto](models-35.md)
-- [Models 36: StudioTranscriptionResultDto through SyncAssetV1](models-36.md)
-- [Models 37: SyncAssetV2 through SyncUserMetadataV1](models-37.md)
-- [Models 38: SyncUserV1 through TrashItemSort](models-38.md)
-- [Models 39: TrashItemsResponseDto through UtilityActivityEntryDto](models-39.md)
-- [Models 40: UtilityActivityItemDto through YearInReviewDto](models-40.md)
+- [Models 34: StringPatternFilter through StudioPreviewStreamBoundsDto](models-34.md)
+- [Models 35: StudioPreviewStreamCloseReason through StudioReverseConformResultDto](models-35.md)
+- [Models 36: StudioSourceFileDto through SyncAssetTrashStateV1](models-36.md)
+- [Models 37: SyncAssetV1 through SyncStreamDto](models-37.md)
+- [Models 38: SyncTagDeleteV1 through TimelineHighlightGrouping](models-38.md)
+- [Models 39: TimelineHighlightResponseDto through UserPreferencesResponseDto](models-39.md)
+- [Models 40: UserPreferencesUpdateDto through YearInReviewDto](models-40.md)
 
 [HTTP aliases and discovery](http-aliases.md). The complete machine-readable contract lives in `open-api/immich-openapi-specs.json`; `coverage.json` maps every operation and model to its page and records source hashes.
 

@@ -152,12 +152,12 @@ it('keeps an item from the upstream Locked folder Locked when it is marked safe'
   const { asset, mark, lockRow } = await setup();
   await database
     .insertInto('asset_lock')
-    .values({ assetId: asset.id, reason: AssetLockReason.ImmichLockedFolder, lockedBy: null })
+    .values({ assetId: asset.id, reason: AssetLockReason.FrameleafLockedFolder, lockedBy: null })
     .execute();
   await expect(mark(AssetImageEnrichmentAction.MarkSafe)).resolves.toMatchObject({
     nsfwDetection: { effectiveIsNsfw: false },
   });
-  await expect(lockRow()).resolves.toMatchObject({ assetId: asset.id, reason: AssetLockReason.ImmichLockedFolder });
+  await expect(lockRow()).resolves.toMatchObject({ assetId: asset.id, reason: AssetLockReason.FrameleafLockedFolder });
 });
 
 // Missing enrichment metadata reads as unclassified; reads must not create metadata.
