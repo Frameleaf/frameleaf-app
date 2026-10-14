@@ -1045,10 +1045,11 @@ export class MachineLearningRepository implements RestorationInference {
     });
 
     // The fallback model is retried on the same destination only, and never on a cloud
-    // destination: the admin picked one primary model for cloud work. Local and LAN workers may
-    // be running an older image where Florence is the only small-footprint option.
+    // destination: the admin picked one primary model for cloud work. Florence runs on torch, which
+    // the CPU and CUDA images ship and the OpenVINO image doesn't; on a CPU-only worker it is the
+    // only description model that loads.
     const florenceUnavailable =
-      acceleration !== MachineLearningHardwareAcceleration.Cuda &&
+      acceleration === MachineLearningHardwareAcceleration.OpenVino &&
       !!fallbackModelName &&
       isFlorenceImageDescriptionModel(fallbackModelName);
     // A Frameleaf Cloud job names only the cloud model admission resolved (the routed SKU or the
