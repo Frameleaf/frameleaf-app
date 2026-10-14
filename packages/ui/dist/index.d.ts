@@ -95,7 +95,6 @@ export { default as ToastPanel } from './components/Toast/ToastPanel.svelte';
 export { default as Tooltip } from './components/Tooltip/Tooltip.svelte';
 export { default as TooltipProvider } from './components/Tooltip/TooltipProvider.svelte';
 export * from './actions/shortcut.js';
-export * from './commands.js';
 export * from './services/command-palette-manager.svelte.js';
 export * from './services/logo-manager.svelte.js';
 export * from './services/menu-manager.svelte.js';
