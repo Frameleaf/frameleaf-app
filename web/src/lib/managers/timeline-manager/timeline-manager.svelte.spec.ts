@@ -817,7 +817,14 @@ describe('TimelineManager', () => {
     });
 
     it('updates existing assets in the timeline', () => {
-      const existing = deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build({ isFavorite: false }));
+      const date = '2024-01-20T12:00:00.000Z';
+      const existing = deriveLocalDateTimeFromFileCreatedAt(
+        timelineAssetFactory.build({
+          isFavorite: false,
+          fileCreatedAt: fromISODateTimeUTCToObject(date),
+          createdAt: fromISODateTimeUTCToObject(date),
+        }),
+      );
 
       timelineManager.upsertAssets([existing]);
       eventManager.emit(
@@ -825,6 +832,9 @@ describe('TimelineManager', () => {
         assetFactory.build({
           id: existing.id,
           ownerId: existing.ownerId,
+          localDateTime: date,
+          fileCreatedAt: date,
+          createdAt: date,
           isFavorite: true,
           isTrashed: existing.isTrashed,
           visibility: existing.visibility,
