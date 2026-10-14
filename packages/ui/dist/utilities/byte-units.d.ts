@@ -1,4 +1,4 @@
-export declare const enum ByteUnit {
+export declare enum ByteUnit {
     B = "B",
     KiB = "KiB",
     MiB = "MiB",

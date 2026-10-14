@@ -1,14 +1,19 @@
-export var ByteUnit;
-(function (ByteUnit) {
-    ByteUnit["B"] = "B";
-    ByteUnit["KiB"] = "KiB";
-    ByteUnit["MiB"] = "MiB";
-    ByteUnit["GiB"] = "GiB";
-    ByteUnit["TiB"] = "TiB";
-    ByteUnit["PiB"] = "PiB";
-    ByteUnit["EiB"] = "EiB";
-})(ByteUnit || (ByteUnit = {}));
-const byteUnits = [ByteUnit.B, ByteUnit.KiB, ByteUnit.MiB, ByteUnit.GiB, ByteUnit.TiB, ByteUnit.PiB, ByteUnit.EiB];
+export const ByteUnit = {
+  B: 'B',
+  KiB: 'KiB',
+  MiB: 'MiB',
+  GiB: 'GiB',
+  TiB: 'TiB',
+  PiB: 'PiB',
+  EiB: 'EiB',
+};
+const byteUnits = Object.values(ByteUnit);
+const unitScales = byteUnits.map((_, magnitude) => 1024 ** magnitude);
+const scaleByUnit = new Map(
+  byteUnits.map((unit, magnitude) => [unit, unitScales[magnitude]]),
+);
+const logUnitBase = Math.log(1024);
+const unknownUnitScale = 1 / 1024;
 /**
  * Convert bytes to best human readable unit and number of that unit.
  *
@@ -20,8 +25,12 @@ const byteUnits = [ByteUnit.B, ByteUnit.KiB, ByteUnit.MiB, ByteUnit.GiB, ByteUni
  * @returns size (number) and unit (string)
  */
 export function getBytesWithUnit(bytes, maxPrecision = 1) {
-    const magnitude = Math.floor(Math.log(bytes === 0 ? 1 : bytes) / Math.log(1024));
-    return [Number((bytes / 1024 ** magnitude).toFixed(maxPrecision)), byteUnits[magnitude]];
+  const magnitude = Math.floor(Math.log(bytes === 0 ? 1 : bytes) / logUnitBase);
+  const scale =
+    magnitude >= 0 && magnitude < unitScales.length
+      ? unitScales[magnitude]
+      : 1024 ** magnitude;
+  return [Number((bytes / scale).toFixed(maxPrecision)), byteUnits[magnitude]];
 }
 /**
  * Localized number of bytes with a unit.
@@ -34,9 +43,14 @@ export function getBytesWithUnit(bytes, maxPrecision = 1) {
  * @param maxPrecision maximum number of decimal places, default is `1`
  * @returns localized bytes with unit as string
  */
-export function getByteUnitString(bytes, locale, maxPrecision = 1, separator = ' ') {
-    const [size, unit] = getBytesWithUnit(bytes, maxPrecision);
-    return `${size.toLocaleString(locale)}${separator}${unit}`;
+export function getByteUnitString(
+  bytes,
+  locale,
+  maxPrecision = 1,
+  separator = ' ',
+) {
+  const [size, unit] = getBytesWithUnit(bytes, maxPrecision);
+  return `${size.toLocaleString(locale)}${separator}${unit}`;
 }
 /**
  * Convert to bytes from on a specified unit.
@@ -48,7 +62,7 @@ export function getByteUnitString(bytes, locale, maxPrecision = 1, separator = '
  * @returns bytes (number)
  */
 export function convertToBytes(size, unit) {
-    return size * 1024 ** byteUnits.indexOf(unit);
+  return size * (scaleByUnit.get(unit) ?? unknownUnitScale);
 }
 /**
  * Convert from bytes to a specified unit.
@@ -60,5 +74,5 @@ export function convertToBytes(size, unit) {
  * @returns bytes (number)
  */
 export function convertFromBytes(bytes, unit) {
-    return bytes / 1024 ** byteUnits.indexOf(unit);
+  return bytes / (scaleByUnit.get(unit) ?? unknownUnitScale);
 }

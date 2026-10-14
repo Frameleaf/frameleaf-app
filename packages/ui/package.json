@@ -23,6 +23,10 @@
       "types": "./dist/index.d.ts",
       "svelte": "./dist/index.js"
     },
+    "./byte-units": {
+      "types": "./dist/utilities/byte-units.d.ts",
+      "default": "./dist/utilities/byte-units.js"
+    },
     "./theme/default.css": "./dist/theme/default.css"
   },
   "peerDependencies": {
