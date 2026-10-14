@@ -37,6 +37,7 @@ import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 
 vi.mock('src/utils/config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/config.js')>()),
@@ -151,7 +152,7 @@ const operation = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
     ...overrides,
   }) as unknown as MediaOperation;
 
-/** A live render session for a LAN worker that verified 1080p H.264 in SDR (FL-42). */
+/** Synthetic approved 720p rendering session (not native qualification). */
 const liveSession = (
   overrides: Partial<{
     destination: MediaOperationDestination;
@@ -161,30 +162,37 @@ const liveSession = (
     colorPrecision: { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean } | null;
     conformanceReportedAt: Date;
   }> = {},
-) => ({
-  worker: {
-    id: 'worker-1',
-    status: 'active',
-    destination: overrides.destination ?? MediaOperationDestination.Lan,
-    engineDigest: 'engine-1',
-    conformanceMaxAgeMs: 24 * 60 * 60 * 1000,
-  },
-  session: {
-    id: 'session-1',
-    scopes: [MediaOperationKind.StudioExport],
-    gpuMemoryBytes: overrides.gpuMemoryBytes === undefined ? String(12 * 1024 ** 3) : overrides.gpuMemoryBytes,
-    engineDigest: 'engine-1',
-    conformanceReportedAt: overrides.conformanceReportedAt ?? new Date(),
-    codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : overrides.codecs,
-    colorPrecision: overrides.colorPrecision ?? null,
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    revokedAt: null,
-  },
-  capabilities: {
-    codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : (overrides.codecs ?? []),
-    formats: overrides.formats === undefined ? ['mp4'] : (overrides.formats ?? []),
-  },
-});
+) => {
+  const entry = {
+    worker: {
+      id: '0195e2a0-0000-7000-8000-00000000aaa1',
+      kinds: [MediaOperationKind.StudioExport],
+      gpuMemoryBytes: null,
+      maxConcurrentOperations: 1,
+      status: 'active',
+      destination: overrides.destination ?? MediaOperationDestination.Lan,
+      engineDigest: 'engine-1',
+      conformanceMaxAgeMs: 24 * 60 * 60 * 1000,
+    },
+    session: {
+      id: 'session-1',
+      workerId: '0195e2a0-0000-7000-8000-00000000aaa1',
+      scopes: [MediaOperationKind.StudioExport],
+      gpuMemoryBytes: overrides.gpuMemoryBytes === undefined ? String(2 * 1024 ** 3) : overrides.gpuMemoryBytes,
+      engineDigest: 'engine-1',
+      conformanceReportedAt: overrides.conformanceReportedAt ?? new Date(),
+      codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : overrides.codecs,
+      colorPrecision: overrides.colorPrecision ?? null,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      revokedAt: null,
+    },
+    capabilities: {
+      codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : (overrides.codecs ?? []),
+      formats: overrides.formats === undefined ? ['mp4'] : (overrides.formats ?? []),
+    },
+  };
+  return { ...withSyntheticGpuBudget(entry as never, entry.capabilities), capabilities: entry.capabilities };
+};
 
 /** A Freecut graph at 30000/1001 with one clip of CLIP and its linked audio. */
 const clipGraph = (overrides: { items?: Record<string, unknown>[]; transitions?: unknown[] } = {}) => ({
@@ -524,7 +532,7 @@ describe(StudioExportService.name, () => {
       destination: MediaOperationDestination.Lan,
       format: 'mp4-h264',
       color: 'preserve',
-      resolution: '1080p',
+      resolution: '720p',
     } as StudioExportCreateDto;
 
     it.each([{ subtitleMode: 'burn' }, { subtitleMode: 'off' }, { audio: 'stereo' }])(
@@ -564,6 +572,59 @@ describe(StudioExportService.name, () => {
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
+    it.each(['legacy', 'policy', 'expired', 'changed-capabilities', 'scope'])(
+      'refuses unqualified measured session %s before enqueue',
+      async (mode) => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        const value = liveSession();
+        switch (mode) {
+          case 'legacy': {
+            value.session.gpuWorkingBudgetEvidence = null;
+            break;
+          }
+          case 'policy': {
+            value.worker.gpuWorkingBudgetApproval = null;
+            break;
+          }
+          case 'expired': {
+            value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+            break;
+          }
+          case 'scope': {
+            value.worker.kinds = [];
+            // No default
+            break;
+          }
+        }
+        mockRenderSessions([value]);
+        if (mode === 'changed-capabilities')
+          renderWorkers.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
+        await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
+          response: { code: 'studio_export_unsupported', reason: 'no-qualified-worker' },
+        });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      },
+    );
+
+    it('uses current A to tighten Q and never permits higher/original resolution from a v1 receipt', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      for (const resolution of ['1080p', '1440p', '2160p']) {
+        await expect(sut.create(auth(), PROJECT, { ...dto, resolution } as never)).rejects.toMatchObject({
+          response: { reason: 'insufficient-memory' },
+        });
+      }
+      await expect(
+        sut.create(auth(), PROJECT, { ...dto, format: 'sdr-jpeg', resolution: 'original' } as never),
+      ).rejects.toMatchObject({ response: { reason: 'insufficient-memory' } });
+      const value = liveSession();
+      value.worker.gpuMemoryBytes = '1073741824';
+      mockRenderSessions([value]);
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
+        response: { reason: 'insufficient-memory' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it('refuses split encoder and container evidence before creating any work', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
       mockRenderSessions([
@@ -586,7 +647,7 @@ describe(StudioExportService.name, () => {
       renderWorkers.getSessionCapabilities.mockResolvedValue(undefined);
 
       await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
-        response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+        response: { code: 'studio_export_unsupported', reason: 'no-qualified-worker' },
       });
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
@@ -595,7 +656,7 @@ describe(StudioExportService.name, () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
       mockRenderSessions([
         liveSession({ codecs: ['webcodecs-avc'], formats: ['webm'] }),
-        liveSession({ codecs: ['webcodecs-avc'], formats: ['mp4'], gpuMemoryBytes: String(2 * 1024 ** 3) }),
+        liveSession({ codecs: ['webcodecs-avc'], formats: ['mp4'], gpuMemoryBytes: String(1024 ** 3) }),
       ]);
 
       await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
@@ -622,7 +683,7 @@ describe(StudioExportService.name, () => {
       });
       expect(repository.createWithRender).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
-          settings: { format: 'mp4-h264', color: 'preserve', resolution: '1080p', quality: 'high', audio: 'preserve' },
+          settings: { format: 'mp4-h264', color: 'preserve', resolution: '720p', quality: 'high', audio: 'preserve' },
         }),
         expect.objectContaining({ projectId: PROJECT, revision: 3 }),
       );
@@ -759,7 +820,7 @@ describe(StudioExportService.name, () => {
 
     it.each([
       [[], {}, 'no-qualified-worker'],
-      [[liveSession({ gpuMemoryBytes: String(2 * 1024 ** 3) })], {}, 'insufficient-memory'],
+      [[liveSession({ gpuMemoryBytes: String(1024 ** 3) })], {}, 'insufficient-memory'],
       [[liveSession({ codecs: ['h264_nvenc'] })], { format: 'prores-422-hq' }, 'codec-unavailable'],
       [[liveSession()], { format: 'mp4-hevc-main10', color: 'hdr10' }, 'incompatible-color'],
       [[liveSession({ destination: MediaOperationDestination.Local })], {}, 'no-qualified-worker'],
@@ -918,7 +979,7 @@ describe(StudioExportService.name, () => {
       destination: MediaOperationDestination.Lan,
       format: 'mp4-h264',
       color: 'preserve',
-      resolution: '1080p',
+      resolution: '720p',
     };
     const snapshotOf = async (graph: unknown, overrides: Record<string, unknown> = {}, entries = [entry()]) => {
       studio.authorizeRevision.mockResolvedValue(authorizedWith(graph, entries));

@@ -218,13 +218,15 @@ describe('hardware check (FL-159)', () => {
 
   describe('workers', () => {
     it('shows a render worker from its admitted session, and nothing without one', () => {
-      expect(renderWorkerCheckFrom({ id: 'w1', name: 'Studio PC' }, { gpuMemoryBytes: String(8 * GB) })).toEqual({
+      expect(
+        renderWorkerCheckFrom({ id: 'w1', name: 'Studio PC' }, { valid: true, qualifiedBytes: String(2 * GB) }),
+      ).toEqual({
         id: 'w1',
         name: 'Studio PC',
         kind: 'render',
         reachable: true,
         model: null,
-        vramGb: 8,
+        vramGb: null,
         gpu: { present: true, visible: true, usable: true },
       });
       expect(renderWorkerCheckFrom({ id: 'w1', name: 'Studio PC' }, null)).toMatchObject({
