@@ -1,11 +1,8 @@
 export class CancellableTask {
   cancelToken: AbortController | null = null;
-  cancellable: boolean = true;
-  /**
-   * A promise that resolves once the bucket is loaded, and rejects if bucket is canceled.
-   */
+  cancellable = true;
   complete!: Promise<unknown>;
-  executed: boolean = false;
+  executed = false;
 
   private loadedSignal: (() => void) | undefined;
   private canceledSignal: (() => void) | undefined;
@@ -19,51 +16,39 @@ export class CancellableTask {
   }
 
   get loading() {
-    return !!this.cancelToken;
+    return Boolean(this.cancelToken);
   }
 
   async waitUntilCompletion() {
     if (this.executed) {
       return 'DONE';
     }
-    // The `complete` promise resolves when executed, rejects when canceled/errored.
     try {
-      const complete = this.complete;
-      await complete;
+      await this.complete;
       return 'WAITED';
     } catch {
-      // ignore
+      return 'CANCELED';
     }
-    return 'CANCELED';
   }
 
   async waitUntilExecution() {
-    // Keep retrying until the task completes successfully (not canceled)
-    for (;;) {
+    while (!this.executed) {
       try {
-        if (this.executed) {
-          return 'DONE';
-        }
         await this.complete;
         return 'WAITED';
       } catch {
-        continue;
+        // Cancellation and errors publish a fresh completion for the next attempt.
       }
     }
+    return 'DONE';
   }
 
   async execute<F extends (abortSignal: AbortSignal) => Promise<void>>(f: F, cancellable: boolean) {
     if (this.executed) {
       return 'DONE';
     }
-
-    // if promise is pending, wait on previous request instead.
     if (this.cancelToken) {
-      // if promise is pending, and preventCancel is requested,
-      // do not allow transition from prevent cancel to allow cancel.
-      if (this.cancellable && !cancellable) {
-        this.cancellable = cancellable;
-      }
+      this.cancellable &&= cancellable;
       try {
         await this.complete;
         return 'WAITED';
@@ -71,64 +56,79 @@ export class CancellableTask {
         return 'CANCELED';
       }
     }
-    this.cancellable = cancellable;
-    const cancelToken = (this.cancelToken = new AbortController());
 
+    this.cancellable = cancellable;
+    const token = (this.cancelToken = new AbortController());
+    const completion = this.complete;
+    let notifyingLoaded = false;
     try {
-      await f(cancelToken.signal);
-      if (cancelToken.signal.aborted) {
-        return 'CANCELED';
+      try {
+        await f(token.signal);
+        if (this.complete !== completion) {
+          return 'CANCELED';
+        }
+        if (!token.signal.aborted) {
+          notifyingLoaded = true;
+          this.#transitionToExecuted();
+          return 'LOADED';
+        }
+      } catch (error) {
+        if (this.complete !== completion) {
+          return 'CANCELED';
+        }
+        if (!token.signal.aborted && (error as Error)?.name !== 'AbortError') {
+          this.#transitionToErrored(error);
+          return 'ERRORED';
+        }
+        if (notifyingLoaded) {
+          return 'CANCELED';
+        }
       }
-      this.#transitionToExecuted();
-      return 'LOADED';
-    } catch (error) {
-      if (cancelToken.signal.aborted || (error as Error)?.name === 'AbortError') {
-        // abort error is not treated as an error, but as a cancellation.
-        return 'CANCELED';
-      }
-      this.#transitionToErrored(error);
-      return 'ERRORED';
+      this.#transitionToCancelled();
+      return 'CANCELED';
     } finally {
-      if (this.cancelToken === cancelToken) {
+      if (this.cancelToken === token) {
         this.cancelToken = null;
       }
     }
   }
 
   private init() {
+    this.cancelToken = null;
+    this.executed = false;
     this.complete = new Promise<void>((resolve, reject) => {
-      this.cancelToken = null;
-      this.executed = false;
       this.loadedSignal = resolve;
       this.canceledSignal = reject;
     });
-    // Suppress unhandled rejection warning
-    this.complete.catch(() => {});
+    void this.complete.catch(() => {});
   }
 
-  // will reset this job back to the initial state (isLoaded=false, no errors, etc)
   async reset() {
-    this.#transitionToCancelled();
+    const completion = this.complete;
+    this.cancel();
+    if (this.complete !== completion) {
+      return;
+    }
     if (this.cancelToken) {
       await this.waitUntilCompletion();
     }
-    this.init();
+    if (this.complete === completion) {
+      this.init();
+    }
   }
 
   cancel() {
-    this.#transitionToCancelled();
+    if (!this.executed && this.cancellable) {
+      this.#transitionToCancelled();
+    }
   }
 
   #transitionToCancelled() {
-    if (this.executed) {
-      return;
-    }
-    if (!this.cancellable) {
-      return;
-    }
-    this.cancelToken?.abort();
-    this.canceledSignal?.();
+    const token = this.cancelToken;
+    const reject = this.canceledSignal;
     this.init();
+    reject?.();
+    token?.abort();
     this.canceledCallback?.();
   }
 
@@ -139,9 +139,9 @@ export class CancellableTask {
   }
 
   #transitionToErrored(error: unknown) {
-    this.cancelToken = null;
-    this.canceledSignal?.();
+    const reject = this.canceledSignal;
     this.init();
+    reject?.();
     this.errorCallback?.(error);
   }
 }
