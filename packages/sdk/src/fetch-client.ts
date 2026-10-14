@@ -5111,9 +5111,7 @@ export type SignUpDto = {
     name: string;
     /** User password */
     password: string;
-    /** The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator */
-    setupCode?: string;
-    /** Instead of the code: a setup ticket from POST server/setup/code, from the same device */
+    /** From the Frameleaf app: a setup ticket from POST server/setup/code, from the same device */
     setupTicket?: string;
 };
 export type ChangePasswordDto = {

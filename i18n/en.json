@@ -10438,7 +10438,6 @@
   "frameleaf_setup_error_link": "Link this server to your Frameleaf account to continue, or continue with a local account.",
   "frameleaf_setup_error_name": "Enter your name.",
   "frameleaf_setup_error_password": "Choose a stronger password that meets the requirements.",
-  "frameleaf_setup_error_setup_code": "Enter the setup code: 8 letters and numbers, shown as XXXX-XXXX.",
   "frameleaf_setup_error_sign_in": "Enter your email and password.",
   "frameleaf_setup_error_storage": "Frameleaf can't write to the library location. Check the folder's permissions, then try again.",
   "frameleaf_setup_eyebrow": "{chapter} · step {step} of {count}",

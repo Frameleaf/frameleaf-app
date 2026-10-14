@@ -10,7 +10,7 @@ const adminLoginDto = {
 };
 // FL-292: the e2e server pins its setup code (FRAMELEAF_SETUP_CODE in docker-compose.yml)
 export const setupCode = process.env.FRAMELEAF_SETUP_CODE ?? 'E2ESETUP';
-const adminSignupDto = { ...adminLoginDto, name: 'Immich Admin', setupCode };
+const adminSignupDto = { ...adminLoginDto, name: 'Immich Admin' };
 
 export const loginDto = {
   admin: adminLoginDto,

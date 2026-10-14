@@ -24,10 +24,11 @@ import {
 } from 'src/utils/frameleaf-setup.js';
 
 /**
- * FL-292 (NAPI-012): the setup code gate every way of claiming a new server goes through: the
- * app's code check (which hands out a setup ticket), the app's link and password claims (which take
- * the ticket), and the web first-run sign-up (which takes the code itself). Shared by the services
- * that own those routes; all of it runs under one database lock.
+ * FL-292 (NAPI-012): the setup gate every way of claiming a new server goes through: the app's code
+ * check (which hands out a setup ticket), the app's link and password claims (which take the
+ * ticket), the restore onto a new server (which takes the code itself), and the web first-run
+ * sign-up (home network only, no code: the code step was dropped from the web setup). Shared by the
+ * services that own those routes; all of it runs under one database lock.
  *
  * - The code exists only while the server has no administrator. It is replaced at every start and
  *   after `SETUP_CODE_MAX_FAILURES` wrong tries (a pinned `FRAMELEAF_SETUP_CODE` locks until the
@@ -125,7 +126,7 @@ const announce = async (deps: SetupGateDeps, code: string, reason: 'start' | 're
     '',
     reason === 'replaced'
       ? 'Too many wrong setup codes: this server has a new one.'
-      : 'This server is not set up yet. To set it up from the Frameleaf app or this server’s web page,',
+      : 'This server is not set up yet. To set it up from the Frameleaf app,',
     reason === 'replaced' ? 'Use this code instead:' : 'use this setup code (or scan the QR code with the app):',
     '',
     `    ${formatSetupCode(code)}`,
@@ -241,13 +242,13 @@ export const issueSetupTicket = (deps: SetupGateDeps, typed: string, client: Set
 
 /**
  * Run `claim` with the server proven claimable: from the home network, without an administrator,
- * and with the setup code (the web first-run sign-up) or the one valid setup ticket from this same
- * client (the app), which is used up. One claim at a time.
+ * and with the setup code (the restore), the one valid setup ticket from this same client (the app),
+ * which is used up, or neither (`noCode`: the web first-run sign-up). One claim at a time.
  */
 export const withSetupProof = <T>(
   deps: SetupGateDeps,
   /** `ticketOnly`: the app's routes, which take the ticket and never the code itself. */
-  proof: { code?: string; ticket?: string; ticketOnly?: boolean },
+  proof: { code?: string; ticket?: string; ticketOnly?: boolean; noCode?: boolean },
   client: SetupClient,
   claim: () => Promise<T>,
 ): Promise<T> =>
@@ -277,7 +278,9 @@ export const withSetupProof = <T>(
       }
       return result;
     }
-    await checkCode(deps, proof.code, client);
+    if (!proof.noCode) {
+      await checkCode(deps, proof.code, client);
+    }
     return claim();
   });
 

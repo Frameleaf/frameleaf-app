@@ -57,7 +57,7 @@ describe('FirstRunSetup (FL-176)', () => {
     expect(localStorage.getItem('frameleaf:setup:v1')).not.toContain('Correct-Horse-9');
   });
 
-  it('submits the admin form on Enter, asks for the setup code first and focuses the first problem', async () => {
+  it('submits the admin form on Enter, starts with the name and focuses the first problem', async () => {
     const state = createSetup('new');
     const account = flowSteps('new').findIndex((entry) => entry.id === 'account');
     const { container } = render(FirstRunSetup, {
@@ -66,7 +66,8 @@ describe('FirstRunSetup (FL-176)', () => {
     });
     const form = container.querySelector<HTMLFormElement>('form#frs-account-form')!;
     const fields = [...form.querySelectorAll('input')].map((input) => input.id);
-    expect(fields[0]).toBe('frs-setup-code');
+    expect(fields).not.toContain('frs-setup-code');
+    expect(fields[0]).toBe('frs-name');
     // Continue is the form's own submit button, so Enter and the button take the same path
     expect(screen.getByRole('button', { name: /Continue/ })).toHaveAttribute('form', 'frs-account-form');
     await fireEvent.submit(form);
@@ -74,7 +75,7 @@ describe('FirstRunSetup (FL-176)', () => {
     // one announcement for the whole form; each message is tied to its field
     expect(within(form).getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByLabelText('Name')).toHaveAttribute('aria-describedby', 'frs-name-error');
-    await waitFor(() => expect(screen.getByLabelText('Setup code')).toHaveFocus());
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveFocus());
     expect(sdkMock.signUpAdmin).not.toHaveBeenCalled();
   });
 

@@ -112253,13 +112253,8 @@
             "example": "password",
             "type": "string"
           },
-          "setupCode": {
-            "description": "The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator",
-            "maxLength": 32,
-            "type": "string"
-          },
           "setupTicket": {
-            "description": "Instead of the code: a setup ticket from POST server/setup/code, from the same device",
+            "description": "From the Frameleaf app: a setup ticket from POST server/setup/code, from the same device",
             "maxLength": 256,
             "type": "string"
           }
