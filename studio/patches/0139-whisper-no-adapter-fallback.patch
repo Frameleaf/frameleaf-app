@@ -1,0 +1,25 @@
+Subject: Select WASM before Whisper initialization when WebGPU has no adapter
+
+Freecut MIT adaptation. Preserve the pinned Transformers runtime and avoid
+poisoning its first session promise with an unavailable WebGPU backend.
+
+--- a/src/features/media-library/transcription/workers/whisper.worker.ts
++++ b/src/features/media-library/transcription/workers/whisper.worker.ts
+@@ -212,11 +212,14 @@
+           progress_callback: progressCallback,
+         })
+
++      // The pinned runtime retains a failed first session; do not try an unavailable GPU first.
++      const device = (await navigator.gpu?.requestAdapter().catch(() => null)) ? 'webgpu' : 'wasm'
+       try {
+-        asrPipeline = await loadPipeline('webgpu')
+-        activeDevice = 'webgpu'
+-        postMain({ type: 'runtime', info: { backend: 'webgpu' } })
++        asrPipeline = await loadPipeline(device)
++        activeDevice = device
++        postMain({ type: 'runtime', info: { backend: device } })
+       } catch (error) {
++        if (device === 'wasm') throw error
+         logger.warn(
+           `[FreeCut transcription] WebGPU initialization failed: ${
+             error instanceof Error ? error.message : String(error)
