@@ -27,7 +27,6 @@
       variant: {
         stacked: '',
         inline: '',
-        'stacked-futo': '',
         logo: 'bg-light aspect-square rounded-full shadow-lg',
         icon: 'aspect-square',
       },
@@ -37,4 +36,4 @@
   const src = $derived(logoManager.getLogo(variant, themeManager.value));
 </script>
 
-<img {src} class={cleanClass(styles({ size, variant }), className)} alt="Immich logo" draggable="false" />
+<img {src} class={cleanClass(styles({ size, variant }), className)} alt="Frameleaf logo" draggable="false" />
