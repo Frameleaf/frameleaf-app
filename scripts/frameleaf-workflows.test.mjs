@@ -1189,7 +1189,7 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
   assert.equal(publish.environment, "production");
   assert.deepEqual(
     w.jobs.build.strategy.matrix.include.map(({ runner }) => runner),
-    ["ubuntu-24.04", "ubuntu-24.04-arm"],
+    ["nscloud-ubuntu-24.04-amd64-8x16", "nscloud-ubuntu-24.04-arm64-8x16"],
   );
   const build = w.jobs.build.steps.find(
     (s) => s.name === "Build without publishing",
@@ -1488,8 +1488,8 @@ test("integration image is a guarded manual pre-release that never writes releas
     "node .github/frameleaf-deploy-test.cjs",
   );
   assert.deepEqual(w.jobs["deploy-test"].strategy.matrix.runner, [
-    "ubuntu-24.04",
-    "ubuntu-24.04-arm",
+    "nscloud-ubuntu-24.04-amd64-8x16",
+    "nscloud-ubuntu-24.04-arm64-8x16",
   ]);
   const guard = w.jobs.guard.steps[0].run;
   const sha = "a".repeat(40);

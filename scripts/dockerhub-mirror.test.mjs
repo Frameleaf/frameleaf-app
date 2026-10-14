@@ -33,7 +33,7 @@ const workflows = {
   ],
 };
 
-test("all Docker consumers configure the public mirror before builds, bootstrap or Testcontainers", () => {
+test("all Docker consumers run registry setup before builds, bootstrap or Testcontainers", () => {
   for (const [file, jobs] of Object.entries(workflows)) {
     const workflow = load(
       readFileSync(path.join(root, ".github/workflows", file), "utf8"),
@@ -86,7 +86,12 @@ test("all Docker consumers configure the public mirror before builds, bootstrap 
 // permissions and active-configuration check execute against an owned fixture.
 const runHelper = (
   contents,
-  { reportedMirrors, restartFailure = false } = {},
+  {
+    reportedMirrors,
+    restartFailure = false,
+    namespace = false,
+    dockerFailure = false,
+  } = {},
 ) => {
   const directory = mkdtempSync(path.join(tmpdir(), "frameleaf-mirror-"));
   const config = path.join(directory, "daemon.json");
@@ -109,6 +114,9 @@ if (path.basename(process.argv[1]) === 'sudo') {
   if (process.env.MIRROR_RESTART_FAILURE === 'true') process.exit(92);
   fs.copyFileSync(config, config + '.active');
 } else {
+  if (JSON.stringify(args) === JSON.stringify(['info'])) {
+    process.exit(process.env.MIRROR_DOCKER_FAILURE === 'true' ? 94 : 0);
+  }
   if (JSON.stringify(args) !== JSON.stringify(['info', '--format', '{{json .RegistryConfig.Mirrors}}'])) process.exit(93);
   const active = JSON.parse(fs.readFileSync(config + '.active', 'utf8'));
   console.log(process.env.MIRROR_REPORTED ?? JSON.stringify(active['registry-mirrors']));
@@ -128,6 +136,8 @@ if (path.basename(process.argv[1]) === 'sudo') {
         PATH: `${directory}:${process.env.PATH}`,
         MIRROR_FIXTURE_CONFIG: config,
         MIRROR_RESTART_FAILURE: String(restartFailure),
+        MIRROR_DOCKER_FAILURE: String(dockerFailure),
+        NSC_CONTAINER_REGISTRY: namespace ? "nscr.io/fixture-owned" : "",
         ...(reportedMirrors === undefined
           ? {}
           : { MIRROR_REPORTED: reportedMirrors }),
@@ -212,4 +222,21 @@ test("daemon restart or missing active mirror cannot silently pass", () => {
     runHelper("{}", { reportedMirrors: '["https://mirror.gcr.io/"]' }).status,
     0,
   );
+});
+
+test("Namespace verifies managed Docker without changing daemon configuration or restarting it", () => {
+  for (const original of [undefined, '{"log-driver":"local"}']) {
+    const result = runHelper(original, {
+      namespace: true,
+      restartFailure: true,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.final, original);
+  }
+  const refused = runHelper(undefined, {
+    namespace: true,
+    dockerFailure: true,
+  });
+  assert.notEqual(refused.status, 0);
+  assert.equal(refused.final, undefined);
 });
