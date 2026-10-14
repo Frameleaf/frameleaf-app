@@ -7,6 +7,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import MigrationChecklistDialog from '$lib/components/frameleaf/settings/MigrationChecklistDialog.svelte';
+  import ManagerMoveLink from '$lib/components/frameleaf/settings/ManagerMoveLink.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -16,18 +17,22 @@
 </script>
 
 <div class="migration-section">
-  <div class="action">
-    <Button
-      onclick={() => {
-        notice = '';
-        open = true;
-      }}
-    >
-      {$t('admin.frameleaf_migration_checklist_action')}
-      <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
-    </Button>
-  </div>
-  <p class="notice" role="status">{notice}</p>
+  <ManagerMoveLink />
+  <details>
+    <summary>{$t('advanced')}</summary>
+    <div class="action">
+      <Button
+        onclick={() => {
+          notice = '';
+          open = true;
+        }}
+      >
+        {$t('admin.frameleaf_migration_checklist_action')}
+        <span aria-hidden="true"><Icon icon={mdiChevronRight} size="16" /></span>
+      </Button>
+    </div>
+    <p class="notice" role="status">{notice}</p>
+  </details>
 </div>
 
 <MigrationChecklistDialog bind:open onDone={() => (notice = $t('admin.frameleaf_migration_checklist_final'))} />

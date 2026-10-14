@@ -12887,6 +12887,10 @@ export type FinishLibrarySetupDto = {
     receipt: string;
     revision: string;
 };
+export type ManagerAccessDto = {
+    /** Deployment-configured HTTPS Manager origin, or null when unavailable. Requires separate Manager sign-in; configuration is not a reachability check. */
+    url: string | null;
+};
 export type WarmLibrarySetupDto = {
     reset?: boolean;
 };
@@ -25698,6 +25702,17 @@ export function beginManagerLibrarySetup({ xFrameleafManager }: {
         headers: oazapfts.mergeHeaders(opts?.headers, {
             "x-frameleaf-manager": xFrameleafManager
         })
+    }));
+}
+/**
+ * Configured Frameleaf Manager link for Storage
+ */
+export function getManagerAccess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ManagerAccessDto;
+    }>("/server/library-setup/manager-access", {
+        ...opts
     }));
 }
 /**

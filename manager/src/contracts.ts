@@ -60,7 +60,16 @@ export function recentBackup(backups: Backup[], source: Source, now = Date.now()
     .sort((a, b) => b.takenAt - a.takenAt)[0];
 }
 export type OperationKind =
-  'install' | 'import' | 'update' | 'backup' | 'restore' | 'start' | 'stop' | 'restart' | 'recover-source';
+  | 'install'
+  | 'import'
+  | 'update'
+  | 'backup'
+  | 'restore'
+  | 'start'
+  | 'stop'
+  | 'restart'
+  | 'recover-source'
+  | 'move-library';
 export type Operation = {
   id: string;
   kind: OperationKind;
