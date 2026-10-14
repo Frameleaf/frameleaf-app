@@ -8,8 +8,11 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 // Reviewed base 0a1a4aae150cbdd97ae4c0dd086ac45bc10d742c, raw spec SHA-256
 // 6c99abf3a3500d2ee5488a0c6e9f7361611e0436a04e23dca4f18835dc65d9cb.
 // SHA-256 of JSON.stringify(parsed base): formatting changes alone do not change its identity.
-const reviewedBaseSha256 =
-  "bcb48357fe0c4808d196da4993330c72e4db5201f03018f0c9b0e00c4e7c4057";
+const reviewedBaseSha256 = new Set([
+  "bcb48357fe0c4808d196da4993330c72e4db5201f03018f0c9b0e00c4e7c4057",
+  // PR140 ba3c033f8e retains the same point DTO and email constraints after Takeout updates.
+  "ede05156bcab7a9f84ef01ae067bd7e6441b76be1eee9ce9df84572d66456a39",
+]);
 const pointPointers = [
   "/components/schemas/AssetDevelopStroke/properties/points/items",
   "/components/schemas/DarktableDevelopRecipe/properties/masks/items/properties/strokes/items/properties/points/items",
@@ -29,7 +32,7 @@ export function deriveOpenApiComparisonBase(input) {
     throw new Error("Expected a legacy OpenAPI 3.0 base");
   const document = structuredClone(input);
   const rewrites = [];
-  if (sha(JSON.stringify(input)) === reviewedBaseSha256) {
+  if (reviewedBaseSha256.has(sha(JSON.stringify(input)))) {
     const at = (pointer) =>
       pointer
         .split("/")
