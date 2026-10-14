@@ -20,7 +20,7 @@ import {
   CacheControl,
   EnrichmentItemState,
   EnrichmentStaleReason,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlWorkload,
@@ -606,7 +606,7 @@ export class VideoMomentIndexService {
    * and generated moments are dropped, and their files removed. Manual moments, typed transcripts
    * and the cover choice stay. The next plan cuts the frames again.
    */
-  @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId }: ArgOf<'AssetMetadataExtracted'>) {
     const index = await this.moments.getIndex(assetId);
     if (!index) {

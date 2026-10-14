@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { FrameleafWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -18,7 +18,7 @@ export class ICloudRelationsService {
     @Optional() private readonly logger?: LoggingRepository,
   ) {}
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.stopped = false;
     await this.enqueue();

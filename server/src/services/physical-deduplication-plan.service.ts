@@ -14,7 +14,7 @@ import {
 } from 'src/dtos/physical-deduplication.dto.js';
 import {
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -318,7 +318,7 @@ export class PhysicalDeduplicationPlanService {
   /* The worker                                                          */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), PHYSICAL_DEDUPLICATION_TICK_MS);

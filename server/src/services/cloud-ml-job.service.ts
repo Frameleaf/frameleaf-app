@@ -35,8 +35,8 @@ import {
   AssetType,
   Colorspace,
   DatabaseLock,
+  FrameleafWorker,
   ImageFormat,
-  ImmichWorker,
   JobName,
   MediaOperationDestination,
   MediaOperationKind,
@@ -328,7 +328,7 @@ export class CloudMlJobService {
     this.logger.setContext(CloudMlJobService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     if (this.shutdown.signal.aborted) {

@@ -23,7 +23,7 @@ import {
   AssetStatus,
   AssetType,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   MaintenanceAction,
   MediaOperationDestination,
@@ -534,7 +534,7 @@ export class BuddyBackupRestoreService {
     };
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.timer = setInterval(() => this.tick(), 10_000);
     this.tick();

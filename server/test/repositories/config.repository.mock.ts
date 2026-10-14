@@ -1,12 +1,12 @@
 import { Mocked, vitest } from 'vitest';
 import type { RepositoryInterface } from 'src/types.js';
-import { DatabaseExtension, ImmichEnvironment, ImmichWorker, LogFormat } from 'src/enum.js';
+import { DatabaseExtension, FrameleafEnvironment, FrameleafWorker, LogFormat } from 'src/enum.js';
 import { ConfigRepository, EnvData } from 'src/repositories/config.repository.js';
 
 export const envData: EnvData = {
   port: 2283,
   shutdown: { graceMs: 5000, deadlineMs: 9000, workerDeadlineMs: 8000 },
-  environment: ImmichEnvironment.Production,
+  environment: FrameleafEnvironment.Production,
   logFormat: LogFormat.Console,
 
   buildMetadata: {},
@@ -73,7 +73,7 @@ export const envData: EnvData = {
     metrics: new Set(),
   },
 
-  workers: [ImmichWorker.Api, ImmichWorker.Microservices],
+  workers: [FrameleafWorker.Api, FrameleafWorker.Microservices],
 
   plugins: {
     external: {
@@ -103,7 +103,7 @@ export const mockEnvData = (config: Partial<EnvData>) => ({ ...envData, ...confi
 export const newConfigRepositoryMock = (): Mocked<RepositoryInterface<ConfigRepository>> => {
   return {
     getEnv: vitest.fn().mockReturnValue(mockEnvData({})),
-    getWorker: vitest.fn().mockReturnValue(ImmichWorker.Api),
+    getWorker: vitest.fn().mockReturnValue(FrameleafWorker.Api),
     isDev: vitest.fn().mockReturnValue(false),
     isProduction: vitest.fn().mockReturnValue(true),
   };

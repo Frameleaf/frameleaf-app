@@ -2,7 +2,7 @@ import { BeforeUpdateTrigger, Column, ColumnOptions } from '@frameleaf/sql-tools
 import { SetMetadata, applyDecorators } from '@nestjs/common';
 import { ApiOperation, ApiOperationOptions, ApiTags } from '@nestjs/swagger';
 import { chunk, flatten } from 'lodash-es';
-import { ApiCustomExtension, ApiTag, ImmichWorker, JobName, MetadataKey, QueueName } from 'src/enum.js';
+import { ApiCustomExtension, ApiTag, FrameleafWorker, JobName, MetadataKey, QueueName } from 'src/enum.js';
 import { EmitEvent } from 'src/repositories/event.repository.js';
 import { immich_uuid_v7, updated_at } from 'src/schema/functions.js';
 
@@ -154,7 +154,7 @@ export type EventConfig = {
   /** lower value has higher priority, defaults to 0 */
   priority?: number;
   /** register events for these workers, defaults to all workers */
-  workers?: ImmichWorker[];
+  workers?: FrameleafWorker[];
 };
 export const OnEvent = (config: EventConfig) => SetMetadata(MetadataKey.EventConfig, config);
 

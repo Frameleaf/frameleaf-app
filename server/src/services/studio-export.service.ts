@@ -26,7 +26,7 @@ import {
 import {
   AssetType,
   CacheControl,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   MediaOperationDestination,
   MediaOperationKind,
@@ -1054,7 +1054,7 @@ export class StudioExportService {
   /* Publication worker                                                  */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), STUDIO_EXPORT_TICK_MS);

@@ -28,7 +28,7 @@ import {
   AssetType,
   AssetVisibility,
   EnrichmentStaleReason,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlWorkload,
@@ -618,7 +618,7 @@ export class ImageEnrichmentService extends BaseService {
    * owner has reviewed, so those photos move to their owners' Locked view instead of staying in view.
    * Switching it off unlocks nothing: a lock is only ever removed by its owner.
    */
-  @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
+  @OnEvent({ name: 'ConfigUpdate', workers: [FrameleafWorker.Microservices], server: true })
   async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     const hideDetections = isNsfwHidingEnabled(newConfig.machineLearning);
     if (hideDetections === isNsfwHidingEnabled(oldConfig.machineLearning)) {
@@ -637,7 +637,7 @@ export class ImageEnrichmentService extends BaseService {
    * start, when hiding is on now and was not on the last time the server looked, lock them exactly as
    * switching it on does. The setting seen is remembered, so this happens once per switch-on.
    */
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     const hideDetections = isNsfwHidingEnabled(newConfig.machineLearning);
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.LockedDetectionsState);

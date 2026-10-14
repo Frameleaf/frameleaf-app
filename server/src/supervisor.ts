@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
-import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, ExitCode, FrameleafWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { WorkerStopProofRecorder } from 'src/queue/worker-stop-proof.js';
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
@@ -40,12 +40,13 @@ class Workers {
   /**
    * Currently running workers
    */
-  workers: Partial<Record<ImmichWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void; stop: () => void }>> =
-    {};
+  workers: Partial<
+    Record<FrameleafWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void; stop: () => void }>
+  > = {};
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
-  private databaseRestarts = new Set<ImmichWorker>();
-  private workerRestarts = new Map<ImmichWorker, NodeJS.Timeout>();
+  private databaseRestarts = new Set<FrameleafWorker>();
+  private workerRestarts = new Map<FrameleafWorker, NodeJS.Timeout>();
   private lifecycle = {};
   private maintenanceMode = false;
   private workerStopProofs = new WorkerStopProofRecorder(new ConfigRepository());
@@ -89,7 +90,7 @@ class Workers {
     }
 
     if (isMaintenanceMode) {
-      this.startWorker(ImmichWorker.Maintenance);
+      this.startWorker(FrameleafWorker.Maintenance);
     } else {
       await this.waitForFreeLock();
       // A restore replaces system_metadata. Republish only the actual preceding worker/child
@@ -189,7 +190,7 @@ class Workers {
    * Start an individual worker
    * @param name Worker
    */
-  private startWorker(name: ImmichWorker) {
+  private startWorker(name: FrameleafWorker) {
     console.log(`Starting ${name} worker`);
 
     const basePath = dirname(import.meta.filename);
@@ -202,8 +203,8 @@ class Workers {
 
     // FL-165: the edge worker is a process of its own like the API: it holds the remote access
     // certificate keys and every remote socket, apart from the workers that run jobs
-    if (name === ImmichWorker.Api || name === ImmichWorker.Edge) {
-      const inspectPort = name === ImmichWorker.Api ? 9231 : 9232;
+    if (name === FrameleafWorker.Api || name === FrameleafWorker.Edge) {
+      const inspectPort = name === FrameleafWorker.Api ? 9231 : 9232;
       const worker = fork(workerFile, [], {
         execArgv: process.execArgv.map((arg) =>
           arg.startsWith('--inspect') ? `--inspect=0.0.0.0:${inspectPort}` : arg,
@@ -216,7 +217,7 @@ class Workers {
       anyWorker = worker;
     } else {
       const worker = new Worker(workerFile);
-      if (name === ImmichWorker.Microservices) {
+      if (name === FrameleafWorker.Microservices) {
         stopped = superviseQueueWorker(worker, undefined, undefined, {
           recordStopped: (proof) => this.workerStopProofs.record(proof),
           diagnostic: (message) => console.error(message),
@@ -241,17 +242,17 @@ class Workers {
     });
 
     this.workers[name] = { kill, stop };
-    if (name === ImmichWorker.Edge) {
+    if (name === FrameleafWorker.Edge) {
       this.edgeStartedAt = Date.now();
       this.edgeStopRequested = false;
     }
   }
 
-  onError(name: ImmichWorker, error: Error) {
+  onError(name: FrameleafWorker, error: Error) {
     console.error(`${name} worker error: ${error}, stack: ${error.stack}`);
   }
 
-  onExit(name: ImmichWorker, exitCode: number | null) {
+  onExit(name: FrameleafWorker, exitCode: number | null) {
     // FL-291: a stop in progress: no restart, no killing the others; exit once the last one has gone
     if (this.stopper.stopping) {
       console.info(`${name} worker stopped`);
@@ -272,20 +273,20 @@ class Workers {
 
       // FL-165: the edge worker does not listen for restart events; it is stopped here (it closes
       // its connections within 5 seconds) and starts again with the others
-      const edge = this.workers[ImmichWorker.Edge];
-      if (edge && name !== ImmichWorker.Edge && !this.stoppingEdge) {
+      const edge = this.workers[FrameleafWorker.Edge];
+      if (edge && name !== FrameleafWorker.Edge && !this.stoppingEdge) {
         this.stoppingEdge = true;
         this.edgeStopRequested = true;
         void edge.kill('SIGTERM');
         this.edgeKillTimer = setTimeout(() => {
-          const stuck = this.workers[ImmichWorker.Edge];
+          const stuck = this.workers[FrameleafWorker.Edge];
           if (stuck) {
             console.error(`edge worker did not stop within ${EDGE_STOP_MS / 1000} s; killing it`);
             void stuck.kill('SIGKILL');
           }
         }, EDGE_STOP_MS);
       }
-      if (name === ImmichWorker.Edge) {
+      if (name === FrameleafWorker.Edge) {
         clearTimeout(this.edgeKillTimer);
       }
 
@@ -303,7 +304,7 @@ class Workers {
     // stopped; ending any other way (an error, a crash, a kill from outside) it starts again on its
     // own, waiting 1 s, then 2 s, 4 s … up to a minute while it keeps failing (a minute of running
     // resets that)
-    if (name === ImmichWorker.Edge) {
+    if (name === FrameleafWorker.Edge) {
       delete this.workers[name];
       if (this.edgeStopRequested) {
         return;
@@ -314,8 +315,8 @@ class Workers {
       console.error(`edge worker exited with code ${exitCode}; starting it again in ${delay / 1000} s`);
       clearTimeout(this.edgeRestartTimer);
       this.edgeRestartTimer = setTimeout(() => {
-        if (!this.restarting && !this.workers[ImmichWorker.Edge]) {
-          this.startWorker(ImmichWorker.Edge);
+        if (!this.restarting && !this.workers[FrameleafWorker.Edge]) {
+          this.startWorker(FrameleafWorker.Edge);
         }
       }, delay);
       return;
@@ -323,13 +324,15 @@ class Workers {
 
     // Database cleanup failure poisons only its originating pool. Restart that worker; keep the
     // other API/edge/executor pools available. Safe queue publications remain token fenced.
-    if (this.databaseRestarts.delete(name) || name === ImmichWorker.Microservices) {
+    if (this.databaseRestarts.delete(name) || name === FrameleafWorker.Microservices) {
       delete this.workers[name];
       const lifecycle = this.lifecycle;
       clearTimeout(this.workerRestarts.get(name));
       const timer = setTimeout(() => {
         this.workerRestarts.delete(name);
-        const permitted = this.maintenanceMode ? name === ImmichWorker.Maintenance : name !== ImmichWorker.Maintenance;
+        const permitted = this.maintenanceMode
+          ? name === FrameleafWorker.Maintenance
+          : name !== FrameleafWorker.Maintenance;
         if (
           lifecycle === this.lifecycle &&
           permitted &&
@@ -350,16 +353,16 @@ class Workers {
     if (exitCode !== 0) {
       console.error(`${name} worker exited with code ${exitCode}`);
 
-      if (Object.hasOwn(this.workers, ImmichWorker.Api) && name !== ImmichWorker.Api) {
+      if (Object.hasOwn(this.workers, FrameleafWorker.Api) && name !== FrameleafWorker.Api) {
         console.error('Killing api process');
-        void this.workers[ImmichWorker.Api]!.kill('SIGTERM');
+        void this.workers[FrameleafWorker.Api]!.kill('SIGTERM');
       }
     }
     // FL-165: the edge worker is a process of its own; it must not outlive the server and keep the port
     // (an ending edge worker returned above, so the worker ending here is never the edge)
-    if (Object.hasOwn(this.workers, ImmichWorker.Edge)) {
+    if (Object.hasOwn(this.workers, FrameleafWorker.Edge)) {
       this.edgeStopRequested = true;
-      void this.workers[ImmichWorker.Edge]!.kill('SIGTERM');
+      void this.workers[FrameleafWorker.Edge]!.kill('SIGTERM');
     }
 
     process.exit(exitCode);

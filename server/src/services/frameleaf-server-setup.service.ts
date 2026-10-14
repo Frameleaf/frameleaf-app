@@ -7,7 +7,7 @@ import {
   FrameleafSetupTicketResponseDto,
 } from 'src/dtos/frameleaf-server-setup.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AdminAuditAction, ImmichWorker } from 'src/enum.js';
+import { AdminAuditAction, FrameleafWorker } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
@@ -41,7 +41,7 @@ export type ServerSetupState = {
  */
 @Injectable()
 export class FrameleafServerSetupService extends BaseService {
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Api] })
   async onBootstrap() {
     await prepareSetup(this.setupGate);
   }

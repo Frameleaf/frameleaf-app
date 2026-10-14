@@ -12,7 +12,7 @@ import {
   StudioReverseConformResultSchema,
 } from 'src/dtos/studio-reverse-conform.dto.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -229,7 +229,7 @@ export class StudioReverseConformService {
     return bytes;
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.timer ??= setInterval(() => this.tick(), TICK_MS);

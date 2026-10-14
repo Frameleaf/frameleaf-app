@@ -42,7 +42,7 @@ import {
   PhotographyWorkflowMutationDto,
   PhotographyZipDto,
 } from 'src/dtos/photography-workflow.dto.js';
-import { CacheControl, ImmichWorker, JobName, JobStatus, QueueName, StorageFolder } from 'src/enum.js';
+import { CacheControl, FrameleafWorker, JobName, JobStatus, QueueName, StorageFolder } from 'src/enum.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -1916,7 +1916,7 @@ export class PhotographyWorkflowService {
       throw new ForbiddenException('Approved source is unavailable');
     return revision;
   }
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async recover() {
     let cursor: string | null = null;
     for (;;) {

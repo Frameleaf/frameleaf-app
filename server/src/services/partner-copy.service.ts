@@ -15,7 +15,7 @@ import {
   AssetLockReason,
   AssetStatus,
   AssetVisibility,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -528,7 +528,7 @@ export class PartnerCopyService extends BaseService {
   }
 
   /** Spec §4.6: a new item of a sharing user's is copied to every partner, once its metadata is read. */
-  @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AssetMetadataExtracted', workers: [FrameleafWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId, userId }: ArgOf<'AssetMetadataExtracted'>) {
     await this.queueOnward(userId, [assetId]);
   }

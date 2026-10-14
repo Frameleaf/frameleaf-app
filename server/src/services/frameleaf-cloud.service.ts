@@ -29,7 +29,7 @@ import {
 import {
   AdminAuditAction,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlDestinationKind,
@@ -1001,7 +1001,7 @@ export class FrameleafCloudService extends BaseService {
 
   // ------------------------------------------------------------------ headless link (FL-155)
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     const { url: cloudUrl, linkToken } = this.configRepository.getEnv().frameleafCloud;
     await this.startBoot();

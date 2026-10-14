@@ -8,7 +8,7 @@ import { HLS_SEGMENT_DURATION, HLS_SEGMENT_FILENAME_REGEX, HLS_VARIANTS, HLS_VER
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
-import { CacheControl, ImmichWorker, Permission } from 'src/enum.js';
+import { CacheControl, FrameleafWorker, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PendingEvents } from 'src/utils/event.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -24,7 +24,7 @@ export class HlsService extends BaseService {
   private pendingSessions = new PendingEvents<'HlsSessionResult'>({ timeoutMs: 5000 });
   private sessions = new Map<string, ApiSession>();
 
-  @OnEvent({ name: 'HlsSessionResult', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'HlsSessionResult', server: true, workers: [FrameleafWorker.Api] })
   onSessionResult(event: ArgOf<'HlsSessionResult'>) {
     this.pendingSessions.complete(event.sessionId, event);
     if (event.error) {
@@ -33,13 +33,13 @@ export class HlsService extends BaseService {
     }
   }
 
-  @OnEvent({ name: 'HlsSessionEnd', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'HlsSessionEnd', server: true, workers: [FrameleafWorker.Api] })
   onSessionEnd({ sessionId }: ArgOf<'HlsSessionEnd'>) {
     this.sessions.delete(sessionId);
     this.pendingSegments.rejectByPrefix(`${sessionId}:`, 'Session ended');
   }
 
-  @OnEvent({ name: 'HlsSegmentResult', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'HlsSegmentResult', server: true, workers: [FrameleafWorker.Api] })
   onSegmentResult(event: ArgOf<'HlsSegmentResult'>) {
     this.pendingSegments.complete(this.getSegmentKey(event), event);
   }

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import Bonjour, { Service } from 'bonjour-service';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
-import { ImmichWorker } from 'src/enum.js';
+import { FrameleafWorker } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { localAddressFor } from 'src/utils/frameleaf-lan-discovery.js';
 import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
@@ -42,7 +42,7 @@ export class LanDiscoveryService extends BaseService {
   /** FL-292: how often the setup state is checked while the record is published. */
   static readonly REFRESH_MS = 30_000;
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Api] })
   async onBootstrap(): Promise<void> {
     const { server } = await this.getConfig({ withCache: true });
     if (server.lanDiscovery) {
@@ -51,7 +51,7 @@ export class LanDiscoveryService extends BaseService {
   }
 
   /** FL-292: the first administrator completes setup; the record says so at once. */
-  @OnEvent({ name: 'UserCreate', workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'UserCreate', workers: [FrameleafWorker.Api] })
   async onUserCreate({ isAdmin }: ArgOf<'UserCreate'>): Promise<void> {
     if (isAdmin && this.service) {
       await this.refresh();
@@ -59,7 +59,7 @@ export class LanDiscoveryService extends BaseService {
   }
 
   /** FL-291: a graceful shutdown withdraws the record and stops the setup-state check. */
-  @OnEvent({ name: 'AppShutdown', workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'AppShutdown', workers: [FrameleafWorker.Api] })
   async onShutdown(): Promise<void> {
     this.closed = true;
     const bonjour = this.bonjour;
@@ -80,7 +80,7 @@ export class LanDiscoveryService extends BaseService {
     await settle((done) => bonjour.destroy(() => done()));
   }
 
-  @OnEvent({ name: 'ConfigUpdate', server: true, workers: [ImmichWorker.Api] })
+  @OnEvent({ name: 'ConfigUpdate', server: true, workers: [FrameleafWorker.Api] })
   async onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>): Promise<void> {
     if (newConfig.server.lanDiscovery) {
       await this.start();

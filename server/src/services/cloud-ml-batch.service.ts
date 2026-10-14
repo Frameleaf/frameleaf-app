@@ -18,7 +18,7 @@ import {
   AssetStatus,
   AssetType,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationDestination,
@@ -257,7 +257,7 @@ export class CloudMlBatchService extends BaseService {
     return this._enrichment;
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.cronRepository.create({
       name: 'frameleafCloudDescriptionBatches',

@@ -23,7 +23,7 @@ import {
   StudioBundleSourceDto,
   StudioBundleUploadDto,
 } from 'src/dtos/studio-bundle.dto.js';
-import { ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
+import { FrameleafWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -637,7 +637,7 @@ export class StudioBundleService {
   /* The worker                                                           */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), STUDIO_BUNDLE_TICK_MS);

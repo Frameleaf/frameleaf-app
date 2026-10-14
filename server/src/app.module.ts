@@ -7,7 +7,7 @@ import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { commandsAndQuestions } from 'src/commands/index.js';
 import { IWorker } from 'src/constants.js';
 import { controllers } from 'src/controllers/index.js';
-import { ImmichWorker } from 'src/enum.js';
+import { FrameleafWorker } from 'src/enum.js';
 import { MaintenanceAuthGuard } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
@@ -74,7 +74,7 @@ configureUserAgent();
 
 export class BaseModule implements OnModuleInit, OnModuleDestroy {
   constructor(
-    @Inject(IWorker) private worker: ImmichWorker,
+    @Inject(IWorker) private worker: FrameleafWorker,
     logger: LoggingRepository,
     private authService: AuthService,
     private eventRepository: EventRepository,
@@ -107,7 +107,7 @@ export class BaseModule implements OnModuleInit, OnModuleDestroy {
 @Module({
   imports: [...commonImports, ScheduleModule.forRoot()],
   controllers: [...controllers],
-  providers: [...common, ...apiMiddleware, { provide: IWorker, useValue: ImmichWorker.Api }],
+  providers: [...common, ...apiMiddleware, { provide: IWorker, useValue: FrameleafWorker.Api }],
 })
 export class ApiModule extends BaseModule {}
 
@@ -132,12 +132,12 @@ export class ApiModule extends BaseModule {}
     BuddyBackupRecoveryService,
     ...commonMiddleware,
     { provide: APP_GUARD, useClass: MaintenanceAuthGuard },
-    { provide: IWorker, useValue: ImmichWorker.Maintenance },
+    { provide: IWorker, useValue: FrameleafWorker.Maintenance },
   ],
 })
 export class MaintenanceModule {
   constructor(
-    @Inject(IWorker) private worker: ImmichWorker,
+    @Inject(IWorker) private worker: FrameleafWorker,
     logger: LoggingRepository,
     private maintenanceWorkerService: MaintenanceWorkerService,
   ) {
@@ -151,7 +151,7 @@ export class MaintenanceModule {
 
 @Module({
   imports: [...commonImports],
-  providers: [...common, { provide: IWorker, useValue: ImmichWorker.Microservices }, SchedulerRegistry],
+  providers: [...common, { provide: IWorker, useValue: FrameleafWorker.Microservices }, SchedulerRegistry],
 })
 export class MicroservicesModule extends BaseModule {}
 

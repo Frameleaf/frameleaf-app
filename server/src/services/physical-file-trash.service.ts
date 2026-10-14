@@ -14,7 +14,7 @@ import {
   FileTrashResponseDto,
   FileTrashRestoreResponseDto,
 } from 'src/dtos/physical-file-trash.dto.js';
-import { AssetVisibility, ChecksumAlgorithm, ImmichWorker, JobName, StorageFolder } from 'src/enum.js';
+import { AssetVisibility, ChecksumAlgorithm, FrameleafWorker, JobName, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
@@ -27,7 +27,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
  */
 @Injectable()
 export class PhysicalFileTrashService extends BaseService {
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     return this.recoverMoves();
   }

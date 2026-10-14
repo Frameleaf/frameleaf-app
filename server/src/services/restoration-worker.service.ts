@@ -8,8 +8,8 @@ import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
   Colorspace,
+  FrameleafWorker,
   ImageFormat,
-  ImmichWorker,
   JobName,
   MediaOperationKind,
   MediaOperationStatus,
@@ -169,7 +169,7 @@ export class RestorationWorkerService {
     this.logger.setContext(RestorationWorkerService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.start();
   }

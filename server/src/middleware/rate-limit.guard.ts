@@ -14,7 +14,7 @@ import { isIP } from 'node:net';
 import { Observable, catchError, from, map, mergeMap, throwError } from 'rxjs';
 import type { Request, Response } from 'express';
 import type { FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
-import { AuthCookie, ImmichEnvironment, MetadataKey, RequestHeader, RequestQuery } from 'src/enum.js';
+import { AuthCookie, FrameleafEnvironment, MetadataKey, RequestHeader, RequestQuery } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -319,7 +319,7 @@ export class RateLimitGuard implements CanActivate {
   }
 
   private testing() {
-    return this.configRepository.getEnv().environment === ImmichEnvironment.Testing;
+    return this.configRepository.getEnv().environment === FrameleafEnvironment.Testing;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

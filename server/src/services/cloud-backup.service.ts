@@ -57,7 +57,7 @@ import {
   AssetStatus,
   ChecksumAlgorithm,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationDestination,
@@ -1201,7 +1201,7 @@ export class CloudBackupService {
    * `DatabaseLock.FrameleafCloudBackupCheck` runs the cron that queues scheduled runs and the hourly check
    * that queues a verification when one is due.
    */
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     this.scheduleLock = await this.databaseRepository.tryLock(DatabaseLock.FrameleafCloudBackupCheck);
     if (!this.scheduleLock) {
@@ -1513,7 +1513,7 @@ export class CloudBackupService {
     }
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), CLOUD_BACKUP_TICK_MS);

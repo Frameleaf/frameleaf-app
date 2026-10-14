@@ -16,7 +16,7 @@ import {
 } from 'src/dtos/studio-preview.dto.js';
 import {
   CacheControl,
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   StorageFolder,
@@ -701,7 +701,7 @@ export class StudioPreviewService {
     return evicted.length;
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.sweepHandle ??= setInterval(() => void this.sweep(), PREVIEW_SWEEP_MS);
     void this.sweep();

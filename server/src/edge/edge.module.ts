@@ -10,7 +10,7 @@ import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { EdgeRelayService } from 'src/edge/edge-relay.service.js';
 import { EdgeStateService } from 'src/edge/edge-state.service.js';
-import { ImmichWorker } from 'src/enum.js';
+import { FrameleafWorker } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -57,12 +57,12 @@ export const detectMediaLocation = (configRepository: ConfigRepository): string 
     EdgeRelayService,
     EdgePortMappingService,
     EdgeStateService,
-    { provide: IWorker, useValue: ImmichWorker.Edge },
+    { provide: IWorker, useValue: FrameleafWorker.Edge },
   ],
 })
 export class EdgeModule implements OnModuleInit, OnModuleDestroy {
   constructor(
-    @Inject(IWorker) private worker: ImmichWorker,
+    @Inject(IWorker) private worker: FrameleafWorker,
     logger: LoggingRepository,
     private configRepository: ConfigRepository,
     private edgeState: EdgeStateService,

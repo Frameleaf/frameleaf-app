@@ -4,7 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetBulkUpdateDto } from 'src/dtos/asset.dto.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationBulkAction,
   MediaOperationItemStatus,
   MediaOperationKind,
@@ -194,7 +194,7 @@ export class BulkOperationService {
     this.logger.setContext(BulkOperationService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), BULK_TICK_MS);

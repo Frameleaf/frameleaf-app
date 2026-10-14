@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { lastValueFrom, of, throwError } from 'rxjs';
-import { ImmichEnvironment } from 'src/enum.js';
+import { FrameleafEnvironment } from 'src/enum.js';
 import {
   RATE_LIMITS,
   REMOTE_ACCESS_CEILING,
@@ -301,14 +301,14 @@ describe(RateLimitGuard.name, () => {
   });
 
   it('counts a home request as not testing: the unit tests run with FRAMELEAF_ENV unset', () => {
-    expect(configRepository.getEnv().environment).not.toBe(ImmichEnvironment.Testing);
+    expect(configRepository.getEnv().environment).not.toBe(FrameleafEnvironment.Testing);
     expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('FRAMELEAF_ENV=testing'));
   });
 
   it('skips the route limits, but not the ceiling, when FRAMELEAF_ENV is testing, and says so at start', async () => {
     configRepository.getEnv.mockReturnValue(
       mockEnvData({
-        environment: ImmichEnvironment.Testing,
+        environment: FrameleafEnvironment.Testing,
         frameleafCloud: { ...envData.frameleafCloud, identityDir: IDENTITY_DIR },
       }),
     );

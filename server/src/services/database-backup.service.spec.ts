@@ -9,7 +9,7 @@ import { createGunzip, createGzip, gzipSync } from 'node:zlib';
 import type { Stats } from 'node:fs';
 import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { FrameleafWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
@@ -285,7 +285,7 @@ describe(DatabaseBackupService.name, () => {
       const dbUrl = 'postgresql://postgres:pwd@host:5432/immich?sslmode=require&uselibpqcompat=true';
       const configMock = {
         getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-        getWorker: () => ImmichWorker.Api,
+        getWorker: () => FrameleafWorker.Api,
         isDev: () => false,
       } as unknown as any;
 
@@ -513,7 +513,7 @@ describe(DatabaseBackupService.name, () => {
               skipMigrations: false,
             },
           }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -589,7 +589,7 @@ describe(DatabaseBackupService.name, () => {
         const dbUrl = 'postgresql://mypg:mypwd@myhost:1234/myimmich?sslmode=require&uselibpqcompat=true';
         const configMock = {
           getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -653,7 +653,7 @@ describe(DatabaseBackupService.name, () => {
         const dbUrl = 'post://gresql://mypg:myp@wd@myhos:t:1234/myimmich?sslmode=require&uselibpqcompat=true';
         const configMock = {
           getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -695,7 +695,7 @@ describe(DatabaseBackupService.name, () => {
         const dbUrl = 'socket://mypg:mypwd@/var/run/postgresql?db=myimmich';
         const configMock = {
           getEnv: () => ({ database: { config: { connectionType: 'url', url: dbUrl }, skipMigrations: false } }),
-          getWorker: () => ImmichWorker.Api,
+          getWorker: () => FrameleafWorker.Api,
           isDev: () => false,
         } as unknown as any;
 
@@ -955,7 +955,7 @@ describe(DatabaseBackupService.name, () => {
             skipMigrations: false,
           },
         }),
-        getWorker: () => ImmichWorker.Api,
+        getWorker: () => FrameleafWorker.Api,
         isDev: () => false,
       } as unknown as any;
 

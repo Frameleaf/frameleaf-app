@@ -16,7 +16,7 @@ import {
   EnrichmentItemState,
   EnrichmentPreviewStatus,
   EnrichmentStage,
-  ImmichWorker,
+  FrameleafWorker,
   JobStatus,
   MediaOperationDestination,
   MediaOperationKind,
@@ -455,7 +455,7 @@ export class EnrichmentPlanService {
   /* The worker                                                          */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), ENRICHMENT_PLAN_TICK_MS);

@@ -27,7 +27,7 @@ import {
   CacheControl,
   ChecksumAlgorithm,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   IntegrityReport,
   JobName,
   JobStatus,
@@ -77,7 +77,7 @@ export class IntegrityService extends BaseService {
     return enabled && config.libraryCare.integrityAudit;
   }
 
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     const {
       integrityChecks: { untrackedFiles, missingFiles, checksumFiles },

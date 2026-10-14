@@ -7,7 +7,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -27,7 +27,7 @@ export class StorageService extends BaseService {
   private attemptSweepTimer?: NodeJS.Timeout;
   private attemptSweepActive?: Promise<void>;
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   startAttemptSweep() {
     this.attemptSweepTimer ??= setInterval(() => void this.sweepAttemptOutputs(), 60_000);
     this.attemptSweepTimer.unref();

@@ -1,4 +1,4 @@
-import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, FrameleafWorker, JobName, JobStatus } from 'src/enum.js';
 import { OcrService } from 'src/services/ocr.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
@@ -11,7 +11,7 @@ describe(OcrService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(OcrService));
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     mocks.assetJob.getForOcr.mockResolvedValue({
       visibility: AssetVisibility.Timeline,
       previewFile: '/uploads/user-id/thumbs/path.jpg',

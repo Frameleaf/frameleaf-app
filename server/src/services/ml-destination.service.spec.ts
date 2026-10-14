@@ -10,7 +10,7 @@ import {
   RestorationModelState,
 } from 'src/dtos/restoration-inference.dto.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationDestination,
   MediaOperationKind,
   MlAdmissionRefusal,
@@ -67,7 +67,7 @@ describe(MlDestinationService.name, () => {
     it('creates a local destination for each configured ML URL and routes unrouted library workloads to the first', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(undefined);
       mocks.mlDestination.getRoute.mockResolvedValue(undefined);
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await sut.onConfigInit({
         newConfig: {
@@ -115,7 +115,7 @@ describe(MlDestinationService.name, () => {
             : { workload, destinationId: mlDestinationStub.local.id, modelId: null, updatedAt: new Date() },
         ),
       );
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await sut.onConfigInit({
         newConfig: {
@@ -137,7 +137,7 @@ describe(MlDestinationService.name, () => {
     it('never creates a cloud destination or routes restoration and Studio work on its own', async () => {
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
       mocks.mlDestination.getRoute.mockResolvedValue(undefined);
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await sut.onConfigInit({
         newConfig: {
@@ -178,7 +178,7 @@ describe(MlDestinationService.name, () => {
         modelId: null,
         updatedAt: new Date(),
       });
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await bootWith(['http://frameleaf-machine-learning:3003']);
 
@@ -203,7 +203,7 @@ describe(MlDestinationService.name, () => {
         modelId: null,
         updatedAt: new Date(),
       });
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await bootWith(['http://frameleaf-machine-learning:3003']);
       expect(mocks.mlDestination.update).toHaveBeenCalledWith(removed.id, { enabled: true });
@@ -231,7 +231,7 @@ describe(MlDestinationService.name, () => {
         modelId: null,
         updatedAt: new Date(),
       });
-      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
+      (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(FrameleafWorker.Microservices);
 
       await sut.onConfigInit({
         newConfig: {

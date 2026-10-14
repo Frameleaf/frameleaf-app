@@ -5,7 +5,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { BackupScheduleResponseDto } from 'src/dtos/database-backup.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, FrameleafWorker, JobName, JobStatus, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -90,7 +90,7 @@ export class BackupSequenceService {
     });
   }
 
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     this.lock = await this.databaseRepository.tryLock(DatabaseLock.BackupSequence);
     if (!this.lock) {

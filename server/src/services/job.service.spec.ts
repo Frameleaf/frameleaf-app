@@ -3,7 +3,7 @@ import type { VideoEditVersion } from 'src/repositories/asset-edit.repository.js
 import type { JobItem } from 'src/types.js';
 import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, ImmichWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
+import { AssetType, FrameleafWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
 import { JobService } from 'src/services/job.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { getForAsset } from 'test/mappers.js';
@@ -17,7 +17,7 @@ describe(JobService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(JobService));
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
   });
 
   it('should work', () => {

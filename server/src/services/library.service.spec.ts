@@ -10,7 +10,7 @@ import {
   AdminAuditAction,
   AssetType,
   CronJob,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   LibraryImportPathReason,
@@ -46,7 +46,7 @@ describe(LibraryService.name, () => {
     ({ sut, mocks } = newTestService(LibraryService));
 
     mocks.database.tryLock.mockResolvedValue(true);
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     // FL-78: libraries belong to a live account unless a test says otherwise
     mocks.user.get.mockResolvedValue(UserFactory.create());
     mocks.library.getAll.mockResolvedValue([]);

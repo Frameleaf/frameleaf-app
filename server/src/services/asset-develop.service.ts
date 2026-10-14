@@ -45,8 +45,8 @@ import {
   CacheControl,
   ChecksumAlgorithm,
   Colorspace,
+  FrameleafWorker,
   ImageFormat,
-  ImmichWorker,
   JobName,
   JobStatus,
   Permission,
@@ -707,7 +707,7 @@ export class AssetDevelopService {
    * refuses a live one, so requeueing is safe to repeat. A render with an Activity job (FL-43) is
    * left to that job's recovery, which dispatches it again with its row.
    */
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     const unfinished = await this.assetDevelopRepository.listUnfinished();
     const claimable = unfinished.filter((revision) => this.isClaimable(revision));

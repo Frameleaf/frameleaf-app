@@ -15,7 +15,7 @@ import {
   AssetLockReason,
   AssetOrder,
   AssetVisibility,
-  ImmichWorker,
+  FrameleafWorker,
   MediaOperationKind,
   MediaOperationStatus,
   StorageFolder,
@@ -254,7 +254,7 @@ export class PreservationWorkerService {
   /* Scheduling                                                           */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), PRESERVATION_TICK_MS);

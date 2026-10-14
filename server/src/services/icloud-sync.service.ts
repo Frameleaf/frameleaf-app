@@ -16,7 +16,7 @@ import {
 } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetType,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationKind,
@@ -544,7 +544,7 @@ export class ICloudSyncService {
   /* Schedule and worker                                                 */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap(): Promise<void> {
     this.stopping = false;
     // The worker runs even when the connector is switched off, so a queued run ends honestly.

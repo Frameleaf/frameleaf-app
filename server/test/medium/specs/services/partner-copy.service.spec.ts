@@ -10,7 +10,7 @@ import {
   AssetLockReason,
   AssetStatus,
   AssetVisibility,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   Permission,
   UserMetadataKey,
@@ -198,7 +198,7 @@ const newSourceAsset = async (ctx: Ctx, ownerId: string, size = 1234) => {
 };
 
 describe(PartnerCopyService.name, () => {
-  it.each([ImmichWorker.Api, ImmichWorker.Microservices])(
+  it.each([FrameleafWorker.Api, FrameleafWorker.Microservices])(
     'leaves imported media and partnerships intact on %s bootstrap',
     async (worker) => {
       const media = await mkdtemp(join(tmpdir(), 'frameleaf-import-bootstrap-'));

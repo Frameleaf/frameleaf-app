@@ -21,7 +21,7 @@ import {
   BootstrapEventPriority,
   DatabaseLock,
   FRAMELEAF_CLOUD_ML_WORKLOADS,
-  ImmichWorker,
+  FrameleafWorker,
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
   MediaOperationKind,
@@ -137,7 +137,7 @@ export class MlDestinationService extends BaseService {
     }
 
     this.stopProbing();
-    if (machineLearning.availabilityChecks.enabled && this.configRepository.getWorker() === ImmichWorker.Api) {
+    if (machineLearning.availabilityChecks.enabled && this.configRepository.getWorker() === FrameleafWorker.Api) {
       this.probeHandle = setInterval(() => {
         void this.probeAll().catch((error) => this.logger.warn(`Destination probe sweep failed: ${error}`));
       }, machineLearning.availabilityChecks.interval);

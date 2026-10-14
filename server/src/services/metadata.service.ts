@@ -20,8 +20,8 @@ import {
   ChecksumAlgorithm,
   DatabaseLock,
   ExifOrientation,
-  ImmichEnvironment,
-  ImmichWorker,
+  FrameleafEnvironment,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -141,7 +141,7 @@ type Dates = {
 
 @Injectable()
 export class MetadataService extends BaseService {
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.logger.log('Bootstrapping metadata service');
     await this.init();
@@ -152,12 +152,12 @@ export class MetadataService extends BaseService {
     await this.metadataRepository.teardown();
   }
 
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     this.metadataRepository.setMaxConcurrency(newConfig.job.metadataExtraction.concurrency);
   }
 
-  @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
+  @OnEvent({ name: 'ConfigUpdate', workers: [FrameleafWorker.Microservices], server: true })
   onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
     this.metadataRepository.setMaxConcurrency(newConfig.job.metadataExtraction.concurrency);
   }
@@ -194,7 +194,7 @@ export class MetadataService extends BaseService {
   private async syncLandmarkIcons(): Promise<void> {
     try {
       const { reverseGeocoding } = await this.getConfig({ withCache: true });
-      if (!reverseGeocoding.enabled || this.configRepository.getEnv().environment !== ImmichEnvironment.Production) {
+      if (!reverseGeocoding.enabled || this.configRepository.getEnv().environment !== FrameleafEnvironment.Production) {
         return;
       }
       if (await this.mapRepository.installLandmarkIcons(LANDMARK_ICON_PACK)) {

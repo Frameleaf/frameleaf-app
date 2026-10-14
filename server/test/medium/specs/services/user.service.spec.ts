@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor, UserMetadataKey } from 'src/enum.js';
+import { FrameleafEnvironment, JobName, JobStatus, UserAvatarColor, UserMetadataKey } from 'src/enum.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -22,7 +22,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  process.env.FRAMELEAF_ENV = ImmichEnvironment.Testing;
+  process.env.FRAMELEAF_ENV = FrameleafEnvironment.Testing;
 
   return newMediumService(UserService, {
     database: db || defaultDatabase,

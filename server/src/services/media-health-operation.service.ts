@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { OnEvent } from 'src/decorators.js';
-import { ImmichWorker, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { FrameleafWorker, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -69,7 +69,7 @@ export class MediaHealthOperationService {
     this.logger.setContext(MediaHealthOperationService.name);
   }
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), MEDIA_HEALTH_TICK_MS);

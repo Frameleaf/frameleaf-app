@@ -37,8 +37,8 @@ import {
   AudioCodec,
   ChecksumAlgorithm,
   Colorspace,
+  FrameleafWorker,
   ImageFormat,
-  ImmichWorker,
   JobName,
   JobStatus,
   PhysicalFileType,
@@ -199,7 +199,7 @@ const isEditAction =
 export class MediaService extends BaseService {
   videoInterfaces: VideoInterfaces = { dri: [], mali: false };
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   async onBootstrap() {
     this.videoInterfaces = await this.storageCore.getVideoInterfaces();
   }

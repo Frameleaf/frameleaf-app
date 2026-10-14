@@ -13,8 +13,8 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   ExifOrientation,
-  ImmichEnvironment,
-  ImmichWorker,
+  FrameleafEnvironment,
+  FrameleafWorker,
   JobName,
   JobStatus,
   SourceType,
@@ -104,7 +104,7 @@ describe(MetadataService.name, () => {
     mockReadTags();
     mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([]);
 
-    mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
+    mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
 
     delete process.env.TZ;
   });
@@ -167,7 +167,7 @@ describe(MetadataService.name, () => {
     const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
 
     it('should not fetch the landmark icon pack outside production', async () => {
-      mocks.config.getEnv.mockReturnValue(mockEnvData({ environment: ImmichEnvironment.Testing }));
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ environment: FrameleafEnvironment.Testing }));
 
       await sut.onBootstrap();
       await settled();

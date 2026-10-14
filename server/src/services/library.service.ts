@@ -26,7 +26,7 @@ import {
   AdminAuditAction,
   CronJob,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   QueueName,
@@ -70,7 +70,7 @@ export class LibraryService extends BaseService {
   private lock = false;
   private watchers: Record<string, () => Promise<void>> = {};
 
-  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({
     newConfig: {
       library: { watch, scan },
@@ -495,7 +495,7 @@ export class LibraryService extends BaseService {
     await this.onWatchUpdate({ id });
   }
 
-  @OnEvent({ name: 'LibraryWatchUpdate', server: true, workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'LibraryWatchUpdate', server: true, workers: [FrameleafWorker.Microservices] })
   async onWatchUpdate({ id }: ArgOf<'LibraryWatchUpdate'>) {
     if (!this.watchLibraries) {
       return;

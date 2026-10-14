@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
-import { ImmichWorker } from 'src/enum.js';
+import { FrameleafWorker } from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRecovery, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -46,7 +46,7 @@ export class MediaOperationSweepService {
   }
 
   /** Starts at once as well as on the interval, so a restart settles what it left behind promptly. */
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.timer ??= setInterval(() => void this.tick(), MEDIA_OPERATION_SWEEP_MS);
     void this.tick();

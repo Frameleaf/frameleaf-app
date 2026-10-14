@@ -3,9 +3,9 @@ import z from 'zod';
 
 // eslint-disable-next-line no-restricted-imports -- Native Node pre-import consumers share pure environment values without application aliases.
 export {
-  ImmichEnvironment,
-  ImmichEnvironmentSchema,
-  ImmichWorker,
+  FrameleafEnvironment,
+  FrameleafEnvironmentSchema,
+  FrameleafWorker,
   LogFormat,
   LogFormatSchema,
   LogLevel,

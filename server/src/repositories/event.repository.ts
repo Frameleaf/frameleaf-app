@@ -12,7 +12,7 @@ import { Asset } from 'src/database.js';
 import { EventConfig } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
-  ImmichWorker,
+  FrameleafWorker,
   JobStatus,
   MetadataKey,
   NotificationLevel,
@@ -270,7 +270,7 @@ export class EventRepository {
           continue;
         }
 
-        const workers = event.workers ?? Object.values(ImmichWorker);
+        const workers = event.workers ?? Object.values(FrameleafWorker);
         if (!workers.includes(worker)) {
           continue;
         }

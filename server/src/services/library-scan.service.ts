@@ -12,7 +12,7 @@ import {
   AdminAuditAction,
   AssetStatus,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MediaOperationDestination,
@@ -320,7 +320,7 @@ export class LibraryScanService {
   /* Worker                                                              */
   /* ------------------------------------------------------------------ */
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => void this.tick(), LIBRARY_SCAN_TICK_MS);

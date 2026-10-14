@@ -19,7 +19,7 @@ import { LicenseResponseDto } from 'src/dtos/license.dto.js';
 import {
   AdminAuditAction,
   DatabaseLock,
-  ImmichWorker,
+  FrameleafWorker,
   JobName,
   JobStatus,
   NotificationLevel,
@@ -388,7 +388,7 @@ export class FrameleafLicenseService extends BaseService {
 
   // ------------------------------------------------------------------ daily refresh
 
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
   onBootstrap() {
     this.cronRepository.create({
       name: 'frameleafLicenseRefresh',
