@@ -47,6 +47,8 @@ Stop API, job and upload writers before restoring. Preserve the current database
 
 Restore the matching media files, configuration and keys, then restore the database using Frameleaf's recovery interface or your documented PostgreSQL recovery procedure. Use a fresh, isolated database for an operator-managed recovery rehearsal. Do not load a Frameleaf dump into an unrelated database, or drop a live schema as a diagnostic step.
 
+Frameleaf's database backups retain each item's landmark matches but omit the bundled place and boundary rows. On the next microservices worker start, the server imports those rows from the place pack shipped in its image. Maintenance recovery and Buddy's full-server recovery restart the workers through the maintenance flow. After a Cloud bare-metal command or a manual SQL restore, start the server before checking places. Until that worker starts, landmark names, pins, search and album suggestions can be empty. The worker logs `Restoring bundled landmark places` and the imported count and duration; if it reports that landmarks were not imported, check that the matching server image contains its geodata pack and restart after correcting the error.
+
 For a rehearsal, use a separate recovery host with the matching release's Compose file and a new `.env`. Set `DB_DATA_LOCATION` to a fresh, empty directory and use separate media paths; do not mount the live installation's database or media directories. Copy the backup archive there, start only the database service, and wait for its healthcheck to report healthy before loading the archive. The following commands use the release defaults; substitute your configured database user and database name if they differ:
 
 ```bash
