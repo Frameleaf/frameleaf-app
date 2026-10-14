@@ -93,6 +93,20 @@ for (const [file, workflow] of Object.entries(workflows)) {
           `${label}: uncontrolled runner matrix`,
         );
       }
+    } else if (file === "fl103-linux-intake.yml" && id === "intake") {
+      // Dispatched only in the private qualification repository; its intake
+      // needs a fresh GitHub-hosted VM with systemd, which Namespace lacks.
+      assert.equal(
+        job["runs-on"],
+        "ubuntu-24.04",
+        `${label}: intake VM changed`,
+      );
+      assert.equal(
+        job.if,
+        "github.repository == 'Frameleaf/frameleaf-qualification' && github.ref == 'refs/heads/aj/fl103-linux-intake-execute'",
+        `${label}: hosted intake must stay outside this repository's CI`,
+      );
+      assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
     } else
       assert(
         supported.has(job["runs-on"]),
