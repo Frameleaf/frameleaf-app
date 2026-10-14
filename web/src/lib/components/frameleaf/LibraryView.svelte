@@ -98,6 +98,7 @@
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+  import { uploadAssetsStore } from '$lib/stores/upload';
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetOrder,
@@ -1156,6 +1157,7 @@
    * Upload, and the chrome that only makes sense with photos (layout switch, results toolbar,
    * grouping, status capsule) stays away until there is something to arrange.
    */
+  const uploadStats = uploadAssetsStore.stats;
   const firstRun = $derived(
     !publicView &&
       !selectionMode &&
@@ -1807,6 +1809,13 @@
     />
   {:else if empty}
     {@render empty()}
+  {:else if firstRun && $uploadStats.success > 0}
+    <!-- Uploads finished, but a photo joins the grid only once its thumbnails exist (on_upload_success). -->
+    <LibraryEmptyState
+      icon={mdiImageMultipleOutline}
+      title={$t('frameleaf_library_first_run_preparing_title')}
+      message={$t('frameleaf_library_first_run_preparing_message')}
+    />
   {:else if firstRun}
     <!-- A new library leads somewhere: the same pickers as the top bar's Upload menu. -->
     <LibraryEmptyState

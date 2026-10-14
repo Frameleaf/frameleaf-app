@@ -6,6 +6,7 @@ import threading
 import unicodedata
 from collections.abc import Callable
 from hashlib import sha256
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -272,6 +273,10 @@ class ImageDescriptionModel(InferenceModel):
             )
             verify_florence_snapshot(self.model_path, manifest)
             return
+        # The CPU image has no OpenVINO GenAI: fail before downloading gigabytes it can't load, so the
+        # server moves straight on to its Florence fallback, which runs on the CPU image's torch.
+        if self.acceleration == ImageDescriptionAcceleration.OPENVINO and find_spec("openvino_genai") is None:
+            raise ImportError("openvino-genai is required for image description models")
         self._check_custom_florence_trust()
         endpoint = model_repository_url()
         snapshot_download(

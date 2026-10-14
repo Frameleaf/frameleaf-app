@@ -12,6 +12,7 @@ import { applyFilterQuery } from '$lib/frameleaf/search-shortcuts';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+import { uploadAssetsStore } from '$lib/stores/upload';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -685,6 +686,18 @@ describe('LibraryView', () => {
       expect(screen.queryByTestId('frameleaf-layout-switch')).not.toBeInTheDocument();
       expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
       expect(screen.queryByTestId('library-status-bar')).not.toBeInTheDocument();
+    });
+
+    it('says uploads are on their way instead of offering Upload again while their previews are made', async () => {
+      uploadAssetsStore.track('success');
+      try {
+        await setupLibrary();
+        const empty = await screen.findByTestId('frameleaf-library-empty');
+        expect(empty).toHaveTextContent('frameleaf_library_first_run_preparing_title');
+        expect(screen.queryByRole('button', { name: 'frameleaf_library_first_run_upload' })).not.toBeInTheDocument();
+      } finally {
+        uploadAssetsStore.reset();
+      }
     });
 
     it('keeps the plain empty state, with no upload offer, on any other empty view (T-10)', async () => {
