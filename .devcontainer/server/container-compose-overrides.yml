@@ -19,7 +19,7 @@ services:
       - ../packages/plugin-core:/build/plugins/immich-plugin-core
   immich-web:
     env_file: !reset []
-  immich-machine-learning:
+  frameleaf-machine-learning:
     env_file: !reset []
   database:
     env_file: !reset []

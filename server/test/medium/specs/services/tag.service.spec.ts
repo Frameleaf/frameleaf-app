@@ -1253,7 +1253,7 @@ describe(TagService.name, () => {
       };
       const marked = await newLocked(AssetLockReason.Marked);
       const detected = await newLocked(AssetLockReason.Detected);
-      const moved = await newLocked(AssetLockReason.ImmichLockedFolder);
+      const moved = await newLocked(AssetLockReason.FrameleafLockedFolder);
       const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newTagAsset({ tagIds: [byValue.get('marked')!.id], assetIds: [marked.id] });
       await ctx.newTagAsset({ tagIds: [byValue.get('detected')!.id], assetIds: [detected.id] });

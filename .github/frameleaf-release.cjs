@@ -88,6 +88,13 @@ const INSTALL_FILES = [
   "hwaccel.ml.yml",
   "hwaccel.transcoding.yml",
 ];
+// Every asset Frameleaf Manager downloads before it reviews an install or update (manager/src/releases.ts).
+const MANAGER_ASSETS = Object.freeze([
+  ...INSTALL_FILES,
+  "nas-manifest.json",
+  "release-manifest.json",
+  "SHA256SUMS",
+]);
 // FL-191: Frameleaf images a release depends on besides the versioned server/ML variants. They are
 // published separately (Postgres Image and CLI Build dispatches), so promotion proves each exists
 // and the bundle pins the database by digest.
@@ -1405,6 +1412,11 @@ async function createBundle(
     server && ml && DIGEST.test(server.digest) && DIGEST.test(ml.digest),
     "Missing NAS images",
   );
+  for (const platform of ["linux/amd64", "linux/arm64"])
+    assert(
+      server.platforms?.includes(platform) && ml.platforms?.includes(platform),
+      `NAS images are missing ${platform}`,
+    );
   const nas = {
     schemaVersion: 3,
     tag,
@@ -1462,6 +1474,19 @@ async function createBundle(
   );
   files.push("SHA256SUMS");
   return files.map((name) => path.join(directory, name));
+}
+function missingManagerAssets(release) {
+  const names = new Set((release.assets ?? []).map((asset) => asset.name));
+  return MANAGER_ASSETS.filter((name) => !names.has(name));
+}
+async function checkReleaseAssets(tag, request = github) {
+  const missing = missingManagerAssets(await request(`releases/tags/${tag}`));
+  assert.deepEqual(
+    missing,
+    [],
+    `${tag} is missing Manager assets: ${missing.join(", ")}`,
+  );
+  console.log(`${tag} has every asset Frameleaf Manager requires.`);
 }
 async function reserveAndStage({
   existing,
@@ -1613,6 +1638,9 @@ async function release(env = process.env) {
     );
     console.log(`Signed and verified ${signed.length} image digests.`);
   }
+  // Check the bundle exactly as Manager will (signatures included when signed) before anything is uploaded.
+  const { verifyBundle } = require("./verify-release-bundle.cjs");
+  await verifyBundle(directory, tag, { authenticate: env.SIGN === "1" });
   await requireTestQualification(env.SOURCE_SHA, github, testQualification);
   assert(
     await currentMainline(env.SOURCE_SHA),
@@ -1624,6 +1652,13 @@ async function release(env = process.env) {
     "gh",
     ["release", "upload", tag, ...assets, "--repo", REPOSITORY, "--clobber"],
     { stdio: "inherit" },
+  );
+  // The draft is not visible at releases/tags/{tag}; read it by id.
+  const missing = missingManagerAssets(await github(`releases/${existing.id}`));
+  assert.deepEqual(
+    missing,
+    [],
+    `Draft ${tag} is missing Manager assets: ${missing.join(", ")}`,
   );
   for (let i = 0; i < VARIANTS.length; i++) {
     await tagImage(registry, VARIANTS[i], images[i], "release");
@@ -1644,6 +1679,9 @@ module.exports = {
   SOURCE,
   VARIANTS,
   INSTALL_FILES,
+  MANAGER_ASSETS,
+  missingManagerAssets,
+  checkReleaseAssets,
   variant,
   validateBuildInput,
   validateIndex,
@@ -1689,9 +1727,11 @@ if (require.main === module) {
     else if (process.argv[2] === "deploy-test-images") await deployTestImages();
     else if (process.argv[2] === "resolve-candidate") await resolveCandidate();
     else if (process.argv[2] === "release-flags") await releaseFlags();
+    else if (process.argv[2] === "check-release-assets")
+      await checkReleaseAssets(process.argv[3]);
     else
       throw new Error(
-        "Expected build-matrix, merge-candidate, plan-reuse, reuse-candidate, deploy-test-images, resolve-candidate, release or release-flags",
+        "Expected build-matrix, merge-candidate, plan-reuse, reuse-candidate, deploy-test-images, resolve-candidate, release, release-flags or check-release-assets",
       );
   })().catch((error) => {
     console.error(error.message);

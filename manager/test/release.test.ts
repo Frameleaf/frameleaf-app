@@ -10,6 +10,7 @@ const { verifyBundle, verifyNasManifest } = require('../../.github/verify-releas
 const {
   createBundle,
   INSTALL_FILES,
+  MANAGER_ASSETS,
   VARIANTS,
   REPOSITORY,
   ATTESTATION_TYPE,
@@ -32,7 +33,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
                 'services:',
                 '  frameleaf-server:',
                 '    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
-                '  immich-machine-learning:',
+                '  frameleaf-machine-learning:',
                 '    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}',
                 '  database:',
                 `    image: ${postgres}`,
@@ -57,6 +58,13 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
     };
     const bundle = join(root, 'bundle');
     await createBundle(bundle, root, tag, manifest);
+    await assert.rejects(
+      createBundle(join(root, 'amd64-only'), root, tag, {
+        ...manifest,
+        images: manifest.images.map((image) => ({ ...image, platforms: ['linux/amd64'] })),
+      }),
+      /NAS images are missing linux\/arm64/,
+    );
     const nas = JSON.parse(await readFile(join(bundle, 'nas-manifest.json'), 'utf8'));
     const authenticated: string[] = [];
     const run = (_binary: string, args: string[]) => {
@@ -138,4 +146,31 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('Manager lists only installable releases, newest first', async (t) => {
+  const complete = MANAGER_ASSETS.map((name: string) => ({ name }));
+  const release = (n: number, publishedAt: string, assets = complete) => ({
+    tag_name: `frameleaf-v3.2.0-${n}`,
+    published_at: publishedAt,
+    draft: false,
+    prerelease: false,
+    body: '',
+    assets,
+  });
+  t.mock.method(globalThis, 'fetch', async () =>
+    new Response(
+      JSON.stringify([
+        release(9, '2026-10-01T00:00:00Z'),
+        release(13, '2026-10-03T00:00:00Z'),
+        release(14, '2026-10-04T00:00:00Z', complete.filter((asset: any) => asset.name !== 'nas-manifest.json')),
+        release(10, '2026-10-02T00:00:00Z'),
+      ]),
+    ),
+  );
+  const listed = await new Releases('/nonexistent', 'seed').available();
+  assert.deepEqual(
+    listed.map((item) => item.tag),
+    ['frameleaf-v3.2.0-13', 'frameleaf-v3.2.0-10', 'frameleaf-v3.2.0-9'],
+  );
 });

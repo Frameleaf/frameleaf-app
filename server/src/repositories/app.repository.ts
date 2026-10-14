@@ -11,6 +11,11 @@ export class AppRepository {
   private closeFn?: (graceMs: number) => Promise<void>;
   private stopping?: boolean;
 
+  /** True once a stop or restart has begun: the application is closing, so its database may be gone. */
+  get isStopping() {
+    return this.stopping ?? false;
+  }
+
   /**
    * Restart (entering or leaving maintenance mode, a restart request): the supervisor starts the
    * workers again as soon as they have all exited, so a restart keeps the short {@link RESTART_BUDGET}

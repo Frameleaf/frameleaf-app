@@ -37,6 +37,8 @@ Back up the database and originals before changing releases. Frameleaf uses Post
 
 Cloud processing is Frameleaf Cloud, added and consented to by an administrator in the app; no image setting or Compose change enables it.
 
+The inference and staging services are `frameleaf-machine-learning` and `frameleaf-model-staging`. When upgrading an existing Compose stack with the old service name, run `docker compose down` before replacing its files, then run `docker compose up -d --remove-orphans`; keep the same project name and volumes, and do not pass `--volumes` to `down`. The worker retains the old DNS alias so saved worker URLs continue to resolve. Manager handles this service transition during updates.
+
 For local inference with internet access denied, use the release's `docker-compose.ml-isolated.yml` overlay and the [model-staging procedure](../docs/docs/administration/model-staging.md). Acquisition runs separately, without media or backup mounts; the worker loads the verified cache offline. Keep the existing cache/project and follow the documented runtime/source environment split before enabling the overlay.
 
 ## Local builds
@@ -45,6 +47,6 @@ For local inference with internet access denied, use the release's `docker-compo
 
 ## Restoration worker
 
-`docker-compose.restoration.yml` adds a separate restoration container (`frameleaf-restoration`, port 3004 on the Compose network) built from `machine-learning/Dockerfile.video-restoration`. Library analysis stays in `immich-machine-learning`; the two never share a worker. Use it from a source checkout with `docker compose -f docker-compose.yml -f docker-compose.restoration.yml up -d`, then add the worker under Administration > Processing destinations. No restoration image is published and the worker is not qualified; see [Workers and endpoints](../docs/docs/administration/workers-and-endpoints.md) and `machine-learning/video-restoration/README.md`.
+`docker-compose.restoration.yml` adds a separate restoration container (`frameleaf-restoration`, port 3004 on the Compose network) built from `machine-learning/Dockerfile.video-restoration`. Library analysis stays in `frameleaf-machine-learning`; the two never share a worker. Use it from a source checkout with `docker compose -f docker-compose.yml -f docker-compose.restoration.yml up -d`, then add the worker under Administration > Processing destinations. No restoration image is published and the worker is not qualified; see [Workers and endpoints](../docs/docs/administration/workers-and-endpoints.md) and `machine-learning/video-restoration/README.md`.
 
 Test fixtures are frozen at commit `6742055402de1aa48f93d12ded7d18f4057f9d1f`. Hosted jobs use `bash scripts/checkout-test-assets.sh`; the manual Frameleaf frozen media fixtures workflow creates an attributed, checksummed archive for later authorized publication. No fixture tracking branch or submodule updates are followed.

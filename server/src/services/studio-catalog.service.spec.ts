@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetType, CacheControl } from 'src/enum.js';
-import { StudioCatalogService, exactFrameRateOf } from 'src/services/studio-catalog.service.js';
+import { StudioCatalogService, exactFrameRateOf, studioMediaColorOf } from 'src/services/studio-catalog.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { getMocks } from 'test/utils.js';
 
@@ -10,7 +10,7 @@ const ASSET = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e01';
 describe(StudioCatalogService.name, () => {
   let sut: StudioCatalogService;
   let access: { asset: { checkOwnerAccess: ReturnType<typeof vi.fn> } };
-  let assets: { getById: ReturnType<typeof vi.fn> };
+  let assets: { getById: ReturnType<typeof vi.fn>; getVideoColor: ReturnType<typeof vi.fn> };
   let media: { probe: ReturnType<typeof vi.fn> };
   let storage: { checkFileExists: ReturnType<typeof vi.fn> };
 
@@ -26,11 +26,21 @@ describe(StudioCatalogService.name, () => {
     ...overrides,
   });
 
+  /** A stored `asset_video` row: BT.709 8-bit unless overridden. */
+  const stream = (overrides: Record<string, unknown> = {}) => ({
+    colorTransfer: 1,
+    colorPrimaries: 1,
+    colorMatrix: 1,
+    pixelFormat: 'yuv420p',
+    dvProfile: null,
+    ...overrides,
+  });
+
   beforeEach(() => {
     const mocks = getMocks();
     access = mocks.access as never;
     access.asset.checkOwnerAccess.mockResolvedValue(new Set([ASSET]));
-    assets = { getById: vi.fn().mockResolvedValue(video()) };
+    assets = { getById: vi.fn().mockResolvedValue(video()), getVideoColor: vi.fn().mockResolvedValue(stream()) };
     media = {
       probe: vi.fn().mockResolvedValue({
         format: { duration: 10.01 },
@@ -72,8 +82,15 @@ describe(StudioCatalogService.name, () => {
       hasAudio: true,
       audioCodec: 'aac',
       videoCodec: 'h264',
+      colorTransfer: 'sdr',
+      colorTransferCode: 1,
+      colorPrimariesCode: 1,
+      colorMatrixCode: 1,
+      bitDepth: 8,
+      dolbyVisionProfile: null,
       source: 'probe',
     });
+    expect(assets.getVideoColor).toHaveBeenCalledWith(ASSET);
     expect(media.probe).toHaveBeenCalledWith('/data/upload/clip.mov');
   });
 
@@ -123,8 +140,123 @@ describe(StudioCatalogService.name, () => {
       frameRate: null,
       hasAudio: false,
       durationSeconds: 0,
+      colorTransfer: 'sdr',
+      colorTransferCode: null,
+      colorPrimariesCode: null,
+      colorMatrixCode: null,
+      bitDepth: null,
+      dolbyVisionProfile: null,
     });
     expect(media.probe).not.toHaveBeenCalled();
+    expect(assets.getVideoColor).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'PQ (H.273 transfer 16)', row: { colorTransfer: 16 }, colorTransfer: 'pq' },
+    { name: 'HLG (H.273 transfer 18)', row: { colorTransfer: 18 }, colorTransfer: 'hlg' },
+    { name: 'Dolby Vision 8.4 over an HLG base', row: { colorTransfer: 18, dvProfile: 8 }, colorTransfer: 'hdr' },
+    { name: 'Dolby Vision 8.1 over a PQ base', row: { colorTransfer: 16, dvProfile: 8 }, colorTransfer: 'hdr' },
+    { name: 'Dolby Vision 5, transfer unspecified', row: { colorTransfer: 2, dvProfile: 5 }, colorTransfer: 'hdr' },
+    { name: 'BT.709', row: { colorTransfer: 1 }, colorTransfer: 'sdr' },
+    { name: 'an unspecified transfer', row: { colorTransfer: 2 }, colorTransfer: 'sdr' },
+    { name: 'BT.2020 10-bit, not an HDR transfer', row: { colorTransfer: 14 }, colorTransfer: 'sdr' },
+    { name: 'a reserved transfer', row: { colorTransfer: 0 }, colorTransfer: 'sdr' },
+  ])('marks $name as $colorTransfer', async ({ row, colorTransfer }) => {
+    assets.getVideoColor.mockResolvedValue(stream(row));
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      colorTransfer,
+      colorTransferCode: row.colorTransfer,
+      dolbyVisionProfile: 'dvProfile' in row ? row.dvProfile : null,
+    });
+  });
+
+  it('answers the stored H.273 codes and the bit depth of the pixel format', async () => {
+    assets.getVideoColor.mockResolvedValue(
+      stream({ colorTransfer: 16, colorPrimaries: 9, colorMatrix: 9, pixelFormat: 'yuv420p10le' }),
+    );
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      colorTransfer: 'pq',
+      colorTransferCode: 16,
+      colorPrimariesCode: 9,
+      colorMatrixCode: 9,
+      bitDepth: 10,
+      dolbyVisionProfile: null,
+      source: 'probe',
+    });
+  });
+
+  it('answers no bit depth for a pixel format it cannot describe', async () => {
+    assets.getVideoColor.mockResolvedValue(stream({ pixelFormat: 'not-a-format' }));
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({ bitDepth: null });
+  });
+
+  it('answers the stored colour when the original cannot be read', async () => {
+    media.probe.mockRejectedValue(new Error('offline'));
+    assets.getVideoColor.mockResolvedValue(stream({ colorTransfer: 18, colorPrimaries: 9, colorMatrix: 9 }));
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      source: 'stored',
+      colorTransfer: 'hlg',
+      colorTransferCode: 18,
+    });
+  });
+
+  it('prefers the stored colour to the probe, and uses the probe only when nothing is stored', async () => {
+    const probed = {
+      width: 3840,
+      height: 2160,
+      rotation: 0,
+      codecName: 'hevc',
+      frameCount: 0,
+      frameRate: 30,
+      frameRateRational: { num: 30, den: 1 },
+      colorTransfer: 16,
+      colorPrimaries: 9,
+      colorMatrix: 9,
+      pixelFormat: 'yuv420p10le',
+      dvProfile: null,
+    };
+    media.probe.mockResolvedValue({ format: { duration: 1 }, videoStreams: [probed], audioStreams: [] });
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      colorTransfer: 'sdr',
+      colorTransferCode: 1,
+      bitDepth: 8,
+    });
+
+    assets.getVideoColor.mockResolvedValue(undefined);
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      source: 'probe',
+      colorTransfer: 'pq',
+      colorTransferCode: 16,
+      colorPrimariesCode: 9,
+      colorMatrixCode: 9,
+      bitDepth: 10,
+      dolbyVisionProfile: null,
+    });
+  });
+
+  it('answers sdr with no codes for a video nothing is known about', async () => {
+    media.probe.mockRejectedValue(new Error('offline'));
+    assets.getVideoColor.mockResolvedValue(undefined);
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      source: 'stored',
+      colorTransfer: 'sdr',
+      colorTransferCode: null,
+      colorPrimariesCode: null,
+      colorMatrixCode: null,
+      bitDepth: null,
+      dolbyVisionProfile: null,
+    });
+  });
+
+  it('marks as HDR exactly the streams the project HDR rule counts', () => {
+    // StudioResourceService.hdrLibraryAssets: transfer 16 or 18, or any Dolby Vision profile
+    for (const colorTransfer of [0, 1, 2, 14, 16, 18]) {
+      for (const dvProfile of [null, 5, 8]) {
+        const counted = colorTransfer === 16 || colorTransfer === 18 || dvProfile !== null;
+        const marked = studioMediaColorOf(stream({ colorTransfer, dvProfile }) as never).colorTransfer;
+        expect(marked !== 'sdr').toBe(counted);
+      }
+    }
   });
 
   it('refuses an asset the caller cannot read', async () => {

@@ -130,7 +130,9 @@ const SearchLandmarkResponseSchema = LandmarkSummarySchema.extend({
   assetCount: z.int().min(1).describe('Number of timeline photos and videos taken at this landmark'),
   firstTakenAt: z.iso.datetime().describe('Local capture time of the earliest photo or video here'),
   lastTakenAt: z.iso.datetime().describe('Local capture time of the latest photo or video here'),
-  coverAssetId: z.uuidv4().describe('The latest photo or video here, for use as a cover'),
+  coverAssetId: z
+    .uuidv4()
+    .describe('The best photo or video here (by the Best Photos score, landscape preferred), for use as a cover'),
   city: z.string().nullable().describe('City most of these photos and videos were taken in'),
   state: z.string().nullable().describe('State or region most of these photos and videos were taken in'),
   country: z.string().nullable().describe('Country most of these photos and videos were taken in'),

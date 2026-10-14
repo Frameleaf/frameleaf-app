@@ -1,6 +1,393 @@
 # Server API models 8
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## CastMediaUrlResponseDto
+
+Related models: [CastMediaKind](models-07.md#castmediakind).
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "The one item this URL serves",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "When the URL stops working (15 minutes after it was issued)",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/CastMediaKind"
+    },
+    "path": {
+      "description": "The signed URL path (`/api/cast/{token}`), relative to the server origin. Prefix the server address the Cast receiver can reach. Works without a session token or cookies until `expiresAt`; never contains a session token.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "expiresAt",
+    "kind",
+    "path"
+  ],
+  "type": "object"
+}
+```
+
+## CastResponse
+
+
+```json
+{
+  "properties": {
+    "adminDisabled": {
+      "description": "Whether an administrator has turned casting off for this user",
+      "type": "boolean"
+    },
+    "gCastEnabled": {
+      "description": "Whether Google Cast is enabled (always false while an administrator has turned casting off)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "adminDisabled",
+    "gCastEnabled"
+  ],
+  "type": "object"
+}
+```
+
+## CastUpdate
+
+
+```json
+{
+  "properties": {
+    "adminDisabled": {
+      "description": "Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences",
+      "type": "boolean"
+    },
+    "gCastEnabled": {
+      "description": "Whether Google Cast is enabled",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+## ChangePasswordDto
+
+
+```json
+{
+  "properties": {
+    "invalidateSessions": {
+      "default": false,
+      "description": "Invalidate all other sessions",
+      "type": "boolean"
+    },
+    "newPassword": {
+      "description": "New password (min 8 characters)",
+      "example": "password",
+      "minLength": 8,
+      "type": "string"
+    },
+    "password": {
+      "description": "Current password",
+      "example": "password",
+      "type": "string"
+    }
+  },
+  "required": [
+    "newPassword",
+    "password"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationApplyDto
+
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "description": "Items from the plan; empty records the check when nothing changed",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "type": "array"
+    }
+  },
+  "required": [
+    "assetIds"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationApplyResponseDto
+
+
+```json
+{
+  "properties": {
+    "added": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "lastAppliedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "removed": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "suggested": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "unchanged": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "added",
+    "lastAppliedAt",
+    "removed",
+    "suggested",
+    "unchanged"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationContributionDto
+
+Related models: [ClassificationMatchDecision](models-08.md#classificationmatchdecision), [ClassificationTagDto](models-08.md#classificationtagdto).
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "type": "string"
+    },
+    "albumName": {
+      "type": "string"
+    },
+    "archived": {
+      "description": "True when this rule archived the item",
+      "type": "boolean"
+    },
+    "decision": {
+      "$ref": "#/components/schemas/ClassificationMatchDecision"
+    },
+    "ruleId": {
+      "type": "string"
+    },
+    "score": {
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "tag": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ClassificationTagDto"
+        }
+      ],
+      "description": "The tag this rule added, when it added one",
+      "nullable": true
+    }
+  },
+  "required": [
+    "albumId",
+    "albumName",
+    "archived",
+    "decision",
+    "ruleId",
+    "score",
+    "tag"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationDecisionDto
+
+Related models: [ClassificationReviewDecision](models-08.md#classificationreviewdecision).
+
+```json
+{
+  "properties": {
+    "assetIds": {
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "type": "array"
+    },
+    "decision": {
+      "$ref": "#/components/schemas/ClassificationReviewDecision"
+    }
+  },
+  "required": [
+    "assetIds",
+    "decision"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationDecisionResponseDto
+
+
+```json
+{
+  "properties": {
+    "skipped": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "updated": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "skipped",
+    "updated"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationMatchDecision
+
+
+```json
+{
+  "description": "What became of an asset a classification rule matched",
+  "enum": [
+    "matched",
+    "suggested",
+    "accepted",
+    "rejected"
+  ],
+  "type": "string"
+}
+```
+
+## ClassificationMatchDto
+
+Related models: [ClassificationMatchDecision](models-08.md#classificationmatchdecision).
+
+```json
+{
+  "properties": {
+    "archiveContributed": {
+      "type": "boolean"
+    },
+    "assetId": {
+      "type": "string"
+    },
+    "decision": {
+      "$ref": "#/components/schemas/ClassificationMatchDecision"
+    },
+    "score": {
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "tagContributed": {
+      "type": "boolean"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "archiveContributed",
+    "assetId",
+    "decision",
+    "score",
+    "tagContributed",
+    "updatedAt"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationMatchPageDto
+
+Related models: [ClassificationMatchDto](models-08.md#classificationmatchdto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/ClassificationMatchDto"
+      },
+      "type": "array"
+    },
+    "nextPage": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "nextPage",
+    "total"
+  ],
+  "type": "object"
+}
+```
+
+## ClassificationMediaType
+
+
+```json
+{
+  "description": "Which media a classification rule considers",
+  "enum": [
+    "any",
+    "photo",
+    "video"
+  ],
+  "type": "string"
+}
+```
 
 ## ClassificationPlanResponseDto
 
@@ -69,7 +456,7 @@ Related models: [ClassificationScoredAssetDto](models-08.md#classificationscored
 
 ## ClassificationPreviewDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype).
+Related models: [ClassificationMediaType](models-08.md#classificationmediatype).
 
 ```json
 {
@@ -258,7 +645,7 @@ Related models: [ClassificationScoredAssetDto](models-08.md#classificationscored
 
 ## ClassificationRuleCreateDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction).
+Related models: [ClassificationMediaType](models-08.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction).
 
 ```json
 {
@@ -379,7 +766,7 @@ Related models: [ClassificationMediaType](models-07.md#classificationmediatype),
 
 ## ClassificationRuleResponseDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction), [ClassificationRuleCountsDto](models-08.md#classificationrulecountsdto), [ClassificationTagDto](models-08.md#classificationtagdto).
+Related models: [ClassificationMediaType](models-08.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction), [ClassificationRuleCountsDto](models-08.md#classificationrulecountsdto), [ClassificationTagDto](models-08.md#classificationtagdto).
 
 ```json
 {
@@ -511,7 +898,7 @@ Related models: [ClassificationMediaType](models-07.md#classificationmediatype),
 
 ## ClassificationRuleUpdateDto
 
-Related models: [ClassificationMediaType](models-07.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction).
+Related models: [ClassificationMediaType](models-08.md#classificationmediatype), [ClassificationRuleAction](models-08.md#classificationruleaction).
 
 ```json
 {
@@ -732,7 +1119,7 @@ Related models: [CloudBackupRestoreScope](models-08.md#cloudbackuprestorescope),
 
 ## CloudBackupActiveRunDto
 
-Related models: [CloudBackupRunPhase](models-08.md#cloudbackuprunphase), [CloudBackupRunState](models-08.md#cloudbackuprunstate), [CloudBackupTask](models-08.md#cloudbackuptask).
+Related models: [CloudBackupRunPhase](models-08.md#cloudbackuprunphase), [CloudBackupRunState](models-08.md#cloudbackuprunstate), [CloudBackupTask](models-09.md#cloudbackuptask).
 
 ```json
 {
@@ -1217,7 +1604,7 @@ Related models: [CloudBackupLastRunStatus](models-08.md#cloudbackuplastrunstatus
 
 ## CloudBackupLastVerifyDto
 
-Related models: [CloudBackupVerifyDepth](models-08.md#cloudbackupverifydepth), [CloudBackupVerifyStatus](models-08.md#cloudbackupverifystatus).
+Related models: [CloudBackupVerifyDepth](models-09.md#cloudbackupverifydepth), [CloudBackupVerifyStatus](models-09.md#cloudbackupverifystatus).
 
 ```json
 {
@@ -1449,7 +1836,7 @@ Related models: [CloudBackupAlbumState](models-08.md#cloudbackupalbumstate).
   "properties": {
     "manifestKey": {
       "description": "The backup run’s manifest in the bucket",
-      "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+      "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
       "type": "string"
     }
   },
@@ -1629,7 +2016,7 @@ Related models: [CloudBackupItemFilter](models-08.md#cloudbackupitemfilter).
     },
     "manifestKey": {
       "description": "The backup run’s manifest in the bucket",
-      "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+      "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
       "type": "string"
     },
     "query": {
@@ -1746,7 +2133,7 @@ Related models: [CloudBackupManifestDto](models-08.md#cloudbackupmanifestdto).
 
 ## CloudBackupOwnerSetupResponseDto
 
-Related models: [CloudBackupOwnerSetupEntitlement](models-08.md#cloudbackupownersetupentitlement), [CloudBackupOwnerSetupFirstRun](models-08.md#cloudbackupownersetupfirstrun), [CloudBackupTargetSetting](models-08.md#cloudbackuptargetsetting).
+Related models: [CloudBackupOwnerSetupEntitlement](models-08.md#cloudbackupownersetupentitlement), [CloudBackupOwnerSetupFirstRun](models-08.md#cloudbackupownersetupfirstrun), [CloudBackupTargetSetting](models-09.md#cloudbackuptargetsetting).
 
 ```json
 {
@@ -1854,7 +2241,7 @@ Related models: [CloudBackupRestoreDetails](models-08.md#cloudbackuprestoredetai
     },
     "manifestKey": {
       "description": "The backup run’s manifest in the bucket",
-      "pattern": "^m\\/\\d{8}T\\d{6}Z\\.json\\.gz$",
+      "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
       "type": "string"
     },
     "scope": {
@@ -1979,7 +2366,7 @@ Related models: [CloudBackupRestoreDetails](models-08.md#cloudbackuprestoredetai
 
 ## CloudBackupSetupDto
 
-Related models: [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBackupS3Dto](models-08.md#cloudbackups3dto), [CloudBackupTarget](models-08.md#cloudbackuptarget).
+Related models: [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBackupS3Dto](models-08.md#cloudbackups3dto), [CloudBackupTarget](models-09.md#cloudbackuptarget).
 
 ```json
 {
@@ -1991,7 +2378,7 @@ Related models: [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBac
     },
     "key": {
       "description": "The bucket key: the key file, the base64 key or the recovery code. Never returned",
-      "maxLength": 4096,
+      "maxLength": 16384,
       "minLength": 1,
       "type": "string"
     },
@@ -2009,422 +2396,6 @@ Related models: [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBac
     "key",
     "keyMode",
     "target"
-  ],
-  "type": "object"
-}
-```
-
-## CloudBackupStatusResponseDto
-
-Related models: [CloudBackupActiveRestoreDto](models-08.md#cloudbackupactiverestoredto), [CloudBackupActiveRunDto](models-08.md#cloudbackupactiverundto), [CloudBackupEscrowStatusDto](models-08.md#cloudbackupescrowstatusdto), [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBackupLastPruneDto](models-08.md#cloudbackuplastprunedto), [CloudBackupLastRestoreDto](models-08.md#cloudbackuplastrestoredto), [CloudBackupLastRunDto](models-08.md#cloudbackuplastrundto), [CloudBackupLastVerifyDto](models-08.md#cloudbackuplastverifydto), [CloudBackupManagedDto](models-08.md#cloudbackupmanageddto), [CloudBackupTargetSetting](models-08.md#cloudbackuptargetsetting).
-
-```json
-{
-  "properties": {
-    "activeRestore": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupActiveRestoreDto"
-        }
-      ],
-      "nullable": true
-    },
-    "activeRun": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupActiveRunDto"
-        }
-      ],
-      "nullable": true
-    },
-    "bucket": {
-      "nullable": true,
-      "type": "string"
-    },
-    "claimedAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "configured": {
-      "description": "A bucket is claimed and cloud backup is on",
-      "type": "boolean"
-    },
-    "endpoint": {
-      "nullable": true,
-      "type": "string"
-    },
-    "escrow": {
-      "$ref": "#/components/schemas/CloudBackupEscrowStatusDto"
-    },
-    "instanceId": {
-      "nullable": true,
-      "type": "string"
-    },
-    "keyFingerprint": {
-      "nullable": true,
-      "type": "string"
-    },
-    "keyLoaded": {
-      "description": "The key is available to this server; false in own-memory mode until unlocked",
-      "type": "boolean"
-    },
-    "keyMode": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupKeyMode"
-        }
-      ],
-      "nullable": true
-    },
-    "lastManifestKey": {
-      "nullable": true,
-      "type": "string"
-    },
-    "lastPrune": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupLastPruneDto"
-        }
-      ],
-      "nullable": true
-    },
-    "lastRestore": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupLastRestoreDto"
-        }
-      ],
-      "nullable": true
-    },
-    "lastRun": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupLastRunDto"
-        }
-      ],
-      "nullable": true
-    },
-    "lastSuccessAt": {
-      "nullable": true,
-      "type": "string"
-    },
-    "lastVerify": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupLastVerifyDto"
-        }
-      ],
-      "nullable": true
-    },
-    "managed": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/CloudBackupManagedDto"
-        }
-      ],
-      "description": "Frameleaf-managed storage only",
-      "nullable": true
-    },
-    "managedAvailable": {
-      "description": "Frameleaf-managed storage can be chosen: this server is linked to Frameleaf Cloud",
-      "type": "boolean"
-    },
-    "region": {
-      "nullable": true,
-      "type": "string"
-    },
-    "target": {
-      "$ref": "#/components/schemas/CloudBackupTargetSetting"
-    },
-    "usage": {
-      "description": "Unique files this server has in the bucket and their size",
-      "nullable": true,
-      "properties": {
-        "bytes": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "objects": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "objects",
-        "bytes"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "activeRestore",
-    "activeRun",
-    "bucket",
-    "claimedAt",
-    "configured",
-    "endpoint",
-    "escrow",
-    "instanceId",
-    "keyFingerprint",
-    "keyLoaded",
-    "keyMode",
-    "lastManifestKey",
-    "lastPrune",
-    "lastRestore",
-    "lastRun",
-    "lastSuccessAt",
-    "lastVerify",
-    "managed",
-    "managedAvailable",
-    "region",
-    "target",
-    "usage"
-  ],
-  "type": "object"
-}
-```
-
-## CloudBackupTarget
-
-
-```json
-{
-  "description": "managed: Frameleaf-managed storage; byo-s3: your own S3-compatible bucket",
-  "enum": [
-    "managed",
-    "byo-s3"
-  ],
-  "type": "string"
-}
-```
-
-## CloudBackupTargetSetting
-
-
-```json
-{
-  "description": "off: no cloud backup; managed: Frameleaf-managed storage; byo-s3: your own S3-compatible bucket",
-  "enum": [
-    "off",
-    "managed",
-    "byo-s3"
-  ],
-  "type": "string"
-}
-```
-
-## CloudBackupTask
-
-
-```json
-{
-  "description": "backup: a backup run; verify: a check of the backed-up files; prune: a clean-up of runs past retention",
-  "enum": [
-    "backup",
-    "verify",
-    "prune"
-  ],
-  "type": "string"
-}
-```
-
-## CloudBackupUnlockDto
-
-
-```json
-{
-  "properties": {
-    "key": {
-      "description": "The key file, the base64 key or the recovery code. Kept in memory only",
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "key"
-  ],
-  "type": "object"
-}
-```
-
-## CloudBackupVerifyDepth
-
-
-```json
-{
-  "description": "sample: fetch and check this week’s 1/52 of the files; full: check every referenced file is there",
-  "enum": [
-    "sample",
-    "full"
-  ],
-  "type": "string"
-}
-```
-
-## CloudBackupVerifyDto
-
-Related models: [CloudBackupVerifyDepth](models-08.md#cloudbackupverifydepth).
-
-```json
-{
-  "properties": {
-    "depth": {
-      "$ref": "#/components/schemas/CloudBackupVerifyDepth"
-    }
-  },
-  "required": [
-    "depth"
-  ],
-  "type": "object"
-}
-```
-
-## CloudBackupVerifyStatus
-
-
-```json
-{
-  "enum": [
-    "passed",
-    "degraded",
-    "failed"
-  ],
-  "type": "string"
-}
-```
-
-## CloudHeartbeatField
-
-
-```json
-{
-  "enum": [
-    "version",
-    "bootId",
-    "uptimeSec",
-    "health",
-    "endpoints",
-    "remoteAccess",
-    "permissions",
-    "licenseKid",
-    "capabilities",
-    "remoteAccessSettings",
-    "cloudMl",
-    "cloudBackup",
-    "licenseState"
-  ],
-  "type": "string"
-}
-```
-
-## CloudLinkPendingDto
-
-
-```json
-{
-  "properties": {
-    "expiresAt": {
-      "type": "string"
-    },
-    "intervalSeconds": {
-      "description": "How often this server asks whether the code was approved",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    },
-    "userCode": {
-      "description": "The code to enter on the approval page, XXXX-XXXX",
-      "type": "string"
-    },
-    "verificationUri": {
-      "type": "string"
-    },
-    "verificationUriComplete": {
-      "description": "The approval page with the code filled in; shown as a QR code",
-      "type": "string"
-    }
-  },
-  "required": [
-    "expiresAt",
-    "intervalSeconds",
-    "userCode",
-    "verificationUri",
-    "verificationUriComplete"
-  ],
-  "type": "object"
-}
-```
-
-## CloudLinkRefusal
-
-
-```json
-{
-  "description": "Why Frameleaf Cloud refused the last link: instance-limit: the plan has no room for another server; server-refused: the server was removed from the account or the account is suspended; instance-id-taken: this server, or another one with its ID, is still registered; key-already-linked: this server’s key is already linked (a copied identity directory); region-mismatch: the account keeps its data in another region than the one this server asked for (FC-18)",
-  "enum": [
-    "instance-limit",
-    "server-refused",
-    "instance-id-taken",
-    "key-already-linked",
-    "region-mismatch"
-  ],
-  "type": "string"
-}
-```
-
-## CloudLinkResult
-
-
-```json
-{
-  "description": "How the current or last device authorization stands",
-  "enum": [
-    "pending",
-    "approved",
-    "denied",
-    "expired"
-  ],
-  "type": "string"
-}
-```
-
-## CloudLinkState
-
-
-```json
-{
-  "description": "not-configured: FRAMELEAF_CLOUD_URL is unset and nothing is contacted; unlinked: configured but not linked; pending: waiting for approval of a device code; linked; revoked: Frameleaf Cloud ended the link",
-  "enum": [
-    "not-configured",
-    "unlinked",
-    "pending",
-    "linked",
-    "revoked"
-  ],
-  "type": "string"
-}
-```
-
-## CloudMlCatalogResponseDto
-
-Related models: [CloudMlModelDto](models-09.md#cloudmlmodeldto).
-
-```json
-{
-  "properties": {
-    "models": {
-      "description": "Models Frameleaf Cloud offers now; retired models are left out",
-      "items": {
-        "$ref": "#/components/schemas/CloudMlModelDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "models"
   ],
   "type": "object"
 }

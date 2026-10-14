@@ -14,9 +14,9 @@ Examples below run from the installation directory and use the regular release C
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml config
-docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml stop immich-machine-learning
-docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml run --rm immich-model-staging --task image-description-tagging --type visual --model microsoft/Florence-2-base-ft --options '{"acceleration":"cuda"}'
-docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml up -d immich-machine-learning
+docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml stop frameleaf-machine-learning
+docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml run --rm frameleaf-model-staging --task image-description-tagging --type visual --model microsoft/Florence-2-base-ft --options '{"acceleration":"cuda"}'
+docker compose -f docker-compose.yml -f docker-compose.ml-isolated.yml up -d frameleaf-machine-learning
 ```
 
 Stage each configured task and model, including fallback models. Use the task's existing options, especially image-description acceleration. Description caches use the exact resolved repository identity and backend, with built-in artifacts in an immutable revision subdirectory. Existing legacy description directories remain preserved and need one-time restaging. Staging calls acquisition and verification only, without loading a model, custom repository Python or processing media. Existing built-in Florence allowlists, immutable revisions, hashes and attribution are preserved. If a chosen mirror does not serve the pinned files, acquisition fails; it never falls back to another source. For private/custom repositories, use an exact worker-side trust decision where required; inference API selection alone does not grant trust.
@@ -33,7 +33,7 @@ Stage each configured task and model, including fallback models. Use the task's 
 
 Stage both types where a task has two. The transcription alias chooses the staging machine's runtime/device unless `MACHINE_LEARNING_TRANSCRIPTION_MODEL` names the same concrete model configured for inference. Semantic masks retain their separate pinned provisioning command: run the staging service with `--entrypoint python` and command `scripts/provision-semantic-models.py --download`; it verifies the Florence/SAM manifests without inference. Restoration remains a separate worker and model-provisioning workflow.
 
-Warm verified caches work without an internet connection. Staging an old cache reacquires and verifies its artifacts; the original unverified directory is retained as a sibling ending in `.unverified` and is never automatically removed or used for rollback. Missing or changed files produce an actionable error, and offline inference does not clear a failed cache. To fetch an update, rerun acquisition with `--refresh`; a failed download or verification retains the active cache. A successful replacement retains one previous staged copy. Rerun with `--rollback` to swap it back, using the same task/model/options. A changed pinned revision uses a different directory: retain the previous matching release and cache for recovery. This does not roll back the application database.
+Warm verified caches work without an internet connection. Staging an old cache reacquires and verifies its artifacts; the original unverified directory is retained as a sibling ending in `.unverified` and is never automatically removed or used for rollback. Missing or changed files produce an actionable error, and offline inference does not clear a failed cache. To fetch an update, rerun acquisition with `--refresh`; a failed download or verification retains the active cache. A successful replacement retains one previous staged copy. Rerun with `--rollback` to swap it back, using the same task/model/options. An interrupted rollback leaves a sibling ending in `.rollback`; acquisition, refresh and rollback all refuse further changes until the administrator recovers it. Preserve that entry and both cache copies during recovery. A changed pinned revision uses a different directory: retain the previous matching release and cache for recovery. This does not roll back the application database.
 
 ## Credentials and metadata
 

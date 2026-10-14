@@ -1,10 +1,514 @@
 # Server API models 17
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## MediaHealthStatus
+
+
+```json
+{
+  "description": "Media health status",
+  "enum": [
+    "found",
+    "missing",
+    "candidate",
+    "relinked",
+    "dismissed",
+    "resolved",
+    "unsupported_raw",
+    "corrupt_suspect",
+    "corrupt_confirmed",
+    "trash_queued",
+    "trashed",
+    "delete_queued",
+    "deleted"
+  ],
+  "type": "string"
+}
+```
+
+## MediaHealthSummaryResponseDto
+
+Related models: [MediaHealthActivityDto](models-16.md#mediahealthactivitydto), [MediaHealthCareSettingsDto](models-16.md#mediahealthcaresettingsdto), [MediaHealthOperationDto](models-16.md#mediahealthoperationdto), [MediaHealthQueuesDto](models-16.md#mediahealthqueuesdto), [MediaHealthRunsDto](models-16.md#mediahealthrunsdto).
+
+```json
+{
+  "properties": {
+    "care": {
+      "$ref": "#/components/schemas/MediaHealthCareSettingsDto"
+    },
+    "operation": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MediaHealthOperationDto"
+        }
+      ],
+      "nullable": true
+    },
+    "queues": {
+      "$ref": "#/components/schemas/MediaHealthQueuesDto"
+    },
+    "recent": {
+      "items": {
+        "$ref": "#/components/schemas/MediaHealthActivityDto"
+      },
+      "type": "array"
+    },
+    "recoveryAvailable": {
+      "description": "At least one recovery location is configured for this reader",
+      "type": "boolean"
+    },
+    "runs": {
+      "$ref": "#/components/schemas/MediaHealthRunsDto"
+    }
+  },
+  "required": [
+    "care",
+    "operation",
+    "queues",
+    "recent",
+    "recoveryAvailable",
+    "runs"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationAggregateDto
+
+Related models: [MediaOperationDestination](models-17.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
+
+```json
+{
+  "properties": {
+    "count": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "destination": {
+      "$ref": "#/components/schemas/MediaOperationDestination"
+    },
+    "kind": {
+      "$ref": "#/components/schemas/MediaOperationKind"
+    },
+    "oldestCreatedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationStatus"
+    }
+  },
+  "required": [
+    "count",
+    "destination",
+    "kind",
+    "oldestCreatedAt",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationBulkAction
+
+
+```json
+{
+  "description": "Bulk action a durable media operation applies",
+  "enum": [
+    "favorite",
+    "unfavorite",
+    "archive",
+    "unarchive",
+    "add-to-album",
+    "remove-from-album",
+    "tag",
+    "untag",
+    "change-date",
+    "change-description",
+    "change-location",
+    "mark-sensitive",
+    "unmark-sensitive",
+    "delete",
+    "delete-permanently",
+    "restore",
+    "stack",
+    "unstack",
+    "refresh-thumbnails",
+    "refresh-metadata",
+    "refresh-encoded",
+    "refresh-faces",
+    "relink-live-photo",
+    "resolve-duplicates",
+    "undo-duplicates",
+    "relink-missing-media",
+    "recover-damaged-media",
+    "trash-damaged-media",
+    "apply-classification-rule"
+  ],
+  "type": "string"
+}
+```
+
+## MediaOperationBulkCreateDto
+
+Related models: [MediaOperationBulkAction](models-17.md#mediaoperationbulkaction), [MediaOperationBulkPayloadDto](models-17.md#mediaoperationbulkpayloaddto).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/MediaOperationBulkAction"
+    },
+    "assetIds": {
+      "description": "The frozen matching set, in order",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "payload": {
+      "$ref": "#/components/schemas/MediaOperationBulkPayloadDto"
+    },
+    "requestId": {
+      "description": "Client idempotency key; submitting the same key again returns the existing operation",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "scope": {
+      "additionalProperties": {},
+      "description": "A record of the view the set came from; never re-resolved",
+      "type": "object"
+    },
+    "submittedTotal": {
+      "description": "The count shown to the person at submit",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "The client could not resolve the whole matching set",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "assetIds"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationBulkItemDto
+
+Related models: [MediaOperationItemStatus](models-17.md#mediaoperationitemstatus).
+
+```json
+{
+  "properties": {
+    "id": {
+      "description": "Asset ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "message": {
+      "description": "Operator detail from the server",
+      "nullable": true,
+      "type": "string"
+    },
+    "reasonKey": {
+      "description": "Stable key the client turns into a message",
+      "nullable": true,
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/components/schemas/MediaOperationItemStatus"
+    }
+  },
+  "required": [
+    "id",
+    "message",
+    "reasonKey",
+    "status"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationBulkPayloadDto
+
+Related models: [MediaOperationDuplicateGroupDto](models-17.md#mediaoperationduplicategroupdto), [MediaOperationLivePhotoPairDto](models-17.md#mediaoperationlivephotopairdto), [MediaOperationMediaHealthEntryDto](models-17.md#mediaoperationmediahealthentrydto).
+
+```json
+{
+  "properties": {
+    "albumId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "classificationRuleId": {
+      "description": "For `apply-classification-rule`: the rule to apply to the items (FL-60)",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "dateMode": {
+      "enum": [
+        "set",
+        "shift"
+      ],
+      "type": "string"
+    },
+    "dateTimeOriginal": {
+      "type": "string"
+    },
+    "description": {
+      "maxLength": 10000,
+      "type": "string"
+    },
+    "duplicateGroups": {
+      "description": "Duplicate review decisions, one complete group each (FL-61)",
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationDuplicateGroupDto"
+      },
+      "maxItems": 5000,
+      "type": "array"
+    },
+    "latitude": {
+      "format": "double",
+      "maximum": 90,
+      "minimum": -90,
+      "type": "number"
+    },
+    "longitude": {
+      "format": "double",
+      "maximum": 180,
+      "minimum": -180,
+      "type": "number"
+    },
+    "mediaHealth": {
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationMediaHealthEntryDto"
+      },
+      "maxItems": 1000,
+      "type": "array"
+    },
+    "minutes": {
+      "description": "Relative shift in minutes, for `dateMode: shift`",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "pairs": {
+      "items": {
+        "$ref": "#/components/schemas/MediaOperationLivePhotoPairDto"
+      },
+      "maxItems": 50000,
+      "type": "array"
+    },
+    "primaryId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "stackIds": {
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "type": "array"
+    },
+    "tagIds": {
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "timeZone": {
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## MediaOperationBulkSummaryDto
+
+Related models: [MediaOperationBulkAction](models-17.md#mediaoperationbulkaction).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/MediaOperationBulkAction"
+    },
+    "failed": {
+      "description": "Items the server attempted and could not apply; a retry covers these",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "itemsTruncated": {
+      "type": "boolean"
+    },
+    "requested": {
+      "description": "Items in the frozen set",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "retried": {
+      "description": "Items that failed and were given their one automatic retry",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "skipped": {
+      "description": "Items refused before anything changed, e.g. no access",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "snapshotTruncated": {
+      "type": "boolean"
+    },
+    "succeeded": {
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "action",
+    "failed",
+    "itemsTruncated",
+    "requested",
+    "retried",
+    "skipped",
+    "snapshotTruncated",
+    "succeeded"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationCheckpointDto
+
+Related models: [MediaOperationCheckpointState](models-17.md#mediaoperationcheckpointstate).
+
+```json
+{
+  "properties": {
+    "chunkKey": {
+      "description": "Digest over every input to this chunk; the reuse key",
+      "type": "string"
+    },
+    "completedAt": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "endTicks": {
+      "description": "Chunk end, in ticks of the timebase",
+      "type": "string"
+    },
+    "id": {
+      "description": "Checkpoint ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "requiresSequentialContext": {
+      "description": "A render may not start inside this chunk",
+      "type": "boolean"
+    },
+    "sequence": {
+      "description": "Chunk order within the render",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "type": "integer"
+    },
+    "sizeInBytes": {
+      "nullable": true,
+      "type": "string"
+    },
+    "startTicks": {
+      "description": "Chunk start, in ticks of the timebase",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/components/schemas/MediaOperationCheckpointState"
+    },
+    "timebase": {
+      "description": "Rational timebase for the tick range, e.g. 30000/1001",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chunkKey",
+    "completedAt",
+    "endTicks",
+    "id",
+    "requiresSequentialContext",
+    "sequence",
+    "sizeInBytes",
+    "startTicks",
+    "state",
+    "timebase"
+  ],
+  "type": "object"
+}
+```
+
+## MediaOperationCheckpointState
+
+
+```json
+{
+  "description": "Media operation checkpoint state",
+  "enum": [
+    "pending",
+    "complete",
+    "invalid"
+  ],
+  "type": "string"
+}
+```
+
+## MediaOperationDestination
+
+
+```json
+{
+  "description": "Media operation destination",
+  "enum": [
+    "local",
+    "lan",
+    "frameleaf-cloud"
+  ],
+  "type": "string"
+}
+```
 
 ## MediaOperationDetailDto
 
-Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkItemDto](models-16.md#mediaoperationbulkitemdto), [MediaOperationBulkSummaryDto](models-16.md#mediaoperationbulksummarydto), [MediaOperationCheckpointDto](models-16.md#mediaoperationcheckpointdto), [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationEstimateDto](models-17.md#mediaoperationestimatedto), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
+Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkItemDto](models-17.md#mediaoperationbulkitemdto), [MediaOperationBulkSummaryDto](models-17.md#mediaoperationbulksummarydto), [MediaOperationCheckpointDto](models-17.md#mediaoperationcheckpointdto), [MediaOperationDestination](models-17.md#mediaoperationdestination), [MediaOperationEstimateDto](models-17.md#mediaoperationestimatedto), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus), [RenderWorkerRefusalReason](models-30.md#renderworkerrefusalreason).
 
 ```json
 {
@@ -120,6 +624,21 @@ Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [Me
     },
     "label": {
       "description": "What the person sees in Activity; empty when withheld",
+      "type": "string"
+    },
+    "lastAdmissionRefusalReason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+        }
+      ],
+      "description": "Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed",
+      "nullable": true
+    },
+    "lastAdmissionRefusedAt": {
+      "description": "When that worker refused it; null with lastAdmissionRefusalReason",
+      "format": "date-time",
+      "nullable": true,
       "type": "string"
     },
     "maxAttempts": {
@@ -247,7 +766,7 @@ Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [Me
 
 ## MediaOperationDto
 
-Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkSummaryDto](models-16.md#mediaoperationbulksummarydto), [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationEstimateDto](models-17.md#mediaoperationestimatedto), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus).
+Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [MediaOperationBulkSummaryDto](models-17.md#mediaoperationbulksummarydto), [MediaOperationDestination](models-17.md#mediaoperationdestination), [MediaOperationEstimateDto](models-17.md#mediaoperationestimatedto), [MediaOperationKind](models-17.md#mediaoperationkind), [MediaOperationStatus](models-17.md#mediaoperationstatus), [RenderWorkerRefusalReason](models-30.md#renderworkerrefusalreason).
 
 ```json
 {
@@ -342,6 +861,21 @@ Related models: [CloudMlJobActivityDto](models-09.md#cloudmljobactivitydto), [Me
     },
     "label": {
       "description": "What the person sees in Activity; empty when withheld",
+      "type": "string"
+    },
+    "lastAdmissionRefusalReason": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+        }
+      ],
+      "description": "Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed",
+      "nullable": true
+    },
+    "lastAdmissionRefusedAt": {
+      "description": "When that worker refused it; null with lastAdmissionRefusalReason",
+      "format": "date-time",
+      "nullable": true,
       "type": "string"
     },
     "maxAttempts": {
@@ -690,7 +1224,7 @@ Related models: [MediaOperationDto](models-17.md#mediaoperationdto).
 
 ## MediaOperationStatisticsDto
 
-Related models: [MediaOperationAggregateDto](models-16.md#mediaoperationaggregatedto).
+Related models: [MediaOperationAggregateDto](models-17.md#mediaoperationaggregatedto).
 
 ```json
 {
@@ -807,7 +1341,7 @@ Related models: [MediaOperationAggregateDto](models-16.md#mediaoperationaggregat
 
 ## MemoryCreateDto
 
-Related models: [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md#memorytype).
+Related models: [MemoryData](models-17.md#memorydata), [MemoryType](models-18.md#memorytype).
 
 ```json
 {
@@ -1227,7 +1761,7 @@ Related models: [MemoryHighlightAudio](models-17.md#memoryhighlightaudio), [Memo
 
 ## MemoryResponseDto
 
-Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MemoryData](models-17.md#memorydata), [MemoryType](models-17.md#memorytype).
+Related models: [AssetResponseDto](models-06.md#assetresponsedto), [MemoryData](models-17.md#memorydata), [MemoryType](models-18.md#memorytype).
 
 ```json
 {
@@ -1401,224 +1935,5 @@ Related models: [MemoryShowLessKind](models-17.md#memoryshowlesskind).
     "type"
   ],
   "type": "string"
-}
-```
-
-## MemoryShowLessResponseDto
-
-Related models: [MemoryShowLessKind](models-17.md#memoryshowlesskind).
-
-```json
-{
-  "properties": {
-    "createdAt": {
-      "description": "When the rule was added",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "kind": {
-      "$ref": "#/components/schemas/MemoryShowLessKind"
-    },
-    "name": {
-      "description": "The person's or pet's name, for person and pet rules",
-      "nullable": true,
-      "type": "string"
-    },
-    "value": {
-      "description": "A person or pet id, a date as 'MM-dd', or a memory type",
-      "type": "string"
-    }
-  },
-  "required": [
-    "createdAt",
-    "kind",
-    "name",
-    "value"
-  ],
-  "type": "object"
-}
-```
-
-## MemoryStatisticsResponseDto
-
-
-```json
-{
-  "properties": {
-    "total": {
-      "description": "Total number of memories",
-      "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "total"
-  ],
-  "type": "object"
-}
-```
-
-## MemoryStoryPlaceDto
-
-
-```json
-{
-  "properties": {
-    "city": {
-      "description": "City",
-      "nullable": true,
-      "type": "string"
-    },
-    "country": {
-      "description": "Country",
-      "nullable": true,
-      "type": "string"
-    },
-    "state": {
-      "description": "State or region",
-      "nullable": true,
-      "type": "string"
-    }
-  },
-  "required": [
-    "city",
-    "country",
-    "state"
-  ],
-  "type": "object"
-}
-```
-
-## MemoryType
-
-
-```json
-{
-  "description": "Memory type",
-  "enum": [
-    "on_this_day",
-    "event_story",
-    "year_in_review",
-    "pet_story",
-    "birthday",
-    "person_recap"
-  ],
-  "type": "string"
-}
-```
-
-## MemoryUpdateDto
-
-
-```json
-{
-  "properties": {
-    "assetOrder": {
-      "description": "The memory's items in the order the owner chose; items not listed follow in capture order",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "maxItems": 5000,
-      "type": "array",
-      "x-immich-history": [
-        {
-          "version": "v3",
-          "state": "Added"
-        }
-      ]
-    },
-    "isHidden": {
-      "description": "Hide the memory from the memories list; false restores it",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v3",
-          "state": "Added"
-        }
-      ]
-    },
-    "isSaved": {
-      "description": "Is memory saved",
-      "type": "boolean"
-    },
-    "memoryAt": {
-      "description": "Memory date",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "seenAt": {
-      "description": "Date when memory was seen",
-      "example": "2024-01-01T00:00:00.000Z",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
-      "type": "string"
-    },
-    "title": {
-      "description": "The owner's own title for the memory; null returns to the generated one",
-      "maxLength": 200,
-      "minLength": 1,
-      "nullable": true,
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v3",
-          "state": "Added"
-        }
-      ]
-    }
-  },
-  "type": "object"
-}
-```
-
-## MergePersonDto
-
-
-```json
-{
-  "properties": {
-    "ids": {
-      "description": "Person IDs to merge",
-      "items": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "ids"
-  ],
-  "type": "object"
-}
-```
-
-## MergeSuggestionsResponseDto
-
-Related models: [PersonMergeSuggestionDto](models-19.md#personmergesuggestiondto).
-
-```json
-{
-  "properties": {
-    "suggestions": {
-      "description": "Suggested pairs of people that may be the same person",
-      "items": {
-        "$ref": "#/components/schemas/PersonMergeSuggestionDto"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "suggestions"
-  ],
-  "type": "object"
 }
 ```

@@ -8,7 +8,7 @@ const row = (overrides: Partial<MlDestinationRow>): MlDestinationRow => ({
   id: 'ml-destination-local',
   kind: MlDestinationKind.Local,
   name: 'This server',
-  url: 'http://immich-machine-learning:3003',
+  url: 'http://frameleaf-machine-learning:3003',
   authToken: null,
   enabled: true,
   workloads: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment],
@@ -164,6 +164,6 @@ export const mlSelectionStub = (workload: MlWorkload, destination = mlDestinatio
   destinationId: destination.id,
   kind: destination.kind,
   workload,
-  endpoint: { url: destination.url ?? 'http://immich-machine-learning:3003' },
+  endpoint: { url: destination.url ?? 'http://frameleaf-machine-learning:3003' },
   record: () => {},
 });

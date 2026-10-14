@@ -12,6 +12,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { getKeysDeep, unsetDeep } from 'src/utils/misc.js';
 import { canonicalJson } from 'src/utils/object.js';
 import {
@@ -466,6 +467,26 @@ const buildConfig = async (repos: RepoDeps, privateErrors = false) => {
 
   if (!config.ffmpeg.acceptedAudioCodecs.includes(config.ffmpeg.targetAudioCodec)) {
     config.ffmpeg.acceptedAudioCodecs.push(config.ffmpeg.targetAudioCodec);
+  }
+
+  if (configFile) {
+    const epoch = await metadataRepo.getEffectiveConfigEpoch();
+    const priorDigest = epoch?.recoveryMl?.rawDigest ?? epoch?.digest;
+    if (epoch?.sourceKind === 'file' && priorDigest !== configDigest(config)) {
+      const legacy = cloneDeep(config);
+      const priorDefaults = {
+        'machineLearning.urls': [
+          readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_URL') || 'http://immich-machine-learning:3003',
+        ],
+        'oauth.roleClaim': 'immich_role',
+        'oauth.storageQuotaClaim': 'immich_quota',
+      };
+      for (const [property, value] of Object.entries(priorDefaults)) {
+        if (get(partial, property) === undefined) set(legacy, property, value);
+      }
+      // Only the exact previously approved file configuration may retain the old defaults.
+      if (configDigest(legacy) === priorDigest) return legacy;
+    }
   }
 
   return config;

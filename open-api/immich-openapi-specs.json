@@ -12390,6 +12390,79 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/uploads/{id}/direct": {
+      "post": {
+        "description": "Version 1 complete data-only offer/answer; native upload ownership, durable offsets and receipts remain authoritative.",
+        "operationId": "negotiateAssetUploadDirect",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetUploadDirectDescriptionDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "description": "Direct peer capacity unavailable"
+          },
+          "503": {
+            "description": "Direct negotiation unavailable; native HTTPS resume is retained"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Negotiate a resource-scoped direct upload data channel",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assets/uploads/{id}/result": {
       "get": {
         "operationId": "getAssetUploadResourceResult",
@@ -15830,7 +15903,7 @@
             }
           },
           {
-            "name": "x-immich-hls-pos",
+            "name": "x-frameleaf-hls-pos",
             "required": false,
             "in": "header",
             "schema": {
@@ -15941,7 +16014,7 @@
             }
           },
           {
-            "name": "x-immich-hls-msn",
+            "name": "x-frameleaf-hls-msn",
             "required": false,
             "in": "header",
             "schema": {
@@ -41327,7 +41400,7 @@
     },
     "/studio/assets/{id}/media-facts": {
       "get": {
-        "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so.",
+        "description": "What placing this photo or video in Studio needs (graph protocol 3.5), read from the original: its exact frame rate as a reduced fraction, whether it has an audio track and its codec, its display size and length. When the original cannot be read, the stored metadata is answered and `source` says so. It also answers the colour of the picture stream as metadata extraction stored it: `colorTransfer` (`hdr` for any Dolby Vision profile, else `pq` for H.273 transfer 16, `hlg` for 18, `sdr` otherwise), the H.273 codes, the bit depth and the Dolby Vision profile. A native client that cannot read the stream itself marks its media record from it.",
         "operationId": "getStudioMediaFacts",
         "parameters": [
           {
@@ -47907,6 +47980,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/takeout/{id}/items/{itemId}/preview": {
+      "get": {
+        "description": "A small WebP made from the staged file of a photo not yet in the library.",
+        "operationId": "getTakeoutItemPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a photo waiting in a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/takeout/{id}/live-photos": {
       "get": {
         "operationId": "getTakeoutPairs",
@@ -48192,7 +48333,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48429,7 +48580,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48678,7 +48839,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -48928,7 +49099,17 @@
             "in": "query",
             "description": "With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.",
             "schema": {
-              "$ref": "#/components/schemas/AssetLockReason"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetLockReason"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "immich-locked-folder"
+                  ]
+                }
+              ]
             }
           },
           {
@@ -61242,7 +61423,7 @@
         "enum": [
           "marked",
           "detected",
-          "immich-locked-folder"
+          "frameleaf-locked-folder"
         ],
         "type": "string"
       },
@@ -62694,6 +62875,26 @@
           "reject"
         ],
         "type": "string"
+      },
+      "AssetUploadDirectDescriptionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "sdp": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sdp",
+          "version"
+        ],
+        "type": "object"
       },
       "AssetUploadResultDto": {
         "properties": {
@@ -82194,6 +82395,21 @@
             "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
+          "lastAdmissionRefusalReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "description": "Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed",
+            "nullable": true
+          },
+          "lastAdmissionRefusedAt": {
+            "description": "When that worker refused it; null with lastAdmissionRefusalReason",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "maxAttempts": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -82407,6 +82623,21 @@
           },
           "label": {
             "description": "What the person sees in Activity; empty when withheld",
+            "type": "string"
+          },
+          "lastAdmissionRefusalReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "description": "Why the last render worker that looked at this queued job did not take it; null when none has refused it since it was last claimed",
+            "nullable": true
+          },
+          "lastAdmissionRefusedAt": {
+            "description": "When that worker refused it; null with lastAdmissionRefusalReason",
+            "format": "date-time",
+            "nullable": true,
             "type": "string"
           },
           "maxAttempts": {
@@ -110071,7 +110302,7 @@
             "type": "string"
           },
           "coverAssetId": {
-            "description": "The latest photo or video here, for use as a cover",
+            "description": "The best photo or video here (by the Best Photos score, landscape preferred), for use as a cover",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -115160,6 +115391,16 @@
         ],
         "type": "string"
       },
+      "StudioMediaColorTransfer": {
+        "description": "The Studio media record's colorTransfer (graph protocol 3.5), from the stored picture stream: hdr for any Dolby Vision profile, whatever its transfer; otherwise pq for H.273 transfer 16 and hlg for 18; sdr for anything else, for a still, and when nothing is known",
+        "enum": [
+          "sdr",
+          "pq",
+          "hlg",
+          "hdr"
+        ],
+        "type": "string"
+      },
       "StudioMediaFactsDto": {
         "properties": {
           "assetId": {
@@ -115171,6 +115412,44 @@
             "description": "The first audio track codec; its presence places a linked audio clip",
             "nullable": true,
             "type": "string"
+          },
+          "bitDepth": {
+            "description": "Bits per component, read from the pixel format of the picture stream; null when unknown",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "colorMatrixCode": {
+            "description": "ITU-T H.273 matrix coefficients of the picture stream (2: unspecified); null when none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "colorPrimariesCode": {
+            "description": "ITU-T H.273 colour primaries of the picture stream (2: unspecified); null when none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "colorTransfer": {
+            "$ref": "#/components/schemas/StudioMediaColorTransfer"
+          },
+          "colorTransferCode": {
+            "description": "ITU-T H.273 transfer characteristics of the picture stream (2: unspecified); null when none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "dolbyVisionProfile": {
+            "description": "The Dolby Vision profile of the picture stream; null when it has none or none is known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
           },
           "durationSeconds": {
             "description": "Length in seconds; 0 for a still; null when unknown",
@@ -115236,6 +115515,12 @@
         "required": [
           "assetId",
           "audioCodec",
+          "bitDepth",
+          "colorMatrixCode",
+          "colorPrimariesCode",
+          "colorTransfer",
+          "colorTransferCode",
+          "dolbyVisionProfile",
           "durationSeconds",
           "fps",
           "frameCount",
@@ -121706,6 +121991,11 @@
             "description": "Bring over favorites",
             "type": "boolean"
           },
+          "includeTrashed": {
+            "default": false,
+            "description": "Bring in photos that were in the Google Photos trash; otherwise they are skipped",
+            "type": "boolean"
+          },
           "locations": {
             "default": true,
             "description": "Bring over locations",
@@ -121721,8 +122011,8 @@
             "type": "array"
           },
           "sidecarReview": {
-            "default": true,
-            "description": "Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar",
+            "default": false,
+            "description": "Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar",
             "type": "boolean"
           },
           "updateMatchedMetadata": {
@@ -121750,6 +122040,9 @@
           "favorites": {
             "type": "boolean"
           },
+          "includeTrashed": {
+            "type": "boolean"
+          },
           "locations": {
             "type": "boolean"
           },
@@ -121772,6 +122065,7 @@
           "dates",
           "descriptions",
           "favorites",
+          "includeTrashed",
           "locations",
           "sidecarReview",
           "updateMatchedMetadata"

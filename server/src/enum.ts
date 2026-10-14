@@ -35,8 +35,8 @@ export enum ImmichHeader {
   SharedLinkSlug = 'x-immich-share-slug',
   Checksum = 'x-immich-checksum',
   CorrelationId = 'X-Correlation-ID',
-  HlsInitSegment = 'x-immich-hls-msn',
-  HlsPosition = 'x-immich-hls-pos',
+  HlsInitSegment = 'x-frameleaf-hls-msn',
+  HlsPosition = 'x-frameleaf-hls-pos',
   /** The scoped, expiring session credential a render worker was handed at admission (FL-95). */
   RenderWorkerSession = 'x-frameleaf-worker-session',
   /** FL-161: how the edge worker received a request (`lan`, `wan` or `relay`); counts only with the secret below. */
@@ -3012,7 +3012,7 @@ export enum AssetLockReason {
   /** Sensitive-content detection flagged it; reviewable and reversible in the Locked view. */
   Detected = 'detected',
   /** It was in the upstream Locked folder (`visibility = locked`) when the library was upgraded. */
-  ImmichLockedFolder = 'immich-locked-folder',
+  FrameleafLockedFolder = 'frameleaf-locked-folder',
 }
 
 /**

@@ -1,6 +1,6 @@
 # Server API models 1
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## ActivityCreateDto
 
@@ -40,7 +40,7 @@ Related models: [ReactionType](models-29.md#reactiontype).
 
 ## ActivityResponseDto
 
-Related models: [ReactionType](models-29.md#reactiontype), [UserResponseDto](models-39.md#userresponsedto).
+Related models: [ReactionType](models-29.md#reactiontype), [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {
@@ -424,19 +424,52 @@ Related models: [VideoAdjustModel](models-40.md#videoadjustmodel), [VideoDevelop
 }
 ```
 
+## AdminConfigBackupScheduleDto
+
+
+```json
+{
+  "properties": {
+    "cronExpression": {
+      "anyOf": [
+        {
+          "type": "string",
+          "description": "Cron expression"
+        },
+        {
+          "type": "string",
+          "enum": [
+            ""
+          ]
+        }
+      ],
+      "description": "When backups start: the copy on this server, then Buddy Backup, then Cloud Backup, one after another. Empty until it is first chosen: the schedule stored before then is used"
+    }
+  },
+  "required": [
+    "cronExpression"
+  ],
+  "type": "object"
+}
+```
+
 ## AdminConfigBackupsDto
 
-Related models: [AdminConfigDatabaseBackupDto](models-01.md#adminconfigdatabasebackupdto).
+Related models: [AdminConfigBackupScheduleDto](models-01.md#adminconfigbackupscheduledto), [AdminConfigDatabaseBackupDto](models-01.md#adminconfigdatabasebackupdto).
 
 ```json
 {
   "properties": {
     "database": {
       "$ref": "#/components/schemas/AdminConfigDatabaseBackupDto"
+    },
+    "schedule": {
+      "$ref": "#/components/schemas/AdminConfigBackupScheduleDto"
     }
   },
   "required": [
-    "database"
+    "database",
+    "schedule"
   ],
   "type": "object"
 }
@@ -705,7 +738,7 @@ Related models: [AdminConfigAnalyticsDto](models-01.md#adminconfiganalyticsdto),
 
 ## AdminConfigFFmpegDto
 
-Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrealtimedto), [AudioCodec](models-06.md#audiocodec), [CQMode](models-07.md#cqmode), [ToneMapping](models-38.md#tonemapping), [TranscodeHWAccel](models-38.md#transcodehwaccel), [TranscodePolicy](models-38.md#transcodepolicy), [VideoCodec](models-40.md#videocodec), [VideoContainer](models-40.md#videocontainer).
+Related models: [AdminConfigFFmpegRealtimeDto](models-01.md#adminconfigffmpegrealtimedto), [AudioCodec](models-06.md#audiocodec), [CQMode](models-07.md#cqmode), [ToneMapping](models-39.md#tonemapping), [TranscodeHWAccel](models-39.md#transcodehwaccel), [TranscodePolicy](models-39.md#transcodepolicy), [VideoCodec](models-40.md#videocodec), [VideoContainer](models-40.md#videocontainer).
 
 ```json
 {
@@ -986,7 +1019,7 @@ Related models: [HlsVideoResolution](models-13.md#hlsvideoresolution), [VideoCod
 
 ## AdminConfigFrameleafCloudBackupDto
 
-Related models: [AdminConfigFrameleafCloudBackupIncludeDto](models-01.md#adminconfigframeleafcloudbackupincludedto), [AdminConfigFrameleafCloudBackupRetentionDto](models-01.md#adminconfigframeleafcloudbackupretentiondto), [AdminConfigFrameleafCloudBackupS3Dto](models-01.md#adminconfigframeleafcloudbackups3dto), [AdminConfigFrameleafCloudBackupScheduleDto](models-01.md#adminconfigframeleafcloudbackupscheduledto), [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBackupTargetSetting](models-08.md#cloudbackuptargetsetting).
+Related models: [AdminConfigFrameleafCloudBackupIncludeDto](models-01.md#adminconfigframeleafcloudbackupincludedto), [AdminConfigFrameleafCloudBackupRetentionDto](models-01.md#adminconfigframeleafcloudbackupretentiondto), [AdminConfigFrameleafCloudBackupS3Dto](models-01.md#adminconfigframeleafcloudbackups3dto), [AdminConfigFrameleafCloudBackupScheduleDto](models-01.md#adminconfigframeleafcloudbackupscheduledto), [CloudBackupKeyMode](models-08.md#cloudbackupkeymode), [CloudBackupTargetSetting](models-09.md#cloudbackuptargetsetting).
 
 ```json
 {

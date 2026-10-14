@@ -1,6 +1,281 @@
 # Server API models 40
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## UserPreferencesUpdateDto
+
+Related models: [AlbumsUpdate](models-02.md#albumsupdate), [AvatarUpdate](models-06.md#avatarupdate), [CastUpdate](models-08.md#castupdate), [DownloadUpdate](models-11.md#downloadupdate), [EmailNotificationsUpdate](models-11.md#emailnotificationsupdate), [FoldersUpdate](models-12.md#foldersupdate), [MemoriesUpdate](models-17.md#memoriesupdate), [PeopleUpdate](models-19.md#peopleupdate), [PrivacyUpdate](models-28.md#privacyupdate), [PurchaseUpdate](models-28.md#purchaseupdate), [RatingsUpdate](models-29.md#ratingsupdate), [RecentlyAddedUpdate](models-29.md#recentlyaddedupdate), [SavedSearch](models-30.md#savedsearch), [SharedLinksUpdate](models-32.md#sharedlinksupdate), [TagsUpdate](models-38.md#tagsupdate).
+
+```json
+{
+  "properties": {
+    "albums": {
+      "$ref": "#/components/schemas/AlbumsUpdate"
+    },
+    "avatar": {
+      "$ref": "#/components/schemas/AvatarUpdate"
+    },
+    "cast": {
+      "$ref": "#/components/schemas/CastUpdate"
+    },
+    "download": {
+      "$ref": "#/components/schemas/DownloadUpdate"
+    },
+    "emailNotifications": {
+      "$ref": "#/components/schemas/EmailNotificationsUpdate"
+    },
+    "expectedRevision": {
+      "description": "The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed",
+      "type": "string"
+    },
+    "folders": {
+      "$ref": "#/components/schemas/FoldersUpdate"
+    },
+    "memories": {
+      "$ref": "#/components/schemas/MemoriesUpdate"
+    },
+    "notifications": {
+      "description": "Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision.",
+      "properties": {
+        "devices": {
+          "items": {
+            "properties": {
+              "locale": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "sessionId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionId",
+              "locale"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "locale": {
+          "maxLength": 64,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "people": {
+      "$ref": "#/components/schemas/PeopleUpdate"
+    },
+    "privacy": {
+      "$ref": "#/components/schemas/PrivacyUpdate"
+    },
+    "purchase": {
+      "$ref": "#/components/schemas/PurchaseUpdate"
+    },
+    "ratings": {
+      "$ref": "#/components/schemas/RatingsUpdate"
+    },
+    "recentlyAdded": {
+      "$ref": "#/components/schemas/RecentlyAddedUpdate"
+    },
+    "savedSearches": {
+      "description": "Saved searches, replacing the whole list (at most 50). Only the account itself can change them",
+      "items": {
+        "$ref": "#/components/schemas/SavedSearch"
+      },
+      "maxItems": 50,
+      "type": "array",
+      "x-immich-history": [
+        {
+          "version": "v3.2.0",
+          "state": "Added"
+        }
+      ]
+    },
+    "sharedLinks": {
+      "$ref": "#/components/schemas/SharedLinksUpdate"
+    },
+    "tags": {
+      "$ref": "#/components/schemas/TagsUpdate"
+    }
+  },
+  "type": "object"
+}
+```
+
+## UserResponseDto
+
+Related models: [UserAvatarColor](models-39.md#useravatarcolor).
+
+```json
+{
+  "properties": {
+    "avatarColor": {
+      "$ref": "#/components/schemas/UserAvatarColor"
+    },
+    "email": {
+      "description": "User email",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "id": {
+      "description": "User ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "profileChangedAt": {
+      "description": "Profile change date",
+      "format": "date-time",
+      "type": "string"
+    },
+    "profileImagePath": {
+      "description": "Profile image path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "avatarColor",
+    "email",
+    "id",
+    "name",
+    "profileChangedAt",
+    "profileImagePath"
+  ],
+  "type": "object"
+}
+```
+
+## UserStatus
+
+
+```json
+{
+  "description": "User status",
+  "enum": [
+    "active",
+    "removing",
+    "deleted"
+  ],
+  "type": "string"
+}
+```
+
+## UserUpdateMeDto
+
+Related models: [UserAvatarColor](models-39.md#useravatarcolor).
+
+```json
+{
+  "properties": {
+    "avatarColor": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/UserAvatarColor"
+        }
+      ],
+      "nullable": true
+    },
+    "email": {
+      "description": "User email",
+      "format": "email",
+      "pattern": "^[\\p{L}\\p{M}\\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?(?:\\.[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?)*$",
+      "type": "string"
+    },
+    "name": {
+      "description": "User name",
+      "type": "string"
+    },
+    "password": {
+      "deprecated": true,
+      "description": "User password (deprecated, use change password endpoint)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## UtilityActivityAction
+
+
+```json
+{
+  "description": "A move to the trash, or its undo",
+  "enum": [
+    "trash",
+    "restore"
+  ],
+  "type": "string"
+}
+```
+
+## UtilityActivityEntryDto
+
+Related models: [UtilityActivityAction](models-40.md#utilityactivityaction), [UtilityActivityItemDto](models-40.md#utilityactivityitemdto).
+
+```json
+{
+  "properties": {
+    "action": {
+      "$ref": "#/components/schemas/UtilityActivityAction"
+    },
+    "bytes": {
+      "description": "Combined size of the items listed below, in bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "createdAt": {
+      "description": "When the change was made",
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "description": "Entry ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "itemCount": {
+      "description": "Items listed below",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/UtilityActivityItemDto"
+      },
+      "type": "array"
+    },
+    "unavailableCount": {
+      "description": "Items of this change no longer shown: permanently deleted, or not visible to this session",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "action",
+    "bytes",
+    "createdAt",
+    "id",
+    "itemCount",
+    "items",
+    "unavailableCount"
+  ],
+  "type": "object"
+}
+```
 
 ## UtilityActivityItemDto
 
@@ -36,7 +311,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## UtilityActivityResponseDto
 
-Related models: [UtilityActivityEntryDto](models-39.md#utilityactivityentrydto).
+Related models: [UtilityActivityEntryDto](models-40.md#utilityactivityentrydto).
 
 ```json
 {

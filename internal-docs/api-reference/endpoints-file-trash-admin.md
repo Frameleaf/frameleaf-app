@@ -1,18 +1,18 @@
 # Server API — File trash (admin)
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getFileTrash
 
 `GET /api/admin/file-trash`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/physical-file-trash.controller.ts#L19).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/physical-file-trash.controller.ts#L19).
 
 List the file trash
 
 Permission: `maintenance`. Admin only: `true`.
 
-Models: [FileTrashResponseDto](models-11.md#filetrashresponsedto).
+Models: [FileTrashResponseDto](models-12.md#filetrashresponsedto).
 
 Controller access declarations:
 
@@ -108,7 +108,7 @@ Complete operation contract:
 
 `DELETE /api/admin/file-trash/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/physical-file-trash.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/physical-file-trash.controller.ts#L44).
 
 Delete a file permanently
 
@@ -187,13 +187,13 @@ Complete operation contract:
 
 `POST /api/admin/file-trash/{id}/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/physical-file-trash.controller.ts#L31).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/physical-file-trash.controller.ts#L31).
 
 Restore a file from the file trash
 
 Permission: `maintenance`. Admin only: `true`.
 
-Models: [FileTrashRestoreResponseDto](models-11.md#filetrashrestoreresponsedto).
+Models: [FileTrashRestoreResponseDto](models-12.md#filetrashrestoreresponsedto).
 
 Controller access declarations:
 

@@ -1,12 +1,12 @@
 # Server API — Media operations
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## searchMediaOperations
 
 `GET /api/media-operations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L48).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L48).
 
 List your media operations
 
@@ -130,13 +130,13 @@ Complete operation contract:
 
 `POST /api/media-operations/bulk`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L75).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L75).
 
 Queue a bulk operation
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaOperationBulkCreateDto](models-16.md#mediaoperationbulkcreatedto), [MediaOperationDto](models-17.md#mediaoperationdto).
+Models: [MediaOperationBulkCreateDto](models-17.md#mediaoperationbulkcreatedto), [MediaOperationDto](models-17.md#mediaoperationdto).
 
 Controller access declarations:
 
@@ -216,7 +216,7 @@ Complete operation contract:
 
 `GET /api/media-operations/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L63).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L63).
 
 Get media operation statistics
 
@@ -292,7 +292,7 @@ Complete operation contract:
 
 `DELETE /api/media-operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L187).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L187).
 
 Clear a finished media operation
 
@@ -369,7 +369,7 @@ Complete operation contract:
 
 `GET /api/media-operations/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L91).
 
 Get a media operation
 
@@ -454,7 +454,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/cancel`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L135).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L135).
 
 Cancel a media operation
 
@@ -541,7 +541,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/pause`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L148).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L148).
 
 Pause a media operation
 
@@ -628,7 +628,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/resume`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L161).
 
 Resume a media operation
 
@@ -715,7 +715,7 @@ Complete operation contract:
 
 `POST /api/media-operations/{id}/retry`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L174).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L174).
 
 Retry a media operation
 
@@ -802,7 +802,7 @@ Complete operation contract:
 
 `GET /api/media-operations/{id}/reverse-preview`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L118).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L118).
 
 View a source reversal preview
 
@@ -889,7 +889,7 @@ Complete operation contract:
 
 `GET /api/media-operations/{id}/reverse-result`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-operation.controller.ts#L102).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-operation.controller.ts#L102).
 
 Get a completed source reversal result
 

@@ -18,7 +18,7 @@ describe('locked view', () => {
   it('offers All, the old Locked folder, Marked and Detected, in that order', () => {
     expect(LOCKED_FILTERS).toEqual([
       'all',
-      AssetLockReason.ImmichLockedFolder,
+      AssetLockReason.FrameleafLockedFolder,
       AssetLockReason.Marked,
       AssetLockReason.Detected,
     ]);
@@ -39,13 +39,13 @@ describe('locked view', () => {
 
   it('reads a filter from the URL and falls back to All for anything unknown', () => {
     expect(parseLockedFilter('detected')).toBe(AssetLockReason.Detected);
-    expect(parseLockedFilter('immich-locked-folder')).toBe(AssetLockReason.ImmichLockedFolder);
+    expect(parseLockedFilter('frameleaf-locked-folder')).toBe(AssetLockReason.FrameleafLockedFolder);
     expect(parseLockedFilter('sensitive')).toBe('all');
     expect(parseLockedFilter(null)).toBe('all');
   });
 
   it('labels a tile Locked or Sensitive, as the prototype does', () => {
-    expect(lockBadgeLabelKey(AssetLockReason.ImmichLockedFolder)).toBe('frameleaf_library_badge_locked');
+    expect(lockBadgeLabelKey(AssetLockReason.FrameleafLockedFolder)).toBe('frameleaf_library_badge_locked');
     expect(lockBadgeLabelKey(AssetLockReason.Marked)).toBe('frameleaf_library_badge_sensitive');
     expect(lockBadgeLabelKey(AssetLockReason.Detected)).toBe('frameleaf_library_badge_sensitive');
     expect(lockBadgeLabelKey(null)).toBe('frameleaf_library_badge_locked');

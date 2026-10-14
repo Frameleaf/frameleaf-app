@@ -48,11 +48,11 @@ for (const [filename, project, rootless] of [
     assert.equal(config.name, project);
     assert.deepEqual(Object.keys(config.services), [
       "frameleaf-server",
-      "immich-machine-learning",
+      "frameleaf-machine-learning",
       "database",
     ]);
     const server = config.services["frameleaf-server"];
-    const ml = config.services["immich-machine-learning"];
+    const ml = config.services["frameleaf-machine-learning"];
     assert.equal(
       server.image,
       "ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
@@ -136,11 +136,11 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
       dockerfile: "Dockerfile",
     });
     assert.equal(
-      config.services["immich-machine-learning"].build.target,
+      config.services["frameleaf-machine-learning"].build.target,
       "prod",
     );
     assert.ok(
-      config.services["immich-machine-learning"].volumes.includes(
+      config.services["frameleaf-machine-learning"].volumes.includes(
         `${cache}:/cache`,
       ),
     );
@@ -286,7 +286,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
   assert.doesNotMatch(read("machine-learning/Dockerfile"), /AS prod-runpod/);
   assert.ok(
     read("server/src/dtos/config.dto.ts").includes(
-      "'http://immich-machine-learning:3003'",
+      "'http://frameleaf-machine-learning:3003'",
     ),
   );
   assert.match(read("docker/example.env"), /^FRAMELEAF_VERSION=release$/m);
@@ -533,7 +533,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
           "ghcr.io/frameleaf/frameleaf-server:frameleaf-v3.1.0-7",
         );
         assert.equal(
-          result.services["immich-machine-learning"].image,
+          result.services["frameleaf-machine-learning"].image,
           "ghcr.io/frameleaf/frameleaf-machine-learning:frameleaf-v3.1.0-7",
         );
       }
@@ -546,7 +546,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
         "    extends:",
         "      file: hwaccel.transcoding.yml",
         "      service: nvenc",
-        "  immich-machine-learning:",
+        "  frameleaf-machine-learning:",
         "    extends:",
         "      file: hwaccel.ml.yml",
         "      service: cuda",
@@ -556,7 +556,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
     );
     const hardware = run(["docker-compose.yml", "hardware.yml"]);
     assert.equal(
-      hardware.services["immich-machine-learning"].image,
+      hardware.services["frameleaf-machine-learning"].image,
       "ghcr.io/frameleaf/frameleaf-machine-learning:frameleaf-v3.1.0-7-cuda",
     );
     assert.equal(
@@ -565,7 +565,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       "nvidia",
     );
     assert.equal(
-      hardware.services["immich-machine-learning"].deploy.resources.reservations
+      hardware.services["frameleaf-machine-learning"].deploy.resources.reservations
         .devices[0].driver,
       "nvidia",
     );
@@ -600,7 +600,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
           `ghcr.io/frameleaf/frameleaf-server:${tag}`,
         );
         assert.equal(
-          result.services["immich-machine-learning"].image,
+          result.services["frameleaf-machine-learning"].image,
           `ghcr.io/frameleaf/frameleaf-machine-learning:${tag}`,
         );
       }

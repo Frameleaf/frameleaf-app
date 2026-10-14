@@ -1,12 +1,99 @@
 # Server API — Assets 4
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## getAssetRestorations
+
+`GET /api/assets/{id}/restorations`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L53).
+
+List restorations of an asset
+
+Permission: `asset.edit.get`. Admin only: `false`.
+
+Models: [AssetRestorationListResponseDto](models-06.md#assetrestorationlistresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller(RouteKey.Asset)
+@Get(':id/restorations')
+@Authenticated({ permission: Permission.AssetEditGet })
+@Endpoint({
+    summary: 'List restorations of an asset',
+    description:
+      'Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.",
+  "operationId": "getAssetRestorations",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/AssetRestorationListResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "List restorations of an asset",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "asset.edit.get",
+  "x-immich-state": "Alpha"
+}
+```
 
 ## requestAssetRestoration
 
 `POST /api/assets/{id}/restorations`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L81).
 
 Request a restoration preview
 
@@ -104,7 +191,7 @@ Complete operation contract:
 
 `PUT /api/assets/{id}/restorations/current`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L98).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L98).
 
 Choose the restoration used for playback
 
@@ -201,7 +288,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/restorations/options`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L65).
 
 Get restoration options for an asset
 
@@ -308,7 +395,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/restorations/{restorationId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L145).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L145).
 
 Discard a restoration
 
@@ -399,7 +486,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/restorations/{restorationId}/accept`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L114).
 
 Accept a restoration preview
 
@@ -499,7 +586,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/restorations/{restorationId}/file`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L161).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L161).
 
 View a restoration file
 
@@ -609,7 +696,7 @@ Complete operation contract:
 
 `POST /api/assets/{id}/restorations/{restorationId}/reject`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-restoration.controller.ts#L130).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-restoration.controller.ts#L130).
 
 Reject a restoration preview
 
@@ -708,7 +795,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/thumbnail`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-media.controller.ts#L172).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-media.controller.ts#L172).
 
 View asset thumbnail
 
@@ -865,7 +952,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/playback`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-media.controller.ts#L247).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-media.controller.ts#L247).
 
 Play asset video
 
@@ -980,7 +1067,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/stream/main.m3u8`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/video-stream.controller.ts#L30).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/video-stream.controller.ts#L30).
 
 Get HLS main playlist
 
@@ -1083,7 +1170,7 @@ Complete operation contract:
 
 `DELETE /api/assets/{id}/video/stream/{sessionId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/video-stream.controller.ts#L95).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/video-stream.controller.ts#L95).
 
 End HLS streaming session
 
@@ -1187,7 +1274,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/stream/{sessionId}/{variantIndex}/playlist.m3u8`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/video-stream.controller.ts#L44).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/video-stream.controller.ts#L44).
 
 Get HLS media playlist
 
@@ -1264,7 +1351,7 @@ Complete operation contract:
       }
     },
     {
-      "name": "x-immich-hls-pos",
+      "name": "x-frameleaf-hls-pos",
       "required": false,
       "in": "header",
       "schema": {
@@ -1319,7 +1406,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/stream/{sessionId}/{variantIndex}/{filename}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/video-stream.controller.ts#L67).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/video-stream.controller.ts#L67).
 
 Get HLS segment or init file
 
@@ -1403,7 +1490,7 @@ Complete operation contract:
       }
     },
     {
-      "name": "x-immich-hls-msn",
+      "name": "x-frameleaf-hls-msn",
       "required": false,
       "in": "header",
       "schema": {
@@ -1460,7 +1547,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/video/studio-hdr`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/asset-media.controller.ts#L277).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/asset-media.controller.ts#L278).
 
 Play the Studio HDR intermediate
 
@@ -1477,7 +1564,7 @@ Controller access declarations:
 @Endpoint({
     summary: 'Play the Studio HDR intermediate',
     description:
-      'FL-97: streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.',
+      'Streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
 ```
@@ -1486,7 +1573,7 @@ Complete operation contract:
 
 ```json
 {
-  "description": "FL-97: streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.",
+  "description": "Streams the 10-bit AV1 intermediate that keeps an HDR video’s BT.2020 PQ or HLG signal, for the Studio editor. Not found until it has been made (placing the video in a Studio project queues it). Supports byte range requests.",
   "operationId": "playStudioHdrVideo",
   "parameters": [
     {
@@ -1547,7 +1634,7 @@ Complete operation contract:
 
 `GET /api/assets/{id}/waveform`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/studio-media.controller.ts#L67).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/studio-media.controller.ts#L67).
 
 Get video audio waveform
 
@@ -1671,7 +1758,7 @@ Complete operation contract:
 
 `GET /api/cast/{token}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/cast.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/cast.controller.ts#L51).
 
 Read Cast media
 
@@ -1743,7 +1830,7 @@ Complete operation contract:
 
 `GET /api/develop-presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L83).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L83).
 
 List develop presets
 
@@ -1820,7 +1907,7 @@ Complete operation contract:
 
 `POST /api/develop-presets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L94).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L94).
 
 Save a develop preset
 
@@ -1904,7 +1991,7 @@ Complete operation contract:
 
 `DELETE /api/develop-presets/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L121).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L121).
 
 Delete a develop preset
 
@@ -1960,102 +2047,6 @@ Complete operation contract:
     }
   ],
   "summary": "Delete a develop preset",
-  "tags": [
-    "Assets"
-  ],
-  "x-immich-history": [
-    {
-      "version": "v3.2.0",
-      "state": "Added"
-    },
-    {
-      "version": "v3.2.0",
-      "state": "Alpha"
-    }
-  ],
-  "x-immich-state": "Alpha"
-}
-```
-
-## updateDevelopPreset
-
-`PUT /api/develop-presets/{id}`
-
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/photo-tools.controller.ts#L105).
-
-Update a develop preset
-
-Permission: `See authentication declaration`. Admin only: `false`.
-
-Models: [DevelopPresetResponseDto](models-10.md#developpresetresponsedto), [DevelopPresetUpdateDto](models-10.md#developpresetupdatedto).
-
-Controller access declarations:
-
-```typescript
-@ApiTags(ApiTag.Assets)
-@Controller()
-@Put('develop-presets/:id')
-@Authenticated()
-@Endpoint({
-    summary: 'Update a develop preset',
-    description:
-      'Renames a preset, changes its settings, or both. Settings the request leaves out keep their stored values.',
-    history: history(),
-  })
-```
-
-Complete operation contract:
-
-```json
-{
-  "description": "Renames a preset, changes its settings, or both. Settings the request leaves out keep their stored values.",
-  "operationId": "updateDevelopPreset",
-  "parameters": [
-    {
-      "name": "id",
-      "required": true,
-      "in": "path",
-      "schema": {
-        "format": "uuid",
-        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-        "type": "string"
-      }
-    }
-  ],
-  "requestBody": {
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/DevelopPresetUpdateDto"
-        }
-      }
-    },
-    "required": true
-  },
-  "responses": {
-    "200": {
-      "content": {
-        "application/json": {
-          "schema": {
-            "$ref": "#/components/schemas/DevelopPresetResponseDto"
-          }
-        }
-      },
-      "description": ""
-    }
-  },
-  "security": [
-    {
-      "bearer": []
-    },
-    {
-      "cookie": []
-    },
-    {
-      "api_key": []
-    }
-  ],
-  "summary": "Update a develop preset",
   "tags": [
     "Assets"
   ],

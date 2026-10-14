@@ -116,4 +116,40 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
       await closeSharedServicePool(pool, this.clients);
     }
   }
+
+  /** A shared five-minute lease also bounds abandoned peers after an API process exits. */
+  async claimDirectUploadPeer(id: string, ownerId: string): Promise<boolean> {
+    const client = await this.getClient().connect();
+    let discard = false;
+    try {
+      await client.query('BEGIN');
+      // Separate statements acquire a fresh snapshot after a competing admission commits.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('frameleaf-direct-upload-peers'))");
+      const { rowCount } = await client.query(
+        `INSERT INTO public.frameleaf_upload_lease (key, token, expires_at)
+         SELECT $1, $2, clock_timestamp() + interval '300 seconds'
+         WHERE (SELECT count(*) FROM public.frameleaf_upload_lease
+           WHERE key LIKE 'direct-upload-peer:%' AND expires_at > clock_timestamp()) < 16
+         AND (SELECT count(*) FROM public.frameleaf_upload_lease
+           WHERE key LIKE 'direct-upload-peer:%' AND token = $2 AND expires_at > clock_timestamp()) < 2`,
+        [`direct-upload-peer:${id}`, ownerId],
+      );
+      await client.query('COMMIT');
+      return rowCount === 1;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {
+        discard = true;
+      });
+      throw error;
+    } finally {
+      client.release(discard);
+    }
+  }
+
+  async releaseDirectUploadPeer(id: string, ownerId: string): Promise<void> {
+    await this.getClient().query('DELETE FROM public.frameleaf_upload_lease WHERE key = $1 AND token = $2', [
+      `direct-upload-peer:${id}`,
+      ownerId,
+    ]);
+  }
 }

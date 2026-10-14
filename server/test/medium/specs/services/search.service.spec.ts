@@ -13,6 +13,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -155,6 +156,84 @@ describe(SearchService.name, () => {
           country: 'France',
         },
       ]);
+    });
+
+    describe('cover (FL-395)', () => {
+      const scored = (assetId: string, ownerId: string, score: number) =>
+        defaultDatabase
+          .insertInto('asset_best_photo_score')
+          .values({ assetId, ownerId, score, scoreVersion: 1, computedAt: new Date() })
+          .execute();
+      const coverOf = async (sut: SearchService, user: { id: string }, landmarkId: string) =>
+        (await sut.getVisitedLandmarks(factory.auth({ user }))).find(({ id }) => id === landmarkId)?.coverAssetId;
+
+      it("is the place's best photo, even when it is outside the library-wide top 60", async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const at = async (exif: object, asset: object = {}, score?: number) => {
+          const { asset: created } = await ctx.newAsset({ ownerId: user.id, width: 4000, height: 3000, ...asset });
+          await ctx.newExif({ assetId: created.id, ...exif });
+          if (score !== undefined) {
+            await scored(created.id, user.id, score);
+          }
+          return created;
+        };
+        // The library's best photos are all elsewhere.
+        for (let i = 0; i < 61; i++) {
+          await at({ latitude: 40, longitude: -100 }, {}, 0.9);
+        }
+        const best = await at(atTower, { localDateTime: new Date('2023-01-01T10:00:00Z') }, 0.4);
+        await at(atTower, { localDateTime: new Date('2023-01-02T10:00:00Z') }, 0.2);
+        // The latest photo there, unscored: it was the cover before FL-395.
+        await at(atTower, { localDateTime: new Date('2023-01-03T10:00:00Z') });
+
+        const top = await new BestPhotosRepository(defaultDatabase).getBestPhotos({
+          ownerId: user.id,
+          limit: 60,
+          page: 1,
+        });
+        expect(top.items.map(({ id }) => id)).not.toContain(best.id);
+        await expect(coverOf(sut, user, tower.id)).resolves.toBe(best.id);
+      });
+
+      it('prefers a landscape photo to a better portrait one', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { asset: portrait } = await ctx.newAsset({ ownerId: user.id, width: 3000, height: 4000 });
+        const { asset: landscape } = await ctx.newAsset({ ownerId: user.id, width: 4000, height: 3000 });
+        for (const asset of [portrait, landscape]) {
+          await ctx.newExif({ assetId: asset.id, ...atTower });
+        }
+        await scored(portrait.id, user.id, 0.9);
+        await scored(landscape.id, user.id, 0.6);
+
+        await expect(coverOf(sut, user, tower.id)).resolves.toBe(landscape.id);
+      });
+
+      it.each(['archived', 'hidden', 'trashed'] as const)('is never an %s photo', async (excluded) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { asset: shown } = await ctx.newAsset({ ownerId: user.id, width: 4000, height: 3000 });
+        const { asset: excludedAsset } = await ctx.newAsset({
+          ownerId: user.id,
+          width: 4000,
+          height: 3000,
+          visibility:
+            excluded === 'archived'
+              ? AssetVisibility.Archive
+              : excluded === 'hidden'
+                ? AssetVisibility.Hidden
+                : AssetVisibility.Timeline,
+          deletedAt: excluded === 'trashed' ? new Date() : null,
+        });
+        for (const asset of [shown, excludedAsset]) {
+          await ctx.newExif({ assetId: asset.id, ...atTower });
+        }
+        await scored(shown.id, user.id, 0.3);
+        await scored(excludedAsset.id, user.id, 0.99);
+
+        await expect(coverOf(sut, user, tower.id)).resolves.toBe(shown.id);
+      });
     });
 
     it('names the best label for a photo first: the famous spot, then lesser ones, then the area around it', async () => {

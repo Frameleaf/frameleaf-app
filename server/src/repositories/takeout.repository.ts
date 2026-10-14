@@ -585,8 +585,9 @@ export class TakeoutRepository {
     locked: boolean;
   }): Promise<void> {
     // A resumed scan meets items it already recorded, and the owner may have decided about them
-    // since. Only an item still waiting, without a chosen sidecar, is updated, and only when this scan
-    // found more candidates for it: a sidecar that arrived in an archive added after the first scan.
+    // since. Only an item still waiting (in review, where the scan's own pick is not a decision, or
+    // without a chosen sidecar) is updated, and only when this scan found more candidates for it: a
+    // sidecar that arrived in an archive added after the first scan.
     await this.write((db) =>
       sql`
       insert into takeout_item (id, "importId", state, metadata, "sidecarId", candidates, albums, warnings, locked)
@@ -601,7 +602,7 @@ export class TakeoutRepository {
         locked = takeout_item.locked or excluded.locked,
         "updatedAt" = now()
       where takeout_item.state in ('ready', 'review')
-        and takeout_item."sidecarId" is null
+        and (takeout_item.state = 'review' or takeout_item."sidecarId" is null)
         and jsonb_array_length(takeout_item.candidates) < jsonb_array_length(excluded.candidates)
     `.execute(db),
     );
@@ -704,31 +705,20 @@ export class TakeoutRepository {
     );
     return Number(result.numAffectedRows ?? 0);
   }
-  /** With sidecar review switched off, disputed items import with only their own metadata. */
+  /** Items still waiting for a decision import with the sidecar chosen for them (the most likely, unless the owner picked another). */
   async releaseReview(tx: Kysely<DB>, importId: string): Promise<void> {
     await sql`
-      update takeout_item set state = 'ready', "sidecarId" = null,
-        metadata = jsonb_build_object('title', (select file.name from takeout_file file where file.id = takeout_item.id)),
-        "updatedAt" = now()
+      update takeout_item set state = 'ready', "updatedAt" = now()
       where "importId" = ${importId}::uuid and state = 'review'
     `.execute(tx);
   }
-  /** Items waiting for a decision, and how many of them a locked session cannot see. */
-  async countReview(
-    tx: Kysely<DB>,
-    importId: string,
-  ): Promise<{
-    total: number;
-    locked: number;
-  }> {
-    const { rows } = await sql<{
-      total: string;
-      locked: string;
-    }>`
-      select count(*) as total, count(*) filter (where ${itemIsLocked('takeout_item')}) as locked
-      from takeout_item where "importId" = ${importId}::uuid and state = 'review'
+  /** Photos skipped because they were in the Google Photos trash are brought in after all. */
+  async includeTrashed(tx: Kysely<DB>, importId: string): Promise<void> {
+    await sql`
+      update takeout_item set state = 'ready', "updatedAt" = now()
+      where "importId" = ${importId}::uuid and state = 'skipped' and "assetId" is null
+        and warnings @> '["trashed"]'::jsonb
     `.execute(tx);
-    return { total: toNumber(rows[0]?.total), locked: toNumber(rows[0]?.locked) };
   }
   /**
    * Record, before the upload, that this run is creating the asset. A run that stops after the upload
@@ -873,11 +863,13 @@ export class TakeoutRepository {
   /* ------------------------------------------------------------------ */
   /* Live Photo pairs                                                    */
   /* ------------------------------------------------------------------ */
-  async recordPair(importId: string, photoItemId: string, videoItemId: string): Promise<void> {
+  /** A possible Live Photo; `approved` when it is the only photo and video sharing that name. */
+  async recordPair(importId: string, photoItemId: string, videoItemId: string, approved = false): Promise<void> {
     await this.write((db) =>
       sql`
-      insert into takeout_pair ("importId", "photoItemId", "videoItemId", reason)
-      values (${importId}::uuid, ${photoItemId}::uuid, ${videoItemId}::uuid, 'same_name')
+      insert into takeout_pair ("importId", "photoItemId", "videoItemId", reason, state)
+      values (${importId}::uuid, ${photoItemId}::uuid, ${videoItemId}::uuid, 'same_name',
+        ${approved ? 'approved' : 'suggested'})
       on conflict do nothing
     `.execute(db),
     );

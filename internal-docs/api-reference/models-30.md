@@ -1,6 +1,6 @@
 # Server API models 30
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## RenderWorkerAuditDto
 
@@ -230,7 +230,7 @@ Related models: [RenderWorkerAuditEvent](models-30.md#renderworkerauditevent), [
 
 ## RenderWorkerClaimDto
 
-Related models: [MediaOperationCheckpointDto](models-16.md#mediaoperationcheckpointdto), [MediaOperationKind](models-17.md#mediaoperationkind), [RenderWorkerClaimLimitsDto](models-30.md#renderworkerclaimlimitsdto), [RenderWorkerInputGrantDto](models-30.md#renderworkerinputgrantdto).
+Related models: [MediaOperationCheckpointDto](models-17.md#mediaoperationcheckpointdto), [MediaOperationKind](models-17.md#mediaoperationkind), [RenderWorkerClaimLimitsDto](models-30.md#renderworkerclaimlimitsdto), [RenderWorkerInputGrantDto](models-30.md#renderworkerinputgrantdto).
 
 ```json
 {
@@ -428,7 +428,7 @@ Related models: [RenderWorkerOutputDto](models-30.md#renderworkeroutputdto).
 
 ## RenderWorkerCreateDto
 
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind).
+Related models: [MediaOperationDestination](models-17.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind).
 
 ```json
 {
@@ -515,7 +515,7 @@ Related models: [RenderWorkerDto](models-30.md#renderworkerdto).
 
 ## RenderWorkerDto
 
-Related models: [MediaOperationDestination](models-16.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind), [RenderWorkerStatus](models-30.md#renderworkerstatus).
+Related models: [MediaOperationDestination](models-17.md#mediaoperationdestination), [MediaOperationKind](models-17.md#mediaoperationkind), [RenderWorkerStatus](models-30.md#renderworkerstatus).
 
 ```json
 {
@@ -744,7 +744,7 @@ Related models: [RenderWorkerRefusalReason](models-30.md#renderworkerrefusalreas
       "type": "string"
     },
     "inputId": {
-      "description": "FL-90 resource key, or `source` for a single-asset workload",
+      "description": "Resource key, or `source` for a single-asset workload",
       "type": "string"
     },
     "kind": {
@@ -1144,7 +1144,7 @@ Related models: [MediaOperationKind](models-17.md#mediaoperationkind).
 
 ## RenderWorkerStreamSignalDto
 
-Related models: [StudioPreviewStreamBoundsDto](models-34.md#studiopreviewstreamboundsdto), [StudioPreviewStreamCloseReason](models-34.md#studiopreviewstreamclosereason), [StudioPreviewTimeDto](models-34.md#studiopreviewtimedto).
+Related models: [StudioPreviewStreamBoundsDto](models-34.md#studiopreviewstreamboundsdto), [StudioPreviewStreamCloseReason](models-35.md#studiopreviewstreamclosereason), [StudioPreviewTimeDto](models-35.md#studiopreviewtimedto).
 
 ```json
 {
@@ -1512,6 +1512,164 @@ Related models: [AssetRestorationMode](models-06.md#assetrestorationmode), [Rest
     "insufficient-vram"
   ],
   "type": "string"
+}
+```
+
+## RetainedProcessingProvenance
+
+Related models: [ProcessingProvenanceEvidence](models-28.md#processingprovenanceevidence), [ProcessingProvenanceFamily](models-28.md#processingprovenancefamily), [ProcessingProvenanceSourceNamespace](models-28.md#processingprovenancesourcenamespace), [ProcessingProvenanceVersion](models-28.md#processingprovenanceversion).
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "evidence": {
+      "$ref": "#/components/schemas/ProcessingProvenanceEvidence"
+    },
+    "family": {
+      "$ref": "#/components/schemas/ProcessingProvenanceFamily"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "maximum": 32768,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "width": {
+          "maximum": 32768,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "modelBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "resourceId": {
+          "pattern": "^[A-Za-z0-9:._-]{1,128}$",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resourceId",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "output": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "pattern": "^[\\u{20}-\\u{7E}]{1,128}$",
+          "type": "string"
+        },
+        "fps": {
+          "exclusiveMinimum": true,
+          "format": "double",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "frameCount": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "height": {
+          "maximum": 32768,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "width": {
+          "maximum": 32768,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "fps",
+        "frameCount",
+        "codec"
+      ],
+      "type": "object"
+    },
+    "outputSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z0-9_-]{1,128}$",
+          "type": "string"
+        },
+        "namespace": {
+          "$ref": "#/components/schemas/ProcessingProvenanceSourceNamespace"
+        },
+        "projectId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "namespace",
+        "id",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "variant": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "animation"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "liveAction"
+          ]
+        },
+        {
+          "type": "string",
+          "enum": [
+            "threeD"
+          ]
+        }
+      ]
+    },
+    "version": {
+      "$ref": "#/components/schemas/ProcessingProvenanceVersion"
+    }
+  },
+  "required": [
+    "evidence",
+    "family",
+    "input",
+    "output",
+    "outputSha256",
+    "source",
+    "variant",
+    "version"
+  ],
+  "type": "object"
 }
 ```
 

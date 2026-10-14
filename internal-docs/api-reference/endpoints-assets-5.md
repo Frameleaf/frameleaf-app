@@ -1,12 +1,108 @@
 # Server API — Assets 5
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## updateDevelopPreset
+
+`PUT /api/develop-presets/{id}`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/photo-tools.controller.ts#L105).
+
+Update a develop preset
+
+Permission: `See authentication declaration`. Admin only: `false`.
+
+Models: [DevelopPresetResponseDto](models-10.md#developpresetresponsedto), [DevelopPresetUpdateDto](models-11.md#developpresetupdatedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Assets)
+@Controller()
+@Put('develop-presets/:id')
+@Authenticated()
+@Endpoint({
+    summary: 'Update a develop preset',
+    description:
+      'Renames a preset, changes its settings, or both. Settings the request leaves out keep their stored values.',
+    history: history(),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Renames a preset, changes its settings, or both. Settings the request leaves out keep their stored values.",
+  "operationId": "updateDevelopPreset",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/DevelopPresetUpdateDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/DevelopPresetResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Update a develop preset",
+  "tags": [
+    "Assets"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.0",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.0",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-state": "Alpha"
+}
+```
 
 ## listTakeoutImports
 
 `GET /api/takeout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L58).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L58).
 
 List Google Photos imports
 
@@ -79,7 +175,7 @@ Complete operation contract:
 
 `POST /api/takeout`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L65).
 
 Start a Google Photos import
 
@@ -166,7 +262,7 @@ Complete operation contract:
 
 `GET /api/takeout/roots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L78).
 
 List the permitted import locations
 
@@ -236,7 +332,7 @@ Complete operation contract:
 
 `DELETE /api/takeout/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L92).
 
 Delete a Google Photos import
 
@@ -314,7 +410,7 @@ Complete operation contract:
 
 `GET /api/takeout/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L85).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L85).
 
 Get a Google Photos import
 
@@ -395,7 +491,7 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/archives`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L104).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L104).
 
 Stage a Takeout archive
 
@@ -487,7 +583,7 @@ Complete operation contract:
 
 `DELETE /api/takeout/{id}/archives/{archiveId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L116).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L116).
 
 Remove a staged Takeout archive
 
@@ -570,7 +666,7 @@ Complete operation contract:
 
 `PUT /api/takeout/{id}/archives/{archiveId}/chunks`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L124).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L124).
 
 Upload part of a Takeout archive
 
@@ -690,7 +786,7 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/archives/{archiveId}/verify`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L158).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L158).
 
 Check a staged part of a Takeout archive
 
@@ -790,7 +886,7 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/control`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L203).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L203).
 
 Pause, resume or cancel a Google Photos import
 
@@ -882,7 +978,7 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/import`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L186).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L186).
 
 Import the reviewed items
 
@@ -980,7 +1076,7 @@ Complete operation contract:
 
 `GET /api/takeout/{id}/items`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L215).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L215).
 
 List the items of a Google Photos import
 
@@ -1093,7 +1189,7 @@ Complete operation contract:
 
 `PUT /api/takeout/{id}/items/{itemId}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L226).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L226).
 
 Choose metadata for an item, or leave it out
 
@@ -1194,7 +1290,7 @@ Complete operation contract:
 
 `GET /api/takeout/{id}/live-photos`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L237).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L237).
 
 List possible Live Photos in a Google Photos import
 
@@ -1307,7 +1403,7 @@ Complete operation contract:
 
 `PUT /api/takeout/{id}/live-photos`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L248).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L248).
 
 Link or separate a possible Live Photo
 
@@ -1398,7 +1494,7 @@ Complete operation contract:
 
 `POST /api/takeout/{id}/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/takeout.controller.ts#L174).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/takeout.controller.ts#L174).
 
 Scan a Google Photos import
 

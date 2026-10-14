@@ -1,6 +1,521 @@
 # Server API models 12
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+
+## ExifResponseDto
+
+
+```json
+{
+  "description": "EXIF response",
+  "properties": {
+    "bitsPerSample": {
+      "default": null,
+      "description": "Bits per sample",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "city": {
+      "default": null,
+      "description": "City name",
+      "nullable": true,
+      "type": "string"
+    },
+    "colorspace": {
+      "default": null,
+      "description": "Recorded color space",
+      "nullable": true,
+      "type": "string"
+    },
+    "country": {
+      "default": null,
+      "description": "Country name",
+      "nullable": true,
+      "type": "string"
+    },
+    "dateTimeOriginal": {
+      "default": null,
+      "description": "Original date/time",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "description": {
+      "default": null,
+      "description": "Image description",
+      "nullable": true,
+      "type": "string"
+    },
+    "exifImageHeight": {
+      "default": null,
+      "description": "Image height in pixels",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "exifImageWidth": {
+      "default": null,
+      "description": "Image width in pixels",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "exposureTime": {
+      "default": null,
+      "description": "Exposure time",
+      "nullable": true,
+      "type": "string"
+    },
+    "fNumber": {
+      "default": null,
+      "description": "F-number (aperture)",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "fileSizeInByte": {
+      "default": null,
+      "description": "File size in bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "focalLength": {
+      "default": null,
+      "description": "Focal length in mm",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "fps": {
+      "default": null,
+      "description": "Video frame rate (frames per second)",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "isRejected": {
+      "default": null,
+      "description": "Whether the stored rating is rejected",
+      "nullable": true,
+      "type": "boolean"
+    },
+    "iso": {
+      "default": null,
+      "description": "ISO sensitivity",
+      "maximum": 9007199254740991,
+      "minimum": -9007199254740991,
+      "nullable": true,
+      "type": "integer"
+    },
+    "latitude": {
+      "default": null,
+      "description": "GPS latitude",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "lensModel": {
+      "default": null,
+      "description": "Lens model",
+      "nullable": true,
+      "type": "string"
+    },
+    "longitude": {
+      "default": null,
+      "description": "GPS longitude",
+      "format": "double",
+      "nullable": true,
+      "type": "number"
+    },
+    "make": {
+      "default": null,
+      "description": "Camera make",
+      "nullable": true,
+      "type": "string"
+    },
+    "model": {
+      "default": null,
+      "description": "Camera model",
+      "nullable": true,
+      "type": "string"
+    },
+    "modifyDate": {
+      "default": null,
+      "description": "Modification date/time",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "orientation": {
+      "default": null,
+      "description": "Image orientation",
+      "nullable": true,
+      "type": "string"
+    },
+    "profileDescription": {
+      "default": null,
+      "description": "Color profile description",
+      "nullable": true,
+      "type": "string"
+    },
+    "projectionType": {
+      "default": null,
+      "description": "Projection type",
+      "nullable": true,
+      "type": "string"
+    },
+    "rating": {
+      "default": null,
+      "description": "Rating",
+      "maximum": 5,
+      "minimum": 1,
+      "nullable": true,
+      "type": "integer"
+    },
+    "state": {
+      "default": null,
+      "description": "State/province name",
+      "nullable": true,
+      "type": "string"
+    },
+    "timeZone": {
+      "default": null,
+      "description": "Time zone",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## FaceDto
+
+
+```json
+{
+  "properties": {
+    "id": {
+      "description": "Face ID",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}
+```
+
+## FaceEvidenceDto
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "The complete photo the face is in",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    },
+    "box": {
+      "description": "Where the face is in the photo",
+      "nullable": true,
+      "properties": {
+        "height": {
+          "description": "Height, as a fraction of the photo height",
+          "format": "double",
+          "type": "number"
+        },
+        "width": {
+          "description": "Width, as a fraction of the photo width",
+          "format": "double",
+          "type": "number"
+        },
+        "x": {
+          "description": "Left edge, as a fraction of the photo width",
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "description": "Top edge, as a fraction of the photo height",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "faceId": {
+      "description": "The face, when it still exists",
+      "format": "uuid",
+      "nullable": true,
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId",
+    "box",
+    "faceId"
+  ],
+  "type": "object"
+}
+```
+
+## FileTrashItemResponseDto
+
+
+```json
+{
+  "properties": {
+    "checksum": {
+      "description": "Hex-encoded SHA-256 checksum of the file",
+      "type": "string"
+    },
+    "id": {
+      "description": "File trash entry id",
+      "type": "string"
+    },
+    "lastAssetId": {
+      "description": "Asset that held the file last, when known",
+      "nullable": true,
+      "type": "string"
+    },
+    "lastOwnerId": {
+      "description": "Account whose library held the file last, when known",
+      "nullable": true,
+      "type": "string"
+    },
+    "lastOwnerName": {
+      "description": "Name of that account, while it exists",
+      "nullable": true,
+      "type": "string"
+    },
+    "originalFileName": {
+      "description": "Name of the file when it was last in a library",
+      "type": "string"
+    },
+    "sizeInBytes": {
+      "description": "Size of the file in bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "trashedAt": {
+      "description": "When the file was moved to the file trash",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "checksum",
+    "id",
+    "lastAssetId",
+    "lastOwnerId",
+    "lastOwnerName",
+    "originalFileName",
+    "sizeInBytes",
+    "trashedAt"
+  ],
+  "type": "object"
+}
+```
+
+## FileTrashResponseDto
+
+Related models: [FileTrashItemResponseDto](models-12.md#filetrashitemresponsedto).
+
+```json
+{
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/components/schemas/FileTrashItemResponseDto"
+      },
+      "type": "array"
+    },
+    "total": {
+      "description": "Entries in the file trash",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "totalBytes": {
+      "description": "Disk space the file trash holds, in bytes",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "totalBytes"
+  ],
+  "type": "object"
+}
+```
+
+## FileTrashRestoreResponseDto
+
+
+```json
+{
+  "properties": {
+    "assetId": {
+      "description": "The new asset the file was restored as, in its last owner’s library",
+      "type": "string"
+    }
+  },
+  "required": [
+    "assetId"
+  ],
+  "type": "object"
+}
+```
+
+## FinishLibrarySetupDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "previewsReady": {
+      "enum": [
+        true
+      ],
+      "type": "boolean"
+    },
+    "receipt": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "revision": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "previewsReady",
+    "receipt",
+    "revision"
+  ],
+  "type": "object"
+}
+```
+
+## FolderSummaryResponseDto
+
+
+```json
+{
+  "properties": {
+    "count": {
+      "description": "Originals directly in this folder",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "coverAssetIds": {
+      "description": "Up to four assets for a cover: the newest captures directly in this folder",
+      "items": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "endDate": {
+      "description": "End date (latest original in this folder)",
+      "format": "date-time",
+      "type": "string"
+    },
+    "path": {
+      "description": "Folder path, without a trailing slash",
+      "type": "string"
+    },
+    "size": {
+      "description": "Bytes of the originals directly in this folder",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "startDate": {
+      "description": "Start date (earliest original in this folder)",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "count",
+    "coverAssetIds",
+    "endDate",
+    "path",
+    "size",
+    "startDate"
+  ],
+  "type": "object"
+}
+```
+
+## FoldersResponse
+
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "description": "Whether folders are enabled",
+      "type": "boolean"
+    },
+    "sidebarWeb": {
+      "description": "Whether folders appear in web sidebar",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "enabled",
+    "sidebarWeb"
+  ],
+  "type": "object"
+}
+```
+
+## FoldersUpdate
+
+
+```json
+{
+  "properties": {
+    "enabled": {
+      "description": "Whether folders are enabled",
+      "type": "boolean"
+    },
+    "sidebarWeb": {
+      "description": "Whether folders appear in web sidebar",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
 
 ## FrameleafAccountLinkResponseDto
 
@@ -164,7 +679,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## FrameleafLinkResponseDto
 
-Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-39.md#useravatarcolor), [UserLicense](models-39.md#userlicense), [UserStatus](models-39.md#userstatus).
+Related models: [FrameleafLinkRoleChange](models-12.md#frameleaflinkrolechange), [UserAvatarColor](models-39.md#useravatarcolor), [UserLicense](models-39.md#userlicense), [UserStatus](models-40.md#userstatus).
 
 ```json
 {
@@ -1572,545 +2087,5 @@ Related models: [HardwareBenchmarkSource](models-12.md#hardwarebenchmarksource),
     "failed"
   ],
   "type": "string"
-}
-```
-
-## HdrAssetDevelopRecipe
-
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "blacks": {
-      "default": 0,
-      "description": "Black point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "brilliance": {
-      "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "clarity": {
-      "default": 0,
-      "description": "Local contrast in the midtones",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "cleanup": {
-      "default": [],
-      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
-      "items": {
-        "$ref": "#/components/schemas/AssetDevelopCleanup"
-      },
-      "maxItems": 32,
-      "type": "array"
-    },
-    "contrast": {
-      "default": 0,
-      "description": "Contrast around middle grey",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "crop": {
-      "$ref": "#/components/schemas/KnownAssetDevelopCrop",
-      "default": {
-        "h": 1,
-        "w": 1,
-        "x": 0,
-        "y": 0
-      }
-    },
-    "dehaze": {
-      "default": 0,
-      "description": "Haze removal (positive) or addition (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "exposure": {
-      "default": 0,
-      "description": "Exposure in EV; each whole stop doubles the light",
-      "format": "double",
-      "maximum": 2,
-      "minimum": -2,
-      "type": "number"
-    },
-    "flipHorizontal": {
-      "default": false,
-      "description": "Mirror left to right",
-      "type": "boolean"
-    },
-    "flipVertical": {
-      "default": false,
-      "description": "Mirror top to bottom",
-      "type": "boolean"
-    },
-    "grain": {
-      "default": 0,
-      "description": "Film grain amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "hdr": {
-      "additionalProperties": false,
-      "default": {},
-      "properties": {
-        "intent": {
-          "default": "preserve",
-          "enum": [
-            "preserve"
-          ],
-          "type": "string"
-        },
-        "referenceWhite": {
-          "default": 203,
-          "enum": [
-            203
-          ],
-          "format": "int32",
-          "type": "integer"
-        },
-        "sdrToneMapper": {
-          "default": "libultrahdr/2.0.2",
-          "enum": [
-            "libultrahdr/2.0.2"
-          ],
-          "type": "string"
-        },
-        "version": {
-          "default": 1,
-          "enum": [
-            1
-          ],
-          "format": "int32",
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "highlights": {
-      "default": 0,
-      "description": "Highlight recovery (negative) or lift (positive)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "masks": {
-      "default": [],
-      "description": "Selective adjustments, applied in order after the global develop",
-      "items": {
-        "$ref": "#/components/schemas/AssetDevelopMask"
-      },
-      "maxItems": 8,
-      "type": "array"
-    },
-    "noiseReduction": {
-      "default": 0,
-      "description": "Luminance noise reduction amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "perspective": {
-      "$ref": "#/components/schemas/AssetDevelopPerspective",
-      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
-    },
-    "preset": {
-      "$ref": "#/components/schemas/AssetDevelopPreset",
-      "default": "Original"
-    },
-    "presetStrength": {
-      "default": 100,
-      "description": "How much of the preset is applied, as a percentage",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "renderer": {
-      "default": "frameleaf-develop-hdr/1",
-      "enum": [
-        "frameleaf-develop-hdr/1"
-      ],
-      "type": "string"
-    },
-    "rotation": {
-      "default": 0,
-      "description": "Quarter-turn rotation in degrees, clockwise",
-      "maximum": 270,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "saturation": {
-      "default": 0,
-      "description": "Global saturation",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "shadows": {
-      "default": 0,
-      "description": "Shadow lift (positive) or deepening (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "sharpen": {
-      "default": 0,
-      "description": "Detail sharpening amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "straighten": {
-      "default": 0,
-      "description": "Straighten angle in degrees, applied before the crop",
-      "format": "double",
-      "maximum": 45,
-      "minimum": -45,
-      "type": "number"
-    },
-    "temperature": {
-      "default": 0,
-      "description": "Warm (positive) or cool (negative) white balance shift",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "tint": {
-      "default": 0,
-      "description": "Magenta (positive) or green (negative) tint",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "version": {
-      "enum": [
-        3
-      ],
-      "format": "int32",
-      "type": "integer"
-    },
-    "vibrance": {
-      "default": 0,
-      "description": "Saturation weighted towards muted colours",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "vignette": {
-      "default": 0,
-      "description": "Darkened (positive) or lightened (negative) edges",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "whites": {
-      "default": 0,
-      "description": "White point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    }
-  },
-  "required": [
-    "version"
-  ],
-  "type": "object"
-}
-```
-
-## HdrAssetDevelopRecipeV4
-
-Related models: [AssetDevelopCleanup](models-04.md#assetdevelopcleanup), [AssetDevelopMask](models-04.md#assetdevelopmask), [AssetDevelopPerspective](models-04.md#assetdevelopperspective), [AssetDevelopPreset](models-04.md#assetdeveloppreset), [KnownAssetDevelopCrop](models-15.md#knownassetdevelopcrop).
-
-```json
-{
-  "additionalProperties": false,
-  "properties": {
-    "blacks": {
-      "default": 0,
-      "description": "Black point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "brilliance": {
-      "default": 0,
-      "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "clarity": {
-      "default": 0,
-      "description": "Local contrast in the midtones",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "cleanup": {
-      "default": [],
-      "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
-      "items": {
-        "$ref": "#/components/schemas/AssetDevelopCleanup"
-      },
-      "maxItems": 32,
-      "type": "array"
-    },
-    "contrast": {
-      "default": 0,
-      "description": "Contrast around middle grey",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "crop": {
-      "$ref": "#/components/schemas/KnownAssetDevelopCrop",
-      "default": {
-        "h": 1,
-        "w": 1,
-        "x": 0,
-        "y": 0
-      }
-    },
-    "dehaze": {
-      "default": 0,
-      "description": "Haze removal (positive) or addition (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "exposure": {
-      "default": 0,
-      "description": "Exposure in EV; each whole stop doubles the light",
-      "format": "double",
-      "maximum": 2,
-      "minimum": -2,
-      "type": "number"
-    },
-    "flipHorizontal": {
-      "default": false,
-      "description": "Mirror left to right",
-      "type": "boolean"
-    },
-    "flipVertical": {
-      "default": false,
-      "description": "Mirror top to bottom",
-      "type": "boolean"
-    },
-    "grain": {
-      "default": 0,
-      "description": "Film grain amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "hdr": {
-      "additionalProperties": false,
-      "default": {},
-      "properties": {
-        "intent": {
-          "default": "preserve",
-          "enum": [
-            "preserve"
-          ],
-          "type": "string"
-        },
-        "referenceWhite": {
-          "default": 203,
-          "enum": [
-            203
-          ],
-          "format": "int32",
-          "type": "integer"
-        },
-        "sdrToneMapper": {
-          "default": "libultrahdr/2.0.2-frameleaf.2",
-          "enum": [
-            "libultrahdr/2.0.2-frameleaf.2"
-          ],
-          "type": "string"
-        },
-        "version": {
-          "default": 2,
-          "enum": [
-            2
-          ],
-          "format": "int32",
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "highlights": {
-      "default": 0,
-      "description": "Highlight recovery (negative) or lift (positive)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "masks": {
-      "default": [],
-      "description": "Selective adjustments, applied in order after the global develop",
-      "items": {
-        "$ref": "#/components/schemas/AssetDevelopMask"
-      },
-      "maxItems": 8,
-      "type": "array"
-    },
-    "noiseReduction": {
-      "default": 0,
-      "description": "Luminance noise reduction amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "perspective": {
-      "$ref": "#/components/schemas/AssetDevelopPerspective",
-      "description": "Keystone correction, applied after the quarter turns and flips and before straightening"
-    },
-    "preset": {
-      "$ref": "#/components/schemas/AssetDevelopPreset",
-      "default": "Original"
-    },
-    "presetStrength": {
-      "default": 100,
-      "description": "How much of the preset is applied, as a percentage",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "renderer": {
-      "default": "frameleaf-develop-hdr/2",
-      "enum": [
-        "frameleaf-develop-hdr/2"
-      ],
-      "type": "string"
-    },
-    "rotation": {
-      "default": 0,
-      "description": "Quarter-turn rotation in degrees, clockwise",
-      "maximum": 270,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "saturation": {
-      "default": 0,
-      "description": "Global saturation",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "shadows": {
-      "default": 0,
-      "description": "Shadow lift (positive) or deepening (negative)",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "sharpen": {
-      "default": 0,
-      "description": "Detail sharpening amount",
-      "format": "double",
-      "maximum": 100,
-      "minimum": 0,
-      "type": "number"
-    },
-    "straighten": {
-      "default": 0,
-      "description": "Straighten angle in degrees, applied before the crop",
-      "format": "double",
-      "maximum": 45,
-      "minimum": -45,
-      "type": "number"
-    },
-    "temperature": {
-      "default": 0,
-      "description": "Warm (positive) or cool (negative) white balance shift",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "tint": {
-      "default": 0,
-      "description": "Magenta (positive) or green (negative) tint",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "version": {
-      "enum": [
-        4
-      ],
-      "format": "int32",
-      "type": "integer"
-    },
-    "vibrance": {
-      "default": 0,
-      "description": "Saturation weighted towards muted colours",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "vignette": {
-      "default": 0,
-      "description": "Darkened (positive) or lightened (negative) edges",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    },
-    "whites": {
-      "default": 0,
-      "description": "White point",
-      "format": "double",
-      "maximum": 100,
-      "minimum": -100,
-      "type": "number"
-    }
-  },
-  "required": [
-    "version"
-  ],
-  "type": "object"
 }
 ```

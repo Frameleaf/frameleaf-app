@@ -1,12 +1,12 @@
 # Server API — Trash
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getUtilityActivity
 
 `GET /api/trash/activity`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L50).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L50).
 
 Get utility activity
 
@@ -91,13 +91,13 @@ Complete operation contract:
 
 `POST /api/trash/apply`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L78).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L78).
 
 Apply a reviewed trash change
 
 Permission: `asset.delete`. Admin only: `false`.
 
-Models: [TrashApplyDto](models-38.md#trashapplydto), [TrashResponseDto](models-39.md#trashresponsedto).
+Models: [TrashApplyDto](models-39.md#trashapplydto), [TrashResponseDto](models-39.md#trashresponsedto).
 
 Controller access declarations:
 
@@ -178,7 +178,7 @@ Complete operation contract:
 
 `POST /api/trash/empty`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L91).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L91).
 
 Empty trash
 
@@ -258,13 +258,13 @@ Complete operation contract:
 
 `GET /api/trash/items`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L38).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L38).
 
 List trash items
 
 Permission: `asset.read`. Admin only: `false`.
 
-Models: [AssetTypeEnum](models-06.md#assettypeenum), [TrashItemSort](models-38.md#trashitemsort), [TrashItemsResponseDto](models-39.md#trashitemsresponsedto).
+Models: [AssetTypeEnum](models-06.md#assettypeenum), [TrashItemSort](models-39.md#trashitemsort), [TrashItemsResponseDto](models-39.md#trashitemsresponsedto).
 
 Controller access declarations:
 
@@ -385,7 +385,7 @@ Complete operation contract:
 
 `POST /api/trash/restore`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L103).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L103).
 
 Restore trash
 
@@ -465,7 +465,7 @@ Complete operation contract:
 
 `POST /api/trash/restore/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L115).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L115).
 
 Restore assets
 
@@ -555,7 +555,7 @@ Complete operation contract:
 
 `POST /api/trash/review`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L65).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L65).
 
 Review a trash change
 
@@ -642,7 +642,7 @@ Complete operation contract:
 
 `GET /api/trash/summary`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/trash.controller.ts#L26).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/trash.controller.ts#L26).
 
 Get trash summary
 

@@ -1,12 +1,12 @@
 # Server API — Duplicates
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## deleteDuplicates
 
 `DELETE /api/duplicates`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/duplicate.controller.ts#L28).
 
 Delete duplicates
 
@@ -89,7 +89,7 @@ Complete operation contract:
 
 `GET /api/duplicates`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate.controller.ts#L17).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/duplicate.controller.ts#L17).
 
 Retrieve duplicates
 
@@ -171,7 +171,7 @@ Complete operation contract:
 
 `GET /api/duplicates/decisions`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate-review.controller.ts#L35).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/duplicate-review.controller.ts#L35).
 
 Retrieve recent duplicate decisions
 
@@ -247,7 +247,7 @@ Complete operation contract:
 
 `POST /api/duplicates/resolve`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate.controller.ts#L52).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/duplicate.controller.ts#L52).
 
 Resolve duplicate groups
 
@@ -336,7 +336,7 @@ Complete operation contract:
 
 `GET /api/duplicates/review`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate-review.controller.ts#L23).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/duplicate-review.controller.ts#L23).
 
 Retrieve the duplicate review
 
@@ -415,7 +415,7 @@ Complete operation contract:
 
 `DELETE /api/duplicates/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/duplicate.controller.ts#L40).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/duplicate.controller.ts#L40).
 
 Dismiss a duplicate group
 

@@ -134,7 +134,7 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     await mkdir(bundle);
     await writeFile(
       join(bundle, 'docker-compose.yml'),
-      JSON.stringify({ services: { database: {}, 'frameleaf-server': {}, 'immich-machine-learning': {} } }),
+      JSON.stringify({ services: { database: {}, 'frameleaf-server': {}, 'frameleaf-machine-learning': {} } }),
     );
     const image = 'ghcr.io/frameleaf/test@sha256:' + 'a'.repeat(64);
     const release = {
@@ -158,6 +158,19 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
         { type: 'bind', source: '/fixtures/external', target: '/gallery/family', readOnly: true },
       ],
     };
+    await renderCompose(release, installation, 'disposable-password', stack);
+    const withMl = { ...installation, ml: true };
+    await renderCompose(release, withMl, 'disposable-password', stack);
+    const canonical = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
+    assert.ok(canonical.services['frameleaf-machine-learning']);
+    assert.equal(canonical.services['immich-machine-learning'], undefined);
+    assert.deepEqual(canonical.services['frameleaf-machine-learning'].networks.default.aliases, ['immich-machine-learning']);
+    await writeFile(
+      join(bundle, 'docker-compose.yml'),
+      JSON.stringify({ services: { database: {}, 'frameleaf-server': {}, 'immich-machine-learning': {} } }),
+    );
+    await renderCompose(release, withMl, 'disposable-password', stack);
+    assert.ok(JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8')).services['frameleaf-machine-learning']);
     await renderCompose(release, installation, 'disposable-password', stack);
     const compose = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
     assert.deepEqual(compose.services.database.volumes, [

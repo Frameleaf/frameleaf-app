@@ -75,8 +75,9 @@ export type TakeoutBoundary = { relativePath: string; folder: string; name: stri
 export type TakeoutWarning = 'ambiguous_sidecar' | 'no_sidecar' | 'invalid_sidecar' | 'trashed' | 'locked';
 
 /**
- * The owner's choices for an import. `albums` and `sidecarReview` are the two switches the settings
- * section names ("Recreate album memberships", "Review ambiguous sidecars").
+ * The owner's choices for an import. The import flow shows `albums`, `updateMatchedMetadata`,
+ * `includeTrashed`, and `sidecarReview` when the export has photos with conflicting details; the rest
+ * stay at their defaults.
  */
 export type TakeoutOptions = {
   descriptions: boolean;
@@ -85,10 +86,15 @@ export type TakeoutOptions = {
   favorites: boolean;
   archive: boolean;
   albums: boolean;
-  /** Hold items whose sidecars disagree for a decision; off imports them without a sidecar. */
+  /**
+   * Let the owner choose for items whose sidecars disagree. Those items wait while everything else
+   * imports; off imports them with the most likely sidecar (`takeoutMostLikelySidecar`).
+   */
   sidecarReview: boolean;
   /** Fill metadata the library is missing on photos it already had. Never overwrites a value. */
   updateMatchedMetadata: boolean;
+  /** Bring in photos that were in the Google Photos trash; otherwise they are skipped. */
+  includeTrashed: boolean;
   /** Album folders to recreate; absent means every folder that is not a year folder. */
   selectedAlbums?: string[];
 };
@@ -100,8 +106,9 @@ export const TAKEOUT_DEFAULT_OPTIONS: Readonly<TakeoutOptions> = Object.freeze({
   favorites: true,
   archive: true,
   albums: true,
-  sidecarReview: true,
+  sidecarReview: false,
   updateMatchedMetadata: false,
+  includeTrashed: false,
 });
 
 /** Stored options, read leniently: anything missing or malformed falls back to the default. */
@@ -122,6 +129,7 @@ export const parseTakeoutOptions = (value: unknown): TakeoutOptions => {
     albums: flag('albums'),
     sidecarReview: flag('sidecarReview'),
     updateMatchedMetadata: flag('updateMatchedMetadata'),
+    includeTrashed: flag('includeTrashed'),
     ...(selected && { selectedAlbums: selected }),
   };
 };
@@ -322,7 +330,24 @@ export function takeoutStableId(namespace: string) {
 }
 
 /**
- * What a scanned item starts as. One candidate is used as it is; several wait for a decision; a
+ * Of several sidecars that disagree, the one most likely to describe `name`: the one whose Google
+ * title is the file's own name, then the one carrying the most details. Ties keep the scan's order.
+ */
+export const takeoutMostLikelySidecar = <T extends { metadata: TakeoutMetadata }>(name: string, candidates: T[]) => {
+  const score = ({ metadata }: T) =>
+    (normalizedName(metadata.title) === normalizedName(name) ? 100 : 0) + Object.keys(metadata).length;
+  let best: T | undefined;
+  for (const candidate of candidates) {
+    if (!best || score(candidate) > score(best)) {
+      best = candidate;
+    }
+  }
+  return best;
+};
+
+/**
+ * What a scanned item starts as. One candidate is used as it is; several are marked for review with
+ * the most likely one already chosen, so the item imports with it unless the owner picks another; a
  * trashed photo is skipped. `locked` is true when any candidate or the folder says Locked Folder, so
  * a disputed item stays private whichever sidecar is chosen.
  */
@@ -339,8 +364,8 @@ export const takeoutScannedItem = (input: {
   locked: boolean;
 } => {
   const { candidates } = input;
-  const single = candidates.length === 1 ? candidates[0] : undefined;
-  const metadata = single?.metadata ?? { title: input.name };
+  const chosen = takeoutMostLikelySidecar(input.name, candidates);
+  const metadata = chosen?.metadata ?? { title: input.name };
   const locked = isTakeoutLockedFolder(input.folder) || candidates.some((candidate) => candidate.metadata.locked);
   const warnings: TakeoutWarning[] = [];
   if (candidates.length > 1) {
@@ -362,7 +387,7 @@ export const takeoutScannedItem = (input: {
   return {
     state: trashed ? 'skipped' : candidates.length > 1 ? 'review' : 'ready',
     metadata,
-    sidecarId: single?.id ?? null,
+    sidecarId: chosen?.id ?? null,
     warnings,
     locked,
   };

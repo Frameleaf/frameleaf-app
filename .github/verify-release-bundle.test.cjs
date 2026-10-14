@@ -32,7 +32,7 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
                 "services:",
                 "  frameleaf-server:",
                 "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
-                "  immich-machine-learning:",
+                "  frameleaf-machine-learning:",
                 "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
                 "  database:",
                 `    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:${"c".repeat(64)}`,

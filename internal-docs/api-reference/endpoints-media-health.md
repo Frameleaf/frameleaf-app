@@ -1,18 +1,18 @@
 # Server API — Media Health
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## list
 
 `GET /api/media-health`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L28).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L28).
 
 List media health findings
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthCategory](models-16.md#mediahealthcategory), [MediaHealthListResponseDto](models-16.md#mediahealthlistresponsedto), [MediaHealthStatus](models-16.md#mediahealthstatus).
+Models: [MediaHealthCategory](models-16.md#mediahealthcategory), [MediaHealthListResponseDto](models-16.md#mediahealthlistresponsedto), [MediaHealthStatus](models-17.md#mediahealthstatus).
 
 Controller access declarations:
 
@@ -148,7 +148,7 @@ Complete operation contract:
 
 `POST /api/media-health/candidates/choose`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L62).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L62).
 
 Choose media health candidates
 
@@ -232,7 +232,7 @@ Complete operation contract:
 
 `DELETE /api/media-health/corrupt`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L157).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L157).
 
 Move confirmed corrupt media to trash
 
@@ -316,7 +316,7 @@ Complete operation contract:
 
 `POST /api/media-health/corrupt/recover`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L121).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L121).
 
 Recover damaged media from a verified copy
 
@@ -401,7 +401,7 @@ Complete operation contract:
 
 `POST /api/media-health/corrupt/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L110).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L110).
 
 Start corrupt media scan
 
@@ -475,7 +475,7 @@ Complete operation contract:
 
 `POST /api/media-health/dismiss`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L133).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L133).
 
 Dismiss media health findings
 
@@ -553,7 +553,7 @@ Complete operation contract:
 
 `POST /api/media-health/missing/locate`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L87).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L87).
 
 Locate missing media
 
@@ -638,7 +638,7 @@ Complete operation contract:
 
 `POST /api/media-health/missing/relink`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L99).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L99).
 
 Relink missing media
 
@@ -722,7 +722,7 @@ Complete operation contract:
 
 `POST /api/media-health/missing/scan`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L76).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L76).
 
 Start missing media scan
 
@@ -796,7 +796,7 @@ Complete operation contract:
 
 `POST /api/media-health/reopen`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L145).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L145).
 
 Reopen media health findings
 
@@ -881,7 +881,7 @@ Complete operation contract:
 
 `GET /api/media-health/roots`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L51).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L51).
 
 List Library Care search locations
 
@@ -955,13 +955,13 @@ Complete operation contract:
 
 `GET /api/media-health/summary`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/media-health.controller.ts#L39).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/media-health.controller.ts#L39).
 
 Get Library Care summary
 
 Permission: `See authentication declaration`. Admin only: `false`.
 
-Models: [MediaHealthSummaryResponseDto](models-16.md#mediahealthsummaryresponsedto).
+Models: [MediaHealthSummaryResponseDto](models-17.md#mediahealthsummaryresponsedto).
 
 Controller access declarations:
 

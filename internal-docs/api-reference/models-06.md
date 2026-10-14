@@ -1,6 +1,6 @@
 # Server API models 6
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## AssetOrder
 
@@ -46,7 +46,7 @@ Generated from the checked-in [server contract](https://github.com/Frameleaf/fra
 
 ## AssetResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [LandmarkSummaryDto](models-15.md#landmarksummarydto), [PartnerOriginDto](models-19.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-38.md#tagresponsedto), [UserResponseDto](models-39.md#userresponsedto).
+Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [ExifResponseDto](models-12.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [LandmarkSummaryDto](models-15.md#landmarksummarydto), [PartnerOriginDto](models-19.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-38.md#tagresponsedto), [UserResponseDto](models-40.md#userresponsedto).
 
 ```json
 {
@@ -200,7 +200,7 @@ Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [As
     },
     "origin": {
       "$ref": "#/components/schemas/PartnerOriginDto",
-      "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+      "description": "Present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
     },
     "originalFileName": {
       "description": "Original file name",
@@ -1239,6 +1239,32 @@ Related models: [AssetRestorationEstimateDto](models-06.md#assetrestorationestim
 }
 ```
 
+## AssetUploadDirectDescriptionDto
+
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "sdp": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "version": {
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "sdp",
+    "version"
+  ],
+  "type": "object"
+}
+```
+
 ## AssetUploadResultDto
 
 Related models: [AssetMediaStatus](models-05.md#assetmediastatus).
@@ -1729,272 +1755,99 @@ Related models: [BackupDeviceDto](models-06.md#backupdevicedto).
 }
 ```
 
-## BestPhotoAssetResponseDto
+## BackupScheduleResponseDto
 
-Related models: [AssetStackResponseDto](models-06.md#assetstackresponsedto), [AssetTypeEnum](models-06.md#assettypeenum), [AssetVisibility](models-06.md#assetvisibility), [BestPhotoScoreDto](models-07.md#bestphotoscoredto), [ExifResponseDto](models-11.md#exifresponsedto), [ImageEncodingInfo](models-14.md#imageencodinginfo), [LandmarkSummaryDto](models-15.md#landmarksummarydto), [PartnerOriginDto](models-19.md#partnerorigindto), [PersonResponseDto](models-19.md#personresponsedto), [TagResponseDto](models-38.md#tagresponsedto), [UserResponseDto](models-39.md#userresponsedto).
+Related models: [BackupSequencePlace](models-06.md#backupsequenceplace).
 
 ```json
 {
   "properties": {
-    "bestPhotoScore": {
-      "$ref": "#/components/schemas/BestPhotoScoreDto"
-    },
-    "checksum": {
-      "description": "Base64-encoded file checksum. SHA-256 (44 chars) for assets uploaded after the SHA-256 transition; SHA-1 (28 chars) for legacy assets. Use the asset `checksumAlgorithm` field to disambiguate when length-based detection is insufficient.",
-      "type": "string"
-    },
-    "createdAt": {
-      "description": "The UTC timestamp when the asset was originally uploaded to Frameleaf.",
-      "format": "date-time",
-      "type": "string"
-    },
-    "duplicateId": {
-      "description": "Duplicate group ID",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "duration": {
-      "description": "Video/gif duration in milliseconds (null for static images)",
-      "maximum": 2147483647,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "exifInfo": {
-      "$ref": "#/components/schemas/ExifResponseDto"
-    },
-    "fileCreatedAt": {
-      "description": "The actual UTC timestamp when the file was created/captured, preserving timezone information. This is the authoritative timestamp for chronological sorting within timeline groups. Combined with timezone data, this can be used to determine the exact moment the photo was taken.",
-      "format": "date-time",
-      "type": "string"
-    },
-    "fileModifiedAt": {
-      "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
-      "format": "date-time",
-      "type": "string"
-    },
-    "hasMetadata": {
-      "description": "Whether asset has metadata",
+    "chosen": {
+      "description": "Whether the schedule was chosen in Backup settings; false while it is the one stored before",
       "type": "boolean"
     },
-    "height": {
-      "description": "Asset height",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
-    },
-    "id": {
-      "description": "Asset ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+    "cronExpression": {
+      "description": "The schedule in force, in the server time zone",
       "type": "string"
     },
-    "imageEncoding": {
-      "$ref": "#/components/schemas/ImageEncodingInfo",
-      "description": "Source image color encoding; unprocessed or unavailable evidence remains unknown"
+    "lastFinishedAt": {
+      "description": "When the last run ended",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
     },
-    "imageRenditions": {
-      "description": "Available current still renditions; omitted when file evidence was not loaded",
+    "nextRunAt": {
+      "description": "When the next run starts",
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+    },
+    "places": {
+      "description": "The places a run visits, in order",
+      "items": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/BackupSequencePlace"
+          },
+          "on": {
+            "description": "Whether a run backs up to this place",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "on"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "run": {
+      "description": "The run in progress",
+      "nullable": true,
       "properties": {
-        "hdrFullsize": {
-          "type": "boolean"
+        "place": {
+          "$ref": "#/components/schemas/BackupSequencePlace"
         },
-        "hdrPreview": {
-          "type": "boolean"
-        },
-        "sdrFullsize": {
-          "type": "boolean"
-        },
-        "sdrPreview": {
-          "type": "boolean"
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
         }
       },
       "required": [
-        "sdrPreview",
-        "sdrFullsize",
-        "hdrPreview",
-        "hdrFullsize"
+        "startedAt",
+        "place"
       ],
       "type": "object"
     },
-    "isArchived": {
-      "description": "Is archived",
-      "type": "boolean"
-    },
-    "isEdited": {
-      "description": "Is edited",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v2.5.0",
-          "state": "Added"
-        },
-        {
-          "version": "v2.5.0",
-          "state": "Beta"
-        }
-      ],
-      "x-immich-state": "Beta"
-    },
-    "isFavorite": {
-      "description": "Is favorite",
-      "type": "boolean"
-    },
-    "isOffline": {
-      "description": "Is offline",
-      "type": "boolean"
-    },
-    "isTrashed": {
-      "description": "Is trashed",
-      "type": "boolean"
-    },
-    "landmarks": {
-      "description": "Landmarks this asset was taken at, the most specific first. Only on the single-asset response.",
-      "items": {
-        "$ref": "#/components/schemas/LandmarkSummaryDto"
-      },
-      "type": "array"
-    },
-    "libraryId": {
-      "description": "Library ID",
-      "format": "uuid",
-      "nullable": true,
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v1",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "livePhotoVideoId": {
-      "description": "Live photo video ID",
-      "nullable": true,
+    "timezone": {
+      "description": "The server time zone the schedule runs in",
       "type": "string"
-    },
-    "localDateTime": {
-      "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
-      "format": "date-time",
-      "type": "string"
-    },
-    "origin": {
-      "$ref": "#/components/schemas/PartnerOriginDto",
-      "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
-    },
-    "originalFileName": {
-      "description": "Original file name",
-      "type": "string"
-    },
-    "originalMimeType": {
-      "description": "Original MIME type",
-      "type": "string"
-    },
-    "originalPath": {
-      "description": "Original file path",
-      "type": "string"
-    },
-    "owner": {
-      "$ref": "#/components/schemas/UserResponseDto"
-    },
-    "ownerId": {
-      "description": "Owner user ID",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-      "type": "string"
-    },
-    "people": {
-      "items": {
-        "$ref": "#/components/schemas/PersonResponseDto"
-      },
-      "type": "array"
-    },
-    "resized": {
-      "description": "Is resized",
-      "type": "boolean",
-      "x-immich-history": [
-        {
-          "version": "v1",
-          "state": "Added"
-        },
-        {
-          "version": "v1.113.0",
-          "state": "Deprecated"
-        }
-      ],
-      "x-immich-state": "Deprecated"
-    },
-    "stack": {
-      "allOf": [
-        {
-          "$ref": "#/components/schemas/AssetStackResponseDto"
-        }
-      ],
-      "nullable": true
-    },
-    "tags": {
-      "items": {
-        "$ref": "#/components/schemas/TagResponseDto"
-      },
-      "type": "array"
-    },
-    "thumbhash": {
-      "description": "Thumbhash for thumbnail generation (base64) also used as the c query param for thumbnail cache busting.",
-      "nullable": true,
-      "type": "string"
-    },
-    "type": {
-      "$ref": "#/components/schemas/AssetTypeEnum"
-    },
-    "updatedAt": {
-      "description": "The UTC timestamp when the asset record was last updated in the database. This is automatically maintained by the database and reflects when any field in the asset was last modified.",
-      "format": "date-time",
-      "type": "string"
-    },
-    "visibility": {
-      "$ref": "#/components/schemas/AssetVisibility"
-    },
-    "width": {
-      "description": "Asset width",
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "nullable": true,
-      "type": "integer"
     }
   },
   "required": [
-    "bestPhotoScore",
-    "checksum",
-    "createdAt",
-    "duration",
-    "fileCreatedAt",
-    "fileModifiedAt",
-    "hasMetadata",
-    "height",
-    "id",
-    "isArchived",
-    "isEdited",
-    "isFavorite",
-    "isOffline",
-    "isTrashed",
-    "localDateTime",
-    "originalFileName",
-    "originalPath",
-    "ownerId",
-    "thumbhash",
-    "type",
-    "updatedAt",
-    "visibility",
-    "width"
+    "chosen",
+    "cronExpression",
+    "lastFinishedAt",
+    "nextRunAt",
+    "places",
+    "run",
+    "timezone"
   ],
   "type": "object"
+}
+```
+
+## BackupSequencePlace
+
+
+```json
+{
+  "enum": [
+    "local",
+    "buddy",
+    "cloud"
+  ],
+  "type": "string"
 }
 ```

@@ -33,6 +33,8 @@ Code: `server/src/repositories/media-operation.repository.ts` (every transition)
 
 Working stages only move forward (`preparing` → `rendering` → `validating`). A progress report that would move a job backwards is refused.
 
+A client reads `lastAdmissionRefusalReason` and `lastAdmissionRefusedAt` on the job to explain a queued export that no worker has claimed. When a render worker looks at a queued job and a limit stops it taking that job, the server writes the refusal code and the time on the job; the next claim clears both. Both are null while no worker has refused the job. For a job that stays queued that means no worker has considered it: none is asking for work at its destination, or those that are were turned away themselves or are busy. The reason is one of the stable codes of `RenderWorkerRefusalReason`: `destination_mismatch`, `worker_mismatch`, `scope_exceeded`, `destination_unavailable`, `engine_digest_mismatch`, `codec_unsupported`, `gpu_memory_insufficient`, `user_concurrency_exceeded` or `manifest_incomplete`. A code names a limit, never a worker, another account or a path, and a stored value that is not a known code is answered as null.
+
 ## Cancel
 
 A queued or paused job is cancelled at once. A claimed job goes to `cancelling` and keeps its lease, because the worker holding it has to answer. Only the worker holding the current claim can acknowledge the cancel. A worker whose lease lapsed and whose job another worker has since claimed cannot settle it. If the worker never answers, recovery marks the job `cancelled` without an acknowledgement. A cancel is never retried.

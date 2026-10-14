@@ -1,12 +1,12 @@
 # Server API — Tags
 
-Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
+Generated from the checked-in [server contract](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/open-api/immich-openapi-specs.json). Base path: `/api`. Wire names are preserved for client compatibility. Full JSON below retains validation constraints, formats, nullability, media types, status codes, extensions and history.
 
 ## getAllTags
 
 `GET /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L36).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L37).
 
 Retrieve tags
 
@@ -88,7 +88,7 @@ Complete operation contract:
 
 `POST /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L25).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L26).
 
 Create a tag
 
@@ -177,7 +177,7 @@ Complete operation contract:
 
 `PUT /api/tags`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L59).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L60).
 
 Upsert tags
 
@@ -269,7 +269,7 @@ Complete operation contract:
 
 `PUT /api/tags/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L70).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L71).
 
 Tag assets
 
@@ -358,7 +358,7 @@ Complete operation contract:
 
 `GET /api/tags/statistics`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L47).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L48).
 
 Retrieve tag statistics
 
@@ -437,7 +437,7 @@ Complete operation contract:
 
 `DELETE /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L114).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L115).
 
 Delete a tag
 
@@ -519,7 +519,7 @@ Complete operation contract:
 
 `GET /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L81).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L82).
 
 Retrieve a tag
 
@@ -609,7 +609,7 @@ Complete operation contract:
 
 `PUT /api/tags/{id}`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L92).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L93).
 
 Update a tag
 
@@ -716,7 +716,7 @@ Complete operation contract:
 
 `DELETE /api/tags/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L141).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L155).
 
 Untag assets
 
@@ -819,7 +819,7 @@ Complete operation contract:
 
 `PUT /api/tags/{id}/assets`
 
-[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/84601cc0814d82ddfcf113a25e4046c930dd64b8/server/src/controllers/tag.controller.ts#L126).
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L140).
 
 Tag assets
 
@@ -915,5 +915,103 @@ Complete operation contract:
   ],
   "x-immich-permission": "tag.asset",
   "x-immich-state": "Stable"
+}
+```
+
+## mergeTag
+
+`POST /api/tags/{id}/merge`
+
+[Controller implementation](https://github.com/Frameleaf/frameleaf-app/blob/3674dd2d103d87bf1dc40ef71a63b86a29ce810a/server/src/controllers/tag.controller.ts#L127).
+
+Merge a tag into another
+
+Permission: `tag.delete`. Admin only: `false`.
+
+Models: [TagMergeDto](models-38.md#tagmergedto), [TagResponseDto](models-38.md#tagresponsedto).
+
+Controller access declarations:
+
+```typescript
+@ApiTags(ApiTag.Tags)
+@Controller('tags')
+@Post(':id/merge')
+@Authenticated({ permission: Permission.TagDelete })
+@HttpCode(HttpStatus.OK)
+@Endpoint({
+    summary: 'Merge a tag into another',
+    description:
+      'Merge the tag in the path into the target tag and answer the target. Every item the merged tag is on carries the target afterwards, including archived, trashed and Locked items; the tags nested under it move under the target, and one that meets a tag of the same name there is merged into it the same way. The merged tag is then deleted. The target keeps its name, colour and place. A tag cannot be merged into itself or a tag nested under it. An API key also needs the permission to update tags.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+```
+
+Complete operation contract:
+
+```json
+{
+  "description": "Merge the tag in the path into the target tag and answer the target. Every item the merged tag is on carries the target afterwards, including archived, trashed and Locked items; the tags nested under it move under the target, and one that meets a tag of the same name there is merged into it the same way. The merged tag is then deleted. The target keeps its name, colour and place. A tag cannot be merged into itself or a tag nested under it. An API key also needs the permission to update tags.",
+  "operationId": "mergeTag",
+  "parameters": [
+    {
+      "name": "id",
+      "required": true,
+      "in": "path",
+      "schema": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+        "type": "string"
+      }
+    }
+  ],
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "schema": {
+          "$ref": "#/components/schemas/TagMergeDto"
+        }
+      }
+    },
+    "required": true
+  },
+  "responses": {
+    "200": {
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "#/components/schemas/TagResponseDto"
+          }
+        }
+      },
+      "description": ""
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    },
+    {
+      "cookie": []
+    },
+    {
+      "api_key": []
+    }
+  ],
+  "summary": "Merge a tag into another",
+  "tags": [
+    "Tags"
+  ],
+  "x-immich-history": [
+    {
+      "version": "v3.2.1",
+      "state": "Added"
+    },
+    {
+      "version": "v3.2.1",
+      "state": "Alpha"
+    }
+  ],
+  "x-immich-permission": "tag.delete",
+  "x-immich-state": "Alpha"
 }
 ```

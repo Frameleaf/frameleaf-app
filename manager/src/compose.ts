@@ -61,7 +61,8 @@ export async function renderCompose(
   const template = load(await readFile(join(release.directory, 'docker-compose.yml'), 'utf8')) as any;
   if (
     !template?.services ||
-    !['database', 'frameleaf-server', 'immich-machine-learning'].every((k) => template.services[k])
+    !['database', 'frameleaf-server'].every((k) => template.services[k]) ||
+    !(template.services['frameleaf-machine-learning'] || template.services['immich-machine-learning'])
   )
     throw new Refusal('unsupported_compose_bundle');
   const { server, machineLearning, postgres } = release.nas.images;
@@ -98,7 +99,7 @@ export async function renderCompose(
       machineLearning: {
         ...(application.settings?.machineLearning as Record<string, unknown> | undefined),
         enabled: installation.ml,
-        urls: ['http://immich-machine-learning:3003'],
+        urls: ['http://frameleaf-machine-learning:3003'],
       },
     };
     await atomicJson(join(directory, 'application-settings.json'), settings);
@@ -162,7 +163,8 @@ export async function renderCompose(
     },
   };
   if (installation.ml)
-    services['immich-machine-learning'] = {
+    services['frameleaf-machine-learning'] = {
+      networks: { default: { aliases: ['immich-machine-learning'] } },
       image: machineLearning,
       labels,
       restart: 'unless-stopped',

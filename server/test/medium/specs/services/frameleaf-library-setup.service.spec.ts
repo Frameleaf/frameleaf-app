@@ -218,7 +218,7 @@ it('applies the initial machine learning choice once through normal settings and
     expect((await service.status()).regeneration).toBeNull(); // A fresh installation has no import run to start.
     expect(config.updateAdminConfigWithRevision).toHaveBeenCalledExactlyOnceWith({
       config: {
-        machineLearning: { enabled: false, urls: ['http://immich-machine-learning:3003'] },
+        machineLearning: { enabled: false, urls: ['http://frameleaf-machine-learning:3003'] },
         trash: { days: 17 },
       },
       expectedRevision: 'current',

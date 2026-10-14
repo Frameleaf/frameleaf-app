@@ -83,11 +83,11 @@ describe('asset lock (FL-34)', () => {
       const { asset: open } = await ctx.newAsset({ ownerId: user.id });
       const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: still.id }, [still.id, open.id]);
 
-      await ctx.get(AssetRepository).lock([still.id], AssetLockReason.ImmichLockedFolder, user.id);
+      await ctx.get(AssetRepository).lock([still.id], AssetLockReason.FrameleafLockedFolder, user.id);
 
       await expect(locksOf(ctx.database, [still.id, motion.id, archived.id, open.id])).resolves.toEqual({
-        [still.id]: AssetLockReason.ImmichLockedFolder,
-        [motion.id]: AssetLockReason.ImmichLockedFolder,
+        [still.id]: AssetLockReason.FrameleafLockedFolder,
+        [motion.id]: AssetLockReason.FrameleafLockedFolder,
       });
       // the video part goes back to hidden, never onto the timeline
       await expect(storedVisibilityOf(ctx.database, [still.id, motion.id, archived.id])).resolves.toEqual({
@@ -107,10 +107,10 @@ describe('asset lock (FL-34)', () => {
       ).resolves.toEqual({ albumThumbnailAssetId: open.id });
 
       // running it again changes nothing
-      await ctx.get(AssetRepository).lock([still.id], AssetLockReason.ImmichLockedFolder, user.id);
+      await ctx.get(AssetRepository).lock([still.id], AssetLockReason.FrameleafLockedFolder, user.id);
       await expect(locksOf(ctx.database, [still.id, motion.id])).resolves.toEqual({
-        [still.id]: AssetLockReason.ImmichLockedFolder,
-        [motion.id]: AssetLockReason.ImmichLockedFolder,
+        [still.id]: AssetLockReason.FrameleafLockedFolder,
+        [motion.id]: AssetLockReason.FrameleafLockedFolder,
       });
     });
 
@@ -168,11 +168,11 @@ describe('asset lock (FL-34)', () => {
       const { asset: outside } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newStack({ ownerId: user.id }, [primary.id, member.id]);
 
-      await ctx.get(AssetRepository).lock([primary.id], AssetLockReason.ImmichLockedFolder, user.id);
+      await ctx.get(AssetRepository).lock([primary.id], AssetLockReason.FrameleafLockedFolder, user.id);
 
       await expect(locksOf(ctx.database, [primary.id, member.id, outside.id])).resolves.toEqual({
-        [primary.id]: AssetLockReason.ImmichLockedFolder,
-        [member.id]: AssetLockReason.ImmichLockedFolder,
+        [primary.id]: AssetLockReason.FrameleafLockedFolder,
+        [member.id]: AssetLockReason.FrameleafLockedFolder,
       });
     });
   });
@@ -274,7 +274,7 @@ describe('asset lock (FL-34)', () => {
       await ctx.database
         .insertInto('asset_lock')
         .values([
-          { assetId: folder.id, reason: AssetLockReason.ImmichLockedFolder, lockedBy: null },
+          { assetId: folder.id, reason: AssetLockReason.FrameleafLockedFolder, lockedBy: null },
           { assetId: marked.id, reason: AssetLockReason.Marked, lockedBy: user.id },
         ])
         .execute();
@@ -286,7 +286,7 @@ describe('asset lock (FL-34)', () => {
 
       await expect(count({ visibility: AssetVisibility.Locked })).resolves.toBe(2);
       await expect(
-        count({ visibility: AssetVisibility.Locked, lockReasons: [AssetLockReason.ImmichLockedFolder] }),
+        count({ visibility: AssetVisibility.Locked, lockReasons: [AssetLockReason.FrameleafLockedFolder] }),
       ).resolves.toBe(1);
       await expect(count({ visibility: AssetVisibility.Timeline })).resolves.toBe(1);
       // "Revealed for this session": the mark and, since the FL-195 follow-up, the old Locked folder item too

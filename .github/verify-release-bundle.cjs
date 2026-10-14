@@ -10,7 +10,7 @@ const { load } = createRequire(
 )("js-yaml");
 const {
   hash,
-  INSTALL_FILES,
+  MANAGER_ASSETS,
   VARIANTS,
   REPOSITORY,
   SOURCE,
@@ -30,11 +30,7 @@ async function verifyBundle(
     expectedTag,
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/,
   );
-  const names = [
-    ...INSTALL_FILES,
-    "nas-manifest.json",
-    "release-manifest.json",
-  ];
+  const names = MANAGER_ASSETS.filter((name) => name !== "SHA256SUMS");
   const lines = (await fs.readFile(path.join(directory, "SHA256SUMS"), "utf8"))
     .trimEnd()
     .split("\n");
@@ -108,7 +104,7 @@ async function verifyBundle(
       );
     for (const [service, image] of [
       ["frameleaf-server", "frameleaf-server"],
-      ["immich-machine-learning", "frameleaf-machine-learning"],
+      ["frameleaf-machine-learning", "frameleaf-machine-learning"],
     ])
       assert.equal(
         services?.[service]?.image,
