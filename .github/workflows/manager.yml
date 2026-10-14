@@ -66,6 +66,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Install independent Manager dependencies
         run: npm ci --prefix manager --ignore-scripts
+      - name: Install filesystem metadata tools for copy verification
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends acl attr
       - name: Types and Svelte
         run: npm run check --prefix manager
       - name: Security, ownership, recovery and policy tests

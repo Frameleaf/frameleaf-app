@@ -2,7 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, RenderWorkerStatus } from 'src/enum.js';
+import { isDeepStrictEqual } from 'node:util';
+import type { RenderWorkerAdmissionDto } from 'src/dtos/render-worker.dto.js';
+import type { GpuWorkingBudgetDecision } from 'src/utils/gpu-working-budget.js';
+import {
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  RenderWorkerAuditEvent,
+  RenderWorkerRefusalReason,
+  RenderWorkerStatus,
+} from 'src/enum.js';
 
 import { DB } from 'src/schema/index.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
@@ -14,10 +24,26 @@ import {
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
 import { notJobQueueExecuted } from 'src/utils/edit-operation.js';
-import { CLAIMED_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+import {
+  GpuWorkingBudgetApprovalSchema,
+  GpuWorkingBudgetEvidenceSchema,
+  evaluateApprovedGpuWorkingBudget,
+  evaluateApprovedRenderSession,
+} from 'src/utils/gpu-working-budget-policy.js';
+import { CLAIMED_MEDIA_OPERATION_STATUSES, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
+import {
+  DestinationHealth,
+  RenderLimits,
+  evaluateClaimAdmission,
+  evaluateRenderOutput,
+  evaluateSessionAdmission,
+  tightestLimits,
+} from 'src/utils/render-admission.js';
 
-export type RenderWorker = Selectable<RenderWorkerTable>;
-export type RenderWorkerSession = Selectable<RenderWorkerSessionTable>;
+export type RenderWorker = Omit<Selectable<RenderWorkerTable>, 'gpuMemoryBytes'> & { gpuMemoryBytes: string | null };
+export type RenderWorkerSession = Omit<Selectable<RenderWorkerSessionTable>, 'gpuMemoryBytes'> & {
+  gpuMemoryBytes: string | null;
+};
 export type RenderWorkerLimit = Selectable<RenderWorkerLimitTable>;
 export type RenderWorkerAudit = Selectable<RenderWorkerAuditTable>;
 type MediaOperationRow = Selectable<MediaOperationTable>;
@@ -35,6 +61,7 @@ export type RenderWorkerUpdate = Pick<
   | 'maxWallClockMs'
   | 'maxOutputBytes'
   | 'gpuMemoryBytes'
+  | 'gpuWorkingBudgetApproval'
 >;
 export type RenderWorkerSessionCreate = Omit<Insertable<RenderWorkerSessionTable>, 'id' | 'createdAt'>;
 export type RenderWorkerLimitUpsert = Pick<
@@ -60,6 +87,9 @@ export type AuthenticatedRenderWorker = {
  * `claimQueued` — and the service runs the decision in between. `claimQueued` is still one
  * conditional UPDATE, so two admitted workers racing for the same candidate resolve in Postgres.
  */
+// The shared int8 decoder uses Number; memory ceilings must reach policy validation losslessly.
+const memoryBytes = sql<string | null>`"gpuMemoryBytes"::text`.as('gpuMemoryBytes');
+
 /** A Postgres text array literal, every element quoted and escaped. */
 const pgTextArray = (values: readonly string[]) =>
   `{${values.map((value) => `"${value.replaceAll('\\', '\\\\').replaceAll('"', String.raw`\"`)}"`).join(',')}}`;
@@ -78,13 +108,14 @@ export class RenderWorkerRepository {
   /* ------------------------------------------------------------------ */
   async createWorker(worker: RenderWorkerCreate): Promise<RenderWorker> {
     return (await this.write((db) =>
-      db.insertInto('render_worker').values(worker).returningAll().executeTakeFirstOrThrow(),
+      db.insertInto('render_worker').values(worker).returningAll().returning(memoryBytes).executeTakeFirstOrThrow(),
     )) as unknown as RenderWorker;
   }
   async getWorker(id: string): Promise<RenderWorker | undefined> {
     return (await this.db
       .selectFrom('render_worker')
       .selectAll()
+      .select(memoryBytes)
       .where('id', '=', id)
       .executeTakeFirst()) as unknown as RenderWorker | undefined;
   }
@@ -93,6 +124,7 @@ export class RenderWorkerRepository {
     return (await this.db
       .selectFrom('render_worker')
       .selectAll()
+      .select(memoryBytes)
       .where('enrolmentSecret', '=', enrolmentSecret)
       .executeTakeFirst()) as unknown as RenderWorker | undefined;
   }
@@ -100,6 +132,7 @@ export class RenderWorkerRepository {
     return this.db
       .selectFrom('render_worker')
       .selectAll()
+      .select(memoryBytes)
       .orderBy('createdAt', 'asc')
       .orderBy('id', 'asc')
       .execute() as unknown as Promise<RenderWorker[]>;
@@ -112,6 +145,7 @@ export class RenderWorkerRepository {
         .where('id', '=', id)
         .where('status', '=', RenderWorkerStatus.Active)
         .returningAll()
+        .returning(memoryBytes)
         .executeTakeFirst(),
     )) as unknown as RenderWorker | undefined;
   }
@@ -150,6 +184,7 @@ export class RenderWorkerRepository {
         .where('id', '=', id)
         .where('status', '=', RenderWorkerStatus.Active)
         .returningAll()
+        .returning(memoryBytes)
         .executeTakeFirst(),
     )) as unknown as RenderWorker | undefined;
     if (worker) {
@@ -160,9 +195,173 @@ export class RenderWorkerRepository {
   /* ------------------------------------------------------------------ */
   /* Sessions                                                            */
   /* ------------------------------------------------------------------ */
+  async admitSession(input: {
+    report: Omit<RenderWorkerAdmissionDto, 'enrolmentSecret'>;
+    enrolmentSecret: Buffer;
+    token: Buffer;
+    ttlMs: number;
+  }): Promise<
+    | { admitted: true; session: RenderWorkerSession }
+    | {
+        admitted: false;
+        reason: RenderWorkerRefusalReason;
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'];
+      }
+  > {
+    const { report } = input;
+    try {
+      return await this.write(async (db) => {
+        const worker = await db
+          .selectFrom('render_worker')
+          .selectAll()
+          .select(memoryBytes)
+          .where('id', '=', report.workerId)
+          .where('enrolmentSecret', '=', input.enrolmentSecret)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!worker) return { admitted: false, reason: RenderWorkerRefusalReason.InvalidCredential };
+        const approval = GpuWorkingBudgetApprovalSchema.safeParse(worker.gpuWorkingBudgetApproval);
+        if (!approval.success)
+          return {
+            admitted: false,
+            reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+            budgetReason: 'profile-unapproved',
+          };
+        const lifetime = approval.data.evidence.deviceLifetimeId;
+        // Claim must use this same lifetime lock before taking a session or operation lock.
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'gpu-working-budget:' + lifetime}, 0))`.execute(db);
+        const previous = await db
+          .selectFrom('render_worker_session')
+          .selectAll()
+          .select(memoryBytes)
+          .where(sql<string>`"gpuWorkingBudgetEvidence"->>'deviceLifetimeId'`, '=', lifetime)
+          .orderBy('id')
+          .forUpdate()
+          .execute();
+        const {
+          rows: [{ now }],
+        } = await sql<{ now: Date }>`SELECT clock_timestamp() AS now`.execute(db);
+        const conformanceReportedAt = new Date(report.conformanceReportedAt);
+        const admission = evaluateSessionAdmission({
+          worker: {
+            revoked: worker.status !== RenderWorkerStatus.Active,
+            engineDigest: worker.engineDigest,
+            conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
+            lastConformanceReportedAt: worker.lastConformanceReportedAt
+              ? new Date(worker.lastConformanceReportedAt)
+              : null,
+          },
+          report: {
+            engineDigest: report.engineDigest,
+            conformanceReportedAt,
+            softwareRenderer: report.softwareRenderer,
+          },
+          now,
+        });
+        if (!admission.admitted) return admission;
+        const expiresAt = new Date(now.getTime() + input.ttlMs);
+        const budget = evaluateApprovedGpuWorkingBudget({
+          worker,
+          evidence: report.gpuWorkingBudgetEvidence,
+          capabilities: {
+            codecs: report.codecs ?? [],
+            formats: report.formats ?? [],
+            colorPrecision: report.colorPrecision ?? null,
+          },
+          reportedBytes: report.gpuMemoryBytes ?? null,
+          phase: { kind: 'admission' },
+          now,
+          conformanceExpiresAt: new Date(conformanceReportedAt.getTime() + worker.conformanceMaxAgeMs),
+          credentialExpiresAt: expiresAt,
+        });
+        if (!budget.valid)
+          return {
+            admitted: false,
+            reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+            budgetReason: budget.reason,
+          };
+        const workerIds = [...new Set([worker.id, ...previous.map((session) => session.workerId)])];
+        const active = await db
+          .selectFrom('media_operation')
+          .select('id')
+          .where('claimedBy', 'in', workerIds)
+          .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+          .limit(1)
+          .executeTakeFirst();
+        if (active) return { admitted: false, reason: RenderWorkerRefusalReason.WorkerConcurrency };
+        if (previous.length > 0)
+          await db
+            .updateTable('render_worker_session')
+            .set({ revokedAt: now })
+            .where(
+              'id',
+              'in',
+              previous.map((session) => session.id),
+            )
+            .where('revokedAt', 'is', null)
+            .execute();
+        const session = await db
+          .insertInto('render_worker_session')
+          .values({
+            workerId: worker.id,
+            token: input.token,
+            scopes: worker.kinds.filter(isRenderWorkerMediaOperationKind),
+            gpuMemoryBytes: budget.qualifiedBytes,
+            gpuWorkingBudgetEvidence: GpuWorkingBudgetEvidenceSchema.parse(report.gpuWorkingBudgetEvidence),
+            engineDigest: report.engineDigest,
+            conformanceReportedAt,
+            codecs: report.codecs ?? [],
+            colorPrecision: report.colorPrecision ?? null,
+            expiresAt,
+          })
+          .returningAll()
+          .returning(memoryBytes)
+          .executeTakeFirstOrThrow();
+        await sql`INSERT INTO public.render_worker_session_capability ("sessionId", codecs, formats)
+          VALUES (${session.id}::uuid, ${pgTextArray(report.codecs ?? [])}::text[], ${pgTextArray(report.formats ?? [])}::text[])`.execute(
+          db,
+        );
+        await db
+          .updateTable('render_worker')
+          .set({ lastAdmittedAt: now, lastSeenAt: now, lastConformanceReportedAt: conformanceReportedAt })
+          .where('id', '=', worker.id)
+          .execute();
+        await db
+          .insertInto('render_worker_audit')
+          .values({
+            workerId: worker.id,
+            event: RenderWorkerAuditEvent.Admitted,
+            detail: {
+              sessionId: session.id,
+              gpuMemoryBytes: budget.qualifiedBytes,
+              expiresAt: expiresAt.toISOString(),
+            },
+          })
+          .execute();
+        return { admitted: true, session };
+      });
+    } catch (error) {
+      const failure = error as { code?: string; constraint_name?: string };
+      if (
+        failure.code === '23505' &&
+        ['render_worker_session_budget_measurement_key', 'render_worker_session_budget_receipt_key'].includes(
+          failure.constraint_name ?? '',
+        )
+      ) {
+        return { admitted: false, reason: RenderWorkerRefusalReason.ConformanceReplayed };
+      }
+      throw error;
+    }
+  }
+
   async createSession(session: RenderWorkerSessionCreate): Promise<RenderWorkerSession> {
     return (await this.write((db) =>
-      db.insertInto('render_worker_session').values(session).returningAll().executeTakeFirstOrThrow(),
+      db
+        .insertInto('render_worker_session')
+        .values(session)
+        .returningAll()
+        .returning(memoryBytes)
+        .executeTakeFirstOrThrow(),
     )) as unknown as RenderWorkerSession;
   }
   /**
@@ -176,11 +375,14 @@ export class RenderWorkerRepository {
       formats: readonly string[];
     },
   ): Promise<void> {
-    await sql`
+    const result = await sql`
       INSERT INTO public.render_worker_session_capability ("sessionId", codecs, formats)
-      VALUES (${sessionId}::uuid, ${pgTextArray(capabilities.codecs)}::text[], ${pgTextArray(capabilities.formats)}::text[])
+      SELECT id, ${pgTextArray(capabilities.codecs)}::text[], ${pgTextArray(capabilities.formats)}::text[]
+      FROM public.render_worker_session WHERE id = ${sessionId}::uuid AND "gpuWorkingBudgetEvidence" IS NULL
       ON CONFLICT ("sessionId") DO UPDATE SET codecs = excluded.codecs, formats = excluded.formats
+      RETURNING "sessionId"
     `.execute(this.db);
+    if (result.rows.length !== 1) throw new Error('Measured session capabilities are immutable or session is missing');
   }
   /** What the session proved at admission, or undefined when it proved nothing (FL-95). */
   async getSessionCapabilities(sessionId: string): Promise<
@@ -206,6 +408,7 @@ export class RenderWorkerRepository {
     const session = (await this.db
       .selectFrom('render_worker_session')
       .selectAll()
+      .select(memoryBytes)
       .where('token', '=', token)
       .executeTakeFirst()) as unknown as RenderWorkerSession | undefined;
     if (!session) {
@@ -225,11 +428,13 @@ export class RenderWorkerRepository {
       .selectFrom('render_worker_session')
       .innerJoin('render_worker', 'render_worker.id', 'render_worker_session.workerId')
       .selectAll('render_worker')
+      .select(sql<string | null>`render_worker."gpuMemoryBytes"::text`.as('gpuMemoryBytes'))
       .select([
         'render_worker_session.id as sessionId',
         'render_worker_session.token as sessionToken',
         'render_worker_session.scopes as sessionScopes',
-        'render_worker_session.gpuMemoryBytes as sessionGpuMemoryBytes',
+        sql<string | null>`render_worker_session."gpuMemoryBytes"::text`.as('sessionGpuMemoryBytes'),
+        'render_worker_session.gpuWorkingBudgetEvidence as sessionGpuWorkingBudgetEvidence',
         'render_worker_session.engineDigest as sessionEngineDigest',
         'render_worker_session.conformanceReportedAt as sessionConformanceReportedAt',
         'render_worker_session.codecs as sessionCodecs',
@@ -249,6 +454,7 @@ export class RenderWorkerRepository {
         sessionToken,
         sessionScopes,
         sessionGpuMemoryBytes,
+        sessionGpuWorkingBudgetEvidence,
         sessionEngineDigest,
         sessionConformanceReportedAt,
         sessionCodecs,
@@ -266,6 +472,7 @@ export class RenderWorkerRepository {
           token: sessionToken,
           scopes: sessionScopes,
           gpuMemoryBytes: sessionGpuMemoryBytes,
+          gpuWorkingBudgetEvidence: sessionGpuWorkingBudgetEvidence,
           engineDigest: sessionEngineDigest,
           conformanceReportedAt: sessionConformanceReportedAt,
           codecs: sessionCodecs,
@@ -321,23 +528,29 @@ export class RenderWorkerRepository {
     userId: string | null,
     limit: RenderWorkerLimitUpsert,
   ): Promise<RenderWorkerLimit> {
-    return (await this.write((db) =>
-      db
+    return (await this.write(async (db) => {
+      const key =
+        subject === RENDER_WORKER_LIMIT_INSTANCE_SUBJECT
+          ? 'render-worker-limit:instance'
+          : 'render-worker-owner:' + subject;
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key},0))`.execute(db);
+      return db
         .insertInto('render_worker_limit')
         .values({ subject, userId, ...limit })
         .onConflict((oc) => oc.column('subject').doUpdateSet({ ...limit, userId }))
         .returningAll()
-        .executeTakeFirstOrThrow(),
-    )) as unknown as RenderWorkerLimit;
+        .executeTakeFirstOrThrow();
+    })) as unknown as RenderWorkerLimit;
   }
   async deleteLimit(subject: string): Promise<boolean> {
     if (subject === RENDER_WORKER_LIMIT_INSTANCE_SUBJECT) {
       // The instance default is edited, never removed; without it there would be no ceiling at all.
       return false;
     }
-    const result = await this.write((db) =>
-      db.deleteFrom('render_worker_limit').where('subject', '=', subject).executeTakeFirst(),
-    );
+    const result = await this.write(async (db) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'render-worker-owner:' + subject},0))`.execute(db);
+      return db.deleteFrom('render_worker_limit').where('subject', '=', subject).executeTakeFirst();
+    });
     return Number(result.numDeletedRows) === 1;
   }
   /* ------------------------------------------------------------------ */
@@ -420,39 +633,236 @@ export class RenderWorkerRepository {
    * automatic retry every operation gets is therefore charged for its own wall clock and output
    * only, and the previous attempt's grants and writes, bound to the old claim token, stop verifying.
    */
-  async claimQueued(options: { id: string; workerId: string; leaseMs: number }): Promise<
+  async claimQueued(options: {
+    id: string;
+    workerId: string;
+    sessionId: string;
+    sessionTokenHash: Buffer;
+    leaseMs: number;
+    expected: Pick<
+      MediaOperationRow,
+      | 'ownerId'
+      | 'kind'
+      | 'destination'
+      | 'destinationDetail'
+      | 'assetId'
+      | 'projectId'
+      | 'revisionId'
+      | 'snapshot'
+      | 'settings'
+    >;
+    destinationHealth: DestinationHealth;
+    defaultInstanceLimits: RenderLimits;
+  }): Promise<
     | {
         operation: MediaOperationRow;
         claimToken: string;
+        claimedAt: Date;
+        engineDigest: string;
+        limits: RenderLimits;
+      }
+    | {
+        refused: RenderWorkerRefusalReason;
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'];
       }
     | undefined
   > {
-    const claimToken = randomUUID();
-    const row = await this.write((db) =>
-      db
+    return this.write(async (db) => {
+      const refuse = (
+        refused: RenderWorkerRefusalReason,
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'],
+      ) => ({ refused, ...(budgetReason && { budgetReason }) });
+      const worker = await db
+        .selectFrom('render_worker')
+        .selectAll()
+        .select(memoryBytes)
+        .where('id', '=', options.workerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!worker) return refuse(RenderWorkerRefusalReason.InvalidCredential);
+      const approval = GpuWorkingBudgetApprovalSchema.safeParse(worker.gpuWorkingBudgetApproval);
+      if (!approval.success) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, 'profile-unapproved');
+      const lifetime = approval.data.evidence.deviceLifetimeId;
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'gpu-working-budget:' + lifetime}, 0))`.execute(db);
+      const session = await db
+        .selectFrom('render_worker_session')
+        .selectAll()
+        .select(memoryBytes)
+        .where('id', '=', options.sessionId)
+        .where('workerId', '=', worker.id)
+        .where('token', '=', options.sessionTokenHash)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!session) return refuse(RenderWorkerRefusalReason.InvalidCredential);
+      const operation = await db
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('id', '=', options.id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!operation) return;
+      // Serialize per-owner ceilings across separate workers and device lifetimes.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'render-worker-owner:' + operation.ownerId},0))`.execute(
+        db,
+      );
+      // This shared lock also protects the absence of an instance-limit row.
+      await sql`SELECT pg_advisory_xact_lock_shared(hashtextextended('render-worker-limit:instance',0))`.execute(db);
+      const limitRows = await db
+        .selectFrom('render_worker_limit')
+        .selectAll()
+        .where('subject', 'in', [RENDER_WORKER_LIMIT_INSTANCE_SUBJECT, operation.ownerId])
+        .orderBy('subject')
+        .forShare()
+        .execute();
+      const capabilitiesResult = await sql<{ codecs: string[]; formats: string[] }>`
+        SELECT codecs,formats FROM public.render_worker_session_capability WHERE "sessionId"=${session.id}::uuid`.execute(
+        db,
+      );
+      const capabilities = capabilitiesResult.rows[0];
+      const histories = await db
+        .selectFrom('render_worker_session')
+        .select('workerId')
+        .where(sql<string>`"gpuWorkingBudgetEvidence"->>'deviceLifetimeId'`, '=', lifetime)
+        .execute();
+      const lifetimeWorkers = [...new Set([worker.id, ...histories.map((row) => row.workerId)])];
+      const active = await db
+        .selectFrom('media_operation')
+        .select(['ownerId', 'claimedBy'])
+        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+        .where((eb) => eb.or([eb('claimedBy', 'in', lifetimeWorkers), eb('ownerId', '=', operation.ownerId)]))
+        .execute();
+      const {
+        rows: [{ now }],
+      } = await sql<{ now: Date }>`SELECT clock_timestamp() AS now`.execute(db);
+      if (
+        operation.status !== MediaOperationStatus.Queued ||
+        operation.cancelRequestedAt !== null ||
+        (operation.retryAt && new Date(operation.retryAt) > now) ||
+        operation.attempt >= operation.maxAttempts
+      )
+        return;
+      for (const key of [
+        'ownerId',
+        'kind',
+        'destination',
+        'destinationDetail',
+        'assetId',
+        'projectId',
+        'revisionId',
+        'snapshot',
+        'settings',
+      ] as const) {
+        if (!isDeepStrictEqual(operation[key], options.expected[key]))
+          return refuse(RenderWorkerRefusalReason.ManifestIncomplete);
+      }
+      const budget = evaluateApprovedRenderSession({ worker, session, capabilities, now });
+      if (!budget.valid) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, budget.reason);
+      const health = options.destinationHealth;
+      const completedAt = Date.parse(approval.data.evidence.completedAt);
+      // Destination health has an independent 30-second deadline, shorter than measurement freshness.
+      if (
+        health.destination !== worker.destination ||
+        health.state !== 'available' ||
+        !health.checkedAt ||
+        !Number.isFinite(health.checkedAt.getTime()) ||
+        health.checkedAt.getTime() < completedAt ||
+        now.getTime() - health.checkedAt.getTime() > 30_000 ||
+        health.checkedAt > now
+      ) {
+        return refuse(RenderWorkerRefusalReason.DestinationUnavailable);
+      }
+      if (active.some((row) => row.claimedBy !== null && lifetimeWorkers.includes(row.claimedBy)))
+        return refuse(RenderWorkerRefusalReason.WorkerConcurrency);
+      const numericLimits = (row: {
+        maxConcurrentOperations: number;
+        maxWallClockMs: number | null;
+        maxOutputBytes: number | null;
+      }): RenderLimits => ({
+        maxConcurrentOperations: row.maxConcurrentOperations,
+        maxWallClockMs: row.maxWallClockMs,
+        maxOutputBytes: row.maxOutputBytes,
+      });
+      const instance = limitRows.find((row) => row.subject === RENDER_WORKER_LIMIT_INSTANCE_SUBJECT);
+      const owner = limitRows.find((row) => row.subject === operation.ownerId);
+      const ownerLimits = tightestLimits(
+        instance ? numericLimits(instance) : options.defaultInstanceLimits,
+        owner ? numericLimits(owner) : null,
+      );
+      const limits = tightestLimits(numericLimits(worker), ownerLimits);
+      const decision = evaluateClaimAdmission({
+        worker: {
+          ...worker,
+          revoked: worker.status !== RenderWorkerStatus.Active,
+          gpuMemoryBytes: null,
+          activeOperations: 0,
+          limits: numericLimits(worker),
+        },
+        session: {
+          ...session,
+          revoked: session.revokedAt !== null,
+          gpuMemoryBytes: Number(budget.qualifiedBytes),
+          capabilities,
+        },
+        operation,
+        owner: {
+          activeOperations: active.filter((row) => row.ownerId === operation.ownerId).length,
+          limits: ownerLimits,
+        },
+        destinationHealth: health,
+        now,
+      });
+      if (!decision.admitted) return refuse(decision.reason);
+      if (typeof operation.settings.format === 'string') {
+        const output = evaluateRenderOutput(
+          [
+            {
+              gpuMemoryBytes: Number(budget.qualifiedBytes),
+              codecs: capabilities.codecs,
+              formats: capabilities.formats,
+              colorPrecision: session.colorPrecision,
+              engineDigest: session.engineDigest,
+            },
+          ],
+          operation.settings as { format: string; color: string; resolution: string },
+        );
+        if (!output.supported)
+          return refuse(
+            output.refusal === 'insufficient-memory'
+              ? RenderWorkerRefusalReason.GpuMemoryInsufficient
+              : RenderWorkerRefusalReason.CodecUnsupported,
+          );
+      }
+      const claimToken = randomUUID();
+      const row = await db
         .updateTable('media_operation')
         .set({
           status: MediaOperationStatus.Preparing,
           claimToken,
-          claimedBy: options.workerId,
-          claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
-          heartbeatAt: sql<Date>`now()`,
-          startedAt: sql<Date>`coalesce("startedAt", now())`,
-          attemptStartedAt: sql<Date>`now()`,
+          claimedBy: worker.id,
+          claimExpiresAt: new Date(now.getTime() + options.leaseMs),
+          heartbeatAt: now,
+          startedAt: operation.startedAt ?? now,
+          attemptStartedAt: now,
           outputBytes: '0',
-          attempt: sql<number>`"attempt" + 1`,
+          attempt: operation.attempt + 1,
           lastAdmissionRefusalReason: null,
           lastAdmissionRefusedAt: null,
           retryAt: null,
         })
-        .where('id', '=', options.id)
+        .where('id', '=', operation.id)
         .where('status', '=', MediaOperationStatus.Queued)
         .where('cancelRequestedAt', 'is', null)
-        .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
+        .whereRef('attempt', '<', 'maxAttempts')
+        .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', now)]))
+        .where(notJobQueueExecuted())
+        .where(sql<boolean>`clock_timestamp() < ${new Date(budget.expiresAt)}`)
+        .where(sql<boolean>`clock_timestamp() <= ${new Date(health.checkedAt.getTime() + 30_000)}`)
         .returningAll()
-        .executeTakeFirst(),
-    );
-    return row ? { operation: row as unknown as MediaOperationRow, claimToken } : undefined;
+        .executeTakeFirst();
+      return row
+        ? { operation: row, claimToken, claimedAt: now, engineDigest: session.engineDigest!, limits }
+        : undefined;
+    });
   }
   /** Write the reason a queued job was passed over, so its owner sees why it is still queued. */
   async recordRefusal(id: string, reason: string): Promise<void> {

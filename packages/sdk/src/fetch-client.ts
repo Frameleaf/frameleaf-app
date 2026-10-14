@@ -2630,8 +2630,41 @@ export type RenderWorkerDto = {
     destination: MediaOperationDestination;
     /** Engine and patch digest the worker must keep reporting */
     engineDigest: string | null;
-    /** GPU memory the worker was qualified with, in bytes */
+    /** Administrator ceiling A in bytes; never a measurement */
     gpuMemoryBytes: string | null;
+    gpuWorkingBudgetApproval?: {
+        capabilities: {
+            codecs: string[];
+            colorPrecision: {
+                dolbyVision: boolean;
+                hdr10: boolean;
+                maxBitDepth: number;
+            } | null;
+            formats: string[];
+        };
+        evidence: {
+            bindingMethod: GpuWorkingBudgetBindingMethod;
+            browserIdentity: string;
+            buildDigest: string;
+            completedAt: string;
+            deviceLifetimeId: string;
+            encoderEvidenceDigest: string;
+            engineDigest: string;
+            hardwareBackend: GpuWorkingBudgetBackend;
+            headroomBytes: GpuWorkingBudgetHeadroomBytes;
+            measuredBytes: GpuWorkingBudgetMeasuredBytes;
+            measurementId: string;
+            metric: GpuWorkingBudgetMetric;
+            outputReceiptDigest: string;
+            pressureEnvelopeDigest: string;
+            profileDigest: string;
+            receiptDigest: string;
+            status: GpuWorkingBudgetStatus;
+            topology: GpuWorkingBudgetTopology;
+            topologyEvidenceDigest: string | null;
+            validUntil: string;
+        };
+    } | null;
     /** Render worker ID */
     id: string;
     /** Operation kinds this worker may claim */
@@ -2655,6 +2688,39 @@ export type RenderWorkerCreateDto = {
     destination: MediaOperationDestination;
     engineDigest?: string | null;
     gpuMemoryBytes?: string | null;
+    gpuWorkingBudgetApproval?: {
+        capabilities: {
+            codecs: string[];
+            colorPrecision: {
+                dolbyVision: boolean;
+                hdr10: boolean;
+                maxBitDepth: number;
+            } | null;
+            formats: string[];
+        };
+        evidence: {
+            bindingMethod: GpuWorkingBudgetBindingMethod;
+            browserIdentity: string;
+            buildDigest: string;
+            completedAt: string;
+            deviceLifetimeId: string;
+            encoderEvidenceDigest: string;
+            engineDigest: string;
+            hardwareBackend: GpuWorkingBudgetBackend;
+            headroomBytes: GpuWorkingBudgetHeadroomBytes;
+            measuredBytes: GpuWorkingBudgetMeasuredBytes;
+            measurementId: string;
+            metric: GpuWorkingBudgetMetric;
+            outputReceiptDigest: string;
+            pressureEnvelopeDigest: string;
+            profileDigest: string;
+            receiptDigest: string;
+            status: GpuWorkingBudgetStatus;
+            topology: GpuWorkingBudgetTopology;
+            topologyEvidenceDigest: string | null;
+            validUntil: string;
+        };
+    } | null;
     /** Operation kinds this worker may claim */
     kinds: MediaOperationKind[];
     maxConcurrentOperations?: number;
@@ -2712,6 +2778,39 @@ export type RenderWorkerUpdateDto = {
     conformanceMaxAgeMs?: number;
     engineDigest?: string | null;
     gpuMemoryBytes?: string | null;
+    gpuWorkingBudgetApproval?: {
+        capabilities: {
+            codecs: string[];
+            colorPrecision: {
+                dolbyVision: boolean;
+                hdr10: boolean;
+                maxBitDepth: number;
+            } | null;
+            formats: string[];
+        };
+        evidence: {
+            bindingMethod: GpuWorkingBudgetBindingMethod;
+            browserIdentity: string;
+            buildDigest: string;
+            completedAt: string;
+            deviceLifetimeId: string;
+            encoderEvidenceDigest: string;
+            engineDigest: string;
+            hardwareBackend: GpuWorkingBudgetBackend;
+            headroomBytes: GpuWorkingBudgetHeadroomBytes;
+            measuredBytes: GpuWorkingBudgetMeasuredBytes;
+            measurementId: string;
+            metric: GpuWorkingBudgetMetric;
+            outputReceiptDigest: string;
+            pressureEnvelopeDigest: string;
+            profileDigest: string;
+            receiptDigest: string;
+            status: GpuWorkingBudgetStatus;
+            topology: GpuWorkingBudgetTopology;
+            topologyEvidenceDigest: string | null;
+            validUntil: string;
+        };
+    } | null;
     kinds?: MediaOperationKind[];
     maxConcurrentOperations?: number;
     maxOutputBytes?: string | null;
@@ -11631,14 +11730,62 @@ export type RenderWorkerAdmissionDto = {
     enrolmentSecret: string;
     /** Containers and versioned paired-output profiles the check verified writing */
     formats?: string[];
-    /** GPU memory measured by the conformance check */
+    /** Raw measured usable GPU working budget M, in bytes */
     gpuMemoryBytes: string | null;
+    gpuWorkingBudgetEvidence?: {
+        bindingMethod: GpuWorkingBudgetBindingMethod;
+        browserIdentity: string;
+        buildDigest: string;
+        completedAt: string;
+        deviceLifetimeId: string;
+        encoderEvidenceDigest: string;
+        engineDigest: string;
+        hardwareBackend: GpuWorkingBudgetBackend;
+        headroomBytes: GpuWorkingBudgetHeadroomBytes;
+        measuredBytes: GpuWorkingBudgetMeasuredBytes;
+        measurementId: string;
+        metric: GpuWorkingBudgetMetric;
+        outputReceiptDigest: string;
+        pressureEnvelopeDigest: string;
+        profileDigest: string;
+        receiptDigest: string;
+        status: GpuWorkingBudgetStatus;
+        topology: GpuWorkingBudgetTopology;
+        topologyEvidenceDigest: string | null;
+        validUntil: string;
+        workerId: string;
+    } | null;
     /** True when the renderer is a software or fallback device */
     softwareRenderer: boolean;
     workerId: string;
 };
 export type RenderWorkerSessionDto = {
     expiresAt: string;
+    /** Qualified session budget Q, in bytes */
+    gpuMemoryBytes?: string | null;
+    gpuWorkingBudgetEvidence?: {
+        bindingMethod: GpuWorkingBudgetBindingMethod;
+        browserIdentity: string;
+        buildDigest: string;
+        completedAt: string;
+        deviceLifetimeId: string;
+        encoderEvidenceDigest: string;
+        engineDigest: string;
+        hardwareBackend: GpuWorkingBudgetBackend;
+        headroomBytes: GpuWorkingBudgetHeadroomBytes;
+        measuredBytes: GpuWorkingBudgetMeasuredBytes;
+        measurementId: string;
+        metric: GpuWorkingBudgetMetric;
+        outputReceiptDigest: string;
+        pressureEnvelopeDigest: string;
+        profileDigest: string;
+        receiptDigest: string;
+        status: GpuWorkingBudgetStatus;
+        topology: GpuWorkingBudgetTopology;
+        topologyEvidenceDigest: string | null;
+        validUntil: string;
+        workerId: string;
+    } | null;
     /** How often the worker should heartbeat a held claim */
     heartbeatIntervalMs: number;
     /** How long a claim lasts without a heartbeat */
@@ -12739,6 +12886,10 @@ export type FinishLibrarySetupDto = {
     previewsReady: true;
     receipt: string;
     revision: string;
+};
+export type ManagerAccessDto = {
+    /** Deployment-configured HTTPS Manager origin, or null when unavailable. Requires separate Manager sign-in; configuration is not a reachability check. */
+    url: string | null;
 };
 export type WarmLibrarySetupDto = {
     reset?: boolean;
@@ -25554,6 +25705,17 @@ export function beginManagerLibrarySetup({ xFrameleafManager }: {
     }));
 }
 /**
+ * Configured Frameleaf Manager link for Storage
+ */
+export function getManagerAccess(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ManagerAccessDto;
+    }>("/server/library-setup/manager-access", {
+        ...opts
+    }));
+}
+/**
  * Warm the authenticated device catalog during setup
  */
 export function syncLibrarySetup({ warmLibrarySetupDto }: {
@@ -29729,6 +29891,29 @@ export enum PhysicalDeduplicationSkipReason {
 export enum PhysicalDeduplicationPlanMode {
     DryRun = "dry-run",
     Apply = "apply"
+}
+export enum GpuWorkingBudgetBindingMethod {
+    SameExportDevice = "same-export-device"
+}
+export enum GpuWorkingBudgetBackend {
+    Hardware = "hardware"
+}
+export enum GpuWorkingBudgetHeadroomBytes {
+    $536870912 = "536870912"
+}
+export enum GpuWorkingBudgetMeasuredBytes {
+    $2147483648 = "2147483648"
+}
+export enum GpuWorkingBudgetMetric {
+    MeasuredUsableGpuWorkingBudgetV1 = "measured-usable-gpu-working-budget-v1"
+}
+export enum GpuWorkingBudgetStatus {
+    Passed = "passed"
+}
+export enum GpuWorkingBudgetTopology {
+    Unified = "unified",
+    Dedicated = "dedicated",
+    Unknown = "unknown"
 }
 export enum RenderWorkerStatus {
     Active = "active",
