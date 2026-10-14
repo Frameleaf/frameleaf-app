@@ -57,6 +57,22 @@ describe('FirstRunSetup (FL-176)', () => {
     expect(localStorage.getItem('frameleaf:setup:v1')).not.toContain('Correct-Horse-9');
   });
 
+  it('keeps focus in the admin form while typing', async () => {
+    const state = createSetup('new');
+    const account = flowSteps('new').findIndex((entry) => entry.id === 'account');
+    render(FirstRunSetup, {
+      initial: { ...state, step: account, reached: account, choices: { ...state.choices, signIn: 'local' } },
+      authenticated: false,
+    });
+    const name = screen.getByLabelText('Name');
+    name.focus();
+    await fireEvent.input(name, { target: { value: 'A' } });
+    await fireEvent.input(name, { target: { value: 'Al' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(name).toHaveFocus();
+    expect(name).toHaveValue('Al');
+  });
+
   it('submits the admin form on Enter, starts with the name and focuses the first problem', async () => {
     const state = createSetup('new');
     const account = flowSteps('new').findIndex((entry) => entry.id === 'account');

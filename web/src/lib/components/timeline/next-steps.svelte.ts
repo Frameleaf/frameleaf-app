@@ -1,6 +1,6 @@
 /**
  * The one-time "Next steps" card on the library (design review finding 98). First-run setup tells
- * the administrator that Library Care, Cloud backup and Activity come after setup; this is where
+ * the administrator that Library Care, Cloud backup and Background work come after setup; this is where
  * the library delivers on it.
  *
  * Setup hands off with a navigation from its own page into the app, so the app's layout offers the

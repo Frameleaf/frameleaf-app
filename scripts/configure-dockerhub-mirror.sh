@@ -2,6 +2,12 @@
 # Public cache only: keep all existing daemon settings and image references.
 set -euo pipefail
 
+# Namespace owns the daemon; CI images and BuildKit retain their pinned public-mirror routes.
+if [[ -n "${NSC_CONTAINER_REGISTRY:-}" ]]; then
+  docker info >/dev/null
+  exit 0
+fi
+
 sudo python3 - /etc/docker/daemon.json <<'PY'
 import json
 import os

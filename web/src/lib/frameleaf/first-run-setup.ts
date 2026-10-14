@@ -107,7 +107,8 @@ export const modelTiers: readonly {
     id: 'balanced',
     label: 'frameleaf_setup_tier_balanced',
     summary: 'frameleaf_setup_tier_balanced_summary',
-    model: 'ViT-B-16-SigLIP2__webli',
+    // The server's default CLIP model (config.dto), which the image stages: choosing it downloads nothing.
+    model: 'ViT-B-16-SigLIP-384__webli',
     speed: 1,
     recommended: true,
   },

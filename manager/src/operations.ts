@@ -11,6 +11,7 @@ import { Fencing } from './fencing.js';
 import { ApplicationConfig, renderCompose, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
+import { LibraryMove } from './library-move.js';
 import {
   Refusal,
   digest,
@@ -121,6 +122,7 @@ type PreviousInstallation = {
   archive: string;
 };
 export class Operations {
+  private mediaMove: LibraryMove;
   private discovery: Discovery;
   private fencing: Fencing;
   private executing = new Set<string>();
@@ -135,6 +137,39 @@ export class Operations {
   ) {
     this.discovery = new Discovery(docker);
     this.fencing = new Fencing(docker, store, autostartFile);
+    this.mediaMove = new LibraryMove(
+      store,
+      docker,
+      this.fencing,
+      new PostgresStorage(docker, store.directory, roots, !!autostartFile),
+      store.directory,
+      process.env.MANAGER_BACKUP_ROOT ?? join(store.directory, 'backups'),
+    );
+  }
+  reviewMove(root: string) {
+    return this.mediaMove.review(root);
+  }
+  move(id: string, key: string): Operation {
+    const { operation, created } = this.mediaMove.start(id, key);
+    if (created) this.launch(operation, () => this.applyMove(operation));
+    return operation;
+  }
+  async stopMove(id: string): Promise<void> {
+    const operation = this.store.history().find((o) => o.id === id);
+    if (!operation || operation.kind !== 'move-library' || operation.state === 'complete')
+      throw new Refusal('operation_not_recoverable');
+    await this.mediaMove.stop(operation);
+  }
+  private applyMove(operation: Operation): Promise<void> {
+    return this.mediaMove.run(
+      operation,
+      (name, action) => this.step(operation, name, action),
+      async () => {
+        await this.backups.initialize();
+        return this.backups.snapshot(await this.checkpoint(operation), operation.id);
+      },
+      () => this.libraryStatus(),
+    );
   }
   installation(): Installation | null {
     return this.store.get('installation');
@@ -278,6 +313,7 @@ export class Operations {
     this.store.save(operation);
     this.launch(operation, async () => {
       if (operation.receipts['cancellation-intent']) return this.cancelOperation(operation);
+      if (operation.kind === 'move-library') return this.applyMove(operation);
       if (operation.kind === 'update') {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
@@ -1058,6 +1094,13 @@ export class Operations {
       throw new Refusal('operation_not_recoverable');
     this.executing.add(id); // Claim synchronously, before any external effect or await.
     try {
+      if (operation.kind === 'move-library') {
+        await this.mediaMove.recover(operation);
+        operation.state = 'complete';
+        operation.error = operation.receipts['cancelled'] as string;
+        this.store.save(operation);
+        return;
+      }
       if (!operation.receipts['cancellation-intent']) {
         const installation = this.installation();
         const kind =
@@ -1245,23 +1288,24 @@ export class Operations {
     operation.receipts['cancelled'] = 'recovered_source_stopped';
   }
   history() {
-    return this.store
-      .history()
-      .map(({ input, receipts, ...operation }) => ({
-        ...operation,
-        backupSkipped: operation.kind === 'import' && !!this.store.get<Review>(`review:${input.reviewId}`)?.backup,
-        replacesInstallation:
-          operation.kind === 'restore' && !!this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current,
-        canCancel:
-          ['failed', 'interrupted'].includes(operation.state) &&
-          (operation.kind === 'backup' ||
+    return this.store.history().map(({ input, receipts, ...operation }) => ({
+      ...operation,
+      backupSkipped: operation.kind === 'import' && !!this.store.get<Review>(`review:${input.reviewId}`)?.backup,
+      replacesInstallation:
+        operation.kind === 'restore' && !!this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current,
+      canStop: operation.kind === 'move-library' && operation.state === 'running' && !receipts['move-writes-intent'],
+      canCancel:
+        ['failed', 'interrupted'].includes(operation.state) &&
+        (operation.kind === 'move-library'
+          ? !receipts['move-writes-intent']
+          : operation.kind === 'backup' ||
             (operation.kind === 'update' &&
               operation.step !== 'apply-release' &&
               !operation.completed.includes('apply-release')) ||
             !this.installation()?.mayHaveWrittenMedia ||
             (operation.kind === 'restore' &&
               this.installation()?.id === this.store.get<RestoreReview>(`restore:${input.reviewId}`)?.current?.id)),
-      }));
+    }));
   }
   private async archiveStack(archive: string): Promise<void> {
     try {
