@@ -4,7 +4,6 @@ import {
   TakeoutState,
   type TakeoutItemResponseDto,
   type TakeoutOptionsDto,
-  type TakeoutPairResponseDto,
   type TakeoutResponseDto,
   type TakeoutSourceResponseDto,
 } from '@frameleaf/sdk';
@@ -13,17 +12,20 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import type { Translations } from 'svelte-i18n';
 
 /**
- * The Google Photos import wizard's rules (FL-65), kept apart from the page so they can be read and
- * tested on their own. The prototype's `Import Google Photos` workflow has three stages — Stage,
- * Scan, Reconcile — and this module decides which one an import is on, what the stage shows, and how
- * an archive upload resumes after the browser was closed.
+ * The Google Photos import's rules (FL-65), kept apart from the page so they can be read and tested
+ * on their own. An import goes Upload → Check → Import and moves on by itself; this module decides
+ * which screen an import is on, and how an archive upload resumes after the browser was closed.
  *
  * The server is the authority for every state: nothing here is persisted in the browser, and a
  * reload finds the import exactly where the server says it is.
  */
 
-export const TAKEOUT_STAGES = ['stage', 'scan', 'reconcile'] as const;
-export type TakeoutStage = (typeof TAKEOUT_STAGES)[number];
+/**
+ * The screen an import is on. `stopped` is an upload left part-way; `unclear` holds the photos whose
+ * details disagree when the owner asked to choose for them; `done` also covers a run that stopped.
+ */
+export type TakeoutView =
+  'start' | 'upload' | 'stopped' | 'checking' | 'check-failed' | 'ready' | 'importing' | 'unclear' | 'done';
 
 /** States in which a job is working on the import: nothing may change, and the page keeps watching. */
 const BUSY: ReadonlySet<TakeoutState> = new Set([
@@ -40,35 +42,12 @@ const MOVING: ReadonlySet<TakeoutState> = new Set([
   TakeoutState.Importing,
   TakeoutState.Cancelling,
 ]);
-/** States in which review decisions and import choices may change. */
-const REVIEWABLE: ReadonlySet<TakeoutState> = new Set([
-  TakeoutState.Review,
-  TakeoutState.Completed,
-  TakeoutState.Failed,
-  TakeoutState.Cancelled,
-]);
 /** A job stopped without finishing. */
 const STOPPED: ReadonlySet<TakeoutState> = new Set([TakeoutState.Failed, TakeoutState.Cancelled]);
 
 export const isTakeoutBusy = (state: TakeoutState) => BUSY.has(state);
 export const isTakeoutMoving = (state: TakeoutState) => MOVING.has(state);
 export const isTakeoutStopped = (state: TakeoutState) => STOPPED.has(state);
-
-/** The prototype stage an import is on. */
-export const takeoutStage = (takeout?: Pick<TakeoutResponseDto, 'phase'>): TakeoutStage => {
-  if (!takeout || takeout.phase === TakeoutPhase.Sources) {
-    return 'stage';
-  }
-  return takeout.phase === TakeoutPhase.Scanning ? 'scan' : 'reconcile';
-};
-
-/** Decisions about items and pairs, and the import choices, can change. */
-export const canReviewTakeout = (takeout: Pick<TakeoutResponseDto, 'phase' | 'state'>) =>
-  takeout.phase !== TakeoutPhase.Sources && takeout.phase !== TakeoutPhase.Scanning && REVIEWABLE.has(takeout.state);
-
-/** A scan that stopped can be run again; archives can be added before it. */
-export const canRetryScan = (takeout: Pick<TakeoutResponseDto, 'phase' | 'state'>) =>
-  takeout.phase === TakeoutPhase.Scanning && isTakeoutStopped(takeout.state);
 
 /** Every source is fully on the server. */
 export const takeoutSourcesStaged = (sources: readonly TakeoutSourceResponseDto[]) =>
@@ -81,6 +60,51 @@ export const takeoutBytesRemaining = (sources: readonly TakeoutSourceResponseDto
     (total, source) => total + (source.kind === TakeoutSourceKind.Zip ? Math.max(0, source.size - source.received) : 0),
     0,
   );
+
+/** The screen for an import, from the server's state; `uploading` while this page sends archives. */
+export const takeoutView = (
+  takeout: Pick<TakeoutResponseDto, 'phase' | 'state' | 'sources' | 'counts'> | undefined,
+  uploading = false,
+): TakeoutView => {
+  if (!takeout) {
+    return 'start';
+  }
+  if (takeout.phase === TakeoutPhase.Sources) {
+    const started = takeout.sources.some((source) => source.received > 0);
+    return !uploading && started && takeoutBytesRemaining(takeout.sources) > 0 ? 'stopped' : 'upload';
+  }
+  if (takeout.phase === TakeoutPhase.Scanning) {
+    return isTakeoutStopped(takeout.state) ? 'check-failed' : 'checking';
+  }
+  if (takeout.state === TakeoutState.Review) {
+    return 'ready';
+  }
+  if (isTakeoutBusy(takeout.state)) {
+    return 'importing';
+  }
+  return takeout.state === TakeoutState.Completed && takeout.counts.review > 0 ? 'unclear' : 'done';
+};
+
+/** Which of Upload, Check and Import a screen belongs to; 3 once the import is finished. */
+export const takeoutStep = (view: TakeoutView) => {
+  switch (view) {
+    case 'start':
+    case 'upload':
+    case 'stopped': {
+      return 0;
+    }
+    case 'checking':
+    case 'check-failed': {
+      return 1;
+    }
+    case 'done': {
+      return 3;
+    }
+    default: {
+      return 2;
+    }
+  }
+};
 
 /**
  * Progress of the job working on the import, from what the server counted. The total grows while a
@@ -96,10 +120,6 @@ export const takeoutProgress = (takeout: Pick<TakeoutResponseDto, 'processed' | 
   };
 };
 
-/** Items the owner still has to decide about before importing with sidecar review on. */
-export const takeoutNeedsReview = (takeout: Pick<TakeoutResponseDto, 'counts'>) =>
-  takeout.counts.review + takeout.counts.suggestedPairs;
-
 /** The import choices to send, from the import's current ones and the albums the owner picked. */
 export const takeoutImportOptions = (
   options: TakeoutResponseDto['options'],
@@ -113,16 +133,11 @@ export const takeoutImportOptions = (
   albums: options.albums,
   sidecarReview: options.sidecarReview,
   updateMatchedMetadata: options.updateMatchedMetadata,
+  includeTrashed: options.includeTrashed,
   selectedAlbums: albums.filter((album) => album.selected).map((album) => album.folder),
 });
 
 export const takeoutStateKey = (state: TakeoutState): Translations => `frameleaf_takeout_state_${state}`;
-export const takeoutItemStateKey = (state: TakeoutItemResponseDto['state']): Translations =>
-  `frameleaf_takeout_item_${state}`;
-export const takeoutPairStateKey = (state: TakeoutPairResponseDto['state']): Translations =>
-  `frameleaf_takeout_pair_${state}`;
-export const takeoutWarningKey = (warning: TakeoutItemResponseDto['warnings'][number]): Translations =>
-  `frameleaf_takeout_warning_${warning}`;
 
 /* ------------------------------------------------------------------ */
 /* Resumable archive upload                                            */
@@ -190,7 +205,7 @@ export const findStagedArchive = (sources: readonly TakeoutSourceResponseDto[], 
   );
 
 /* ------------------------------------------------------------------ */
-/* Reconciliation report                                               */
+/* Report                                                              */
 /* ------------------------------------------------------------------ */
 
 const csvCell = (value: string | number | null | undefined) => {
@@ -219,32 +234,6 @@ export const takeoutReportCsv = (items: readonly TakeoutItemResponseDto[]) => {
   );
   return [header.join(','), ...rows].join('\n') + '\n';
 };
-
-/** The reconciliation report as JSON: the import, every item and every Live Photo decision. */
-export const takeoutReportJson = (
-  takeout: TakeoutResponseDto,
-  items: readonly TakeoutItemResponseDto[],
-  pairs: readonly TakeoutPairResponseDto[],
-  hiddenLocked: number,
-) =>
-  JSON.stringify(
-    {
-      import: {
-        id: takeout.id,
-        name: takeout.name,
-        state: takeout.state,
-        counts: takeout.counts,
-        sources: takeout.sources.map(({ name, kind, size, rejected }) => ({ name, kind, size, rejected })),
-        options: takeout.options,
-      },
-      // Locked items are only in a report made from an unlocked session.
-      lockedItemsOmitted: hiddenLocked,
-      items,
-      livePhotos: pairs,
-    },
-    null,
-    2,
-  );
 
 export const takeoutReportFileName = (takeout: Pick<TakeoutResponseDto, 'createdAt'>, extension: 'json' | 'csv') =>
   `google-photos-import-${takeout.createdAt.slice(0, 10)}-report.${extension}`;
