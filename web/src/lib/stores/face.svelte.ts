@@ -1,29 +1,15 @@
 import { getFaces, type AssetFaceResponseDto, type PersonResponseDto } from '@frameleaf/sdk';
 import { SvelteMap } from 'svelte/reactivity';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
-import type { Faces } from '$lib/managers/asset-viewer-manager.svelte';
-import { CancellableTask } from '$lib/utils/cancellable-task';
 
 class FaceManager {
   #data = $state<AssetFaceResponseDto[]>([]);
   /** FL-38: faces the asset's owner hid; listed only for the owner, behind "Show hidden". */
   #hiddenFaces = $state<AssetFaceResponseDto[]>([]);
-  #hiddenFor: string | null = null;
-  #faceLoader = new CancellableTask();
-  #cleared = false;
-
-  readonly faceNames = $derived.by(() => {
-    const map = new Map<Faces, string>();
-
-    for (const face of this.data) {
-      if (!face.person) {
-        continue;
-      }
-      map.set(face, face.person.name);
-    }
-
-    return map;
-  });
+  #hiddenRequest: AbortController | undefined;
+  #loading: Promise<void> | undefined;
+  #generation = 0;
 
   readonly people = $derived.by(() => {
     const people = new Map<string, PersonResponseDto>();
@@ -39,7 +25,7 @@ class FaceManager {
 
   readonly facesByPersonId = $derived.by(() => {
     const map = new SvelteMap<string, AssetFaceResponseDto[]>();
-    for (const face of faceManager.data) {
+    for (const face of this.data) {
       if (!face.person) {
         continue;
       }
@@ -61,37 +47,74 @@ class FaceManager {
     return this.#hiddenFaces;
   }
 
+  constructor() {
+    // Hidden reads bypass the shared cache, so retire them at the same access boundaries.
+    onLibraryAccessChange(() => this.#clearHidden());
+  }
+
   /** Owner only: the server refuses `withHidden` to anyone else. */
   async loadHiddenFaces(assetId: string) {
-    this.#hiddenFor = assetId;
+    const previous = this.#hiddenRequest;
+    const request = new AbortController();
+    this.#hiddenRequest = request;
+    previous?.abort();
     try {
-      const faces = await getFaces({ id: assetId, withHidden: true });
-      if (this.#hiddenFor === assetId) {
+      if (this.#hiddenRequest !== request) {
+        return;
+      }
+      const faces = await getFaces({ id: assetId, withHidden: true }, { signal: request.signal });
+      if (this.#hiddenRequest === request && !request.signal.aborted) {
         this.#hiddenFaces = faces.filter((face) => !!face.hiddenAt);
       }
     } catch {
-      if (this.#hiddenFor === assetId) {
+      if (this.#hiddenRequest === request && !request.signal.aborted) {
         this.#hiddenFaces = [];
+      }
+    } finally {
+      if (this.#hiddenRequest === request) {
+        this.#hiddenRequest = undefined;
       }
     }
   }
 
   async getAssetFaces(id: string) {
-    if (this.#cleared) {
-      await this.#faceLoader.reset();
-      this.#cleared = false;
+    if (this.#loading) {
+      await this.#loading;
+      return;
     }
-    await this.#faceLoader.execute(async () => {
-      this.#data = await assetCacheManager.getAssetFaces(id);
-    }, false);
+    const generation = this.#generation;
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    this.#loading = pending;
+    try {
+      const faces = await assetCacheManager.getAssetFaces(id);
+      if (generation === this.#generation && this.#loading === pending) {
+        this.#data = faces;
+      }
+    } catch {
+      if (generation === this.#generation && this.#loading === pending) {
+        this.#loading = undefined;
+      }
+    } finally {
+      resolve();
+    }
   }
 
   clear() {
-    this.#cleared = true;
+    this.#generation++;
+    this.#loading = undefined;
     assetCacheManager.clearFaceCache();
     this.#data = [];
+    this.#clearHidden();
+  }
+
+  #clearHidden() {
+    const request = this.#hiddenRequest;
+    this.#hiddenRequest = undefined;
     this.#hiddenFaces = [];
-    this.#hiddenFor = null;
+    request?.abort();
   }
 }
 
