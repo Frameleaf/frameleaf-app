@@ -28,6 +28,7 @@ import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/st
 import { signInputGrant } from 'src/utils/render-admission.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
@@ -99,7 +100,7 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     projectId: 'project-1',
     revisionId: 'revision-7',
     snapshot: { engineDigest: 'engine-1' },
-    settings: { resolution: '3840×2160' },
+    settings: { resolution: '720p' },
     estimate: null,
     progress: 0,
     processedUnits: '0',
@@ -252,6 +253,7 @@ describe(RenderWorkerService.name, () => {
       markSeen: vi.fn().mockResolvedValue(undefined),
       revokeWorker: vi.fn(),
       createSession: vi.fn(),
+      admitSession: vi.fn(),
       getSessionByToken: vi.fn().mockResolvedValue(undefined),
       touchSession: vi.fn().mockResolvedValue(undefined),
       revokeSessions: vi.fn().mockResolvedValue(0),
@@ -403,115 +405,93 @@ describe(RenderWorkerService.name, () => {
       engineDigest: 'engine-1',
       conformanceReportedAt: new Date(Date.now() - 60_000).toISOString(),
       softwareRenderer: false,
-      gpuMemoryBytes: String(8 * 1024 ** 3),
+      gpuMemoryBytes: '2147483648',
     };
-
-    it('refuses an unknown secret generically and audits the refusal', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(undefined);
-
+    it.each([
+      RenderWorkerRefusalReason.InvalidCredential,
+      RenderWorkerRefusalReason.WorkerRevoked,
+      RenderWorkerRefusalReason.ConformanceReplayed,
+      RenderWorkerRefusalReason.SoftwareRenderer,
+      RenderWorkerRefusalReason.EngineDigestMismatch,
+      RenderWorkerRefusalReason.GpuMemoryInsufficient,
+      RenderWorkerRefusalReason.WorkerConcurrency,
+    ])('returns a generic refusal and audits the transactional decision %s', async (reason) => {
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: false, reason });
       await expect(sut.admit(admission as never)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(workers.createSession).not.toHaveBeenCalled();
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: RenderWorkerAuditEvent.Refused,
-          reason: RenderWorkerRefusalReason.InvalidCredential,
-        }),
-      );
-    });
-
-    it('refuses a valid secret presented under another worker’s id', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-
-      await expect(sut.admit({ ...admission, workerId: workerB.id } as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-      expect(workers.createSession).not.toHaveBeenCalled();
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ workerId: workerA.id, reason: RenderWorkerRefusalReason.InvalidCredential }),
-      );
-    });
-
-    it('refuses a revoked worker with a still-valid secret', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(
-        workerStub({ status: RenderWorkerStatus.Revoked, revokedAt: new Date() }),
-      );
-
-      await expect(sut.admit(admission as never)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: RenderWorkerRefusalReason.WorkerRevoked }),
-      );
-    });
-
-    it('refuses a replayed conformance report', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(
-        workerStub({ lastConformanceReportedAt: new Date(admission.conformanceReportedAt) }),
-      );
-
-      await expect(sut.admit(admission as never)).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(workers.recordAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: RenderWorkerRefusalReason.ConformanceReplayed }),
-      );
-    });
-
-    it('refuses a software renderer and a mismatched engine digest', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-
-      await expect(sut.admit({ ...admission, softwareRenderer: true } as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
-      await expect(sut.admit({ ...admission, engineDigest: 'engine-2' } as never)).rejects.toBeInstanceOf(
-        UnauthorizedException,
-      );
+      expect(workers.recordAudit).toHaveBeenCalledWith({
+        workerId: workerA.id,
+        event: RenderWorkerAuditEvent.Refused,
+        reason,
+      });
       expect(workers.createSession).not.toHaveBeenCalled();
     });
-
-    it('issues a scoped session stored by digest, capped to the qualified GPU memory', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-      vi.mocked(workers.createSession).mockImplementation((dto) => Promise.resolve(dto as never));
-
-      const session = await sut.admit(admission as never);
-
-      expect(session.sessionToken).toBe(mocks.crypto.randomBytesAsText(32));
-      expect(session.scopes).toEqual(workerA.kinds);
-      expect(workers.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workerId: workerA.id,
-          token: hashed(session.sessionToken),
-          scopes: workerA.kinds,
-          gpuMemoryBytes: String(8 * 1024 ** 3),
-        }),
-      );
-      expect(workers.markAdmitted).toHaveBeenCalledWith(workerA.id, new Date(admission.conformanceReportedAt));
-      const audits = vi.mocked(workers.recordAudit).mock.calls.map(([entry]) => JSON.stringify(entry));
-      expect(audits.some((entry) => entry.includes(session.sessionToken))).toBe(false);
-      expect(audits.some((entry) => entry.includes('secret-a'))).toBe(false);
-    });
-
-    it('binds the codecs and containers the check verified to the new session (FL-95)', async () => {
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(workerA);
-      vi.mocked(workers.createSession).mockImplementation((dto) =>
-        Promise.resolve({ ...dto, id: 'session-new' } as never),
-      );
-
-      await sut.admit({ ...admission, codecs: ['hevc_nvenc'], formats: ['mp4'] } as never);
-
-      expect(workers.recordSessionCapabilities).toHaveBeenCalledWith('session-new', {
-        codecs: ['hevc_nvenc'],
-        formats: ['mp4'],
+    it('keeps the budget failure classifier in the private audit while returning a generic admission error', async () => {
+      vi.mocked(workers.admitSession).mockResolvedValue({
+        admitted: false,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        budgetReason: 'expired',
+      } as never);
+      await expect(sut.admit(admission as never)).rejects.toMatchObject({
+        response: { message: 'Worker admission refused' },
+      });
+      expect(workers.recordAudit).toHaveBeenCalledWith({
+        workerId: workerA.id,
+        event: RenderWorkerAuditEvent.Refused,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        detail: { gpuWorkingBudgetReason: 'expired' },
       });
     });
 
-    it('scopes the session to renders only, even for a worker enrolled with a server-side kind (FL-73)', async () => {
-      const legacy = workerStub({ kinds: [MediaOperationKind.QuickEdit, MediaOperationKind.Bulk] as never });
-      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(legacy);
-      vi.mocked(workers.createSession).mockImplementation((dto) => Promise.resolve(dto as never));
-
-      const session = await sut.admit(admission as never);
-
-      expect(session.scopes).toEqual([MediaOperationKind.QuickEdit]);
-      expect(workers.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ scopes: [MediaOperationKind.QuickEdit] }),
+    it('delegates the complete report and hashed credentials to atomic admission, returning only its committed scopes and Q', async () => {
+      const committed = sessionStub(workerA, SESSION_A, {
+        scopes: [MediaOperationKind.StudioExport],
+        gpuMemoryBytes: '1073741824',
+      });
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: true, session: committed });
+      const dto = { ...admission, codecs: ['h264'], formats: ['mp4'] };
+      const result = await sut.admit(dto as never);
+      const { enrolmentSecret, ...report } = dto;
+      expect(workers.admitSession).toHaveBeenCalledWith({
+        report,
+        enrolmentSecret: hashed(enrolmentSecret),
+        token: hashed(result.sessionToken),
+        ttlMs: 12 * 60 * 60 * 1000,
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          workerId: committed.workerId,
+          scopes: committed.scopes,
+          gpuMemoryBytes: committed.gpuMemoryBytes,
+          expiresAt: new Date(committed.expiresAt).toISOString(),
+        }),
       );
+      expect(workers.recordSessionCapabilities).not.toHaveBeenCalled();
+      expect(workers.markAdmitted).not.toHaveBeenCalled();
+      expect(workers.recordAudit).not.toHaveBeenCalled();
+    });
+    it('returns the committed receipt with raw M and the independently capped Q', async () => {
+      const committed = withSyntheticGpuBudget(
+        {
+          worker: workerA,
+          session: sessionStub(workerA, SESSION_A, {
+            gpuMemoryBytes: '1073741824',
+            codecs: ['webcodecs-avc'],
+            colorPrecision: null,
+          }),
+        },
+        { codecs: ['webcodecs-avc'], formats: ['mp4'] },
+      ).session;
+      vi.mocked(workers.admitSession).mockResolvedValue({ admitted: true, session: committed });
+      const result = await sut.admit(admission as never);
+      expect(result.gpuWorkingBudgetEvidence).toEqual(committed.gpuWorkingBudgetEvidence);
+      expect(result.gpuWorkingBudgetEvidence!.measuredBytes).toBe('2147483648');
+      expect(result.gpuMemoryBytes).toBe('1073741824');
+    });
+
+    it('does not issue a credential when the transaction fails', async () => {
+      vi.mocked(workers.admitSession).mockRejectedValue(new Error('database rollback'));
+      await expect(sut.admit(admission as never)).rejects.toThrow('database rollback');
+      expect(workers.recordAudit).not.toHaveBeenCalled();
     });
   });
 
@@ -548,6 +528,9 @@ describe(RenderWorkerService.name, () => {
             attempt: 1,
           }) as never,
           claimToken: 'claim-1',
+          claimedAt: new Date(),
+          engineDigest: 'engine-1',
+          limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: 1000 },
         }),
       );
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([queued.assetId!]));
@@ -711,6 +694,9 @@ describe(RenderWorkerService.name, () => {
               attempt: 1,
             }) as never,
             claimToken: 'claim-1',
+            claimedAt: new Date(),
+            engineDigest: 'engine-1',
+            limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: 1000 },
           }),
         );
         const manifest = studioManifestStub();
@@ -903,6 +889,9 @@ describe(RenderWorkerService.name, () => {
               attempt: 1,
             },
             claimToken: 'claim-1',
+            claimedAt: new Date(),
+            engineDigest: 'engine-1',
+            limits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: 1000 },
           } as never);
           const claim = await sut.claim(SESSION_A, {} as never);
           expect(claim!.snapshot).toMatchObject({ contract: { video: { mastering } } });
@@ -1211,7 +1200,7 @@ describe(RenderWorkerService.name, () => {
       });
     });
 
-    it('applies the tightest of worker, instance and account limits to the claim', async () => {
+    it('returns current transaction limits rather than reusing prechecked limits', async () => {
       vi.mocked(workers.getLimit).mockImplementation((subject) =>
         Promise.resolve(
           subject === 'instance'
@@ -1220,9 +1209,16 @@ describe(RenderWorkerService.name, () => {
         ),
       );
 
+      vi.mocked(workers.claimQueued).mockResolvedValue({
+        operation: operationStub({ status: MediaOperationStatus.Preparing }),
+        claimToken: 'claim-1',
+        claimedAt: new Date(),
+        engineDigest: 'engine-1',
+        limits: { maxConcurrentOperations: 1, maxWallClockMs: 300_000, maxOutputBytes: 1000 },
+      } as never);
       const claim = await sut.claim(SESSION_A, {} as never);
 
-      // Worker: no wall clock, 1000 output bytes. Instance: 600 s. Account: 300 s, 5000 bytes.
+      // The transaction re-reads all current ceilings after manifest resolution.
       expect(claim!.limits).toEqual({ maxWallClockMs: '300000', maxOutputBytes: '1000' });
     });
 
@@ -1312,6 +1308,42 @@ describe(RenderWorkerService.name, () => {
       expect(claim).toBeUndefined();
       expect(workers.recordRefusal).toHaveBeenCalledWith(queued.id, RenderWorkerRefusalReason.GpuMemoryInsufficient);
       expect(workers.claimQueued).not.toHaveBeenCalled();
+    });
+
+    it('retains a final budget failure classifier only in the private claim audit', async () => {
+      vi.mocked(workers.claimQueued).mockResolvedValue({
+        refused: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        budgetReason: 'profile-unapproved',
+      } as never);
+      expect(await sut.claim(SESSION_A, {} as never)).toBeUndefined();
+      expect(workers.recordAudit).toHaveBeenCalledWith({
+        workerId: workerA.id,
+        event: RenderWorkerAuditEvent.ClaimRefused,
+        operationId: queued.id,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        detail: { gpuWorkingBudgetReason: 'profile-unapproved' },
+      });
+    });
+
+    it('audits a final transaction refusal after manifest resolution without issuing a claim', async () => {
+      vi.mocked(workers.claimQueued).mockResolvedValue({ refused: RenderWorkerRefusalReason.GpuMemoryInsufficient });
+      expect(await sut.claim(SESSION_A, {} as never)).toBeUndefined();
+      expect(workers.claimQueued).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: sessionA.id,
+          sessionTokenHash: sessionA.token,
+          expected: queued,
+          destinationHealth: expect.objectContaining({ state: 'unknown' }),
+        }),
+      );
+      expect(workers.recordRefusal).toHaveBeenCalledWith(queued.id, RenderWorkerRefusalReason.GpuMemoryInsufficient);
+      expect(workers.recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: RenderWorkerAuditEvent.ClaimRefused,
+          reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        }),
+      );
+      expect(studioExports.onRenderClaimed).not.toHaveBeenCalled();
     });
 
     it('moves on when another worker took the candidate first', async () => {
@@ -2745,7 +2777,17 @@ describe(RenderWorkerService.name, () => {
   });
 
   describe('getCompatibility (FL-71 CC-9)', () => {
-    const live = (worker: RenderWorker, session: RenderWorkerSession) => ({ worker, session });
+    const live = (worker: RenderWorker, session: RenderWorkerSession) =>
+      withSyntheticGpuBudget(
+        {
+          worker: { ...worker, maxConcurrentOperations: 1 },
+          session: { ...session, gpuMemoryBytes: '2147483648', codecs: ['webcodecs-avc'], colorPrecision: null },
+        },
+        { codecs: ['webcodecs-avc'], formats: ['mp4'] },
+      );
+    beforeEach(() =>
+      vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] }),
+    );
 
     it('lists the render kinds a qualified worker can take, and the rest as unavailable', async () => {
       (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
@@ -2761,6 +2803,37 @@ describe(RenderWorkerService.name, () => {
           MediaOperationKind.QuickEdit,
         ],
       });
+    });
+
+    it.each(['legacy', 'policy', 'expired', 'caps', 'scope'])('does not advertise %s evidence', async (mode) => {
+      const value = live(workerA, sessionA);
+      switch (mode) {
+        case 'legacy': {
+          value.session.gpuWorkingBudgetEvidence = null;
+          break;
+        }
+        case 'policy': {
+          value.worker.gpuWorkingBudgetApproval = null;
+          break;
+        }
+        case 'expired': {
+          value.session.gpuWorkingBudgetEvidence!.validUntil = new Date(Date.now() - 1).toISOString();
+          break;
+        }
+        case 'scope': {
+          value.worker.kinds = [];
+          break;
+        }
+        case 'caps': {
+          vi.mocked(workers.getSessionCapabilities).mockResolvedValue({ codecs: ['av1'], formats: ['webm'] });
+          // No default
+          break;
+        }
+      }
+      (workers as unknown as { listLiveSessions: ReturnType<typeof vi.fn> }).listLiveSessions = vi
+        .fn()
+        .mockResolvedValue([value]);
+      expect((await sut.getCompatibility()).qualified).toEqual([]);
     });
 
     it('does not count a session whose conformance is stale', async () => {

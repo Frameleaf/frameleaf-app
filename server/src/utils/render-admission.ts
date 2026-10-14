@@ -57,7 +57,7 @@ export type AuthorizedManifest = {
 
 /**
  * Whether a destination can take work right now. `unknown` is the honest default when nothing
- * has probed it; admission refuses only on `unavailable`. FL-110 supplies the real provider
+ * has probed it; measured claim transactions require fresh `available` health. FL-110 supplies the real provider
  * (Frameleaf Cloud availability, LAN reachability, local GPU presence).
  */
 export type DestinationHealth = {
@@ -352,11 +352,18 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
   }
 
   const gpuHint = snapshotNumber(operation.snapshot, 'gpuMemoryHintBytes');
-  if (gpuHint !== null) {
-    const available = session.gpuMemoryBytes ?? worker.gpuMemoryBytes;
-    if (available === null || gpuHint > available) {
-      return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient);
-    }
+  const resolution = operation.settings?.resolution;
+  const requiredMemory =
+    typeof resolution === 'string' && Object.hasOwn(RENDER_MEMORY_BY_RESOLUTION, resolution)
+      ? RENDER_MEMORY_BY_RESOLUTION[resolution]
+      : undefined;
+  if (
+    requiredMemory === undefined ||
+    session.gpuMemoryBytes === null ||
+    !Number.isSafeInteger(session.gpuMemoryBytes) ||
+    session.gpuMemoryBytes < Math.max(requiredMemory, gpuHint ?? 0)
+  ) {
+    return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient);
   }
 
   if (worker.activeOperations >= worker.limits.maxConcurrentOperations) {
@@ -718,9 +725,15 @@ export const evaluateRenderOutput = (
   if (candidates.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.NoQualifiedWorker };
   }
-  const neededMemory = RENDER_MEMORY_BY_RESOLUTION[request.resolution] ?? 0;
+  const neededMemory = Object.hasOwn(RENDER_MEMORY_BY_RESOLUTION, request.resolution)
+    ? RENDER_MEMORY_BY_RESOLUTION[request.resolution]
+    : undefined;
+  if (neededMemory === undefined) return { supported: false, refusal: RenderOutputRefusal.InsufficientMemory };
   const withMemory = candidates.filter(
-    (candidate) => candidate.gpuMemoryBytes !== null && candidate.gpuMemoryBytes >= neededMemory,
+    (candidate) =>
+      candidate.gpuMemoryBytes !== null &&
+      Number.isSafeInteger(candidate.gpuMemoryBytes) &&
+      candidate.gpuMemoryBytes >= neededMemory,
   );
   if (withMemory.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.InsufficientMemory };
