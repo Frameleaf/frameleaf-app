@@ -46,11 +46,38 @@
     <meta name="theme-color" content="#101416" />
     <script>
       try {
-        const preference = JSON.parse(localStorage.getItem('immich-ui-theme'));
+        let saved;
+        let legacy = false;
+        try {
+          saved = localStorage.getItem('frameleaf-ui-theme');
+          if (saved === null) {
+            saved = localStorage.getItem('immich-ui-theme');
+            legacy = saved !== null;
+          }
+        } catch {
+          // Blocked storage still follows the device theme.
+        }
+        let value;
+        try {
+          value = JSON.parse(saved);
+        } catch {
+          // Invalid saved preferences fall back to the device theme.
+        }
+        if (value && typeof value === 'object') value = value.system ? 'system' : value.value;
+        const preference = value === 'dark' || value === 'light' ? value : 'system';
+        if (legacy) {
+          try {
+            localStorage.setItem('frameleaf-ui-theme', JSON.stringify(preference));
+            localStorage.removeItem('immich-ui-theme');
+          } catch {
+            // Preserve the previous choice if migration cannot be saved.
+          }
+        }
         const prefersDark = globalThis.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (preference === 'light' || (preference !== 'dark' && !prefersDark)) {
-          document.documentElement.classList.remove('dark');
-          document.documentElement.classList.add('light');
+        const dark = preference === 'dark' || (preference === 'system' && prefersDark);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.classList.toggle('light', !dark);
+        if (!dark) {
           document.querySelector('meta[name="theme-color"]:not([media])')?.setAttribute('content', '#f4f6f7');
         }
       } catch {

@@ -14,6 +14,7 @@ import { pruneExpiredOAuthRequests } from '$lib/frameleaf/auth-session-preferenc
  * Keys a future feature adds under the `frameleaf` prefix are private by default.
  */
 export const DEVICE_PREFERENCE_KEYS: ReadonlySet<string> = new Set([
+  'frameleaf-ui-theme',
   'frameleaf-thumbnail-size',
   'frameleaf-work-filenames',
   'frameleaf.rail.closedSections',
