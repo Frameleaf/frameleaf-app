@@ -3,9 +3,23 @@
 Linux workflow jobs use Namespace Ubuntu 24.04 runners:
 `nscloud-ubuntu-24.04-amd64-8x16` (AMD64) and
 `nscloud-ubuntu-24.04-arm64-8x16` (ARM64). Both request 8 vCPU and 16 GB RAM;
-container builds remain native, without QEMU. Windows CLI tests use
-Namespace `nscloud-windows-2022-amd64-8x16` (Windows Server 2022, 8 vCPU,
-16 GB RAM). Every executable workflow job routes to Namespace.
+container builds remain native, without QEMU.
+
+These exact jobs stay on GitHub-hosted runners until Namespace can run them;
+`check-runners.cjs` pins each one and fails if the list or its runners change:
+
+- Manager (`manager.yml/manager`, `ubuntu-24.04` and `ubuntu-24.04-arm`): Namespace
+  Docker 29.3.0-namespace ignores read-only on the `/proc/1/mountinfo` bind mount,
+  which Manager's host-mount check requires.
+- End-to-End Image, Tests (Server & CLI), Tests (Web) and the Success aggregator
+  (`test.yml`, `ubuntu-24.04` and `ubuntu-24.04-arm`): on Namespace ARM64 these
+  suites hit repeated reset, readiness and Playwright timeouts.
+- Unit Test CLI (Windows) (`test.yml/cli-unit-tests-win`, `windows-latest`): no
+  Namespace runner ever picked up `nscloud-windows-2022-amd64-8x16`.
+
+The private FL103 Linux intake runs only in `Frameleaf/frameleaf-qualification`
+on `ubuntu-24.04`, because it needs systemd. Every other executable workflow job
+routes to Namespace.
 
 The Namespace Managed Runners GitHub App must have access to this public
 repository. Runner-group policies must allow public repositories when using

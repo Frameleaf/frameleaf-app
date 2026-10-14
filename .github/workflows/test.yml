@@ -156,7 +156,8 @@ jobs:
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
-    runs-on: nscloud-windows-2022-amd64-8x16
+    # GitHub-hosted: no Namespace runner ever picked up nscloud-windows-2022-amd64-8x16 (FL-24).
+    runs-on: windows-latest
     permissions:
       contents: read
     defaults:
@@ -573,6 +574,8 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:288c9defbb13c05fed2bfb55f859f1cf65dbd600f45bc89c91efbdd8f2a1e7b9
     name: End-to-End Image
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    # GitHub-hosted: on Namespace ARM64 these suites hit repeated reset, readiness and
+    # Playwright timeouts (FL-24); move back once they pass there.
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -581,8 +584,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - nscloud-ubuntu-24.04-amd64-8x16
-          - nscloud-ubuntu-24.04-arm64-8x16
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -623,6 +626,8 @@ jobs:
     name: End-to-End Tests (Server & CLI)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     needs: e2e-image
+    # GitHub-hosted: on Namespace ARM64 these suites hit repeated reset, readiness and
+    # Playwright timeouts (FL-24); move back once they pass there.
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -634,8 +639,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - nscloud-ubuntu-24.04-amd64-8x16
-          - nscloud-ubuntu-24.04-arm64-8x16
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -808,11 +813,11 @@ jobs:
       # The first bounded lane qualifies direct HTTPS on x64; relay/real-Cloud/two-network acceptance is separate.
       - name: Prepare disposable Buddy TLS and storage
         id: buddy-prepare
-        if: ${{ !cancelled() && matrix.runner == 'nscloud-ubuntu-24.04-amd64-8x16' }}
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
         run: bash buddy-fixture-tls.sh
       - name: Start the two-server Buddy fixture
         id: buddy-fixture
-        if: ${{ !cancelled() && matrix.runner == 'nscloud-ubuntu-24.04-amd64-8x16' }}
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
         env:
           BUDDY_PREPARE_OUTCOME: ${{ steps.buddy-prepare.outcome }}
         run: |
@@ -828,7 +833,7 @@ jobs:
           done
       - name: Run two-server direct Buddy acceptance
         id: buddy-test
-        if: ${{ !cancelled() && matrix.runner == 'nscloud-ubuntu-24.04-amd64-8x16' }}
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
         working-directory: ./server
         env:
           BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
@@ -841,7 +846,7 @@ jobs:
           fi
           pnpm exec vitest run --config test/vitest.config.buddy.mjs
       - name: Capture redacted Buddy diagnostics
-        if: ${{ always() && matrix.runner == 'nscloud-ubuntu-24.04-amd64-8x16' }}
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
         run: |
           # This file intentionally excludes raw app/fixture logs, environment, auth headers, kits and media.
           {
@@ -864,13 +869,13 @@ jobs:
       # The fixed diagnostic above names the error class but not the competing writer (55P03 on the restore
       # after the restart). Both app containers hold only disposable fixture accounts, keys and media.
       - name: Capture Buddy app logs
-        if: ${{ always() && matrix.runner == 'nscloud-ubuntu-24.04-amd64-8x16' }}
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
         run: |
           if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
             docker compose -f docker-compose.buddy.yml logs --no-color --timestamps buddy-a buddy-b > docker-buddy-logs.txt 2>&1 || true
           fi
       - name: Remove the owned Buddy fixture
-        if: ${{ always() && matrix.runner == 'nscloud-ubuntu-24.04-amd64-8x16' }}
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
         run: |
           if [ -n "${BUDDY_ROOT:-}" ]; then
             case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
@@ -934,6 +939,8 @@ jobs:
     name: End-to-End Tests (Web)
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     needs: e2e-image
+    # GitHub-hosted: on Namespace ARM64 these suites hit repeated reset, readiness and
+    # Playwright timeouts (FL-24); move back once they pass there.
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -945,8 +952,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - nscloud-ubuntu-24.04-amd64-8x16
-          - nscloud-ubuntu-24.04-arm64-8x16
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
         # FL-380: the specs are split by file across three stacks of their own. The web project shares
         # one server and database per stack, so it stays on one worker; more stacks, not more workers.
         shard: [1, 2, 3]
@@ -1087,7 +1094,8 @@ jobs:
       - e2e-tests-web
     permissions:
       contents: read
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    # GitHub-hosted with the E2E jobs it aggregates (FL-24).
+    runs-on: ubuntu-24.04
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
     steps:
       - name: Verify required E2E jobs succeeded

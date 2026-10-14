@@ -688,19 +688,13 @@ test("Buddy acceptance runs only on x64 and refuses unsuccessful fixture prerequ
     assert.ok(step);
     assert.equal(step["continue-on-error"], undefined);
     // A failed earlier step must still enter the fail-closed prerequisite check.
-    for (const runner of [
-      "nscloud-ubuntu-24.04-amd64-8x16",
-      "nscloud-ubuntu-24.04-arm64-8x16",
-    ]) {
+    for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
       for (const cancelled of [false, true]) {
         const admitted = runInNewContext(
           step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""),
           { matrix: { runner }, cancelled: () => cancelled },
         );
-        assert.equal(
-          admitted,
-          runner === "nscloud-ubuntu-24.04-amd64-8x16" && !cancelled,
-        );
+        assert.equal(admitted, runner === "ubuntu-24.04" && !cancelled);
       }
     }
   }
@@ -754,16 +748,13 @@ test("Buddy cleanup is always admitted on x64 and refuses an unowned directory",
   for (const step of [capture, logs, cleanup]) {
     assert.ok(step);
     assert.equal(step["continue-on-error"], undefined);
-    for (const runner of [
-      "nscloud-ubuntu-24.04-amd64-8x16",
-      "nscloud-ubuntu-24.04-arm64-8x16",
-    ]) {
+    for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
       assert.equal(
         runInNewContext(step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
           matrix: { runner },
           always: () => true,
         }),
-        runner === "nscloud-ubuntu-24.04-amd64-8x16",
+        runner === "ubuntu-24.04",
       );
     }
   }
@@ -1326,7 +1317,7 @@ test("Zizmor is a pinned failing scanner rather than a skipped success, and Code
 test("all inline bash steps remain syntactically valid", () => {
   for (const file of owned) {
     for (const [id, j] of Object.entries(workflow(file).jobs)) {
-      if (j["runs-on"] === "nscloud-windows-2022-amd64-8x16") continue;
+      if (j["runs-on"] === "windows-latest") continue;
       for (const s of j.steps ?? []) {
         if (!s.run || (s.shell && s.shell !== "bash")) continue;
         const script = s.run.replace(/\$\{\{[\s\S]*?\}\}/g, "EXPRESSION");
