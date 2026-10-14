@@ -27,7 +27,11 @@
       "types": "./dist/utilities/byte-units.d.ts",
       "default": "./dist/utilities/byte-units.js"
     },
-    "./theme/default.css": "./dist/theme/default.css"
+    "./theme/default.css": "./dist/theme/default.css",
+    "./persisted": {
+      "types": "./dist/state/persisted.d.ts",
+      "default": "./dist/state/persisted.js"
+    }
   },
   "peerDependencies": {
     "@sveltejs/kit": "^3.0.1",
