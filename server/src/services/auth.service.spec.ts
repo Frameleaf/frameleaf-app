@@ -523,13 +523,6 @@ describe(AuthService.name, () => {
         metadata: [] as UserMetadataItem[],
       } as UserAdmin);
 
-      mocks.systemMetadata.get.mockImplementation((key) =>
-        Promise.resolve(
-          (key === SystemMetadataKey.FrameleafSetupCode
-            ? { code: 'ABCD2345', pinned: false, failures: 0, locked: false, generatedAt: '2026-10-01T00:00:00Z' }
-            : null) as never,
-        ),
-      );
       mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
 
       await expect(sut.adminSignUp(dto, home)).resolves.toMatchObject({
@@ -548,13 +541,6 @@ describe(AuthService.name, () => {
 
     describe('home network gate (FL-292)', () => {
       beforeEach(() => {
-        mocks.systemMetadata.get.mockImplementation((key) =>
-          Promise.resolve(
-            (key === SystemMetadataKey.FrameleafSetupCode
-              ? { code: 'ABCD2345', pinned: false, failures: 0, locked: false, generatedAt: '2026-10-01T00:00:00Z' }
-              : null) as never,
-          ),
-        );
         mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
       });
 

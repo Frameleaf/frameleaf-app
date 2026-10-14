@@ -2,38 +2,12 @@
   "contract": "frameleaf-server-error-display",
   "version": 1,
   "sourceBase": "d78bb71b1bd4a5aed4735dddea02c8aa271cdcd9",
-  "consumerTargets": ["Frameleaf iOS", "Frameleaf Android"],
+  "consumerTargets": [
+    "Frameleaf iOS",
+    "Frameleaf Android"
+  ],
   "consumerAdoption": "Excluded from this server-only packet; these are normative input/output vectors, not native test results.",
   "producer": [
-    {
-      "name": "known-setup",
-      "input": {
-        "status": 401,
-        "response": {
-          "message": "Wrong setup code",
-          "code": "setup_code_invalid",
-          "attemptsLeft": 2,
-          "error": "Unauthorized",
-          "statusCode": 401
-        }
-      },
-      "expected": {
-        "message": "Wrong setup code",
-        "code": "setup_code_invalid",
-        "attemptsLeft": 2,
-        "displayError": {
-          "version": 1,
-          "code": "http_unauthorized",
-          "args": {
-            "attemptsLeft": 2
-          },
-          "fallback": {
-            "locale": "en",
-            "message": "Authentication is required for this request."
-          }
-        }
-      }
-    },
     {
       "name": "known-rate-limit",
       "input": {
@@ -198,35 +172,6 @@
   ],
   "consumer": [
     {
-      "name": "known-setup",
-      "status": 401,
-      "body": {
-        "message": "Wrong setup code",
-        "code": "setup_code_invalid",
-        "attemptsLeft": 2,
-        "displayError": {
-          "version": 1,
-          "code": "http_unauthorized",
-          "args": {
-            "attemptsLeft": 2
-          },
-          "fallback": {
-            "locale": "en",
-            "message": "Authentication is required for this request."
-          }
-        }
-      },
-      "knownDomainCodes": ["setup_code_invalid"],
-      "expected": {
-        "lookupCode": "setup_code_invalid",
-        "args": {
-          "attemptsLeft": 2
-        },
-        "englishFallback": "Authentication is required for this request.",
-        "status": 401
-      }
-    },
-    {
       "name": "known-rate-limit",
       "status": 429,
       "body": {
@@ -245,7 +190,9 @@
           }
         }
       },
-      "knownDomainCodes": ["rate_limited"],
+      "knownDomainCodes": [
+        "rate_limited"
+      ],
       "expected": {
         "lookupCode": "rate_limited",
         "args": {
@@ -276,7 +223,9 @@
           }
         }
       },
-      "knownDomainCodes": ["service-paused"],
+      "knownDomainCodes": [
+        "service-paused"
+      ],
       "expected": {
         "lookupCode": "service-paused",
         "args": {

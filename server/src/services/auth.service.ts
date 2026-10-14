@@ -33,7 +33,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { type SetupClient, withSetupProof } from 'src/utils/frameleaf-setup-gate.js';
+import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
@@ -478,12 +478,10 @@ export class AuthService extends BaseService {
   }
 
   /**
-   * `POST auth/admin-sign-up`: the first administrator, only from the home network. FL-292: with a
-   * setup ticket the Frameleaf app got with the setup code; the web setup sends none and needs no code.
+   * `POST auth/admin-sign-up`: the first administrator. FL-292: only from the home network.
    */
   async adminSignUp(dto: SignUpDto, client: SetupClient): Promise<UserAdminResponseDto> {
-    const proof = dto.setupTicket ? { ticket: dto.setupTicket } : { noCode: true };
-    return withSetupProof(this.setupGate, proof, client, async () => {
+    return whileClaimable(this.setupGate, client, async () => {
       const admin = await this.createUser({
         isAdmin: true,
         email: dto.email,
@@ -497,7 +495,7 @@ export class AuthService extends BaseService {
           actorId: admin.id,
           action: AdminAuditAction.AccountCreated,
           subject: admin.name,
-          detail: dto.setupTicket ? 'server-claimed:app-password' : 'server-claimed:web',
+          detail: 'server-claimed:web',
         },
       ]);
       this.logger.log(`This server was set up (${client.ip}): ${admin.email} administers it`);

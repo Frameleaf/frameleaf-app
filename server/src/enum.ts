@@ -547,12 +547,6 @@ export enum SystemMetadataKey {
    * before it is ever linked.
    */
   FrameleafServerId = 'frameleaf-server-id',
-  /**
-   * FL-292: the setup code of a server without an administrator, its wrong tries and the one setup
-   * ticket it handed out (hashed). Replaced at every start and cleared once an administrator exists;
-   * never returned by any API.
-   */
-  FrameleafSetupCode = 'frameleaf-setup-code',
   /** FL-159: the cached Frameleaf Cloud service discovery document. */
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
   /**
@@ -2465,7 +2459,7 @@ export enum DatabaseLock {
   FrameleafEdge = 963,
   /** FL-162: the kept Frameleaf Cloud job estimates change one at a time, so a confirmation is taken once. */
   FrameleafCloudMlJobEstimates = 970,
-  /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
+  /** FL-292: claims of a new server happen one at a time. */
   FrameleafServerClaim = 971,
   BuddyBackup = 972,
   /** FL-362: one server runs the backup schedule and moves a run from one place to the next. */

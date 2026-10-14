@@ -1934,10 +1934,6 @@ export type BackupScheduleResponseDto = {
     /** The server time zone the schedule runs in */
     timezone: string;
 };
-export type FrameleafSetupCodeDto = {
-    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
-    code: string;
-};
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
@@ -5111,8 +5107,6 @@ export type SignUpDto = {
     name: string;
     /** User password */
     password: string;
-    /** From the Frameleaf app: a setup ticket from POST server/setup/code, from the same device */
-    setupTicket?: string;
 };
 export type ChangePasswordDto = {
     /** Invalidate all other sessions */
@@ -12769,31 +12763,19 @@ export type FrameleafSetupAdminDto = {
     name: string;
     /** The administrator’s password (min 8 characters) */
     password: string;
-    /** The setup ticket POST server/setup/code returned, used once, from the same device */
-    ticket: string;
 };
 export type FrameleafSetupErrorDto = {
-    /** For setup_code_invalid: wrong tries left before the code is replaced */
-    attemptsLeft?: number;
     code: FrameleafSetupErrorCode;
     error: string;
     /** What went wrong, in words a person can act on */
     message: string;
     statusCode: number;
 };
-export type FrameleafSetupTicketResponseDto = {
-    /** When the ticket stops working */
-    expiresAt: string;
-    /** Proof the setup code was entered: use it once, from this device, before it expires */
-    ticket: string;
-};
 export type FrameleafSetupLinkDto = {
     /** A single-use Frameleaf link token (fll_…) the app got from Frameleaf Cloud for this server */
     linkToken: string;
     /** The name the person chose for this server; it is linked under this name */
     serverName?: string;
-    /** The setup ticket POST server/setup/code returned, used once, from the same device */
-    ticket: string;
 };
 export type FrameleafSetupLinkResponseDto = {
     /** The Frameleaf account that now owns this server; its first Sign in with Frameleaf creates the administrator */
@@ -17516,14 +17498,11 @@ export function getBackupSchedule(opts?: Oazapfts.RequestOpts) {
 /**
  * Start database backup restore flow
  */
-export function startDatabaseRestoreFlow({ frameleafSetupCodeDto }: {
-    frameleafSetupCodeDto: FrameleafSetupCodeDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", oazapfts.json({
+export function startDatabaseRestoreFlow(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", {
         ...opts,
-        method: "POST",
-        body: frameleafSetupCodeDto
-    })));
+        method: "POST"
+    }));
 }
 /**
  * Upload database backup
@@ -25604,24 +25583,6 @@ export function createNewServerAdmin({ frameleafSetupAdminDto }: {
     })));
 }
 /**
- * Check a new server’s setup code
- */
-export function verifyServerSetupCode({ frameleafSetupCodeDto }: {
-    frameleafSetupCodeDto: FrameleafSetupCodeDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: FrameleafSetupTicketResponseDto;
-    } | {
-        status: 401;
-        data: FrameleafSetupErrorDto;
-    }>("/server/setup/code", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: frameleafSetupCodeDto
-    })));
-}
-/**
  * Set up a new server with a Frameleaf account
  */
 export function linkNewServer({ frameleafSetupLinkDto }: {
@@ -29035,7 +28996,6 @@ export enum EnvironmentKeys {
     FrameleafLicenseExtraJwksFile = "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
     FrameleafIdentityDir = "FRAMELEAF_IDENTITY_DIR",
     FrameleafLinkToken = "FRAMELEAF_LINK_TOKEN",
-    FrameleafSetupCode = "FRAMELEAF_SETUP_CODE",
     FrameleafEdgePort = "FRAMELEAF_EDGE_PORT",
     FrameleafEdgeBind = "FRAMELEAF_EDGE_BIND",
     FrameleafAcmeDirectoryUrl = "FRAMELEAF_ACME_DIRECTORY_URL",
@@ -31892,11 +31852,6 @@ export enum Setup {
 export enum FrameleafSetupErrorCode {
     SetupLanOnly = "setup_lan_only",
     SetupComplete = "setup_complete",
-    SetupCodeRequired = "setup_code_required",
-    SetupCodeInvalid = "setup_code_invalid",
-    SetupCodeReplaced = "setup_code_replaced",
-    SetupCodeLocked = "setup_code_locked",
-    SetupTicketInvalid = "setup_ticket_invalid",
     SetupCloudUnavailable = "setup_cloud_unavailable",
     SetupAlreadyLinked = "setup_already_linked",
     SetupLinkTokenInvalid = "setup_link_token_invalid",

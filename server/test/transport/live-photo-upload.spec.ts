@@ -136,10 +136,9 @@ describe('FL-225 normal HTTP atomic Live Photo publication', () => {
     const password = 'FL225-pair-fixture-password-24!';
     const email = 'pair-owner@example.test';
     // FL-292: the e2e server pins its setup code
-    const setupCode = process.env.FRAMELEAF_SETUP_CODE ?? 'E2ESETUP';
-    expect(
-      (await json('/auth/admin-sign-up', 'POST', undefined, { email, password, name: 'Pair Owner', setupCode })).status,
-    ).toBe(201);
+    expect((await json('/auth/admin-sign-up', 'POST', undefined, { email, password, name: 'Pair Owner' })).status).toBe(
+      201,
+    );
     const login = await json('/auth/login', 'POST', undefined, { email, password });
     expect(login.status).toBe(201);
     owner = login.data.accessToken;

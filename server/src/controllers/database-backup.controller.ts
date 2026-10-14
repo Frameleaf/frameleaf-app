@@ -26,7 +26,6 @@ import {
   DatabaseBackupListResponseDto,
   DatabaseBackupUploadDto,
 } from 'src/dtos/database-backup.dto.js';
-import { FrameleafSetupCodeDto } from 'src/dtos/frameleaf-server-setup.dto.js';
 import { ApiTag, ImmichCookie, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, GetLoginDetails, OriginalTransfer } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
@@ -135,11 +134,10 @@ export class DatabaseBackupController {
   })
   @Authenticated({ public: true, setup: true })
   async startDatabaseRestoreFlow(
-    @Body() dto: FrameleafSetupCodeDto,
     @GetLoginDetails() loginDetails: LoginDetails,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    const { jwt } = await this.maintenanceService.startRestoreFlow(dto, {
+    const { jwt } = await this.maintenanceService.startRestoreFlow({
       ip: loginDetails.clientIp,
       via: loginDetails.via ?? null,
     });
