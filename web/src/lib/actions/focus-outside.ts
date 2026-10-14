@@ -4,18 +4,13 @@ interface Options {
   onFocusOut?: (event: FocusEvent) => void;
 }
 
-/**
- * Calls a function when focus leaves the element.
- * @param node
- * @param options Object containing onFocusOut function
- */
+/** Forwards focus leaving the container to its current callback. */
 export function focusOutside(node: HTMLElement, options: Options = {}) {
-  const { onFocusOut } = options;
-
   const handleFocusOut = (event: FocusEvent) => {
+    const { onFocusOut } = options;
     if (
       onFocusOut &&
-      (!event.relatedTarget || (event.relatedTarget instanceof Node && !node.contains(event.relatedTarget as Node)))
+      (!event.relatedTarget || (event.relatedTarget instanceof Node && !node.contains(event.relatedTarget)))
     ) {
       onFocusOut(event);
     }
@@ -24,6 +19,9 @@ export function focusOutside(node: HTMLElement, options: Options = {}) {
   const off = on(node, 'focusout', handleFocusOut);
 
   return {
+    update(next: Options = {}) {
+      options = next;
+    },
     destroy() {
       off();
     },
