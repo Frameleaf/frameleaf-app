@@ -6980,6 +6980,8 @@
   "frameleaf_library_filters_active": "{count, plural, one {# filter active} other {# filters active}}",
   "frameleaf_library_first_run_hint": "You can also drag files or folders anywhere in this window.",
   "frameleaf_library_first_run_message": "Upload photos and videos to see them here, arranged by the day they were taken.",
+  "frameleaf_library_first_run_preparing_message": "Your uploads appear here as soon as their previews are made.",
+  "frameleaf_library_first_run_preparing_title": "Getting your photos ready",
   "frameleaf_library_first_run_title": "Your library starts here",
   "frameleaf_library_first_run_upload": "Upload photos",
   "frameleaf_library_grid_view": "Grid view",
