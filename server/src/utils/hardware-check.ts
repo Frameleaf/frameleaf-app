@@ -502,14 +502,15 @@ export type WorkerCheck = {
  */
 export const renderWorkerCheckFrom = (
   worker: { id: string; name: string },
-  session: { gpuMemoryBytes: string | number | null } | null,
+  session: { valid: true; qualifiedBytes: string } | null,
 ): WorkerCheck => ({
   id: worker.id,
   name: worker.name,
   kind: 'render',
   reachable: !!session,
   model: null,
-  vramGb: session ? gb(session.gpuMemoryBytes === null ? null : Number(session.gpuMemoryBytes)) : null,
+  // A measured working budget is not dedicated physical VRAM.
+  vramGb: null,
   gpu: session ? { present: true, visible: true, usable: true } : UNKNOWN_FACTS,
 });
 

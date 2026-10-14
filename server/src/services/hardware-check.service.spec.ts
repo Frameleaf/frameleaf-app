@@ -1,6 +1,7 @@
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
-import { MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
+import { MediaOperationKind, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
+import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -87,15 +88,61 @@ describe(HardwareCheckService.name, () => {
     expect(mocks.hardwareProbe.readServer).toHaveBeenCalled();
   });
 
+  it('does not label an unmeasured live session as usable GPU evidence or physical VRAM', async () => {
+    mocks.renderWorker.listWorkers.mockResolvedValue([
+      { id: 'legacy', name: 'Legacy worker', status: RenderWorkerStatus.Active },
+    ] as never);
+    mocks.renderWorker.listLiveSessions.mockResolvedValue([
+      { worker: { id: 'legacy' }, session: { workerId: 'legacy', gpuMemoryBytes: '8589934592' } },
+    ] as never);
+    mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
+    const result = await sut.runCheck();
+    expect(result.workers).toEqual([
+      expect.objectContaining({
+        id: 'legacy',
+        vramGb: null,
+        reachable: false,
+        gpu: { present: null, visible: null, usable: null },
+      }),
+    ]);
+  });
+
   it('shows enrolled render workers and restoration workers from what they reported', async () => {
     mocks.renderWorker.listWorkers.mockResolvedValue([
-      { id: 'render-1', name: 'Studio PC', status: RenderWorkerStatus.Active },
+      { id: '0195e2a0-0000-7000-8000-00000000aaa1', name: 'Studio PC', status: RenderWorkerStatus.Active },
       { id: 'render-2', name: 'Old laptop', status: RenderWorkerStatus.Active },
       { id: 'render-3', name: 'Gone', status: RenderWorkerStatus.Revoked },
     ] as never);
     mocks.renderWorker.listLiveSessions.mockResolvedValue([
-      { worker: { id: 'render-1' }, session: { gpuMemoryBytes: String(8 * 1024 ** 3) } },
+      withSyntheticGpuBudget(
+        {
+          worker: {
+            id: '0195e2a0-0000-7000-8000-00000000aaa1',
+            name: 'Studio PC',
+            status: RenderWorkerStatus.Active,
+            engineDigest: 'engine',
+            gpuMemoryBytes: null,
+            maxConcurrentOperations: 1,
+            kinds: [MediaOperationKind.StudioExport],
+            conformanceMaxAgeMs: 60_000,
+          },
+          session: {
+            workerId: '0195e2a0-0000-7000-8000-00000000aaa1',
+            id: 'session',
+            engineDigest: 'engine',
+            scopes: [MediaOperationKind.StudioExport],
+            gpuMemoryBytes: '2147483648',
+            codecs: ['webcodecs-avc'],
+            colorPrecision: null,
+            conformanceReportedAt: new Date(),
+            expiresAt: new Date(Date.now() + 60_000),
+            revokedAt: null,
+          },
+        } as never,
+        { codecs: ['webcodecs-avc'], formats: ['mp4'] },
+      ),
     ] as never);
+    mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
     mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan]);
     mocks.machineLearning.getRestorationModels.mockResolvedValue({
       protocol: 'restoration-v1',
@@ -110,9 +157,9 @@ describe(HardwareCheckService.name, () => {
 
     expect(result.workers).toEqual([
       expect.objectContaining({
-        id: 'render-1',
+        id: '0195e2a0-0000-7000-8000-00000000aaa1',
         kind: 'render',
-        vramGb: 8,
+        vramGb: null,
         gpu: { present: true, visible: true, usable: true },
       }),
       expect.objectContaining({
@@ -140,6 +187,7 @@ describe(HardwareCheckService.name, () => {
       'selectRoutedMlDestination',
     ).mockResolvedValue(selection);
     mocks.machineLearning.describeImage.mockResolvedValue({} as never);
+    mocks.renderWorker.getSessionCapabilities.mockResolvedValue({ codecs: ['webcodecs-avc'], formats: ['mp4'] });
     mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan]);
     mocks.machineLearning.getRestorationModels.mockResolvedValue({
       protocol: 'restoration-v1',
