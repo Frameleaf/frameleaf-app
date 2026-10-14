@@ -27,26 +27,14 @@ export class CronRepository {
   }
 
   create({ name, expression, onTick, start = true }: CronCreate): void {
-    const job = new CronJob<null, null>(
-      expression,
-      onTick,
-      // function to run onComplete
-      undefined,
-      // whether it should start directly
-      start,
-      // timezone
-      undefined,
-      // context
-      undefined,
-      // runOnInit
-      undefined,
-      // utcOffset
-      undefined,
-      // prevents memory leaking by automatically stopping when the node process finishes
-      true,
-    );
+    const job = CronJob.from<null, null>({ cronTime: expression, onTick, start, unrefTimeout: true });
 
-    this.schedulerRegistry.addCronJob(name, job);
+    try {
+      this.schedulerRegistry.addCronJob(name, job);
+    } catch (error) {
+      void job.stop();
+      throw error;
+    }
   }
 
   update({ name, expression, start }: CronUpdate): void {
