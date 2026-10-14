@@ -282,3 +282,36 @@ def test_receipt_records_exact_model_bytes_without_download_metadata(model: Synt
     (metadata / "download.lock").touch()
     assert json.loads((model.cache_dir / RECEIPT).read_text()) == cache_hashes(model.cache_dir)
     verify_staged(model.cache_dir)
+
+
+@pytest.mark.parametrize("action", [{}, {"refresh": True}, {"rollback": True}])
+@pytest.mark.parametrize("pending_kind", ["directory", "file", "dangling-symlink"])
+def test_interrupted_rollback_blocks_every_staging_action(
+    model: SyntheticModel, action: dict[str, bool], pending_kind: str
+) -> None:
+    stage_model(model)
+    model.content = b"synthetic v2"
+    stage_model(model, refresh=True)
+    pending = model.cache_dir.with_name(f".{model.cache_dir.name}.rollback")
+    if pending_kind == "directory":
+        pending.mkdir()
+        (pending / "keep.bin").write_bytes(b"retained rollback bytes")
+    elif pending_kind == "file":
+        pending.write_bytes(b"retained rollback bytes")
+    else:
+        pending.symlink_to(model.cache_dir.parent / "missing")
+    before = cache_hashes(model.cache_dir)
+    previous = model.cache_dir.with_name(f".{model.cache_dir.name}.previous")
+    previous_before = cache_hashes(previous)
+    with patch.object(model, "_download") as download:
+        with pytest.raises(ModelUnavailableError, match="interrupted rollback"):
+            stage_model(model, **action)
+        download.assert_not_called()
+    assert cache_hashes(model.cache_dir) == before
+    assert cache_hashes(previous) == previous_before
+    if pending_kind == "directory":
+        assert (pending / "keep.bin").read_bytes() == b"retained rollback bytes"
+    elif pending_kind == "file":
+        assert pending.read_bytes() == b"retained rollback bytes"
+    else:
+        assert pending.is_symlink()

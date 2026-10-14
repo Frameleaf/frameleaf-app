@@ -61,11 +61,11 @@ def stage_model(model: InferenceModel, *, refresh: bool = False, rollback: bool 
     with FileLock(str(active.with_name(f".{active.name}.staging.lock")), timeout=0):
         if active.is_symlink() or previous.is_symlink():
             raise ModelUnavailableError("Model staging does not replace cache symlinks")
+        swap = active.with_name(f".{active.name}.rollback")
+        if swap.exists() or swap.is_symlink():
+            raise ModelUnavailableError("An interrupted rollback needs recovery before staging")
         if rollback:
             verify_staged(previous)
-            swap = active.with_name(f".{active.name}.rollback")
-            if swap.exists():
-                raise ModelUnavailableError("An interrupted rollback needs recovery before staging")
             had_active = active.exists()
             if had_active:
                 active.rename(swap)

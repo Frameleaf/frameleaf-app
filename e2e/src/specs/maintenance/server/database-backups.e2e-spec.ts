@@ -221,6 +221,14 @@ describe('/admin/database-backups', () => {
     });
 
     it('should restore a backup', { concurrent: false, timeout: 60_000 }, async () => {
+      const asset = await utils.createAsset(admin.accessToken);
+      await request(app)
+        .put(`/assets/${asset.id}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ latitude: 33.8121, longitude: -117.919 })
+        .expect(200);
+      const before = await utils.getAssetInfo(admin.accessToken, asset.id);
+      expect(before.landmarks?.map(({ id }) => id)).toContain('Q181185');
       const filename = await utils.createBackup(admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -270,6 +278,17 @@ describe('/admin/database-backups', () => {
           },
         )
         .toBeFalsy();
+
+      // The real dump omits place rows. The restarted worker must restore their names for this item.
+      await expect
+        .poll(
+          async () => {
+            const restored = await utils.getAssetInfo(admin.accessToken, asset.id);
+            return restored.landmarks;
+          },
+          { interval: 500, timeout: 10_000 },
+        )
+        .toEqual(before.landmarks);
     });
 
     it(

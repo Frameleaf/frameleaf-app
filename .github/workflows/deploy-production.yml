@@ -149,6 +149,12 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      # The release bundle is checked with Manager's own verifier before upload; it needs js-yaml.
+      - name: Install the release verifier dependencies
+        run: npm ci --prefix manager --ignore-scripts
       - name: Verify all manifests, promote, sign every digest and publish the release
         env:
           SOURCE_SHA: ${{ needs.candidate.outputs.sha }}
@@ -160,6 +166,7 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          NODE_PATH: ${{ github.workspace }}/manager/node_modules
         run: node .github/frameleaf-release.cjs release
 
   flags-plan:

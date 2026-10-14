@@ -5,7 +5,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { assertResetExecutionsStopped, drainAfterExecutorStop } from './harness-reset-executions.mjs';
-import { resetLockSettings, resetWhilePaused } from './harness-reset.ts';
+import { resetLockSettings, resetWhilePaused, retryResetTransaction } from './harness-reset.ts';
 import { waitUntil, withDeadline } from './harness-wait.ts';
 
 test('reset joins unsafe edits while preserving bounded refusals and cleanup', async (t) => {
@@ -363,10 +363,12 @@ test('only metadata resets request configuration reconciliation and never delete
       );
     },
   };
-  const reset = new Function('utils', 'resetLockSettings', `return (${stripTypeScriptTypes(expression)});`)(
-    utils,
-    resetLockSettings,
-  );
+  const reset = new Function(
+    'utils',
+    'resetLockSettings',
+    'retryResetTransaction',
+    `return (${stripTypeScriptTypes(expression)});`,
+  )(utils, resetLockSettings, retryResetTransaction);
   await reset(['asset']);
   assert.equal(resetConfig, false);
   assert.equal(deletedMetadata, undefined);
@@ -849,6 +851,73 @@ test('active-job cancellation retries only confirmed statement-timeout row conte
         );
         assert.equal(connections, 1);
         assert.equal(cancellationAttempts, attemptsAtFailure);
+      }
+    });
+  }
+});
+
+test('fixture reset retries only a rolled-back deadlock within its original deadline', async (t) => {
+  const source = readFileSync(new URL('./utils.ts', import.meta.url), 'utf8');
+  const expression = source
+    .slice(source.indexOf('  resetDatabase: async'), source.indexOf('\n\n  unzip:'))
+    .trim()
+    .replace(/^resetDatabase: /, '')
+    .replace(/,$/, '');
+  for (const failure of ['deadlock', 'rollback', 'other', 'abort', 'deadline']) {
+    await t.test(failure, async () => {
+      const order = [];
+      const owner = new AbortController();
+      let attempts = 0;
+      let expired = false;
+      const error = Object.assign(new Error('confirmed transaction abort'), {
+        code: failure === 'other' ? 'XX000' : '40P01',
+      });
+      const context = {
+        signal: owner.signal,
+        remaining: () => {
+          owner.signal.throwIfAborted();
+          if (expired) throw new Error('original reset deadline expired');
+          return 1000;
+        },
+      };
+      const bindings = {
+        drainQueues: async (mutate) =>
+          mutate(
+            {
+              query: async (text) => {
+                if (text === 'BEGIN') {
+                  attempts++;
+                  order.push('begin');
+                }
+                if (text.startsWith('TRUNCATE')) {
+                  order.push('truncate');
+                  if (attempts === 1) throw error;
+                }
+                if (text === 'ROLLBACK') {
+                  order.push('rollback');
+                  if (failure === 'rollback') throw new Error('rollback uncertain');
+                  if (failure === 'abort') owner.abort(new Error('owner aborted'));
+                  if (failure === 'deadline') expired = true;
+                }
+                if (text === 'COMMIT') order.push('commit');
+              },
+            },
+            context,
+          ),
+      };
+      const reset = new Function(
+        'utils',
+        'resetLockSettings',
+        'retryResetTransaction',
+        `return (${stripTypeScriptTypes(expression)});`,
+      )(bindings, resetLockSettings, retryResetTransaction);
+      if (failure === 'deadlock') {
+        await reset();
+        assert.deepEqual(order, ['begin', 'truncate', 'rollback', 'begin', 'truncate', 'commit']);
+      } else {
+        await assert.rejects(reset());
+        assert.equal(attempts, 1, 'uncertain rollback, other SQL errors, abort and deadline never restart mutation');
+        assert.equal(order.includes('commit'), false);
       }
     });
   }

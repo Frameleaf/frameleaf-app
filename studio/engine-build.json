@@ -679,7 +679,12 @@
       "path": "patches/0140-explicit-headless-typescript-loader.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "f6e6e095601d7ffc6bcf74d7bd991d38ba0cf2f3fb7f8c80299ce4f094222167"
+    },
+    {
+      "path": "patches/0139-microphone-terminal-notification.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9edae1a6575c3231e891cade718274278249cd575be0d3239d3ea3ba0565bab1"
     }
   ],
-  "sourceSha256": "f4fce3ae0293ca9ab3587ef12e014d384ef6b0aa4d043e3f4b3492402014d20c"
+  "sourceSha256": "0c69a72edaca2861c5d4fad86b6b3e4ba9bb088bb65ffceace32d7b046fa5164"
 }
