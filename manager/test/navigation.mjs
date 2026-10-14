@@ -8,6 +8,10 @@ export const gotoWithNetworkChangeRetry = async (page, origin) => {
     ) {
       throw error;
     }
+    await page.waitForURL("chrome-error://chromewebdata/", {
+      waitUntil: "load",
+      timeout: 10_000,
+    });
     return page.goto(origin);
   }
 };
