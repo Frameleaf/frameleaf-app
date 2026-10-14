@@ -208,7 +208,7 @@ describe('first-run setup state (FL-176)', () => {
       const state = createSetup('new');
       const next = applySetupChoices(config, { ...state, choices: { ...state.choices, map: false } });
       expect(next.storageTemplate).toMatchObject({ enabled: true, template: '{{y}}/{{MM}}/{{filename}}' });
-      expect(next.machineLearning.clip.modelName).toBe('ViT-B-16-SigLIP2__webli');
+      expect(next.machineLearning.clip.modelName).toBe('ViT-B-16-SigLIP-384__webli');
       expect(next.backup.database.enabled).toBe(true);
       expect(next.newVersionCheck.enabled).toBe(true);
       expect(next.map.enabled).toBe(false);

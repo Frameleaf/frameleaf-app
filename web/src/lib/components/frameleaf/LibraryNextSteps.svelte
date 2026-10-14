@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * The one-time "Next steps" card at the head of the library (design review finding 98). During
-   * first-run setup the administrator is told that Library Care, Cloud backup and Activity come
+   * first-run setup the administrator is told that Library Care, Cloud backup and Background work come
    * after setup; this card is where they are, once, when the library first opens. It leaves on
    * "Dismiss" and is not shown again (`next-steps.svelte.ts`).
    *
@@ -37,10 +37,11 @@
       body: $t('frameleaf_next_steps_backup'),
     },
     {
-      id: 'activity',
-      href: Route.activity(),
+      // Upload processing (thumbnails, faces, search, text) is queue work, which Activity doesn't list.
+      id: 'background',
+      href: commandCenterUrl('processing', 'queues'),
       icon: mdiProgressClock,
-      title: $t('activity'),
+      title: $t('frameleaf_computers_page_queues'),
       body: $t('frameleaf_next_steps_activity'),
     },
   ]);
