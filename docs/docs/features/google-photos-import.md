@@ -33,7 +33,7 @@ When the check finishes, the import shows what it found: new photos and videos, 
 - turn off **Keep album memberships**, or choose which albums are made; Google's automatic year folders are never made into albums
 - turn on **Fill in missing details on photos you already have**
 - bring in the photos that were in your Google Photos trash, which are left out otherwise
-- when some photos came with two sets of details, choose **Let me choose for these**: those photos wait while everything else is imported, then you pick the right details for any you know, and the rest get the most likely ones
+- when some photos came with two sets of details, choose **Let me choose for these**: those photos wait while everything else is imported, then you see each photo with both sets of details and pick the right ones for any you know; the rest get the most likely
 
 Each file is copied into your library; the files in your export are never changed. A photo that is already in your library (the same file, by checksum) is not copied again: it joins its albums, keeps its own date and details, and only gains what it is missing when you fill in missing details. Running an import again, or retrying one, never creates a second copy of anything.
 

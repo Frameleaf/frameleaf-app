@@ -171,9 +171,12 @@ describe('TakeoutWizard', () => {
     } as never);
     sdkMock.resolveTakeoutItem.mockResolvedValue(unclearImport);
     sdkMock.startTakeoutImport.mockResolvedValue({ ...unclearImport, state: TakeoutState.Importing });
-    render(TakeoutWizard, { current: unclearImport });
+    sdkMock.getBaseUrl.mockReturnValue('/api');
+    const { container } = render(TakeoutWizard, { current: unclearImport });
 
     await userEvent.click(await screen.findByRole('radio', { name: /No date/ }));
+    // The photo itself, so the owner can tell which one they are choosing for.
+    expect(container.querySelector(':scope legend img')).toHaveAttribute('src', '/api/takeout/import-1/items/item-1/preview');
     await userEvent.click(screen.getByRole('button', { name: 'Add 1 photo' }));
     expect(sdkMock.resolveTakeoutItem).toHaveBeenCalledWith({
       id: 'import-1',

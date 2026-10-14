@@ -109,6 +109,7 @@ describe(TakeoutService.name, () => {
   let repository: Record<string, any>;
   let staging: Record<string, any>;
   let mediaOperations: Record<string, any>;
+  let media: Record<string, any>;
   let access: ReturnType<typeof newAccessRepositoryMock>;
   let importRoots: string[];
   const tx = {};
@@ -150,6 +151,7 @@ describe(TakeoutService.name, () => {
       matchSummary: vi.fn().mockResolvedValue({ newAssets: 0, matchedOriginals: 0 }),
       items: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       lockItem: vi.fn(),
+      getItem: vi.fn(),
       updateDecision: vi.fn(),
       pairs: vi.fn().mockResolvedValue({ pairs: [], total: 0 }),
       decidePair: vi.fn(),
@@ -175,6 +177,7 @@ describe(TakeoutService.name, () => {
     access = newAccessRepositoryMock();
     const config = { getEnv: () => ({ storage: { importRoots } }) };
     const logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    media = { generateThumbnail: vi.fn() };
 
     sut = new TakeoutService(
       logger as never,
@@ -183,6 +186,7 @@ describe(TakeoutService.name, () => {
       mediaOperations as never,
       access as never,
       config as never,
+      media as never,
     );
   });
 
@@ -566,6 +570,39 @@ describe(TakeoutService.name, () => {
 
       expect(repository.delete).toHaveBeenCalledWith(tx, importId);
       expect(staging.removeImport).toHaveBeenCalledWith(authStub.user1.user.id, importId);
+    });
+  });
+
+  describe('preview', () => {
+    it('makes a small WebP of a staged photo, removed once it has been sent', async () => {
+      repository.getItem.mockResolvedValue(itemOf({ kind: 'image', path: '/staging/photo' }));
+      const file = await sut.preview(authStub.user1, importId, itemId);
+
+      expect(media.generateThumbnail).toHaveBeenCalledWith(
+        '/staging/photo',
+        expect.objectContaining({ format: 'webp', size: 320 }),
+        file.path,
+      );
+      expect(file.contentType).toBe('image/webp');
+      file.release?.();
+    });
+
+    it('has none for a Locked item in a locked session, a video, or a photo already imported', async () => {
+      for (const item of [
+        itemOf({ kind: 'image', withheld: true }),
+        itemOf({ kind: 'video' }),
+        itemOf({ kind: 'image', assetId: '6f1c1a0e-4444-4444-8444-444444444444' }),
+      ]) {
+        repository.getItem.mockResolvedValue(item);
+        await expect(sut.preview(authStub.user1, importId, itemId)).rejects.toBeInstanceOf(NotFoundException);
+      }
+      expect(media.generateThumbnail).not.toHaveBeenCalled();
+    });
+
+    it('says there is none when the file cannot be read as an image', async () => {
+      repository.getItem.mockResolvedValue(itemOf({ kind: 'image' }));
+      media.generateThumbnail.mockRejectedValue(new Error('unsupported'));
+      await expect(sut.preview(authStub.user1, importId, itemId)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
