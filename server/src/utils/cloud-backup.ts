@@ -381,10 +381,10 @@ export const readManifestAsset = (asset: CloudBackupManifestAsset): CloudBackupM
 
 /** Entries of a keyed manifest section that are well formed; the rest are left out. */
 export const readManifestSection = <T>(section: unknown, schema: z.ZodType<T>): Record<string, T> => {
+  const read: Record<string, T> = Object.create(null);
   if (!section || typeof section !== 'object' || Array.isArray(section)) {
-    return {};
+    return read;
   }
-  const read: Record<string, T> = {};
   for (const [id, value] of Object.entries(section)) {
     const parsed = schema.safeParse(value);
     if (parsed.success) {
