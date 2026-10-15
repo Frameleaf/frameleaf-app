@@ -113,4 +113,14 @@ describe('putting details back (FL-164)', () => {
       detailChanges({ ...backup, visibility: 'hidden' }, { ...backup, visibility: 'timeline' }, 'replace'),
     ).toEqual({});
   });
+  it('does not mistake duplicate backup tags for a different current set', () => {
+    const current = { ...backup, tags: ['Trips', 'Other'] };
+    const repeated = { ...backup, tags: ['Trips', 'Trips'] };
+    expect(detailChanges(current, repeated, 'replace').tags).toEqual({ values: repeated.tags, exact: true });
+  });
+  it('does not rewrite a tag set just because the backup repeats an existing tag', () => {
+    const current = { ...backup, tags: ['Trips'] };
+    const repeated = { ...backup, tags: ['Trips', 'Trips'] };
+    expect(detailChanges(current, repeated, 'replace')).toEqual({});
+  });
 });
