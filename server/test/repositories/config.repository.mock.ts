@@ -83,12 +83,12 @@ export const envData: EnvData = {
   },
 
   appReleases: {},
+  studioWorker: { enabled: true, trustDir: '/run/frameleaf/studio-worker' },
   frameleafCloud: {
     url: null,
     pushUrl: null,
     identityDir: null,
     linkToken: null,
-    setupCode: null,
     edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
     localUrl: null,
     trustedLanCidrs: [],

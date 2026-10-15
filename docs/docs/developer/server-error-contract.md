@@ -28,16 +28,16 @@ Every writable JSON error handled by `GlobalExceptionFilter` adds:
 {
   "displayError": {
     "version": 1,
-    "code": "http_unauthorized",
-    "args": { "attemptsLeft": 2 },
-    "fallback": { "locale": "en", "message": "Authentication is required for this request." }
+    "code": "http_rate_limited",
+    "args": { "retryAfter": 30 },
+    "fallback": { "locale": "en", "message": "Too many requests. Try again later." }
   }
 }
 ```
 
-For this example, existing `code: "setup_code_invalid"` and `attemptsLeft: 2`
+For this example, existing `code: "rate_limited"` and `retryAfter: 30`
 remain outside the descriptor. A domain-aware client translates that known
-setup code with the same `attemptsLeft` argument. A client that lacks that
+code with the same `retryAfter` argument. A client that lacks that
 mapping uses the general descriptor or its explicit English fallback.
 
 `displayError` is display metadata, never authority for authorization,
@@ -81,11 +81,10 @@ remain 400. `ZodSerializationException` uses `response_validation_failed`; its
 status and fallback remain 500. Validation paths, values and messages never
 become interpolation arguments.
 
-| Existing domain code | Allowed argument    | Value rule                               |
-| -------------------- | ------------------- | ---------------------------------------- |
-| `setup_code_invalid` | `attemptsLeft`      | Nonnegative safe integer, including zero |
-| `rate_limited`       | `retryAfter`        | Nonnegative safe integer seconds         |
-| `service-paused`     | `retryAfterSeconds` | Nonnegative safe integer seconds         |
+| Existing domain code | Allowed argument    | Value rule                       |
+| -------------------- | ------------------- | -------------------------------- |
+| `rate_limited`       | `retryAfter`        | Nonnegative safe integer seconds |
+| `service-paused`     | `retryAfterSeconds` | Nonnegative safe integer seconds |
 
 Every other code gets an empty argument map. Strings, fractions, negative values,
 non-finite numbers, unsafe integers, nested values, provider `args` / `data`, and
@@ -158,7 +157,7 @@ translation must never turn unknown counts into zero or pending work into succes
 
 | Existing error family              | Producer inventory / reusable mapping                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Setup                              | `FrameleafSetupErrorCode` in `frameleaf-server-setup.dto.ts`, `setupRefusal` in `frameleaf-setup-gate.ts`: LAN-only, complete, required/invalid/replaced/locked code, invalid ticket, unavailable Cloud, already linked, invalid/used link token and failed link. These are separate refusal resources.                                                                                                                      |
+| Setup                              | `FrameleafSetupErrorCode` in `frameleaf-server-setup.dto.ts`, `setupRefusal` in `frameleaf-setup-gate.ts`: LAN-only, complete, unavailable Cloud, already linked, invalid/used link token and failed link. These are separate refusal resources.                                                                                                                                                                             |
 | Token exchange                     | `FrameleafTokenExchangeErrorCode` in `frameleaf-auth.dto.ts`: not linked, sign-in off, no access, wrong audience, expired, replayed, invalid, email unverified, removed account and conflicting account. No translation may relax any check.                                                                                                                                                                                 |
 | Remote authentication              | `frameleaf_sign_in_required` and `frameleaf_home_network_only`; `handle-error.ts` preserves sign-out/revoked-share behavior. No new sign-in instruction is inferred from a general descriptor.                                                                                                                                                                                                                               |
 | Rate limiting                      | `rate_limited`, producer `tooManyRequests` in `rate-limit.guard.ts`; `Retry-After` is authoritative.                                                                                                                                                                                                                                                                                                                         |

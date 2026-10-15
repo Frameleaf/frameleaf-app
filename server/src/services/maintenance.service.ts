@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { FrameleafSetupCodeDto } from 'src/dtos/frameleaf-server-setup.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { MaintenanceModeState } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
@@ -13,7 +12,7 @@ import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buddyMaintenancePath } from 'src/utils/buddy-backup-maintenance.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
-import { type SetupClient, withSetupProof } from 'src/utils/frameleaf-setup-gate.js';
+import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
   createMaintenanceLoginUrl,
   detectPriorInstall,
@@ -67,8 +66,8 @@ export class MaintenanceService extends BaseService {
     };
   }
 
-  async startRestoreFlow(dto: FrameleafSetupCodeDto, client: SetupClient): Promise<{ jwt: string }> {
-    return withSetupProof(this.setupGate, { code: dto.code }, client, () =>
+  async startRestoreFlow(client: SetupClient): Promise<{ jwt: string }> {
+    return whileClaimable(this.setupGate, client, () =>
       this.startMaintenance(
         {
           action: MaintenanceAction.SelectDatabaseRestore,

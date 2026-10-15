@@ -7,7 +7,9 @@ import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -31,7 +33,7 @@ describe('weekly consent foundation, never execution authority', () => {
     await expectCanonicalTables(db, ['icloud_identity_audit', 'icloud_weekly_grant']);
 
     sut = new ICloudWeeklyRepository(db);
-    sync = new ICloudSyncRepository(db);
+    sync = new ICloudSyncRepository(db, new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()));
   });
   afterAll(async () => db.destroy());
 

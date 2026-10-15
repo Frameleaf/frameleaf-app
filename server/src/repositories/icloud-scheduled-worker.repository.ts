@@ -3,7 +3,9 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { VerifiedMedia } from 'src/repositories/media-recovery.repository.js';
+import type { ValidationInputEnvelope } from 'src/utils/icloud-private-copy.js';
 import { ICloudAuditRow } from 'src/repositories/icloud-audit.repository.js';
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { ScheduledAuditAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
 import {
@@ -119,10 +121,36 @@ export class ICloudScheduledWorkerRepository {
     });
   }
   async allocate(authority: ScheduledAuditAuthority, ownerId: string): Promise<ICloudResource | undefined> {
+    // Hints select only the item fence; admission revalidates their binding after both prefix locks.
+    const hint = (
+      await sql<{ sourceAssetId: string }>`SELECT s."sourceAssetId" FROM public.icloud_identity_audit q
+      JOIN public.icloud_resource s ON s.id=q."sourceResourceId" AND s."ownerId"=q."ownerId"
+      WHERE q.id=${authority.auditRequestId}::uuid AND q."ownerId"=${ownerId}::uuid
+        AND q."operationId"=${authority.operationId}::uuid AND q.purpose='scheduled-weekly'`.execute(this.db)
+    ).rows[0];
+    if (!hint) return;
+    const prior = (
+      await sql<ICloudResource>`SELECT * FROM public.icloud_resource
+      WHERE "auditRequestId"=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(this.db)
+    ).rows[0];
+    let envelope: ValidationInputEnvelope | undefined;
+    if (prior) {
+      try {
+        envelope = await this.staging.validationInputs({
+          authority,
+          ownerId,
+          resource: { id: prior.id, leaseToken: prior.leaseToken ?? '' },
+        });
+      } catch {
+        return;
+      }
+      if (envelope && envelope.payload.current.payload.state !== 'disposed') return;
+    }
     return this.db.transaction().execute(async (db) => {
+      await lockICloudItemClaims(db, ownerId, [hint.sourceAssetId]);
       await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(db);
       const guarded = await guardScheduledAudit(db, authority, ownerId);
-      if (!guarded || !guarded.request.itemClaimId) {
+      if (!guarded || !guarded.request.itemClaimId || guarded.source.sourceAssetId !== hint.sourceAssetId) {
         return;
       }
       const { source, connection, request } = guarded;
@@ -131,6 +159,11 @@ export class ICloudScheduledWorkerRepository {
         WHERE "auditRequestId"=${request.id}::uuid FOR UPDATE`
           .execute(db)
           .then(({ rows }) => rows[0]);
+      if (
+        existing?.id !== prior?.id ||
+        canonicalJson(existing?.verification?.auditValidationInputs ?? null) !== canonicalJson(envelope ?? null)
+      )
+        return;
       if (existing && ['committed', 'finalized', 'removed', 'failed', 'cancelled'].includes(existing.status)) {
         return;
       }

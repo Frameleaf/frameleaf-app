@@ -23,6 +23,7 @@ import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.s
 import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
+import { BundledRenderWorkerService } from 'src/services/bundled-render-worker.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
@@ -42,6 +43,7 @@ import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
+import { FrameleafLibraryMoveService } from 'src/services/frameleaf-library-move.service.js';
 import { FrameleafLibrarySetupService } from 'src/services/frameleaf-library-setup.service.js';
 import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.js';
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
@@ -155,6 +157,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  FrameleafLibraryMoveService,
   FrameleafLibrarySetupService,
   ICloudAuditService,
   ICloudScheduledStagingService,
@@ -236,6 +239,7 @@ export const services = [
   MediaOperationSweepService,
   PhotoToolsService,
   RenderWorkerService,
+  BundledRenderWorkerService,
   MediaService,
   MemoryHighlightService,
   MemoryService,

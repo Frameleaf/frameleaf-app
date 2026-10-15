@@ -78,10 +78,12 @@ jobs:
         run: node --test scripts/frameleaf-web-bundle-budget.test.mjs
       - name: Validate the Studio authorization report
         run: node --test scripts/frameleaf-studio-authz-report.test.mjs
+      - name: Verify the server Studio rights mirror is current
+        run: node scripts/frameleaf-studio-rights.mjs
       - name: Validate independent Studio conformance evidence
         run: |
           node studio/tools/conformance.mjs
-          node --test studio/tools/conformance.test.mjs scripts/frameleaf-studio-evidence.test.mjs
+          node --test studio/tools/conformance.test.mjs studio/tools/feature-manifest.test.mjs scripts/frameleaf-studio-evidence.test.mjs
       - name: Validate the Studio graph protocol fixtures (FL-306)
         run: node --test studio/tools/graph-protocol.test.mjs
       - name: Validate the Studio render spec and goldens

@@ -334,7 +334,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         '/auth/admin-sign-up',
         'POST',
         undefined,
-        { email: `fl310-${side}@example.test`, name: `Buddy ${side}`, password, setupCode: 'E2ESETUP' },
+        { email: `fl310-${side}@example.test`, name: `Buddy ${side}`, password },
         201,
       );
       app.admin = await login(app, `fl310-${side}@example.test`);

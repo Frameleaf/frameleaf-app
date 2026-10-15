@@ -35,8 +35,7 @@ const memory = () => {
   };
 };
 
-// FL-292: with the setup code the server shows on its console
-const strong = { password: 'Correct-Horse-9', confirm: 'Correct-Horse-9', setupCode: 'ABCD-2345' };
+const strong = { password: 'Correct-Horse-9', confirm: 'Correct-Horse-9' };
 const indexOf = (flow: 'new' | 'existing', id: string) => flowSteps(flow).findIndex((entry) => entry.id === id);
 
 describe('first-run setup state (FL-176)', () => {
@@ -85,13 +84,6 @@ describe('first-run setup state (FL-176)', () => {
       expect(validateStep(state, 'account', { secrets: { ...strong, confirm: 'other' } }).errors).toEqual({
         confirm: 'frameleaf_setup_error_confirm',
       });
-      // FL-292: the setup code is required, in its shape
-      for (const setupCode of [undefined, 'ABCD', 'ABCD-234O']) {
-        expect(validateStep(state, 'account', { secrets: { ...strong, setupCode } }).errors).toEqual({
-          setupCode: 'frameleaf_setup_error_setup_code',
-        });
-      }
-      expect(validateStep(state, 'account', { secrets: { ...strong, setupCode: 'abcd2345' } }).ok).toBe(true);
       expect(validateStep(state, 'account', { secrets: strong }).ok).toBe(true);
     });
 
