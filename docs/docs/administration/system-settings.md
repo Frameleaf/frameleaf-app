@@ -227,16 +227,20 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 
 ## Setting up a new server
 
-A new server has no administrator. Until it has one, anyone on its home network can claim it, with no code. Set it up soon after installing, before anyone else on that network reaches it.
+A new server has no administrator. Until it has one, anyone on its home network can claim it; there is no setup code. Set it up soon after installing, before anyone else on that network reaches it.
 
 - **Where it works:** only from the home network, never over remote access. A request counts as home when it comes from a private address, or through a trusted local reverse proxy that passes the visitor's address in `X-Forwarded-For`. Tries are limited per address. Once an administrator exists, setup is over. A server that is not on your home network (a rented server, for example) can be set up through an SSH tunnel to it, or by adding your network to `FRAMELEAF_TRUSTED_LAN_CIDRS`.
 - **Onboarding:** whether the first-run onboarding is finished is reported by `GET /api/server/config` (`isOnboarded`), so the app can say so.
 
-There are three ways to claim a new server:
+The Frameleaf apps find new servers on the same Wi-Fi (see [Local network discovery](#local-network-discovery)). A server can be claimed in three ways:
 
-- **Web page:** the first-run page asks for the administrator's name, email and password.
-- **Frameleaf app, with a Frameleaf account:** the app hands the server a single-use link token (`fll_…`) and the name you chose, and the server links itself exactly as with `FRAMELEAF_LINK_TOKEN`. The Frameleaf account that made the token owns the server. That account's first Sign in with Frameleaf creates the administrator, with no server password. Only that account can become the first administrator.
-- **Frameleaf app, with a password:** the app can instead create the administrator with an email and password, for a server without Frameleaf Cloud.
+- **Link it to your Frameleaf account:** in the app, choose **Set up**, then **Name your server**, then **Link to Your Frameleaf Account** with Sign in with Frameleaf. The app hands the server a single-use link token (`fll_…`) and the name, and the server links itself exactly as with `FRAMELEAF_LINK_TOKEN`. The Frameleaf account that made the token owns the server, and that account's first Sign in with Frameleaf creates the administrator, with no server password. Only that account can become the first administrator. The web first-run page offers the same link as its featured option.
+- **Create a password administrator:** on the web first-run page (**Continue with local account**: name, email and password), through the API (`POST /api/auth/admin-sign-up` or `POST /api/server/setup/admin`), or in the app on a server without Frameleaf Cloud.
+- **Join a server that is already linked:** a server the apps find that is already linked to a Frameleaf account is never set up or linked again. The apps join it with Sign in with Frameleaf. If it has no administrator yet, the first sign-in of the account that owns it creates the administrator.
+
+In the Frameleaf apps, a server with Frameleaf Cloud is set up with Sign in with Frameleaf; the apps don't offer a password. The server itself doesn't require this: the web first-run page and the API still let you create a password administrator on a server with Frameleaf Cloud (for example, to set it up without a Frameleaf account).
+
+**Restore from backup** on a new server is gated the same way: only from the home network, and only while the server has no administrator.
 
 Linking to Frameleaf Cloud is optional. `FRAMELEAF_LINK_TOKEN` links a server when it starts, without a browser. Linking a server that is already set up is done by an administrator (in Settings, or from the app). Once it is linked, that administrator's account is connected to the Frameleaf account that approved the link.
 
