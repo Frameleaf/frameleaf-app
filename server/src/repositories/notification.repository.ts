@@ -83,7 +83,7 @@ export class NotificationRepository {
       .selectFrom('notification')
       .select(columns.notification)
       .where('id', '=', id)
-      .where('deletedAt', 'is not', null)
+      .where('deletedAt', 'is', null)
       .executeTakeFirst();
   }
 
