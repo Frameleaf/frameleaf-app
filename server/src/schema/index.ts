@@ -1,5 +1,3 @@
-import { DesktopMlTaskTable, DesktopMlAttemptTable } from 'src/schema/tables/desktop-ml-task.table.js';
-import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
@@ -83,6 +81,8 @@ import {
 } from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
+import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
