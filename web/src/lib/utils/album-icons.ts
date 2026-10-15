@@ -91,5 +91,3 @@ export function albumIconPath(key: string | null | undefined): string {
   }
   return DEFAULT_ALBUM_ICON_PATH;
 }
-
-export const ALBUM_ICON_KEYS = Object.keys(ALBUM_ICONS);
