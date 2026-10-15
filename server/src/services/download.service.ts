@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { parse } from 'node:path';
-import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -13,25 +12,11 @@ import { Permission } from 'src/enum.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
+import { nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
-
-const nextArchiveName = (paths: Map<string, number>, originalFileName: string) => {
-  const base = sanitize(originalFileName) || 'unnamed';
-  let filename = base;
-  let count = paths.get(base) ?? 0;
-  if (paths.has(filename)) {
-    const parsedFilename = parse(base);
-    do {
-      filename = `${parsedFilename.name}+${++count}${parsedFilename.ext}`;
-    } while (paths.has(filename));
-  }
-  paths.set(base, count);
-  paths.set(filename, 0);
-  return filename;
-};
 
 const archiveFileName = (asset: { originalFileName: string; editedPath?: string | null }, dto: DownloadArchiveDto) =>
   dto.edited && asset.editedPath

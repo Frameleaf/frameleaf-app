@@ -1137,6 +1137,28 @@ describe(MemoryService.name, () => {
       expect(addFile).toHaveBeenCalledWith(locked.originalPath, expect.any(String));
     });
 
+    it('keeps every emitted filename unique when originals already contain generated suffixes', async () => {
+      const ownerId = newUuid();
+      const assets = ['photo.jpg', 'photo+1.jpg', 'photo.jpg', 'photo+2.jpg', 'photo.jpg'].map((originalFileName) =>
+        AssetFactory.create({ ownerId, originalFileName }),
+      );
+      const run = exportRun({ ownerId, assetIds: assets.map(({ id }) => id), assetCount: assets.length });
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.memory.getExportForJob.mockResolvedValue({ ...run, cancelRequestedAt: null } as never);
+      mocks.asset.getByIds.mockResolvedValue(assets as never);
+      mocks.storage.stat.mockResolvedValue({ size: 42 } as never);
+      const { addFile } = givenZip();
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
+      expect(addFile.mock.calls.map(([, filename]) => filename)).toEqual([
+        'photo.jpg',
+        'photo+1.jpg',
+        'photo+2.jpg',
+        'photo+2+1.jpg',
+        'photo+3.jpg',
+      ]);
+    });
+
     it('should rename the archive into place only once it is complete', async () => {
       const ownerId = newUuid();
       const asset = AssetFactory.create({ ownerId });
