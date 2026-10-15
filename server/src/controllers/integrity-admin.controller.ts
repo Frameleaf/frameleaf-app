@@ -1,5 +1,6 @@
 import { Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { pipeline } from 'node:stream/promises';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -123,13 +124,13 @@ export class IntegrityAdminController {
   })
   @FileResponse()
   @Authenticated({ permission: Permission.Maintenance, admin: true })
-  getIntegrityReportCsv(@Param() { type }: IntegrityReportTypeParamDto, @Res() res: Response): void {
+  async getIntegrityReportCsv(@Param() { type }: IntegrityReportTypeParamDto, @Res() res: Response): Promise<void> {
     res.header({
       'Content-Type': 'text/csv',
       'Cache-Control': 'private, no-cache, no-transform',
       'Content-Disposition': `attachment; filename="${encodeURIComponent(`${Date.now()}-${type}.csv`)}"`,
     });
 
-    this.service.getIntegrityReportCsv(type).pipe(res);
+    await pipeline(this.service.getIntegrityReportCsv(type), res);
   }
 }

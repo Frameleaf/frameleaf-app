@@ -1,4 +1,7 @@
+import { PassThrough, Readable, Writable } from 'node:stream';
+import { setImmediate } from 'node:timers/promises';
 import request from 'supertest';
+import type { Response } from 'express';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { IntegrityReport, Permission } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -20,6 +23,67 @@ describe(IntegrityAdminController.name, () => {
   beforeEach(() => {
     service.resetAllMocks();
     ctx.reset();
+  });
+
+  describe('CSV streaming lifecycle', () => {
+    const controller = new IntegrityAdminController(automock(LoggingRepository, { strict: false }), service);
+    const response = () => Object.assign(new PassThrough(), { header: vi.fn() });
+
+    it('preserves CSV bytes and response headers', async () => {
+      const csv = 'id,type,assetId,fileAssetId,path\n1,missing_file,,,"a,b"\n';
+      service.getIntegrityReportCsv.mockReturnValue(Readable.from([csv]));
+      const output = response();
+      let received = '';
+      output.on('data', (chunk: Buffer) => (received += chunk.toString()));
+      await controller.getIntegrityReportCsv({ type: IntegrityReport.MissingFile }, output as unknown as Response);
+      await setImmediate();
+      expect(received).toBe(csv);
+      expect(output.header).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Type': 'text/csv',
+          'Cache-Control': 'private, no-cache, no-transform',
+          'Content-Disposition': expect.stringMatching(/^attachment; filename=".*-missing_file\.csv"$/),
+        }),
+      );
+    });
+
+    it('destroys a paused source when the response disconnects', async () => {
+      const source = new PassThrough();
+      service.getIntegrityReportCsv.mockReturnValue(source);
+      const output = Object.assign(new Writable({ write() {} }), { header: vi.fn() });
+      const streaming = Promise.resolve(
+        controller.getIntegrityReportCsv({ type: IntegrityReport.MissingFile }, output as unknown as Response),
+      );
+      void streaming.catch(() => {});
+      try {
+        source.write('id,type,assetId,fileAssetId,path\n');
+        output.destroy();
+        await setImmediate();
+        expect(source.destroyed).toBe(true);
+        await expect(streaming).rejects.toMatchObject({ code: 'ERR_STREAM_PREMATURE_CLOSE' });
+      } finally {
+        source.destroy();
+      }
+    });
+
+    it('owns source failures and closes the response', async () => {
+      const source = new PassThrough();
+      const failure = new Error('CSV reader failed');
+      source.on('error', () => {});
+      service.getIntegrityReportCsv.mockReturnValue(source);
+      const output = response();
+      const streaming = Promise.resolve(
+        controller.getIntegrityReportCsv({ type: IntegrityReport.MissingFile }, output as unknown as Response),
+      );
+      void streaming.catch(() => {});
+      source.destroy(failure);
+      try {
+        await expect(streaming).rejects.toBe(failure);
+        expect(output.destroyed).toBe(true);
+      } finally {
+        output.destroy();
+      }
+    });
   });
 
   describe('GET /admin/integrity/runs (FL-81)', () => {
