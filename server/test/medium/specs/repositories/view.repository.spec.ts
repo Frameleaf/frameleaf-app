@@ -33,6 +33,26 @@ const capturedAt = (dateTime: string) => {
 const day = (date: string) => new Date(`${date}T00:00:00.000Z`);
 
 describe(ViewRepository.name, () => {
+  it.each([
+    { folder: '100%', other: '100percent' },
+    { folder: 'set_', other: 'setx' },
+    { folder: String.raw`a\b`, other: 'ab' },
+    { folder: "Ada's", other: 'Adas' },
+  ])('treats $folder literally while retaining direct-child and owner scope', async ({ folder, other }) => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { user: foreign } = await ctx.newUser();
+    const path = `/root/${folder}`;
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: `${path}/photo.jpg` });
+    await ctx.newAsset({ ownerId: user.id, originalPath: `/root/${other}/other.jpg` });
+    await ctx.newAsset({ ownerId: user.id, originalPath: `${path}/nested/child.jpg` });
+    await ctx.newAsset({ ownerId: foreign.id, originalPath: `${path}/foreign.jpg` });
+    for (const requested of [path, `${path}/`, folder]) {
+      const rows = await sut.getAssetsByOriginalPath(user.id, requested);
+      expect(rows.map(({ id }) => id)).toEqual([asset.id]);
+    }
+  });
+
   describe('getFolderSummary', () => {
     it("summarises each folder's own originals: count, bytes, the four newest for a cover and the capture dates", async () => {
       const { ctx, sut } = setup();
