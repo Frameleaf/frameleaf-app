@@ -9,6 +9,7 @@ import {
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
+import type { BundledRenderWorkerApproval } from 'src/utils/bundled-render-worker.js';
 import type { GpuWorkingBudgetApproval } from 'src/utils/gpu-working-budget-policy.js';
 import type { RenderColorPrecision } from 'src/utils/render-admission.js';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
@@ -93,8 +94,9 @@ export class RenderWorkerTable {
   @Column({ type: 'bigint', nullable: true })
   gpuMemoryBytes!: Int8Writable | null;
 
+  /** An approved measured hardware profile, or FL-408's server-written bundled-worker marker. */
   @Column({ type: 'jsonb', nullable: true })
-  gpuWorkingBudgetApproval!: GpuWorkingBudgetApproval | null;
+  gpuWorkingBudgetApproval!: GpuWorkingBudgetApproval | BundledRenderWorkerApproval | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   lastAdmittedAt!: Timestamp | null;

@@ -58,6 +58,7 @@ import { ApiTag, ImmichHeader } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, HomeNetworkOnly } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
+import { renderWorkerOriginOf } from 'src/utils/bundled-render-worker.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto, UUIDv7ParamDto } from 'src/validation.js';
 
@@ -252,8 +253,8 @@ export class RenderWorkerController {
       'Exchanges the enrolment secret and fresh conformance evidence for a scoped, expiring session credential. Refusals are audited and answered generically.',
     history: history(),
   })
-  admitRenderWorker(@Body() dto: RenderWorkerAdmissionDto): Promise<RenderWorkerSessionDto> {
-    return this.service.admit(dto);
+  admitRenderWorker(@Body() dto: RenderWorkerAdmissionDto, @Req() request: Request): Promise<RenderWorkerSessionDto> {
+    return this.service.admit(dto, renderWorkerOriginOf(request));
   }
 
   @Post('claims')
