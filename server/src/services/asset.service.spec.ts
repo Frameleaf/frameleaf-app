@@ -981,6 +981,54 @@ describe(AssetService.name, () => {
   });
 
   describe('deleteAll', () => {
+    it('announces only ordinary changes, preserving their order and duplicates after sequenced effects', async () => {
+      const ids = ['ordinary-2', 'sequenced', 'ordinary-1', 'ordinary-2'];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
+      mocks.trash.enqueueLocalEffects.mockResolvedValue();
+      mocks.trash.applyReviewed.mockImplementation((...args) => {
+        args[6]?.(['sequenced', 'sequenced']);
+        return Promise.resolve(ids);
+      });
+
+      await sut.deleteAll(authStub.user1, { ids });
+
+      expect(mocks.trash.enqueueLocalEffects).toHaveBeenCalledOnce();
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetTrashAll', {
+        assetIds: ['ordinary-2', 'ordinary-1', 'ordinary-2'],
+        userId: authStub.user1.user.id,
+      });
+      expect(mocks.trash.enqueueLocalEffects.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.event.emit.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('reads sequenced IDs only linearly for a large mixed trash batch', async () => {
+      const ids = Array.from({ length: 512 }, (_, index) => `asset-${index}`);
+      let reads = 0;
+      const sequenced = new Proxy(ids.slice(0, 256), {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) {
+            reads++;
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
+      mocks.trash.enqueueLocalEffects.mockResolvedValue();
+      mocks.trash.applyReviewed.mockImplementation((...args) => {
+        args[6]?.(sequenced);
+        return Promise.resolve(ids);
+      });
+
+      await sut.deleteAll(authStub.user1, { ids });
+
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('AssetTrashAll', {
+        assetIds: ids.slice(256),
+        userId: authStub.user1.user.id,
+      });
+      expect(reads).toBeLessThanOrEqual(512);
+    });
+
     it('should require asset delete access for all ids', async () => {
       await expect(
         sut.deleteAll(authStub.user1, {

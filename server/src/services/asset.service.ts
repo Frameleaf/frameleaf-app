@@ -852,7 +852,8 @@ export class AssetService extends BaseService {
       },
     );
     if (sequenced.length > 0) await this.trashRepository.enqueueLocalEffects();
-    const ordinary = (changed ?? []).filter((id) => !sequenced.includes(id));
+    const sequencedIds = new Set(sequenced);
+    const ordinary = (changed ?? []).filter((id) => !sequencedIds.has(id));
     if (ordinary.length > 0)
       await this.eventRepository.emit('AssetTrashAll', { assetIds: ordinary, userId: auth.user.id });
   }
