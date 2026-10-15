@@ -32,6 +32,24 @@ describe(DownloadService.name, () => {
   });
 
   describe('downloadArchive', () => {
+    it.each([
+      { names: ['constructor', 'constructor'], expected: ['constructor', 'constructor+1'] },
+      { names: ['__proto__', '__proto__'], expected: ['__proto__', '__proto__+1'] },
+      { names: ['photo.jpg', 'photo+1.jpg', 'photo.jpg'], expected: ['photo.jpg', 'photo+1.jpg', 'photo+2.jpg'] },
+      { names: ['photo.jpg', 'photo.jpg', 'photo+1.jpg'], expected: ['photo.jpg', 'photo+1.jpg', 'photo+1+1.jpg'] },
+      { names: ['', 'unnamed', ''], expected: ['unnamed', 'unnamed+1', 'unnamed+2'] },
+    ])('keeps every archive member distinct for $names', async ({ names, expected }) => {
+      const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+      const assets = names.map((originalFileName) => AssetFactory.create({ originalFileName }));
+      const assetIds = assets.map(({ id }) => id);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+      mocks.asset.getForOriginals.mockResolvedValue(assets);
+      mocks.storage.createZipStream.mockReturnValue(archive);
+      await sut.downloadArchive(authStub.admin, { assetIds });
+      expect(archive.addFile.mock.calls.map(([, name]) => name)).toEqual(expected);
+      expect(new Set(archive.addFile.mock.calls.map(([, name]) => name)).size).toBe(names.length);
+    });
+
     it.each([true, false])(
       'uses the actual rendition extension for edited HEIC archive downloads: %s',
       async (edited) => {

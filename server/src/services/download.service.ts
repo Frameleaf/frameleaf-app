@@ -18,14 +18,18 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
-const nextArchiveName = (paths: Record<string, number>, originalFileName: string) => {
-  let filename = sanitize(originalFileName) || 'unnamed';
-  const count = paths[filename] || 0;
-  paths[filename] = count + 1;
-  if (count !== 0) {
-    const parsedFilename = parse(filename);
-    filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
+const nextArchiveName = (paths: Map<string, number>, originalFileName: string) => {
+  const base = sanitize(originalFileName) || 'unnamed';
+  let filename = base;
+  let count = paths.get(base) ?? 0;
+  if (paths.has(filename)) {
+    const parsedFilename = parse(base);
+    do {
+      filename = `${parsedFilename.name}+${++count}${parsedFilename.ext}`;
+    } while (paths.has(filename));
   }
+  paths.set(base, count);
+  paths.set(filename, 0);
   return filename;
 };
 
@@ -129,7 +133,7 @@ export class DownloadService extends BaseService {
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
     const zip = this.storageRepository.createZipStream();
-    const paths: Record<string, number> = {};
+    const paths = new Map<string, number>();
 
     for (const assetId of dto.assetIds) {
       const asset = assetMap.get(assetId);
