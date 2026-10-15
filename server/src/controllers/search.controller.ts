@@ -73,7 +73,7 @@ export class SearchController {
   @Endpoint({
     summary: 'Search facet counts',
     description:
-      "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own; places of partners who hide their locations are left out.",
+      "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own.",
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   searchFacets(@Auth() auth: AuthDto, @Body() dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
