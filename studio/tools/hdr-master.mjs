@@ -4,8 +4,8 @@
 //   - measures static content light levels of the edited output itself
 //     (CTA-861.3 MaxCLL/MaxFALL from decoded PQ light, never copied from a source),
 //   - validates them against the declared mastering display,
-//   - encodes HEVC Main10 BT.2020 with explicit matrix/range/dither (the FL-102
-//     float-to-integer convention) and HDR10 SEI, and
+//   - encodes HEVC Main10 BT.2020 with explicit matrix/range and spec rounding
+//     to ten-bit codes (see TEN_BIT_QUANTISER) and HDR10 SEI, and
 //   - verifies the written stream by probing and decoding it back.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -85,6 +85,17 @@ export function toRgb48(frame) {
   return Buffer.from(out.buffer, out.byteOffset, out.byteLength);
 }
 
+/**
+ * Ten-bit quantiser for the master. ITU-R BT.2100 (Table 9) and BT.2020 define the
+ * integer signal as Round(), e.g. D'Y = Round((219 E'Y + 16) * 2^(n-8)). Rounding
+ * bounds each Y/Cb/Cr code to 0.5, so the inverse-RGB error of a flat region is at
+ * most 0.5*1023/876 + 0.5*2(1-Kb)*1023/896 = 1.66 RGB10 codes (blue, the largest
+ * gain), inside the two-code QC limit. Error diffusion lets a code drift by up to
+ * one (0.985 measured), which the blue gain 2(1-Kb)*1023/896 = 2.148 turns into
+ * 2.92 codes: it cannot meet the limit at ten bits, so the master rounds.
+ */
+export const TEN_BIT_QUANTISER = 'none';
+
 export function encoderArgs({ width, height, fps, transfer, light, mastering, output, lossless = false, timeline, audio }) {
   const trc = transfer === 'pq' ? 'smpte2084' : 'arib-std-b67';
   const x265 = [
@@ -104,9 +115,9 @@ export function encoderArgs({ width, height, fps, transfer, light, mastering, ou
     '-color_primaries', 'bt2020', '-color_trc', trc, '-colorspace', 'rgb', '-color_range', 'pc',
     '-i', '-',
     ...(audio ? ['-i', audio.path, '-map', '0:v:0', '-map', `1:a:${audio.stream ?? 0}`, '-c:a', 'copy'] : []),
-    // FL-102 convention: explicit matrix, range and error-diffusion dither.
+    // Explicit matrix and range; ten-bit codes are rounded per BT.2100 (TEN_BIT_QUANTISER).
     '-vf', [
-      'format=gbrp16le,zscale=rangein=full:range=limited:matrixin=gbr:matrix=bt2020nc:dither=error_diffusion,format=yuv420p10le',
+      `format=gbrp16le,zscale=rangein=full:range=limited:matrixin=gbr:matrix=bt2020nc:dither=${TEN_BIT_QUANTISER},format=yuv420p10le`,
       ...(timeline ? [`settb=${timeline.timeBase}`, `setpts=${timeline.pts.reduceRight((expr, pts, i) =>
         i === timeline.pts.length - 1 ? String(pts) : `if(eq(N,${i}),${pts},${expr})`, '').replaceAll(',', '\\,')}`] : []),
     ].join(','),
@@ -218,29 +229,52 @@ export function probeMaster(ffprobe, file) {
   };
 }
 
-/** RGB signal for comparison, or native limited-range ten-bit Y/Cb/Cr planes without RGB conversion. */
-export function decodeMaster(ffmpeg, file, width, height, format = 'rgb48le') {
-  assert.ok(['rgb48le', 'yuv420p10le'].includes(format), 'Unsupported decoded format');
+/**
+ * Bytes of one raw decoded frame. Both formats store every sample in a 16-bit
+ * little-endian container: rgb48le is 3 samples per pixel, yuv420p10le is 1.5
+ * (Y plus quarter-size Cb and Cr), so 1024x128 yuv420p10le is 393216 bytes.
+ */
+export function rawFrameBytes(width, height, format) {
   assert.ok(Number.isSafeInteger(width) && width > 0 && Number.isSafeInteger(height) && height > 0,
     'Invalid decoded size');
+  const samplesPerPixel = { rgb48le: 3, yuv420p10le: 1.5 }[format];
+  assert.ok(samplesPerPixel, 'Unsupported decoded format');
+  if (format === 'yuv420p10le') assert.ok(width % 2 === 0 && height % 2 === 0, 'Ten-bit 4:2:0 requires even dimensions');
+  return width * height * samplesPerPixel * 2;
+}
+
+/** RGB signal for comparison, or native limited-range ten-bit Y/Cb/Cr planes without RGB conversion. */
+export function decodeMaster(ffmpeg, file, width, height, format = 'rgb48le') {
+  const frameBytes = rawFrameBytes(width, height, format);
   const planar = format === 'yuv420p10le';
-  if (planar) assert.ok(width % 2 === 0 && height % 2 === 0, 'Ten-bit 4:2:0 requires even dimensions');
   const result = spawnSync(ffmpeg, ['-v', 'error', '-xerror', '-i', file,
     ...(planar ? ['-pix_fmt', format] : [
-      '-vf', 'zscale=rangein=limited:range=full:matrixin=bt2020nc:matrix=gbr:dither=error_diffusion,format=gbrp16le,format=rgb48le',
+      '-vf', `zscale=rangein=limited:range=full:matrixin=bt2020nc:matrix=gbr:dither=${TEN_BIT_QUANTISER},format=gbrp16le,format=rgb48le`,
     ]),
     '-fps_mode', 'passthrough', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 30 });
   if (result.status !== 0) throw new Error(`ffmpeg decode failed: ${result.stderr}`);
-  const frameSize = width * height * (planar ? 1.5 : 3);
+  const frameSize = frameBytes / 2;
   assert.ok(Number.isSafeInteger(frameSize) && result.stdout.byteLength > 0 &&
-    result.stdout.byteLength % (frameSize * 2) === 0, 'Decoded output has incomplete frames');
+    result.stdout.byteLength % frameBytes === 0, 'Decoded output has incomplete frames');
   const samples = Uint16Array.from({ length: result.stdout.byteLength / 2 }, (_, i) => result.stdout.readUInt16LE(i * 2));
   return Array.from({ length: samples.length / frameSize }, (_, i) =>
     planar ? samples.slice(i * frameSize, (i + 1) * frameSize)
       : Float32Array.from(samples.subarray(i * frameSize, (i + 1) * frameSize), (v) => v / 65535));
 }
 
-/** Analytical BT.2020 NCL/limited-range oracle at flat-region samples, before publication. */
+/** RGB signal of limited-range BT.2020 NCL ten-bit codes, by the inverse matrix (no rounding). */
+export function inverseRgb([y, cb, cr]) {
+  const luma = (y - 64) / 876;
+  const r = luma + 2 * (1 - 0.2627) * (cr - 512) / 896;
+  const b = luma + 2 * (1 - 0.0593) * (cb - 512) / 896;
+  return [r, (luma - 0.2627 * r - 0.0593 * b) / 0.6780, b];
+}
+
+/**
+ * Analytical BT.2020 NCL/limited-range oracle at flat-region samples, before
+ * publication: each Y/Cb/Cr code and the RGB it reconstructs (in ten-bit RGB
+ * codes) must be within two codes of the edited signal.
+ */
 export function validateHdrPlaneSamples(frames, width, height, samples) {
   assert.ok(Number.isSafeInteger(width) && width > 0 && width % 2 === 0 &&
     Number.isSafeInteger(height) && height > 0 && height % 2 === 0, 'Invalid plane size');
@@ -264,6 +298,9 @@ export function validateHdrPlaneSamples(frames, width, height, samples) {
     const error = actual.map((value, channel) => Math.abs(value - expected[channel]));
     assert.ok(actual.every((value) => value <= 1023) && error.every((value) => value <= 2),
       `HDR plane error at frame ${frame} (${x},${y}): ${actual} vs ${expected}`);
-    return { frame, x, y, rgb: Array.from(rgb), expected, actual, error };
+    const rgbError = inverseRgb(actual).map((value, channel) => Math.abs(value - rgb[channel]) * 1023);
+    assert.ok(rgbError.every((value) => value <= 2),
+      `HDR inverse-RGB error at frame ${frame} (${x},${y}): ${rgbError.map((value) => value.toFixed(3))} RGB10 codes`);
+    return { frame, x, y, rgb: Array.from(rgb), expected, actual, error, rgbError };
   });
 }
