@@ -7838,7 +7838,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
         "status": "not-started"
       },
       "id": "readme.export.1",
@@ -8063,7 +8063,7 @@
       "category": "Export",
       "frameleaf": {
         "evidence": ["74a752f25d"],
-        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only H.264 is accepted.",
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only H.264 is accepted. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
         "status": "not-started"
       },
       "id": "readme.export.4",
@@ -24157,7 +24157,7 @@
     "basis": "FL-405: per-row Frameleaf delivery status, separate from the upstream preservation axes under status. Measured qualification stays in studio/conformance.json.",
     "note": "Web Studio rows require an admitted GPU and render worker, which the bundled local ML server provides by default.",
     "statusVocabulary": {
-      "descoped-v1": "Out of the first release by owner decision: MusicGen (licence) and the FL-107 server HDR10/HLG master.",
+      "descoped-v1": "Out of the first release by owner decision: MusicGen, for its licence.",
       "not-started": "Not reachable in Frameleaf Studio.",
       "shipped": "In the prepared engine (vendor plus engine-build.json patches) or the Frameleaf adapter and host, and reachable in Frameleaf Studio. Upstream behaviour carried over unchanged counts, and its note says so."
     }
