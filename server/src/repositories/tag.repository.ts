@@ -18,7 +18,13 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
-import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets, tagIsSuppressed } from 'src/utils/database.js';
+import {
+  asUuid,
+  dummy,
+  getHiddenContentFilter,
+  tagHasVisibleAssetOrNoAssets,
+  tagIsSuppressed,
+} from 'src/utils/database.js';
 
 /**
  * `hideLocked`: the session is not unlocked, so a tag carried only by locked items is left out
@@ -519,7 +525,6 @@ export class TagRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
-  @Chunked({ paramIndex: 1 })
   replaceAssetTags(assetId: string, tagIds: string[]) {
     const execute = async (tx: Kysely<DB>) => {
       await tx.deleteFrom('tag_asset').where('assetId', '=', assetId).execute();
@@ -530,7 +535,12 @@ export class TagRepository {
 
       return tx
         .insertInto('tag_asset')
-        .values(tagIds.map((tagId) => ({ tagId, assetId })))
+        .columns(['assetId', 'tagId'])
+        .expression((eb) =>
+          eb
+            .selectFrom(dummy)
+            .select([asUuid(assetId).as('assetId'), sql<string>`unnest(${tagIds}::uuid[])`.as('tagId')]),
+        )
         .onConflict((oc) => oc.doNothing())
         .returningAll()
         .execute();
