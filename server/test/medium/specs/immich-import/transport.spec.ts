@@ -369,10 +369,10 @@ describe('offline Immich import over PostgreSQL source and destination connectio
         clusterGroupId: version.startsWith('3.2.') ? f.group : clusterId(f.owner),
       });
       const crypto = new CryptoRepository();
-      expect(crypto.compareBcrypt(f.password, String(owner.password))).toBe(true);
-      expect(crypto.compareBcrypt('wrong password', String(owner.password))).toBe(false);
-      expect(crypto.compareBcrypt(f.pin, String(owner.pinCode))).toBe(true);
-      expect(crypto.compareBcrypt('000000', String(owner.pinCode))).toBe(false);
+      await expect(crypto.compareBcrypt(f.password, String(owner.password))).resolves.toBe(true);
+      await expect(crypto.compareBcrypt('wrong password', String(owner.password))).resolves.toBe(false);
+      await expect(crypto.compareBcrypt(f.pin, String(owner.pinCode))).resolves.toBe(true);
+      await expect(crypto.compareBcrypt('000000', String(owner.pinCode))).resolves.toBe(false);
       expect(await f.destination.db.query('SELECT id,"ownerId","originalPath",visibility FROM public.asset')).toEqual([
         { id: f.asset, ownerId: f.owner, originalPath: f.targetPath, visibility: 'locked' },
       ]);

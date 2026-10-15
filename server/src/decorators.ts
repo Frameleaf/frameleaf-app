@@ -257,7 +257,9 @@ export class HistoryBuilder {
       extensions[ApiCustomExtension.History] = this.items;
     }
 
-    const item = this.items.findLast(({ state }) => state !== 'Added' && state !== 'Updated');
+    const item = this.items.findLast(
+      (entry): entry is HistoryEntry & { state: ApiState } => entry.state !== 'Added' && entry.state !== 'Updated',
+    );
     if (item) {
       extensions[ApiCustomExtension.State] = item.state;
     }
