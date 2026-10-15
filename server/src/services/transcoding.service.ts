@@ -104,6 +104,7 @@ export class TranscodingService extends BaseService {
       return;
     }
     this.sessions.delete(sessionId);
+    session.startToken++;
     if (this.cleanupInterval && this.sessions.size === 0) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
