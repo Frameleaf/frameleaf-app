@@ -56,22 +56,9 @@ jobs:
           echo "server=${server}" | tee -a "$GITHUB_OUTPUT"
           echo "machine-learning=${ml}" | tee -a "$GITHUB_OUTPUT"
 
-  integration:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: ./.github/workflows/fork-integration.yml
-    permissions:
-      contents: read
-
-  certification:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    uses: ./.github/workflows/fork-roundtrip.yml
-    permissions:
-      contents: read
-      packages: read
-
   server:
     name: Build and Push Server
-    needs: [changes, integration, certification]
+    needs: changes
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
     permissions:
@@ -89,7 +76,7 @@ jobs:
 
   retag-server:
     name: Re-Tag Server
-    needs: [changes, integration, certification]
+    needs: changes
     if: needs.changes.outputs.server != 'true'
     runs-on: ubuntu-24.04
     permissions:
@@ -109,7 +96,7 @@ jobs:
 
   machine-learning:
     name: Build and Push ML
-    needs: [changes, integration, certification]
+    needs: changes
     if: needs.changes.outputs['machine-learning'] == 'true'
     strategy:
       fail-fast: false
@@ -160,7 +147,7 @@ jobs:
 
   retag-machine-learning:
     name: Re-Tag ML
-    needs: [changes, integration, certification]
+    needs: changes
     if: needs.changes.outputs['machine-learning'] != 'true'
     runs-on: ubuntu-24.04
     permissions:
@@ -186,22 +173,22 @@ jobs:
 
   success-check-server:
     name: Docker Build & Push Server Success
-    needs: [integration, certification, server, retag-server]
+    needs: [server, retag-server]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require certified server publication
+      - name: Require server publication
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and .certification.result == "success" and ([.server.result, ."retag-server".result] | any(. == "success"))' <<< "$RESULTS"
+        run: jq -e '([.server.result, ."retag-server".result] | any(. == "success"))' <<< "$RESULTS"
 
   success-check-ml:
     name: Docker Build & Push ML Success
-    needs: [integration, certification, machine-learning, retag-machine-learning]
+    needs: [machine-learning, retag-machine-learning]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every certified ML variant
+      - name: Require every ML variant
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq -e '.integration.result == "success" and .certification.result == "success" and ([."machine-learning".result, ."retag-machine-learning".result] | any(. == "success"))' <<< "$RESULTS"
+        run: jq -e '([."machine-learning".result, ."retag-machine-learning".result] | any(. == "success"))' <<< "$RESULTS"

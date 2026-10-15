@@ -26,7 +26,7 @@ const LOCK_SOURCES = [
   "machine-learning/uv.lock",
   "mobile/pubspec.lock",
 ];
-const WORKFLOW_SOURCES = [".github/workflows/fork-integration.yml"];
+const WORKFLOW_SOURCES = [".github/workflows/test.yml"];
 const CONTAINER_SOURCES = [
   "icloud-bridge/Dockerfile",
   "machine-learning/Dockerfile",

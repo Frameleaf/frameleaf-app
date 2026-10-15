@@ -1,6 +1,6 @@
 name: Frameleaf Release
 
-# The Deploy workflow name identifies the certified candidate completion chain.
+# The Deploy workflow name identifies the candidate completion chain.
 # This workflow owns version/release/latest promotion; Deploy creates candidates.
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] API-verified same-repo Deploy run and exact current mainline SHA are required before checkout
@@ -56,7 +56,7 @@ jobs:
               });
               run = runs.find(trusted);
             }
-            if (!run || !trusted(run)) throw new Error('A successful same-SHA canonical Docker run is required, including integration and roundtrip certification');
+            if (!run || !trusted(run)) throw new Error('A successful same-SHA canonical Docker run is required');
             core.setOutput('sha', sha);
             core.setOutput('run', String(run.id));
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

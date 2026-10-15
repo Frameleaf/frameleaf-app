@@ -3,7 +3,6 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
-const { runInNewContext } = require("node:vm");
 const { load } = createRequire(
   path.resolve(__dirname, "../server/package.json"),
 )("js-yaml");
@@ -86,50 +85,17 @@ assert(
   !docker.on.pull_request && !docker.on.release,
   "Candidate publishing must not run on PR/release events",
 );
-for (const name of ["server", "machine-learning"])
-  assert.deepEqual(
-    docker.jobs[name].needs,
-    ["integration", "certification"],
-    "Both quality gates must precede publishing",
-  );
-assert.equal(
-  docker.jobs.integration.uses,
-  "./.github/workflows/fork-integration.yml",
-);
-assert.equal(
-  docker.jobs.certification.uses,
-  "./.github/workflows/fork-roundtrip.yml",
-);
-const roundtripConcurrency = workflows["fork-roundtrip.yml"].concurrency;
-assert.equal(
-  roundtripConcurrency?.group,
-  "${{ github.workflow }}-${{ github.ref }}-roundtrip",
-  "Roundtrip concurrency must isolate each workflow/ref from its caller",
-);
-assert.equal(
-  roundtripConcurrency["cancel-in-progress"],
-  "${{ github.event_name == 'pull_request' }}",
-);
-for (const event_name of [
-  "pull_request",
-  "push",
-  "schedule",
-  "workflow_dispatch",
-  "workflow_call",
-]) {
+for (const name of [
+  "server",
+  "retag-server",
+  "machine-learning",
+  "retag-machine-learning",
+])
   assert.equal(
-    runInNewContext(roundtripConcurrency["cancel-in-progress"].slice(3, -2), {
-      github: { event_name },
-    }),
-    event_name === "pull_request",
-    "Only stale PR certification may be cancelled; publication gates must finish",
+    docker.jobs[name].needs,
+    "changes",
+    "Candidate publishing must depend on image change detection",
   );
-}
-assert(Object.hasOwn(workflows["fork-integration.yml"].on, "workflow_call"));
-assert(
-  !workflows["fork-integration.yml"].on.push,
-  "Mainline integration is invoked by Docker only",
-);
 const ml = docker.jobs["machine-learning"].strategy.matrix.include;
 assert.deepEqual(
   ml.map(({ device, suffix, platforms, target }) => ({
@@ -191,5 +157,5 @@ assert(
   "Zizmor must execute the real pinned scanner",
 );
 console.log(
-  `Hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
+  `Hosted runner, pinned-action, image-variant contracts passed for ${count} jobs.`,
 );

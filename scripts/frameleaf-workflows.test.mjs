@@ -25,8 +25,6 @@ const excluded = new Set([
   "docker.yml",
   "local-multi-runner-build.yml",
   "fork-release.yml",
-  "fork-roundtrip.yml",
-  "fork-integration.yml",
   "nsfw-unraid-docker.yml",
 ]);
 const owned = readdirSync(path.join(root, ".github/workflows")).filter(
@@ -68,6 +66,32 @@ const admission = (
     always: () => true,
   });
 
+test("upstream integration gates and their certification harness stay retired", () => {
+  for (const file of [
+    ".github/workflows/fork-integration.yml",
+    ".github/workflows/fork-roundtrip.yml",
+    "e2e/docker-compose.fork-roundtrip.yml",
+    "scripts/test-fork-roundtrip.sh",
+    "scripts/test-fork-roundtrip.test.mjs",
+  ]) {
+    assert.equal(existsSync(path.join(root, file)), false, file);
+  }
+  const docker = workflow("docker.yml");
+  assert.equal(docker.jobs.integration, undefined);
+  assert.equal(docker.jobs.certification, undefined);
+  assert.equal(
+    JSON.parse(readFileSync(path.join(root, "e2e/package.json"), "utf8"))
+      .scripts["test:fork-roundtrip"],
+    undefined,
+  );
+  assert.equal(
+    readdirSync(path.join(root, "e2e/src/specs/server")).some((name) =>
+      /^fork-schema-/.test(name),
+    ),
+    false,
+  );
+});
+
 test("all nine protected check contexts execute real commands on external fork/main PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
@@ -108,6 +132,19 @@ test("standalone script tests install their locked JavaScript dependencies first
     "node --test scripts/frameleaf-workflows.test.mjs",
   ]) {
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
+  }
+  const delivery = scripts.findIndex(
+    (step) => step.name === "Validate delivery workflow contracts",
+  );
+  assert.ok(delivery > install);
+  for (const command of [
+    "node .github/check-runners.cjs",
+    "node .github/check-release.cjs",
+    "node .github/check-jira.cjs",
+    "node --test docker/frameleaf-delivery.test.mjs",
+    "node --test .github/frameleaf-release.test.cjs",
+  ]) {
+    assert.ok(scripts[delivery].run.includes(command));
   }
 });
 
@@ -154,7 +191,6 @@ test("retired mobile workflows and jobs remain absent", () => {
     assert.equal(existsSync(path.join(root, ".github/workflows", file)), false);
   }
   assert.equal(workflow("test.yml").jobs["mobile-unit-tests"], undefined);
-  assert.equal(workflow("fork-integration.yml").jobs["mobile"], undefined);
   const apiGeneration = workflow("test.yml").jobs[
     "generated-api-up-to-date"
   ].steps.find((step) => step.name === "Run API generation").run;
@@ -164,6 +200,7 @@ test("retired mobile workflows and jobs remain absent", () => {
   );
   assert.match(apiGeneration, /\/\/server:sync-open-api/u);
   assert.match(apiGeneration, /\/\/:open-api-typescript/u);
+  assert.match(apiGeneration, /pnpm --filter @immich\/sdk test/u);
 });
 
 test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {

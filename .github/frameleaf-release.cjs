@@ -632,7 +632,7 @@ async function release(env = process.env) {
     certifiedBuildRun: `${SOURCE}/actions/runs/${env.CERTIFIED_RUN_ID}`,
     images,
     certification:
-      "Integration and all three official-container roundtrip lanes passed in the referenced build run.",
+      "Container publication passed in the referenced build run. Upstream integration and official-container roundtrip certification are retired.",
     provenance:
       "Image/index revision labels and SHA-256 content verified; BuildKit metadata/SBOM are not a signed provenance claim.",
   };
@@ -652,7 +652,7 @@ async function release(env = process.env) {
         name: tag,
         draft: true,
         generate_release_notes: true,
-        body: `Certified source: ${env.SOURCE_SHA}\n\nBuild and compatibility evidence: ${manifest.certifiedBuildRun}\n\nUse the attached version-matched installation files and release-manifest.json.`,
+        body: `Source: ${env.SOURCE_SHA}\n\nContainer publication evidence: ${manifest.certifiedBuildRun}\n\n${manifest.certification}\n\nUse the attached version-matched installation files and release-manifest.json.`,
       };
       return github("releases", {
         method: "POST",
