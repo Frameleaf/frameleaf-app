@@ -64611,6 +64611,8 @@
                     "FRAMELEAF_SOURCE_COMMIT",
                     "FRAMELEAF_SOURCE_COMMIT_URL",
                     "FRAMELEAF_ALLOW_SETUP",
+                    "FRAMELEAF_STUDIO_WORKER",
+                    "FRAMELEAF_STUDIO_WORKER_TRUST_DIR",
                     "FRAMELEAF_TRUSTED_PROXIES",
                     "FRAMELEAF_WORKERS_INCLUDE",
                     "FRAMELEAF_WORKERS_EXCLUDE",
@@ -64649,7 +64651,7 @@
                   ],
                   "type": "string"
                 },
-                "maxItems": 60,
+                "maxItems": 62,
                 "type": "array"
               },
               "version": {
@@ -65093,6 +65095,8 @@
                         "FRAMELEAF_SOURCE_COMMIT",
                         "FRAMELEAF_SOURCE_COMMIT_URL",
                         "FRAMELEAF_ALLOW_SETUP",
+                        "FRAMELEAF_STUDIO_WORKER",
+                        "FRAMELEAF_STUDIO_WORKER_TRUST_DIR",
                         "FRAMELEAF_TRUSTED_PROXIES",
                         "FRAMELEAF_WORKERS_INCLUDE",
                         "FRAMELEAF_WORKERS_EXCLUDE",
@@ -65131,7 +65135,7 @@
                       ],
                       "type": "string"
                     },
-                    "maxItems": 60,
+                    "maxItems": 62,
                     "type": "array"
                   },
                   "version": {
