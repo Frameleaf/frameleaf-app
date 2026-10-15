@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import request from 'supertest';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudEditBaselineSchema, ICloudEditSuccessorSchema } from 'src/dtos/icloud-identity.dto.js';
@@ -66,7 +67,6 @@ import { StudioRevocationService } from 'src/services/studio-revocation.service.
 import { initializeEffectiveConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { StudioDestination } from 'src/utils/studio-resources.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
-import request from 'supertest';
 import { canonicalTestContext, expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';

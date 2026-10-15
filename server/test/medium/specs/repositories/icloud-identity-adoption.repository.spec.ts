@@ -10,7 +10,6 @@ import {
 } from 'kysely';
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import type { FileHandle } from 'node:fs/promises';
 import {
   access,
   copyFile,
@@ -31,6 +30,7 @@ import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import type { FileHandle } from 'node:fs/promises';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
