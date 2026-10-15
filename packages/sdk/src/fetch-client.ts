@@ -2085,6 +2085,10 @@ export type IntegrityReportResponseDto = {
     }[];
     nextCursor?: string;
 };
+export type IntegrityReportClearResponseDto = {
+    /** Findings removed from the list; no file or photo was changed */
+    cleared: number;
+};
 export type IntegrityCheckRunsResponseDto = {
     /** When the checksum check last completed a full pass */
     checksum_mismatch: string | null;
@@ -17811,6 +17815,17 @@ export function deleteIntegrityReport({ id }: {
     }));
 }
 /**
+ * Remove one finding from its list
+ */
+export function dismissIntegrityReport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/integrity/report/${encodeURIComponent(id)}/dismiss`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Download flagged file
  */
 export function getIntegrityReportFile({ id }: {
@@ -17821,6 +17836,20 @@ export function getIntegrityReportFile({ id }: {
         data: Blob;
     }>(`/admin/integrity/report/${encodeURIComponent(id)}/file`, {
         ...opts
+    }));
+}
+/**
+ * Clear the list of one integrity check
+ */
+export function clearIntegrityReports({ $type }: {
+    $type: IntegrityReport;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityReportClearResponseDto;
+    }>(`/admin/integrity/report/${encodeURIComponent($type)}/clear`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**

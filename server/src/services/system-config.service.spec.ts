@@ -90,7 +90,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     preset: 'ultrafast',
     targetAudioCodec: AudioCodec.Aac,
     acceptedAudioCodecs: [AudioCodec.Aac, AudioCodec.Mp3, AudioCodec.Opus],
-    targetResolution: '720',
+    targetResolution: '1080',
     targetVideoCodec: VideoCodec.H264,
     acceptedVideoCodecs: [VideoCodec.H264],
     acceptedContainers: [VideoContainer.Mov, VideoContainer.Ogg, VideoContainer.Webm],

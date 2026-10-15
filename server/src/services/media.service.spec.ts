@@ -4809,7 +4809,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining([expect.stringMatching(/scale(_.+)?=-2:720/)]),
+          outputOptions: expect.arrayContaining([expect.stringMatching(/scale(_.+)?=-2:1080/)]),
           twoPass: false,
         }),
       );
@@ -4824,7 +4824,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining([expect.stringMatching(/scale(_.+)?=720:-2/)]),
+          outputOptions: expect.arrayContaining([expect.stringMatching(/scale(_.+)?=1080:-2/)]),
           twoPass: false,
         }),
       );
@@ -5242,7 +5242,13 @@ describe(MediaService.name, () => {
 
     it('should use av1 if specified', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.videoStreamVp9 });
-      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { targetVideoCodec: VideoCodec.Av1 } });
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          targetVideoCodec: VideoCodec.Av1,
+        },
+      });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
         '/original/path.ext',
@@ -5412,7 +5418,12 @@ describe(MediaService.name, () => {
     it('should set options for nvenc sw decode', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: false },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Nvenc,
+          accelDecode: false,
+        },
       });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
@@ -5547,7 +5558,12 @@ describe(MediaService.name, () => {
     it('should use hardware decoding for nvenc if enabled', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: true },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Nvenc,
+          accelDecode: true,
+        },
       });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
@@ -5601,7 +5617,7 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.arrayContaining(['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']),
-          outputOptions: expect.arrayContaining([expect.stringContaining('scale_cuda=-2:720:format=nv12')]),
+          outputOptions: expect.arrayContaining([expect.stringContaining('scale_cuda=-2:1080:format=nv12')]),
           twoPass: false,
         }),
       );
@@ -5610,7 +5626,13 @@ describe(MediaService.name, () => {
     it('should set options for qsv with sw decode', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Qsv, maxBitrate: '10000k', accelDecode: false },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Qsv,
+          maxBitrate: '10000k',
+          accelDecode: false,
+        },
       });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
@@ -5752,7 +5774,12 @@ describe(MediaService.name, () => {
     it('should use hardware decoding for qsv if enabled', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Qsv, accelDecode: true },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Qsv,
+          accelDecode: true,
+        },
       });
 
       await sut.handleVideoConversion({ id: 'video-id' });
@@ -5862,7 +5889,12 @@ describe(MediaService.name, () => {
     it('should set options for sw decode vaapi', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Vaapi, accelDecode: false },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Vaapi,
+          accelDecode: false,
+        },
       });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
@@ -6012,7 +6044,12 @@ describe(MediaService.name, () => {
     it('should use hardware decoding for vaapi if enabled', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Vaapi, accelDecode: true },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Vaapi,
+          accelDecode: true,
+        },
       });
 
       await sut.handleVideoConversion({ id: 'video-id' });
@@ -6187,7 +6224,12 @@ describe(MediaService.name, () => {
     it('should set options for rkmpp', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.matroskaContainer });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Rkmpp, accelDecode: true },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Rkmpp,
+          accelDecode: true,
+        },
       });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
@@ -6325,7 +6367,7 @@ describe(MediaService.name, () => {
           ]),
           outputOptions: expect.arrayContaining([
             expect.stringContaining(
-              'scale_rkrga=-2:720:format=p010:afbc=1:async_depth=4,hwmap=derive_device=opencl:mode=read,tonemap_opencl=format=nv12:r=pc:p=bt709:t=bt709:m=bt709:tonemap=hable:desat=0:tonemap_mode=lum:peak=100,hwmap=derive_device=rkmpp:mode=write:reverse=1,format=drm_prime',
+              'scale_rkrga=-2:1080:format=p010:afbc=1:async_depth=4,hwmap=derive_device=opencl:mode=read,tonemap_opencl=format=nv12:r=pc:p=bt709:t=bt709:m=bt709:tonemap=hable:desat=0:tonemap_mode=lum:peak=100,hwmap=derive_device=rkmpp:mode=write:reverse=1,format=drm_prime',
             ),
           ]),
           twoPass: false,
@@ -6337,7 +6379,14 @@ describe(MediaService.name, () => {
       sut.videoInterfaces = { dri: ['renderD128'], mali: false };
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.noAudioStreams });
       mocks.systemMetadata.get.mockResolvedValue({
-        ffmpeg: { accel: TranscodeHardwareAcceleration.Rkmpp, accelDecode: true, crf: 30, maxBitrate: '0' },
+        ffmpeg: {
+          // FL-366: the default is 1080p now; these tests are about the encoder, not the size
+          targetResolution: '720',
+          accel: TranscodeHardwareAcceleration.Rkmpp,
+          accelDecode: true,
+          crf: 30,
+          maxBitrate: '0',
+        },
       });
       await sut.handleVideoConversion({ id: 'video-id' });
       expect(mocks.media.transcode).toHaveBeenCalledWith(
@@ -6471,7 +6520,14 @@ describe(MediaService.name, () => {
         expect.any(String),
         expect.objectContaining({
           inputOptions: expect.any(Array),
-          outputOptions: expect.arrayContaining(['-c:v', 'h264', '-c:a', 'copy', '-vf', 'scale=-2:720,format=yuv420p']),
+          outputOptions: expect.arrayContaining([
+            '-c:v',
+            'h264',
+            '-c:a',
+            'copy',
+            '-vf',
+            'scale=-2:1080,format=yuv420p',
+          ]),
           twoPass: false,
         }),
       );
