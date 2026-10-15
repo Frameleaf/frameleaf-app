@@ -29145,6 +29145,8 @@ export enum EnvironmentKeys {
     FrameleafSourceCommit = "FRAMELEAF_SOURCE_COMMIT",
     FrameleafSourceCommitUrl = "FRAMELEAF_SOURCE_COMMIT_URL",
     FrameleafAllowSetup = "FRAMELEAF_ALLOW_SETUP",
+    FrameleafStudioWorker = "FRAMELEAF_STUDIO_WORKER",
+    FrameleafStudioWorkerTrustDir = "FRAMELEAF_STUDIO_WORKER_TRUST_DIR",
     FrameleafTrustedProxies = "FRAMELEAF_TRUSTED_PROXIES",
     FrameleafWorkersInclude = "FRAMELEAF_WORKERS_INCLUDE",
     FrameleafWorkersExclude = "FRAMELEAF_WORKERS_EXCLUDE",

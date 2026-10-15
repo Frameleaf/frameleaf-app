@@ -964,7 +964,7 @@ export class PhysicalFileRepository {
     const hdr = type === AssetFileType.HdrPreview || type === AssetFileType.HdrFullSize;
     if (hdr && !renditionIdentity) return;
     const physicalType = this.toPhysicalFileType(type);
-    return this.db
+    const registered = await this.db
       .selectFrom('asset as duplicateAsset')
       .innerJoin('physical_file as originalPhysical', 'originalPhysical.id', 'duplicateAsset.physicalOriginalFileId')
       .innerJoin('physical_file as generatedPhysical', (join) =>
@@ -979,9 +979,24 @@ export class PhysicalFileRepository {
           )
           .where('generatedFile.renditionIdentity', '=', renditionIdentity!),
       )
-      .select(['generatedPhysical.id', 'generatedPhysical.path'])
+      .select(['generatedPhysical.id', 'generatedPhysical.path', 'generatedPhysical.canonicalAssetId'])
       .where('duplicateAsset.id', '=', asUuid(assetId))
       .whereRef('duplicateAsset.id', '!=', 'originalPhysical.canonicalAssetId')
+      .executeTakeFirst();
+    if (registered) {
+      return registered;
+    }
+    // Pre-upgrade derivatives still belong to the original's primary, even before registration.
+    return this.db
+      .selectFrom('asset as duplicateAsset')
+      .innerJoin('physical_file as originalPhysical', 'originalPhysical.id', 'duplicateAsset.physicalOriginalFileId')
+      .innerJoin('asset_file as generated', 'generated.assetId', 'originalPhysical.canonicalAssetId')
+      .select(['generated.physicalFileId as id', 'generated.path', 'originalPhysical.canonicalAssetId'])
+      .where('duplicateAsset.id', '=', asUuid(assetId))
+      .whereRef('duplicateAsset.id', '!=', 'originalPhysical.canonicalAssetId')
+      .where('generated.type', '=', type)
+      .where('generated.isEdited', '=', false)
+      .$if(hdr, (query) => query.where('generated.renditionIdentity', '=', renditionIdentity!))
       .executeTakeFirst();
   }
   // Same aliasing hazard as linkAssetToOriginalPhysicalFile, for derivatives.

@@ -137,6 +137,13 @@ export interface EnvData {
   /** Signed release destinations of this installation's apps (FL-82). */
   appReleases: AppReleaseConfig;
 
+  /** FL-408: the Studio render worker bundled with the machine-learning container. */
+  studioWorker: {
+    enabled: boolean;
+    /** Where the enrolment is written for the machine-learning container to read. */
+    trustDir: string;
+  };
+
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
   frameleafCloud: {
     url: string | null;
@@ -306,6 +313,11 @@ const getEnv = (): EnvData => {
     },
 
     appReleases: parseAppReleases(dto),
+
+    studioWorker: {
+      enabled: dto.FRAMELEAF_STUDIO_WORKER ?? true,
+      trustDir: dto.FRAMELEAF_STUDIO_WORKER_TRUST_DIR ?? '/run/frameleaf/studio-worker',
+    },
 
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,

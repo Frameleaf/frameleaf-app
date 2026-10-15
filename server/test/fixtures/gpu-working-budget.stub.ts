@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { AuthenticatedRenderWorker } from 'src/repositories/render-worker.repository.js';
+import type { GpuWorkingBudgetApproval } from 'src/utils/gpu-working-budget-policy.js';
+import { AuthenticatedRenderWorker, RenderWorker } from 'src/repositories/render-worker.repository.js';
 
 /** Synthetic approved contract evidence, never native-device qualification. */
 export const withSyntheticGpuBudget = (
   entry: AuthenticatedRenderWorker,
   capabilities: { codecs: string[]; formats: string[] },
-): AuthenticatedRenderWorker => {
+): Omit<AuthenticatedRenderWorker, 'worker'> & {
+  worker: Omit<RenderWorker, 'gpuWorkingBudgetApproval'> & {
+    gpuWorkingBudgetApproval: GpuWorkingBudgetApproval | null;
+  };
+} => {
   const completedAt = new Date(Date.now() - 1000);
   const evidence = {
     metric: 'measured-usable-gpu-working-budget-v1' as const,
