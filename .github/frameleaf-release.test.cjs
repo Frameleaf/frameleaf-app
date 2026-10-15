@@ -99,7 +99,7 @@ test("every supported image variant has an explicit native build contract", () =
       SOURCE_SHA: sha,
       GITHUB_SHA: sha,
       GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
-      GITHUB_REF: "refs/heads/fork/main",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_NAME: "push",
     };
     assert.deepEqual(
@@ -225,7 +225,7 @@ test("all seven ML manifests qualify only for their declared variant/platform se
 test("manual releases require a successful canonical exact-SHA Docker run", () => {
   const run = {
     head_sha: sha,
-    head_branch: "fork/main",
+    head_branch: "main",
     head_repository: { full_name: "Frameleaf/frameleaf-app" },
     event: "workflow_dispatch",
     status: "completed",

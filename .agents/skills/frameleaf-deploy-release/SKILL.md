@@ -9,7 +9,7 @@ Announce that you are using this skill. Read [AGENTS.md](../../../AGENTS.md) and
 
 ## Establish the work
 
-- Use `Frameleaf/frameleaf-app`, literal default branch `fork/main`, and the explicitly verified `frameleaf` remote. Never push to `origin`, the former owner, or upstream.
+- Use `Frameleaf/frameleaf-app`, default branch `main`, and the explicitly verified `frameleaf` remote. Never push to `origin`, the former owner, or upstream.
 - Read and claim every assigned `FL-` issue before implementation. Discover live transitions; do not copy HeroNet's IDs or its `NEEDS REVIEW` status. An existing assigned PR/worktree can be continued. For new work, fetch the verified default branch immediately before creating a worktree from its exact SHA.
 - Use author and committer `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers. Preserve unrelated working-tree changes.
 - For UI work, also follow the [committed design handoff](../../../design/frameleaf/README.md). A prototype is not implementation acceptance.
@@ -40,7 +40,7 @@ The installed GitHub for Atlassian connection and matching Jira/GitHub identity 
 
 ## PR and CI ownership
 
-- Use a `codex/FL-123-description` branch and every included issue key in the human-readable PR title. Target `fork/main`. State the final behavior, evidence, migration/rollback implications and outstanding acceptance. Record Smart Commit delivery evidence separately from ordinary Jira links.
+- Use a `codex/FL-123-description` branch and every included issue key in the human-readable PR title. Target `main`. State the final behavior, evidence, migration/rollback implications and outstanding acceptance. Record Smart Commit delivery evidence separately from ordinary Jira links.
 - Apply the repository's independent review contract to privacy, data integrity, migrations, concurrency, cloud costs and publication authority. Review the exact candidate and callers before pushing risk-bearing changes. Fix P0/P1/P2; recheck substantive deltas. Read existing bot feedback without waiting for optional bots.
 - Own CI until the current head passes. Read raw failed job logs; fix repository errors without weakening gates. Retry proven infrastructure failures a bounded number of times after their cause clears. A registry pull failure before tests is not a failed assertion or evidence that tests passed.
 - Hosted current-head checks are authoritative; focused local checks are allowed. Track the PR head and tested merge SHA. Preserve all protected checks, integration and official-container round trips. Do not copy HeroNet's local-test ban or Ubicloud assumptions.
@@ -52,7 +52,7 @@ Before an authorized merge, read the repository's current `squash_merge_commit_t
 
 Supply an explicit, reviewed squash message instead of replaying command history. Retain every assigned issue key and, if recording a new merge milestone, use one fresh accurate `#comment` per issue. Do not replay prior `#time` or transition commands. Before invoking merge, verify the chosen method can satisfy the repository's author/committer policy: local Git configuration does not control GitHub-generated merge metadata, and web merges may use a GitHub committer. Resolve any conflict before merge without weakening identity policy or bypassing branch protection. Verify the resulting identities and actual Jira outcome afterward. Reconcile any prior-command duplication rather than silently treating it as new work. See [GitHub's metadata restrictions](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#metadata-restrictions).
 
-A request to prepare/update a PR does not authorize merge or publication. Reuse explicit session authorization within its scope. Merging to `fork/main` can automatically publish containers and promote stable tags, so resolve that authorization before invoking merge. Never merge solely to satisfy this skill's completion checklist.
+A request to prepare/update a PR does not authorize merge or publication. Reuse explicit session authorization within its scope. Merging to `main` can automatically publish containers and promote stable tags, so resolve that authorization before invoking merge. Never merge solely to satisfy this skill's completion checklist.
 
 For an authorized release, follow the [build/release flow](../../../docs/docs/developer/frameleaf-development.md#build-and-release-flow): exact-SHA integration and round-trip gates, owned `ghcr.io/frameleaf` images, candidate manifests/platforms/source revisions, stable promotion and matching release assets. CLI publication is separately opt-in. Keep original storage/service/database identities and official-client compatibility intact. Local/Compose/Unraid and local/LAN workers remain supported; RunPod is explicit. Do not import HeroNet's Kubernetes endpoint, Jira-Version-before-tag format, secrets or deployment workflow.
 

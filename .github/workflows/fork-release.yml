@@ -5,7 +5,7 @@ name: Frameleaf Release
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] API-verified same-repo Deploy run and exact current mainline SHA are required before checkout
     workflows: ['Deploy']
-    branches: [fork/main]
+    branches: [main]
     types: [completed]
   workflow_dispatch:
 
@@ -20,12 +20,12 @@ jobs:
     name: Tag and release
     if: >-
       ${{ github.repository == 'Frameleaf/frameleaf-app'
-          && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fork/main')
+          && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
               || (github.event_name == 'workflow_run'
                   && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
                   && github.event.workflow_run.conclusion == 'success'
                   && github.event.workflow_run.head_repository.full_name == github.repository
-                  && github.event.workflow_run.head_branch == 'fork/main')) }}
+                  && github.event.workflow_run.head_branch == 'main')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -40,9 +40,9 @@ jobs:
             const sha = context.eventName === 'workflow_run'
               ? context.payload.workflow_run.head_sha : context.sha;
             if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Invalid release SHA');
-            const { data: branch } = await github.rest.git.getRef({ ...context.repo, ref: 'heads/fork/main' });
-            if (branch.object.sha !== sha) throw new Error('Stale release candidate: fork/main has moved');
-            const trusted = (run) => run.head_sha === sha && run.head_branch === 'fork/main'
+            const { data: branch } = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
+            if (branch.object.sha !== sha) throw new Error('Stale release candidate: main has moved');
+            const trusted = (run) => run.head_sha === sha && run.head_branch === 'main'
               && run.head_repository?.full_name === 'Frameleaf/frameleaf-app'
               && ['push', 'workflow_dispatch'].includes(run.event)
               && run.status === 'completed' && run.conclusion === 'success'

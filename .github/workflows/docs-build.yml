@@ -3,10 +3,10 @@ name: Docs build
   workflow_dispatch: null
   pull_request:
     branches:
-      - fork/main
+      - main
   push:
     branches:
-      - fork/main
+      - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

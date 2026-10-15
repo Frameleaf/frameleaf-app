@@ -4,7 +4,7 @@ title: Frameleaf development and delivery
 
 # Frameleaf development and delivery
 
-Frameleaf development lives in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app), on the literal default branch `fork/main`. Work is tracked in [Jira project FL](https://heroit.atlassian.net/jira/software/c/projects/FL/boards/233/backlog). The [implementation plan](https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319) and the assigned issue define acceptance; infrastructure readiness is separate from application feature parity.
+Frameleaf development lives in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app), on the default branch `main`. Work is tracked in [Jira project FL](https://heroit.atlassian.net/jira/software/c/projects/FL/boards/233/backlog). The [implementation plan](https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319) and the assigned issue define acceptance; infrastructure readiness is separate from application feature parity.
 
 A [Confluence mirror of this guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844) records the setup checkpoint and review links.
 
@@ -19,11 +19,11 @@ Use the assigned issue key consistently:
 | Branch             | `codex/FL-118-frameleaf-delivery`         |
 | Commit subject     | `ci: FL-118 configure Frameleaf delivery` |
 | Pull request title | `ci: FL-118 configure Frameleaf delivery` |
-| Pull request base  | `fork/main` in `Frameleaf/frameleaf-app`  |
+| Pull request base  | `main` in `Frameleaf/frameleaf-app`  |
 
 GitHub autolinks resolve `FL-123` to `https://heroit.atlassian.net/browse/FL-123`. The **Jira Issue Key** check validates a key in human PR titles; it does not execute Smart Commits, query Jira or establish that an issue exists. Dependabot-authored dependency branches have an explicit exception. The workflow reads event metadata without checking out PR code or granting write access.
 
-Use the [Frameleaf delivery and release skill](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/.agents/skills/frameleaf-deploy-release/SKILL.md), stored at `.agents/skills/frameleaf-deploy-release/SKILL.md`, for commits, PRs and closeout. Delivery commits must contain a real single-line command such as `FL-123 #comment Added the reviewed change; qualification remains pending.` in the Git message. A key in the title or a command pasted into a PR description is insufficient. Verify the resulting Jira comment after pushing and record its commit and comment ID. Only log actual authorized time; discover live transitions and never send a completion command before merge and acceptance.
+Use the [Frameleaf delivery and release skill](https://github.com/Frameleaf/frameleaf-app/blob/main/.agents/skills/frameleaf-deploy-release/SKILL.md), stored at `.agents/skills/frameleaf-deploy-release/SKILL.md`, for commits, PRs and closeout. Delivery commits must contain a real single-line command such as `FL-123 #comment Added the reviewed change; qualification remains pending.` in the Git message. A key in the title or a command pasted into a PR description is insufficient. Verify the resulting Jira comment after pushing and record its commit and comment ID. Only log actual authorized time; discover live transitions and never send a completion command before merge and acceptance.
 
 Squash commits currently use `PR_TITLE` with `COMMIT_MESSAGES`. Before an authorized merge, explicitly prepare the final message so historical Smart Commit commands are not replayed by the new squash SHA. Retain all issue keys and record a fresh merge milestone only where appropriate. These instructions do not authorize merging or changing account privacy/settings. See [Atlassian's Smart Commit syntax](https://support.atlassian.com/jira-software-cloud/docs/process-issues-with-smart-commits/).
 
@@ -44,7 +44,7 @@ Use this sequence for Jira-backed implementation. Read-only discovery can preced
 5. Implement a reviewable slice, apply the risk-based review contract, and open a ready PR. Use a draft for unfinished scope or when requested, recording what remains. Include the exact acceptance evidence, migrations/rollback implications and unresolved requirements; a draft is not a substitute for reporting CI failures.
 6. Read review findings already present and own failing checks through resolution. Keep Jira In Progress while the PR is reviewed or awaiting merge. If review requires changes, remain In Progress and update the same PR rather than claiming a second delivery.
 7. Once the required current-candidate checks pass and blocking findings are resolved, verify merge authorization, including the publication consequences below. Prepare the concrete result before requesting any missing authorization. Do not merge merely to transition an issue.
-8. After an authorized merge, verify GitHub reports `MERGED` into `fork/main`, record the merge SHA, check/run links, acceptance evidence and documentation mirrors. Transition the issue to **Done** only when its own required acceptance is satisfied. Close child tasks independently; do not close an epic because one PR mentions its key. Keep any unqualified release, device, media or deployment acceptance open.
+8. After an authorized merge, verify GitHub reports `MERGED` into `main`, record the merge SHA, check/run links, acceptance evidence and documentation mirrors. Transition the issue to **Done** only when its own required acceptance is satisfied. Close child tasks independently; do not close an epic because one PR mentions its key. Keep any unqualified release, device, media or deployment acceptance open.
 
 On September 19, 2026, FL-118 exposed **To Do**, **In Progress** and **Done** only. There was no **Needs Review** transition. Use the ready PR as the review signal and leave Jira In Progress; do not invent a status, copy HeroNet's transition IDs, or modify the project workflow as part of an implementation task. Re-discover transitions if the workflow changes.
 
@@ -65,11 +65,11 @@ gh repo view Frameleaf/frameleaf-app --json nameWithOwner,defaultBranchRef,url
 git remote get-url frameleaf
 git remote get-url --push frameleaf
 # Only after both URLs resolve directly to Frameleaf/frameleaf-app:
-git fetch --prune frameleaf refs/heads/fork/main
+git fetch --prune frameleaf refs/heads/main
 git rev-parse FETCH_HEAD
 ```
 
-Record the returned full SHA and supply that literal SHA to `git worktree add -b codex/FL-123-description <new-path> <recorded-SHA>`, replacing the example issue/path placeholders. Do not base new work on stale local `fork/main`, another feature branch, or a redirect from the former owner. If the named remote is missing, configure an explicit Frameleaf remote within the user's existing repository authorization, then verify it; never fall back to pushing `origin`.
+Record the returned full SHA and supply that literal SHA to `git worktree add -b codex/FL-123-description <new-path> <recorded-SHA>`, replacing the example issue/path placeholders. Do not base new work on stale local `main`, another feature branch, or a redirect from the former owner. If the named remote is missing, configure an explicit Frameleaf remote within the user's existing repository authorization, then verify it; never fall back to pushing `origin`.
 
 Read-only audits, continuation of an explicitly assigned existing PR/worktree, and cleanup of the owning worktree do not require a new branch. For a continuation, record its current head and inspect its divergence from the verified default branch. Do not rebase or copy dirty application work merely to make the baseline look current. If implementation requires uncommitted sources from another checkout, resolve and review that dependency before distributing work.
 
@@ -133,17 +133,17 @@ Use available Jira/Confluence connectors or authenticated APIs. Discover their c
 
 Registry names are explicitly lowercase. Server and ML images carry source metadata for `Frameleaf/frameleaf-app`. The ML hardware suffixes are `-cuda`, `-cuda-runpod`, `-openvino`, `-armnn`, `-rknn` and `-rocm`; CPU has no hardware suffix. Architecture support is declared in the build matrix. Regular ML builds select `prod`; only the RunPod variant selects `prod-runpod`.
 
-CLI builds are read-only by default. Publication additionally requires the repository variable `FRAMELEAF_ENABLE_CLI_PUBLISH=true`. [Release events created with `GITHUB_TOKEN` do not trigger another release workflow](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows), so the container release workflow cannot be assumed to trigger CLI publication. The **CLI Build** manual dispatch provides an explicit fallback: select `fork/main` and request publication; it verifies the exact current commit and publishes its SHA tag. It does not turn a manual build into a stable release. This variable is not enabled during setup.
+CLI builds are read-only by default. Publication additionally requires the repository variable `FRAMELEAF_ENABLE_CLI_PUBLISH=true`. [Release events created with `GITHUB_TOKEN` do not trigger another release workflow](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows), so the container release workflow cannot be assumed to trigger CLI publication. The **CLI Build** manual dispatch provides an explicit fallback: select `main` and request publication; it verifies the exact current commit and publishes its SHA tag. It does not turn a manual build into a stable release. This variable is not enabled during setup.
 
-Compose's visible container names use Frameleaf. Existing service keys, project/volume identities, mount paths, database settings, environment variables and internal ML DNS remain compatible. Updating image references must not allocate a new empty database or detach an existing upload directory. Official dependencies and compatibility-test images retain their upstream names. See [Docker installation and migration](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/README.md).
+Compose's visible container names use Frameleaf. Existing service keys, project/volume identities, mount paths, database settings, environment variables and internal ML DNS remain compatible. Updating image references must not allocate a new empty database or detach an existing upload directory. Official dependencies and compatibility-test images retain their upstream names. See [Docker installation and migration](https://github.com/Frameleaf/frameleaf-app/blob/main/docker/README.md).
 
 The RunPod default points to the Frameleaf CUDA RunPod image. Explicitly configured custom images remain unchanged. Existing provider resource names and adoption identifiers stay intact so renaming the application does not strand an existing pod.
 
 ## Build and release flow
 
-An implementation request authorizes preparing the change; it does not by itself authorize merge, registry publication, runtime deployment or store submission. Reuse explicit authorization already given in the session within its scope. Prepare the candidate, review and CI evidence before asking for a missing approval. In this pipeline a merge to `fork/main` can cause container publication and stable promotion automatically: include that consequence in the merge decision. Do not copy HeroNet's automatic-merge rule or assume it only deploys on a separate manual dispatch.
+An implementation request authorizes preparing the change; it does not by itself authorize merge, registry publication, runtime deployment or store submission. Reuse explicit authorization already given in the session within its scope. Prepare the candidate, review and CI evidence before asking for a missing approval. In this pipeline a merge to `main` can cause container publication and stable promotion automatically: include that consequence in the merge decision. Do not copy HeroNet's automatic-merge rule or assume it only deploys on a separate manual dispatch.
 
-1. A reviewed change reaches `fork/main`. **Docker** runs the integration and official handoff/round-trip qualification workflows before publication.
+1. A reviewed change reaches `main`. **Docker** runs the integration and official handoff/round-trip qualification workflows before publication.
 2. The publisher builds every server/ML candidate from the exact SHA, including hardware variants, rather than retagging an unrelated mutable branch image. Native architecture runners publish manifest lists.
 3. Candidate publication owns `commit-<full-SHA>` and `edge` tags, with corresponding ML hardware suffixes. These are development artifacts, not an application feature qualification or installation instruction to deploy automatically.
 4. The release workflow verifies a successful Docker run for that exact SHA and the current default-branch head. It preflights every candidate's expected platforms and source revision before promoting stable tags.

@@ -88,7 +88,7 @@ services:
       IMMICH_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
       IMMICH_THIRD_PARTY_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
       IMMICH_THIRD_PARTY_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
-      IMMICH_THIRD_PARTY_DOCUMENTATION_URL: https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs
+      IMMICH_THIRD_PARTY_DOCUMENTATION_URL: https://github.com/Frameleaf/frameleaf-app/tree/main/docs
       IMMICH_THIRD_PARTY_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
       IMMICH_HELMET_FILE: "true"
     ports:

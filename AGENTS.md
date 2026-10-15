@@ -16,7 +16,7 @@ This file routes repository work. Read the linked detail relevant to the task ra
 ## Repository and baseline
 
 - Work only in `Frameleaf/frameleaf-app`. Never push, open PRs, or merge against upstream repositories, including `immich-app/immich`.
-- The default branch is literally `fork/main`, not remote `fork` plus branch `main`. Verify repository metadata and remote URLs before every remote write. Never push to a remote named `origin`; use an explicitly verified `frameleaf` remote. Historical `fork` URLs may still point to the former owner.
+- The default branch is `main`. Verify repository metadata and remote URLs before every remote write. Never push to a remote named `origin`; use an explicitly verified `frameleaf` remote. Historical `fork` URLs may still point to the former owner.
 - Before creating a task branch/worktree, claim the Jira issue, fetch the verified Frameleaf default branch, and start from that exact fetched SHA. See the [baseline procedure](docs/docs/developer/frameleaf-development.md#baseline-and-worktree). Continuing an explicitly assigned existing PR/worktree and read-only audits are exceptions to creating a new worktree.
 - Preserve uncommitted work. Do not reset, clean, stash, or overwrite another task's changes. A worktree contains committed state only; it must not silently omit an uncommitted dependency. Establish a reviewed baseline before delegating dependent implementation.
 - Use author and committer `AJ Taylor <aj@ajtaylor.net>` for every created commit. Verify both identities; never add co-author trailers.
@@ -25,7 +25,7 @@ This file routes repository work. Read the linked detail relevant to the task ra
 
 - Use the [Frameleaf delivery and release skill](.agents/skills/frameleaf-deploy-release/SKILL.md) when starting work that will ship by PR, committing, opening/updating a PR, resolving CI, or handling Jira closeout, merge or release. Include actual Jira Smart Commit commands in delivery commits and verify their result in Jira; issue keys alone only link activity. Follow the skill's squash-message check to avoid replaying commands.
 - Read the assigned `FL-` issue, dependencies, linked Confluence specifications and relevant source inventories before implementation. Claim ownership and transition to **In Progress** before edits or implementation delegation; verify both writes. Do not take over another active task or reopen completed work implicitly.
-- Use `codex/FL-123-description` branches, include the real issue key in commit subjects and PR titles, and target `fork/main`. Batch closely related assigned issues only when scope and ownership remain clear.
+- Use `codex/FL-123-description` branches, include the real issue key in commit subjects and PR titles, and target `main`. Batch closely related assigned issues only when scope and ownership remain clear.
 - Discover transitions on the actual issue. Frameleaf currently has **To Do**, **In Progress**, and **Done**; it has no review transition. Keep a ready PR's issue In Progress until acceptance and authorized merge are verified. Do not copy transition IDs from another project.
 - One owner coordinates implementation, PR checks, issue state and closeout. Give subagents bounded file ownership, acceptance criteria, baseline/head, dependencies and review scope; a reviewer is not a second CI monitor.
 - Follow the [delivery lifecycle](docs/docs/developer/frameleaf-development.md#issue-ownership-and-lifecycle). A PR, a linked key, a mock control or generated SDK does not establish completion.
@@ -49,6 +49,6 @@ This file routes repository work. Read the linked detail relevant to the task ra
 ## Merge, publication and deployment
 
 - Do not merge, publish, dispatch publishing workflows, deploy, or submit mobile applications unless the user has authorized that operation. Existing session authorization remains valid within its scope; do not ask twice. Prepare a concrete reviewed candidate before seeking any missing approval.
-- Merging into `fork/main` can trigger automatic Docker publication and stable promotion. Account for that consequence before merge. A ready PR does not authorize publication, and a published image does not prove a deployed or qualified application.
+- Merging into `main` can trigger automatic Docker publication and stable promotion. Account for that consequence before merge. A ready PR does not authorize publication, and a published image does not prove a deployed or qualified application.
 - Use the [Frameleaf release flow](docs/docs/developer/frameleaf-development.md#build-and-release-flow), owned GHCR destinations and exact-SHA provenance gates. Do not import HeroNet's Kubernetes, Ubicloud, secret-store or versioning assumptions; Compose/Unraid and local/LAN workers remain supported here.
 - After an authorized merge, verify GitHub reports **MERGED**, confirm the issue's own acceptance evidence, synchronize documentation and only then mark the corresponding issue Done. Keep release/deployment acceptance open when still unqualified. Clean up only owned, clean branches/worktrees; preserve unrelated work.
