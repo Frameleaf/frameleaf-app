@@ -1,3 +1,4 @@
+import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -108,6 +109,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  DesktopDeviceController,
   FrameleafLibraryMoveAdminController,
   FrameleafLibraryMoveController,
   FrameleafLibrarySetupController,

@@ -1,3 +1,4 @@
+import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
@@ -213,6 +214,7 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    DesktopDeviceTable,
     AssetLocalEffectStreamTable,
     AssetLocalEffectTable,
     AssetLocalEffectCursorTable,
@@ -414,6 +416,7 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  desktop_device: DesktopDeviceTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;

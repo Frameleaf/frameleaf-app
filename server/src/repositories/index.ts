@@ -1,3 +1,4 @@
+import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -122,6 +123,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  DesktopDeviceRepository,
   ICloudAuditRepository,
   ICloudScheduledStagingRepository,
   ICloudScheduledWorkerRepository,

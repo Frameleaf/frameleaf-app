@@ -1,3 +1,4 @@
+import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -157,6 +158,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  DesktopDeviceService,
   FrameleafLibraryMoveService,
   FrameleafLibrarySetupService,
   ICloudAuditService,
