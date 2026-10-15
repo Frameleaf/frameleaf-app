@@ -4,8 +4,6 @@ Frameleaf keeps media files on your storage and their identity, ownership, album
 
 Keep identity keys and recovery material on [private backup storage](./private-backup-storage.md). That guide covers server-only mounts, NAS ACL verification and migration that preserves existing keys.
 
-For versioned Cloud Backup keys, trusted snapshot selection and a complete export that can be restored without a cloud account, see [Cloud Backup recovery](./cloud-backup-recovery.md). Client-encrypted writes remain opt-in while restore and provider qualification are completed; existing SSE-C backups remain readable.
-
 ## What to preserve
 
 - The complete Frameleaf database, including `public.frameleaf_migrations`, import journals, configuration and feature tables.
@@ -15,7 +13,7 @@ For versioned Cloud Backup keys, trusted snapshot selection and a complete expor
 
 Database backups do not contain your media. A filesystem copy taken while uploads, moves or deletions continue can disagree with the database snapshot. Stop writers or use a storage snapshot procedure that gives you a consistent recovery point. Keep a second copy outside the server being backed up.
 
-For cloud backups, also preserve the separate [backup key and recovery kit](./cloud-backup-keys.md). That guide covers keys held only in memory, application worker access and restart recovery.
+For cloud backups, also keep your backup key and recovery kit somewhere safe, apart from the server. Without them an encrypted cloud backup cannot be restored.
 
 ## Backup secrets and diagnostic logs
 

@@ -60,6 +60,11 @@ FORK_FOLLOWUPS.md
 /docs/docs/developer/frameleaf-plan/
 /docs/docs/developer/*-evidence*.md
 /docs/docs/developer/frameleaf-baseline-inventory.md
+# Purged 2026-10-15 (owner): internal API reference and Cloud backup internals stay private.
+/internal-docs/
+/docs/docs/administration/cloud-backup-keys.md
+/docs/docs/administration/cloud-backup-recovery.md
+/docs/docs/developer/cloud-backup-format.md
 /studio/*-test-packet.md
 /studio/*-source-contract.md
 /studio/*-qualification.md
