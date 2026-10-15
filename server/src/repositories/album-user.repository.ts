@@ -626,7 +626,11 @@ export class AlbumUserRepository {
     await this.db
       .insertInto('shared_space_visit')
       .values({ albumId, userId, lastSeenAt })
-      .onConflict((oc) => oc.columns(['albumId', 'userId']).doUpdateSet({ lastSeenAt }))
+      .onConflict((oc) =>
+        oc.columns(['albumId', 'userId']).doUpdateSet({
+          lastSeenAt: sql<Date>`greatest(shared_space_visit."lastSeenAt", excluded."lastSeenAt")`,
+        }),
+      )
       .execute();
   }
   /**
