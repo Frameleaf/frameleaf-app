@@ -11,6 +11,7 @@
     onSaved,
     onAssetSuppressed,
     onUndoDelete,
+    onRandom,
   }: {
     cursor?: { current: AssetResponseDto };
     asset?: AssetResponseDto;
@@ -18,6 +19,7 @@
     onRendered?: (assetId: string) => void;
     onSaved?: () => void | Promise<void>;
     onUndoDelete?: OnUndoDelete;
+    onRandom?: () => Promise<{ id: string } | undefined>;
     onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
   } = $props();
 </script>
@@ -34,4 +36,8 @@
 
 {#if onSaved}
   <button type="button" onclick={() => onSaved?.()}>Save face tags</button>
+{/if}
+
+{#if onRandom}
+  <button type="button" onclick={() => void onRandom()}>Random slide</button>
 {/if}

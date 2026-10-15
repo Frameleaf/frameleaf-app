@@ -177,6 +177,19 @@
   let developLookupGeneration = 0;
   let viewerAlive = true;
   let viewGeneration = 0;
+  let slideshowGeneration = 0;
+  let slideshowNavigationGeneration = 0;
+  const captureSlideshow = () => {
+    const generation = slideshowGeneration;
+    const navigationGeneration = slideshowNavigationGeneration;
+    const isCurrentSession = authManager.captureSession();
+    return () =>
+      viewerAlive &&
+      generation === slideshowGeneration &&
+      navigationGeneration === slideshowNavigationGeneration &&
+      isCurrentSession() &&
+      $slideshowState === SlideshowState.PlaySlideshow;
+  };
   const captureView = () => {
     const id = asset.id;
     const generation = viewGeneration;
@@ -424,6 +437,7 @@
     // FL-36: a slideshow starts only from a stopped viewer; resuming from pause is not a new run.
     let previousSlideshowState = $slideshowState;
     const slideshowStateUnsubscribe = slideshowState.subscribe((value) => {
+      slideshowGeneration++;
       const previous = previousSlideshowState;
       previousSlideshowState = value;
       if (value === SlideshowState.PlaySlideshow && previous !== SlideshowState.PauseSlideshow) {
@@ -436,6 +450,7 @@
     });
 
     const slideshowNavigationUnsubscribe = slideshowNavigation.subscribe((value) => {
+      slideshowNavigationGeneration++;
       if (value !== SlideshowNavigation.Shuffle) {
         return;
       }
@@ -609,43 +624,57 @@
       return;
     }
 
+    const isCurrentView = captureView();
+    const isCurrentSession = authManager.captureSession();
+    const isCurrentSlideshow = captureSlideshow();
+    const wasSlideshow = $slideshowState === SlideshowState.PlaySlideshow;
     void tracker
       .invoke(async () => {
-        const isShuffle =
-          $slideshowState === SlideshowState.PlaySlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
-
-        let hasNext: boolean;
-
-        if (isShuffle) {
-          hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
-          if (!hasNext) {
-            const asset = await onRandom?.();
-            if (asset) {
-              slideshowHistory.queue(asset);
-              hasNext = true;
+        try {
+          const isShuffle = wasSlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
+          let hasNext: boolean;
+          if (isShuffle) {
+            hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
+            if (!hasNext) {
+              const randomAsset = await onRandom?.();
+              if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== randomAsset?.id)) {
+                return;
+              }
+              if (randomAsset) {
+                slideshowHistory.queue(randomAsset);
+                hasNext = true;
+              }
+            }
+          } else {
+            const target = order === 'previous' ? cursor.previousAsset : cursor.nextAsset;
+            hasNext = await goToAsset(target);
+            if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== target?.id)) {
+              return;
             }
           }
-        } else {
-          hasNext = await goToAsset(order === 'previous' ? cursor.previousAsset : cursor.nextAsset);
-        }
-
-        if ($slideshowState !== SlideshowState.PlaySlideshow) {
-          return;
-        }
-
-        if (!hasNext && $slideshowRepeat && slideshowStartAssetId) {
-          await assetViewerManager.setAssetId(slideshowStartAssetId);
-          hasNext = true;
-        }
-
-        if (hasNext) {
-          $restartSlideshowProgress = true;
-        } else {
-          await handleStopSlideshow();
+          if (!isCurrentSlideshow()) {
+            return;
+          }
+          if (!hasNext && $slideshowRepeat && slideshowStartAssetId) {
+            await assetViewerManager.setAssetId(slideshowStartAssetId, {
+              isCurrent: () => isCurrentView() && isCurrentSlideshow(),
+              onSet: () => ($restartSlideshowProgress = true),
+            });
+            return;
+          }
+          if (hasNext) {
+            $restartSlideshowProgress = true;
+          } else {
+            await handleStopSlideshow();
+          }
+        } catch (error) {
+          if (isCurrentView() && (!wasSlideshow || isCurrentSlideshow())) {
+            throw error;
+          }
         }
       }, $t('error_while_navigating'))
       .then(() => {
-        if (!queuedWhileBusy) {
+        if (!viewerAlive || !isCurrentSession() || !queuedWhileBusy) {
           return;
         }
         const queuedOrder = queuedWhileBusy;
@@ -726,7 +755,14 @@
   let assetViewerHtmlElement = $state<HTMLElement>();
 
   const slideshowHistory = new SlideshowHistory((asset) => {
-    handlePromiseError(assetViewerManager.setAssetId(asset.id).then(() => ($restartSlideshowProgress = true)));
+    const isCurrentView = captureView();
+    const isCurrentSlideshow = captureSlideshow();
+    handlePromiseError(
+      assetViewerManager.setAssetId(asset.id, {
+        isCurrent: () => isCurrentView() && isCurrentSlideshow(),
+        onSet: () => ($restartSlideshowProgress = true),
+      }),
+    );
   });
 
   const handleVideoStarted = () => {
@@ -745,15 +781,22 @@
   };
 
   const handleStopSlideshow = async () => {
+    const generation = slideshowGeneration;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => viewerAlive && generation === slideshowGeneration && isCurrentSession();
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_exit_fullscreen'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_exit_fullscreen'));
+      }
     } finally {
-      $stopSlideshowProgress = true;
-      $slideshowState = SlideshowState.None;
+      if (isCurrent()) {
+        $stopSlideshowProgress = true;
+        $slideshowState = SlideshowState.None;
+      }
     }
   };
 
