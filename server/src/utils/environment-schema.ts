@@ -101,6 +101,10 @@ export const EnvSchema = z
     IMMICH_THIRD_PARTY_DOCUMENTATION_URL: z.string().optional(),
     IMMICH_THIRD_PARTY_SUPPORT_URL: z.string().optional(),
     FRAMELEAF_ALLOW_SETUP: stringBool.optional(),
+    /** FL-408: false stops this server enrolling the bundled machine-learning Studio worker. */
+    FRAMELEAF_STUDIO_WORKER: stringBool.optional(),
+    /** FL-408: the private volume the bundled worker's enrolment is written to (shared, read only, with ML). */
+    FRAMELEAF_STUDIO_WORKER_TRUST_DIR: absolutePath,
     FRAMELEAF_TRUSTED_PROXIES: trustedProxiesSchema,
     FRAMELEAF_WORKERS_INCLUDE: z.string().optional(),
     FRAMELEAF_WORKERS_EXCLUDE: z.string().optional(),
