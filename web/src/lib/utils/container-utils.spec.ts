@@ -1,6 +1,5 @@
 import {
   type ContentMetrics,
-  getContentMetrics,
   getNaturalSize,
   mapNormalizedRectToContent,
   mapNormalizedToContent,
@@ -48,45 +47,6 @@ describe('scaleToFit', () => {
 
   it('should handle square images in portrait container', () => {
     expect(scaleToFit({ width: 500, height: 500 }, { width: 400, height: 600 })).toEqual({ width: 400, height: 400 });
-  });
-});
-
-describe('getContentMetrics', () => {
-  it('should compute zero offsets when aspect ratios match', () => {
-    const img = mockImage({ naturalWidth: 1600, naturalHeight: 900, width: 800, height: 450 });
-    expect(getContentMetrics(img)).toEqual({
-      contentWidth: 800,
-      contentHeight: 450,
-      offsetX: 0,
-      offsetY: 0,
-    });
-  });
-
-  it('should compute horizontal letterbox offsets for tall image', () => {
-    const img = mockImage({ naturalWidth: 1000, naturalHeight: 2000, width: 800, height: 600 });
-    const metrics = getContentMetrics(img);
-    expect(metrics.contentWidth).toBe(300);
-    expect(metrics.contentHeight).toBe(600);
-    expect(metrics.offsetX).toBe(250);
-    expect(metrics.offsetY).toBe(0);
-  });
-
-  it('should compute vertical letterbox offsets for wide image', () => {
-    const img = mockImage({ naturalWidth: 2000, naturalHeight: 1000, width: 800, height: 600 });
-    const metrics = getContentMetrics(img);
-    expect(metrics.contentWidth).toBe(800);
-    expect(metrics.contentHeight).toBe(400);
-    expect(metrics.offsetX).toBe(0);
-    expect(metrics.offsetY).toBe(100);
-  });
-
-  it('should use clientWidth/clientHeight for video elements', () => {
-    const video = mockVideo({ videoWidth: 1920, videoHeight: 1080, clientWidth: 800, clientHeight: 600 });
-    const metrics = getContentMetrics(video);
-    expect(metrics.contentWidth).toBe(800);
-    expect(metrics.contentHeight).toBe(450);
-    expect(metrics.offsetX).toBe(0);
-    expect(metrics.offsetY).toBe(75);
   });
 });
 
@@ -256,12 +216,12 @@ describe('coordinate invariants', () => {
   it('reads new image and video dimensions after a resize or source change', () => {
     const image = mockImage({ naturalWidth: 2000, naturalHeight: 1000, width: 800, height: 600 });
     const video = mockVideo({ videoWidth: 2000, videoHeight: 1000, clientWidth: 800, clientHeight: 600 });
-    expect(getContentMetrics(image)).toEqual(getContentMetrics(video));
+    expect(getNaturalSize(image)).toEqual(getNaturalSize(video));
     Object.assign(image, { naturalWidth: 1000, naturalHeight: 2000, width: 400, height: 300 });
     Object.assign(video, { videoWidth: 1000, videoHeight: 2000, clientWidth: 400, clientHeight: 300 });
     expect(getNaturalSize(image)).toEqual({ width: 1000, height: 2000 });
     expect(getNaturalSize(video)).toEqual(getNaturalSize(image));
-    expect(getContentMetrics(image)).toEqual({ contentWidth: 150, contentHeight: 300, offsetX: 125, offsetY: 0 });
-    expect(getContentMetrics(video)).toEqual(getContentMetrics(image));
+    expect(scaleToFit(getNaturalSize(image), { width: 400, height: 300 })).toEqual({ width: 150, height: 300 });
+    expect(scaleToFit(getNaturalSize(video), { width: 400, height: 300 })).toEqual({ width: 150, height: 300 });
   });
 });
