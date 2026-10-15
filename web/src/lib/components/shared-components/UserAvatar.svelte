@@ -59,14 +59,14 @@
       return;
     }
     let active = true;
-    void image.decode().then(
-      () => {
+    void image
+      .decode()
+      .then(() => {
         if (active) {
           showFallback = false;
         }
-      },
-      () => {},
-    );
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
