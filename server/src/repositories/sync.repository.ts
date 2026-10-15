@@ -879,17 +879,6 @@ class MemoryToAssetSync extends BaseSync {
   }
 }
 class PartnerSync extends BaseSync {
-  @GenerateSql({ params: [dummyCreateAfterOptions] })
-  getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
-    return this.db
-      .selectFrom('partner')
-      .select(['sharedById', 'createId', 'shareLocation'])
-      .where('sharedWithId', '=', userId)
-      .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
-      .where('createId', '<', nowId)
-      .orderBy('partner.createId', 'asc')
-      .execute();
-  }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     const userId = options.userId;

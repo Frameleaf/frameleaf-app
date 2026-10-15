@@ -2285,9 +2285,9 @@ export class AssetRepository {
   /**
    * FL-30 (S-15): one page of the timeline's assets in a flat order — by file name or by rating —
    * for the Browse and Work layouts. It is the time bucket's own query without the bucket filter,
-   * so everything that decides what a bucket may show (Locked and the elevated session, partners who
-   * hide their locations, hidden content, suppressed-only, lock reasons, stacks, a shared link that
-   * hides EXIF) decides this page identically, and the response has the bucket's columnar shape.
+   * so everything that decides what a bucket may show (Locked and the elevated session, hidden content,
+   * suppressed-only, lock reasons, stacks, a shared link that hides EXIF) decides this page identically,
+   * and the response has the bucket's columnar shape.
    */
   @GenerateSql({
     params: [{ withStacked: true }, { user: { id: DummyValue.UUID } }, { sort: 'filename', skip: 0, take: 100 }],

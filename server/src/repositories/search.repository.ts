@@ -300,8 +300,7 @@ export interface GetCameraLensModelsOptions {
 
 /**
  * FL-49: who is looking and what they may be told. Facets name people and tags from the viewer's own
- * records only, leave out what the session keeps suppressed, and never place an owner who hides their
- * locations from the viewer.
+ * records only, and leave out what the session keeps suppressed.
  */
 export interface SearchFacetOptions {
   viewerId: string;
