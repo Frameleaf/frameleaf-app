@@ -3,6 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+// internal-docs/ (the hand-written pages plus the generated reference) is private and untracked since
+// 2026-10-15, so this check only runs on a machine that holds a local copy.
+if (!fs.existsSync(path.join(root, 'internal-docs/api-reference/coverage.json'))) {
+  console.log('Skipped: internal-docs/api-reference is private and not present in this checkout');
+  process.exit(0);
+}
 const run = () => spawnSync(process.execPath, ['scripts/generate-api-reference.cjs', '--check'], { cwd: root, encoding: 'utf8' });
 assert.equal(run().status, 0, 'complete reference must pass');
 const coveragePath = path.join(root, 'internal-docs/api-reference/coverage.json');

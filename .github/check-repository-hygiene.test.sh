@@ -67,4 +67,32 @@ if HYGIENE_BASE_SHA="$base" bash check.sh > /dev/null; then
   printf '%s\n' 'FAILED: accepted report introduced only by merge'
   exit 1
 fi
-printf '%s\n' 'PASS: normal source, force-add rejection, deleted-report history, and merge history'
+# Merging the base branch in does not count what the base already holds as incoming...
+git checkout -qb base-with-report "$base"
+printf '%s\n' private > CLAUDE.md
+git add -f CLAUDE.md
+git commit -qm 'base tracks a private file'
+base_report=$(git rev-parse HEAD)
+git checkout -qb feature "$base"
+printf '%s\n' feature > feature.txt
+git add feature.txt
+git commit -qm feature
+git merge -q --no-ff --no-edit base-with-report
+git rm -q --cached CLAUDE.md
+git commit -qm 'keep CLAUDE.md untracked'
+HYGIENE_BASE_SHA="$base_report" bash check.sh
+# ...but a private file added by that merge commit itself is still rejected.
+git reset -q --hard HEAD~2
+git merge -q --no-ff --no-commit base-with-report
+git rm -q --cached CLAUDE.md
+printf '%s\n' private > reports-evil.md
+mkdir -p reports && mv reports-evil.md reports/evil.md
+git add -f reports/evil.md
+git commit -qm 'merge base and add report'
+git rm -q reports/evil.md
+git commit -qm 'remove report'
+if HYGIENE_BASE_SHA="$base_report" bash check.sh > /dev/null; then
+  printf '%s\n' 'FAILED: accepted report added by a base merge'
+  exit 1
+fi
+printf '%s\n' 'PASS: normal source, force-add rejection, deleted-report history, merge history and base merges'

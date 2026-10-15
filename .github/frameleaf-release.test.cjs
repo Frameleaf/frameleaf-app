@@ -166,9 +166,7 @@ test("every supported image variant has an explicit native build contract", () =
       spec.platforms.map((platform) => ({
         platform,
         runner:
-          platform === "linux/amd64"
-            ? "nscloud-ubuntu-24.04-amd64-8x16"
-            : "nscloud-ubuntu-24.04-arm64-8x16",
+          platform === "linux/amd64" ? "ubuntu-24.04" : "ubuntu-24.04-arm",
       })),
     );
     for (const patch of [

@@ -8,7 +8,7 @@ concurrency:
 jobs:
   registry-archive:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       packages: read
@@ -54,7 +54,7 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/cloud-contracts" "$RUNNER_TEMP/cloud-package.npmrc"
   consumers:
     needs: registry-archive
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read

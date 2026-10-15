@@ -46,10 +46,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: nscloud-ubuntu-24.04-amd64-8x16
+          - runner: ubuntu-24.04
             architecture: amd64
             node-architecture: x64
-          - runner: nscloud-ubuntu-24.04-arm64-8x16
+          - runner: ubuntu-24.04-arm
             architecture: arm64
             node-architecture: arm64
     steps:
@@ -122,7 +122,7 @@ jobs:
           [[ "$(jq -er '.config.digest' "$runtime_manifest")" == "$config" ]]
           docker load --input "$archive/runtime.tar"
           # The classic image store names an image by its config digest, the containerd store
-          # (Namespace runners) by its manifest digest.
+          # by its manifest digest.
           image_id=$(docker image inspect frameleaf-cli:ci --format '{{.Id}}')
           [[ "$image_id" == "$config" || "$image_id" == "$runtime_digest" ]]
           # Docker executes uncompressed layers: bind every ordered diffID to the OCI config.
@@ -162,7 +162,7 @@ jobs:
     if:
       ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' &&
       github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main' }}
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read

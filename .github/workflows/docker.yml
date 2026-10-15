@@ -15,7 +15,7 @@ permissions: {}
 jobs:
   changes:
     if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -230,7 +230,7 @@ jobs:
     name: Re-Tag Server
     needs: [changes, integration, deploy-test]
     if: needs.changes.outputs.server == 'false' && needs['deploy-test'].result == 'success'
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -258,7 +258,7 @@ jobs:
     name: Re-Tag ML
     needs: [changes, integration, deploy-test]
     if: needs.changes.outputs['machine-learning'] == 'false' && needs['deploy-test'].result == 'success'
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -290,7 +290,7 @@ jobs:
     name: Docker Build & Push Server Success
     needs: [integration, deploy-test, server-publish, retag-server]
     if: always()
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     steps:
       - name: Require deployment-tested server publication
         env:
@@ -308,7 +308,7 @@ jobs:
         retag-machine-learning,
       ]
     if: always()
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     steps:
       - name: Require every deployment-tested ML variant
         env:

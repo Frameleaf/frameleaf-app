@@ -46,7 +46,7 @@ jobs:
       FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:4c618d9a30e0b88078b9371a0499d7055da9ab7f5afe386a460758eac9857f06
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -83,7 +83,7 @@ jobs:
   engine:
     needs: lifecycle-evidence
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'

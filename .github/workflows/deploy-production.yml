@@ -58,7 +58,7 @@ jobs:
   candidate:
     name: Verify the verified candidate
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/main' || inputs.dry-run)
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -128,7 +128,7 @@ jobs:
     name: Promote, sign and publish
     needs: [candidate, deploy-test]
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/main'
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     environment: production
     permissions:
       contents: write
@@ -172,7 +172,7 @@ jobs:
   flags-plan:
     name: Plan ${{ inputs.action }} (read only)
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release'
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -195,7 +195,7 @@ jobs:
     name: Apply ${{ inputs.action }}
     needs: flags-plan
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/main'
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     environment: production
     permissions:
       contents: write

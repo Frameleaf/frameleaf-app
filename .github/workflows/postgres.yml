@@ -45,8 +45,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - nscloud-ubuntu-24.04-amd64-8x16
-          - nscloud-ubuntu-24.04-arm64-8x16
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -133,7 +133,7 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.publish &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master/frameleaf-implementation' ||
       github.ref == 'refs/heads/aj/FL-333-pg19') }}
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -193,13 +193,13 @@ jobs:
           set -euo pipefail
           digest_of() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
           # Exactly one tested image per architecture, checked before anything is pushed.
-          seen=$(for runner in nscloud-ubuntu-24.04-amd64-8x16 nscloud-ubuntu-24.04-arm64-8x16; do cat "$RUNNER_TEMP/tested/frameleaf-postgres-$runner/architecture"; done | sort | tr '\n' ' ')
+          seen=$(for runner in ubuntu-24.04 ubuntu-24.04-arm; do cat "$RUNNER_TEMP/tested/frameleaf-postgres-$runner/architecture"; done | sort | tr '\n' ' ')
           if [[ "$seen" != "amd64 arm64 " ]]; then
             echo "::error::Expected one amd64 and one arm64 tested image, found: $seen"
             exit 1
           fi
           children=()
-          for runner in nscloud-ubuntu-24.04-amd64-8x16 nscloud-ubuntu-24.04-arm64-8x16; do
+          for runner in ubuntu-24.04 ubuntu-24.04-arm; do
             dir="$RUNNER_TEMP/tested/frameleaf-postgres-$runner"
             tested=$(cat "$dir/config-digest")
             architecture=$(cat "$dir/architecture")

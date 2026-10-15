@@ -1,4 +1,4 @@
-// Read-only contract checks for Namespace CI and the canonical container publisher.
+// Read-only contract checks for GitHub-hosted CI and the canonical container publisher.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -18,32 +18,12 @@ const workflows = Object.fromEntries(
       load(fs.readFileSync(path.join(directory, file), "utf8")),
     ]),
 );
+// GitHub-hosted runners only; Namespace and self-hosted labels are rejected.
 const supported = new Set([
-  "nscloud-ubuntu-24.04-amd64-8x16",
-  "nscloud-ubuntu-24.04-arm64-8x16",
-  "nscloud-windows-2022-amd64-8x16",
+  "ubuntu-24.04",
+  "ubuntu-24.04-arm",
+  "windows-latest",
 ]);
-// FL-24 hybrid: only these exact jobs stay on GitHub-hosted runners until Namespace can run them.
-const hostedLinux = ["ubuntu-24.04", "ubuntu-24.04-arm"];
-const hosted = new Map([
-  // Namespace Docker 29.3.0-namespace ignores read-only on the /proc/1/mountinfo bind,
-  // which Manager's host-mount check requires.
-  ["manager.yml/manager", hostedLinux],
-  // Namespace ARM64 E2E runs hit repeated reset, readiness and Playwright timeouts. The image
-  // job hands each suite a per-runner artifact, so it follows the suites.
-  ["test.yml/e2e-image", hostedLinux],
-  ["test.yml/e2e-tests-server-cli", hostedLinux],
-  ["test.yml/e2e-tests-web", hostedLinux],
-  ["test.yml/success-check-e2e", "ubuntu-24.04"],
-  // No Namespace runner ever picked up nscloud-windows-2022-amd64-8x16.
-  ["test.yml/cli-unit-tests-win", "windows-latest"],
-  // Namespace Docker cannot create the release Compose file's /etc/localtime bind source
-  // ("mkdir …/etc/localtime: file exists"), so the server container never starts.
-  ["docker.yml/deploy-test", hostedLinux],
-  ["integration-image.yml/deploy-test", hostedLinux],
-  ["deploy-production.yml/deploy-test", hostedLinux],
-]);
-const hostedSeen = new Set();
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
   assert(
@@ -77,28 +57,6 @@ for (const [file, workflow] of Object.entries(workflows)) {
         fs.existsSync(path.resolve(__dirname, "..", job.uses)),
         `${label}: missing local workflow`,
       );
-    } else if (hosted.has(label)) {
-      const expected = hosted.get(label);
-      if (Array.isArray(expected)) {
-        assert.equal(job["runs-on"], "${{ matrix.runner }}", label);
-        assert.deepEqual(
-          job.strategy?.matrix?.runner,
-          expected,
-          `${label}: hosted runner matrix changed`,
-        );
-        assert(
-          (job.strategy.matrix.include ?? []).every((row) =>
-            expected.includes(row.runner),
-          ),
-          `${label}: hosted runner matrix adds a runner`,
-        );
-      } else
-        assert.equal(
-          job["runs-on"],
-          expected,
-          `${label}: hosted runner changed`,
-        );
-      hostedSeen.add(label);
     } else if (job["runs-on"] === "${{ matrix.runner }}") {
       if (
         file === "local-multi-runner-build.yml" &&
@@ -114,12 +72,12 @@ for (const [file, workflow] of Object.entries(workflows)) {
           {
             include: [
               {
-                runner: "nscloud-ubuntu-24.04-amd64-8x16",
+                runner: "ubuntu-24.04",
                 architecture: "amd64",
                 "node-architecture": "x64",
               },
               {
-                runner: "nscloud-ubuntu-24.04-arm64-8x16",
+                runner: "ubuntu-24.04-arm",
                 architecture: "arm64",
                 "node-architecture": "arm64",
               },
@@ -138,7 +96,7 @@ for (const [file, workflow] of Object.entries(workflows)) {
       }
     } else if (file === "fl103-linux-intake.yml" && id === "intake") {
       // Dispatched only in the private qualification repository; its intake
-      // needs a fresh GitHub-hosted VM with systemd, which Namespace lacks.
+      // needs a fresh GitHub-hosted VM with systemd.
       assert.equal(
         job["runs-on"],
         "ubuntu-24.04",
@@ -153,16 +111,11 @@ for (const [file, workflow] of Object.entries(workflows)) {
     } else
       assert(
         supported.has(job["runs-on"]),
-        `${label}: not a supported Namespace runner`,
+        `${label}: not a supported GitHub-hosted runner`,
       );
     count++;
   }
 }
-assert.deepEqual(
-  [...hostedSeen].sort(),
-  [...hosted.keys()].sort(),
-  "Every GitHub-hosted exception must name an existing job",
-);
 const webSteps = workflows["test.yml"].jobs["e2e-tests-web"].steps;
 const browserInstall = webSteps.findIndex(
   (step) => step.name === "Install Playwright Browsers",
@@ -307,5 +260,5 @@ assert(
   "Zizmor must execute the real pinned scanner",
 );
 console.log(
-  `Namespace runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
+  `GitHub-hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
 );
