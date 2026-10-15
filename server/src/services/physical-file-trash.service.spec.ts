@@ -113,6 +113,31 @@ describe(PhysicalFileTrashService.name, () => {
       expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
     });
 
+    it('lets the restored file go only for a stored copy proven to hold its bytes (FL-412)', async () => {
+      mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
+        physicalFile: { id: 'new-physical' },
+        linked: false,
+      } as never);
+      await sut.restore('trash-id');
+      const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+      const shared = '/data/library/other/IMG_0001.jpg';
+      mocks.storage.stat.mockResolvedValue({
+        isFile: () => true,
+        dev: 1,
+        ino: 2,
+        size: 1234,
+        mtimeMs: 3,
+        ctimeMs: 4,
+      } as never);
+
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from('other bytes'));
+      await expect(options.verify(shared)).resolves.toBeNull();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(shared));
+
+      mocks.crypto.hashFileMatching.mockResolvedValue(entry.checksum);
+      await expect(options.verify(shared)).resolves.toEqual(expect.any(String));
+    });
+
     it('returns an uninspected file to its original trash entry and restores it on retry', async () => {
       const inspectionError = new Error('stat failed');
       const files = new Set([entry.path]);

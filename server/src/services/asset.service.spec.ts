@@ -1240,6 +1240,47 @@ describe(AssetService.name, () => {
       });
     });
 
+    it("keeps both paths of a shared original's unfinished move: either can hold the only copy (FL-412)", async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.physicalFile.isOriginalShared.mockResolvedValue(true);
+      removedExtras = {
+        pendingMoves: [
+          {
+            pathType: AssetPathType.Original,
+            oldPath: asset.originalPath,
+            newPath: '/data/library/2024/moved.jpg',
+            stagedPath: '/data/library/2024/moved.jpg.m1.moving',
+          },
+          {
+            pathType: AssetFileType.Thumbnail,
+            oldPath: asset.files[0].path,
+            newPath: '/data/thumbs/moved.webp',
+            stagedPath: '/data/thumbs/moved.webp.m2.moving',
+          },
+        ],
+      };
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.physicalFile.isOriginalShared).toHaveBeenCalledWith(asset.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: {
+          // the original itself stays reference-counted by FileDelete; the move's new path is never named
+          files: [
+            asset.files[0].path,
+            asset.originalPath,
+            '/data/library/2024/moved.jpg.m1.moving',
+            '/data/thumbs/moved.webp',
+            '/data/thumbs/moved.webp.m2.moving',
+          ],
+          removedAssetId: asset.id,
+          original: expect.objectContaining({ assetId: asset.id }),
+        },
+      });
+    });
+
     it('never releases the moved original of an external library item (FL-179)', async () => {
       const asset = AssetFactory.from({ libraryId: newUuid(), isExternal: true })
         .file({ type: AssetFileType.Thumbnail })
