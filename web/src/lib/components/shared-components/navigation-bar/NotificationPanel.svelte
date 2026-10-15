@@ -5,13 +5,14 @@
   import NotificationItem from '$lib/components/shared-components/navigation-bar/NotificationItem.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { NotificationType, type NotificationDto } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiBellOutline, mdiClose } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { motionFlip } from '$lib/frameleaf/motion';
 
@@ -36,20 +37,37 @@
   onMount(() => panel?.focus());
   const nothingRunning = $derived(runningJobsSession.rows.length === 0);
 
+  let alive = true;
+  onDestroy(() => {
+    alive = false;
+  });
+  const capturePanel = () => {
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && isCurrentSession();
+  };
+
   const markAsRead = async (id: string) => {
+    const isCurrent = capturePanel();
     try {
       await notificationManager.markAsRead(id);
     } catch (error) {
-      handleError(error, $t('errors.failed_to_update_notification_status'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.failed_to_update_notification_status'));
+      }
     }
   };
 
   const markAllAsRead = async () => {
+    const isCurrent = capturePanel();
     try {
       await notificationManager.markAllAsRead();
-      toastManager.info($t('marked_all_as_read'));
+      if (isCurrent()) {
+        toastManager.info($t('marked_all_as_read'));
+      }
     } catch (error) {
-      handleError(error, $t('errors.failed_to_update_notification_status'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.failed_to_update_notification_status'));
+      }
     }
   };
 
@@ -111,16 +129,29 @@
 
   /** The prototype's per-row dismiss (SystemPanels.jsx `notif-dismiss`, September 24 "Small actions"). */
   const dismiss = async (notification: NotificationDto) => {
+    const isCurrent = capturePanel();
     try {
       await notificationManager.dismiss(notification.id);
     } catch (error) {
-      handleError(error, $t('errors.frameleaf_notification_dismiss_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.frameleaf_notification_dismiss_failed'));
+      }
     }
   };
 
   const onclick = async (notification: NotificationDto) => {
+    const isCurrent = capturePanel();
     await markAsRead(notification.id);
-    await handleNotificationAction(notification);
+    if (!isCurrent()) {
+      return;
+    }
+    try {
+      await handleNotificationAction(notification);
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.something_went_wrong'));
+      }
+    }
   };
 </script>
 

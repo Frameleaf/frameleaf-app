@@ -93,31 +93,33 @@
    * Minimum space required for the dropdown to be displayed at the bottom of the input.
    */
   const bottomBreakpoint = 225;
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const inputEntry = entries[0];
-      if (inputEntry.intersectionRatio < 1) {
-        isOpen = false;
-      }
-    },
-    { threshold: 0.5 },
-  );
-
+  let viewport = $state<VisualViewport | null>(null);
   onMount(() => {
     if (!input) {
       return;
     }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const inputEntry = entries[0];
+        if (inputEntry && inputEntry.intersectionRatio < 1) {
+          isOpen = false;
+        }
+      },
+      { threshold: 0.5 },
+    );
     observer.observe(input);
-    const scrollableAncestor = input?.closest('.overflow-y-auto, .overflow-y-scroll');
+    const scrollableAncestor = input.closest('.overflow-y-auto, .overflow-y-scroll');
+    const visualViewport = window.visualViewport;
+    viewport = visualViewport;
     scrollableAncestor?.addEventListener('scroll', onPositionChange, { passive: true });
-    window.visualViewport?.addEventListener('resize', onPositionChange, { passive: true });
-    window.visualViewport?.addEventListener('scroll', onPositionChange, { passive: true });
+    visualViewport?.addEventListener('resize', onPositionChange, { passive: true });
+    visualViewport?.addEventListener('scroll', onPositionChange, { passive: true });
 
     return () => {
       observer.disconnect();
       scrollableAncestor?.removeEventListener('scroll', onPositionChange);
-      window.visualViewport?.removeEventListener('resize', onPositionChange);
-      window.visualViewport?.removeEventListener('scroll', onPositionChange);
+      visualViewport?.removeEventListener('resize', onPositionChange);
+      visualViewport?.removeEventListener('scroll', onPositionChange);
     };
   });
 
@@ -195,8 +197,6 @@
   };
 
   const calculatePosition = (boundary: DOMRect | undefined) => {
-    const visualViewport = window.visualViewport;
-
     if (!boundary) {
       return;
     }
@@ -219,7 +219,7 @@
       };
     }
 
-    const viewportHeight = visualViewport?.height || window.innerHeight;
+    const viewportHeight = viewport?.height || window.innerHeight;
     const availableHeight = viewportHeight - boundary.bottom;
     return {
       top: `${bottom}px`,
@@ -258,16 +258,22 @@
   const getInputPosition = () => input?.getBoundingClientRect();
 
   let filteredOptions = $derived.by(() => {
-    const _options = options.filter((option) => option.label.toLowerCase().includes(searchQuery.toLowerCase()));
+    const query = searchQuery.toLowerCase();
+    const _options = options.filter((option) => option.label.toLowerCase().includes(query));
 
-    if (allowCreate && searchQuery !== '' && _options.filter((option) => option.label === searchQuery).length === 0) {
+    if (allowCreate && searchQuery !== '' && !_options.some((option) => option.label === searchQuery)) {
       _options.unshift({ label: searchQuery, value: searchQuery });
     }
 
     return _options;
   });
+  $effect.pre(() => {
+    if (selectedIndex !== undefined && selectedIndex >= filteredOptions.length) {
+      selectedIndex = Math.max(filteredOptions.length - 1, 0);
+    }
+  });
   let position = $derived(calculatePosition(bounds));
-  let dropdownDirection: 'bottom' | 'top' = $derived(getComboboxDirection(bounds, visualViewport));
+  let dropdownDirection: 'bottom' | 'top' = $derived(getComboboxDirection(bounds, viewport));
 </script>
 
 <svelte:window onresize={onPositionChange} />

@@ -1,13 +1,22 @@
 import { NotificationLevel, NotificationType, type NotificationDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { notificationManager } from '$lib/stores/notification-manager.svelte';
+import { handleError } from '$lib/utils/handle-error';
+import { deferredPromise } from '@test-data/deferred';
 import en from '../../../../../../i18n/en.json';
 import fixtures from '../../../../../../server/test/fixtures/system-notification-locale.json';
 import NotificationItem from './NotificationItem.svelte';
 import NotificationPanel from './NotificationPanel.svelte';
 
+vi.mock('$lib/utils/handle-error', async (original) => ({
+  ...(await original<typeof import('$lib/utils/handle-error')>()),
+  handleError: vi.fn(),
+}));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/frameleaf/running-jobs-session.svelte', () => ({
   runningJobsSession: { rows: [], activeCount: 0, watch: () => () => {}, setPanelOpen: vi.fn() },
@@ -32,6 +41,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  vi.clearAllMocks();
+  authManager.reset();
   addMessages('dev', en);
   notificationManager.notifications = [notification('a', 'Backup finished'), notification('b', 'Album shared')];
 });
@@ -84,4 +95,64 @@ describe('notificationManager.dismiss', () => {
     await expect(pending).rejects.toThrow('offline');
     expect(notificationManager.notifications.map(({ id }) => id)).toEqual(['a', 'b']);
   });
+});
+
+it.each(['current', 'close', 'session'])('opens a read notification only for its panel owner: %s', async (change) => {
+  notificationManager.notifications = [
+    {
+      ...notification('album', 'Album shared'),
+      type: NotificationType.AlbumInvite,
+      data: JSON.stringify({ albumId: 'album-id' }),
+    },
+  ];
+  const pending = deferredPromise<void>();
+  sdkMock.updateNotification.mockReturnValueOnce(pending.promise as never);
+  const view = render(NotificationPanel);
+  await fireEvent.click(screen.getByText('Album shared'));
+  expect(sdkMock.updateNotification).toHaveBeenCalled();
+  if (change === 'close') view.unmount();
+  if (change === 'session') authManager.reset();
+  pending.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(goto).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
+  if (change === 'current') expect(goto).toHaveBeenCalledWith('/albums/album-id');
+});
+
+it.each(['current', 'close', 'session'])('announces mark-all only for its panel owner: %s', async (change) => {
+  const pending = deferredPromise<void>();
+  sdkMock.updateNotifications.mockReturnValueOnce(pending.promise as never);
+  const info = vi.spyOn(toastManager, 'info').mockImplementation(() => 'toast');
+  try {
+    const view = render(NotificationPanel);
+    await fireEvent.click(screen.getByRole('button', { name: en.mark_all_as_read }));
+    if (change === 'close') view.unmount();
+    if (change === 'session') authManager.reset();
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(info).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
+  } finally {
+    info.mockRestore();
+  }
+});
+
+it('reports malformed notification data without starting navigation', async () => {
+  notificationManager.notifications = [
+    { ...notification('bad', 'Malformed album'), type: NotificationType.AlbumInvite, data: '{broken' },
+  ];
+  sdkMock.updateNotification.mockResolvedValueOnce(undefined as never);
+  render(NotificationPanel);
+  await fireEvent.click(screen.getByText('Malformed album'));
+  await waitFor(() => expect(handleError).toHaveBeenCalledOnce());
+  expect(goto).not.toHaveBeenCalled();
+});
+
+it('suppresses a mark-all failure after the panel closes', async () => {
+  const pending = deferredPromise<void>();
+  sdkMock.updateNotifications.mockReturnValueOnce(pending.promise as never);
+  const view = render(NotificationPanel);
+  await fireEvent.click(screen.getByRole('button', { name: en.mark_all_as_read }));
+  view.unmount();
+  pending.reject(new Error('Offline'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(handleError).not.toHaveBeenCalled();
 });
