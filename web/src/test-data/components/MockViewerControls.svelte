@@ -8,6 +8,7 @@
     asset,
     onClose,
     onRendered,
+    onSaved,
     onAssetSuppressed,
     onUndoDelete,
   }: {
@@ -15,6 +16,7 @@
     asset?: AssetResponseDto;
     onClose?: (refreshAsset: boolean) => void;
     onRendered?: (assetId: string) => void;
+    onSaved?: () => void | Promise<void>;
     onUndoDelete?: OnUndoDelete;
     onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
   } = $props();
@@ -28,4 +30,8 @@
 
 {#if onUndoDelete && cursor}
   <button type="button" onclick={() => cursor && onUndoDelete?.([toTimelineAsset(cursor.current)])}>Undo delete</button>
+{/if}
+
+{#if onSaved}
+  <button type="button" onclick={() => onSaved?.()}>Save face tags</button>
 {/if}

@@ -176,6 +176,13 @@
   const asset = $derived(previewStackedAsset ?? cursor.current);
   let developLookupGeneration = 0;
   let viewerAlive = true;
+  let viewGeneration = 0;
+  const captureView = () => {
+    const id = asset.id;
+    const generation = viewGeneration;
+    const isCurrentSession = authManager.captureSession();
+    return () => viewerAlive && generation === viewGeneration && asset.id === id && isCurrentSession();
+  };
   /**
    * The owner's photo may have a saved edit, and the address of its preview follows that edit. The
    * photo is on screen from the first frame all the same (its thumbhash and thumbnail never depend on
@@ -318,13 +325,11 @@
     if (authManager.isSharedLink || !withStacked) {
       return;
     }
-
-    if (asset.stack) {
-      stack = await getStack({ id: asset.stack.id });
-    }
-
-    if (!stack?.assets.some(({ id }) => id === asset.id)) {
-      stack = null;
+    const target = asset;
+    const isCurrent = captureView();
+    const loaded = target.stack ? await getStack({ id: target.stack.id }) : null;
+    if (isCurrent()) {
+      stack = loaded?.assets.some(({ id }) => id === target.id) ? loaded : null;
     }
   };
 
@@ -466,11 +471,15 @@
 
   // FL-113: the quick editor says whether a saved version changed what the viewer should show.
   const closeEditor = async (refreshAsset = false) => {
+    const isCurrent = captureView();
     if (refreshAsset) {
       // What the photo shows is about to change: the current picture stays until the new one has loaded.
       holdCurrentPhoto('ready');
       bumpPlaybackRevision(asset.id);
       const refreshedAsset = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       onAssetChange?.(refreshedAsset);
       assetViewerManager.setAsset(refreshedAsset);
     }
@@ -545,7 +554,11 @@
 
   // FL-38: after the face tagger saves, re-read the asset and its faces, as closeEditor does.
   const refreshFaces = async () => {
+    const isCurrent = captureView();
     const refreshedAsset = await getAssetInfo({ id: asset.id });
+    if (!isCurrent()) {
+      return;
+    }
     onAssetChange?.(refreshedAsset);
     assetViewerManager.setAsset(refreshedAsset);
     faceManager.clear();
@@ -775,6 +788,9 @@
         break;
       }
       case AssetAction.REMOVE_ASSET_FROM_STACK: {
+        if (!viewerAlive || action.asset.id !== asset.id) {
+          break;
+        }
         stack = action.stack;
         if (stack) {
           cursor = { ...cursor, current: stack.assets[0] };
@@ -806,7 +822,9 @@
         break;
       }
       case AssetAction.UNSTACK: {
-        closeViewer();
+        if (viewerAlive && action.assets.some((member) => member.id === asset.id)) {
+          closeViewer();
+        }
         break;
       }
       // no default
@@ -835,18 +853,22 @@
   };
 
   const refresh = async () => {
+    const target = asset;
+    const isCurrent = captureView();
     // FL-35: a panorama always opens looking around again after a navigation.
     assetViewerManager.resetPanoramaView();
     await refreshStack();
+    if (!isCurrent()) {
+      return;
+    }
     ocrManager.clear();
     faceManager.clear();
     if (!sharedLink) {
-      if (previewStackedAsset) {
-        await ocrManager.getAssetOcr(previewStackedAsset.id);
-        await faceManager.getAssetFaces(previewStackedAsset.id);
+      await ocrManager.getAssetOcr(target.id);
+      if (!isCurrent()) {
+        return;
       }
-      await ocrManager.getAssetOcr(asset.id);
-      await faceManager.getAssetFaces(asset.id);
+      await faceManager.getAssetFaces(target.id);
     }
   };
 
@@ -1124,6 +1146,7 @@
       return;
     }
     const first = shownAssetId === undefined;
+    viewGeneration++;
     shownAssetId = id;
     if (first) {
       return;

@@ -5,6 +5,8 @@ import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import RemoveAssetFromStack from '$lib/components/asset-viewer/actions/RemoveAssetFromStack.svelte';
 import { AssetAction } from '$lib/constants';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import en from '../../../../../../i18n/en.json';
 
@@ -30,5 +32,41 @@ describe('RemoveAssetFromStack', () => {
         asset: current,
       }),
     );
+  });
+  it('reports the original stack when the selection changes during removal', async () => {
+    const [primary, current, replacement] = assetFactory.buildList(3);
+    const stack: StackResponseDto = { id: 'original-stack', primaryAssetId: primary.id, assets: [primary, current] };
+    const onAction = vi.fn();
+    const pending = deferredPromise<void>();
+    sdkMock.removeAssetFromStack.mockReturnValue(pending.promise);
+    const view = render(RemoveAssetFromStack, { asset: current, stack, onAction });
+    await userEvent.click(screen.getByText(en.viewer_remove_from_stack));
+    await view.rerender({
+      asset: replacement,
+      stack: { ...stack, id: 'replacement-stack', assets: [replacement] },
+      onAction,
+    });
+    pending.resolve();
+    await waitFor(() =>
+      expect(onAction).toHaveBeenCalledWith({
+        type: AssetAction.REMOVE_ASSET_FROM_STACK,
+        stack: { ...stack, assets: [primary] },
+        asset: current,
+      }),
+    );
+  });
+
+  it('does not publish the old stack into another session', async () => {
+    const asset = assetFactory.build();
+    const stack: StackResponseDto = { id: 'stack', primaryAssetId: asset.id, assets: [asset] };
+    const onAction = vi.fn();
+    const pending = deferredPromise<void>();
+    sdkMock.removeAssetFromStack.mockReturnValue(pending.promise);
+    render(RemoveAssetFromStack, { asset, stack, onAction });
+    await userEvent.click(screen.getByText(en.viewer_remove_from_stack));
+    authManager.reset();
+    pending.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onAction).not.toHaveBeenCalled();
   });
 });
