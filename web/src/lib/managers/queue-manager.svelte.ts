@@ -39,7 +39,17 @@ export class QueueManager {
     this.#listenerCount++;
     void this.refresh();
 
-    return () => this.#listenerCount--;
+    let listening = true;
+    return () => {
+      if (!listening) {
+        return;
+      }
+      listening = false;
+      if (--this.#listenerCount === 0) {
+        clearInterval(this.#interval);
+        this.#interval = undefined;
+      }
+    };
   }
 
   async refresh(tick = false) {
