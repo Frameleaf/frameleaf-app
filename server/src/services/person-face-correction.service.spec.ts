@@ -253,6 +253,28 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it.each([true, false])(
+      'records corrected face ownership and propagates the edit when hidden=%s',
+      async (hidden) => {
+        const { auth, face } = setup();
+        mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([face.assetId]);
+        await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden });
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
+          'asset',
+          [face.assetId],
+          ['faces'],
+          auth.user.id,
+        );
+        expect(mocks.job.queueAll).toHaveBeenCalledWith([
+          { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: face.assetId, fields: ['faces'] } },
+        ]);
+        await expect(sut.correctFace(auth, face.id, { expectedRevision: 'stale', hidden })).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('unassigns a detected face as a correction', async () => {
       const { auth, face, person } = setup();
       const result = await sut.correctFace(auth, face.id, {
