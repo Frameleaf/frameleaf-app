@@ -19,6 +19,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
+  IntegrityReportClearResponseDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
 } from 'src/dtos/integrity.dto.js';
@@ -253,6 +254,22 @@ export class IntegrityService extends BaseService {
       }
       await this.integrityRepository.deleteById(id);
     }
+  }
+
+  /**
+   * FL-366 "Clear this list": forgets one finding without acting on it. Unlike
+   * `deleteIntegrityReport`, nothing is trashed or deleted; the next check reports it again if the
+   * problem is still there.
+   */
+  async dismissIntegrityReport(id: string): Promise<void> {
+    await this.integrityRepository.getById(id);
+    await this.integrityRepository.deleteById(id);
+  }
+
+  /** FL-366 "Clear this list" for a whole check: empties its findings and touches no file or photo. */
+  async clearIntegrityReports(type: IntegrityReport): Promise<IntegrityReportClearResponseDto> {
+    const cleared = await this.integrityRepository.deleteByType(type);
+    return { cleared };
   }
 
   private async queueRefreshAllUntrackedFiles() {

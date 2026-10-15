@@ -87,19 +87,27 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['takeout', 'preservation'],
     order: ['takeout', 'backup', 'preservation'],
   },
-  { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
+  // FL-366: one page per feature, opened from the area's own landing page (the old Search &
+  // recognition page, Photo details and the eleven tuning pages are folded into them; see
+  // `SERVER_ALIASES`).
+  {
+    id: 'intelligence',
+    group: 'library',
+    sections: ['smart-search', 'faces', 'documents', 'sensitive-detection', 'descriptions', 'smart-albums'],
+  },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
   // The template's People & sharing: partner sharing moved out of the personal settings list.
   { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
-  // The template's Library care (settings-catalog.mjs:905-977): media health & integrity with its
-  // integrity check settings, repair queues and enrichment completeness.
+  // Library care (FL-366): File checks (the one checker), Things to fix, Duplicates with Merge older
+  // copies behind it, and Search and recognition progress, under a landing page that says how the
+  // library is.
   {
     id: 'care',
     group: 'library',
     // universal storage: the deduplication history and verification live in Library Care
-    sections: ['integrity-checks', 'deduplication', 'enrichment-care'],
+    sections: ['integrity-checks', 'duplicates', 'deduplication', 'enrichment-care'],
     personal: ['repair'],
-    order: ['integrity-checks', 'repair', 'deduplication', 'enrichment-care'],
+    order: ['integrity-checks', 'repair', 'duplicates', 'deduplication', 'enrichment-care'],
   },
   // Computers & background work (FL-364; before it "Compute & jobs", FL-71): a landing page that says
   // how the computers and the background work are doing, then Computers, Where work runs, Background
@@ -257,6 +265,11 @@ export const PLAIN_AREAS: readonly SettingsAreaId[] = Object.freeze([
   'server',
   'preferences',
   'sharing',
+  // FL-366
+  'care',
+  'intelligence',
+  'editing',
+  'maintenance',
 ]);
 export const isPlainArea = (area: SettingsAreaId) => PLAIN_AREAS.includes(area);
 
@@ -382,14 +395,53 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
  * Server section keys older links use for a section that now has another key. Workers & endpoints
  * and Render workers are one page, Computers (FL-364).
  */
-const SERVER_ALIASES: Record<string, string> = { job: 'queues', workers: 'computers', 'render-workers': 'computers' };
+const SERVER_ALIASES: Record<string, string> = {
+  job: 'queues',
+  workers: 'computers',
+  'render-workers': 'computers',
+  // FL-366: the prototype's addresses, and the pages folded into another one. File checks is one
+  // checker; Duplicates holds look-alike matching; the tuning pages are closed "Advanced" sections.
+  health: 'integrity-checks',
+  'advanced-integrity-budget': 'integrity-checks',
+  'integrity-schedules': 'integrity-checks',
+  'advanced-duplicate-matching': 'duplicates',
+  'exact-copies': 'deduplication',
+  metadata: 'faces',
+  pets: 'faces',
+  'advanced-recognition-models': 'faces',
+  classification: 'smart-albums',
+  'advanced-travel-album': 'smart-albums',
+  'smart-album-documents': 'smart-albums',
+  'smart-album-food': 'smart-albums',
+  'smart-album-nature': 'smart-albums',
+  'smart-album-pets': 'smart-albums',
+  'smart-album-screenshots': 'smart-albums',
+  'advanced-description-runtime': 'descriptions',
+  'advanced-description-prompt': 'descriptions',
+  'advanced-description-identity': 'descriptions',
+  'advanced-search-labels': 'descriptions',
+  previews: 'image',
+  'image-thumbnails': 'image',
+  'image-fullsize': 'image',
+  'advanced-image-output': 'image',
+  playback: 'video-transcoding',
+  'advanced-playback-compatibility': 'video-transcoding',
+  'advanced-hls': 'video-transcoding',
+  'video-encoder-tuning': 'video-transcoding',
+};
+
+/**
+ * Keys of pages that became an area's landing page (FL-366): older links name the area, and open on
+ * its landing page instead of a section.
+ */
+const LANDING_KEYS: Record<string, SettingsAreaId> = { 'machine-learning': 'intelligence' };
 
 /** The server section a legacy key names. */
 export const serverSectionKey = (key: string) => SERVER_ALIASES[key] ?? key;
 
 /** The area that owns a server settings section key, for `?isOpen=` links written before the areas existed. */
 export const areaForSection = (sectionKey: string): SettingsAreaId | undefined =>
-  SETTINGS_AREAS.find((area) => area.sections.includes(serverSectionKey(sectionKey)))?.id;
+  SETTINGS_AREAS.find((area) => area.sections.includes(serverSectionKey(sectionKey)))?.id ?? LANDING_KEYS[sectionKey];
 
 /** Account section keys the older personal settings page used under another name. */
 const PERSONAL_ALIASES: Record<string, string> = { notifications: 'email-preferences' };
@@ -567,12 +619,20 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'user-settings': 'trash',
   },
   backup: { takeout: 'import', backup: 'protection', preservation: 'protection' },
-  intelligence: { 'machine-learning': 'search', 'smart-albums': 'smart_albums', metadata: 'recognition' },
+  intelligence: {
+    'smart-search': 'search',
+    descriptions: 'search',
+    faces: 'recognition',
+    documents: 'recognition',
+    'sensitive-detection': 'recognition',
+    'smart-albums': 'smart_albums',
+  },
   editing: { image: 'photos', 'video-transcoding': 'video_playback' },
   sharing: { sharing: 'sharing' },
   care: {
     'integrity-checks': 'health',
     repair: 'repairs',
+    duplicates: 'identical_files',
     deduplication: 'identical_files',
     'enrichment-care': 'repairs',
   },

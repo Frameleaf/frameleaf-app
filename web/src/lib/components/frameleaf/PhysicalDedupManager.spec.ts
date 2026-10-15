@@ -180,58 +180,68 @@ const preview = (overrides: Partial<PhysicalDeduplicationPreviewResponseDto> = {
     ...overrides,
   }) as PhysicalDeduplicationPreviewResponseDto;
 
-const prepareButton = () => screen.getByRole('button', { name: en.frameleaf_dedup_prepare });
+const findButton = () => screen.getByRole('button', { name: en.frameleaf_dupes_merge_find });
 
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
-  // The account pickers' combobox measures the visual viewport, which jsdom lacks.
   vi.stubGlobal('visualViewport', null);
 });
 
-describe('PhysicalDedupManager configuration error (FL-73, UT-23)', () => {
-  it('asks to enable file reuse and keeps Prepare disabled', () => {
-    render(PhysicalDedupManager, { users, initial: preview({ enabled: false }) });
+describe('Merge older copies: opens on what was found (FL-366)', () => {
+  it('says how many extra copies can be merged and the space they give back', () => {
+    render(PhysicalDedupManager, { users, initial: preview({ plan: plan() }) });
 
-    const message = screen.getByText(en.frameleaf_dedup_config_disabled).closest('p')!;
-    expect(message).toHaveAttribute('role', 'status');
-    expect(within(message).getByRole('button', { name: en.frameleaf_dedup_open_settings })).toBeInTheDocument();
-    expect(prepareButton()).toBeDisabled();
+    const hero = screen.getByRole('region', { name: en.frameleaf_dupes_merge_status });
+    expect(within(hero).getByRole('heading', { name: '1 extra copy can be merged' })).toBeInTheDocument();
+    expect(within(hero).getByText(/Merging gets back 2 KiB\. Everyone keeps every photo\./)).toBeInTheDocument();
   });
 
-  it('asks for an account to retain shared originals in when there is none to choose', () => {
-    render(PhysicalDedupManager, { users: [], initial: preview({ savedMasterUserId: null }) });
-
-    expect(screen.getByText(en.frameleaf_dedup_config_no_master)).toBeInTheDocument();
-    expect(prepareButton()).toBeDisabled();
-  });
-
-  it('opens Storage at the retained-account setting', async () => {
-    render(PhysicalDedupManager, { users, initial: preview({ enabled: false }) });
-
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_open_settings }));
-
-    expect(goto).toHaveBeenCalledWith(expect.stringContaining('openSetting=dedup-owner'));
-  });
-
-  it('prepares once file reuse is on and an account is saved', async () => {
-    api.requestPhysicalDeduplicationPreview.mockResolvedValue(undefined);
+  it('opens on looking for older copies before any search', () => {
     render(PhysicalDedupManager, { users, initial: preview() });
 
-    expect(screen.queryByText(en.frameleaf_dedup_config_disabled)).toBeNull();
-    await fireEvent.click(prepareButton());
+    expect(screen.getByRole('heading', { name: en.frameleaf_dupes_merge_hero_start })).toBeInTheDocument();
+    expect(findButton()).toBeEnabled();
+  });
+});
+
+describe('Merge older copies: where to look (FL-73, FL-366)', () => {
+  it('keeps Find exact copies off while merging is turned off, without sending anyone elsewhere', () => {
+    render(PhysicalDedupManager, { users, initial: preview({ enabled: false }) });
+
+    expect(screen.getByText(en.frameleaf_dupes_merge_disabled)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.frameleaf_dedup_open_settings })).toBeNull();
+    expect(findButton()).toBeDisabled();
+    expect(goto).not.toHaveBeenCalled();
+  });
+
+  it('says there is no account to keep the shared file with when there is none', () => {
+    render(PhysicalDedupManager, { users: [], initial: preview({ savedMasterUserId: null }) });
+
+    expect(screen.getByText(en.frameleaf_dupes_merge_no_account)).toBeInTheDocument();
+    expect(findButton()).toBeDisabled();
+  });
+
+  it('looks with the person chosen on this page', async () => {
+    api.requestPhysicalDeduplicationPreview.mockResolvedValue(undefined);
+    render(PhysicalDedupManager, { users, initial: preview({ savedMasterUserId: null }) });
+
+    await fireEvent.change(screen.getByRole('combobox', { name: en.frameleaf_dupes_merge_keep_with }), {
+      target: { value: 'jamie' },
+    });
+    await fireEvent.click(findButton());
 
     expect(api.requestPhysicalDeduplicationPreview).toHaveBeenCalledWith({
-      physicalDeduplicationPreviewRequestDto: { masterUserId: undefined, scopeUserId: undefined },
+      physicalDeduplicationPreviewRequestDto: { masterUserId: 'jamie', scopeUserId: undefined },
     });
   });
 
-  it('shows the saved account by name with a Change button, not a link (UT-25)', async () => {
+  it('names whose photos to look in, in plain words', () => {
     render(PhysicalDedupManager, { users, initial: preview() });
 
-    expect(screen.queryByText(/taylor@example\.com/)).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_retained_change }));
-    expect(goto).toHaveBeenCalledWith(expect.stringContaining('openSetting=dedup-owner'));
+    const lookIn = screen.getByRole('combobox', { name: en.frameleaf_dupes_merge_look_in });
+    expect(within(lookIn).getByRole('option', { name: 'Everyone’s photos' })).toBeInTheDocument();
+    expect(within(lookIn).getByRole('option', { name: 'Only Jamie’s photos' })).toBeInTheDocument();
   });
 });
 
@@ -241,9 +251,8 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
 
     // Media view: the prototype's overlay on the retained thumbnail.
     expect(screen.getByText(en.frameleaf_dedup_unavailable)).toBeInTheDocument();
-    expect(screen.getByText(/Retained copy unavailable/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Retained copy unavailable/).length).toBeGreaterThan(0);
 
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_view_evidence }));
     expect(screen.getByText(en.frameleaf_dedup_table_file_available)).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_dedup_table_file_unavailable)).toBeInTheDocument();
     expect(screen.getAllByText(en.frameleaf_dedup_retained_location).length).toBe(2);
@@ -254,7 +263,6 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
     withSha256.copies[0].checksum = 'b'.repeat(64);
     render(PhysicalDedupManager, { users, initial: preview({ plan: withSha256 }) });
 
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_view_evidence }));
     const table = screen.getByRole('table');
     expect(within(table).getAllByText('Checksum evidence', { selector: 'summary' })).toHaveLength(2);
     expect(within(table).getByText('SHA-256 · stored checksum')).toBeInTheDocument();
@@ -281,34 +289,35 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
     );
   });
 
-  it('never offers Apply before the plan on screen is reviewed', () => {
+  it('never offers Merge before the list on screen is checked', () => {
     render(PhysicalDedupManager, { users, initial: preview({ plan: plan() }) });
 
-    expect(screen.getByRole('button', { name: en.frameleaf_dedup_mark_reviewed })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: en.frameleaf_dedup_apply })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: en.frameleaf_dupes_merge_checked })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: en.frameleaf_dupes_merge_go })).toBeDisabled();
   });
 
-  it('offers Apply after reviewing a plan for the page-chosen account without a saved account', async () => {
+  it('merges only after the list is checked and the phrase typed, with the page-chosen person', async () => {
     api.getPhysicalDeduplicationPreview.mockResolvedValue(preview());
     api.reviewPhysicalDeduplicationPlan.mockResolvedValue({
       fingerprint: plan().fingerprint,
       excludedRetainedAssetIds: [],
       reviewToken: 'review-token',
       copies: 1,
+      retainedOriginals: 1,
       hiddenCopies: 0,
       estimatedBytes: 2048,
     });
     render(PhysicalDedupManager, { users, initial: preview({ savedMasterUserId: null, plan: plan() }) });
 
-    expect(screen.queryByText(en.frameleaf_dedup_apply_blocked_no_saved_master)).toBeNull();
-    expect(screen.getByText(/The shared files stay with the account chosen above/)).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_mark_reviewed }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_dupes_merge_checked }));
     expect(api.reviewPhysicalDeduplicationPlan).toHaveBeenCalledWith({
       physicalDeduplicationReviewRequestDto: { fingerprint: plan().fingerprint, excludedRetainedAssetIds: [] },
     });
-    await waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_dedup_apply })).toBeEnabled());
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dedup_apply }));
-    const confirm = screen.getByRole('button', { name: en.frameleaf_dedup_apply_confirm });
+    await waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_dupes_merge_go })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_dupes_merge_go }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/The extra files move to File trash/)).toBeInTheDocument();
+    const confirm = within(dialog).getByRole('button', { name: 'Merge 1 copy' });
     expect(confirm).toBeDisabled();
     expect(api.applyPhysicalDeduplicationPlan).not.toHaveBeenCalled();
     await fireEvent.input(screen.getByRole('textbox', { name: 'Type APPLY PD-ABABABAB to confirm' }), {
@@ -323,6 +332,28 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
         confirmation: 'APPLY PD-ABABABAB',
       },
     });
+  });
+});
+
+describe('PhysicalDedupManager checked list (FL-366)', () => {
+  it('asks to check the list again when a group decision changes after the check', async () => {
+    api.reviewPhysicalDeduplicationPlan.mockResolvedValue({
+      fingerprint: plan().fingerprint,
+      excludedRetainedAssetIds: [],
+      reviewToken: 'review-token',
+      copies: 1,
+      retainedOriginals: 1,
+      hiddenCopies: 0,
+      estimatedBytes: 2048,
+    });
+    render(PhysicalDedupManager, { users, initial: preview({ plan: plan() }) });
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_dupes_merge_checked }));
+    await waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_dupes_merge_go })).toBeEnabled());
+    await fireEvent.click(screen.getAllByRole('checkbox', { name: en.frameleaf_dupes_merge_include })[0]);
+
+    expect(screen.getByRole('checkbox', { name: en.frameleaf_dupes_merge_checked })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: en.frameleaf_dupes_merge_go })).toBeDisabled();
   });
 });
 

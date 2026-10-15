@@ -12,23 +12,24 @@
   import LicenseSection from '$lib/components/frameleaf/cloud/LicenseSection.svelte';
   import PlanSection from '$lib/components/frameleaf/cloud/PlanSection.svelte';
   import RemoteAccessSection from '$lib/components/frameleaf/cloud/RemoteAccessSection.svelte';
+  import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
+  import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import ThingsToFix from '$lib/components/frameleaf/settings/care/ThingsToFix.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
   import DeduplicationSection from './DeduplicationSection.svelte';
-  import EnrichmentCareSection from './EnrichmentCareSection.svelte';
   import Loader from './Loader.svelte';
   import ComputersSection from './ComputersSection.svelte';
   import { loadComputers } from './loaders';
   import MaintenanceSection from './MaintenanceSection.svelte';
   import QueuesSection from './QueuesSection.svelte';
-  import RepairSection from './RepairSection.svelte';
   import TrashSection from './TrashSection.svelte';
   import UsersSection from './UsersSection.svelte';
 
   let { section }: { section: SettingsHostSection } = $props();
 
-  // 'backups' is drawn by the Backup area (FL-362).
-  const MAINTENANCE = ['mode', 'integrity'] as const;
+  // 'backups' is drawn by the Backup area (FL-362); 'integrity' is File checks (FL-366).
+  const MAINTENANCE = ['mode'] as const;
   const maintenanceSection = $derived(MAINTENANCE.find((key) => key === section.key));
 </script>
 
@@ -59,15 +60,17 @@
     <RemoteAccessSection />
   {:else if section.key === 'frameleaf-signin'}
     <FrameleafSignInSection />
+  {:else if section.key === 'integrity'}
+    <FileChecks />
   {:else if maintenanceSection}
     <MaintenanceSection section={maintenanceSection} />
   {:else if section.key === 'accounts'}
     <UsersSection />
   {:else if section.key === 'enrichment-care'}
-    <EnrichmentCareSection />
+    <CareProgress />
   {/if}
 {:else if section.key === 'repair'}
-  <RepairSection />
+  <ThingsToFix />
 {:else if section.key === 'contents'}
   <TrashSection />
 {:else}

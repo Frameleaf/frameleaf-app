@@ -56,7 +56,7 @@ The default configuration looks like this:
     "preset": "ultrafast",
     "refs": 0,
     "targetAudioCodec": "aac",
-    "targetResolution": "720",
+    "targetResolution": "1080",
     "targetVideoCodec": "h264",
     "temporalAQ": false,
     "threads": 0,

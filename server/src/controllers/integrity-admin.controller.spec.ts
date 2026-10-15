@@ -42,4 +42,40 @@ describe(IntegrityAdminController.name, () => {
       );
     });
   });
+  describe('POST /admin/integrity/report/:type/clear (FL-366)', () => {
+    it("empties one check's list for an administrator with maintenance", async () => {
+      service.clearIntegrityReports.mockResolvedValue({ cleared: 3 });
+
+      const { status, body } = await request(ctx.getHttpServer()).post(
+        `/admin/integrity/report/${IntegrityReport.UntrackedFile}/clear`,
+      );
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ cleared: 3 });
+      expect(service.clearIntegrityReports).toHaveBeenCalledWith(IntegrityReport.UntrackedFile);
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: true, permission: Permission.Maintenance }),
+        }),
+      );
+    });
+
+    it('rejects a type that is not a check', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/admin/integrity/report/everything/clear');
+
+      expect(status).toBe(400);
+      expect(service.clearIntegrityReports).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /admin/integrity/report/:id/dismiss (FL-366)', () => {
+    it('forgets one finding', async () => {
+      const id = '01970000-0000-7000-8000-000000000001';
+
+      const { status } = await request(ctx.getHttpServer()).post(`/admin/integrity/report/${id}/dismiss`);
+
+      expect(status).toBe(204);
+      expect(service.dismissIntegrityReport).toHaveBeenCalledWith(id);
+    });
+  });
 });

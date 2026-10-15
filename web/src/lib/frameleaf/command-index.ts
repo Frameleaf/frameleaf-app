@@ -18,7 +18,6 @@ import {
   mdiClockOutline,
   mdiCogOutline,
   mdiContentDuplicate,
-  mdiDatabaseOutline,
   mdiDevices,
   mdiDownload,
   mdiFeatureSearchOutline,
@@ -373,9 +372,16 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'integrity-checks',
-    titleKey: 'admin.integrity_checks_settings',
-    descriptionKey: 'admin.integrity_checks_settings_description',
+    titleKey: 'frameleaf_cc_section_health',
+    descriptionKey: 'frameleaf_cc_section_health_description',
     icon: mdiFileCheckOutline,
+  },
+  // FL-366: Library care → Duplicates (look-alike matching and exact copies).
+  {
+    key: 'duplicates',
+    titleKey: 'frameleaf_cc_section_duplicates',
+    descriptionKey: 'frameleaf_cc_section_duplicates_description',
+    icon: mdiContentDuplicate,
   },
   {
     key: 'external-library',
@@ -389,10 +395,35 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_cc_section_diagnostics_description',
     icon: mdiFileDocumentOutline,
   },
+  // FL-366: Search & intelligence is one page per feature.
   {
-    key: 'machine-learning',
-    titleKey: 'admin.machine_learning_settings',
-    descriptionKey: 'admin.machine_learning_settings_description',
+    key: 'smart-search',
+    titleKey: 'frameleaf_cc_section_visual_search',
+    descriptionKey: 'frameleaf_cc_section_visual_search_description',
+    icon: mdiFeatureSearchOutline,
+  },
+  {
+    key: 'faces',
+    titleKey: 'frameleaf_cc_section_faces',
+    descriptionKey: 'frameleaf_cc_section_faces_description',
+    icon: mdiAccountGroupOutline,
+  },
+  {
+    key: 'documents',
+    titleKey: 'frameleaf_cc_section_documents',
+    descriptionKey: 'frameleaf_cc_section_documents_description',
+    icon: mdiFileDocumentOutline,
+  },
+  {
+    key: 'sensitive-detection',
+    titleKey: 'frameleaf_cc_section_locked_detection',
+    descriptionKey: 'frameleaf_cc_section_locked_detection_description',
+    icon: mdiLockSmart,
+  },
+  {
+    key: 'descriptions',
+    titleKey: 'frameleaf_cc_section_descriptions',
+    descriptionKey: 'frameleaf_cc_section_descriptions_description',
     icon: mdiRobotOutline,
   },
   {
@@ -400,12 +431,6 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_maps',
     descriptionKey: 'frameleaf_cc_section_maps_description',
     icon: mdiMapMarkerOutline,
-  },
-  {
-    key: 'metadata',
-    titleKey: 'admin.metadata_settings',
-    descriptionKey: 'admin.metadata_settings_description',
-    icon: mdiDatabaseOutline,
   },
   {
     key: 'nightly-tasks',
@@ -427,8 +452,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
   },
   {
     key: 'smart-albums',
-    titleKey: 'admin.smart_albums_settings',
-    descriptionKey: 'admin.smart_albums_settings_description',
+    titleKey: 'frameleaf_cc_section_smart_albums',
+    descriptionKey: 'frameleaf_cc_section_smart_albums_description',
     icon: mdiImageMultipleOutline,
   },
   {

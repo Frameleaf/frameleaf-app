@@ -452,4 +452,10 @@ export class IntegrityRepository {
   deleteByIds(ids: string[]) {
     return this.db.deleteFrom('integrity_report').where('id', 'in', ids).execute();
   }
+  /** Empties one check's list of findings. Only the rows go: no file or photo is touched. */
+  @GenerateSql({ params: [IntegrityReport.MissingFile] })
+  async deleteByType(type: IntegrityReport) {
+    const result = await this.db.deleteFrom('integrity_report').where('type', '=', type).executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
 }

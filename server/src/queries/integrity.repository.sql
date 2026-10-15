@@ -221,3 +221,8 @@ where
 delete from "integrity_report"
 where
   "id" in $1
+
+-- IntegrityRepository.deleteByType
+delete from "integrity_report"
+where
+  "type" = $1

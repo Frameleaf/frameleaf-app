@@ -15,22 +15,26 @@
   import AuthSettings from '../../admin/system-settings/AuthSettings.svelte';
   import FFmpegSettings from '../../admin/system-settings/FFmpegSettings.svelte';
   import ImageSettings from '../../admin/system-settings/ImageSettings.svelte';
-  import CareHealthSection from './sections/CareHealthSection.svelte';
   import LibrarySettings from '../../admin/system-settings/LibrarySettings.svelte';
   import LoggingSettings from '../../admin/system-settings/LoggingSettings.svelte';
-  import MachineLearningSettings from '../../admin/system-settings/MachineLearningSettings.svelte';
   import MapSettings from '../../admin/system-settings/MapSettings.svelte';
-  import MetadataSettings from '../../admin/system-settings/MetadataSettings.svelte';
   import MigrationSettingsSection from '$lib/components/frameleaf/settings/MigrationSettingsSection.svelte';
   import NewVersionCheckSettings from '../../admin/system-settings/NewVersionCheckSettings.svelte';
   import NightlyTasksSettings from '../../admin/system-settings/NightlyTasksSettings.svelte';
   import NotificationSettings from '../../admin/system-settings/NotificationSettings.svelte';
   import ServerSettings from '../../admin/system-settings/ServerSettings.svelte';
-  import SmartAlbumsSettings from '../../admin/system-settings/SmartAlbumsSettings.svelte';
   import StorageTemplateSettings from '$lib/components/admin-settings/StorageTemplateSettings.svelte';
   import ThemeSettings from '../../admin/system-settings/ThemeSettings.svelte';
   import TrashSettings from '../../admin/system-settings/TrashSettings.svelte';
   import UserSettings from '../../admin/system-settings/UserSettings.svelte';
+  import Duplicates from '$lib/components/frameleaf/settings/care/Duplicates.svelte';
+  import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import Descriptions from '$lib/components/frameleaf/settings/intelligence/Descriptions.svelte';
+  import Faces from '$lib/components/frameleaf/settings/intelligence/Faces.svelte';
+  import LockedDetection from '$lib/components/frameleaf/settings/intelligence/LockedDetection.svelte';
+  import SmartAlbums from '$lib/components/frameleaf/settings/intelligence/SmartAlbums.svelte';
+  import TextInPhotos from '$lib/components/frameleaf/settings/intelligence/TextInPhotos.svelte';
+  import VisualSearch from '$lib/components/frameleaf/settings/intelligence/VisualSearch.svelte';
   import LibrariesArea from '$lib/components/frameleaf/LibrariesArea.svelte';
   import ConfigurationTransferSection from '$lib/components/frameleaf/settings/ConfigurationTransferSection.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
@@ -61,6 +65,10 @@
     mdiAccountMultipleOutline,
     mdiAccountOutline,
     mdiAutoFix,
+    mdiContentCopy,
+    mdiFaceRecognition,
+    mdiImageSearchOutline,
+    mdiTextRecognition,
     mdiCertificateOutline,
     mdiCloudSyncOutline,
     mdiCloudUploadOutline,
@@ -197,9 +205,9 @@
       icon: mdiImageOutline,
     },
     {
-      // The template's Library care → Media health & integrity: the integrity check settings.
+      // FL-366: Library care → File checks, the one checker (Maintenance's address opens it too).
       admin: true,
-      component: CareHealthSection,
+      component: FileChecks,
       title: $t('frameleaf_cc_section_health'),
       subtitle: $t('frameleaf_cc_section_health_description'),
       key: 'integrity-checks',
@@ -221,13 +229,55 @@
       key: 'logging',
       icon: mdiFileDocumentOutline,
     },
+    // FL-366: Search & intelligence, one page per feature under the area's landing page.
     {
       admin: true,
-      component: MachineLearningSettings,
-      title: $t('admin.machine_learning_settings'),
-      subtitle: $t('admin.machine_learning_settings_description'),
-      key: 'machine-learning',
+      component: VisualSearch,
+      title: $t('frameleaf_cc_section_visual_search'),
+      subtitle: $t('frameleaf_cc_section_visual_search_description'),
+      key: 'smart-search',
+      icon: mdiImageSearchOutline,
+    },
+    {
+      admin: true,
+      component: Faces,
+      title: $t('frameleaf_cc_section_faces'),
+      subtitle: $t('frameleaf_cc_section_faces_description'),
+      key: 'faces',
+      icon: mdiFaceRecognition,
+    },
+    {
+      admin: true,
+      component: TextInPhotos,
+      title: $t('frameleaf_cc_section_documents'),
+      subtitle: $t('frameleaf_cc_section_documents_description'),
+      key: 'documents',
+      icon: mdiTextRecognition,
+    },
+    {
+      admin: true,
+      component: LockedDetection,
+      title: $t('frameleaf_cc_section_locked_detection'),
+      subtitle: $t('frameleaf_cc_section_locked_detection_description'),
+      key: 'sensitive-detection',
+      icon: mdiLockOutline,
+    },
+    {
+      admin: true,
+      component: Descriptions,
+      title: $t('frameleaf_cc_section_descriptions'),
+      subtitle: $t('frameleaf_cc_section_descriptions_description'),
+      key: 'descriptions',
       icon: mdiRobotOutline,
+    },
+    {
+      // FL-366: Library care → Duplicates (look-alike matching; exact copies are merged on Merge older copies).
+      admin: true,
+      component: Duplicates,
+      title: $t('frameleaf_cc_section_duplicates'),
+      subtitle: $t('frameleaf_cc_section_duplicates_description'),
+      key: 'duplicates',
+      icon: mdiContentCopy,
     },
     {
       admin: true,
@@ -236,14 +286,6 @@
       subtitle: $t('frameleaf_cc_section_maps_description'),
       key: 'location',
       icon: mdiMapMarkerOutline,
-    },
-    {
-      admin: true,
-      component: MetadataSettings,
-      title: $t('admin.metadata_settings'),
-      subtitle: $t('admin.metadata_settings_description'),
-      key: 'metadata',
-      icon: mdiDatabaseOutline,
     },
     {
       admin: true,
@@ -279,9 +321,9 @@
     },
     {
       admin: true,
-      component: SmartAlbumsSettings,
-      title: $t('admin.smart_albums_settings'),
-      subtitle: $t('admin.smart_albums_settings_description'),
+      component: SmartAlbums,
+      title: $t('frameleaf_cc_section_smart_albums'),
+      subtitle: $t('frameleaf_cc_section_smart_albums_description'),
       key: 'smart-albums',
       icon: mdiImageMultipleOutline,
     },
