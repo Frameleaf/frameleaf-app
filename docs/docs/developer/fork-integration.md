@@ -1,6 +1,6 @@
 # Fork integration checklist
 
-Use this checklist when bringing upstream changes into `fork/main`. The **Fork integration** workflow runs for pull requests targeting `fork/main`, pushes to that branch, and manual dispatches. It uses the Node version in `.nvmrc`, the frozen pnpm lockfile, and the locked Extism JavaScript/Binaryen and oazapfts tools. It requires no upstream Push-O-Matic app credentials.
+Use this checklist when bringing upstream changes into `main`. The **Fork integration** workflow runs for pull requests targeting `main`, pushes to that branch, and manual dispatches. It uses the Node version in `.nvmrc`, the frozen pnpm lockfile, and the locked Extism JavaScript/Binaryen and oazapfts tools. It requires no upstream Push-O-Matic app credentials.
 
 ## Preserve the fork during a merge
 
