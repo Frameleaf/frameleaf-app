@@ -1,6 +1,9 @@
 ARG CPU_IMAGE=python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 ARG CUDA_IMAGE=nvidia/cuda:12.2.2-runtime-ubuntu22.04@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000
 ARG DEVICE=cpu
+# FL-408: the bundled Studio render worker. Same Node as the server's Studio engine stage.
+ARG STUDIO_NODE_IMAGE=node:24.21.0-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4
+ARG NODE_RUNTIME_IMAGE=node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590
 
 # Native CPU semantic masks share the existing Torch 2.5 / vision 0.20 Python 3.12 ABI.
 FROM ${CPU_IMAGE} AS builder-cpu
@@ -33,6 +36,25 @@ FROM python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9ad
 # Warning: 25GiB+ disk space required to pull this image
 # TODO: find a way to reduce the image size
 FROM rocm/dev-ubuntu-24.04:7.2-complete@sha256:86e11093b4a7ec2a79b1b6701d10e840a6994f21c7e05929b51eb9be361c683a AS builder-rocm
+
+# FL-408: the Studio render worker this image runs by default (FRAMELEAF_STUDIO_WORKER=false turns
+# it off). The pinned Studio engine is recovered and verified exactly as the server image does,
+# its headless harness is built, and only the worker, the built harness and its three runtime
+# packages are kept. Build with the repository as the named context `frameleaf`:
+#   docker build --build-context frameleaf=. -f machine-learning/Dockerfile machine-learning
+FROM ${STUDIO_NODE_IMAGE} AS studio-worker
+
+WORKDIR /usr/src/app
+COPY --from=frameleaf scripts/frameleaf-studio-contracts.mjs scripts/frameleaf-studio-rights.mjs ./scripts/
+COPY --from=frameleaf studio ./studio/
+RUN node studio/tools/engine.mjs prepare && \
+    npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund && \
+    RAYON_NUM_THREADS=2 TOKIO_WORKER_THREADS=2 npm --prefix studio/engine run build && \
+    node studio/tools/bundled-worker-package.mjs /opt/frameleaf-studio
+# The title families the server's render font catalogue resolves, installed as system fonts.
+COPY --from=frameleaf server/resources/studio-fonts /opt/frameleaf-studio/fonts/
+
+FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
 
 FROM builder-${DEVICE} AS builder
 
@@ -121,13 +143,27 @@ FROM prod-${DEVICE} AS prod
 
 ARG DEVICE
 
+# mimalloc is preloaded into the inference workers only (immich_ml/__main__.py): a global
+# /etc/ld.so.preload would also load it into the Studio worker's Chromium, which then crashes (FL-408).
 RUN MIMALLOC=$(case "$DEVICE" in cuda) echo "libmimalloc2.0";; openvino|rocm);; *) echo "libmimalloc3";; esac); \
     apt-get update && \
     apt-get install -y --no-install-recommends tini ccache libgl1 libglib2.0-0 libgomp1 $MIMALLOC && \
     apt-get autoremove -yqq && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    { [ -z "$MIMALLOC" ] || ls /usr/lib/*-linux-gnu/libmimalloc.so.? > /etc/ld.so.preload; }
+    { [ -z "$MIMALLOC" ] || ls /usr/lib/*-linux-gnu/libmimalloc.so.? > /etc/frameleaf-mimalloc-preload; }
+
+# FL-408: the Studio render worker's runtime: Node, a browser for the engine, ffmpeg to check and
+# align what it encoded, Vulkan for WebGPU (the GPU when the container has one, else software).
+COPY scripts/install-studio-runtime.sh /tmp/install-studio-runtime.sh
+RUN sh /tmp/install-studio-runtime.sh && rm /tmp/install-studio-runtime.sh
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=studio-worker /opt/frameleaf-studio /opt/frameleaf-studio
+RUN mkdir -p /usr/share/fonts/truetype/frameleaf-studio && \
+    mv /opt/frameleaf-studio/fonts/*.ttf /usr/share/fonts/truetype/frameleaf-studio/ && \
+    rmdir /opt/frameleaf-studio/fonts && \
+    fc-cache -f > /dev/null && \
+    node --version
 
 WORKDIR /usr/src
 ENV TRANSFORMERS_CACHE=/cache \
@@ -145,7 +181,10 @@ ENV TRANSFORMERS_CACHE=/cache \
     PYTHONPATH=/usr/src \
     DEVICE=${DEVICE} \
     VIRTUAL_ENV=/opt/venv \
-    MACHINE_LEARNING_CACHE_FOLDER=/cache
+    MACHINE_LEARNING_CACHE_FOLDER=/cache \
+    FRAMELEAF_STUDIO_WORKER_ENTRY=/opt/frameleaf-studio/studio/tools/bundled-worker.mjs \
+    FRAMELEAF_STUDIO_CHROMIUM=/usr/local/bin/frameleaf-studio-browser \
+    FREECUT_CHROME_ARGS=--no-sandbox
 
 # prevent core dumps
 RUN echo "hard core 0" >> /etc/security/limits.conf && \

@@ -454,6 +454,8 @@ export class RenderWorkerRepository {
         codecs: report.codecs ?? [],
         colorPrecision: report.colorPrecision ?? null,
         expiresAt,
+        // Admission is use: the bundled session counts as a running worker from now (FL-408).
+        lastUsedAt: now,
       })
       .returningAll()
       .returning(memoryBytes)

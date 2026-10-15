@@ -148,6 +148,7 @@ jobs:
         with:
           context: machine-learning
           file: machine-learning/Dockerfile
+          build-contexts: frameleaf=.
           target: prod
           platforms: ${{ matrix.platform }}
           outputs: type=oci,dest=${{ runner.temp }}/archive/ml/image.tar,name=frameleaf-deploy-test/frameleaf-machine-learning:${{ matrix.architecture }}
