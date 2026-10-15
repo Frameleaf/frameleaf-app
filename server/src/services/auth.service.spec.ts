@@ -523,16 +523,9 @@ describe(AuthService.name, () => {
         metadata: [] as UserMetadataItem[],
       } as UserAdmin);
 
-      mocks.systemMetadata.get.mockImplementation((key) =>
-        Promise.resolve(
-          (key === SystemMetadataKey.FrameleafSetupCode
-            ? { code: 'ABCD2345', pinned: false, failures: 0, locked: false, generatedAt: '2026-10-01T00:00:00Z' }
-            : null) as never,
-        ),
-      );
       mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
 
-      await expect(sut.adminSignUp({ ...dto, setupCode: 'abcd-2345' }, home)).resolves.toMatchObject({
+      await expect(sut.adminSignUp(dto, home)).resolves.toMatchObject({
         avatarColor: expect.any(String),
         id: 'admin',
         createdAt: new Date('2021-01-01'),
@@ -546,35 +539,18 @@ describe(AuthService.name, () => {
       ]);
     });
 
-    describe('setup code (FL-292)', () => {
+    describe('home network gate (FL-292)', () => {
       beforeEach(() => {
-        mocks.systemMetadata.get.mockImplementation((key) =>
-          Promise.resolve(
-            (key === SystemMetadataKey.FrameleafSetupCode
-              ? { code: 'ABCD2345', pinned: false, failures: 0, locked: false, generatedAt: '2026-10-01T00:00:00Z' }
-              : null) as never,
-          ),
-        );
         mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
       });
 
-      it.each([
-        [undefined, 'setup_code_required'],
-        ['WRONG-CODE', 'setup_code_invalid'],
-      ])('refuses the first-run sign-up with code %s (%s) and creates no one', async (setupCode, code) => {
-        await expect(sut.adminSignUp({ ...dto, setupCode }, home)).rejects.toMatchObject({
-          response: expect.objectContaining({ code }),
-        });
-        expect(mocks.user.create).not.toHaveBeenCalled();
-      });
-
-      it('refuses it from outside the home network, even with the right code', async () => {
+      it('refuses the first-run sign-up from outside the home network', async () => {
         for (const client of [
           { ip: '203.0.113.9', via: null },
           { ip: '192.168.1.5', via: 'relay' as const },
           { ip: '192.168.1.5', via: 'wan' as const },
         ]) {
-          await expect(sut.adminSignUp({ ...dto, setupCode: 'ABCD2345' }, client)).rejects.toMatchObject({
+          await expect(sut.adminSignUp(dto, client)).rejects.toMatchObject({
             response: expect.objectContaining({ code: 'setup_lan_only' }),
           });
         }
@@ -583,7 +559,7 @@ describe(AuthService.name, () => {
 
       it('refuses once an administrator exists', async () => {
         mocks.user.getAdmin.mockResolvedValue(userStub.admin as never);
-        await expect(sut.adminSignUp({ ...dto, setupCode: 'ABCD2345' }, home)).rejects.toMatchObject({
+        await expect(sut.adminSignUp(dto, home)).rejects.toMatchObject({
           response: expect.objectContaining({ code: 'setup_complete' }),
         });
       });
