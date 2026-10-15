@@ -11,6 +11,7 @@ import {
   BUNDLED_RENDER_WORKER_TRUST_FILE,
   isBundledRenderWorker,
 } from 'src/utils/bundled-render-worker.js';
+import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 
 export type BundledEnrolmentOutcome = 'disabled' | 'revoked' | 'enrolled' | 'unavailable';
 
@@ -55,13 +56,18 @@ export class BundledRenderWorkerService extends BaseService {
       if (!(await this.renderWorkerRepository.setEnrolmentSecret(worker.id, digest))) {
         return 'revoked';
       }
+      if (worker.engineDigest !== STUDIO_ENGINE_REVISION) {
+        // Pinned to the engine this server's Studio stores projects for; an upgrade moves it along.
+        await this.renderWorkerRepository.updateWorker(worker.id, { engineDigest: STUDIO_ENGINE_REVISION });
+      }
     } else {
       worker = await this.renderWorkerRepository.createWorker({
         name: BUNDLED_RENDER_WORKER_NAME,
         destination: MediaOperationDestination.Local,
         kinds: [...BUNDLED_RENDER_WORKER_KINDS],
         enrolmentSecret: digest,
-        engineDigest: null,
+        // Artifact transport and claim admission require the session to match a pinned engine.
+        engineDigest: STUDIO_ENGINE_REVISION,
         maxConcurrentOperations: 1,
         maxWallClockMs: null,
         maxOutputBytes: null,

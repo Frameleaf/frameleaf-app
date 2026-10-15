@@ -79,6 +79,7 @@ jobs:
       image: frameleaf-machine-learning
       context: machine-learning
       dockerfile: machine-learning/Dockerfile
+      build-contexts: frameleaf=.
       source-sha: ${{ github.sha }}
       suffix: ''
       platforms: linux/amd64,linux/arm64
@@ -172,6 +173,7 @@ jobs:
       image: frameleaf-machine-learning
       context: machine-learning
       dockerfile: machine-learning/Dockerfile
+      build-contexts: frameleaf=.
       source-sha: ${{ github.sha }}
       suffix: ''
       platforms: linux/amd64,linux/arm64
@@ -216,6 +218,7 @@ jobs:
       image: frameleaf-machine-learning
       context: machine-learning
       dockerfile: machine-learning/Dockerfile
+      build-contexts: frameleaf=.
       source-sha: ${{ github.sha }}
       suffix: ${{ matrix.suffix }}
       platforms: ${{ matrix.platforms }}

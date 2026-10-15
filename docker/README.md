@@ -39,6 +39,8 @@ Cloud processing is Frameleaf Cloud, added and consented to by an administrator 
 
 The inference and staging services are `frameleaf-machine-learning` and `frameleaf-model-staging`. When upgrading an existing Compose stack with the old service name, run `docker compose down` before replacing its files, then run `docker compose up -d --remove-orphans`; keep the same project name and volumes, and do not pass `--volumes` to `down`. The worker retains the old DNS alias so saved worker URLs continue to resolve. Manager handles this service transition during updates.
 
+The machine learning container also runs Studio's render worker, so web Studio opens and exports with no extra setup. It enrols through the `studio-worker` volume the release Compose files mount on both containers (`./studio-worker` in the rootless file). An existing installation gets the worker when it moves to the release's Compose file. Set `FRAMELEAF_STUDIO_WORKER=false` in `.env.ml` to turn it off; see [environment variables](../docs/docs/install/environment-variables.md#studio-render-worker).
+
 For local inference with internet access denied, use the release's `docker-compose.ml-isolated.yml` overlay and the [model-staging procedure](../docs/docs/administration/model-staging.md). Acquisition runs separately, without media or backup mounts; the worker loads the verified cache offline. Keep the existing cache/project and follow the documented runtime/source environment split before enabling the overlay.
 
 ## Local builds

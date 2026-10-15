@@ -92,7 +92,8 @@ const claimOptions = (
     destination: MediaOperationDestination.Local,
     state: 'available' as const,
     reason: null,
-    checkedAt: new Date(),
+    // a second in the past: the host and database clocks may differ by a little
+    checkedAt: new Date(Date.now() - 1000),
   },
   defaultInstanceLimits: { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: null },
 });

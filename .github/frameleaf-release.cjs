@@ -639,7 +639,15 @@ const BUILD_INPUTS = {
     "LICENSE",
     ".dockerignore",
   ],
-  "frameleaf-machine-learning": ["machine-learning"],
+  // FL-408: the image also builds the bundled Studio worker from the repository context
+  "frameleaf-machine-learning": [
+    "machine-learning",
+    "studio",
+    "scripts/frameleaf-studio-contracts.mjs",
+    "scripts/frameleaf-studio-rights.mjs",
+    "server/resources/studio-fonts",
+    ".dockerignore",
+  ],
 };
 function identicalBuildInputs(
   spec,

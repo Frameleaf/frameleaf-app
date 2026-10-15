@@ -64,16 +64,22 @@ for (const [filename, project, rootless] of [
     assert.equal(server.container_name, "frameleaf_server");
     assert.equal(ml.container_name, "frameleaf_machine_learning");
     assert.equal(config.services.database.container_name, "frameleaf_postgres");
+    // FL-408: the bundled Studio worker's enrolment, written by the server, read-only for ML
+    const trust = rootless ? "./studio-worker" : "studio-worker";
     assert.deepEqual(server.volumes, [
       "${UPLOAD_LOCATION}:/data",
       "/etc/localtime:/etc/localtime:ro",
+      `${trust}:/run/frameleaf/studio-worker`,
     ]);
     assert.deepEqual(config.services.database.volumes, [
       "${DB_DATA_LOCATION}:/var/lib/postgresql",
     ]);
     assert.deepEqual(ml.volumes, [
       rootless ? "./ml-model-cache:/cache" : "model-cache:/cache",
+      `${trust}:/run/frameleaf/studio-worker:ro`,
     ]);
+    // the library is never mounted into the inference container
+    assert.ok(!ml.volumes.some((volume) => volume.includes("UPLOAD_LOCATION")));
     assert.equal(config.services.database.image, databaseImage);
     assert.equal(
       config.services.database.environment.POSTGRES_DB,
@@ -91,7 +97,7 @@ for (const [filename, project, rootless] of [
       assert.equal(server.user, "1000:1000");
       assert.equal(ml.user, "1000:1000");
     } else {
-      assert.deepEqual(config.volumes, { "model-cache": null });
+      assert.deepEqual(config.volumes, { "model-cache": null, "studio-worker": null });
     }
   });
 }

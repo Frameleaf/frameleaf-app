@@ -5,6 +5,7 @@ import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, 
 import { RenderWorker } from 'src/repositories/render-worker.repository.js';
 import { BundledRenderWorkerService } from 'src/services/bundled-render-worker.service.js';
 import { BUNDLED_RENDER_WORKER_APPROVAL } from 'src/utils/bundled-render-worker.js';
+import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -56,6 +57,7 @@ describe(BundledRenderWorkerService.name, () => {
         destination: MediaOperationDestination.Local,
         kinds: [MediaOperationKind.StudioExport],
         maxConcurrentOperations: 1,
+        engineDigest: STUDIO_ENGINE_REVISION,
         enrolmentSecret: Buffer.from('fresh-secret (hashed)'),
         gpuWorkingBudgetApproval: BUNDLED_RENDER_WORKER_APPROVAL,
         createdBy: null,
@@ -85,6 +87,16 @@ describe(BundledRenderWorkerService.name, () => {
       Buffer.from('fresh-secret (hashed)'),
     );
     await expect(readTrust()).resolves.toMatchObject({ workerId: '0195e2a0-0000-7000-8000-00000000b001' });
+    // pinned to this server's Studio engine when it was enrolled on another one
+    expect(mocks.renderWorker.updateWorker).toHaveBeenCalledWith('0195e2a0-0000-7000-8000-00000000b001', {
+      engineDigest: STUDIO_ENGINE_REVISION,
+    });
+  });
+
+  it('leaves an already pinned bundled worker alone', async () => {
+    mocks.renderWorker.listWorkers.mockResolvedValue([bundled({ engineDigest: STUDIO_ENGINE_REVISION })]);
+    await expect(sut.ensureEnrolment()).resolves.toBe('enrolled');
+    expect(mocks.renderWorker.updateWorker).not.toHaveBeenCalled();
   });
 
   it('ignores administrator-enrolled workers when looking for the bundled one', async () => {
