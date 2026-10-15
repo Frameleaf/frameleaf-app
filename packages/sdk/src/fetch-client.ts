@@ -5890,6 +5890,44 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type DesktopCapabilitiesDto = {
+    enrollmentPolicy: DesktopEnrollmentPolicy;
+    features: {
+        enrollment: true;
+        nativeHost: false;
+        sources: false;
+        worker: false;
+    };
+    protocolVersion: number;
+    serverId: string;
+};
+export type DesktopDeviceDto = {
+    architecture: DesktopArchitecture;
+    createdAt: string;
+    id: string;
+    installationId: string;
+    mode: DesktopMode;
+    name: string;
+    platform: DesktopPlatform;
+    revokedAt: string | null;
+    routeEffects: {
+        changed: string[];
+        preserved: DesktopRoutePreservation;
+    };
+    state: DesktopDeviceState;
+};
+export type DesktopEnrollmentDto = {
+    architecture: DesktopArchitecture;
+    installationId: string;
+    mode: DesktopMode;
+    name: string;
+    platform: DesktopPlatform;
+    protocolVersion: number;
+    publicKey: string;
+    requestId: string;
+    signature: string;
+    timestamp: number;
+};
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
     blacks?: number;
@@ -20901,6 +20939,65 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get desktop capabilities
+ */
+export function getDesktopCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopCapabilitiesDto;
+    }>("/desktop/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * List this account’s desktop devices
+ */
+export function getDesktopDevices(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopDeviceDto[];
+    }>("/desktop/devices", {
+        ...opts
+    }));
+}
+/**
+ * Enroll or resume this desktop identity
+ */
+export function enrollDesktopDevice({ desktopEnrollmentDto }: {
+    desktopEnrollmentDto: DesktopEnrollmentDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DesktopDeviceDto;
+    }>("/desktop/devices/enroll", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopEnrollmentDto
+    })));
+}
+/**
+ * Revoke this account’s desktop device
+ */
+export function revokeDesktopDevice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/desktop/devices/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * End this desktop association while retaining its installation identity
+ */
+export function endDesktopSession({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/desktop/devices/${encodeURIComponent(id)}/session`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * List develop presets
  */
 export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
@@ -30748,6 +30845,31 @@ export enum ClassificationReviewDecision {
 export enum Unit {
     Photo = "photo",
     Minute = "minute"
+}
+export enum DesktopEnrollmentPolicy {
+    Administrators = "administrators"
+}
+export enum DesktopArchitecture {
+    Arm64 = "arm64",
+    X8664 = "x86_64"
+}
+export enum DesktopMode {
+    LocalServer = "local-server",
+    ClientWorker = "client-worker"
+}
+export enum DesktopPlatform {
+    Macos = "macos",
+    Windows = "windows",
+    Linux = "linux"
+}
+export enum DesktopRoutePreservation {
+    All = "all"
+}
+export enum DesktopDeviceState {
+    AwaitingApproval = "awaiting-approval",
+    Preparing = "preparing",
+    Paused = "paused",
+    Revoked = "revoked"
 }
 export enum DevelopPresetMaskKind {
     Radial = "radial",

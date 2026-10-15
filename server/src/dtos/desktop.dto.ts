@@ -1,8 +1,12 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
-export const DesktopModeSchema = z.enum(['local-server', 'client-worker']);
-export const DesktopDeviceStateSchema = z.enum(['awaiting-approval', 'preparing', 'paused', 'revoked']);
+export const DesktopModeSchema = z.enum(['local-server', 'client-worker']).meta({ id: 'DesktopMode' });
+const DesktopPlatformSchema = z.enum(['macos', 'windows', 'linux']).meta({ id: 'DesktopPlatform' });
+const DesktopArchitectureSchema = z.enum(['arm64', 'x86_64']).meta({ id: 'DesktopArchitecture' });
+export const DesktopDeviceStateSchema = z
+  .enum(['awaiting-approval', 'preparing', 'paused', 'revoked'])
+  .meta({ id: 'DesktopDeviceState' });
 const base64Bytes = (bytes: number) =>
   z.string().refine((value) => {
     const decoded = Buffer.from(value, 'base64');
@@ -10,7 +14,7 @@ const base64Bytes = (bytes: number) =>
   }, 'Invalid canonical base64');
 
 export const DesktopEnrollmentSchema = z.strictObject({
-  protocolVersion: z.literal(1),
+  protocolVersion: z.number().int().min(1).max(1),
   installationId: z.uuidv4(),
   requestId: z.uuidv4(),
   publicKey: base64Bytes(32),
@@ -20,8 +24,8 @@ export const DesktopEnrollmentSchema = z.strictObject({
     .min(1)
     .max(128)
     .regex(/^[^\p{Cc}\p{Cf}]+$/u),
-  platform: z.enum(['macos', 'windows', 'linux']),
-  architecture: z.enum(['arm64', 'x86_64']),
+  platform: DesktopPlatformSchema,
+  architecture: DesktopArchitectureSchema,
   mode: DesktopModeSchema,
   timestamp: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   signature: base64Bytes(64),
@@ -32,18 +36,21 @@ export class DesktopDeviceDto extends createZodDto(
     id: z.uuid(),
     installationId: z.uuidv4(),
     name: z.string(),
-    platform: z.enum(['macos', 'windows', 'linux']),
-    architecture: z.enum(['arm64', 'x86_64']),
+    platform: DesktopPlatformSchema,
+    architecture: DesktopArchitectureSchema,
     mode: DesktopModeSchema,
     state: DesktopDeviceStateSchema,
     createdAt: z.iso.datetime(),
     revokedAt: z.iso.datetime().nullable(),
-    routeEffects: z.object({ changed: z.array(z.string()), preserved: z.literal('all') }),
+    routeEffects: z.object({
+      changed: z.array(z.string()),
+      preserved: z.literal('all').meta({ id: 'DesktopRoutePreservation' }),
+    }),
   }),
 ) {}
 export class DesktopCapabilitiesDto extends createZodDto(
   z.object({
-    protocolVersion: z.literal(1),
+    protocolVersion: z.number().int().min(1).max(1),
     serverId: z.string(),
     features: z.object({
       enrollment: z.literal(true),
@@ -51,7 +58,7 @@ export class DesktopCapabilitiesDto extends createZodDto(
       sources: z.literal(false),
       nativeHost: z.literal(false),
     }),
-    enrollmentPolicy: z.literal('administrators'),
+    enrollmentPolicy: z.literal('administrators').meta({ id: 'DesktopEnrollmentPolicy' }),
   }),
 ) {}
 

@@ -1,5 +1,6 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import z from 'zod';
 import { DesktopEnrollmentSchema, enrollmentMessage } from 'src/dtos/desktop.dto.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 
@@ -28,6 +29,13 @@ const request = () => {
 };
 
 describe('desktop enrollment authority', () => {
+  it('publishes the protocol version as a bounded integer in OpenAPI', () => {
+    expect(z.toJSONSchema(DesktopEnrollmentSchema).properties?.protocolVersion).toMatchObject({
+      type: 'integer',
+      minimum: 1,
+      maximum: 1,
+    });
+  });
   let service: DesktopDeviceService;
   const repository = { enroll: vi.fn(), list: vi.fn(), revoke: vi.fn(), endSession: vi.fn() };
   const metadata = { get: vi.fn().mockResolvedValue({ id: 'server' }) };
@@ -41,24 +49,28 @@ describe('desktop enrollment authority', () => {
     expect(DesktopEnrollmentSchema.safeParse({ ...request(), name: 'x'.repeat(129) }).success).toBe(false);
   });
   it('enrolls an administrator as preparing without claiming GPU or changing routes', async () => {
-    repository.enroll.mockImplementation(async (row) => ({
-      ...row,
-      id: 'device',
-      revokedAt: null,
-      createdAt: new Date(),
-    }));
+    repository.enroll.mockImplementation((row) =>
+      Promise.resolve({
+        ...row,
+        id: 'device',
+        revokedAt: null,
+        createdAt: new Date(),
+      }),
+    );
     const result = await service.enroll(auth, request());
     expect(result).toMatchObject({ id: 'device', state: 'preparing', routeEffects: { changed: [], preserved: 'all' } });
     expect(result).not.toHaveProperty('publicKey');
     expect(result).not.toHaveProperty('workerToken');
   });
   it('records ordinary accounts as awaiting approval', async () => {
-    repository.enroll.mockImplementation(async (row) => ({
-      ...row,
-      id: 'device',
-      revokedAt: null,
-      createdAt: new Date(),
-    }));
+    repository.enroll.mockImplementation((row) =>
+      Promise.resolve({
+        ...row,
+        id: 'device',
+        revokedAt: null,
+        createdAt: new Date(),
+      }),
+    );
     expect(
       await service.enroll({ user: { id: accountId, isAdmin: false }, session: { id: 'session' } } as never, request()),
     ).toMatchObject({ state: 'awaiting-approval' });

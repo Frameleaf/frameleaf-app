@@ -18469,6 +18469,247 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/desktop/capabilities": {
+      "get": {
+        "operationId": "getDesktopCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get desktop capabilities",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/devices": {
+      "get": {
+        "operationId": "getDesktopDevices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DesktopDeviceDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List this account’s desktop devices",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/devices/enroll": {
+      "post": {
+        "operationId": "enrollDesktopDevice",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopEnrollmentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopDeviceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Enroll or resume this desktop identity",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/devices/{id}": {
+      "delete": {
+        "operationId": "revokeDesktopDevice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revoke this account’s desktop device",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/devices/{id}/session": {
+      "delete": {
+        "operationId": "endDesktopSession",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "End this desktop association while retaining its installation identity",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/develop-presets": {
       "get": {
         "description": "Your saved develop presets, by name.",
@@ -70712,6 +70953,237 @@
           "unknownPixelFormat",
           "unsupportedBitDepth",
           "unusableGeometry"
+        ],
+        "type": "string"
+      },
+      "DesktopArchitecture": {
+        "enum": [
+          "arm64",
+          "x86_64"
+        ],
+        "type": "string"
+      },
+      "DesktopCapabilitiesDto": {
+        "properties": {
+          "enrollmentPolicy": {
+            "$ref": "#/components/schemas/DesktopEnrollmentPolicy"
+          },
+          "features": {
+            "properties": {
+              "enrollment": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "nativeHost": {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              "sources": {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              "worker": {
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enrollment",
+              "worker",
+              "sources",
+              "nativeHost"
+            ],
+            "type": "object"
+          },
+          "protocolVersion": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "serverId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enrollmentPolicy",
+          "features",
+          "protocolVersion",
+          "serverId"
+        ],
+        "type": "object"
+      },
+      "DesktopDeviceDto": {
+        "properties": {
+          "architecture": {
+            "$ref": "#/components/schemas/DesktopArchitecture"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "installationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/DesktopMode"
+          },
+          "name": {
+            "type": "string"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/DesktopPlatform"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "routeEffects": {
+            "properties": {
+              "changed": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "preserved": {
+                "$ref": "#/components/schemas/DesktopRoutePreservation"
+              }
+            },
+            "required": [
+              "changed",
+              "preserved"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DesktopDeviceState"
+          }
+        },
+        "required": [
+          "architecture",
+          "createdAt",
+          "id",
+          "installationId",
+          "mode",
+          "name",
+          "platform",
+          "revokedAt",
+          "routeEffects",
+          "state"
+        ],
+        "type": "object"
+      },
+      "DesktopDeviceState": {
+        "enum": [
+          "awaiting-approval",
+          "preparing",
+          "paused",
+          "revoked"
+        ],
+        "type": "string"
+      },
+      "DesktopEnrollmentDto": {
+        "additionalProperties": false,
+        "properties": {
+          "architecture": {
+            "$ref": "#/components/schemas/DesktopArchitecture"
+          },
+          "installationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/DesktopMode"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[^\\p{Cc}\\p{Cf}]+$",
+            "type": "string"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/DesktopPlatform"
+          },
+          "protocolVersion": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "timestamp": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "architecture",
+          "installationId",
+          "mode",
+          "name",
+          "platform",
+          "protocolVersion",
+          "publicKey",
+          "requestId",
+          "signature",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "DesktopEnrollmentPolicy": {
+        "enum": [
+          "administrators"
+        ],
+        "type": "string"
+      },
+      "DesktopMode": {
+        "enum": [
+          "local-server",
+          "client-worker"
+        ],
+        "type": "string"
+      },
+      "DesktopPlatform": {
+        "enum": [
+          "macos",
+          "windows",
+          "linux"
+        ],
+        "type": "string"
+      },
+      "DesktopRoutePreservation": {
+        "enum": [
+          "all"
         ],
         "type": "string"
       },
