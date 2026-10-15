@@ -121,7 +121,7 @@ mutually exclusive via `if:` conditions on `github.repository_owner`. The
 fork side (`zizmor-skipped`) posts a passing status under the exact
 required-check name so branch protection on the fork is satisfied.
 
-If your fork's `main` (or `fork/main`) branch protection rule lists `Zizmor`
+If your fork's `main` branch protection rule lists `Zizmor`
 as a required status check, this is already correct after the round-2 fix.
 
 ### Manual steps (if not already set up)
@@ -129,7 +129,7 @@ as a required status check, this is already correct after the round-2 fix.
 If you want to enforce Zizmor for upstream and have it auto-pass on fork:
 
 1. Go to `Settings → Branches → Branch protection rules → Edit rule for
-fork/main` (or whichever branch you protect).
+main` (or whichever branch you protect).
 
 2. Under **Require status checks to pass before merging**, type `Zizmor`
    in the search box and select it. The exact-string match is essential:

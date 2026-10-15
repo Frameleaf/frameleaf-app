@@ -1,12 +1,12 @@
 name: Frameleaf design template
 'on':
   pull_request:
-    branches: [fork/main]
+    branches: [main]
     paths:
       - design/frameleaf/**
       - .github/workflows/frameleaf-design.yml
   push:
-    branches: [fork/main]
+    branches: [main]
     paths:
       - design/frameleaf/**
       - .github/workflows/frameleaf-design.yml

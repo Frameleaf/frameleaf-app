@@ -2,10 +2,10 @@ name: Migration Order
 'on':
   pull_request:
     branches:
-      - fork/main
+      - main
   push:
     branches:
-      - fork/main
+      - main
 permissions:
   contents: read
 concurrency:

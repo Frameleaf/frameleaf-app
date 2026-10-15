@@ -2,7 +2,7 @@ name: Fork integration
 
 on:
   pull_request:
-    branches: ['fork/main']
+    branches: ['main']
   workflow_call:
   workflow_dispatch:
 

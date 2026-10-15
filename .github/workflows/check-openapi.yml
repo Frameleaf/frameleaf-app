@@ -9,7 +9,7 @@ name: Check OpenAPI
         type: string
   pull_request:
     branches:
-      - fork/main
+      - main
     types:
       - opened
       - synchronize

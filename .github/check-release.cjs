@@ -20,42 +20,42 @@ const run = {
   conclusion: "success",
   path: ".github/workflows/docker.yml",
   head_repository: { full_name: repository },
-  head_branch: "fork/main",
+  head_branch: "main",
   head_sha: sha,
 };
 for (const [event_name, ref, workflow_run, allowed] of [
-  ["workflow_run", "refs/heads/fork/main", run, true],
+  ["workflow_run", "refs/heads/main", run, true],
   [
     "workflow_run",
-    "refs/heads/fork/main",
+    "refs/heads/main",
     { ...run, event: "workflow_dispatch" },
     true,
   ],
   [
     "workflow_run",
-    "refs/heads/fork/main",
+    "refs/heads/main",
     { ...run, event: "pull_request" },
     false,
   ],
   [
     "workflow_run",
-    "refs/heads/fork/main",
+    "refs/heads/main",
     { ...run, head_repository: { full_name: "attacker/app" } },
     false,
   ],
   [
     "workflow_run",
-    "refs/heads/fork/main",
+    "refs/heads/main",
     { ...run, head_branch: "feature" },
     false,
   ],
   [
     "workflow_run",
-    "refs/heads/fork/main",
+    "refs/heads/main",
     { ...run, conclusion: "failure" },
     false,
   ],
-  ["workflow_dispatch", "refs/heads/fork/main", undefined, true],
+  ["workflow_dispatch", "refs/heads/main", undefined, true],
   ["workflow_dispatch", "refs/heads/feature", undefined, false],
 ]) {
   assert.equal(
@@ -108,7 +108,7 @@ assert.equal(workflow.concurrency["cancel-in-progress"], false);
             rest: {
               git: {
                 getRef: async ({ ref }) => {
-                  assert.equal(ref, "heads/fork/main");
+                  assert.equal(ref, "heads/main");
                   return { data: { object: { sha: mainline } } };
                 },
               },

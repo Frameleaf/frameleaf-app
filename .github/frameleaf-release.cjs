@@ -8,7 +8,7 @@ const { execFileSync } = require("node:child_process");
 
 const REPOSITORY = "Frameleaf/frameleaf-app";
 const SOURCE = `https://github.com/${REPOSITORY}`;
-const MAIN = "fork/main";
+const MAIN = "main";
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const SHA = /^[a-f0-9]{40}$/;
 const INDEX_TYPES = new Set([

@@ -154,7 +154,7 @@ for (const [file, image] of [
     const inputs = {
       BUILD_ID: "12345",
       BUILD_SOURCE_COMMIT: "a".repeat(40),
-      BUILD_SOURCE_REF: "fork/main",
+      BUILD_SOURCE_REF: "main",
       BUILD_IMAGE: `ghcr.io/frameleaf/${image}:edge`,
     };
     const values = metadata(file, inputs);
@@ -172,7 +172,7 @@ for (const [file, image] of [
       values.IMMICH_SOURCE_URL,
       `https://github.com/Frameleaf/frameleaf-app/commit/${inputs.BUILD_SOURCE_COMMIT}`,
     );
-    assert.equal(values.IMMICH_SOURCE_REF, "fork/main");
+    assert.equal(values.IMMICH_SOURCE_REF, "main");
     const custom = metadata(file, {
       ...inputs,
       BUILD_SOURCE_REPOSITORY: "Frameleaf/test-build",

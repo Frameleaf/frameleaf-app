@@ -24,4 +24,4 @@ does not stop or unregister the existing container.
 
 Routing is versioned with each workflow. Rerunning an old commit does not adopt
 these changes. Default-branch events (including `pull_request_target`, schedules,
-and `workflow_run`) adopt the routing only after it lands on `fork/main`.
+and `workflow_run`) adopt the routing only after it lands on `main`.

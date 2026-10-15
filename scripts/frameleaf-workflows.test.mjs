@@ -68,12 +68,12 @@ const admission = (
     always: () => true,
   });
 
-test("all nine protected check contexts execute real commands on external fork/main PRs", () => {
+test("all nine protected check contexts execute real commands on external main PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
     const j = w.jobs[id];
     assert.equal(j.name, name);
-    assert.ok(w.on.pull_request.branches.includes("fork/main"));
+    assert.ok(w.on.pull_request.branches.includes("main"));
     assert.equal(
       w.on.pull_request.paths,
       undefined,
@@ -264,7 +264,7 @@ test("OpenAPI compares immutable same-repository base commits, not the moving ta
   ).run;
   for (const [value, expected] of [
     ["a".repeat(40), 0],
-    ["fork/main", 1],
+    ["main", 1],
     ["$(echo bad)", 1],
     ["", 1],
   ]) {
@@ -327,7 +327,7 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
       github: {
         repository: "Frameleaf/frameleaf-app",
         event_name: "workflow_dispatch",
-        ref: "refs/heads/fork/main",
+        ref: "refs/heads/main",
       },
     }),
     true,
@@ -380,7 +380,7 @@ test("CLI release guard rejects a stale tag, wrong checkout or non-SHA input bef
   ).run;
   writeFileSync(
     path.join(dir, "git"),
-    '#!/bin/sh\ncase "$*" in\n"fetch --no-tags origin refs/heads/fork/main") exit 0;;\n"rev-parse FETCH_HEAD") printf "%s\\n" "$TEST_BRANCH_SHA";;\n"rev-parse HEAD") printf "%s\\n" "$TEST_HEAD_SHA";;\n*) exit 9;;\nesac\n',
+    '#!/bin/sh\ncase "$*" in\n"fetch --no-tags origin refs/heads/main") exit 0;;\n"rev-parse FETCH_HEAD") printf "%s\\n" "$TEST_BRANCH_SHA";;\n"rev-parse HEAD") printf "%s\\n" "$TEST_HEAD_SHA";;\n*) exit 9;;\nesac\n',
     { mode: 0o755 },
   );
   try {
@@ -390,7 +390,7 @@ test("CLI release guard rejects a stale tag, wrong checkout or non-SHA input bef
       [sha, sha, sha, 0],
       [sha, other, sha, 1],
       [sha, sha, other, 1],
-      ["fork/main", sha, sha, 1],
+      ["main", sha, sha, 1],
     ]) {
       const r = spawnSync("bash", ["-e", "-c", guard], {
         env: {
@@ -432,7 +432,7 @@ test("Zizmor is a pinned failing scanner rather than a skipped success, and Code
       github: {
         repository: "Frameleaf/frameleaf-app",
         event_name: "push",
-        ref: "refs/heads/fork/main",
+        ref: "refs/heads/main",
       },
     }),
     true,
