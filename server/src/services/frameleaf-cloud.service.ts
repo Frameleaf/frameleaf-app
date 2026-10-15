@@ -117,7 +117,7 @@ import {
   remoteEndpoints,
   remoteHostnameListSchema,
 } from 'src/utils/frameleaf-remote-access.js';
-import { type SetupClient, setupRefusal, withSetupProof } from 'src/utils/frameleaf-setup-gate.js';
+import { type SetupClient, setupRefusal, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /** FL-292: the single-use link token the Frameleaf app hands a new server (as FRAMELEAF_LINK_TOKEN takes). */
@@ -521,14 +521,13 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * FL-292: `POST server/setup/link`. The Frameleaf app, on the home network, with the setup ticket
-   * it got for the code and a single-use link token (`fll_…`) Frameleaf Cloud minted with its
-   * account, links this new server exactly as `FRAMELEAF_LINK_TOKEN` does. The account that minted
+   * FL-292: `POST server/setup/link`. The Frameleaf app, on the home network, with a single-use
+   * link token (`fll_…`) Frameleaf Cloud minted with its account, links this new server exactly as `FRAMELEAF_LINK_TOKEN` does. The account that minted
    * the token owns the server; its first Sign in with Frameleaf creates the administrator.
    */
   async claimNewServer(dto: FrameleafSetupLinkDto, client: SetupClient): Promise<FrameleafSetupLinkResponseDto> {
     const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
-    return withSetupProof(this.setupGate, { ticket: dto.ticket, ticketOnly: true }, client, () =>
+    return whileClaimable(this.setupGate, client, () =>
       this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
         if (!cloudUrl) {
           throw setupRefusal(FrameleafSetupErrorCode.CloudUnavailable);

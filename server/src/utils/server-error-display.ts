@@ -16,7 +16,6 @@ const GENERAL_ERRORS: Partial<Record<number, { code: string; message: string }>>
 
 // Copy only the scalar arguments already owned by these producers. Never copy a provider's `data` or `args`.
 const ARGUMENT_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  setup_code_invalid: ['attemptsLeft'],
   rate_limited: ['retryAfter'],
   'service-paused': ['retryAfterSeconds'],
 };

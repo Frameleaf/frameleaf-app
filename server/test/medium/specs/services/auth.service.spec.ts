@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { hash } from 'bcrypt';
 import { Kysely } from 'kysely';
-import { AuthType, SystemMetadataKey } from 'src/enum.js';
+import { AuthType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -191,15 +191,7 @@ describe(AuthService.name, () => {
     it(`should sign up the admin`, async () => {
       const { sut, ctx } = setup();
       ctx.getMock(EventRepository).emit.mockResolvedValue();
-      const dto = { name: 'Admin', email: 'admin@example.com', password: 'password', setupCode: 'ABCD-2345' };
-      // FL-292: the code the server shows on its console
-      await ctx.get(SystemMetadataRepository).set(SystemMetadataKey.FrameleafSetupCode, {
-        code: 'ABCD2345',
-        pinned: false,
-        failures: 0,
-        locked: false,
-        generatedAt: new Date().toISOString(),
-      });
+      const dto = { name: 'Admin', email: 'admin@example.com', password: 'password' };
 
       await expect(sut.adminSignUp(dto, { ip: '127.0.0.1', via: null })).resolves.toEqual(
         expect.objectContaining({

@@ -155,7 +155,6 @@ test(
         email: 'fl105-local-admin@example.test',
         password,
         name: 'FL105 fixture admin',
-        setupCode: process.env.FRAMELEAF_SETUP_CODE,
       }),
     });
     assert.ok([201, 400].includes(sign.status));

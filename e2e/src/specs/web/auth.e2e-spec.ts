@@ -1,6 +1,6 @@
 import { LoginResponseDto, createUserAdmin, getMyUser, login, logout, setUserOnboarding } from '@frameleaf/sdk';
 import { expect, test, type Page } from '@playwright/test';
-import { createUserDto, setupCode } from 'src/fixtures.js';
+import { createUserDto } from 'src/fixtures.js';
 import { asBearerAuth, utils } from 'src/utils.js';
 
 test.describe('Registration', () => {
@@ -32,8 +32,6 @@ test.describe('Registration', () => {
     await page.getByLabel('Email', { exact: true }).fill('admin@immich.app');
     await page.getByLabel('Password', { exact: true }).fill('Frameleaf-Admin-2026');
     await page.getByLabel('Confirm password', { exact: true }).fill('Frameleaf-Admin-2026');
-    // FL-292: the code the server shows on its console (pinned for e2e)
-    await page.getByLabel('Setup code', { exact: true }).fill(setupCode);
     await page.getByRole('button', { name: /^(Continue|Use recommended)$/ }).click();
 
     // The admin now exists and is signed in; every later step has a recommended choice.
