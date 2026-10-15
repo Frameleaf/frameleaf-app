@@ -37,6 +37,7 @@ const session = (overrides: Record<string, unknown> = {}) => ({
   gpuWorkingBudgetEvidence: null,
   codecs: ['webcodecs-avc', 'webcodecs-aac'],
   colorPrecision: null,
+  lastUsedAt: new Date(now.getTime() - 5000),
   ...overrides,
 });
 
@@ -135,6 +136,12 @@ describe('bundled render worker (FL-408)', () => {
       { name: 'another worker', worker: {}, session: { workerId: 'someone-else' } },
       { name: 'more than one claim at a time', worker: { maxConcurrentOperations: 2 }, session: {} },
       { name: 'codecs that differ from the capability row', worker: {}, session: { codecs: ['libx264'] } },
+      {
+        name: 'worker that stopped asking for work',
+        worker: {},
+        session: { lastUsedAt: new Date(now.getTime() - 3 * 60_000) },
+      },
+      { name: 'session never used', worker: {}, session: { lastUsedAt: null } },
     ])('refuses a $name', ({ worker: workerOverrides, session: sessionOverrides }) => {
       expect(
         evaluateBundledRenderSession({

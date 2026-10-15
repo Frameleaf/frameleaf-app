@@ -23,6 +23,8 @@ services:
     volumes:
       - ${UPLOAD_LOCATION}/photos:/data
       - /etc/localtime:/etc/localtime:ro
+      # FL-408: the bundled Studio worker's enrolment, shared read-only with machine learning
+      - studio-worker:/run/frameleaf/studio-worker
     env_file:
       - .env
     ports:
@@ -50,12 +52,17 @@ services:
       context: ../machine-learning
       dockerfile: Dockerfile
       target: prod
+      # FL-408: the Studio worker stage builds from the repository
+      additional_contexts:
+        frameleaf: ..
       args:
         - DEVICE=cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference
     ports:
       - 3003:3003
     volumes:
       - model-cache:/cache
+      # FL-408: the Studio render worker enrols from here (FRAMELEAF_STUDIO_WORKER=false turns it off)
+      - studio-worker:/run/frameleaf/studio-worker:ro
     # Keep server credentials out of the inference worker.
     env_file:
       - path: .env.ml
@@ -89,3 +96,4 @@ services:
 
 volumes:
   model-cache:
+  studio-worker:
