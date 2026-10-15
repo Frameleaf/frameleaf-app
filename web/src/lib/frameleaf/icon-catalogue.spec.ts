@@ -1,6 +1,6 @@
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { ALBUM_ICONS, albumIconPath } from '$lib/utils/album-icons';
+import { ALBUM_ICONS } from '$lib/utils/album-icons';
 import {
   buildCatalogueEntries,
   derivedIconLabel,
@@ -92,12 +92,14 @@ it('retries a failed SDK catalogue request', async () => {
 
 it('keeps legacy icon paths local and falls back for unknown or inherited keys', () => {
   expect(Object.keys(ALBUM_ICONS)).toHaveLength(31);
-  expect(albumIconPath('folder')).toBe(mdiFolderOutline);
-  expect(albumIconPath('heart')).toBe(mdiHeartOutline);
+  for (const [key, path] of Object.entries(ALBUM_ICONS)) {
+    expect(iconPathFor(key)).toBe(path);
+    expect(needsIconPaths(key)).toBe(false);
+  }
+  expect(iconPathFor('folder')).toBe(mdiFolderOutline);
   expect(iconPathFor('heart')).toBe(mdiHeartOutline);
   expect(needsIconPaths('heart')).toBe(false);
   for (const key of [null, undefined, '', 'unknown', '__proto__', 'constructor']) {
-    expect(albumIconPath(key)).toBe(mdiFolderOutline);
     expect(iconPathFor(key)).toBe(mdiFolderOutline);
     expect(needsIconPaths(key)).toBe(false);
   }

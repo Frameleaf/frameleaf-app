@@ -78,16 +78,3 @@ export const ALBUM_ICONS = {
 
 export const DEFAULT_ALBUM_ICON_KEY = 'folder';
 export const DEFAULT_ALBUM_ICON_PATH = ALBUM_ICONS[DEFAULT_ALBUM_ICON_KEY];
-
-export type AlbumIconKey = keyof typeof ALBUM_ICONS;
-
-/**
- * Resolve a stored icon key (or null/unknown value) to an MDI path string.
- * Always returns a valid path — the default folder icon is the fallback.
- */
-export function albumIconPath(key: string | null | undefined): string {
-  if (key && Object.hasOwn(ALBUM_ICONS, key)) {
-    return ALBUM_ICONS[key as AlbumIconKey];
-  }
-  return DEFAULT_ALBUM_ICON_PATH;
-}
