@@ -2257,6 +2257,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "e6bca4d7d8",
+          "0127-persisted-lottie-discriminator.patch",
+          "0128-persisted-subtitle-discriminator.patch",
+          "0131-canonical-dotlottie-owned-source.patch"
+        ],
+        "note": "All item kinds are reachable in the editor; Lottie and subtitle persistence fixed by patches.",
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.1",
       "source": [
         {
@@ -2467,6 +2477,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "0016-nested-float-transport.patch",
+          "0017-nested-audio-mute.patch",
+          "0020-nested-preview-audio-mute.patch",
+          "0092-reverse-nested-audio-mapping.patch",
+          "19e9aded35"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.2",
       "source": [
         {
@@ -2677,6 +2697,29 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "0012-split-all-unlinked-tracks.patch",
+          "0099-native-linked-chain-join.patch",
+          "0103-native-rate-stretch-lock-admission.patch",
+          "0122-rolling-edit-linked-track-lock-preflight.patch",
+          "0130-native-roll-transient-lock-cancellation.patch",
+          "0134-shared-edit-effective-lock-refusal.patch",
+          "0135-shared-speed-gap-effective-lock-refusal.patch",
+          "4d29c52c91",
+          "cd365017c8",
+          "1accc156fc",
+          "d74234e08d",
+          "PR #221",
+          "PR #246",
+          "PR #250",
+          "PR #258",
+          "PR #260",
+          "PR #262"
+        ],
+        "note": "FL-94 closeout 2026-10-14.",
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.3",
       "source": [
         {
@@ -2887,6 +2930,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "e6bca4d7d8"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.4",
       "source": [
         {
@@ -3097,6 +3148,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "0067-persisted-clip-mute.patch",
+          "0124-normalization-inherited-track-state.patch",
+          "0134-shared-edit-effective-lock-refusal.patch",
+          "cd365017c8"
+        ],
+        "note": "Track lock, mute and visibility persistence covered by timeline-persistence.test.ts (FL-94).",
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.5",
       "source": [
         {
@@ -3307,6 +3368,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": ["0066-timeline-toolbar-scrollport.patch", "e6bca4d7d8"],
+        "note": "Markers and undo/redo are canonical commands; filmstrips, waveforms and snap guides are upstream. Real-media browser journeys are not measured here.",
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.6",
       "source": [
         {
@@ -3517,6 +3583,15 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "0088-source-monitor-linked-partitions.patch",
+          "0116-still-default-project-duration.patch",
+          "cd365017c8",
+          "PR #262"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.7",
       "source": [
         {
@@ -3727,6 +3802,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
+      "frameleaf": {
+        "evidence": [
+          "0035-retime-policy.patch",
+          "0136-project-colour-policy-disclosure.patch",
+          "0058-preview-layout-keyboard-accessibility.patch",
+          "fe9650d552"
+        ],
+        "note": "Templates and keyboard shortcuts are upstream; first-media matching asks for a timing policy (0035).",
+        "status": "shipped"
+      },
       "id": "readme.timeline-editing.8",
       "source": [
         {
@@ -3937,6 +4022,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Preview & Playback",
+      "frameleaf": {
+        "evidence": [
+          "0046-preview-canvas-transform-placement.patch",
+          "0059-mask-path-keyframes.patch",
+          "0113-crop-rotation-keyboard-entry.patch",
+          "0138-number-input-text-commit-lifecycle.patch",
+          "e6bca4d7d8"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.preview-playback.1",
       "source": [
         {
@@ -4099,6 +4194,15 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Preview & Playback",
+      "frameleaf": {
+        "evidence": [
+          "0045-hidden-overlay-displayed-frame.patch",
+          "0114-explicit-seek-scope-currentness.patch",
+          "0662d91ee4"
+        ],
+        "note": "Upstream clock and composition runtime, with exact rational project cadence from the host.",
+        "status": "shipped"
+      },
       "id": "readme.preview-playback.2",
       "source": [
         {
@@ -4261,6 +4365,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Preview & Playback",
+      "frameleaf": {
+        "evidence": [
+          "0003-deferred-profiler-dom-guard.patch",
+          "0044-preview-padding-copy.patch",
+          "0118-adaptive-preview-render-size.patch"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.preview-playback.3",
       "source": [
         {
@@ -4423,6 +4535,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Preview & Playback",
+      "frameleaf": {
+        "evidence": ["4d29c52c91", "975e4b1cbd"],
+        "note": "Two-up and four-up panels are upstream; roll, slip and slide are canonical commands (FL-94).",
+        "status": "shipped"
+      },
       "id": "readme.preview-playback.4",
       "source": [
         {
@@ -4585,6 +4702,21 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Preview & Playback",
+      "frameleaf": {
+        "evidence": [
+          "0018-scope-seek-correspondence.patch",
+          "0019-scope-graph-correspondence.patch",
+          "0038-scopes-measure-what-they-show.patch",
+          "0086-scope-capture-retry.patch",
+          "0098-scope-color-source-correspondence.patch",
+          "0102-scope-displayed-frame-correspondence.patch",
+          "0107-histogram-bin-correspondence.patch",
+          "0110-scope-revision-binding.patch",
+          "0114-explicit-seek-scope-currentness.patch"
+        ],
+        "note": "FL-98 closeout 2026-10-14.",
+        "status": "shipped"
+      },
       "id": "readme.preview-playback.5",
       "source": [
         {
@@ -4747,6 +4879,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Preview & Playback",
+      "frameleaf": {
+        "evidence": [
+          "0024-project-master-mute.patch",
+          "0064-project-master-hydration.patch",
+          "0076-master-gain-envelope.patch"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.preview-playback.6",
       "source": [
         {
@@ -4909,6 +5049,17 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Audio",
+      "frameleaf": {
+        "evidence": [
+          "0007-audio-track-gain.patch",
+          "0069-persisted-track-pan.patch",
+          "0076-master-gain-envelope.patch",
+          "0087-preview-track-gain.patch",
+          "0090-track-gain-automation.patch"
+        ],
+        "note": "FL-103 closeout 2026-10-14.",
+        "status": "shipped"
+      },
       "id": "readme.audio.1",
       "source": [
         {
@@ -5120,6 +5271,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Audio",
+      "frameleaf": {
+        "evidence": [
+          "0011-multichannel-speed-export.patch",
+          "0111-multichannel-shared-retiming.patch"
+        ],
+        "note": "SoundTouch preview is upstream; the patches preserve channels through retiming.",
+        "status": "shipped"
+      },
       "id": "readme.audio.2",
       "source": [
         {
@@ -5331,6 +5490,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Audio",
+      "frameleaf": {
+        "evidence": ["0064-project-master-hydration.patch", "e6bca4d7d8"],
+        "note": "Clip and track EQ are upstream; 0064 initialises the master EQ before hydration.",
+        "status": "shipped"
+      },
       "id": "readme.audio.3",
       "source": [
         {
@@ -5542,6 +5706,18 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Audio",
+      "frameleaf": {
+        "evidence": [
+          "0020-nested-preview-audio-mute.patch",
+          "0054-channel-preservation-tests.patch",
+          "0055-channel-preserving-gain-mix.patch",
+          "0067-persisted-clip-mute.patch",
+          "0087-preview-track-gain.patch",
+          "0111-multichannel-shared-retiming.patch"
+        ],
+        "note": "Preview half delivered. The export half is not: the existing render-worker executor refuses audio.",
+        "status": "shipped"
+      },
       "id": "readme.audio.4",
       "source": [
         {
@@ -5753,6 +5929,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0081-linear-hdr-spatial-blur.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.1",
       "source": [
         {
@@ -5785,6 +5971,20 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": [
+          "0068-linear-hdr-brightness.patch",
+          "0070-linear-hdr-contrast.patch",
+          "0071-linear-hdr-exposure.patch",
+          "0072-linear-hdr-saturation.patch",
+          "0083-linear-hdr-temperature.patch",
+          "0084-linear-hdr-affine-color.patch",
+          "0089-linear-hdr-vibrance.patch",
+          "0085-file-lut-float-admission.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.2",
       "source": [
         {
@@ -5817,6 +6017,15 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0094-linear-hdr-pixelate.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.3",
       "source": [
         {
@@ -5849,6 +6058,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.4",
       "source": [
         {
@@ -5881,6 +6098,13 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": [
+          "0021-chroma-hard-edge.patch",
+          "0026-chroma-hard-edge-precision.patch"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.5",
       "source": [
         {
@@ -5913,6 +6137,15 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": [
+          "0008-soft-light-signed-domain.patch",
+          "0013-linear-dodge-float.patch",
+          "0040-dissolve-dithers-opacity.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.6",
       "source": [
         {
@@ -5945,6 +6178,10 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": ["0059-mask-path-keyframes.patch", "314181de9b"],
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.7",
       "source": [
         {
@@ -5977,6 +6214,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Effects, Masks & Compositing",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own.",
+        "status": "shipped"
+      },
       "id": "readme.effects-masks-compositing.8",
       "source": [
         {
@@ -6009,6 +6251,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Transitions",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.transitions.1",
       "source": [
         {
@@ -6039,6 +6289,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Transitions",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0040-dissolve-dithers-opacity.patch",
+          "0119-linear-hdr-additive-dissolve.patch",
+          "0120-additive-half-subnormal-coverage.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.transitions.2",
       "source": [
         {
@@ -6069,6 +6329,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Transitions",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch"
+        ],
+        "note": "Canvas 2D fallback is upstream.",
+        "status": "shipped"
+      },
       "id": "readme.transitions.3",
       "source": [
         {
@@ -6099,6 +6367,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Keyframe Animation",
+      "frameleaf": {
+        "evidence": [
+          "0022-expression-dependency-budget.patch",
+          "0047-edge-keyframe-marker-overflow.patch",
+          "66c16f6bcf"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.keyframe-animation.1",
       "source": [
         {
@@ -6190,6 +6466,10 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Keyframe Animation",
+      "frameleaf": {
+        "evidence": ["66c16f6bcf", "314181de9b"],
+        "status": "shipped"
+      },
       "id": "readme.keyframe-animation.2",
       "source": [
         {
@@ -6281,6 +6561,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Keyframe Animation",
+      "frameleaf": {
+        "evidence": ["66c16f6bcf"],
+        "note": "Upstream modifiers and bake; bake is the canonical property.bakeModifier command.",
+        "status": "shipped"
+      },
       "id": "readme.keyframe-animation.3",
       "source": [
         {
@@ -6372,6 +6657,10 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Keyframe Animation",
+      "frameleaf": {
+        "evidence": ["19e9aded35"],
+        "status": "shipped"
+      },
       "id": "readme.keyframe-animation.4",
       "source": [
         {
@@ -6463,6 +6752,10 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Keyframe Animation",
+      "frameleaf": {
+        "evidence": ["0047-edge-keyframe-marker-overflow.patch", "66c16f6bcf"],
+        "status": "shipped"
+      },
       "id": "readme.keyframe-animation.5",
       "source": [
         {
@@ -6554,6 +6847,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Keyframe Animation",
+      "frameleaf": {
+        "evidence": [
+          "0010-expression-dependency-errors.patch",
+          "0027-effect-frame-clock-and-animation.patch",
+          "0037-renderable-opacity.patch",
+          "0059-mask-path-keyframes.patch",
+          "19e9aded35"
+        ],
+        "status": "shipped"
+      },
       "id": "readme.keyframe-animation.6",
       "source": [
         {
@@ -6645,6 +6948,17 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Media & Import",
+      "frameleaf": {
+        "evidence": [
+          "0004-resource-admission.patch",
+          "0082-video-byte-admission.patch",
+          "0091-strict-lottie-resource-admission.patch",
+          "0137-scoped-media-static-contracts.patch",
+          "0b7183d4dd"
+        ],
+        "note": "Library media is offered by asset id without copying (library-media.ts); editor imports stay with the project.",
+        "status": "shipped"
+      },
       "id": "readme.media-import.1",
       "source": [
         {
@@ -6704,6 +7018,15 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Media & Import",
+      "frameleaf": {
+        "evidence": [
+          "0091-strict-lottie-resource-admission.patch",
+          "0093-lottie-range-source-clock.patch",
+          "0131-canonical-dotlottie-owned-source.patch"
+        ],
+        "note": "FL-105 closeout: Lottie safety and source handling.",
+        "status": "shipped"
+      },
       "id": "readme.media-import.2",
       "source": [
         {
@@ -6763,6 +7086,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Media & Import",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own. The embedded TurboRes decoder still has an open corresponding-source distribution gate (distribution-gates.json embedded-codec-corresponding-source).",
+        "status": "shipped"
+      },
       "id": "readme.media-import.3",
       "source": [
         {
@@ -6822,6 +7150,17 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Media & Import",
+      "frameleaf": {
+        "evidence": [
+          "0025-relink-workspace-source.patch",
+          "0117-durable-media-relink.patch",
+          "0125-shared-proxy-deletion-alias-guard.patch",
+          "0126-project-copy-media-entry-references.patch",
+          "0b7183d4dd"
+        ],
+        "note": "FL-105 closeout: relink.",
+        "status": "shipped"
+      },
       "id": "readme.media-import.4",
       "source": [
         {
@@ -6881,6 +7220,19 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": [
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch",
+          "0104-browser-whisper-tiny-selector.patch",
+          "0106-browser-whisper-tiny-settings-test.patch",
+          "0140-whisper-no-adapter-fallback.patch",
+          "6a2085d30a",
+          "PR #288"
+        ],
+        "note": "FL-111 closeout: Whisper model choice with a no-GPU fallback.",
+        "status": "shipped"
+      },
       "id": "readme.local-ai-analysis.1",
       "source": [
         {
@@ -6914,6 +7266,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own.",
+        "status": "shipped"
+      },
       "id": "readme.local-ai-analysis.2",
       "source": [
         {
@@ -6947,6 +7304,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own.",
+        "status": "shipped"
+      },
       "id": "readme.local-ai-analysis.3",
       "source": [
         {
@@ -6980,6 +7342,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own.",
+        "status": "shipped"
+      },
       "id": "readme.local-ai-analysis.4",
       "source": [
         {
@@ -7013,6 +7380,15 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": [
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch",
+          "0030-pinned-supertonic-space.patch"
+        ],
+        "note": "Kokoro carried over unchanged apart from pinned model revisions and bundled runtimes (FL-111 closeout).",
+        "status": "shipped"
+      },
       "id": "readme.local-ai-analysis.5",
       "source": [
         {
@@ -7046,6 +7422,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": ["0028-approved-model-revisions.patch"],
+        "note": "MusicGen-small is CC-BY-NC-4.0 and barred from Frameleaf Cloud (distribution-gates.json musicgen-hosted-exclusion). The engine path stays in the build and is rights-approved for local and LAN use; it is descoped by owner direction, not removed.",
+        "status": "descoped-v1"
+      },
       "id": "readme.local-ai-analysis.6",
       "source": [
         {
@@ -7079,6 +7460,14 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Local AI & Analysis",
+      "frameleaf": {
+        "evidence": [
+          "0028-approved-model-revisions.patch",
+          "0063-onnx-cache-byte-admission.patch"
+        ],
+        "note": "Model cache and unload controls are in the editor Settings dialog.",
+        "status": "shipped"
+      },
       "id": "readme.local-ai-analysis.7",
       "source": [
         {
@@ -7112,6 +7501,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Projects & Storage",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Delivered by replacement: the File System Access folder is replaced by the host-backed VirtualWorkspace, and saves become host revisions (FL-88, FL-89).",
+        "status": "shipped"
+      },
       "id": "readme.projects-storage.1",
       "source": [
         {
@@ -7162,6 +7556,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Projects & Storage",
+      "frameleaf": {
+        "evidence": [],
+        "note": "Not reachable: WorkspaceGate is not mounted and the editor has one host workspace. Frameleaf has no workspace switcher, by design.",
+        "status": "not-started"
+      },
       "id": "readme.projects-storage.2",
       "source": [
         {
@@ -7212,6 +7611,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Projects & Storage",
+      "frameleaf": {
+        "evidence": [],
+        "note": "Not reachable: projects are server-stored revisions, not plain files on disk, and there is no legacy browser storage to migrate. The Freecut projects route is blocked by the adapter.",
+        "status": "not-started"
+      },
       "id": "readme.projects-storage.3",
       "source": [
         {
@@ -7262,6 +7666,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Projects & Storage",
+      "frameleaf": {
+        "evidence": ["841fd8bce1"],
+        "note": "Delivered by the host Studio project library (trash, restore, empty trash, delete for good), not by the Freecut projects route.",
+        "status": "shipped"
+      },
       "id": "readme.projects-storage.4",
       "source": [
         {
@@ -7312,6 +7721,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Projects & Storage",
+      "frameleaf": {
+        "evidence": [
+          "74a752f25d",
+          "841fd8bce1",
+          "c74fc1d719",
+          "0091-strict-lottie-resource-admission.patch"
+        ],
+        "note": "Delivered as Frameleaf portable bundles (project.exportBundle / project.importBundle); the Freecut ZIP dialog is substituted.",
+        "status": "shipped"
+      },
       "id": "readme.projects-storage.5",
       "source": [
         {
@@ -7362,6 +7781,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Projects & Storage",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8", "55b957278d"],
+        "note": "Auto-save is forwarded to the host as drafts; cache mirroring and orphan cleanup run against the in-memory VirtualWorkspace. Project thumbnails were not separately checked.",
+        "status": "shipped"
+      },
       "id": "readme.projects-storage.6",
       "source": [
         {
@@ -7412,6 +7836,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
+        "status": "not-started"
+      },
       "id": "readme.export.1",
       "source": [
         {
@@ -7482,6 +7911,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "status": "not-started"
+      },
       "id": "readme.export.2",
       "source": [
         {
@@ -7552,6 +7986,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only MP4 is accepted.",
+        "status": "not-started"
+      },
       "id": "readme.export.3",
       "source": [
         {
@@ -7622,6 +8061,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. Only H.264 is accepted. The FL-107 server HDR10/HLG master (studio/tools/hdr-master.mjs, HEVC Main10) exists but its precision gate does not pass yet (FL-107 reopened), so it does not deliver this row either.",
+        "status": "not-started"
+      },
       "id": "readme.export.4",
       "source": [
         {
@@ -7692,6 +8136,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "status": "not-started"
+      },
       "id": "readme.export.5",
       "source": [
         {
@@ -7762,6 +8211,16 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": [
+          "0023-export-subtitle-admission.patch",
+          "0050-caption-import-export-modes.patch",
+          "0051-extracted-caption-export-modes.patch",
+          "0105-subtitle-sidecar-shared-producer.patch"
+        ],
+        "note": "Subtitle admission and the four modes are implemented and the executor accepts them, but only for its still-image MP4 timelines. The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "status": "not-started"
+      },
       "id": "readme.export.6",
       "source": [
         {
@@ -7832,6 +8291,11 @@
     {
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Export",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet. The executor carries the four engine bitrate presets for that narrow case only.",
+        "status": "not-started"
+      },
       "id": "readme.export.7",
       "source": [
         {
@@ -7902,6 +8366,17 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0081-linear-hdr-spatial-blur.patch",
+          "0094-linear-hdr-pixelate.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-gaussian-blur",
       "source": [
         {
@@ -7931,6 +8406,17 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0081-linear-hdr-spatial-blur.patch",
+          "0094-linear-hdr-pixelate.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-box-blur",
       "source": [
         {
@@ -7960,6 +8446,17 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0081-linear-hdr-spatial-blur.patch",
+          "0094-linear-hdr-pixelate.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-motion-blur",
       "source": [
         {
@@ -7989,6 +8486,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-radial-blur",
       "source": [
         {
@@ -8018,6 +8524,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-zoom-blur",
       "source": [
         {
@@ -8047,6 +8562,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0068-linear-hdr-brightness.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-brightness",
       "source": [
         {
@@ -8076,6 +8600,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0070-linear-hdr-contrast.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-contrast",
       "source": [
         {
@@ -8105,6 +8638,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0071-linear-hdr-exposure.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-exposure",
       "source": [
         {
@@ -8134,6 +8676,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-hue-shift",
       "source": [
         {
@@ -8163,6 +8714,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0084-linear-hdr-affine-color.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-invert",
       "source": [
         {
@@ -8192,6 +8752,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-levels",
       "source": [
         {
@@ -8221,6 +8790,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0072-linear-hdr-saturation.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-saturation",
       "source": [
         {
@@ -8250,6 +8828,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0083-linear-hdr-temperature.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-temperature",
       "source": [
         {
@@ -8279,6 +8866,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0084-linear-hdr-affine-color.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-grayscale",
       "source": [
         {
@@ -8308,6 +8904,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0084-linear-hdr-affine-color.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-sepia",
       "source": [
         {
@@ -8337,6 +8942,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-curves",
       "source": [
         {
@@ -8366,6 +8980,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-color-wheels",
       "source": [
         {
@@ -8395,6 +9018,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-secondary-qualifier",
       "source": [
         {
@@ -8424,6 +9056,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-power-window",
       "source": [
         {
@@ -8453,6 +9094,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0089-linear-hdr-vibrance.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-vibrance",
       "source": [
         {
@@ -8482,6 +9132,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-gradient-map",
       "source": [
         {
@@ -8511,6 +9170,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0094-linear-hdr-pixelate.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-pixelate",
       "source": [
         {
@@ -8540,6 +9208,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-rgb-split",
       "source": [
         {
@@ -8569,6 +9246,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-twirl",
       "source": [
         {
@@ -8598,6 +9284,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-wave",
       "source": [
         {
@@ -8627,6 +9322,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-trigger-wave",
       "source": [
         {
@@ -8656,6 +9360,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0097-linear-hdr-geometry.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-bulge",
       "source": [
         {
@@ -8685,6 +9398,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-kaleidoscope",
       "source": [
         {
@@ -8714,6 +9436,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-mirror",
       "source": [
         {
@@ -8743,6 +9474,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-fluted-glass",
       "source": [
         {
@@ -8772,6 +9512,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-ripple-glass",
       "source": [
         {
@@ -8801,6 +9550,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-glass-mosaic",
       "source": [
         {
@@ -8830,6 +9588,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-blocks",
       "source": [
         {
@@ -8859,6 +9626,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-droste",
       "source": [
         {
@@ -8888,6 +9664,16 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0021-chroma-hard-edge.patch",
+          "0026-chroma-hard-edge-precision.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-chroma-key",
       "source": [
         {
@@ -8917,6 +9703,17 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0009-lut-cache-size.patch",
+          "0049-portable-lut-import.patch",
+          "0085-file-lut-float-admission.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "effect.gpu-lut",
       "source": [
         {
@@ -8946,6 +9743,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-vignette",
       "source": [
         {
@@ -8975,6 +9781,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-grain",
       "source": [
         {
@@ -9004,6 +9819,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-sharpen",
       "source": [
         {
@@ -9033,6 +9857,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-posterize",
       "source": [
         {
@@ -9062,6 +9895,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-glow",
       "source": [
         {
@@ -9091,6 +9933,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-edge-detect",
       "source": [
         {
@@ -9120,6 +9971,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-scanlines",
       "source": [
         {
@@ -9149,6 +10009,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-color-glitch",
       "source": [
         {
@@ -9178,6 +10047,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-block-glitch",
       "source": [
         {
@@ -9207,6 +10085,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-crt",
       "source": [
         {
@@ -9236,6 +10123,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-halftone",
       "source": [
         {
@@ -9265,6 +10161,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-dither",
       "source": [
         {
@@ -9294,6 +10199,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-ascii",
       "source": [
         {
@@ -9323,6 +10237,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-threshold",
       "source": [
         {
@@ -9352,6 +10275,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-vhs",
       "source": [
         {
@@ -9381,6 +10313,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-ink",
       "source": [
         {
@@ -9410,6 +10351,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-pixel-sort",
       "source": [
         {
@@ -9439,6 +10389,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU effect",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "effect.gpu-pixel-sort-hq",
       "source": [
         {
@@ -9468,6 +10427,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.chromatic",
       "source": [
         {
@@ -9494,6 +10462,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.clockWipe",
       "source": [
         {
@@ -9520,6 +10497,16 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "0119-linear-hdr-additive-dissolve.patch",
+          "0120-additive-half-subnormal-coverage.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "transition.additiveDissolve",
       "source": [
         {
@@ -9546,6 +10533,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.blurDissolve",
       "source": [
         {
@@ -9572,6 +10568,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.dipToColorDissolve",
       "source": [
         {
@@ -9598,6 +10603,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.nonAdditiveDissolve",
       "source": [
         {
@@ -9624,6 +10638,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.smoothCut",
       "source": [
         {
@@ -9650,6 +10673,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "0040-dissolve-dithers-opacity.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "transition.dissolve",
       "source": [
         {
@@ -9676,6 +10708,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.fade",
       "source": [
         {
@@ -9702,6 +10743,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.filmGateSlip",
       "source": [
         {
@@ -9728,6 +10778,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.flip",
       "source": [
         {
@@ -9754,6 +10813,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.glitch",
       "source": [
         {
@@ -9780,6 +10848,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.iris",
       "source": [
         {
@@ -9806,6 +10883,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.lensWarpZoom",
       "source": [
         {
@@ -9832,6 +10918,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.lightLeakBurn",
       "source": [
         {
@@ -9858,6 +10953,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.liquidDistort",
       "source": [
         {
@@ -9884,6 +10988,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.pixelate",
       "source": [
         {
@@ -9910,6 +11023,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.radialBlur",
       "source": [
         {
@@ -9936,6 +11058,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.slide",
       "source": [
         {
@@ -9962,6 +11093,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.sparkles",
       "source": [
         {
@@ -9988,6 +11128,15 @@
     {
       "basis": "source-inventory",
       "category": "GPU transition",
+      "frameleaf": {
+        "evidence": [
+          "0015-transition-float-alpha.patch",
+          "0048-transition-input-meaning.patch",
+          "b4113f6f99"
+        ],
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "transition.wipe",
       "source": [
         {
@@ -10014,6 +11163,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.normal",
       "source": [
         {
@@ -10041,6 +11195,14 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": [
+          "0040-dissolve-dithers-opacity.patch",
+          "b4113f6f99",
+          "e6bca4d7d8"
+        ],
+        "status": "shipped"
+      },
       "id": "blend.dissolve",
       "source": [
         {
@@ -10068,6 +11230,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.darken",
       "source": [
         {
@@ -10095,6 +11262,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.multiply",
       "source": [
         {
@@ -10122,6 +11294,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.color-burn",
       "source": [
         {
@@ -10149,6 +11326,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.linear-burn",
       "source": [
         {
@@ -10176,6 +11358,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.lighten",
       "source": [
         {
@@ -10203,6 +11390,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.screen",
       "source": [
         {
@@ -10230,6 +11422,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.color-dodge",
       "source": [
         {
@@ -10257,6 +11454,14 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": [
+          "0013-linear-dodge-float.patch",
+          "b4113f6f99",
+          "e6bca4d7d8"
+        ],
+        "status": "shipped"
+      },
       "id": "blend.linear-dodge",
       "source": [
         {
@@ -10284,6 +11489,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.overlay",
       "source": [
         {
@@ -10311,6 +11521,14 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": [
+          "0008-soft-light-signed-domain.patch",
+          "b4113f6f99",
+          "e6bca4d7d8"
+        ],
+        "status": "shipped"
+      },
       "id": "blend.soft-light",
       "source": [
         {
@@ -10338,6 +11556,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.hard-light",
       "source": [
         {
@@ -10365,6 +11588,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.vivid-light",
       "source": [
         {
@@ -10392,6 +11620,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.linear-light",
       "source": [
         {
@@ -10419,6 +11652,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.pin-light",
       "source": [
         {
@@ -10446,6 +11684,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.hard-mix",
       "source": [
         {
@@ -10473,6 +11716,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.difference",
       "source": [
         {
@@ -10500,6 +11748,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.exclusion",
       "source": [
         {
@@ -10527,6 +11780,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.subtract",
       "source": [
         {
@@ -10554,6 +11812,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.divide",
       "source": [
         {
@@ -10581,6 +11844,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.hue",
       "source": [
         {
@@ -10608,6 +11876,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.saturation",
       "source": [
         {
@@ -10635,6 +11908,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.color",
       "source": [
         {
@@ -10662,6 +11940,11 @@
     {
       "basis": "source-inventory",
       "category": "Blend mode",
+      "frameleaf": {
+        "evidence": ["b4113f6f99", "e6bca4d7d8"],
+        "note": "Upstream blend; reachable through the blend-mode control and clip.setBlendMode. No blend-specific Frameleaf test.",
+        "status": "shipped"
+      },
       "id": "blend.luminosity",
       "source": [
         {
@@ -10689,6 +11972,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addText",
       "source": [
         {
@@ -10716,6 +12004,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addItem",
       "source": [
         {
@@ -10743,6 +12036,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.updateItem",
       "source": [
         {
@@ -10770,6 +12068,17 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": [
+          "c1482c759a",
+          "e6bca4d7d8",
+          "1accc156fc",
+          "d74234e08d",
+          "b5747264ae"
+        ],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.moveItem",
       "source": [
         {
@@ -10797,6 +12106,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.removeItems",
       "source": [
         {
@@ -10824,6 +12138,17 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": [
+          "c1482c759a",
+          "e6bca4d7d8",
+          "1accc156fc",
+          "d74234e08d",
+          "b5747264ae"
+        ],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.split",
       "source": [
         {
@@ -10851,6 +12176,17 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": [
+          "c1482c759a",
+          "e6bca4d7d8",
+          "1accc156fc",
+          "d74234e08d",
+          "b5747264ae"
+        ],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.trimStart",
       "source": [
         {
@@ -10878,6 +12214,17 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": [
+          "c1482c759a",
+          "e6bca4d7d8",
+          "1accc156fc",
+          "d74234e08d",
+          "b5747264ae"
+        ],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.trimEnd",
       "source": [
         {
@@ -10905,6 +12252,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addTransition",
       "source": [
         {
@@ -10932,6 +12284,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.updateTransition",
       "source": [
         {
@@ -10959,6 +12316,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.removeTransition",
       "source": [
         {
@@ -10986,6 +12348,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addTrack",
       "source": [
         {
@@ -11013,6 +12380,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addClip",
       "source": [
         {
@@ -11040,6 +12412,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addKeyframe",
       "source": [
         {
@@ -11067,6 +12444,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.removeKeyframes",
       "source": [
         {
@@ -11094,6 +12476,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.setTransformParent",
       "source": [
         {
@@ -11121,6 +12508,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.addEffect",
       "source": [
         {
@@ -11148,6 +12540,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.removeEffect",
       "source": [
         {
@@ -11175,6 +12572,11 @@
     {
       "basis": "source-inventory",
       "category": "Headless edit command",
+      "frameleaf": {
+        "evidence": ["c1482c759a", "e6bca4d7d8"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "status": "shipped"
+      },
       "id": "command.setTransform",
       "source": [
         {
@@ -11202,6 +12604,14 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0016-nested-float-transport.patch",
+          "0022-expression-dependency-budget.patch",
+          "19e9aded35"
+        ],
+        "status": "shipped"
+      },
       "id": "extra.compose",
       "source": [
         {
@@ -11234,6 +12644,15 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0010-expression-dependency-errors.patch",
+          "0022-expression-dependency-budget.patch",
+          "0053-expression-unary-depth.patch",
+          "66c16f6bcf"
+        ],
+        "status": "shipped"
+      },
       "id": "extra.expressions",
       "source": [
         {
@@ -11287,6 +12706,10 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["19e9aded35"],
+        "status": "shipped"
+      },
       "id": "extra.published-controls",
       "source": [
         {
@@ -11314,6 +12737,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Pick-whip is upstream; clip.setTransformParent is a canonical command.",
+        "status": "shipped"
+      },
       "id": "extra.parenting",
       "source": [
         {
@@ -11346,6 +12774,15 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0031-managed-color-working-range.patch",
+          "0136-project-colour-policy-disclosure.patch",
+          "e6bca4d7d8"
+        ],
+        "note": "FL-97 closeout: managed floating-point colour.",
+        "status": "shipped"
+      },
       "id": "extra.color-workspace",
       "source": [
         {
@@ -11405,6 +12842,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["0058-preview-layout-keyboard-accessibility.patch"],
+        "note": "Bento layout dialog gained keyboard access in 0058.",
+        "status": "shipped"
+      },
       "id": "extra.bento",
       "source": [
         {
@@ -11502,6 +12944,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["0123-removal-preview-lifetime-context.patch"],
+        "note": "Upstream analysis; 0123 keeps the review preview alive for the dialog lifetime.",
+        "status": "shipped"
+      },
       "id": "extra.silence-removal",
       "source": [
         {
@@ -11599,6 +13046,14 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0112-filler-apply-undo-routing.patch",
+          "0123-removal-preview-lifetime-context.patch"
+        ],
+        "note": "FL-103 closeout: undo for filler-word removal.",
+        "status": "shipped"
+      },
       "id": "extra.filler-removal",
       "source": [
         {
@@ -11696,6 +13151,20 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0052-microphone-finalization-authority.patch",
+          "0061-microphone-terminal-events.patch",
+          "0101-recorded-audio-decoded-duration.patch",
+          "0108-microphone-acquisition-retirement.patch",
+          "0109-microphone-monitor-retirement.patch",
+          "0139-microphone-terminal-notification.patch",
+          "PR #282",
+          "PR #266"
+        ],
+        "note": "FL-103 closeout. Live hotplug and latency are not measured.",
+        "status": "shipped"
+      },
       "id": "extra.microphone",
       "source": [
         {
@@ -11726,6 +13195,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["0092-reverse-nested-audio-mapping.patch"],
+        "note": "Upstream in-browser conform through the engine render orchestrator, carried over unchanged (FL-111 closeout); 0092 fixes nested audio mapping. No Frameleaf conform test.",
+        "status": "shipped"
+      },
       "id": "extra.reverse-conform",
       "source": [
         {
@@ -11756,6 +13230,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "Freecut's segmented render queue is replaced by host export jobs followed in Activity. The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "status": "not-started"
+      },
       "id": "extra.render-queue",
       "source": [
         {
@@ -11780,6 +13259,14 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0132-anime4k-retained-provenance.patch",
+          "0133-anime4k-retention-cancellation.patch"
+        ],
+        "note": "FL-111 closeout: Anime4K.",
+        "status": "shipped"
+      },
       "id": "extra.upscale-anime4k",
       "source": [
         {
@@ -11804,6 +13291,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own. Hardware checks per model are FL-401.",
+        "status": "shipped"
+      },
       "id": "extra.interpolation-rife",
       "source": [
         {
@@ -11832,6 +13324,14 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0004-resource-admission.patch",
+          "0078-moss-byte-admission.patch"
+        ],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own. Byte admission added. The bundled MOSS ORT runtime and tokenizer still have an open corresponding-source distribution gate.",
+        "status": "shipped"
+      },
       "id": "extra.tts-moss",
       "source": [
         {
@@ -11856,6 +13356,15 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch",
+          "0030-pinned-supertonic-space.patch"
+        ],
+        "note": "Carried over unchanged apart from pinned model revisions (FL-111 closeout).",
+        "status": "shipped"
+      },
       "id": "extra.tts-supertonic",
       "source": [
         {
@@ -11880,6 +13389,14 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0028-approved-model-revisions.patch",
+          "0029-bundled-onnx-runtimes.patch"
+        ],
+        "note": "Carried over unchanged apart from pinned model revisions (FL-111 closeout).",
+        "status": "shipped"
+      },
       "id": "extra.tts-kokoro",
       "source": [
         {
@@ -11904,6 +13421,11 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": ["0028-approved-model-revisions.patch"],
+        "note": "MusicGen-small is CC-BY-NC-4.0 and barred from Frameleaf Cloud (distribution-gates.json musicgen-hosted-exclusion). Descoped from v1 by owner direction; the local engine path stays in the build.",
+        "status": "descoped-v1"
+      },
       "id": "extra.musicgen",
       "source": [
         {
@@ -11928,6 +13450,15 @@
     {
       "basis": "source-inventory",
       "category": "Source feature beyond README detail",
+      "frameleaf": {
+        "evidence": [
+          "0041-headless-signal-frame.patch",
+          "0073-headless-sdr-still-signal.patch",
+          "0096-lease-gated-private-media-streams.patch"
+        ],
+        "note": "Only the headless still-frame and lease-gated media paths are used, by the narrow render-worker executor. The workspace, project lifecycle and layout API is not reachable in Frameleaf.",
+        "status": "not-started"
+      },
       "id": "extra.portable-headless",
       "source": [
         {
@@ -11952,6 +13483,11 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [],
+        "note": "Not reachable: the adapter blocks every route except the project editor, including the in-app docs route.",
+        "status": "not-started"
+      },
       "id": "module.docs",
       "source": [
         {
@@ -12150,6 +13686,15 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "e6bca4d7d8",
+          "0024-project-master-mute.patch",
+          "0058-preview-layout-keyboard-accessibility.patch",
+          "0113-crop-rotation-keyboard-entry.patch"
+        ],
+        "status": "shipped"
+      },
       "id": "module.editor",
       "source": [
         {
@@ -13497,6 +15042,15 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0014-effects-float-transport.patch",
+          "0039-effect-parameter-meaning.patch",
+          "0049-portable-lut-import.patch",
+          "b4113f6f99"
+        ],
+        "status": "shipped"
+      },
       "id": "module.effects",
       "source": [
         {
@@ -13782,6 +15336,11 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": ["74a752f25d"],
+        "note": "The existing render-worker executor (studio/tools/render-worker-still-executor.mjs) accepts only SDR, silent, MP4/H.264 720p timelines of direct library stills; it refuses audio, HDR, other containers and codecs. The in-editor Freecut export is substituted by the host export dialog (shims/export-dialog.tsx), so this is not delivered yet.",
+        "status": "not-started"
+      },
       "id": "module.export",
       "source": [
         {
@@ -14546,6 +16105,15 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0022-expression-dependency-budget.patch",
+          "0047-edge-keyframe-marker-overflow.patch",
+          "66c16f6bcf",
+          "314181de9b"
+        ],
+        "status": "shipped"
+      },
       "id": "module.keyframes",
       "source": [
         {
@@ -15741,6 +17309,11 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own. LottieFiles access is rights-approved (rights-approval.json asset:lottiefiles).",
+        "status": "shipped"
+      },
       "id": "module.lottie-browser",
       "source": [
         {
@@ -15795,6 +17368,19 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0025-relink-workspace-source.patch",
+          "0052-microphone-finalization-authority.patch",
+          "0101-recorded-audio-decoded-duration.patch",
+          "0117-durable-media-relink.patch",
+          "0125-shared-proxy-deletion-alias-guard.patch",
+          "0126-project-copy-media-entry-references.patch",
+          "0132-anime4k-retained-provenance.patch",
+          "0b7183d4dd"
+        ],
+        "status": "shipped"
+      },
       "id": "module.media-library",
       "source": [
         {
@@ -16682,6 +18268,16 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0038-scopes-measure-what-they-show.patch",
+          "0045-hidden-overlay-displayed-frame.patch",
+          "0046-preview-canvas-transform-placement.patch",
+          "0110-scope-revision-binding.patch",
+          "0118-adaptive-preview-render-size.patch"
+        ],
+        "status": "shipped"
+      },
       "id": "module.preview",
       "source": [
         {
@@ -18362,6 +19958,11 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": ["74a752f25d", "841fd8bce1", "c74fc1d719"],
+        "note": "Export is substituted by Frameleaf portable bundles; the schemas run on the adapter workspace.",
+        "status": "shipped"
+      },
       "id": "module.project-bundle",
       "source": [
         {
@@ -18500,6 +20101,14 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0035-retime-policy.patch",
+          "0136-project-colour-policy-disclosure.patch"
+        ],
+        "note": "The editor-side project settings are reachable; the projects list route is replaced by the host Studio library.",
+        "status": "shipped"
+      },
       "id": "module.projects",
       "source": [
         {
@@ -18663,6 +20272,11 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": ["e6bca4d7d8"],
+        "note": "Upstream behaviour carried over unchanged and reachable in the adapter editor; no Frameleaf test of its own.",
+        "status": "shipped"
+      },
       "id": "module.scene-browser",
       "source": [
         {
@@ -18891,6 +20505,14 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0104-browser-whisper-tiny-selector.patch",
+          "0106-browser-whisper-tiny-settings-test.patch"
+        ],
+        "note": "Reachable through the editor Settings dialog.",
+        "status": "shipped"
+      },
       "id": "module.settings",
       "source": [
         {
@@ -18980,6 +20602,20 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [
+          "0012-split-all-unlinked-tracks.patch",
+          "0099-native-linked-chain-join.patch",
+          "0103-native-rate-stretch-lock-admission.patch",
+          "0122-rolling-edit-linked-track-lock-preflight.patch",
+          "0134-shared-edit-effective-lock-refusal.patch",
+          "4d29c52c91",
+          "cd365017c8",
+          "1accc156fc",
+          "d74234e08d"
+        ],
+        "status": "shipped"
+      },
       "id": "module.timeline",
       "source": [
         {
@@ -22454,6 +24090,11 @@
     {
       "basis": "complete-module-file-inventory",
       "category": "Feature module inventory",
+      "frameleaf": {
+        "evidence": [],
+        "note": "Not reachable: the adapter does not mount WorkspaceGate (replaced by the host-backed VirtualWorkspace), by design.",
+        "status": "not-started"
+      },
       "id": "module.workspace-gate",
       "source": [
         {
@@ -22512,6 +24153,15 @@
       "title": "workspace-gate"
     }
   ],
+  "frameleafDelivery": {
+    "basis": "FL-405: per-row Frameleaf delivery status, separate from the upstream preservation axes under status. Measured qualification stays in studio/conformance.json.",
+    "note": "Web Studio rows require an admitted GPU and render worker, which the bundled local ML server provides by default.",
+    "statusVocabulary": {
+      "descoped-v1": "Out of the first release by owner decision: MusicGen, for its licence.",
+      "not-started": "Not reachable in Frameleaf Studio.",
+      "shipped": "In the prepared engine (vendor plus engine-build.json patches) or the Frameleaf adapter and host, and reachable in Frameleaf Studio. Upstream behaviour carried over unchanged counts, and its note says so."
+    }
+  },
   "schemaVersion": 1,
   "statusVocabulary": {
     "command": "Upstream dedicated command coverage; arbitrary project-graph ingestion is not equivalent to a dedicated command",
