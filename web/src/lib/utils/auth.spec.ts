@@ -1,7 +1,23 @@
+import { getStorage, type ServerStorageResponseDto } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { authenticate } from '$lib/utils/auth';
+import { userInteraction } from '$lib/stores/user.svelte';
+import { authenticate, requestServerInfo } from '$lib/utils/auth';
+import { deferredPromise } from '@test-data/deferred';
 
-const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true }, load: vi.fn() }));
+const session = vi.hoisted(() => ({ generation: 0 }));
+const auth = vi.hoisted(() => ({
+  authenticated: true,
+  user: { isAdmin: true },
+  load: vi.fn(),
+  captureSession: () => {
+    const generation = session.generation;
+    return () => generation === session.generation;
+  },
+}));
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  getStorage: vi.fn(),
+}));
 const server = vi.hoisted(() => ({ value: { isInitialized: true, isOnboarded: false } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/managers/server-config-manager.svelte', () => ({ serverConfigManager: server }));
@@ -37,3 +53,30 @@ describe('authenticate: Frameleaf setup (FL-176)', () => {
     await expect(authenticate(at('/auth/onboarding'))).resolves.toBeUndefined();
   });
 });
+
+it.each([false, true])(
+  'publishes storage information only for its requesting session (changed=%s)',
+  async (changed) => {
+    const response = deferredPromise<ServerStorageResponseDto>();
+    const storage = {
+      diskAvailable: '1 GiB',
+      diskAvailableRaw: 1,
+      diskSize: '2 GiB',
+      diskSizeRaw: 2,
+      diskUsagePercentage: 50,
+      diskUse: '1 GiB',
+      diskUseRaw: 1,
+    };
+    auth.authenticated = true;
+    userInteraction.serverInfo = undefined;
+    vi.mocked(getStorage).mockReturnValueOnce(response.promise);
+    const loading = requestServerInfo();
+    if (changed) {
+      session.generation++;
+      auth.authenticated = false;
+    }
+    response.resolve(storage);
+    await loading;
+    expect(userInteraction.serverInfo).toEqual(changed ? undefined : storage);
+  },
+);

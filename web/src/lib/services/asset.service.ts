@@ -415,6 +415,14 @@ export const getAssetActions = (
 };
 
 export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
+  const isCurrentSession = authManager.captureSession();
+  const params = { ...authManager.params };
+  const sharedLink = authManager.isSharedLink;
+  const isCurrent = () =>
+    isCurrentSession() &&
+    sharedLink === authManager.isSharedLink &&
+    params.key === authManager.params.key &&
+    params.slug === authManager.params.slug;
   const assets: { filename: string; id: string; size?: number }[] = [
     {
       filename: asset.originalFileName,
@@ -424,11 +432,14 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
   ];
 
   const isAndroidMotionVideo = (asset: AssetResponseDto) => {
-    return asset.originalPath.includes('encoded-video');
+    return asset.originalPath.split(/[\\/]/).slice(0, -1).includes('encoded-video');
   };
 
   if (asset.livePhotoVideoId && (!edited || !asset.isEdited)) {
-    const motionAsset = await getAssetInfo({ ...authManager.params, id: asset.livePhotoVideoId });
+    const motionAsset = await getAssetInfo({ ...params, id: asset.livePhotoVideoId });
+    if (!isCurrent()) {
+      return;
+    }
     if (
       !isAndroidMotionVideo(motionAsset) ||
       (authManager.authenticated && authManager.preferences.download.includeEmbeddedVideos)
@@ -453,6 +464,9 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
       if (index > 0) {
         // Play nice with Safari, which drops a second download started in the same tick.
         await sleep(500);
+      }
+      if (!isCurrent()) {
+        return;
       }
       downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), filename);
     }

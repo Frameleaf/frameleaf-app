@@ -10,6 +10,7 @@ import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import * as utils from '$lib/utils';
 import { setSharedLink } from '$lib/utils';
 import { downloadAssetFile } from '$lib/utils/asset-utils';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { sharedLinkFactory } from '@test-data/factories/shared-link-factory';
@@ -283,4 +284,49 @@ describe('AssetService', () => {
       );
     });
   });
+});
+
+it('does not add a download after the session changes during motion lookup', async () => {
+  vi.clearAllMocks();
+  const motion = assetFactory.build();
+  const response = deferredPromise<typeof motion>();
+  vi.mocked(getAssetInfo).mockReturnValueOnce(response.promise);
+  const pending = handleDownloadAsset(assetFactory.build({ livePhotoVideoId: motion.id }), { edited: false });
+  authManager.reset();
+  response.resolve(motion);
+  await pending;
+  expect(downloadAssetFile).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['/library/encoded-video-holiday/clip.mov', 2],
+  ['/data/encoded-video/owner/motion.mp4', 1],
+] as const)('only omits motion files from the generated storage folder (%s)', async (originalPath, count) => {
+  vi.clearAllMocks();
+  authManager.reset();
+  authManager.setUser(userAdminFactory.build());
+  authManager.setPreferences(preferencesFactory.build({ download: { includeEmbeddedVideos: false } }));
+  vi.mocked(getAssetInfo).mockResolvedValueOnce(assetFactory.build({ originalPath }));
+  await handleDownloadAsset(assetFactory.build({ livePhotoVideoId: 'motion' }), { edited: false });
+  expect(downloadAssetFile).toHaveBeenCalledTimes(count);
+});
+
+it('does not start the next public download after a session change during the Safari delay', async () => {
+  vi.clearAllMocks();
+  const download = vi.spyOn(utils, 'downloadUrl').mockImplementation(() => {});
+  const shared = vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+  const delay = deferredPromise<void>();
+  vi.mocked(utils.sleep).mockReturnValueOnce(delay.promise);
+  vi.mocked(getAssetInfo).mockResolvedValueOnce(assetFactory.build({ originalPath: '/library/motion.mov' }));
+  try {
+    const pending = handleDownloadAsset(assetFactory.build({ livePhotoVideoId: 'motion' }), { edited: false });
+    await vi.waitFor(() => expect(utils.sleep).toHaveBeenCalledOnce());
+    authManager.reset();
+    delay.resolve();
+    await pending;
+    expect(download).toHaveBeenCalledOnce();
+  } finally {
+    shared.mockRestore();
+    download.mockRestore();
+  }
 });

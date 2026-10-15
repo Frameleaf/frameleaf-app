@@ -143,9 +143,21 @@ export const uploadRequest = async <T>(options: UploadRequestOptions): Promise<{
 };
 
 let _sharedLink: SharedLinkResponseDto | undefined;
+let sharedLinkRequest = 0;
 
-export const setSharedLink = (sharedLink: typeof _sharedLink) => (_sharedLink = sharedLink);
+export const setSharedLink = (sharedLink: typeof _sharedLink) => {
+  sharedLinkRequest++;
+  return (_sharedLink = sharedLink);
+};
 export const getSharedLink = (): typeof _sharedLink => _sharedLink;
+export const captureSharedLinkRequest = () => {
+  const request = ++sharedLinkRequest;
+  return (sharedLink: SharedLinkResponseDto) => {
+    if (request === sharedLinkRequest) {
+      setSharedLink(sharedLink);
+    }
+  };
+};
 
 const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   const searchParameters = new URLSearchParams();

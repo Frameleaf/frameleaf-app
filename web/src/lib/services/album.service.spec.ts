@@ -106,3 +106,23 @@ describe('handleLeaveAlbum (FL-53)', () => {
     expect(leftLocally('stayed-album')).toBe(false);
   });
 });
+
+it.each([null, 'previous-parent'])(
+  'edits collection membership against the parent shown in the dialog (%s)',
+  async (parentId) => {
+    vi.clearAllMocks();
+    const album = albumFactory.build({ id: 'album', parentId });
+    vi.mocked(updateAlbumInfo).mockResolvedValue(album);
+    vi.mocked(moveAlbumToCollection).mockResolvedValue({ ...album, parentId: 'target' });
+    await handleEditAlbumDetails(album, {
+      albumName: 'Updated',
+      description: null,
+      icon: 'mdiImageAlbum',
+      parentId: 'target',
+    });
+    expect(moveAlbumToCollection).toHaveBeenCalledWith({
+      id: 'album',
+      moveAlbumDto: { collectionId: 'target', expectedParentId: parentId },
+    });
+  },
+);
