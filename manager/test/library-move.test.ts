@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../src/store.js';
-import { LibraryMove } from '../src/library-move.js';
+import { LibraryMove, type ServerPause } from '../src/library-move.js';
 import { Refusal, sha256, type Installation } from '../src/contracts.js';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -110,8 +110,56 @@ test('post-start rollback is refused', async () => {
   }
 });
 
+/** The server's FL-360 pause as the Manager sees it: durable across stack restarts, refused while stopped. */
+class FakeServerPause implements ServerPause {
+  state: { operationId: string } | null = null;
+  busy = 0;
+  calls: string[] = [];
+  constructor(private running: () => boolean) {}
+  private check() {
+    if (!this.running()) throw new Refusal('application_unavailable');
+  }
+  private report() {
+    return {
+      paused: !!this.state,
+      operationId: this.state?.operationId ?? null,
+      drained: !!this.state && this.busy === 0,
+      activeJobs: this.busy,
+      writesInFlight: 0,
+    };
+  }
+  async pause(operationId: string) {
+    this.check();
+    this.calls.push('pause');
+    if (this.state && this.state.operationId !== operationId) throw new Refusal('pause_conflict');
+    this.state = { operationId };
+    return this.report();
+  }
+  async status() {
+    this.check();
+    this.calls.push('status');
+    if (this.busy > 0) this.busy--;
+    return this.report();
+  }
+  async resume(operationId: string) {
+    this.check();
+    this.calls.push('resume');
+    if (this.state?.operationId === operationId) this.state = null;
+    return this.report();
+  }
+}
+
 async function movingFixture(
-  run: (move: LibraryMove, store: Store, root: string, source: string, step: any, checkpoint: any) => Promise<void>,
+  run: (
+    move: LibraryMove,
+    store: Store,
+    root: string,
+    source: string,
+    step: any,
+    checkpoint: any,
+    server: FakeServerPause,
+    containers: any[],
+  ) => Promise<void>,
 ) {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'manager-move-runtime-')));
   const directory = join(base, 'state'),
@@ -247,6 +295,9 @@ async function movingFixture(
       c.State.Running = false;
     }
   };
+  const server = new FakeServerPause(
+    () => containers.find((c) => c.Config.Labels['com.docker.compose.service'] === 'frameleaf-server').State.Running,
+  );
   const move = new LibraryMove(
     store,
     docker,
@@ -255,10 +306,11 @@ async function movingFixture(
     directory,
     join(base, 'backups'),
     execute,
+    server,
+    { timeoutMs: 200, intervalMs: 1 },
   );
   // Host mount authority is separately exercised by the existing storage tests; this fixture tests the journal with real file copying.
   (move as any).physicalPaths = async () => {};
-  (move as any).requireQuiescence = () => {}; // Later phases use a simulated qualified fence; production refuses without one.
   const step = (operation: any, crash?: string) => async (name: string, action: any) => {
     if (operation.completed.includes(name)) return operation.receipts[name];
     operation.step = name;
@@ -278,7 +330,7 @@ async function movingFixture(
     return 'verified-fixture-snapshot';
   };
   try {
-    await run(move, store, root, source, step, checkpoint);
+    await run(move, store, root, source, step, checkpoint, server, containers);
   } finally {
     store.close();
     await rm(base, { recursive: true, force: true });
@@ -295,8 +347,9 @@ for (const crash of [
   'move-start',
 ]) {
   test(`lost acknowledgement at ${crash} resumes without losing originals or changing PostgreSQL`, async () => {
-    await movingFixture(async (move, store, root, source, step, checkpoint) => {
+    await movingFixture(async (move, store, root, source, step, checkpoint, server) => {
       const review = await move.review(root);
+      assert.equal(review.available, true);
       const { operation } = move.start(review.id, 'request');
       assert.equal(move.start(review.id, 'request').created, false);
       await assert.rejects(
@@ -317,11 +370,13 @@ for (const crash of [
       assert.equal(await readFile(join(next.mounts[0].source, 'photo'), 'utf8'), 'unchanged-original');
       assert.equal(next.databasePath, join(root, '..', 'database', 'pg'));
       await assert.rejects(move.recover(resumed), /media_move_reverse_required/);
+      assert.equal(server.state, null, 'uploads and jobs resume after the move');
+      assert.ok(server.calls.includes('pause'));
     });
   });
 }
 test('stop before switching safely restores the old mapping and retains the copied destination', async () => {
-  await movingFixture(async (move, store, root, source, step, checkpoint) => {
+  await movingFixture(async (move, store, root, source, step, checkpoint, server) => {
     const review = await move.review(root),
       { operation } = move.start(review.id, 'request');
     await assert.rejects(
@@ -334,6 +389,8 @@ test('stop before switching safely restores the old mapping and retains the copi
     await move.stop(operation);
     await move.recover(operation);
     assert.equal(store.get<Installation>('installation')!.mounts[0].source, source);
+    assert.equal(server.state, null, 'a stopped move resumes uploads and jobs on the original folder');
+    assert.ok(server.calls.includes('resume'));
     assert.equal(await readFile(join(source, 'photo'), 'utf8'), 'unchanged-original');
     assert.equal(
       await readFile(join(root, `frameleaf-${'a'.repeat(12)}-media-${operation.id}`, 'photo'), 'utf8'),
@@ -342,14 +399,74 @@ test('stop before switching safely restores the old mapping and retains the copi
   });
 });
 
-test('production refuses a new move without backend quiescence, before taking its operation lock', async () => {
+test('a server without the library move pause refuses the move before taking its operation lock', async () => {
   await movingFixture(async (move, store, root, source) => {
+    (move as any).server = undefined;
     const review = await move.review(root);
-    delete (move as any).requireQuiescence;
     assert.equal(review.available, false);
     assert.throws(() => move.start(review.id, 'request'), /media_quiescence_unavailable/);
     assert.equal(store.history().length, 0);
     assert.equal(await readFile(join(source, 'photo'), 'utf8'), 'unchanged-original');
+  });
+});
+
+test('the move waits until uploads and jobs have drained before stopping anything', async () => {
+  await movingFixture(async (move, store, root, _source, step, checkpoint, server, containers) => {
+    const review = await move.review(root),
+      { operation } = move.start(review.id, 'request');
+    server.busy = 3;
+    const stop = (move as any).fencing.stopInstallation;
+    let drainedAtStop: boolean | undefined;
+    (move as any).fencing.stopInstallation = async (installation: Installation) => {
+      if (drainedAtStop === undefined) drainedAtStop = server.busy === 0 && !!server.state;
+      await stop(installation);
+    };
+    await move.run(operation, step(operation), checkpoint(operation.id), async () => ({
+      verificationPassed: true,
+      phase: 'complete',
+    }));
+    assert.equal(drainedAtStop, true);
+    const paused = server.calls.indexOf('pause');
+    assert.deepEqual(server.calls.slice(paused, paused + 4), ['pause', 'status', 'status', 'status']);
+    assert.equal(server.calls.at(-1), 'resume');
+    assert.equal(server.state, null);
+    assert.ok(containers.every((c) => c.State.Running));
+  });
+});
+
+test('a drain that does not finish in time resumes the server and stops nothing', async () => {
+  await movingFixture(async (move, store, root, source, step, checkpoint, server, containers) => {
+    server.busy = Number.POSITIVE_INFINITY;
+    const review = await move.review(root),
+      { operation } = move.start(review.id, 'request');
+    await assert.rejects(
+      move.run(operation, step(operation), checkpoint(operation.id), async () => ({
+        verificationPassed: true,
+        phase: 'complete',
+      })),
+      /media_quiescence_timeout/,
+    );
+    assert.equal(server.state, null);
+    assert.equal(server.calls.at(-1), 'resume');
+    assert.ok(containers.every((c) => c.State.Running), 'no container was stopped');
+    assert.equal(operation.receipts['move-writer-policies'], undefined);
+    assert.equal(store.get<Installation>('installation')!.mounts[0].source, source);
+  });
+});
+
+test('a failed check after the switch still resumes uploads and jobs', async () => {
+  await movingFixture(async (move, store, root, _source, step, checkpoint, server) => {
+    const review = await move.review(root),
+      { operation } = move.start(review.id, 'request');
+    await assert.rejects(
+      move.run(operation, step(operation), checkpoint(operation.id), async () => ({
+        verificationPassed: false,
+        phase: 'needs-attention',
+      })),
+      /media_move_library_needs_attention/,
+    );
+    assert.equal(server.state, null);
+    assert.equal(operation.receipts['move-server-resumed'], true);
   });
 });
 
