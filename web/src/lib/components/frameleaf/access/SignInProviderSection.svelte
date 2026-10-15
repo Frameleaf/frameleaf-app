@@ -16,9 +16,16 @@
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import { toastManager } from '@frameleaf/ui';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import './access.css';
+
+  let alive = true;
+  const isCurrentSession = authManager.captureSession();
+  const isCurrent = () => alive && isCurrentSession();
+  onDestroy(() => {
+    alive = false;
+  });
 
   let linking = $state(false);
   let working = $state(false);
@@ -33,7 +40,6 @@
     }
 
     linking = true;
-    const isCurrent = authManager.captureSession();
     try {
       const updated = await oauth.link(location);
       if (!isCurrent()) {
@@ -55,17 +61,21 @@
   });
 
   const connect = async () => {
+    if (!isCurrent()) {
+      return;
+    }
     error = '';
     working = true;
     try {
-      await oauth.authorize(location);
+      await oauth.authorize(location, isCurrent);
     } finally {
-      working = false;
+      if (isCurrent()) {
+        working = false;
+      }
     }
   };
 
   const disconnect = async () => {
-    const isCurrent = authManager.captureSession();
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_provider_disconnect_title'),
       prompt: featureFlagsManager.value.passwordLogin
@@ -93,7 +103,9 @@
       }
       handleError(error_, $t('errors.unable_to_unlink_account'));
     } finally {
-      working = false;
+      if (isCurrent()) {
+        working = false;
+      }
     }
   };
 </script>

@@ -377,17 +377,22 @@ export const oauth = {
     const value = 'autoLaunch=1';
     return location.search.includes(value);
   },
-  authorize: async (location: Location) => {
+  authorize: async (location: Location, isCurrent?: () => boolean) => {
     const $t = get(t);
     try {
       const redirectUri = location.href.split('?', 1)[0];
       const { url } = await startOAuth({ oAuthConfigDto: { redirectUri } });
+      if (isCurrent && !isCurrent()) {
+        return false;
+      }
       // FL-80: the callback may arrive in another tab; keep this sign-in's choices for it
       recordOAuthRequest(url);
       globalThis.location.assign(url);
       return true;
     } catch (error) {
-      handleError(error, $t('errors.unable_to_login_with_oauth'));
+      if (!isCurrent || isCurrent()) {
+        handleError(error, $t('errors.unable_to_login_with_oauth'));
+      }
       return false;
     }
   },

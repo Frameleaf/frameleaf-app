@@ -15,7 +15,7 @@
   import { CloudLinkRefusal, getPublicConfig } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCheck, mdiCloudOffOutline, mdiRefresh } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -28,6 +28,12 @@
   };
   const { mode, linked, onLinked, onFallback, compact = false }: Props = $props();
 
+  let alive = true;
+  const isCurrent = () => alive;
+  onDestroy(() => {
+    alive = false;
+  });
+
   let signInAvailable = $state<boolean | null>(null);
   let busy = $state(false);
   let error = $state('');
@@ -39,8 +45,16 @@
       return cloudManager.listen();
     }
     getPublicConfig()
-      .then((config) => (signInAvailable = config.frameleaf.signInAvailable))
-      .catch(() => (signInAvailable = false));
+      .then((config) => {
+        if (alive) {
+          signInAvailable = config.frameleaf.signInAvailable;
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          signInAvailable = false;
+        }
+      });
   });
 
   const status = $derived(mode === 'link' ? cloudManager.status : null);
@@ -57,17 +71,25 @@
   );
 
   const run = async (call: () => Promise<unknown>) => {
+    if (!alive) {
+      return;
+    }
     busy = true;
     error = '';
     try {
       await call();
     } catch (error_) {
+      if (!alive) {
+        return;
+      }
       error = getServerErrorMessage(error_) || $t('frameleaf_setup_cloud_unreachable_body');
       if (mode === 'sign-in') {
         signInAvailable = false;
       }
     } finally {
-      busy = false;
+      if (alive) {
+        busy = false;
+      }
     }
   };
 
@@ -87,7 +109,8 @@
       : null,
   );
 
-  const start = () => run(() => (mode === 'link' ? cloudManager.startLink() : startFrameleaf('sign-in', location)));
+  const start = () =>
+    run(() => (mode === 'link' ? cloudManager.startLink() : startFrameleaf('sign-in', location, undefined, isCurrent)));
 </script>
 
 {#if linked || status?.state === 'linked'}
