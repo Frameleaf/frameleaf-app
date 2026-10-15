@@ -11,12 +11,14 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility, type PersonResponseDto } from '@frameleaf/sdk';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -43,6 +45,29 @@
   // People is this page's parent: a reload, a shared address or a notification goes back there.
   let previousRoute = $state<string>(Route.people());
   let refresh = $state(0);
+  let alive = true;
+  const personId = $derived(person.id);
+  const personView = $derived({ id: personId, isCurrentSession: authManager.captureSession() });
+  onDestroy(() => {
+    alive = false;
+  });
+  const onFacesChanged = async (view: typeof personView) => {
+    const isCurrent = () => alive && view === personView && view.isCurrentSession();
+    if (!isCurrent()) {
+      return;
+    }
+    try {
+      // Photos whose only face of this person moved away leave the timeline: re-read both.
+      await updateAssetCount();
+      if (isCurrent()) {
+        refresh++;
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.something_went_wrong'));
+      }
+    }
+  };
 
   onMount(() => {
     const fallbackRoute = page.params.assetId ? Route.viewPerson(data.person) : Route.people();
@@ -119,6 +144,7 @@
 <UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.people() }]]}>
   <div class="relative h-full overflow-hidden md:px-4">
     {#key `${person.id}:${refresh}`}
+      {@const view = personView}
       <LibraryView
         enableRouting
         selectAll="loaded"
@@ -140,11 +166,7 @@
           onBack={() => goto(previousRoute)}
           onPersonChange={(updated) => (person = updated)}
           onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}
-          onFacesChanged={async () => {
-            // Photos whose only face of this person moved away leave the timeline: re-read both.
-            await updateAssetCount();
-            refresh++;
-          }}
+          onFacesChanged={() => onFacesChanged(view)}
           onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
           onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
         />
