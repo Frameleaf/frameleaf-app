@@ -46,6 +46,27 @@ describe(UserService.name, () => {
     );
   });
 
+  describe('updateMe', () => {
+    it.each([false, true])('rejects a conflicting email before writing, deleted=%s', async (deleted) => {
+      const existing = UserFactory.create({ email: 'used@example.com', deletedAt: deleted ? new Date() : null });
+      mocks.user.getByEmail.mockImplementation((_email, options) =>
+        Promise.resolve(!existing.deletedAt || options?.withDeleted ? existing : undefined),
+      );
+      mocks.user.update.mockRejectedValue(new Error('unique email constraint'));
+      await expect(sut.updateMe(authStub.user1, { email: existing.email })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('allows retaining the signed-in account email', async () => {
+      mocks.user.getByEmail.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      await expect(sut.updateMe(authStub.user1, { email: userStub.user1.email })).resolves.toMatchObject({
+        id: userStub.user1.id,
+        email: userStub.user1.email,
+      });
+    });
+  });
+
   describe('getAll', () => {
     it('admin should get all users', async () => {
       const user = UserFactory.create();

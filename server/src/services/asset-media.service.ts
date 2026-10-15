@@ -695,8 +695,8 @@ export class AssetMediaService extends BaseService {
     }
 
     return {
-      results: dto.assets.map(({ id, checksum }) => {
-        const duplicate = checksumMap[fromChecksum(checksum).toString('hex')];
+      results: dto.assets.map(({ id }, index) => {
+        const duplicate = checksumMap[checksums[index].toString('hex')];
         if (duplicate) {
           return {
             id,
