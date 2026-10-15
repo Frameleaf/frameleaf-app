@@ -544,6 +544,7 @@ describe(PhysicalFileRepository.name, () => {
       await expect(sut.getCanonicalGeneratedFile(duplicate.id, AssetFileType.Preview)).resolves.toEqual({
         id: generated.id,
         path: generated.path,
+        canonicalAssetId: master.id,
       });
     });
   });
