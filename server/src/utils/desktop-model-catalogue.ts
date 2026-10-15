@@ -1,0 +1,198 @@
+import { createHash } from 'node:crypto';
+import z from 'zod';
+import { CLIP_MODEL_INFO } from 'src/constants.js';
+import { canonicalJson } from 'src/utils/object.js';
+
+const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+const digest = z.string().regex(/^[a-f0-9]{64}$/);
+const relative = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine(
+    (value) =>
+      !/[\\:]/.test(value) &&
+      !/\p{Control}/u.test(value) &&
+      value
+        .split('/')
+        .every(
+          (part) =>
+            !!part &&
+            part !== '.' &&
+            part !== '..' &&
+            !/[. ]$/.test(part) &&
+            !/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(part.split('.', 1)[0]),
+        ),
+  );
+const model = z.strictObject({
+  name: z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/),
+  task: z.literal('clip'),
+  type: z.enum(['textual', 'visual']),
+  artifacts: z
+    .record(relative, digest)
+    .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 4096),
+});
+const spec = z.strictObject({
+  protocolVersion: z.literal(1),
+  modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+  provider: z.enum([
+    'CPUExecutionProvider',
+    'CUDAExecutionProvider',
+    'CoreMLExecutionProvider',
+    'OpenVINOExecutionProvider',
+    'MIGraphXExecutionProvider',
+  ]),
+  models: z.array(model).length(1),
+  entries: z.record(z.string(), z.json()),
+  preprocessingSha256: digest,
+  fixtureFile: relative.refine(
+    (value) => !value.includes('/') && !['qualification.json', 'report.json'].includes(value),
+  ),
+  fixtureKind: z.enum(['text', 'image']),
+  fixtureSha256: digest,
+  expectedOutput: z.record(z.string(), z.json()),
+  minMemoryBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  deadlineSeconds: z.number().int().min(1).max(600),
+});
+const profile = z
+  .strictObject({
+    modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+    modelName: model.shape.name,
+    workload: z.literal('clip'),
+    runtimeSourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
+    modelSnapshotRevision: z.string().regex(/^[a-f0-9]{40}$/),
+    embeddingDimensions: z.number().int().min(1).max(65_536),
+    spec,
+    fixtureBase64: z.string().min(1).max(22_369_624),
+    artifactBytes: z.record(
+      relative,
+      z
+        .number()
+        .int()
+        .min(0)
+        .max(16 * 1024 ** 3),
+    ),
+  })
+  .superRefine((value, context) => {
+    const invalid = () => context.addIssue({ code: 'custom', message: 'desktop_model_profile_invalid' });
+    const selected = value.spec.models[0];
+    const identity = {
+      protocolVersion: 1,
+      entries: value.spec.entries,
+      models: value.spec.models,
+      preprocessingSha256: value.spec.preprocessingSha256,
+    };
+    if (
+      value.modelKey !== value.spec.modelKey ||
+      value.modelKey !== `clip:${sha(canonicalJson(identity))}` ||
+      value.modelName !== selected.name ||
+      CLIP_MODEL_INFO[value.modelName]?.dimSize !== value.embeddingDimensions
+    )
+      invalid();
+    const type = value.spec.fixtureKind === 'text' ? 'textual' : 'visual';
+    const entry = value.spec.entries.clip;
+    if (
+      selected.type !== type ||
+      !entry ||
+      typeof entry !== 'object' ||
+      Array.isArray(entry) ||
+      Object.keys(entry).join(',') !== type
+    )
+      invalid();
+    else {
+      const actual = entry[type];
+      if (
+        !actual ||
+        typeof actual !== 'object' ||
+        Array.isArray(actual) ||
+        actual.modelName !== value.modelName ||
+        Object.keys(value.spec.entries).join(',') !== 'clip'
+      )
+        invalid();
+    }
+    const ref = `models--frameleaf--${value.modelName}/refs/main`;
+    if (
+      selected.artifacts[ref] !== sha(value.modelSnapshotRevision) ||
+      value.artifactBytes[ref] !== Buffer.byteLength(value.modelSnapshotRevision)
+    )
+      invalid();
+    const names = Object.keys(selected.artifacts).sort();
+    if (
+      canonicalJson(names) !== canonicalJson(Object.keys(value.artifactBytes).sort()) ||
+      new Set(names.map((name) => name.toLowerCase())).size !== names.length ||
+      Object.values(value.artifactBytes).reduce((a, b) => a + b, 0) > 10 * 1024 ** 3
+    )
+      invalid();
+    const fixture = Buffer.from(value.fixtureBase64, 'base64');
+    if (
+      fixture.length === 0 ||
+      fixture.length > 16 * 1024 * 1024 ||
+      fixture.toString('base64') !== value.fixtureBase64 ||
+      sha(fixture) !== value.spec.fixtureSha256
+    )
+      invalid();
+    if (value.spec.fixtureKind === 'text' && !Buffer.from(fixture.toString('utf8'), 'utf8').equals(fixture)) invalid();
+    try {
+      const clip = value.spec.expectedOutput.clip;
+      const vector: unknown = typeof clip === 'string' ? JSON.parse(clip) : null;
+      if (
+        !Array.isArray(vector) ||
+        vector.length !== value.embeddingDimensions ||
+        vector.some((v: unknown) => typeof v !== 'number' || !Number.isFinite(v))
+      )
+        invalid();
+      const keys = Object.keys(value.spec.expectedOutput).sort().join(',');
+      if (value.spec.fixtureKind === 'text') {
+        if (keys !== 'clip') invalid();
+      } else if (
+        keys !== 'clip,imageHeight,imageWidth' ||
+        fixture.length < 24 ||
+        !fixture.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+        fixture.readUInt32BE(16) !== value.spec.expectedOutput.imageWidth ||
+        fixture.readUInt32BE(20) !== value.spec.expectedOutput.imageHeight
+      )
+        invalid();
+    } catch {
+      invalid();
+    }
+  });
+const catalogueSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    epoch: z.number().int().positive(),
+    profiles: z.array(profile).min(1).max(256),
+  })
+  .refine(
+    (value) =>
+      new Set(value.profiles.map((p) => `${p.modelKey}:${p.spec.provider}:${p.runtimeSourceRevision}`)).size ===
+      value.profiles.length,
+  );
+export type DesktopModelCatalogue = z.infer<typeof catalogueSchema>;
+export type DesktopModelProfile = z.infer<typeof profile>;
+
+/** Validates release-owned catalogue data; parsing arbitrary data does not authorize a model grant. */
+export const parseDesktopModelCatalogue = (value: unknown): DesktopModelCatalogue => catalogueSchema.parse(value);
+export const matchDesktopModelProfile = (
+  catalogue: DesktopModelCatalogue,
+  modelName: string,
+  entries: unknown,
+  runtimeSourceRevision: string,
+  provider: string,
+): DesktopModelProfile | undefined =>
+  catalogue.profiles.find(
+    (profile) =>
+      profile.modelName === modelName &&
+      profile.runtimeSourceRevision === runtimeSourceRevision &&
+      profile.spec.provider === provider &&
+      canonicalJson(profile.spec.entries) === canonicalJson(entries),
+  );
+
+export const createDesktopModelChallenge = (profile: DesktopModelProfile, challengeId: string) => {
+  const id = z
+    .uuidv4()
+    .refine((value) => value === value.toLowerCase())
+    .parse(challengeId);
+  const extension = profile.spec.fixtureKind === 'text' ? 'txt' : 'png';
+  const specJson = canonicalJson({ ...profile.spec, fixtureFile: `${id}.${extension}` });
+  return { specJson, bindingSha256: sha(specJson), fixtureBase64: profile.fixtureBase64 };
+};
