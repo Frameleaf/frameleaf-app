@@ -19,7 +19,11 @@ const workflows = Object.fromEntries(
     ]),
 );
 // GitHub-hosted runners only; Namespace and self-hosted labels are rejected.
-const supported = new Set(["ubuntu-24.04", "ubuntu-24.04-arm", "windows-latest"]);
+const supported = new Set([
+  "ubuntu-24.04",
+  "ubuntu-24.04-arm",
+  "windows-latest",
+]);
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
   assert(

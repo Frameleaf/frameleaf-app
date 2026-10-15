@@ -68,7 +68,7 @@
     "src/schema/tables/ocr-search.table.ts": "53bbb08a80b9491428dddaf62b65cc70d6a0b0554f2c61bcb22ca5b0ea05ca21",
     "src/schema/tables/operational-metric-sample.table.ts": "ad06896293efb98b58d7b01ac8affc9c24aca6e3f1912b192939db626c9c04ed",
     "src/schema/tables/partner-audit.table.ts": "0ca4f0fffe6b22c417a698e6f369bf79844a7754f42a48cdddbb39bb0ceda00c",
-    "src/schema/tables/partner.table.ts": "a651f2f0da929ee6f3df51434e5f08b298ce7fd2a8c5e85e69a69bb796923e65",
+    "src/schema/tables/partner.table.ts": "9391a641377293ea8c0cbb93c58c784793f3ae644cd4db05f481541ba14ce66d",
     "src/schema/tables/person-audit.table.ts": "f43ad45c0c0d674184dafb39b7786c232d51d7194c12bfcce22beae22d996ee3",
     "src/schema/tables/person-group-audit.table.ts": "19bf276917c6883284d334f0a53c30761073d0b5af57f3b97562e8298faa9e0e",
     "src/schema/tables/person-group.table.ts": "20d0bc1efac183db55decff5d872755c351a54a3e3f180280a64aef02f1a79c8",
