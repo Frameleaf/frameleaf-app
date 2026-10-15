@@ -973,9 +973,10 @@ export class AssetRepository {
                   ])
                   .as('year'),
               )
-              .select((eb) => eb.fn('make_date', [sql`year::int`, sql`${month}::int`, sql`${day}::int`]).as('date')),
+              .select(sql<Date>`make_date(year::int, ${month}::int, 1) + (${day}::int - 1)`.as('date')),
           )
           .selectFrom('today')
+          .where(sql`date_part('month', today.date)`, '=', month)
           .innerJoinLateral(
             (qb) =>
               qb
@@ -2607,7 +2608,7 @@ export class AssetRepository {
     return { fieldName: 'createdAt', items };
   }
   @GenerateSql({ params: [[DummyValue.UUID]] })
-  @ChunkedArray()
+  @ChunkedSet()
   async getNsfwAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
       return new Set();
