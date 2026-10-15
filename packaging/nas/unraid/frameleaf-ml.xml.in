@@ -12,4 +12,6 @@
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-ml.xml</TemplateURL>
   <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
   <Config Name="Model cache" Target="/cache" Default="/mnt/user/appdata/frameleaf/model-cache" Mode="rw" Description="Persistent downloaded models" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/model-cache</Config>
+  <Config Name="Studio worker enrolment" Target="/run/frameleaf/studio-worker" Default="/mnt/user/appdata/frameleaf/studio-worker" Mode="ro" Description="The same folder as frameleaf-server's Studio worker enrolment, read-only; the bundled Studio render worker enrols from it. Set FRAMELEAF_STUDIO_WORKER=false to turn the worker off" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/frameleaf/studio-worker</Config>
+  <Config Name="Studio worker" Target="FRAMELEAF_STUDIO_WORKER" Default="true" Description="Run the bundled Studio render worker so web Studio opens and exports; false turns it off" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
 </Container>

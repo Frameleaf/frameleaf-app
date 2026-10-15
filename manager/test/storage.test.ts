@@ -165,6 +165,19 @@ test('rendered PostgreSQL uses its new host directory; media volume identity sta
     assert.ok(canonical.services['frameleaf-machine-learning']);
     assert.equal(canonical.services['immich-machine-learning'], undefined);
     assert.deepEqual(canonical.services['frameleaf-machine-learning'].networks.default.aliases, ['immich-machine-learning']);
+    // FL-408: the bundled Studio worker enrols through a volume the server writes and ML only reads.
+    assert.deepEqual(canonical.volumes['studio-worker'], {});
+    assert.deepEqual(canonical.services['frameleaf-machine-learning'].volumes, [
+      { type: 'volume', source: 'model-cache', target: '/cache' },
+      { type: 'volume', source: 'studio-worker', target: '/run/frameleaf/studio-worker', read_only: true },
+    ]);
+    assert.equal(
+      canonical.services['frameleaf-server'].volumes.filter(
+        (mount: { source: string; target: string; read_only: boolean }) =>
+          mount.source === 'studio-worker' && mount.target === '/run/frameleaf/studio-worker' && !mount.read_only,
+      ).length,
+      1,
+    );
     await writeFile(
       join(bundle, 'docker-compose.yml'),
       JSON.stringify({ services: { database: {}, 'frameleaf-server': {}, 'immich-machine-learning': {} } }),
