@@ -6,11 +6,15 @@ import os
 import sys
 import tempfile
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .native_binding import NativeBinding
 from dataclasses import dataclass
 from pathlib import Path
 
 import orjson
-from fastapi import Form, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -85,10 +89,49 @@ class NativeScope:
         await self.app(scope, receive, send)
 
 
+def create_native_app(binding: "NativeBinding | None") -> FastAPI:
+    from . import main
+
+    app = FastAPI(lifespan=main.lifespan)
+    app.get("/ping")(main.ping)
+
+    @app.post("/predict")
+    async def predict(
+        entries: str = Form(), image: bytes | None = File(default=None), text: str | None = Form(default=None)
+    ) -> JSONResponse:
+        if binding is None:
+            raise HTTPException(503, "Native model qualification required")
+        if (image is None) == (text is None):
+            raise HTTPException(422, "Exactly one library input required")
+        if image is not None:
+            data = image
+        else:
+            assert text is not None
+            data = text.encode("utf-8")
+        if not data or len(data) > 16 * 1024 * 1024 or len(entries.encode()) > 65536:
+            raise HTTPException(413, "Native inference input too large")
+        try:
+            value = orjson.loads(entries)
+            kind = "image" if image is not None else "text"
+            selected = await main.run(binding.check, value, kind)
+            response = await main.predict(entries=selected, image=image, text=text, mask=None)
+            # Recheck before publishing; changed bytes or drivers invalidate the whole result.
+            await main.run(binding.check, value, kind)
+            if len(response.body) > 4 * 1024 * 1024:
+                raise HTTPException(413, "Native inference output too large")
+            return response
+        except ValueError as error:
+            raise HTTPException(409, "Native model qualification invalidated") from error
+
+    return app
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--spec", type=Path)
+    parser.add_argument("--qualification-report", type=Path)
     from .native_ort import PROVIDERS
 
     parser.add_argument("--provider", choices=PROVIDERS, default="CPUExecutionProvider")
@@ -105,9 +148,16 @@ def main() -> None:
     from .native_ort import configure
 
     configure(options.provider)
-    from .main import app, get_entries
+    from .native_binding import NativeBinding
 
-    app.dependency_overrides[get_entries] = library_entries
+    if bool(options.spec) != bool(options.qualification_report):
+        parser.error("native_binding_pair_required")
+    binding = (
+        NativeBinding.load(options.spec, options.qualification_report, options.cache_dir, options.provider)
+        if options.spec
+        else None
+    )
+    app = create_native_app(binding)
 
     previous_temp = tempfile.tempdir
     with tempfile.TemporaryDirectory(prefix="frameleaf-native-") as runtime:

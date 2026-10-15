@@ -146,7 +146,9 @@ def test_driver_changes_invalidate_fingerprint_without_using_free_memory() -> No
     assert fingerprint({"driver": "1", "model": "hash"}) != fingerprint({"driver": "2", "model": "hash"})
 
 
-def test_production_text_pipeline_qualification_binds_artifacts_fixture_and_runtime(tmp_path: Path) -> None:
+def test_production_text_pipeline_qualification_binds_artifacts_fixture_and_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import os
     import subprocess
     import sys
@@ -229,6 +231,28 @@ def test_production_text_pipeline_qualification_binds_artifacts_fixture_and_runt
     assert result["bindingSha256"] == hashlib.sha256(spec_path.read_bytes()).hexdigest()
     assert result["execution"][0]["nodes"]["CPUExecutionProvider"] > 0
     assert cache_hashes(cache) == hashes
+    from fastapi.testclient import TestClient
+
+    from immich_ml import native_ort
+    from immich_ml.native_binding import NativeBinding
+    from immich_ml.native_runtime import create_native_app
+
+    with monkeypatch.context() as patch:
+        patch.setattr(native_ort, "_policy", None)
+        native_ort.configure("CPUExecutionProvider", tmp_path / "live-profiles")
+        patch.setattr(settings, "cache_folder", tmp_path / "cache")
+        patch.setattr(settings, "model_downloads", False)
+        binding = NativeBinding.load(spec_path, report, tmp_path / "cache", "CPUExecutionProvider")
+        with TestClient(create_native_app(binding)) as client:
+            data = {"entries": json.dumps(spec["entries"]), "text": "frameleaf fixture"}
+            response = client.post("/predict", data=data)
+            assert response.status_code == 200, response.text
+            assert json.loads(response.json()["clip"]) == [5.0, 5.0]
+            assert client.post("/predict", data={**data, "entries": "{}"}).status_code == 409
+            original = (textual / "model.onnx").read_bytes()
+            (textual / "model.onnx").write_bytes(b"changed after qualification")
+            assert client.post("/predict", data=data).status_code == 409
+            (textual / "model.onnx").write_bytes(original)
     changed = {**spec, "preprocessingSha256": "0" * 64}
     assert run(changed).returncode == 1
     assert json.loads(report.read_text())["reason"] == "native_preprocessing_changed"

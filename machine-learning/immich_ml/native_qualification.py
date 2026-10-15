@@ -23,9 +23,10 @@ from pydantic.alias_generators import to_camel
 from immich_ml.native_hardware import snapshot
 from immich_ml.native_ort import configure
 from immich_ml.qualification import compare_output, execution_evidence
-from immich_ml.schemas import ModelTask, ModelType, ORJSONResponse
+from immich_ml.schemas import InferenceEntries, ModelTask, ModelType, ORJSONResponse
 
 if TYPE_CHECKING:
+    from immich_ml.models.base import InferenceModel
     from immich_ml.sessions.ort import OrtSession
 
 
@@ -116,25 +117,11 @@ def validate_external_weights(model_path: Path, root: Path, artifacts: dict[str,
     visit(proto)
 
 
-async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, spec_sha256: str) -> dict[str, Any]:
-    if "immich_ml.main" in sys.modules:
-        raise RuntimeError("native_qualification_requires_fresh_process")
-    from immich_ml.config import settings
+def verify_models(spec: QualificationSpec, cache_dir: Path) -> tuple[InferenceEntries, list[InferenceModel]]:
     from immich_ml.models import from_model_type
     from immich_ml.native_runtime import library_entries
     from immich_ml.staging import cache_hashes, verify_staged
 
-    if cache_dir.is_symlink():
-        raise ValueError("native_cache_directory_invalid")
-    if preprocessing_identity() != spec.preprocessing_sha256:
-        raise ValueError("native_preprocessing_changed")
-    before = snapshot()
-    if before["availableMemoryBytes"] < spec.min_memory_bytes:
-        raise ValueError("native_memory_insufficient")
-    settings.model_downloads = False
-    settings.cache_folder = cache_dir.resolve()
-    settings.ann = False
-    settings.rknn = False
     entries = library_entries(orjson.dumps(spec.entries).decode())
     selected = {(entry["name"], entry["task"], entry["type"]): entry for group in entries for entry in group}
     if len(selected) != len(spec.models) or set(selected) != {
@@ -150,6 +137,8 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
         )
         if model.model_name != item.name:
             raise ValueError("native_model_name_not_canonical")
+        if not model.cache_dir.resolve().is_relative_to(cache_dir.resolve()):
+            raise ValueError("native_cache_directory_invalid")
         verify_staged(model.cache_dir)
         if cache_hashes(model.cache_dir) != item.artifacts:
             raise ValueError("native_staged_hash_mismatch")
@@ -157,6 +146,27 @@ async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, 
             raise ValueError("native_engine_qualification_not_supported")
         validate_external_weights(model.model_path, model.cache_dir, item.artifacts)
         models.append(model)
+    return entries, models
+
+
+async def qualify(spec: QualificationSpec, cache_dir: Path, fixture_root: Path, spec_sha256: str) -> dict[str, Any]:
+    if "immich_ml.main" in sys.modules:
+        raise RuntimeError("native_qualification_requires_fresh_process")
+    from immich_ml.config import settings
+    from immich_ml.staging import cache_hashes
+
+    if cache_dir.is_symlink():
+        raise ValueError("native_cache_directory_invalid")
+    if preprocessing_identity() != spec.preprocessing_sha256:
+        raise ValueError("native_preprocessing_changed")
+    before = snapshot()
+    if before["availableMemoryBytes"] < spec.min_memory_bytes:
+        raise ValueError("native_memory_insufficient")
+    settings.model_downloads = False
+    settings.cache_folder = cache_dir.resolve()
+    settings.ann = False
+    settings.rknn = False
+    entries, models = verify_models(spec, cache_dir)
     fixture = fixture_root / spec.fixture_file
     if (
         fixture.is_symlink()

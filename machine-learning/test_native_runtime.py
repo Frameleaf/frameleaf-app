@@ -134,3 +134,48 @@ def test_native_predict_rejects_studio_tasks_before_model_loading() -> None:
         assert error.value.status_code == 422
     entries = library_entries('{"clip": {"textual": {"modelName": "ViT-B-32__openai"}}}')
     assert entries[0][0]["task"] == "clip"
+
+
+def test_unqualified_native_app_cannot_predict() -> None:
+    from fastapi.testclient import TestClient
+
+    from immich_ml.native_runtime import create_native_app
+
+    with TestClient(create_native_app(None)) as client:
+        response = client.post("/predict", data={"entries": "{}", "text": "fixture"})
+        assert response.status_code == 503
+
+
+def test_bound_native_app_refuses_changed_request_and_changed_runtime(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from immich_ml import main
+    from immich_ml.native_runtime import create_native_app
+
+    class Binding:
+        calls = 0
+        changed = False
+
+        def check(self, entries, kind):
+            self.calls += 1
+            if entries != {"clip": {"textual": {"modelName": "ViT-B-32__openai"}}} or kind != "text":
+                raise ValueError("native_request_binding_mismatch")
+            if self.changed:
+                raise ValueError("native_runtime_or_driver_changed")
+            return ([], [])
+
+    binding = Binding()
+
+    async def predict(**kwargs):
+        binding.changed = True
+        return main.ORJSONResponse({"clip": "[1,2]"})
+
+    monkeypatch.setattr(main, "predict", predict)
+    entries = '{"clip":{"textual":{"modelName":"ViT-B-32__openai"}}}'
+    with TestClient(create_native_app(binding)) as client:
+        assert client.post("/predict", data={"entries": "{}", "text": "fixture"}).status_code == 409
+        assert binding.calls == 1
+        response = client.post("/predict", data={"entries": entries, "text": "fixture"})
+        assert response.status_code == 409
+        assert "clip" not in response.json()
+        assert binding.calls == 3
