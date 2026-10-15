@@ -3,7 +3,7 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import ContextMenu from '$lib/components/shared-components/context-menu/ContextMenu.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import { optionClickCallbackStore, selectedIdStore } from '$lib/stores/context-menu.store';
+  import { createContextMenu } from '$lib/stores/context-menu.store';
   import {
     getContextMenuPositionFromBoundingRect,
     getContextMenuPositionFromEvent,
@@ -118,9 +118,7 @@
     $selectedIdStore = undefined;
   };
 
-  const handleOptionClick = () => {
-    closeDropdown();
-  };
+  const { selectedId: selectedIdStore } = createContextMenu(closeDropdown);
 
   const handleDocumentClick = (event: MouseEvent) => {
     if (!isOpen) {
@@ -139,12 +137,6 @@
     const button = buttonContainer?.querySelector(`#${buttonId}`) as HTMLButtonElement | null;
     button?.focus();
   };
-
-  $effect(() => {
-    if (isOpen) {
-      $optionClickCallbackStore = handleOptionClick;
-    }
-  });
 </script>
 
 <svelte:window onresize={onResize} />

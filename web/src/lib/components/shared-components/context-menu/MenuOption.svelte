@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Shortcut } from '$lib/actions/shortcut';
   import { shortcut as bindShortcut, shortcutLabel as computeShortcutLabel } from '$lib/actions/shortcut';
-  import { optionClickCallbackStore, selectedIdStore } from '$lib/stores/context-menu.store';
+  import { getContextMenu } from '$lib/stores/context-menu.store';
   import { generateId } from '$lib/utils/generate-id';
   import { Icon, type IconLike } from '@frameleaf/ui';
+  import { writable } from 'svelte/store';
 
   interface Props {
     text: string;
@@ -19,12 +20,13 @@
   let { text, subtitle = '', icon, danger = false, onClick, shortcut = null, shortcutLabel = '' }: Props = $props();
 
   let id: string = generateId();
+  const context = getContextMenu();
+  const selectedIdStore = context?.selectedId ?? writable<string | undefined>(undefined);
 
   let isActive = $derived($selectedIdStore === id);
 
   const handleClick = () => {
-    // eslint-disable-next-line unicorn/no-optional-chaining-on-undeclared-variable
-    $optionClickCallbackStore?.();
+    context?.onOptionClick();
     onClick();
   };
 
