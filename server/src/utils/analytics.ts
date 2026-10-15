@@ -479,8 +479,23 @@ export const groupNamed = (rows: CameraRow[], limit: number): NamedGroup[] =>
   groupCameras(rows, limit).map((row) => ({ ...row, kind: row.kind === 'model' ? 'named' : row.kind }));
 
 /** Fixed rows in a fixed order, zero-filled, so a breakdown always lists every bucket. */
-export const fixedBuckets = <K extends string>(keys: readonly K[], rows: Array<{ key: string; count: number }>) =>
-  keys.map((key) => ({ key, count: rows.filter((row) => row.key === key).reduce((sum, row) => sum + row.count, 0) }));
+export const fixedBuckets = <K extends string>(keys: readonly K[], rows: Array<{ key: string; count: number }>) => {
+  const keyCount = keys.length;
+  if (keyCount === 0) return [];
+  const totals = new Map<string, number>();
+  for (let index = 0; index < keyCount; index++) {
+    if (index in keys) totals.set(keys[index], 0);
+  }
+  const length = totals.size === 0 ? 0 : rows.length;
+  for (let index = 0; index < length; index++) {
+    // Match native filter's treatment of sparse rows.
+    if (!(index in rows)) continue;
+    const row = rows[index];
+    const key = row.key;
+    if (totals.has(key)) totals.set(key, totals.get(key)! + row.count);
+  }
+  return keys.map((key) => ({ key, count: totals.get(key)! }));
+};
 
 /** A camera label from EXIF make and model, without repeating the make ("Canon Canon EOS R6"). */
 export const cameraName = (make: string | null, model: string | null) => {
