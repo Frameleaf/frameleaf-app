@@ -25,6 +25,7 @@ import {
   ValidationInputEnvelope,
   ValidationInputKey,
   ValidationInputPayload,
+  ValidationInputStage,
   nextValidationInputSequence,
   privateCopyScope,
   privateWorkScope,
@@ -47,7 +48,7 @@ export type ScheduledStagingInput = {
 export type ValidationInputPlan = {
   expected: ValidationInputEnvelope | null;
   pathNonce: string;
-  stage: 'source' | 'recovery-destination';
+  stage: ValidationInputStage;
   fresh: ScheduledFreshDownload;
   validationPath: string;
   sourceIdentity: PrivateCopyIdentity;
@@ -387,12 +388,20 @@ export class ICloudScheduledStagingRepository {
             copy.payload.itemClaimId !== guarded.request.itemClaimId)))
     )
       return;
+    // An existing reuse candidate is an already-managed original with no durable identity of its own here;
+    // its observed identity is bound into the input and re-read by the decoder. It never stands in for an
+    // undisposed recovery copy, which must validate as its own generation-bound destination.
+    const ownedCopyLive = validPrivateCopy(copy) && !copy.payload.disposed;
     const sourceIdentity =
       plan.stage === 'source'
         ? plan.fresh.payload.identity
-        : validPrivateCopy(copy)
-          ? copy.payload.identity
-          : undefined;
+        : plan.stage === 'existing-destination'
+          ? ownedCopyLive
+            ? undefined
+            : plan.sourceIdentity
+          : validPrivateCopy(copy)
+            ? copy.payload.identity
+            : undefined;
     if (
       !sourceIdentity ||
       ['dev', 'ino', 'size'].some(

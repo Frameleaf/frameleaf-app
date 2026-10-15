@@ -787,10 +787,17 @@ export class ICloudScheduledStagingService {
         const sourceIdentity = privateCopyIdentity(await lstat(validationPath));
         await this.repository.finishPrivateWork(input, preliminaryWork);
         const expected = (await this.repository.validationInputs(input)) ?? null;
+        // A reused candidate (media recovery `reused`) is an existing managed original, not our recovery copy.
+        const ownedCopy = destination ? await this.repository.privateCopy(input) : undefined;
+        const stage = destination
+          ? ownedCopy && !ownedCopy.payload.disposed && ownedCopy.payload.promotedPath === destination
+            ? 'recovery-destination'
+            : 'existing-destination'
+          : 'source';
         const planned = await this.repository.planValidationInput(input, {
           expected,
           pathNonce: randomUUID(),
-          stage: destination ? 'recovery-destination' : 'source',
+          stage,
           fresh: receipt,
           validationPath,
           sourceIdentity,
