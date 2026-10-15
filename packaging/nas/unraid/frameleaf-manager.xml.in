@@ -8,7 +8,7 @@
   <Support>https://github.com/Frameleaf/frameleaf-app/issues</Support>
   <Overview>Install and manage a self-hosted Frameleaf photo and video library. Manager coordinates sibling services through the Docker socket. Encrypted recovery covers the database and configuration, not media originals. Before applying, create the storage folders and follow the linked setup guide to match the HTTPS origin, WebUI address and storage mappings. Claim the first administrator using the private claim-key file in the Manager state folder.</Overview>
   <Category>MediaApp:Photos</Category>
-  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg</Icon>
   <TemplateURL>https://raw.githubusercontent.com/Frameleaf/unraid-apps/main/templates/frameleaf-manager.xml</TemplateURL>
   <ReadMe>https://github.com/Frameleaf/unraid-apps#readme</ReadMe>
   <License>https://github.com/Frameleaf/unraid-apps/blob/main/LICENSE</License>

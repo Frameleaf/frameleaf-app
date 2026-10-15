@@ -152,7 +152,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     };
     const trusted = {
       head_sha: sha,
-      head_branch: 'fork/main',
+      head_branch: 'main',
       head_repository: { full_name: REPOSITORY },
       event: 'push',
       status: 'completed',

@@ -7,7 +7,7 @@
 # writes the build cache under ci-<platform> tags. Pull request runs only read it.
 #
 # It never runs pull request code, pushes no image, and never writes the release pipeline's cache
-# tags (linux-<arch>-cpu-prod, written by Deploy on fork/main).
+# tags (linux-<arch>-cpu-prod, written by Deploy on main).
 name: End-to-End Build Cache
 
 on:

@@ -4,10 +4,10 @@ name: Zizmor
   workflow_dispatch: null
   pull_request:
     branches:
-      - fork/main
+      - main
   push:
     branches:
-      - fork/main
+      - main
 permissions:
   contents: read
 concurrency:

@@ -184,7 +184,7 @@ assert.match(
   /chromium\.launch\(\{ timeout: 15000 \}\)/,
 );
 const docker = workflows["docker.yml"];
-assert.deepEqual(docker.on.push.branches, ["fork/main"]);
+assert.deepEqual(docker.on.push.branches, ["main"]);
 assert(
   !docker.on.pull_request && !docker.on.release,
   "Candidate publishing must not run on PR/release events",
@@ -273,7 +273,7 @@ for (const spec of VARIANTS) {
     SOURCE_SHA: "a".repeat(40),
     GITHUB_SHA: "a".repeat(40),
     GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
-    GITHUB_REF: "refs/heads/fork/main",
+    GITHUB_REF: "refs/heads/main",
     GITHUB_EVENT_NAME: "push",
   };
   const matrix = validateBuildInput(input);

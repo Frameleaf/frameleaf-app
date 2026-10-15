@@ -76,7 +76,7 @@ Use the Compose files and images from a [Frameleaf release](https://github.com/F
 
 <details >
     <summary>Using the FolderView plugin for organizing your Docker containers? Click me! Otherwise you're complete!</summary>
-    <p>If you are using the FolderView plugin go the Docker tab and select "<b>New Folder</b>".<br />Label it <i>"Frameleaf"</i> and use this URL as the logo: https://raw.githubusercontent.com/Frameleaf/frameleaf-app/refs/heads/fork/main/web/static/favicon.png<br/>Then turn on the toggle for each Frameleaf related container before clicking "<b>Submit</b>". The Docker page then groups them under a single collapsible Frameleaf folder.</p>
+    <p>If you are using the FolderView plugin go the Docker tab and select "<b>New Folder</b>".<br />Label it <i>"Frameleaf"</i> and use this URL as the logo: https://raw.githubusercontent.com/Frameleaf/frameleaf-app/refs/heads/main/web/static/favicon.png<br/>Then turn on the toggle for each Frameleaf related container before clicking "<b>Submit</b>". The Docker page then groups them under a single collapsible Frameleaf folder.</p>
 
 </details>
 

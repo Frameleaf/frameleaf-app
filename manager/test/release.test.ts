@@ -84,7 +84,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
     };
     const request = async () => ({
       head_sha: sourceCommit,
-      head_branch: 'fork/main',
+      head_branch: 'main',
       head_repository: { full_name: REPOSITORY },
       event: 'push',
       status: 'completed',

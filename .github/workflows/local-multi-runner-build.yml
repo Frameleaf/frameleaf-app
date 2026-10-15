@@ -47,7 +47,7 @@ on:
 
 jobs:
   matrix:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
@@ -107,7 +107,7 @@ jobs:
           key="${PLATFORM//\//-}-${DEVICE}-${TARGET}${SUFFIX}"
           ref="ghcr.io/frameleaf/${IMAGE}-build-cache:${key}"
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
-          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/fork/main ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
             echo "destination=type=registry,ref=${ref},mode=max,compression=zstd" >> "$GITHUB_OUTPUT"
           else
             echo "destination=type=local,dest=${RUNNER_TEMP}/discard-cache,ignore-error=true" >> "$GITHUB_OUTPUT"

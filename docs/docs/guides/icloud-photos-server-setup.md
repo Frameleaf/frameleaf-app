@@ -6,7 +6,7 @@ The feature requires a fork build containing iCloud sync, its database migration
 
 ## Deploy the bridge
 
-Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/icloud-bridge/api.md) records the transport contract and limitations.
+Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
 
 Prepare absolute paths in your deployment environment:
 

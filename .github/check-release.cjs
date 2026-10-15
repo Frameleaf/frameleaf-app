@@ -41,22 +41,22 @@ const admitted = (
   );
 let cases = 0;
 for (const [job, ref, action, dryRun, allowed] of [
-  ["candidate", "refs/heads/fork/main", "release", false, true],
-  ["candidate", "refs/heads/fork/main", "release", true, true],
+  ["candidate", "refs/heads/main", "release", false, true],
+  ["candidate", "refs/heads/main", "release", true, true],
   ["candidate", "refs/heads/feature", "release", true, true],
   ["candidate", "refs/heads/feature", "release", false, false],
-  ["candidate", "refs/heads/fork/main", "withdraw", false, false],
-  ["release", "refs/heads/fork/main", "release", false, true],
-  ["release", "refs/heads/fork/main", "release", true, false],
+  ["candidate", "refs/heads/main", "withdraw", false, false],
+  ["release", "refs/heads/main", "release", false, true],
+  ["release", "refs/heads/main", "release", true, false],
   ["release", "refs/heads/feature", "release", false, false],
-  ["release", "refs/heads/fork/main", "rollout", false, false],
+  ["release", "refs/heads/main", "rollout", false, false],
   ["flags-plan", "refs/heads/feature", "withdraw", true, true],
-  ["flags-plan", "refs/heads/fork/main", "release", false, false],
-  ["flags", "refs/heads/fork/main", "withdraw", false, true],
-  ["flags", "refs/heads/fork/main", "rollout", false, true],
-  ["flags", "refs/heads/fork/main", "withdraw", true, false],
+  ["flags-plan", "refs/heads/main", "release", false, false],
+  ["flags", "refs/heads/main", "withdraw", false, true],
+  ["flags", "refs/heads/main", "rollout", false, true],
+  ["flags", "refs/heads/main", "withdraw", true, false],
   ["flags", "refs/heads/feature", "withdraw", false, false],
-  ["flags", "refs/heads/fork/main", "release", false, false],
+  ["flags", "refs/heads/main", "release", false, false],
 ]) {
   assert.equal(
     admitted(job, { ref, action, dryRun }),

@@ -18,7 +18,7 @@
 # (scripts/frameleaf-workflows.test.mjs enforces both).
 name: Integration Image
 
-# A workflow that is not on the default branch (fork/main) cannot be dispatched, so pushes to
+# A workflow that is not on the default branch (main) cannot be dispatched, so pushes to
 # master/frameleaf-implementation build it. One run at a time: a running build always finishes (the
 # branch moves every few minutes, faster than a build), and a newer push replaces any queued run, so
 # the next build is always the latest head. The manual dispatch stays for when this file reaches the

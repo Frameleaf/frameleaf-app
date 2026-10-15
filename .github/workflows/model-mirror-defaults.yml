@@ -4,7 +4,7 @@ name: Model Mirror Defaults
 'on':
   pull_request:
     branches:
-      - fork/main
+      - main
       - master/frameleaf-implementation
     paths:
       - server/src/dtos/config.dto.ts

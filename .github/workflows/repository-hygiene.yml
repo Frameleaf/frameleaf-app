@@ -1,9 +1,9 @@
 name: Repository hygiene
 on:
   pull_request:
-    branches: [fork/main, master/frameleaf-implementation]
+    branches: [main, master/frameleaf-implementation]
   push:
-    branches: [fork/main, master/frameleaf-implementation]
+    branches: [main, master/frameleaf-implementation]
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,4 +22,4 @@ jobs:
       - run: bash .github/check-repository-hygiene.test.sh
       - run: bash .github/check-repository-hygiene.sh
         env:
-          HYGIENE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/fork/main' }}
+          HYGIENE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}

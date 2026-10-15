@@ -5,7 +5,7 @@ sidebar_position: 2
 # Setup
 
 :::warning
-Make sure to read the [`CONTRIBUTING.md`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/CONTRIBUTING.md) before you dive into the code.
+Make sure to read the [`CONTRIBUTING.md`](https://github.com/Frameleaf/frameleaf-app/blob/main/CONTRIBUTING.md) before you dive into the code.
 :::
 
 :::note
@@ -24,9 +24,9 @@ Thanks for being interested in contributing 😊
 
 This environment includes the services below. Additional details are available in each service's README.
 
-- Server - [`/server`](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/server)
-- Web app - [`/web`](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/web)
-- Machine learning - [`/machine-learning`](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/machine-learning)
+- Server - [`/server`](https://github.com/Frameleaf/frameleaf-app/tree/main/server)
+- Web app - [`/web`](https://github.com/Frameleaf/frameleaf-app/tree/main/web)
+- Machine learning - [`/machine-learning`](https://github.com/Frameleaf/frameleaf-app/tree/main/machine-learning)
 - PostgreSQL 19 with pgvector 0.8.7 and HNSW development database with exposed port `5432` so you can use any database client to access it
 
 All the services are packaged to run with a single Docker Compose command.
