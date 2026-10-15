@@ -43,6 +43,13 @@ export const BUNDLED_RENDER_WORKER_KINDS: readonly MediaOperationKind[] = Object
 /** The file in the shared trust directory the machine-learning container reads its enrolment from. */
 export const BUNDLED_RENDER_WORKER_TRUST_FILE = 'enrolment.json';
 
+/**
+ * How recently a bundled session must have been used to count as a running worker. The worker asks
+ * for work every few seconds and heartbeats every 30 s while rendering, so a stopped
+ * machine-learning container stops offering Studio within this window instead of at session expiry.
+ */
+export const BUNDLED_RENDER_WORKER_LIVENESS_MS = 2 * 60 * 1000;
+
 /** Smallest working memory a bundled session may claim against (the 720p render budget). */
 export const BUNDLED_RENDER_WORKER_MIN_MEMORY = 2n * 1024n ** 3n;
 
@@ -132,12 +139,15 @@ export const evaluateBundledRenderSession = (input: {
     scopes: readonly MediaOperationKind[];
     gpuMemoryBytes: string | null;
     codecs: readonly string[] | null;
+    lastUsedAt?: Date | string | null;
   };
   capabilities: { codecs: readonly string[]; formats: readonly string[] } | null | undefined;
   now: Date;
 }): GpuWorkingBudgetDecision => {
   const { worker, session, capabilities, now } = input;
+  const lastUsedAt = session.lastUsedAt ? new Date(session.lastUsedAt).getTime() : NaN;
   if (
+    !(now.getTime() - lastUsedAt <= BUNDLED_RENDER_WORKER_LIVENESS_MS) ||
     session.workerId !== worker.id ||
     !capabilities ||
     JSON.stringify(session.codecs) !== JSON.stringify(capabilities.codecs) ||
