@@ -74,7 +74,11 @@ class MemoryManager {
     // FL-62: the first page already honours the owner's Memory settings.
     this.#filters = omitBy(this.#preferenceFilters(), (item) => item === undefined);
     eventManager.on({
-      AuthLogout: () => this.clearCache(),
+      AuthLogout: () => {
+        this.clearCache();
+        this.hidden = [];
+        this.showLess = [];
+      },
       AuthUserLoaded: () => this.initialize(),
     });
     // FL-195 follow-up: a memory holding a Locked item shows only to the owner's unlocked session, so
@@ -111,9 +115,11 @@ class MemoryManager {
   }
 
   /** Drop every memory this session state loaded and read them again (a page in flight is discarded). */
-  reloadForSessionAccess() {
+  async reloadForSessionAccess() {
     this.clearCache();
-    return this.initialize();
+    this.hidden = [];
+    this.showLess = [];
+    await Promise.all([this.initialize(), this.loadHidden(), this.loadShowLess()]);
   }
 
   applyPreferences() {
@@ -602,8 +608,6 @@ class MemoryManager {
     this.#total = undefined;
     this.#received = 0;
     this.memories = [];
-    this.hidden = [];
-    this.showLess = [];
   }
 
   private initialize() {
