@@ -1,4 +1,5 @@
-import { Chunked, ChunkedArray, ChunkedSet } from 'src/decorators.js';
+import { Chunked, ChunkedArray, ChunkedSet, HistoryBuilder } from 'src/decorators.js';
+import { ApiCustomExtension } from 'src/enum.js';
 
 describe('Chunked invocation ownership', () => {
   it('observes earlier thenable failures when a later chunk throws synchronously, without starting later work', async () => {
@@ -71,7 +72,7 @@ describe('Chunked invocation ownership', () => {
 });
 
 describe('ChunkedSet', () => {
-  it.each([[], ['a'], ['a', 'b'], ['a', 'b', 'c', 'd', 'e']].map((values) => ({ values })))(
+  it.each([[], ['a'], ['a', 'b'], ['a', 'b', 'c', 'd'], ['a', 'b', 'c', 'd', 'e']].map((values) => ({ values })))(
     'preserves order, identities and arguments for $values',
     async ({ values }) => {
       const marker = {};
@@ -127,5 +128,22 @@ describe('ChunkedSet', () => {
       }
     }
     await expect(new Repository().find(new Set(['a', 'b', 'c']))).rejects.toThrow('repository failure');
+  });
+});
+
+describe('API history extensions', () => {
+  it('keeps chronological history and uses the latest explicit state', () => {
+    expect(new HistoryBuilder().getExtensions()).toEqual({});
+    const history = new HistoryBuilder().added('v1').stable('v2').deprecated('v3').updated('v4', 'details');
+    const first = history.getExtensions();
+    expect(first[ApiCustomExtension.State]).toBe('Deprecated');
+    expect(first[ApiCustomExtension.History]?.map(({ version }) => version)).toEqual(['v1', 'v2', 'v3', 'v4']);
+    history.beta('v5').added('v6');
+    const next = history.getExtensions();
+    expect(next[ApiCustomExtension.State]).toBe('Beta');
+    expect(next[ApiCustomExtension.History]).toBe(first[ApiCustomExtension.History]);
+    expect(
+      new HistoryBuilder().added('v1').updated('v2', 'details').getExtensions()[ApiCustomExtension.State],
+    ).toBeUndefined();
   });
 });

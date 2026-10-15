@@ -102,12 +102,12 @@ describe('upload metadata admission', () => {
     vi.mocked(fs.stat)
       .mockReset()
       .mockImplementation(async (file) => {
-        if (file === 'photo.jpg') return { size: 10, mtime: new Date('2022-01-01T00:00:00Z') } as Stats;
+        if (file === 'photo.jpg') {
+          return { size: 10, mtime: new Date('2022-01-01T00:00:00Z') } as Stats;
+        }
         throw failure;
       });
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ id: 'asset', status: 'created' }), { status: 201 }));
+    const fetch = vi.fn().mockResolvedValue(Response.json({ id: 'asset', status: 'created' }, { status: 201 }));
     vi.stubGlobal('fetch', fetch);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await expect(uploadFiles(['photo.jpg'], { concurrency: 1 })).resolves.toEqual([]);
@@ -119,12 +119,12 @@ describe('upload metadata admission', () => {
     vi.mocked(fs.stat)
       .mockReset()
       .mockImplementation(async (file) => {
-        if (file === 'photo.jpg') return { size: 10, mtime: new Date('2022-01-01T00:00:00Z') } as Stats;
+        if (file === 'photo.jpg') {
+          return { size: 10, mtime: new Date('2022-01-01T00:00:00Z') } as Stats;
+        }
         throw Object.assign(new Error('sidecar disappeared'), { code: 'ENOENT' });
       });
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ id: 'asset', status: 'created' }), { status: 201 }));
+    const fetch = vi.fn().mockResolvedValue(Response.json({ id: 'asset', status: 'created' }, { status: 201 }));
     vi.stubGlobal('fetch', fetch);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await expect(uploadFiles(['photo.jpg'], { concurrency: 1 })).resolves.toEqual([

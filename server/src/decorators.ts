@@ -39,22 +39,19 @@ export const DATABASE_PARAMETER_CHUNK_SIZE = 65_500;
 function chunks<T>(collection: Array<T>, size: number): Array<Array<T>>;
 function chunks<T>(collection: Set<T>, size: number): Array<Set<T>>;
 function chunks<T>(collection: Array<T> | Set<T>, size: number): Array<Array<T>> | Array<Set<T>> {
-  if (collection instanceof Set) {
-    const result = [];
-    let chunk = new Set<T>();
-    for (const element of collection) {
-      chunk.add(element);
-      if (chunk.size === size) {
-        result.push(chunk);
-        chunk = new Set<T>();
-      }
-    }
-    if (chunk.size > 0) {
-      result.push(chunk);
-    }
-    return result;
+  if (!(collection instanceof Set)) {
+    return chunk(collection, size);
   }
-  return chunk(collection, size);
+  const groups: Set<T>[] = [];
+  let current: Set<T> | undefined;
+  for (const value of collection) {
+    if (!current || current.size === size) {
+      current = new Set<T>();
+      groups.push(current);
+    }
+    current.add(value);
+  }
+  return groups;
 }
 
 /**
@@ -260,13 +257,9 @@ export class HistoryBuilder {
       extensions[ApiCustomExtension.History] = this.items;
     }
 
-    for (const item of this.items.toReversed()) {
-      if (item.state === 'Added' || item.state === 'Updated') {
-        continue;
-      }
-
+    const item = this.items.findLast(({ state }) => state !== 'Added' && state !== 'Updated');
+    if (item) {
       extensions[ApiCustomExtension.State] = item.state;
-      break;
     }
 
     return extensions;

@@ -90,21 +90,18 @@ const getEnhancedVideoDuplicateConfig = (machineLearning: SystemConfig['machineL
 
 const uniqueNonEmptyLines = (values: Array<string | null | undefined>): string[] => {
   const unique = new Set<string>();
-  const lines: string[] = [];
   for (const value of values) {
     if (!value) {
       continue;
     }
     for (const line of value.split(/\r?\n/)) {
       const trimmed = line.trim();
-      if (!trimmed || unique.has(trimmed)) {
-        continue;
+      if (trimmed) {
+        unique.add(trimmed);
       }
-      unique.add(trimmed);
-      lines.push(trimmed);
     }
   }
-  return lines;
+  return [...unique];
 };
 
 const getUniqueCoordinate = (assets: MapAsset[], key: 'latitude' | 'longitude'): number | null => {

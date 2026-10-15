@@ -26,7 +26,9 @@ it.each([
     [241, 85, 13],
   ];
   const nextInt = vi.fn();
-  for (const value of [...colors.flat(), 3]) nextInt.mockReturnValueOnce(value);
+  for (const value of [...colors.flat(), 3]) {
+    nextInt.mockReturnValueOnce(value);
+  }
   const jpeg = await randomImage({ nextInt } as unknown as SeededRandom, { width, height });
   expect(nextInt).toHaveBeenCalledTimes(7);
   expect(nextInt).toHaveBeenNthCalledWith(7, 0, 5);

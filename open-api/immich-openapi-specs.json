@@ -78957,17 +78957,6 @@
         ],
         "type": "string"
       },
-      "IntegrityReportDto": {
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/IntegrityReport"
-          }
-        },
-        "required": [
-          "type"
-        ],
-        "type": "object"
-      },
       "IntegrityReportClearResponseDto": {
         "properties": {
           "cleared": {
@@ -78979,6 +78968,17 @@
         },
         "required": [
           "cleared"
+        ],
+        "type": "object"
+      },
+      "IntegrityReportDto": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/IntegrityReport"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },

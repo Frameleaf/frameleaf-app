@@ -881,6 +881,26 @@ describe(DuplicateService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: asset1.id } }]);
     });
 
+    it('merges trimmed description lines in first-seen order without duplicates', async () => {
+      const keeper = AssetFactory.from().exif({ description: ' first \r\nsecond\n\n' }).build();
+      const removed = AssetFactory.from().exif({ description: '\tsecond\n third \nfirst\n' }).build();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([removed.id]));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [keeper as unknown as MapAsset, removed as unknown as MapAsset],
+      });
+      await expect(
+        sut.resolve(authStub.admin, {
+          groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: [removed.id] }],
+        }),
+      ).resolves.toEqual([{ id: 'group-1', success: true }]);
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        [keeper.id],
+        expect.objectContaining({ description: 'first\nsecond\nthird' }),
+      );
+    });
+
     it('should not merge metadata when multiple assets are kept', async () => {
       const asset1 = AssetFactory.create({ isFavorite: true });
       const asset2 = AssetFactory.create();

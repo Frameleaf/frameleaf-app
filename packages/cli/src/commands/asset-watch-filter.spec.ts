@@ -12,6 +12,7 @@ vi.mock('@frameleaf/sdk', async (original) => ({
 
 it('admits the same filenames synchronously without changing watcher timing', async () => {
   const before = process.listeners('SIGINT');
+  // eslint-disable-next-line unicorn/prefer-event-target -- Chokidar exposes Node EventEmitter listeners and events.
   const watcher = Object.assign(new EventEmitter(), { close: vi.fn() });
   vi.mocked(watch).mockReturnValue(watcher as never);
   vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.jpg', '.png'], video: ['.mp4'], sidecar: [] });
@@ -34,7 +35,9 @@ it('admits the same filenames synchronously without changing watcher timing', as
       add.mockClear();
       expect(onFile(path)).toBeUndefined();
       expect(add).toHaveBeenCalledTimes(admitted ? 1 : 0);
-      if (admitted) expect(add).toHaveBeenCalledWith(path);
+      if (admitted) {
+        expect(add).toHaveBeenCalledWith(path);
+      }
     }
     add.mockClear();
     expect(onFile('directory.jpg', { isDirectory: () => true })).toBeUndefined();
@@ -52,7 +55,9 @@ it('admits the same filenames synchronously without changing watcher timing', as
   } finally {
     add.mockRestore();
     for (const listener of process.listeners('SIGINT')) {
-      if (!before.includes(listener)) process.off('SIGINT', listener);
+      if (!before.includes(listener)) {
+        process.off('SIGINT', listener);
+      }
     }
   }
 });
