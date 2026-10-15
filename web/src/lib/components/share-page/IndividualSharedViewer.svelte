@@ -52,12 +52,38 @@
     namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')),
   );
 
+  let alive = true;
+  let generation = 0;
+  let previousLinkId: string | undefined;
+  $effect.pre(() => {
+    if (sharedLink.id === previousLinkId) {
+      return;
+    }
+    previousLinkId = sharedLink.id;
+    generation++;
+    selectMode = false;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const params = { ...authManager.params };
+    const isCurrentSession = authManager.captureSession();
+    return () =>
+      alive &&
+      owner === generation &&
+      isCurrentSession() &&
+      params.key === authManager.params.key &&
+      params.slug === authManager.params.slug;
+  };
+
   const stopDropUploads = getDropUploadContext()?.register((files) => {
     if (sharedLink.allowUpload) {
       handlePromiseError(handleUploadAssets(files));
     }
   });
-  onDestroy(() => stopDropUploads?.());
+  onDestroy(() => {
+    alive = false;
+    stopDropUploads?.();
+  });
 
   // A cancelled download is the user's choice, not an error to log.
   const download = (assetIds: string[]) =>
@@ -68,16 +94,24 @@
    * so the link is read again to show the new items, and the count is announced.
    */
   const handleUploadAssets = async (files: File[] = []) => {
+    const params = { ...authManager.params };
+    const isCurrent = captureView();
     try {
       const uploaded = await (files.length === 0 ? openFileUploadDialog() : fileUploadHandler({ files }));
       const count = uploaded.filter(Boolean).length;
-      if (count === 0) {
+      if (count === 0 || !isCurrent()) {
         return;
       }
-      sharedLink = await getMySharedLink({ ...authManager.params });
+      const updated = await getMySharedLink(params);
+      if (!isCurrent()) {
+        return;
+      }
+      sharedLink = updated;
       toastManager.success($t('frameleaf_public_added', { values: { count } }));
     } catch (error) {
-      handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
+      }
     }
   };
 
