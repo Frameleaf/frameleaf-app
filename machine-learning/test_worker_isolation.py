@@ -71,8 +71,11 @@ def test_isolated_compose_preserves_peers_and_excludes_server_secrets(tmp_path: 
     assert staging["environment"]["MACHINE_LEARNING_MODEL_TTL"] == "42"
     assert staging["environment"]["MACHINE_LEARNING_MODEL_SOURCE_TOKEN"] == "staging-only-fake"
     assert "CLOUD_PROVISIONING_TOKEN" not in staging["environment"]
-    assert len(worker["volumes"]) == 1
-    mount = worker["volumes"][0]
+    # FL-408: besides the model cache, only the Studio worker's enrolment volume, read-only.
+    mounts = {mount["target"]: mount for mount in worker["volumes"]}
+    assert set(mounts) == {"/cache", "/run/frameleaf/studio-worker"}
+    assert mounts["/run/frameleaf/studio-worker"]["read_only"] is True
+    mount = mounts["/cache"]
     assert mount["target"] == "/cache" and mount["read_only"] is True
     assert mount["source"] == (str(tmp_path / "ml-model-cache") if "rootless" in base else "model-cache")
     assert [mount["target"] for mount in staging["volumes"]] == ["/cache"]
