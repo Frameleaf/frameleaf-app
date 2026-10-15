@@ -832,29 +832,28 @@ export class MetadataService extends BaseService {
   }
 
   private getTagList(exifTags: ImmichTags): string[] {
-    let tags: string[];
     if (exifTags.TagsList) {
-      tags = exifTags.TagsList.map(String);
-    } else if (exifTags.HierarchicalSubject) {
-      tags = exifTags.HierarchicalSubject.map((tag) =>
-        // convert | to /
-        typeof tag === 'number'
-          ? String(tag)
-          : tag
-              .split('|')
-              .map((tag) => tag.replaceAll('/', '|'))
-              .join('/'),
-      );
-    } else if (exifTags.Keywords) {
-      let keywords = exifTags.Keywords;
-      if (!Array.isArray(keywords)) {
-        keywords = [keywords];
-      }
-      tags = keywords.map(String);
-    } else {
-      tags = [];
+      return exifTags.TagsList.map(String);
     }
-    return tags;
+    if (exifTags.HierarchicalSubject) {
+      return exifTags.HierarchicalSubject.map((tag) => {
+        if (typeof tag === 'number') {
+          return String(tag);
+        }
+        let converted = '';
+        let start = 0;
+        for (let index = 0; index < tag.length; index++) {
+          const separator = tag[index];
+          if (separator === '|' || separator === '/') {
+            converted += tag.slice(start, index) + (separator === '|' ? '/' : '|');
+            start = index + 1;
+          }
+        }
+        return converted + tag.slice(start);
+      });
+    }
+    const keywords = exifTags.Keywords;
+    return keywords ? (Array.isArray(keywords) ? keywords : [keywords]).map(String) : [];
   }
 
   /**
@@ -1015,6 +1014,19 @@ export class MetadataService extends BaseService {
 
     const isSidewards = this.isOrientationSidewards(orientation);
 
+    const flipX = [
+      ExifOrientation.MirrorHorizontal,
+      ExifOrientation.Rotate180,
+      ExifOrientation.Rotate90CW,
+      ExifOrientation.MirrorHorizontalRotate90CW,
+    ].includes(orientation);
+    const flipY = [
+      ExifOrientation.Rotate180,
+      ExifOrientation.MirrorVertical,
+      ExifOrientation.MirrorHorizontalRotate90CW,
+      ExifOrientation.Rotate270CW,
+    ].includes(orientation);
+
     // swap image dimensions in AppliedToDimensions if orientation is sidewards
     const adjustedAppliedToDimensions = isSidewards
       ? {
@@ -1034,38 +1046,14 @@ export class MetadataService extends BaseService {
       W = Number(W);
       H = Number(H);
 
-      switch (orientation) {
-        case ExifOrientation.MirrorHorizontal: {
-          X = 1 - X;
-          break;
-        }
-        case ExifOrientation.Rotate180: {
-          [X, Y] = [1 - X, 1 - Y];
-          break;
-        }
-        case ExifOrientation.MirrorVertical: {
-          Y = 1 - Y;
-          break;
-        }
-        case ExifOrientation.MirrorHorizontalRotate270CW: {
-          [X, Y] = [Y, X];
-          break;
-        }
-        case ExifOrientation.Rotate90CW: {
-          [X, Y] = [1 - Y, X];
-          break;
-        }
-        case ExifOrientation.MirrorHorizontalRotate90CW: {
-          [X, Y] = [1 - Y, 1 - X];
-          break;
-        }
-        case ExifOrientation.Rotate270CW: {
-          [X, Y] = [Y, 1 - X];
-          break;
-        }
-      }
       if (isSidewards) {
-        [W, H] = [H, W];
+        [X, Y, W, H] = [Y, X, H, W];
+      }
+      if (flipX) {
+        X = 1 - X;
+      }
+      if (flipY) {
+        Y = 1 - Y;
       }
       return {
         ...region,
@@ -1136,6 +1124,7 @@ export class MetadataService extends BaseService {
 
       facesToAdd.push(face);
       if (!existingNameMap.has(loweredName)) {
+        existingNameMap.set(loweredName, personGroupId);
         missing.push({
           personGroupId,
           ownerId: asset.ownerId,
@@ -1218,20 +1207,15 @@ export class MetadataService extends BaseService {
       this.logger.debug(`No timezone information found for asset ${asset.id}: ${asset.originalPath}`);
     }
 
-    let dateTimeOriginal = dateTime?.toDateTime();
-
-    // do not let JavaScript use local timezone
-    if (dateTimeOriginal && !dateTime?.hasZone) {
-      dateTimeOriginal = dateTimeOriginal.setZone('UTC', { keepLocalTime: true });
-    }
-
-    // align with whatever timeZone we chose
-    dateTimeOriginal = dateTimeOriginal?.setZone(timeZone ?? 'UTC');
-
-    // store as "local time"
-    let localDateTime = dateTimeOriginal?.setZone('UTC', { keepLocalTime: true });
-
-    if (!localDateTime || !dateTimeOriginal) {
+    const exifDateTime = dateTime?.toDateTime();
+    let dateTimeOriginal: DateTime;
+    let localDateTime: DateTime;
+    if (exifDateTime) {
+      // Interpret unzoned wall time as UTC before applying the selected timezone.
+      const zonedDateTime = dateTime?.hasZone ? exifDateTime : exifDateTime.setZone('UTC', { keepLocalTime: true });
+      dateTimeOriginal = zonedDateTime.setZone(timeZone ?? 'UTC');
+      localDateTime = dateTimeOriginal.setZone('UTC', { keepLocalTime: true });
+    } else {
       // FileCreateDate is not available on linux, likely because exiftool hasn't integrated the statx syscall yet
       // birthtime is not available in Docker on macOS, so it appears as 0
       const earliestDate = DateTime.fromMillis(

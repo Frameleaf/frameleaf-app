@@ -90,7 +90,7 @@ class Ann(metaclass=_Singleton):
             self.ann = None
 
     def __del__(self) -> None:
-        if self.ann is not None:
+        if getattr(self, "ann", None) is not None:
             libann.destroy(self.ann)
             self.ann = None
 
@@ -123,16 +123,27 @@ class Ann(metaclass=_Singleton):
         if net_id < 0:
             raise ValueError("Cannot load model!")
 
-        self.input_shapes[net_id] = tuple(
-            self.shape(net_id, input=True, index=i) for i in range(self.tensors(net_id, input=True))
-        )
-        self.output_shapes[net_id] = tuple(
-            self.shape(net_id, input=False, index=i) for i in range(self.tensors(net_id, input=False))
-        )
+        try:
+            input_shapes = tuple(
+                self.shape(net_id, input=True, index=i) for i in range(self.tensors(net_id, input=True))
+            )
+            output_shapes = tuple(
+                self.shape(net_id, input=False, index=i) for i in range(self.tensors(net_id, input=False))
+            )
+        except BaseException:
+            try:
+                libann.unload(self.ann, net_id)
+            except Exception:
+                log.warning("Failed to release ANN network after shape discovery failed", exc_info=True)
+            raise
+
+        self.input_shapes[net_id] = input_shapes
+        self.output_shapes[net_id] = output_shapes
         return net_id
 
     def unload(self, network_id: int) -> None:
         libann.unload(self.ann, network_id)
+        del self.input_shapes[network_id]
         del self.output_shapes[network_id]
 
     def execute(self, network_id: int, input_tensors: list[NDArray[np.float32]]) -> list[NDArray[np.float32]]:
@@ -150,9 +161,9 @@ class Ann(metaclass=_Singleton):
             np.ndarray(s, dtype=np.float32) for s in self.output_shapes[network_id]
         ]
         input_type = c_void_p * len(input_tensors)
-        inputs = input_type(*[t.ctypes.data_as(c_void_p) for t in input_tensors])
+        inputs = input_type(*(t.ctypes.data for t in input_tensors))
         output_type = c_void_p * len(output_tensors)
-        outputs = output_type(*[t.ctypes.data_as(c_void_p) for t in output_tensors])
+        outputs = output_type(*(t.ctypes.data for t in output_tensors))
         libann.execute(self.ann, network_id, inputs, outputs)
         return output_tensors
 

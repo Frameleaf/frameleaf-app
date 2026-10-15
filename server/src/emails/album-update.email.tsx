@@ -1,3 +1,4 @@
+import { toPlainText } from '@react-email/render';
 import * as React from 'react';
 import { Img, Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
@@ -39,7 +40,7 @@ export const AlbumUpdateEmail = ({
   return (
     <ImmichLayout
       baseUrl={baseUrl}
-      preview={customTemplate ? emailContent.toString() : 'New media has been added to a shared album.'}
+      preview={customTemplate ? toPlainText(emailContent.toString()) : 'New media has been added to a shared album.'}
     >
       {customTemplate && (
         <Text className="m-0">

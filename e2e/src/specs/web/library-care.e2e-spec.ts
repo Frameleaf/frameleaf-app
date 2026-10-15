@@ -254,23 +254,18 @@ test.describe('Library Care', () => {
     expect(results[0]).toMatchObject({ success: false, error: 'Finding is not available' });
   });
 
-  test('shows the Library care toggles in settings', async ({ context, page }) => {
+  test('shows the Library care switches in settings', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
+    // FL-366: File checks has one switch per check, named for what it finds.
     await page.goto('/user-settings?area=care&section=integrity-checks');
-    for (const name of [
-      'Schedule incremental health scans',
-      'Verify original checksums',
-      'Audit database and file references',
-    ]) {
-      await expect(page.getByText(name, { exact: true })).toBeVisible();
+    for (const name of ['Missing files', 'Damaged files', 'Stray files']) {
+      await expect(page.getByRole('switch', { name: `Look for ${name}` })).toBeVisible();
     }
+    // Things to fix keeps a switch on the two kinds of suggestion that can be turned off.
     await page.goto('/user-settings?area=care&section=repair');
-    for (const name of [
-      'Suggest Live Photo relinking',
-      'Suggest recoverable RAW sources',
-      'Group near-duplicates for review',
-    ]) {
-      await expect(page.getByText(name, { exact: true })).toBeVisible();
+    for (const name of ['Live Photos to reconnect', 'RAW files to match']) {
+      await expect(page.getByRole('switch', { name: `Look for ${name}` })).toBeVisible();
     }
+    await expect(page.getByText('Turned on and off in Duplicates', { exact: true })).toBeVisible();
   });
 });

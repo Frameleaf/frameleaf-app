@@ -193,12 +193,8 @@ function sortKeys<T>(target: T): T {
     return target;
   }
 
-  const result: Partial<T> = {};
   const keys = Object.keys(target).toSorted() as Array<keyof T>;
-  for (const key of keys) {
-    result[key] = sortKeys(target[key]);
-  }
-  return result as T;
+  return Object.fromEntries(keys.map((key) => [key, sortKeys(target[key])])) as T;
 }
 
 export const routeToErrorMessage = (methodName: string) =>

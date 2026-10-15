@@ -235,6 +235,32 @@ describe(IntegrityService.name, () => {
     });
   });
 
+  describe('clearIntegrityReports (FL-366)', () => {
+    it('empties the list and touches no file or photo', async () => {
+      mocks.integrityReport.deleteByType.mockResolvedValue(4);
+
+      await expect(sut.clearIntegrityReports(IntegrityReport.MissingFile)).resolves.toEqual({ cleared: 4 });
+
+      expect(mocks.integrityReport.deleteByType).toHaveBeenCalledWith(IntegrityReport.MissingFile);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('dismissIntegrityReport (FL-366)', () => {
+    it('forgets one finding without trashing its photo', async () => {
+      mocks.integrityReport.getById.mockResolvedValue({ path: '/data/a.jpg', assetId: 'asset-id' } as never);
+
+      await sut.dismissIntegrityReport('report-id');
+
+      expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleDeleteIntegrityReports', () => {
     it('unlinks report paths only through the reference-counted guard', async () => {
       const referenced = '/data/upload/admin/ab/asset.mov';

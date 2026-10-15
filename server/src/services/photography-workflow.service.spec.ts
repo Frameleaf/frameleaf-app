@@ -134,7 +134,7 @@ async function setup(brand?: unknown) {
   const revisions = { get: vi.fn((id: string) => Promise.resolve(id === revisionId ? revision : undefined)) };
   const crypto = {
     hashBcrypt: vi.fn(() => Promise.resolve('hashed')),
-    compareBcrypt: vi.fn((password) => password === 'correct-password'),
+    compareBcrypt: vi.fn((password) => Promise.resolve(password === 'correct-password')),
   };
   const jobs = { queue: vi.fn(async () => {}) };
   const storage = {
@@ -196,6 +196,7 @@ async function setup(brand?: unknown) {
     albums,
     storage,
     jobs,
+    crypto,
     invitation,
     published,
     selected,
@@ -342,6 +343,23 @@ describe('photography workflow integration boundaries', () => {
       ForbiddenException,
     );
   });
+
+  it.each(['passwordHash', 'tokenHash'] as const)(
+    'refuses a gallery session if %s changes during verification',
+    async (field) => {
+      const s = await setup();
+      const client = await s.invitation(true, 'correct-password');
+      const comparison = Promise.withResolvers<boolean>();
+      s.crypto.compareBcrypt.mockClear().mockReturnValueOnce(comparison.promise);
+      const pending = s.service.session(s.shootId, { token: client.token, password: 'correct-password' });
+      await vi.waitFor(() => expect(s.crypto.compareBcrypt).toHaveBeenCalledOnce());
+      const before = s.row().value.sessions.length;
+      s.row().value.recipients[0][field] = 'changed-during-verification';
+      comparison.resolve(true);
+      await expect(pending).rejects.toBeInstanceOf(ForbiddenException);
+      expect(s.row().value.sessions).toHaveLength(before);
+    },
+  );
   it('keeps notes independent of favorites, applies named presets without changing live settings, and delivers explicitly included edits', async () => {
     const s = await setup();
     const client = await s.invitation();

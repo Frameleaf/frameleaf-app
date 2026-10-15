@@ -207,7 +207,8 @@ describe('durable smart-album reevaluation', () => {
       db,
     );
     expect(after.rows[0]).toEqual({ count: 1001, executions: 1000 });
-  });
+    // ponytail: 1001 seeded assets take longer than the 5 s default on shared CI runners.
+  }, 30_000);
 
   it('accounts for one corrupt item after one safe retry while unrelated items resume at concurrency 1', async () => {
     const f = await durableFixture(db);

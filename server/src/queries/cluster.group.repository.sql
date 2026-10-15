@@ -16,6 +16,8 @@ where
   "user"."clusterGroupId" = $1
   and "user"."id" != $2
   and "user"."deletedAt" is null
+limit
+  $3
 
 -- ClusterGroupRepository.createRequest
 insert into

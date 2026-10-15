@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -385,7 +385,30 @@ describe(ClusterGroupService.name, () => {
         personGroupId: shared1.personGroupId,
       });
 
+      await sql`CREATE TABLE test_cluster_write_order_log (id bigint GENERATED ALWAYS AS IDENTITY, kind text)`.execute(
+        ctx.database,
+      );
+      await sql`CREATE FUNCTION test_cluster_write_order() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN INSERT INTO test_cluster_write_order_log(kind) VALUES (TG_TABLE_NAME); RETURN NEW; END
+      $$`.execute(ctx.database);
+      for (const [table, event] of [
+        ['person_group', 'INSERT'],
+        ['person', 'UPDATE'],
+        ['asset_face', 'UPDATE'],
+      ]) {
+        await sql
+          .raw(
+            `CREATE TRIGGER test_cluster_write_order BEFORE ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION test_cluster_write_order()`,
+          )
+          .execute(ctx.database);
+      }
       await sut.leave(factory.auth({ user: user2 }), clusterGroupId);
+      const {
+        rows: [order],
+      } = await sql<{
+        kinds: string[];
+      }>`SELECT array_agg(kind ORDER BY id) AS kinds FROM test_cluster_write_order_log`.execute(ctx.database);
+      expect(order.kinds).toEqual(['person_group', 'person', 'asset_face']);
 
       const newClusterGroupId = await getClusterGroupId(ctx, user2.id);
       expect(newClusterGroupId).not.toBe(clusterGroupId);
@@ -524,4 +547,70 @@ describe(ClusterGroupService.name, () => {
       await expect(sut.getRequests(factory.auth({ user: invitee }))).resolves.toEqual([request]);
     });
   });
+});
+
+it('rolls back person and membership changes on a late failure, preserving the invitation for retry', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { user: recipient } = await ctx.newUser();
+  const { person } = await ctx.newPerson({ ownerId: user.id });
+  const groups = ctx.get(ClusterGroupRepository);
+  const invitation = await groups.createRequest({ userId: user.id, clusterGroupId: recipient.clusterGroupId });
+  const auth = factory.auth({ user: { id: user.id } });
+  const error = new Error('late membership write failed');
+  const update = vi.spyOn(ctx.get(UserRepository), 'update').mockRejectedValueOnce(error);
+  try {
+    await expect(sut.acceptRequest(auth, invitation!.id)).rejects.toBe(error);
+  } finally {
+    update.mockRestore();
+  }
+  expect(
+    (await ctx.database.selectFrom('user').select('clusterGroupId').where('id', '=', user.id).executeTakeFirstOrThrow())
+      .clusterGroupId,
+  ).toBe(user.clusterGroupId);
+  expect(
+    (
+      await ctx.database
+        .selectFrom('person_group')
+        .select('clusterGroupId')
+        .where('id', '=', person.personGroupId)
+        .executeTakeFirstOrThrow()
+    ).clusterGroupId,
+  ).toBe(user.clusterGroupId);
+  expect(await groups.getRequest(invitation!.id)).toBeDefined();
+  await sut.acceptRequest(auth, invitation!.id);
+  expect(
+    (await ctx.database.selectFrom('user').select('clusterGroupId').where('id', '=', user.id).executeTakeFirstOrThrow())
+      .clusterGroupId,
+  ).toBe(recipient.clusterGroupId);
+  expect(
+    (
+      await ctx.database
+        .selectFrom('person_group')
+        .select('clusterGroupId')
+        .where('id', '=', person.personGroupId)
+        .executeTakeFirstOrThrow()
+    ).clusterGroupId,
+  ).toBe(recipient.clusterGroupId);
+  expect(await groups.getRequest(invitation!.id)).toBeUndefined();
+});
+
+it('allows only one of the last two members to leave concurrently', async () => {
+  const { ctx, sut } = setup();
+  const { user: first } = await ctx.newUser();
+  const { user: second } = await ctx.newUser({ clusterGroupId: first.clusterGroupId });
+  const outcomes = await Promise.allSettled([
+    sut.leave(factory.auth({ user: { id: first.id } }), first.clusterGroupId),
+    sut.leave(factory.auth({ user: { id: second.id } }), first.clusterGroupId),
+  ]);
+  expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+  const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+  expect(failure?.reason.message).toContain('without any other members');
+  const users = await ctx.database
+    .selectFrom('user')
+    .select(['id', 'clusterGroupId'])
+    .where('id', 'in', [first.id, second.id])
+    .execute();
+  expect(users.filter(({ clusterGroupId }) => clusterGroupId === first.clusterGroupId)).toHaveLength(1);
+  expect(new Set(users.map(({ clusterGroupId }) => clusterGroupId)).size).toBe(2);
 });

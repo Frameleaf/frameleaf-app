@@ -1,5 +1,4 @@
 import { setFetch } from '@frameleaf/sdk';
-import { memoize } from 'lodash-es';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
@@ -21,4 +20,12 @@ async function _init(fetch: Fetch) {
   }
 }
 
-export const init = memoize(_init, () => 'singlevalue');
+let initialization: Promise<void> | undefined;
+
+export const init = (fetch: Fetch) => {
+  initialization ??= _init(fetch).catch((error: unknown) => {
+    initialization = undefined;
+    throw error;
+  });
+  return initialization;
+};

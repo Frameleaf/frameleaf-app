@@ -96,6 +96,7 @@ describe('/trash', () => {
       },
     );
 
+    // Earlier Best Photos publication can retry after30s; allow the background queue to drain.
     it('should remove offline assets', { timeout: process.env.CI ? 210_000 : 70_000 }, async ({ signal }) => {
       const fixtureFolder = `temp/trash-empty-${randomUUID()}`;
       utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);

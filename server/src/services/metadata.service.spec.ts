@@ -1002,6 +1002,24 @@ describe(MetadataService.name, () => {
       });
     });
 
+    it.each([
+      { tags: { HierarchicalSubject: ['A/B|C/D', '|A||B|', 2024] }, expected: ['A|B/C|D', '/A//B/', '2024'] },
+      { tags: { TagsList: [], HierarchicalSubject: ['ignored'], Keywords: ['ignored'] }, expected: [] },
+      { tags: { HierarchicalSubject: [], Keywords: ['ignored'] }, expected: [] },
+    ])('preserves raw hierarchy delimiters and empty-list precedence: $tags', async ({ tags, expected }) => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({ tags: expected, updateId: 'fixture' });
+      mocks.tag.upsertValue.mockResolvedValue(tagStub.parentUpsert);
+      mockReadTags(tags);
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ tags: expected.length > 0 ? expected : null }),
+        }),
+      );
+    });
+
     it('should extract tags from HierarchicalSubject as a list with a number', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));

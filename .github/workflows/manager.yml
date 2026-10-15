@@ -1,7 +1,7 @@
 name: Frameleaf Manager
 on:
   pull_request:
-    branches: [master/frameleaf-implementation, fork/main]
+    branches: [master/frameleaf-implementation, main]
     paths:
       [
         'manager/**',
@@ -199,7 +199,7 @@ jobs:
     name: Manager Publish
     needs: manager
     environment: production
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/frameleaf-manager-release') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/frameleaf-manager-release') }}
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 45
     permissions:

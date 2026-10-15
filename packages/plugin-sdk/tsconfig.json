@@ -23,5 +23,6 @@
     "typeRoots": ["./node_modules/@types", "./node_modules"],
     "types": ["node", "@extism/js-pdk"],
     "verbatimModuleSyntax": true
-  }
+  },
+  "include": ["src/**/*.ts"]
 }

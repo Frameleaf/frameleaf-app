@@ -382,7 +382,7 @@ export const getMocks = () => {
     assetJob: automock(AssetJobRepository, { args: [database] }),
     assetRestoration: automock(AssetRestorationRepository),
     classification: automock(ClassificationRepository, { args: [database], strict: false }),
-    clusterGroup: automock(ClusterGroupRepository),
+    clusterGroup: automock(ClusterGroupRepository, { args: [database] }),
     app: automock(AppRepository, { strict: false }),
     config: newConfigRepositoryMock(),
     database: databaseMock,

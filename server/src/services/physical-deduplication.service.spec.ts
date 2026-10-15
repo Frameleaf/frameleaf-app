@@ -854,7 +854,11 @@ describe(PhysicalDeduplicationService.name, () => {
         path: '/primary-hdr.jpg',
         renditionIdentity: identity,
       } as never);
-      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue({ id: 'hdr-physical', path: '/primary-hdr.jpg' });
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue({
+        id: 'hdr-physical',
+        path: '/primary-hdr.jpg',
+        canonicalAssetId: MASTER_ID,
+      });
       mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
 
       await sut.linkToPrimary(COPY_1, MASTER_ID);

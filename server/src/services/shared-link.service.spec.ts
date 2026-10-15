@@ -649,7 +649,7 @@ describe(SharedLinkService.name, () => {
     it('unlocks a link by its bcrypt hash and derives the token from the hash', async () => {
       const sharedLink = SharedLinkFactory.create({ password: hash });
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
-      mocks.crypto.compareBcrypt.mockReturnValue(true);
+      mocks.crypto.compareBcrypt.mockResolvedValue(true);
 
       const result = await sut.login(authStub.adminSharedLink, { password: 'secret' });
 
@@ -669,7 +669,7 @@ describe(SharedLinkService.name, () => {
 
     it('refuses a wrong password', async () => {
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(SharedLinkFactory.create({ password: hash })));
-      mocks.crypto.compareBcrypt.mockReturnValue(false);
+      mocks.crypto.compareBcrypt.mockResolvedValue(false);
 
       await expect(sut.login(authStub.adminSharedLink, { password: 'wrong' })).rejects.toThrow('Invalid password');
     });
@@ -694,13 +694,13 @@ describe(SharedLinkService.name, () => {
       mocks.sharedLink.replaceLegacyPassword.mockResolvedValue(false);
 
       mocks.sharedLink.get.mockResolvedValueOnce(legacy).mockResolvedValueOnce({ ...legacy, password: hash });
-      mocks.crypto.compareBcrypt.mockReturnValueOnce(true);
+      mocks.crypto.compareBcrypt.mockResolvedValueOnce(true);
       const result = await sut.login(authStub.adminSharedLink, { password: 'secret' });
       expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('secret', hash);
       expect(result.token).toBe(tokenFor(legacy.id, hash));
 
       mocks.sharedLink.get.mockResolvedValueOnce(legacy).mockResolvedValueOnce({ ...legacy, password: hash });
-      mocks.crypto.compareBcrypt.mockReturnValueOnce(false);
+      mocks.crypto.compareBcrypt.mockResolvedValueOnce(false);
       await expect(sut.login(authStub.adminSharedLink, { password: 'secret' })).rejects.toThrow('Invalid password');
     });
 

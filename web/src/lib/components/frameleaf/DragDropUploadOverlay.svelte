@@ -2,23 +2,19 @@
   import { page } from '$app/state';
   import { shouldIgnoreEvent } from '$lib/actions/shortcut';
   import '$lib/frameleaf/tokens.css';
+  import { getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
+  import { getDropUploadContext } from '$lib/stores/drag-and-drop-files.store';
   import { fileUploadHandler } from '$lib/utils/file-uploader';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { mdiCloudUploadOutline, mdiShieldLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
   import { motionFade } from '$lib/frameleaf/motion';
   import { DURATION } from '$lib/frameleaf/tokens';
 
   /**
-   * Drag-and-drop upload overlay for library pages (FL-45), restyled from the legacy
-   * `routes/(user)/DragAndDropUploadOverlay.svelte` under the Frameleaf token sheet. The
-   * directory-reading and paste handling are unchanged from the production component this
-   * replaces; only the drop card's appearance is new (`design/frameleaf/template/src/App.jsx`
-   * `DragDropOverlay`). Files still go straight to `fileUploadHandler`, never a simulation.
-   *
    * The card says where the files will go, because it depends on the page: on an album they also
    * join that album, and in Locked they are uploaded as Locked. The page shows through a frosted
    * veil rather than being covered, so the album you are dropping into stays in view.
@@ -51,6 +47,11 @@
 
   let dragStartTarget: EventTarget | null = $state(null);
   let isInternalDrag = false;
+  const dropUploads = getDropUploadContext();
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
 
   const onDragEnter = (e: DragEvent) => {
     if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
@@ -82,10 +83,38 @@
       return;
     }
 
-    if (!browserSupportsDirectoryUpload()) {
-      return handleFiles(dataTransfer.files);
+    const generation = getPrivateBrowserStateGeneration();
+    const pathname = page.url.pathname;
+    const owner = authManager.authenticated ? authManager.user.id : undefined;
+    const sharedLink = authManager.isSharedLink;
+    const { key, slug } = authManager.params;
+    const targetAlbumId = albumId;
+    const isLockedAssets = isInLockedFolder;
+    const receiveSharedFiles = dropUploads?.capture();
+    // Directory reads can outlive the route or session that admitted the drop.
+    const isCurrent = () =>
+      mounted &&
+      getPrivateBrowserStateGeneration() === generation &&
+      page.url.pathname === pathname &&
+      (authManager.authenticated ? authManager.user.id : undefined) === owner &&
+      authManager.isSharedLink === sharedLink &&
+      authManager.params.key === key &&
+      authManager.params.slug === slug;
+    const files = await readTransferFiles(dataTransfer, isCurrent);
+    if (!isCurrent()) {
+      return;
     }
+    if (sharedLink) {
+      receiveSharedFiles?.(files);
+    } else {
+      await fileUploadHandler({ files, albumId: targetAlbumId, isLockedAssets });
+    }
+  };
 
+  const readTransferFiles = async (dataTransfer: DataTransfer, isCurrent: () => boolean): Promise<File[]> => {
+    if (!browserSupportsDirectoryUpload()) {
+      return Array.from(dataTransfer.files);
+    }
     const entries: FileSystemEntry[] = [];
     const files: File[] = [];
     for (const item of dataTransfer.items) {
@@ -93,32 +122,32 @@
       const entry = item.webkitGetAsEntry();
       if (entry) {
         entries.push(entry);
-        continue;
-      }
-
-      const file = item.getAsFile();
-      if (file) {
-        files.push(file);
+      } else {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
       }
     }
-
-    const directoryFiles = await getAllFilesFromTransferEntries(entries);
-    return handleFiles([...files, ...directoryFiles]);
+    return [...files, ...(await getAllFilesFromTransferEntries(entries, isCurrent))];
   };
 
   // eslint-disable-next-line tscompat/tscompat
   const browserSupportsDirectoryUpload = () => typeof DataTransferItem.prototype.webkitGetAsEntry === 'function';
 
-  const getAllFilesFromTransferEntries = async (transferEntries: FileSystemEntry[]): Promise<File[]> => {
+  const getAllFilesFromTransferEntries = async (
+    transferEntries: FileSystemEntry[],
+    isCurrent: () => boolean,
+  ): Promise<File[]> => {
     const allFiles: File[] = [];
-    let entriesToCheckForSubDirectories = [...transferEntries];
-    while (entriesToCheckForSubDirectories.length > 0) {
+    const entriesToCheckForSubDirectories = [...transferEntries];
+    while (isCurrent() && entriesToCheckForSubDirectories.length > 0) {
       const currentEntry = entriesToCheckForSubDirectories.pop();
 
       if (isFileSystemDirectoryEntry(currentEntry)) {
-        entriesToCheckForSubDirectories = entriesToCheckForSubDirectories.concat(
-          await getContentsFromFileSystemDirectoryEntry(currentEntry),
-        );
+        for (const entry of await getContentsFromFileSystemDirectoryEntry(currentEntry, isCurrent)) {
+          entriesToCheckForSubDirectories.push(entry);
+        }
       } else if (isFileSystemFileEntry(currentEntry)) {
         allFiles.push(await getFileFromFileSystemEntry(currentEntry));
       }
@@ -145,6 +174,7 @@
 
   const getContentsFromFileSystemDirectoryEntry = async (
     fileSystemDirectoryEntry: FileSystemDirectoryEntry,
+    isCurrent: () => boolean,
   ): Promise<FileSystemEntry[]> => {
     const reader = fileSystemDirectoryEntry.createReader();
     const files: FileSystemEntry[] = [];
@@ -153,22 +183,9 @@
     do {
       entries = await readEntriesAsync(reader);
       files.push(...entries);
-    } while (entries.length > 0);
+    } while (isCurrent() && entries.length > 0);
 
     return files;
-  };
-
-  const handleFiles = async (files?: FileList | File[]) => {
-    if (!files) {
-      return;
-    }
-
-    const filesArray: File[] = Array.from<File>(files);
-    if (authManager.isSharedLink) {
-      dragAndDropFilesStore.set({ isDragging: true, files: filesArray });
-    } else {
-      await fileUploadHandler({ files: filesArray, albumId, isLockedAssets: isInLockedFolder });
-    }
   };
 
   const ondragstart = () => {

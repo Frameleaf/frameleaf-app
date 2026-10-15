@@ -66,6 +66,7 @@ import {
 } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-scheduled-worker.repository.js';
 import { type ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -122,7 +123,7 @@ describe('iCloud exact identity adoption', () => {
         });
       }
     });
-    sync = new ICloudSyncRepository(db);
+    sync = new ICloudSyncRepository(db, new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()));
     repository = new ICloudIdentityAdoptionRepository(db);
     identities = new ICloudIdentityRepository(db);
   });
@@ -1487,7 +1488,13 @@ describe('iCloud exact identity adoption', () => {
       // node/result; they add no SQL, alter no authority, and are confined to this large fixture.
       // Timings include compilation/execution/waiting, not exclusive PostgreSQL lock wait time.
       // Adopter statement totals overlap across the four concurrent transactions.
-      const measuredSync = size > 101 ? new ICloudSyncRepository(db.withPlugin(observe('claim'))) : sync;
+      const measuredSync =
+        size > 101
+          ? new ICloudSyncRepository(
+              db.withPlugin(observe('claim')),
+              new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+            )
+          : sync;
       const measuredAdoption =
         size > 101 ? new ICloudIdentityAdoptionRepository(db.withPlugin(observe('adoption'))) : repository;
       const progress = (phase: string, receipts: number) => {
@@ -2268,7 +2275,10 @@ describe('iCloud exact identity adoption', () => {
           600,
         );
         expect(claim).toBeDefined();
-        await new ICloudAuditRepository(db).setItemClaim(authority.auditRequestId, f.user.id, claim.id);
+        await new ICloudAuditRepository(
+          db,
+          new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+        ).setItemClaim(authority.auditRequestId, f.user.id, claim.id);
         const resource = { id: randomUUID(), leaseToken: randomUUID() };
         await sql`INSERT INTO public.icloud_resource (id,"ownerId","connectionId","libraryKey",library,"sourceAssetId",
           "recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"auditRequestId","leaseToken","leaseExpiresAt")
@@ -2587,6 +2597,10 @@ describe('iCloud exact identity adoption', () => {
       describe('fresh scheduled stream provenance and real decoder ownership', { timeout: 15_000 }, () => {
         async function createStageFixture(protectedOriginal = false, decoder?: MediaIntegrityService) {
           const fixture = await scheduledAuthorityFixture(protectedOriginal);
+          // The scheduled byte worker always holds the source-byte reservation before staging; validation-input
+          // custody (FL-296) refuses a staged resource whose reservedBytes is not exactly source+copy+input.
+          await sql`UPDATE public.icloud_resource SET "reservedBytes"="expectedSize"
+            WHERE id=${fixture.resource.id}::uuid`.execute(db);
           const input = { ownerId: fixture.f.user.id, authority: fixture.authority, resource: fixture.resource };
           const root = join(await realpath(dirname(fixture.f.originalPath)), 'scheduled-stage');
           vi.stubEnv('FRAMELEAF_ICLOUD_STAGING_PATH', root);
@@ -2706,7 +2720,10 @@ describe('iCloud exact identity adoption', () => {
             "cancelledCount"::text AS cancelled FROM public.icloud_weekly_cohort WHERE id=${fixture.cohort.id}::uuid`.execute(
             db,
           );
-          const request = await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id);
+          const request = await new ICloudAuditRepository(
+            db,
+            new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+          ).get(fixture.authority.auditRequestId, fixture.f.user.id);
           const identity = (
             await sql<{
               lastVerifiedAt: Date | null;
@@ -2814,7 +2831,12 @@ describe('iCloud exact identity adoption', () => {
           await expect(access(fixture.fresh.payload.path)).rejects.toMatchObject({ code: 'ENOENT' });
           expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
           expect(
-            (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
+            (
+              await new ICloudAuditRepository(
+                db,
+                new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+              ).get(fixture.authority.auditRequestId, fixture.f.user.id)
+            )?.result,
           ).toBe('failed');
           await restarted.housekeeping(); // Idempotent retry neither releases twice nor publishes proof.
           expect((await fixture.state()).reservedBytes).toBe(0);
@@ -2969,7 +2991,8 @@ describe('iCloud exact identity adoption', () => {
             try {
               await restarted.housekeeping();
               expect((await fixture.state()).lastError).toBe('scheduled_private_copy_retained_pending-settlement');
-              expect((await fixture.state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
+              // Source + recovery copy + the still-owned full-size decoder input (FL-296 validation-input charge).
+              expect((await fixture.state()).reservedBytes).toBe(3 * fixture.f.bytes.length);
               expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
             } finally {
               decoderDone.resolve();
@@ -3170,11 +3193,12 @@ describe('iCloud exact identity adoption', () => {
             await fixture.retire();
             done.resolve();
             decoder.mockRestore();
-            await validation.settled;
+            // FL-296: settlement under the forged work generation cannot persist, so the decoder input stays owned.
+            await expect(validation.settled).rejects.toThrow('scheduled_audit_input_changed');
             await fixture.staging.cleanupRetired(fixture.input);
             expect(await fixture.state()).toMatchObject({
               status: 'failed',
-              reservedBytes: 2 * fixture.f.bytes.length,
+              reservedBytes: 3 * fixture.f.bytes.length,
             });
             expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
             expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
@@ -3332,7 +3356,12 @@ describe('iCloud exact identity adoption', () => {
           expect(await fixture.repository.storeDeepValidation(fixture.input, forged)).toBe(false);
           expect(await fixture.repository.authenticateDeepValidation(fixture.input, forged)).toBe(false);
           expect(
-            (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
+            (
+              await new ICloudAuditRepository(
+                db,
+                new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+              ).get(fixture.authority.auditRequestId, fixture.f.user.id)
+            )?.result,
           ).toBe('queued');
           expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
         });
@@ -3724,7 +3753,12 @@ describe('iCloud exact identity adoption', () => {
               await files.release();
             }
             expect(
-              (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
+              (
+                await new ICloudAuditRepository(
+                  db,
+                  new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+                ).get(fixture.authority.auditRequestId, fixture.f.user.id)
+              )?.result,
             ).toBe('queued');
             expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
           },
@@ -3964,7 +3998,12 @@ describe('iCloud exact identity adoption', () => {
               }
               expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
               expect(
-                (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
+                (
+                  await new ICloudAuditRepository(
+                    db,
+                    new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+                  ).get(fixture.authority.auditRequestId, fixture.f.user.id)
+                )?.result,
               ).toBe('queued');
             } finally {
               release.resolve();

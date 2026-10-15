@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Query, Res } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -6,6 +6,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
+  IntegrityReportClearResponseDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
   IntegrityReportTypeParamDto,
@@ -86,6 +87,32 @@ export class IntegrityAdminController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   async deleteIntegrityReport(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<void> {
     await this.service.deleteIntegrityReport(auth.user.id, id);
+  }
+
+  @Post('report/:id/dismiss')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove one finding from its list',
+    description:
+      'Forget one integrity finding without acting on it: no file is deleted and no photo is moved to the trash. The next check reports it again if the problem remains.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  async dismissIntegrityReport(@Param() { id }: UUIDv7ParamDto): Promise<void> {
+    await this.service.dismissIntegrityReport(id);
+  }
+
+  @Post('report/:type/clear')
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Clear the list of one integrity check',
+    description:
+      'Empty the findings of one integrity check without acting on them: no file is deleted and no photo is moved to the trash. The next check reports what is still wrong.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  clearIntegrityReports(@Param() { type }: IntegrityReportTypeParamDto): Promise<IntegrityReportClearResponseDto> {
+    return this.service.clearIntegrityReports(type);
   }
 
   @Get('report/:type/csv')

@@ -1211,15 +1211,12 @@ const getMeta = (schema: z.ZodType) =>
   (z.globalRegistry.get(schema) ?? {}) as { id?: string; description?: string; visibility?: ConfigVisibility };
 
 const unwrap = (schema: z.ZodType): z.ZodType => {
-  if (schema instanceof z.ZodPipe) {
-    return schema.def.in as z.ZodType;
-  }
   // FL-158: a section with a default (the Frameleaf sections) is walked like any other, so its
   // public properties are published and its visibility metadata is stripped
-  if (schema instanceof z.ZodDefault) {
-    return unwrap(schema.def.innerType as z.ZodType);
+  while (schema instanceof z.ZodDefault) {
+    schema = schema.def.innerType as z.ZodType;
   }
-  return schema;
+  return schema instanceof z.ZodPipe ? (schema.def.in as z.ZodType) : schema;
 };
 
 const visibleSchemas = new Map<z.ZodType, Map<ConfigVisibility, z.ZodType | undefined>>();
@@ -1279,19 +1276,28 @@ const applyVisibilityRecursive = (
   return visible;
 };
 
-const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
-  const object = unwrap(schema);
-  if (object instanceof z.ZodObject) {
-    for (const value of Object.values(object.shape as Record<string, z.ZodType>)) {
-      stripVisibilityMetadata(value);
+export const stripVisibilityMetadata = <T extends z.ZodType>(schema: T): T => {
+  const pending: z.ZodType[] = [schema];
+  const visited = new WeakSet<z.ZodType>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    const object = unwrap(current);
+    if (object instanceof z.ZodObject) {
+      const children = Object.values(object.shape as Record<string, z.ZodType>);
+      for (let index = children.length - 1; index >= 0; index--) {
+        pending.push(children[index]);
+      }
+      continue;
     }
 
-    return schema;
-  }
-
-  const { visibility, ...meta } = getMeta(schema);
-  if (visibility) {
-    z.globalRegistry.add(schema, meta);
+    const { visibility, ...meta } = getMeta(current);
+    if (visibility) {
+      z.globalRegistry.add(current, meta);
+    }
   }
 
   return schema;
@@ -1447,7 +1453,7 @@ export const defaults = Object.freeze<SystemConfig>({
     targetAudioCodec: AudioCodec.Aac,
     acceptedAudioCodecs: [AudioCodec.Aac, AudioCodec.Mp3, AudioCodec.Opus],
     acceptedContainers: [VideoContainer.Mov, VideoContainer.Ogg, VideoContainer.Webm],
-    targetResolution: '720',
+    targetResolution: '1080',
     maxBitrate: '0',
     bframes: -1,
     refs: 0,

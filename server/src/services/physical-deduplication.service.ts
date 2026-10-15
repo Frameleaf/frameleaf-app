@@ -1153,9 +1153,10 @@ export class PhysicalDeduplicationService extends BaseService {
     const existing = renditionIdentity
       ? await this.physicalFileRepository.getCanonicalGeneratedFile(assetId, type, renditionIdentity)
       : await this.physicalFileRepository.getCanonicalGeneratedFile(assetId, type);
-    if (existing) {
-      return existing;
+    if (existing?.id) {
+      return { ...existing, id: existing.id };
     }
+    path = existing?.path ?? path;
 
     const sizeInBytes = await this.getFileSize(path);
     if (sizeInBytes === 0) {
@@ -1163,7 +1164,7 @@ export class PhysicalDeduplicationService extends BaseService {
     }
 
     return this.physicalFileRepository.upsertPhysicalFile({
-      canonicalAssetId: assetId,
+      canonicalAssetId: existing?.canonicalAssetId ?? assetId,
       checksum: await this.cryptoRepository.hashFile(path),
       path,
       sizeInBytes,

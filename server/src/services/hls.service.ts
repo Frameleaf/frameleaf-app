@@ -59,11 +59,13 @@ export class HlsService extends BaseService {
     // Sharing the sessionId allows only one microservices worker to successfully insert to the session table.
     // The microservices worker that creates a session owns the transcoding lifecycle for it.
     const sessionId = this.cryptoRepository.randomUUID();
-    this.websocketRepository.serverSend('HlsSessionRequest', { sessionId, assetId, ownerId: auth.user.id });
-    await this.pendingSessions.wait(sessionId);
+    const playlist = this.generateMainPlaylist(sessionId, ffmpeg, asset);
+    await this.pendingSessions.wait(sessionId, () => {
+      this.websocketRepository.serverSend('HlsSessionRequest', { sessionId, assetId, ownerId: auth.user.id });
+    });
     this.trackSession(sessionId);
 
-    return this.generateMainPlaylist(sessionId, ffmpeg, asset);
+    return playlist;
   }
 
   async getMediaPlaylist(auth: AuthDto, assetId: string, sessionId: string, variantIndex: number, position?: number) {
@@ -92,7 +94,7 @@ export class HlsService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [assetId] });
 
     const session = await this.videoStreamRepository.getSession(sessionId);
-    if (!session) {
+    if (!session || session.assetId !== assetId) {
       throw new NotFoundException('Session not found');
     }
 
@@ -108,18 +110,33 @@ export class HlsService extends BaseService {
     const segmentIndex = this.getSegmentIndex(apiSession, filename, initSegment);
     this.websocketRepository.serverSend('HlsHeartbeat', { sessionId, variantIndex, segmentIndex });
 
-    if (await this.storageRepository.checkFileExists(path, constants.R_OK)) {
-      return response;
-    }
-
-    this.websocketRepository.serverSend('HlsSegmentRequest', { sessionId, assetId, variantIndex, segmentIndex });
-    await this.pendingSegments.wait(this.getSegmentKey({ sessionId, variantIndex, segmentIndex }));
+    const result = { sessionId, variantIndex, segmentIndex };
+    const key = this.getSegmentKey(result);
+    await this.pendingSegments.wait(key, async (isPending) => {
+      const exists = await this.storageRepository.checkFileExists(path, constants.R_OK);
+      if (!isPending()) {
+        return;
+      }
+      if (exists) {
+        this.pendingSegments.complete(key, result);
+      } else {
+        this.websocketRepository.serverSend('HlsSegmentRequest', { ...result, assetId });
+      }
+    });
 
     return response;
   }
 
   async endSession(auth: AuthDto, assetId: string, sessionId: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [assetId] });
+
+    const session = await this.videoStreamRepository.getSession(sessionId);
+    if (!session) {
+      return;
+    }
+    if (session.assetId !== assetId) {
+      throw new NotFoundException('Session not found');
+    }
 
     this.websocketRepository.serverSend('HlsSessionEnd', { sessionId });
   }
@@ -178,8 +195,9 @@ export class HlsService extends BaseService {
       '#EXT-X-MAP:URI="init.mp4"',
     ];
 
+    const fullSegment = `#EXTINF:${fullSegmentDuration.toFixed(6)},`;
     for (let i = 0; i < segmentCount - 1; i++) {
-      lines.push(`#EXTINF:${fullSegmentDuration.toFixed(6)},`, `seg_${i}.m4s`);
+      lines.push(fullSegment, `seg_${i}.m4s`);
     }
     lines.push(`#EXTINF:${lastSegmentDuration.toFixed(6)},`, `seg_${segmentCount - 1}.m4s`, '#EXT-X-ENDLIST', '');
 

@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import sharp from 'sharp';
 import { expect, it, vi } from 'vitest';
 import { isStudioFrameHello, STUDIO_FRAME_PROTOCOL_VERSION } from '../../web/src/lib/frameleaf/studio/frame-protocol';
+import { executeCommand } from './command';
 import { generateTimelineData } from './ui/generators/timeline';
 import { setupStudioStreamMocks } from './ui/mock-network/studio-stream-network';
 import { setupTimelineMockApiRoutes, TimelineTestContext } from './ui/mock-network/timeline-network';
@@ -307,4 +311,22 @@ it.each([
   )();
   expect(h.calls.some(([method]) => method === 'Profiler.start')).toBe(true);
   expect(h.attachments).toHaveLength(2);
+});
+
+it('command fixture captures both streams and preserves nonzero exit codes', async () => {
+  const { promise, child } = executeCommand(process.execPath, [
+    '-e',
+    "process.stdout.write('  ' + 'x'.repeat(100000) + '\\n'); process.stderr.write('  detail\\n'); process.exitCode = 7;",
+  ]);
+  let closed = false;
+  child.once('close', () => {
+    closed = true;
+  });
+  await expect(promise).resolves.toEqual({ stdout: 'x'.repeat(100000), stderr: 'detail', exitCode: 7 });
+  expect(closed).toBe(true);
+});
+
+it('command fixture rejects an executable spawn failure', async () => {
+  const { promise } = executeCommand(join(tmpdir(), `frameleaf-missing-command-${randomUUID()}`), []);
+  await expect(promise).rejects.toMatchObject({ code: 'ENOENT' });
 });

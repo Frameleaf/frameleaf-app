@@ -8,7 +8,7 @@ const { execFileSync } = require("node:child_process");
 
 const REPOSITORY = "Frameleaf/frameleaf-app";
 const SOURCE = `https://github.com/${REPOSITORY}`;
-const MAIN = "fork/main";
+const MAIN = "main";
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const SHA = /^[a-f0-9]{40}$/;
 const INDEX_TYPES = new Set([
@@ -639,7 +639,15 @@ const BUILD_INPUTS = {
     "LICENSE",
     ".dockerignore",
   ],
-  "frameleaf-machine-learning": ["machine-learning"],
+  // FL-408: the image also builds the bundled Studio worker from the repository context
+  "frameleaf-machine-learning": [
+    "machine-learning",
+    "studio",
+    "scripts/frameleaf-studio-contracts.mjs",
+    "scripts/frameleaf-studio-rights.mjs",
+    "server/resources/studio-fonts",
+    ".dockerignore",
+  ],
 };
 function identicalBuildInputs(
   spec,
@@ -1062,8 +1070,8 @@ async function deployTestImages(
   console.log(lines.filter((line) => !line.includes("ARCHIVE")).join("\n"));
 }
 
-// FL-146 "Deploy production": the verified candidate a dispatch names, by its exact fork/main commit or
-// by the digest of its frameleaf-server candidate. Only the current fork/main head with a successful
+// FL-146 "Deploy production": the verified candidate a dispatch names, by its exact main commit or
+// by the digest of its frameleaf-server candidate. Only the current main head with a successful
 // same-SHA Deploy run qualifies (the release rules below); rolling tags are never evidence.
 async function resolveCandidate(
   env = process.env,

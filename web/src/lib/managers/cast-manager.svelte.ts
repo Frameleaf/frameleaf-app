@@ -1,5 +1,6 @@
 import { createSession, type SessionCreateResponseDto } from '@frameleaf/sdk';
 import { DateTime, Duration } from 'luxon';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { GCastDestination } from '$lib/utils/cast/gcast-destination.svelte';
 
@@ -51,6 +52,13 @@ class CastManager {
   duration = $derived<number | null>(this.current?.duration ?? null);
 
   private sessionKey: SessionCreateResponseDto | null = null;
+  private sessionKeyIsCurrent: (() => boolean) | undefined;
+  private sessionKeyRequest:
+    | {
+        isCurrent: () => boolean;
+        promise: Promise<SessionCreateResponseDto>;
+      }
+    | undefined;
 
   constructor() {
     // load each cast destination
@@ -91,7 +99,7 @@ class CastManager {
   private isTokenValid() {
     // check if we already have a session token
     // we should always have a expiration date
-    if (!this.sessionKey || !this.sessionKey.expiresAt) {
+    if (!this.sessionKeyIsCurrent?.() || !this.sessionKey || !this.sessionKey.expiresAt) {
       return false;
     }
 
@@ -105,31 +113,53 @@ class CastManager {
   }
 
   private async refreshSessionToken() {
-    // get session token to authenticate the media url
-    // check and make sure we have at least 10 seconds remaining in the session
-    // before we send the media request, refresh the session if needed
-    if (!this.isTokenValid()) {
-      this.sessionKey = await createSession({
+    if (this.isTokenValid()) {
+      return this.sessionKey;
+    }
+    if (this.sessionKeyRequest?.isCurrent()) {
+      return this.sessionKeyRequest.promise;
+    }
+    const request = {
+      isCurrent: authManager.captureSession(),
+      promise: createSession({
         sessionCreateDto: {
           duration: Duration.fromObject({ minutes: 15 }).as('seconds'),
           deviceOS: 'Google Cast',
           deviceType: 'Cast',
         },
-      });
+      }),
+    };
+    this.sessionKeyRequest = request;
+    try {
+      const key = await request.promise;
+      if (request.isCurrent()) {
+        this.sessionKey = key;
+        this.sessionKeyIsCurrent = request.isCurrent;
+      }
+      return key;
+    } finally {
+      if (this.sessionKeyRequest === request) {
+        this.sessionKeyRequest = undefined;
+      }
     }
   }
 
   async loadMedia(mediaUrl: string, reload: boolean = false) {
-    if (!this.current) {
+    const destination = this.current;
+    if (!destination) {
       throw new Error('No active cast destination');
     }
 
-    await this.refreshSessionToken();
-    if (!this.sessionKey) {
+    const isCurrentSession = authManager.captureSession();
+    const key = await this.refreshSessionToken();
+    if (!isCurrentSession() || this.current !== destination || !destination.isConnected) {
+      return;
+    }
+    if (!key) {
       throw new Error('No session key available');
     }
 
-    await this.current.loadMedia(mediaUrl, this.sessionKey.token, reload);
+    await destination.loadMedia(mediaUrl, key.token, reload);
   }
 
   play() {

@@ -42,14 +42,6 @@ import { isWebCompatibleImage } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
 import { convertBCP47, langs } from '$lib/utils/i18n';
 
-interface DownloadRequestOptions<T = unknown> {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  url: string;
-  data?: T;
-  signal?: AbortSignal;
-  onDownloadProgress?: (event: ProgressEvent<XMLHttpRequestEventTarget>) => void;
-}
-
 interface DateFormatter {
   formatDate: (date: Date) => string;
   formatTime: (date: Date) => string;
@@ -139,48 +131,13 @@ export const uploadRequest = async <T>(options: UploadRequestOptions): Promise<{
       xhr.upload.addEventListener('progress', (event) => onProgress(event));
     }
 
-    xhr.open(options.method || 'POST', url);
-    xhr.responseType = 'json';
-    xhr.send(data);
-  });
-};
-
-export const downloadRequest = <TBody = unknown>(options: DownloadRequestOptions<TBody> | string) => {
-  if (typeof options === 'string') {
-    options = { url: options };
-  }
-
-  const { signal, method, url, data: body, onDownloadProgress: onProgress } = options;
-
-  return new Promise<{ data: Blob; status: number }>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-
-    xhr.addEventListener('error', (error) => reject(error));
-    xhr.addEventListener('abort', () => reject(new AbortError()));
-    xhr.addEventListener('load', () => {
-      if (xhr.readyState === 4 && xhr.status >= 200 && xhr.status < 300) {
-        resolve({ data: xhr.response as Blob, status: xhr.status });
-      } else {
-        reject(new ApiError(xhr.statusText, xhr.status, xhr.responseText));
-      }
-    });
-
-    if (onProgress) {
-      xhr.addEventListener('progress', (event) => onProgress(event));
-    }
-
-    if (signal) {
-      signal.addEventListener('abort', () => xhr.abort());
-    }
-
-    xhr.open(method || 'GET', url);
-    xhr.responseType = 'blob';
-
-    if (body) {
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.send(JSON.stringify(body));
-    } else {
-      xhr.send();
+    try {
+      xhr.open(options.method || 'POST', url);
+      xhr.responseType = 'json';
+      xhr.send(data);
+    } catch (error) {
+      unsubscribe();
+      reject(error);
     }
   });
 };
@@ -192,8 +149,7 @@ export const getSharedLink = (): typeof _sharedLink => _sharedLink;
 
 const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   const searchParameters = new URLSearchParams();
-  for (const key in parameters) {
-    const value = parameters[key];
+  for (const [key, value] of Object.entries(parameters ?? {})) {
     if (value !== undefined && value !== null) {
       searchParameters.set(key, value.toString());
     }
@@ -334,13 +290,11 @@ export const copyToClipboard = async (secret: string | unknown) => {
 // https://stackoverflow.com/questions/16167581/sort-object-properties-and-json-stringify/43636793#43636793
 const jsonReplacer = (_key: string, value: unknown) =>
   value instanceof Object && !Array.isArray(value)
-    ? Object.keys(value)
-        .sort()
-        // eslint-disable-next-line unicorn/no-array-reduce
-        .reduce((sorted: { [key: string]: unknown }, key) => {
-          sorted[key] = (value as { [key: string]: unknown })[key];
-          return sorted;
-        }, {})
+    ? Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((key) => [key, (value as Record<string, unknown>)[key]]),
+      )
     : value;
 
 export const downloadUrl = (url: string, filename: string) => {
@@ -553,18 +507,3 @@ export const withoutIcons = (actions: ActionItem[]): ActionItem[] =>
   actions.map((action) => ({ ...action, icon: undefined }));
 
 export const isEnabled = ({ $if }: IfLike) => $if?.() ?? true;
-
-export const transformToTitleCase = (text: string) => {
-  if (text.length === 0) {
-    return text;
-  }
-  if (text.length === 1) {
-    return text.charAt(0).toUpperCase();
-  }
-
-  let result = '';
-  for (const word of text.toLowerCase().split(' ')) {
-    result += word.charAt(0).toUpperCase() + word.slice(1) + ' ';
-  }
-  return result.trim();
-};

@@ -526,33 +526,44 @@ async def load(model: InferenceModel) -> InferenceModel:
         return model
 
     def _load(model: InferenceModel) -> InferenceModel:
-        if model.load_attempts > 1:
-            raise HTTPException(500, f"Failed to load model '{model.model_name}'")
         with lock:
-            try:
-                model.load()
-            except FileNotFoundError as e:
-                if model.model_format == ModelFormat.ONNX:
-                    raise e
-                log.warning(
-                    f"{model.model_format.upper()} is available, but model '{model.model_name}' does not support it.",
-                    exc_info=e,
-                )
-                model.model_format = ModelFormat.ONNX
-                model.load()
-        return model
+            if model.loaded:
+                return model
 
-    try:
-        return await run(_load, model)
-    except ModelUnavailableError as error:
-        # A missing model is a configuration problem; clearing the cache and retrying cannot fix it.
-        raise HTTPException(503, str(error)) from error
-    except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:
-        if not settings.model_downloads:
-            raise HTTPException(503, "Staged model failed to load; repair it with the model-staging command") from error
-        log.warning(f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache.")
-        model.clear_cache()
-        return await run(_load, model)
+            def attempt() -> InferenceModel:
+                if model.load_attempts > 1:
+                    raise HTTPException(500, f"Failed to load model '{model.model_name}'")
+                try:
+                    model.load()
+                except FileNotFoundError as error:
+                    if model.model_format == ModelFormat.ONNX:
+                        raise
+                    log.warning(
+                        f"{model.model_format.upper()} is available, "
+                        f"but model '{model.model_name}' does not support it.",
+                        exc_info=error,
+                    )
+                    model.model_format = ModelFormat.ONNX
+                    model.load()
+                return model
+
+            try:
+                return attempt()
+            except ModelUnavailableError as error:
+                # A missing model is a configuration problem; clearing the cache cannot fix it.
+                raise HTTPException(503, str(error)) from error
+            except (OSError, InvalidProtobuf, BadZipFile, NoSuchFile) as error:
+                if not settings.model_downloads:
+                    raise HTTPException(
+                        503, "Staged model failed to load; repair it with the model-staging command"
+                    ) from error
+                log.warning(
+                    f"Failed to load {model.model_type.replace('_', ' ')} model '{model.model_name}'. Clearing cache."
+                )
+                model.clear_cache()
+                return attempt()
+
+    return await run(_load, model)
 
 
 async def idle_shutdown_task() -> None:

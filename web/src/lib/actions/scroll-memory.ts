@@ -32,6 +32,7 @@ export function scrollMemory(
   node: HTMLElement,
   { routeStartsWith, beforeSave, beforeClear, beforeScroll }: PageOptions,
 ) {
+  let destroyed = false;
   const unsubscribeNavigating = toStore(() => navigating.to).subscribe((to) => {
     const existingScroll = sessionStorage.getItem(SessionStorageKey.SCROLL_POSITION);
     if (to && !existingScroll) {
@@ -49,6 +50,9 @@ export function scrollMemory(
   handlePromiseError(
     (async () => {
       await beforeScroll?.();
+      if (destroyed) {
+        return;
+      }
 
       const newScroll = sessionStorage.getItem(SessionStorageKey.SCROLL_POSITION);
       if (newScroll) {
@@ -64,6 +68,7 @@ export function scrollMemory(
 
   return {
     destroy() {
+      destroyed = true;
       unsubscribeNavigating();
     },
   };

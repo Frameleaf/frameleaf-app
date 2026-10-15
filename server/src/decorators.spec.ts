@@ -1,4 +1,74 @@
-import { ChunkedSet } from 'src/decorators.js';
+import { Chunked, ChunkedArray, ChunkedSet } from 'src/decorators.js';
+
+describe('Chunked invocation ownership', () => {
+  it('observes earlier thenable failures when a later chunk throws synchronously, without starting later work', async () => {
+    const invoked: string[] = [];
+    const failure = new Error('synchronous failure');
+    const earlierFailure = new Error('earlier asynchronous failure');
+    let observed = false;
+    const early = {
+      then(_resolve: unknown, reject: (error: Error) => void) {
+        observed = true;
+        reject(earlierFailure);
+      },
+    };
+    class Repository {
+      @Chunked({ chunkSize: 1 })
+      find(ids: string[]) {
+        invoked.push(ids[0]);
+        if (ids[0] === 'b') {
+          throw failure;
+        }
+        return early;
+      }
+    }
+    expect(() => new Repository().find(['a', 'b', 'c'])).toThrow(failure);
+    await Promise.resolve();
+    expect(invoked).toEqual(['a', 'b']);
+    expect(observed).toBe(true);
+  });
+
+  it('invokes all chunks before settlement and merges results in input order', async () => {
+    const resolvers: Array<(value: string[]) => void> = [];
+    const input = ['a', 'b', 'c', 'd', 'e'];
+    const calls: string[][] = [];
+    class Repository {
+      @ChunkedArray({ paramIndex: 1, chunkSize: 2 })
+      find(owner: object, ids: string[], suffix: object) {
+        expect(this).toBe(repository);
+        expect(owner).toBe(prefix);
+        expect(suffix).toBe(tail);
+        calls.push(ids);
+        return new Promise<string[]>((resolve) => {
+          resolvers.push(resolve);
+        });
+      }
+    }
+    const prefix = {};
+    const tail = {};
+    const repository = new Repository();
+    const result = repository.find(prefix, input, tail);
+    expect(calls).toEqual([['a', 'b'], ['c', 'd'], ['e']]);
+    resolvers[2](['e']);
+    resolvers[0](['a', 'b']);
+    resolvers[1](['c', 'd']);
+    await expect(result).resolves.toEqual(input);
+    expect(input).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+
+  it('keeps the fast path synchronous and returns the original reference without invoking the merger', () => {
+    const mergeFn = vi.fn();
+    class Repository {
+      @Chunked({ chunkSize: 2, mergeFn })
+      find(ids: string[]) {
+        return ids;
+      }
+    }
+    const input = ['a', 'b'];
+    expect(new Repository().find(input)).toBe(input);
+    expect(mergeFn).not.toHaveBeenCalled();
+  });
+});
 
 describe('ChunkedSet', () => {
   it.each([[], ['a'], ['a', 'b'], ['a', 'b', 'c', 'd', 'e']].map((values) => ({ values })))(

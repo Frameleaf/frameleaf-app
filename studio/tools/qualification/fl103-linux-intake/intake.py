@@ -5,6 +5,9 @@ sys.dont_write_bytecode=True  # Keep startup imports from dirtying the reviewed 
 from release import publish_release
 
 PREFIX='fl103-intake-'
+# The reviewed engine recipe the intake accepts; source_test.py keeps it equal to studio/engine-build.json.
+RECIPE_SOURCE_SHA256='e3f7e88e3e38e6ace377a230b47ec41f9197db373cbb5932024dd94b9b67c7e9'
+RECIPE_PATCH_COUNT=137
 LIMITS={'cpu.max':'200000 100000','memory.max':'2147483648','memory.swap.max':'0','pids.max':'128'}
 def command(argv,timeout=10):return subprocess.check_output(argv,text=True,stderr=subprocess.STDOUT,timeout=timeout).strip()
 def system_state(base):
@@ -218,7 +221,7 @@ def main():
  checkout_status=command(['/usr/bin/git','-C',str(checkout),'status','--porcelain'])
  assert checkout_status=='','dirty reviewed checkout (first 4096 characters): '+checkout_status[:4096]
  head=command(['/usr/bin/git','-C',str(checkout),'rev-parse','HEAD'])
- recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']=='3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce' and len(recipe['patches'])==133
+ recipe=json.loads((checkout/'studio/engine-build.json').read_text());assert recipe['sourceSha256']==RECIPE_SOURCE_SHA256 and len(recipe['patches'])==RECIPE_PATCH_COUNT
  assert digest(checkout/'studio/engine-package-lock.json')==recipe['lockfileSha256']
  for patch in recipe['patches']:assert digest(checkout/'studio'/patch['path'])==patch['sha256']
  source=Path(__file__).resolve().parent

@@ -33,14 +33,24 @@
     }
 
     linking = true;
+    const isCurrent = authManager.captureSession();
     try {
-      authManager.setUser(await oauth.link(location));
+      const updated = await oauth.link(location);
+      if (!isCurrent()) {
+        return;
+      }
+      authManager.setUser(updated);
       toastManager.primary($t('frameleaf_access_provider_connected'));
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       error = getServerErrorMessage(error_) ?? $t('frameleaf_access_provider_connect_failed');
     } finally {
       linking = false;
-      await goto('?open=oauth', { replaceState: true });
+      if (isCurrent()) {
+        await goto('?open=oauth', { replaceState: true });
+      }
     }
   });
 
@@ -55,6 +65,7 @@
   };
 
   const disconnect = async () => {
+    const isCurrent = authManager.captureSession();
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_access_provider_disconnect_title'),
       prompt: featureFlagsManager.value.passwordLogin
@@ -63,16 +74,23 @@
       confirmText: $t('frameleaf_access_provider_disconnect'),
       danger: true,
     });
-    if (!confirmed) {
+    if (!confirmed || !isCurrent()) {
       return;
     }
 
     working = true;
     error = '';
     try {
-      authManager.setUser(await oauth.unlink());
+      const updated = await oauth.unlink();
+      if (!isCurrent()) {
+        return;
+      }
+      authManager.setUser(updated);
       toastManager.primary($t('frameleaf_access_provider_disconnected'));
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error_, $t('errors.unable_to_unlink_account'));
     } finally {
       working = false;

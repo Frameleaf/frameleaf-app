@@ -206,7 +206,7 @@ overrides:
 
 packageExtensionsChecksum: sha256-Mofz7nyIAaEAEUKA7506+WAlCIWxW8nGtiE5KynurJ8=
 
-pnpmfileChecksum: sha256-un98do36L0wZyqsjcLozQ3YUadCAn2yz5bXcBbOuyDA=
+pnpmfileChecksum: sha256-Z7xhVQDEt6nNd2Xged6phL8wQvZOafNiGiMy93aNN6w=
 
 patchedDependencies:
   nestjs-zod@5.5.0: 07f26d2c15b8fcefe928074084f63d634e24ac7482ff17313fadcb53721181a0
@@ -841,9 +841,6 @@ importers:
       postgres:
         specifier: 3.4.9
         version: 3.4.9(patch_hash=11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629)
-      qrcode:
-        specifier: ^1.5.4
-        version: 1.5.4
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -965,9 +962,6 @@ importers:
       '@types/pngjs':
         specifier: ^6.0.5
         version: 6.0.5
-      '@types/qrcode':
-        specifier: ^1.5.6
-        version: 1.5.6
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0

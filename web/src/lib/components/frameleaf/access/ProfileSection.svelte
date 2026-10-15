@@ -38,7 +38,13 @@
   const valid = $derived(name.trim().length > 0 && email.trim().length > 0);
   const hasPhoto = $derived(!!user.profileImagePath);
 
-  const reloadUser = async () => authManager.setUser(await getMyUser());
+  const reloadUser = async () => {
+    const isCurrent = authManager.captureSession();
+    const updated = await getMyUser();
+    if (isCurrent()) {
+      authManager.setUser(updated);
+    }
+  };
 
   const uploadPhoto = async (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
@@ -53,11 +59,21 @@
       return;
     }
     photoWorking = true;
+    const isCurrent = authManager.captureSession();
     try {
       await createProfileImage({ createProfileImageDto: { file } });
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('frameleaf_access_profile_photo_updated'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       photoError = getServerErrorMessage(error) ?? $t('frameleaf_access_profile_photo_failed');
     } finally {
       photoWorking = false;
@@ -65,13 +81,23 @@
   };
 
   const removePhoto = async () => {
+    const isCurrent = authManager.captureSession();
     photoWorking = true;
     photoError = '';
     try {
       await deleteProfileImage();
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('frameleaf_access_profile_photo_removed'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     } finally {
       photoWorking = false;
@@ -82,9 +108,16 @@
     if (avatarColor === user.avatarColor) {
       return;
     }
+    const isCurrent = authManager.captureSession();
     try {
-      authManager.setUser(await updateMyUser({ userUpdateMeDto: { avatarColor } }));
+      const updated = await updateMyUser({ userUpdateMeDto: { avatarColor } });
+      if (isCurrent()) {
+        authManager.setUser(updated);
+      }
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     }
   };
@@ -95,13 +128,20 @@
       return;
     }
     saving = true;
+    const isCurrent = authManager.captureSession();
     try {
       const updated = await updateMyUser({ userUpdateMeDto: { name: name.trim(), email: email.trim() } });
+      if (!isCurrent()) {
+        return;
+      }
       authManager.setUser(updated);
       name = updated.name;
       email = updated.email;
       toastManager.primary($t('saved_profile'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_save_profile'));
     } finally {
       saving = false;

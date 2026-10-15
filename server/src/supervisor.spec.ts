@@ -7,6 +7,11 @@ const fixture = vi.hoisted(() => ({
   workers: [] as (EventEmitter & { name: string; stopped: Promise<void> })[],
   signals: new Map<string, () => void>(),
   nextStopped: undefined as Promise<void> | undefined,
+  clients: [] as { destroy: ReturnType<typeof vi.fn> }[],
+  lockAvailable: true,
+  lockError: undefined as Error | undefined,
+  unlockError: undefined as Error | undefined,
+  lockAttempts: 0,
 }));
 
 // Import the real entry point; replace only OS processes, database and stop-proof transport.
@@ -47,10 +52,23 @@ vi.mock('node:worker_threads', async () => {
 });
 vi.mock('kysely', () => ({
   Kysely: class {
+    constructor() {
+      fixture.clients.push(this);
+    }
     destroy = vi.fn().mockResolvedValue(undefined);
     connection = () => ({ execute: (action: (db: unknown) => Promise<unknown>) => action(this) });
   },
-  sql: () => ({ execute: () => Promise.resolve({ rows: [{ pg_try_advisory_lock: true }] }) }),
+  sql: (strings: TemplateStringsArray) => ({
+    execute: () => {
+      if (strings.join('').includes('pg_advisory_unlock')) {
+        return fixture.unlockError ? Promise.reject(fixture.unlockError) : Promise.resolve({ rows: [] });
+      }
+      fixture.lockAttempts++;
+      return fixture.lockError
+        ? Promise.reject(fixture.lockError)
+        : Promise.resolve({ rows: [{ pg_try_advisory_lock: fixture.lockAvailable }] });
+    },
+  }),
 }));
 vi.mock('nest-commander', () => ({ CommandFactory: {} }));
 vi.mock('src/repositories/config.repository.js', () => ({
@@ -87,6 +105,7 @@ vi.mock('src/queue/supervisor.js', () => ({
 const latest = (name: FrameleafWorker) => fixture.workers.findLast((worker) => worker.name === name)!;
 
 describe('supervisor worker-local restart lifecycle', () => {
+  let Workers: typeof import('src/supervisor.js').Workers;
   const argv = process.argv;
   const title = process.title;
   beforeEach(async () => {
@@ -97,6 +116,11 @@ describe('supervisor worker-local restart lifecycle', () => {
     fixture.workers = [];
     fixture.signals.clear();
     fixture.nextStopped = undefined;
+    fixture.clients = [];
+    fixture.lockAvailable = true;
+    fixture.lockError = undefined;
+    fixture.unlockError = undefined;
+    fixture.lockAttempts = 0;
     process.argv = ['node', 'supervisor'];
     vi.stubEnv('FRAMELEAF_EDGE_SECRET', 'supervisor-unit-fixture');
     const on = process.on.bind(process);
@@ -111,7 +135,7 @@ describe('supervisor worker-local restart lifecycle', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await import('src/supervisor.js');
+    Workers = (await import('src/supervisor.js')).Workers;
     await vi.advanceTimersByTimeAsync(0);
     expect(fixture.starts).toEqual(['api', 'microservices', 'edge']);
   });
@@ -122,6 +146,57 @@ describe('supervisor worker-local restart lifecycle', () => {
     process.argv = argv;
     process.title = title;
     vi.unstubAllEnvs();
+  });
+
+  it.each(['lock', 'unlock'] as const)('releases the lock-check client after a %s query failure', async (phase) => {
+    const failure = new Error(`${phase} failed`);
+    fixture[phase === 'lock' ? 'lockError' : 'unlockError'] = failure;
+    const workers = new Workers();
+    await expect(workers['waitForFreeLock']()).rejects.toBe(failure);
+    expect(fixture.clients.at(-1)!.destroy).toHaveBeenCalledOnce();
+  });
+
+  it('stops retrying a busy lock without republishing proofs or admitting replacement workers', async () => {
+    fixture.lockAvailable = false;
+    const workers = new Workers();
+    const attempts = fixture.lockAttempts;
+    const starts = fixture.starts.length;
+    let settled = false;
+    const pending = workers.bootstrap().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const client = fixture.clients.at(-1)!;
+    expect(fixture.lockAttempts).toBe(attempts + 1);
+    workers.stop('SIGTERM');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe(true);
+    expect(fixture.lockAttempts).toBe(attempts + 1);
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(workers['workerStopProofs'].republish).not.toHaveBeenCalled();
+    expect(fixture.starts).toHaveLength(starts);
+    await pending;
+  });
+
+  it('waits for lock release before republishing proof and admitting replacement workers', async () => {
+    fixture.lockAvailable = false;
+    const workers = new Workers();
+    const starts = fixture.starts.length;
+    const pending = workers.bootstrap();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(workers['workerStopProofs'].republish).not.toHaveBeenCalled();
+    expect(fixture.starts).toHaveLength(starts);
+    const client = fixture.clients.at(-1)!;
+    vi.mocked(workers['workerStopProofs'].republish).mockImplementation(() => {
+      expect(client.destroy).toHaveBeenCalledOnce();
+      return Promise.resolve();
+    });
+    fixture.lockAvailable = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+    expect(client.destroy).toHaveBeenCalledOnce();
+    expect(workers['workerStopProofs'].republish).toHaveBeenCalledOnce();
+    expect(fixture.starts.slice(starts)).toEqual(['api', 'microservices', 'edge']);
   });
 
   it('invalidates a failed executor retry across maintenance and reopens the API after End', async () => {

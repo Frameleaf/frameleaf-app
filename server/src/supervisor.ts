@@ -36,7 +36,7 @@ const setEdgeSecret = () => {
 /**
  * Manages worker lifecycle
  */
-class Workers {
+export class Workers {
   /**
    * Currently running workers
    */
@@ -93,6 +93,9 @@ class Workers {
       this.startWorker(FrameleafWorker.Maintenance);
     } else {
       await this.waitForFreeLock();
+      if (this.stopper.stopping) {
+        return;
+      }
       // A restore replaces system_metadata. Republish only the actual preceding worker/child
       // stop proof, after restore has released its lock and before admitting replacement work.
       await this.workerStopProofs.republish();
@@ -155,28 +158,30 @@ class Workers {
     const { database } = new ConfigRepository().getEnv();
     const kysely = new Kysely<DB>(getKyselyConfig(database.config));
 
-    let isLocked = false;
-    while (!isLocked) {
-      isLocked = await kysely.connection().execute(async (conn) => {
-        const { rows } = await sql<{
-          pg_try_advisory_lock: boolean;
-        }>`SELECT pg_try_advisory_lock(${DatabaseLock.MaintenanceOperation})`.execute(conn);
+    try {
+      let isLocked = false;
+      while (!isLocked && !this.stopper.stopping) {
+        isLocked = await kysely.connection().execute(async (conn) => {
+          const { rows } = await sql<{
+            pg_try_advisory_lock: boolean;
+          }>`SELECT pg_try_advisory_lock(${DatabaseLock.MaintenanceOperation})`.execute(conn);
 
-        const isLocked = rows[0].pg_try_advisory_lock;
+          const isLocked = rows[0].pg_try_advisory_lock;
 
-        if (isLocked) {
-          await sql`SELECT pg_advisory_unlock(${DatabaseLock.MaintenanceOperation})`.execute(conn);
+          if (isLocked) {
+            await sql`SELECT pg_advisory_unlock(${DatabaseLock.MaintenanceOperation})`.execute(conn);
+          }
+
+          return isLocked;
+        });
+
+        if (!isLocked && !this.stopper.stopping) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-
-        return isLocked;
-      });
-
-      if (!isLocked) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+    } finally {
+      await kysely.destroy();
     }
-
-    await kysely.destroy();
   }
 
   /** A completed bootstrap must not revive local retries from an earlier worker group. */
@@ -420,4 +425,6 @@ async function main() {
   void workers.bootstrap();
 }
 
+// Executable supervisor keeps its startup behavior when imported by lifecycle tests.
+// eslint-disable-next-line unicorn/no-top-level-side-effects
 void main();

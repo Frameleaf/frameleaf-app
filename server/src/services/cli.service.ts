@@ -6,7 +6,7 @@ import { MaintenanceAuthDto } from 'src/dtos/maintenance.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
-import { currentSetupCode } from 'src/utils/frameleaf-setup-gate.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
 
 export type SchemaReport = {
@@ -23,41 +23,28 @@ type MigrationStatus = {
 export class CliService extends BaseService {
   async schemaReport(): Promise<SchemaReport> {
     const allFiles = await this.storageRepository.readdir(join(import.meta.dirname, '../schema/migrations'));
-    const files = allFiles.filter((file) => file.endsWith('.js')).map((file) => file.slice(0, -3));
-    const rows = await this.databaseRepository.getMigrations();
-    const filesSet = new Set(files);
-    const rowsSet = new Set(rows.map((item) => item.name));
-    const combined = [...filesSet, ...rowsSet].toSorted();
-
-    const migrations: MigrationStatus[] = [];
-
-    for (const name of combined) {
-      if (filesSet.has(name) && rowsSet.has(name)) {
-        migrations.push({ name, status: 'applied' });
+    const files = new Set<string>();
+    const migrations = new Map<string, MigrationStatus['status']>();
+    for (const file of allFiles) {
+      if (!file.endsWith('.js')) {
         continue;
       }
-
-      if (filesSet.has(name) && !rowsSet.has(name)) {
-        migrations.push({ name, status: 'missing' });
-        continue;
-      }
-
-      if (!filesSet.has(name) && rowsSet.has(name)) {
-        migrations.push({ name, status: 'deleted' });
-      }
+      const name = file.slice(0, -3);
+      files.add(name);
+      migrations.set(name, 'missing');
+    }
+    for (const { name } of await this.databaseRepository.getMigrations()) {
+      migrations.set(name, files.has(name) ? 'applied' : 'deleted');
     }
 
     const drift = await this.databaseRepository.getSchemaDrift();
 
-    return { migrations, drift };
-  }
-
-  /** FL-292: the setup code of a server not set up yet (`frameleaf-admin setup-code`), or null. */
-  async getSetupCode(): Promise<string | null> {
-    if (await this.userRepository.getAdmin()) {
-      return null;
-    }
-    return currentSetupCode(this.setupGate);
+    return {
+      migrations: Array.from(migrations, ([name, status]) => ({ name, status })).sort((a, b) =>
+        compareCodeUnits(a.name, b.name),
+      ),
+      drift,
+    };
   }
 
   async listUsers(): Promise<UserAdminResponseDto[]> {

@@ -66,7 +66,7 @@ export class SharedLinkService extends BaseService {
     const legacy = !isBcryptHash(password);
     const valid = legacy
       ? safeEqual(dto.password, password)
-      : this.cryptoRepository.compareBcrypt(dto.password, password);
+      : await this.cryptoRepository.compareBcrypt(dto.password, password);
     if (!valid) {
       throw new UnauthorizedException('Invalid password');
     }
@@ -341,7 +341,7 @@ export class SharedLinkService extends BaseService {
       return hashed;
     }
     const current = (await this.findOrFail(auth.user.id, id, this.nsfwOptions(auth))).password;
-    if (current && isBcryptHash(current) && this.cryptoRepository.compareBcrypt(input, current)) {
+    if (current && isBcryptHash(current) && (await this.cryptoRepository.compareBcrypt(input, current))) {
       return current;
     }
     throw new UnauthorizedException('Invalid password');

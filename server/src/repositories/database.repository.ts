@@ -337,41 +337,52 @@ export class DatabaseRepository {
   }
 
   async migrateFilePaths(sourceFolder: string, targetFolder: string): Promise<void> {
-    // remove trailing slashes
-    if (sourceFolder.endsWith('/')) {
+    const isWindows = (value: string) => /^[a-z]:/i.test(value) || value.startsWith('\\\\');
+    const windowsSource = isWindows(sourceFolder);
+    if (sourceFolder.endsWith('/') || (windowsSource && sourceFolder.endsWith('\\'))) {
       sourceFolder = sourceFolder.slice(0, -1);
     }
-
-    if (targetFolder.endsWith('/')) {
+    if (targetFolder.endsWith('/') || (isWindows(targetFolder) && targetFolder.endsWith('\\'))) {
       targetFolder = targetFolder.slice(0, -1);
     }
 
-    // escaping regex special characters with a backslash
-    const sourceRegex = '^' + sourceFolder.replaceAll(/[-[\]{}()*+?.,\\^$|#\s]/g, String.raw`\$&`);
-    const source = sql.raw(`'${sourceRegex}'`);
-    const target = sql.lit(targetFolder);
+    type PathColumn = 'asset.originalPath' | 'asset_file.path' | 'person.thumbnailPath' | 'user.profileImagePath';
+    const replacement = (column: PathColumn) =>
+      sql<string>`${targetFolder} || substring(${sql.ref(column)} from char_length(${sourceFolder}) + 1)`;
+    const matches = (column: PathColumn) => {
+      if (!sourceFolder) {
+        return sql<boolean>`starts_with(${sql.ref(column)}, ${'/'})`;
+      }
+      const prefixes = [sourceFolder + '/', ...(windowsSource ? [sourceFolder + '\\'] : [])];
+      return sql<boolean>`(${sql.ref(column)} = ${sourceFolder} OR ${sql.join(
+        prefixes.map((prefix) => sql<boolean>`starts_with(${sql.ref(column)}, ${prefix})`),
+        sql` OR `,
+      )})`;
+    };
 
     await this.db.transaction().execute(async (tx) => {
       await tx
         .updateTable('asset')
-        .set((eb) => ({
-          originalPath: eb.fn('REGEXP_REPLACE', ['originalPath', source, target]),
-        }))
+        .set({ originalPath: replacement('asset.originalPath') })
+        .where(matches('asset.originalPath'))
         .execute();
 
       await tx
         .updateTable('asset_file')
-        .set((eb) => ({ path: eb.fn('REGEXP_REPLACE', ['path', source, target]) }))
+        .set({ path: replacement('asset_file.path') })
+        .where(matches('asset_file.path'))
         .execute();
 
       await tx
         .updateTable('person')
-        .set((eb) => ({ thumbnailPath: eb.fn('REGEXP_REPLACE', ['thumbnailPath', source, target]) }))
+        .set({ thumbnailPath: replacement('person.thumbnailPath') })
+        .where(matches('person.thumbnailPath'))
         .execute();
 
       await tx
         .updateTable('user')
-        .set((eb) => ({ profileImagePath: eb.fn('REGEXP_REPLACE', ['profileImagePath', source, target]) }))
+        .set({ profileImagePath: replacement('user.profileImagePath') })
+        .where(matches('user.profileImagePath'))
         .execute();
     });
   }

@@ -2,9 +2,9 @@
 # Following Apache License 2.0
 
 import logging
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from queue import SimpleQueue
 from typing import Callable
 
 import numpy as np
@@ -43,17 +43,23 @@ def init_rknn(model_path: str) -> "RKNNLite":
         raise RuntimeError("rknn is not available!")
     rknn_lite = RKNNLite()
     rknn_lite.rknn_log.logger.setLevel(logging.ERROR)
-    ret = rknn_lite.load_rknn(model_path)
-    if ret != 0:
-        raise RuntimeError("Failed to load RKNN model")
+    try:
+        if rknn_lite.load_rknn(model_path) != 0:
+            raise RuntimeError("Failed to load RKNN model")
 
-    if soc_name in RKNN_COREMASK_SUPPORTED_SOCS:
-        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
-    else:
-        ret = rknn_lite.init_runtime()  # Please do not set this parameter on other platforms.
+        if soc_name in RKNN_COREMASK_SUPPORTED_SOCS:
+            ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_AUTO)
+        else:
+            ret = rknn_lite.init_runtime()  # Please do not set this parameter on other platforms.
 
-    if ret != 0:
-        raise RuntimeError("Failed to initialize RKNN runtime environment")
+        if ret != 0:
+            raise RuntimeError("Failed to initialize RKNN runtime environment")
+    except BaseException:
+        try:
+            rknn_lite.release()
+        except Exception:
+            log.exception("Failed to release RKNN runtime after initialization failed")
+        raise
 
     return rknn_lite
 
@@ -65,25 +71,53 @@ class RknnPoolExecutor:
         tpes: int,
         func: Callable[["RKNNLite", list[NDArray[np.float32]]], list[NDArray[np.float32]]],
     ) -> None:
-        self.tpes = tpes
-        self.rknn_pool = [init_rknn(model_path) for _ in range(tpes)]
-        self.pool = ThreadPoolExecutor(max_workers=tpes)
+        self.rknn_pool: list[RKNNLite] = []
+        self.pool: ThreadPoolExecutor | None = None
+        self.available: SimpleQueue[RKNNLite] = SimpleQueue()
         self.func = func
-        self.num = 0
-        self.lock = threading.Lock()
+        try:
+            for _ in range(tpes):
+                runtime = init_rknn(model_path)
+                self.rknn_pool.append(runtime)
+                self.available.put(runtime)
+            self.pool = ThreadPoolExecutor(max_workers=tpes)
+        except BaseException:
+            try:
+                self.release()
+            except Exception:
+                log.exception("Failed to release partially initialized RKNN pool")
+            raise
 
     def run(self, inputs: list[NDArray[np.float32]]) -> list[NDArray[np.float32]]:
-        with self.lock:
-            idx = self.num % self.tpes
-            self.num += 1
+        pool = self.pool
+        if pool is None:
+            raise RuntimeError("RKNN pool has been released")
+        return pool.submit(self._run, inputs).result()
 
-        fut = self.pool.submit(self.func, self.rknn_pool[idx], inputs)
-        return fut.result()
+    def _run(self, inputs: list[NDArray[np.float32]]) -> list[NDArray[np.float32]]:
+        # Completion order can differ from submission order; only lend idle runtimes.
+        runtime = self.available.get()
+        try:
+            return self.func(runtime, inputs)
+        finally:
+            self.available.put(runtime)
 
     def release(self) -> None:
-        self.pool.shutdown()
-        for rknn_lite in self.rknn_pool:
-            rknn_lite.release()
+        pool, self.pool = self.pool, None
+        if pool is not None:
+            pool.shutdown()
+        runtimes, self.rknn_pool = self.rknn_pool, []
+        error: Exception | None = None
+        for runtime in runtimes:
+            try:
+                runtime.release()
+            except Exception as e:
+                if error is None:
+                    error = e
+                else:
+                    log.exception("Failed to release another RKNN runtime")
+        if error is not None:
+            raise error
 
     def __del__(self) -> None:
         self.release()

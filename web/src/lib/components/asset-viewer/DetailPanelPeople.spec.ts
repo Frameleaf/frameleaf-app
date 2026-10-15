@@ -1,5 +1,6 @@
 import type { AssetFaceResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { DateTime } from 'luxon';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -77,6 +78,37 @@ describe('DetailPanelPeople', () => {
       previousRoute: '/photos',
       onFacesChanged: vi.fn(),
     });
+
+  it('shares the asset date across birthdays while retaining age boundaries and hidden-person filtering', () => {
+    const asset = assetFactory.build({ localDateTime: '2025-07-01T12:00:00' });
+    faces.data = [
+      ['Two years', '2023-07-01'],
+      ['Twelve months', '2024-07-01'],
+      ['Thirteen months', '2024-06-01'],
+      ['Six months', '2025-01-01'],
+      ['Future', '2026-07-01'],
+      ['Hidden', '2020-01-01'],
+    ].map(
+      ([name, birthDate], index) =>
+        ({
+          id: `birthday-${index}`,
+          ...box,
+          person: personFactory.build({ name, birthDate, isHidden: name === 'Hidden' }),
+        }) as AssetFaceResponseDto,
+    );
+    const parse = vi.spyOn(DateTime, 'fromISO');
+    try {
+      render(DetailPanelPeople, { asset, isOwner: true, previousRoute: '/photos', onFacesChanged: vi.fn() });
+      expect(screen.getAllByText('age_years')).toHaveLength(2);
+      expect(screen.getByText('age_year_months')).toBeInTheDocument();
+      expect(screen.getByText('age_months')).toBeInTheDocument();
+      expect(screen.getByText('Future').closest('a')!.querySelectorAll('p')).toHaveLength(1);
+      expect(screen.queryByText('Hidden')).toBeNull();
+      expect(parse.mock.calls.filter(([value]) => value === asset.localDateTime)).toHaveLength(1);
+    } finally {
+      parse.mockRestore();
+    }
+  });
 
   it('no longer offers the legacy Edit people panel', () => {
     renderPanel(true);

@@ -223,6 +223,27 @@ describe(HlsService.name, () => {
       await expect(sut.getMainPlaylist(auth, assetId)).resolves.toBe(eiffelExpectedMasterNoAv1);
     });
 
+    it('does not create a worker session when no configured variant can be offered', async () => {
+      setup(eiffelTower, [], []);
+      await expect(sut.getMainPlaylist(auth, assetId)).rejects.toThrow('No supported variants');
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it('receives a session result emitted immediately by request dispatch', async () => {
+      setup(eiffelTower, allCodecs);
+      mocks.websocket.serverSend.mockImplementation((...args) => {
+        if (args[0] === 'HlsSessionRequest') sut.onSessionResult({ sessionId });
+      });
+      vi.useFakeTimers();
+      try {
+        const result = sut.getMainPlaylist(auth, assetId).catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(await result).toBe(eiffelExpectedMasterAv1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('offers every resolution up to the source and derives 4K codec levels (waterfall, 4K, 29.83fps)', async () => {
       setup(waterfall, allCodecs, allResolutions);
       await expect(sut.getMainPlaylist(auth, assetId)).resolves.toBe(waterfallExpectedMasterAv1);
@@ -328,6 +349,8 @@ describe(HlsService.name, () => {
       sut.onSegmentResult({ sessionId, variantIndex, segmentIndex: 1 });
 
       const responses = await Promise.all(requests);
+      expect(mocks.websocket.serverSend.mock.calls.filter(([event]) => event === 'HlsSegmentRequest')).toHaveLength(1);
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledOnce();
       expect(new Set(responses).size).toBe(8);
       for (const response of responses) {
         expect(response).toEqual(
@@ -437,6 +460,32 @@ describe(HlsService.name, () => {
       );
     });
 
+    it('refuses a segment session belonging to another asset before file access or worker traffic', async () => {
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId: 'another' } as never);
+      await expect(sut.getSegment(auth, assetId, sessionId, 0, 'seg_1.m4s')).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.storage.checkFileExists).not.toHaveBeenCalled();
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it('captures a segment completion that arrives while its file check is pending', async () => {
+      const exists = Promise.withResolvers<boolean>();
+      mocks.storage.checkFileExists.mockReturnValueOnce(exists.promise);
+      vi.useFakeTimers();
+      try {
+        const result = sut.getSegment(auth, assetId, sessionId, 0, 'seg_1.m4s').catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(0);
+        sut.onSegmentResult({ sessionId, variantIndex: 0, segmentIndex: 1 });
+        exists.resolve(false);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(await result).toEqual(expect.objectContaining({ path: expect.stringContaining('seg_1.m4s') }));
+        expect(mocks.websocket.serverSend.mock.calls.filter(([event]) => event === 'HlsSegmentRequest')).toHaveLength(
+          0,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('uses the initSegment hint for init.mp4', async () => {
       await sut.getSegment(auth, assetId, sessionId, variantIndex, 'init.mp4', 7);
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsHeartbeat', {
@@ -472,8 +521,24 @@ describe(HlsService.name, () => {
       const auth = factory.auth();
       const assetId = 'asset-1';
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId } as never);
       await sut.endSession(auth, assetId, sessionId);
       expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsSessionEnd', { sessionId });
+    });
+
+    it('does not end a session attached to another asset', async () => {
+      const auth = factory.auth();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.videoStream.getSession.mockResolvedValueOnce({ id: sessionId, assetId: 'another' } as never);
+      await expect(sut.endSession(auth, 'asset-1', sessionId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
+    });
+
+    it('keeps ending an absent session idempotent without worker traffic', async () => {
+      const auth = factory.auth();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      await expect(sut.endSession(auth, 'asset-1', sessionId)).resolves.toBeUndefined();
+      expect(mocks.websocket.serverSend).not.toHaveBeenCalled();
     });
   });
 });

@@ -128,33 +128,71 @@ describe('respondWithoutCookie', () => {
 });
 
 describe('waitForDrain', () => {
-  it.each(['drain', 'close', 'error'] as const)('settles on %s and removes only its own listeners', async (event) => {
-    const stream = new Writable({ write: (_chunk, _encoding, callback) => callback() });
-    const existing = vi.fn();
-    for (const name of ['drain', 'close', 'error']) {
-      stream.on(name, existing);
-    }
-    const pending = waitForDrain(stream);
-    const error = new Error('write failed');
-    stream.emit(event, error);
-    if (event === 'drain') {
-      await expect(pending).resolves.toBeUndefined();
-    } else if (event === 'close') {
-      await expect(pending).rejects.toBeInstanceOf(ClientDisconnectedError);
-    } else {
-      await expect(pending).rejects.toBe(error);
-    }
-    for (const name of ['drain', 'close', 'error']) {
-      expect(stream.listeners(name)).toEqual([existing]);
+  it('settles when the writable finishes without close', async () => {
+    const stream = new Writable({
+      autoDestroy: false,
+      emitClose: false,
+      write: (_chunk, _encoding, callback) => callback(),
+    });
+    let failure: unknown;
+    const pending = waitForDrain(stream).catch((error: unknown) => {
+      failure = error;
+    });
+    stream.end();
+    try {
+      await vi.waitFor(() => expect(failure).toBeInstanceOf(ClientDisconnectedError), { timeout: 200 });
+      expect(stream.listenerCount('drain')).toBe(0);
+      expect(stream.listenerCount('error')).toBe(0);
+    } finally {
+      stream.emit('close');
+      stream.destroy();
+      await pending;
     }
   });
+
+  it('rejects a writable that already finished without close', async () => {
+    const stream = new Writable({
+      autoDestroy: false,
+      emitClose: false,
+      write: (_chunk, _encoding, callback) => callback(),
+    });
+    const finished = new Promise<void>((resolve) => stream.once('finish', resolve));
+    stream.end();
+    await finished;
+    await expect(waitForDrain(stream)).rejects.toBeInstanceOf(ClientDisconnectedError);
+    stream.destroy();
+  });
+
+  it.each(['drain', 'close', 'finish', 'error'] as const)(
+    'settles on %s and removes only its own listeners',
+    async (event) => {
+      const stream = new Writable({ write: (_chunk, _encoding, callback) => callback() });
+      const existing = vi.fn();
+      for (const name of ['drain', 'close', 'finish', 'error']) {
+        stream.on(name, existing);
+      }
+      const pending = waitForDrain(stream);
+      const error = new Error('write failed');
+      stream.emit(event, error);
+      if (event === 'drain') {
+        await expect(pending).resolves.toBeUndefined();
+      } else if (event === 'close' || event === 'finish') {
+        await expect(pending).rejects.toBeInstanceOf(ClientDisconnectedError);
+      } else {
+        await expect(pending).rejects.toBe(error);
+      }
+      for (const name of ['drain', 'close', 'finish', 'error']) {
+        expect(stream.listeners(name)).toEqual([existing]);
+      }
+    },
+  );
 
   it('rejects a stream already destroyed after close without leaving listeners', async () => {
     const stream = new Writable({ write: (_chunk, _encoding, callback) => callback() });
     stream.destroy();
     await new Promise<void>((resolve) => stream.once('close', resolve));
     await expect(waitForDrain(stream)).rejects.toBeInstanceOf(ClientDisconnectedError);
-    for (const event of ['drain', 'close', 'error']) {
+    for (const event of ['drain', 'close', 'finish', 'error']) {
       expect(stream.listenerCount(event)).toBe(0);
     }
   });

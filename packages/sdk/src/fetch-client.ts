@@ -1934,10 +1934,6 @@ export type BackupScheduleResponseDto = {
     /** The server time zone the schedule runs in */
     timezone: string;
 };
-export type FrameleafSetupCodeDto = {
-    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
-    code: string;
-};
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
@@ -2085,6 +2081,10 @@ export type IntegrityReportResponseDto = {
     }[];
     nextCursor?: string;
 };
+export type IntegrityReportClearResponseDto = {
+    /** Findings removed from the list; no file or photo was changed */
+    cleared: number;
+};
 export type IntegrityCheckRunsResponseDto = {
     /** When the checksum check last completed a full pass */
     checksum_mismatch: string | null;
@@ -2097,6 +2097,24 @@ export type IntegrityReportSummaryResponseDto = {
     checksum_mismatch: number;
     missing_file: number;
     untracked_file: number;
+};
+export type LibraryMovePauseStatusDto = {
+    /** Background jobs still running */
+    activeJobs: number;
+    /** Queues with jobs still running */
+    activeQueues: string[];
+    /** Paused, with no write request and no background job in flight */
+    drained: boolean;
+    /** When the pause lifts by itself unless the Manager renews it (ISO 8601) */
+    leaseExpiresAt: string | null;
+    /** Manager move operation holding the pause */
+    operationId: string | null;
+    /** Uploads, changes and background work are paused for a library move */
+    paused: boolean;
+    /** When the pause started (ISO 8601) */
+    pausedAt: string | null;
+    /** Write requests still being answered */
+    writesInFlight: number;
 };
 export type LicenseEntitlementsDto = {
     cloudBackup: boolean;
@@ -5210,10 +5228,6 @@ export type SignUpDto = {
     name: string;
     /** User password */
     password: string;
-    /** The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator */
-    setupCode?: string;
-    /** Instead of the code: a setup ticket from POST server/setup/code, from the same device */
-    setupTicket?: string;
 };
 export type ChangePasswordDto = {
     /** Invalidate all other sessions */
@@ -12855,6 +12869,14 @@ export type ServerFeaturesDto = {
     /** Whether trash feature is enabled */
     trash: boolean;
 };
+export type LibraryMovePauseDto = {
+    /** Frameleaf Manager move operation that holds the pause */
+    operationId: string;
+};
+export type LibraryMoveResumeDto = {
+    /** Frameleaf Manager move operation that holds the pause */
+    operationId: string;
+};
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
     installation: string;
@@ -12922,31 +12944,19 @@ export type FrameleafSetupAdminDto = {
     name: string;
     /** The administrator’s password (min 8 characters) */
     password: string;
-    /** The setup ticket POST server/setup/code returned, used once, from the same device */
-    ticket: string;
 };
 export type FrameleafSetupErrorDto = {
-    /** For setup_code_invalid: wrong tries left before the code is replaced */
-    attemptsLeft?: number;
     code: FrameleafSetupErrorCode;
     error: string;
     /** What went wrong, in words a person can act on */
     message: string;
     statusCode: number;
 };
-export type FrameleafSetupTicketResponseDto = {
-    /** When the ticket stops working */
-    expiresAt: string;
-    /** Proof the setup code was entered: use it once, from this device, before it expires */
-    ticket: string;
-};
 export type FrameleafSetupLinkDto = {
     /** A single-use Frameleaf link token (fll_…) the app got from Frameleaf Cloud for this server */
     linkToken: string;
     /** The name the person chose for this server; it is linked under this name */
     serverName?: string;
-    /** The setup ticket POST server/setup/code returned, used once, from the same device */
-    ticket: string;
 };
 export type FrameleafSetupLinkResponseDto = {
     /** The Frameleaf account that now owns this server; its first Sign in with Frameleaf creates the administrator */
@@ -18402,14 +18412,11 @@ export function getBackupSchedule(opts?: Oazapfts.RequestOpts) {
 /**
  * Start database backup restore flow
  */
-export function startDatabaseRestoreFlow({ frameleafSetupCodeDto }: {
-    frameleafSetupCodeDto: FrameleafSetupCodeDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", oazapfts.json({
+export function startDatabaseRestoreFlow(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/database-backups/start-restore", {
         ...opts,
-        method: "POST",
-        body: frameleafSetupCodeDto
-    })));
+        method: "POST"
+    }));
 }
 /**
  * Upload database backup
@@ -18544,6 +18551,17 @@ export function deleteIntegrityReport({ id }: {
     }));
 }
 /**
+ * Remove one finding from its list
+ */
+export function dismissIntegrityReport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/integrity/report/${encodeURIComponent(id)}/dismiss`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Download flagged file
  */
 export function getIntegrityReportFile({ id }: {
@@ -18554,6 +18572,20 @@ export function getIntegrityReportFile({ id }: {
         data: Blob;
     }>(`/admin/integrity/report/${encodeURIComponent(id)}/file`, {
         ...opts
+    }));
+}
+/**
+ * Clear the list of one integrity check
+ */
+export function clearIntegrityReports({ $type }: {
+    $type: IntegrityReport;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: IntegrityReportClearResponseDto;
+    }>(`/admin/integrity/report/${encodeURIComponent($type)}/clear`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -18589,6 +18621,29 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
         ...opts
+    }));
+}
+/**
+ * Library move pause status
+ */
+export function getLibraryMovePause(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/admin/library-move", {
+        ...opts
+    }));
+}
+/**
+ * Lift a library move pause (uploads, changes and job queues resume)
+ */
+export function resumeLibraryMovePause(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/admin/library-move/resume", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -26367,6 +26422,55 @@ export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Manager machine-authenticated library move pause status (renews the named operation)
+ */
+export function getManagerLibraryMovePause({ operationId, xFrameleafManager }: {
+    operationId?: string;
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>(`/server/library-move/manager${QS.query(QS.explode({
+        operationId
+    }))}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
+    }));
+}
+/**
+ * Manager machine-authenticated pause of uploads, changes and job queues for a library move
+ */
+export function pauseManagerLibraryMove({ libraryMovePauseDto }: {
+    libraryMovePauseDto: LibraryMovePauseDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/server/library-move/manager/pause", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryMovePauseDto
+    })));
+}
+/**
+ * Manager machine-authenticated resume after a library move
+ */
+export function resumeManagerLibraryMove({ libraryMoveResumeDto }: {
+    libraryMoveResumeDto: LibraryMoveResumeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/server/library-move/manager/resume", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryMoveResumeDto
+    })));
+}
+/**
  * Library preparation for this authenticated device
  */
 export function getLibrarySetupStatus(opts?: Oazapfts.RequestOpts) {
@@ -26498,24 +26602,6 @@ export function createNewServerAdmin({ frameleafSetupAdminDto }: {
         ...opts,
         method: "POST",
         body: frameleafSetupAdminDto
-    })));
-}
-/**
- * Check a new server’s setup code
- */
-export function verifyServerSetupCode({ frameleafSetupCodeDto }: {
-    frameleafSetupCodeDto: FrameleafSetupCodeDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: FrameleafSetupTicketResponseDto;
-    } | {
-        status: 401;
-        data: FrameleafSetupErrorDto;
-    }>("/server/setup/code", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: frameleafSetupCodeDto
     })));
 }
 /**
@@ -29919,6 +30005,8 @@ export enum EnvironmentKeys {
     FrameleafSourceCommit = "FRAMELEAF_SOURCE_COMMIT",
     FrameleafSourceCommitUrl = "FRAMELEAF_SOURCE_COMMIT_URL",
     FrameleafAllowSetup = "FRAMELEAF_ALLOW_SETUP",
+    FrameleafStudioWorker = "FRAMELEAF_STUDIO_WORKER",
+    FrameleafStudioWorkerTrustDir = "FRAMELEAF_STUDIO_WORKER_TRUST_DIR",
     FrameleafTrustedProxies = "FRAMELEAF_TRUSTED_PROXIES",
     FrameleafWorkersInclude = "FRAMELEAF_WORKERS_INCLUDE",
     FrameleafWorkersExclude = "FRAMELEAF_WORKERS_EXCLUDE",
@@ -29932,7 +30020,6 @@ export enum EnvironmentKeys {
     FrameleafLicenseExtraJwksFile = "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
     FrameleafIdentityDir = "FRAMELEAF_IDENTITY_DIR",
     FrameleafLinkToken = "FRAMELEAF_LINK_TOKEN",
-    FrameleafSetupCode = "FRAMELEAF_SETUP_CODE",
     FrameleafEdgePort = "FRAMELEAF_EDGE_PORT",
     FrameleafEdgeBind = "FRAMELEAF_EDGE_BIND",
     FrameleafAcmeDirectoryUrl = "FRAMELEAF_ACME_DIRECTORY_URL",
@@ -32812,11 +32899,6 @@ export enum Setup {
 export enum FrameleafSetupErrorCode {
     SetupLanOnly = "setup_lan_only",
     SetupComplete = "setup_complete",
-    SetupCodeRequired = "setup_code_required",
-    SetupCodeInvalid = "setup_code_invalid",
-    SetupCodeReplaced = "setup_code_replaced",
-    SetupCodeLocked = "setup_code_locked",
-    SetupTicketInvalid = "setup_ticket_invalid",
     SetupCloudUnavailable = "setup_cloud_unavailable",
     SetupAlreadyLinked = "setup_already_linked",
     SetupLinkTokenInvalid = "setup_link_token_invalid",

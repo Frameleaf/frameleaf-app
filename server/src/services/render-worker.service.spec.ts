@@ -425,6 +425,53 @@ describe(RenderWorkerService.name, () => {
       });
       expect(workers.createSession).not.toHaveBeenCalled();
     });
+    describe('FL-408 bundled worker', () => {
+      const bundledWorker = () =>
+        workerStub({
+          destination: MediaOperationDestination.Local,
+          kinds: [MediaOperationKind.StudioExport],
+          gpuWorkingBudgetApproval: { bundled: 'frameleaf-bundled-studio-worker-v1' },
+        } as never);
+
+      it.each([
+        { name: 'no origin', origin: undefined },
+        { name: 'a public address', origin: { remoteAddress: '203.0.113.9', forwarded: false } },
+        { name: 'a forwarded request through a local proxy', origin: { remoteAddress: '172.18.0.4', forwarded: true } },
+      ])('refuses the bundled credential from $name before checking it', async ({ origin }) => {
+        vi.mocked(workers.getWorker).mockResolvedValue(bundledWorker());
+        await expect(sut.admit(admission as never, origin)).rejects.toBeInstanceOf(UnauthorizedException);
+        expect(workers.admitSession).not.toHaveBeenCalled();
+        expect(workers.recordAudit).toHaveBeenCalledWith({
+          workerId: workerA.id,
+          event: RenderWorkerAuditEvent.Refused,
+          reason: RenderWorkerRefusalReason.InvalidCredential,
+          detail: { bundled: true, origin: 'external' },
+        });
+      });
+
+      it('admits the bundled credential from the container network', async () => {
+        vi.mocked(workers.getWorker).mockResolvedValue(bundledWorker());
+        const committed = sessionStub(workerA, SESSION_A, { scopes: [MediaOperationKind.StudioExport] });
+        vi.mocked(workers.admitSession).mockResolvedValue({ admitted: true, session: committed });
+        await expect(
+          sut.admit({ ...admission, softwareRenderer: true } as never, {
+            remoteAddress: '::ffff:172.18.0.5',
+            forwarded: false,
+          }),
+        ).resolves.toEqual(expect.objectContaining({ workerId: committed.workerId }));
+        expect(workers.admitSession).toHaveBeenCalledOnce();
+      });
+
+      it('never offers the bundled trust marker as an approved hardware profile', async () => {
+        vi.mocked(workers.getWorker).mockResolvedValue(bundledWorker());
+        await expect(sut.get(workerA.id)).resolves.toEqual(expect.objectContaining({ gpuWorkingBudgetApproval: null }));
+        await expect(
+          sut.update(authStub.admin, workerA.id, { gpuWorkingBudgetApproval: null } as never),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(workers.updateWorker).not.toHaveBeenCalled();
+      });
+    });
+
     it('keeps the budget failure classifier in the private audit while returning a generic admission error', async () => {
       vi.mocked(workers.admitSession).mockResolvedValue({
         admitted: false,

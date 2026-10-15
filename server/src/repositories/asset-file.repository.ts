@@ -4,6 +4,8 @@ import type { Kysely } from 'kysely';
 import { AssetFileSearchDto } from 'src/dtos/asset-file.dto.js';
 import { DB } from 'src/schema/index.js';
 
+const searchFields = ['type', 'isEdited', 'isProgressive', 'isTransparent'] as const;
+
 @Injectable()
 export class AssetFileRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -13,15 +15,14 @@ export class AssetFileRepository {
   }
 
   search(dto: AssetFileSearchDto) {
-    return this.db
-      .selectFrom('asset_file')
-      .where('assetId', '=', dto.assetId)
-      .$if(dto.type !== undefined, (qb) => qb.where('type', '=', dto.type!))
-      .$if(dto.isEdited !== undefined, (qb) => qb.where('isEdited', '=', dto.isEdited!))
-      .$if(dto.isProgressive !== undefined, (qb) => qb.where('isProgressive', '=', dto.isProgressive!))
-      .$if(dto.isTransparent !== undefined, (qb) => qb.where('isTransparent', '=', dto.isTransparent!))
-      .selectAll()
-      .execute();
+    let query = this.db.selectFrom('asset_file').where('assetId', '=', dto.assetId).selectAll();
+    for (const field of searchFields) {
+      const value = dto[field];
+      if (value !== undefined) {
+        query = query.where(field, '=', value);
+      }
+    }
+    return query.execute();
   }
 
   async delete(id: string): Promise<boolean> {

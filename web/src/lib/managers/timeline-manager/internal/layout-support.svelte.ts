@@ -1,6 +1,6 @@
 import { cellGrid } from '$lib/frameleaf/library-grid';
 import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
-import { TimelineManager } from '../timeline-manager.svelte';
+import type { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { UpdateGeometryOptions } from '../types';
 import { leaveFlow, requestFlowLayout } from './flow-support.svelte';
@@ -117,8 +117,8 @@ type MonthFlow = {
 /** Hand each day its share of a month-wide flow, all measured from the month's first row. */
 function placeMonthFlow(month: TimelineMonth, geometry: MonthFlow) {
   const days = month.timelineDays;
-  const viewerAssets = days.flatMap((day) => day.viewerAssets);
-  const height = viewerAssets.length === 0 ? 0 : geometry.containerHeight;
+  const hasAssets = days.some((day) => day.viewerAssets.length > 0);
+  const height = hasAssets ? geometry.containerHeight : 0;
   let index = 0;
   for (const day of days) {
     for (const viewerAsset of day.viewerAssets) {
@@ -133,6 +133,6 @@ function placeMonthFlow(month: TimelineMonth, geometry: MonthFlow) {
     day.height = height;
     day.updateAssetBoundaries();
   }
-  month.height = viewerAssets.length === 0 ? 0 : month.groupHeaderHeight + height;
+  month.height = hasAssets ? month.groupHeaderHeight + height : 0;
   month.isHeightActual = true;
 }

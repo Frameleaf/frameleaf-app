@@ -13,7 +13,9 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
 import { ICloudIdentityRepository, recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
@@ -187,7 +189,10 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
         pendingCount: 0,
         lastSuccessfulBackupAt: null,
       });
-      await new ICloudSyncRepository(db).update(ctx.connectionId, ctx.ownerId, { state: 'disconnected' });
+      await new ICloudSyncRepository(
+        db,
+        new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+      ).update(ctx.connectionId, ctx.ownerId, { state: 'disconnected' });
       await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '2 minutes' WHERE id=${ctx.auth.session!.id}::uuid`.execute(
         db,
       );
@@ -284,7 +289,10 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
         memberAssetIds: expect.arrayContaining([original, edited, published.resultAssetId!]),
         events: [],
       });
-      await new ICloudSyncRepository(db).update(ctx.connectionId, ctx.ownerId, { state: 'connected' });
+      await new ICloudSyncRepository(
+        db,
+        new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+      ).update(ctx.connectionId, ctx.ownerId, { state: 'connected' });
       await finish(ctx);
       expect(
         (await db.selectFrom('stack').select('primaryAssetId').where('id', '=', stack.id).executeTakeFirstOrThrow())

@@ -72,14 +72,21 @@
   const formatWhen = (value: string | null | undefined) =>
     value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 
-  const act = async (call: () => Promise<unknown>, success: string) => {
+  const act = async (call: (isCurrent: () => boolean) => Promise<unknown>, success: string) => {
+    const isCurrent = authManager.captureSession();
     busy = true;
     failure = '';
     try {
-      await call();
+      await call(isCurrent);
+      if (!isCurrent()) {
+        return false;
+      }
       notice = success;
       return true;
     } catch (error) {
+      if (!isCurrent()) {
+        return false;
+      }
       failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
       return false;
     } finally {
@@ -331,9 +338,15 @@
               // a key for one person is that administrator's own supporter key (personal endpoint)
               const done =
                 keyCheck?.valid && keyCheck.kind === 'individual'
-                  ? await act(async () => {
+                  ? await act(async (isCurrent) => {
                       await setUserLicense({ licenseActivateDto: { key: keyValue } });
-                      authManager.setUser(await getMyUser());
+                      if (!isCurrent()) {
+                        return;
+                      }
+                      const updated = await getMyUser();
+                      if (isCurrent()) {
+                        authManager.setUser(updated);
+                      }
                     }, $t('frameleaf_license_personal_activated_notice'))
                   : await act(() => cloudManager.activateLicense(keyValue), $t('frameleaf_license_activated_notice'));
               if (done) {
@@ -407,9 +420,15 @@
         // a server key is removed from the server; a key for one person through the personal endpoint
         const removed =
           removingKey === 'personal'
-            ? await act(async () => {
+            ? await act(async (isCurrent) => {
                 await deleteUserLicense();
-                authManager.setUser(await getMyUser());
+                if (!isCurrent()) {
+                  return;
+                }
+                const updated = await getMyUser();
+                if (isCurrent()) {
+                  authManager.setUser(updated);
+                }
               }, $t('frameleaf_license_personal_removed_notice'))
             : await act(() => cloudManager.removeLicenseKey(), $t('frameleaf_license_removed_notice'));
         if (removed) {

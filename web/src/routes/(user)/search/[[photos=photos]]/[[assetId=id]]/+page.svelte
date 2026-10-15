@@ -88,7 +88,11 @@
   let previousRoute = $state<string>(Route.explore());
 
   const searchSession = new LibrarySearchSession();
-  onDestroy(() => searchSession.destroy());
+  let scrollRestoreGeneration = 0;
+  onDestroy(() => {
+    scrollRestoreGeneration++;
+    searchSession.destroy();
+  });
   const searchResultAssets = $derived(searchSession.assets);
   const isLoading = $derived(searchSession.loading);
   let askQuery = $state('');
@@ -188,6 +192,7 @@
   });
 
   afterNavigate(({ from }) => {
+    const owner = ++scrollRestoreGeneration;
     // Prevent setting previousRoute to the current page.
     if (from?.url && from.route.id !== page.route.id) {
       previousRoute = from.url.href;
@@ -204,7 +209,9 @@
 
     tick()
       .then(() => {
-        window.scrollTo(0, scrollYHistory);
+        if (owner === scrollRestoreGeneration) {
+          window.scrollTo(0, scrollYHistory);
+        }
       })
       .catch(() => {
         // do nothing

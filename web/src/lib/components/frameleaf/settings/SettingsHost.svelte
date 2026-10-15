@@ -29,6 +29,10 @@
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
+  import MaintenanceLanding from '$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte';
+  import EditingLanding from '$lib/components/frameleaf/settings/editing/EditingLanding.svelte';
+  import SearchLanding from '$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte';
   import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
   import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
   import ServerLanding from '$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte';
@@ -68,7 +72,7 @@
   import { DURATION } from '$lib/frameleaf/tokens';
   import { sectionForConfigPath } from '$lib/frameleaf/system-config-draft';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import { LIBRARY_CARE_TOOLS, libraryCareToolsFor, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
+  import { LIBRARY_CARE_TOOLS, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
@@ -381,7 +385,7 @@
     }
     return areaSections.map((section) => ({ key: section.key, title: section.title, area, section: section.key }));
   });
-  /** The area directory's rows: its sections, and for Library care the repair tools (CommandCenter.jsx:2705-2722). */
+  /** The area directory's rows: its sections. Library care lists its tools on its own landing page (FL-366). */
   const directoryRows = $derived.by((): DirectoryRow[] => {
     const group = (key: string) => {
       const id = directoryGroup(area, key);
@@ -397,19 +401,6 @@
       icon: section.icon,
       onSelect: () => void navigate(area, section.key),
     }));
-    if (area === 'care') {
-      for (const tool of libraryCareToolsFor(isAdmin)) {
-        rows.push({
-          id: `utilities:${tool.id}`,
-          title: $t(tool.titleKey),
-          description: $t(tool.descriptionKey),
-          group: $t('frameleaf_cc_group_tools'),
-          icon: tool.icon,
-          // The tool stays under Library care: its breadcrumb and the navigation say so (finding 67).
-          onSelect: () => void navigate('utilities', tool.id, { from: 'care' }),
-        });
-      }
-    }
     return rows;
   });
   const activeChild = $derived(
@@ -979,6 +970,14 @@
                 <ServerLanding sections={areaSections} />
               {:else if area === 'preferences'}
                 <PreferencesLanding sections={areaSections} />
+              {:else if area === 'care'}
+                <LibraryCareLanding />
+              {:else if area === 'intelligence'}
+                <SearchLanding sections={areaSections} />
+              {:else if area === 'editing'}
+                <EditingLanding sections={areaSections} />
+              {:else if area === 'maintenance'}
+                <MaintenanceLanding />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />

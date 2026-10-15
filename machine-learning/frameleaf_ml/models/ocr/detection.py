@@ -60,7 +60,11 @@ class TextDetector(InferenceModel):
         ratio = min(max_resolution / min(img.height, img.width), 1.0)
         resize_h = max(self._round32(img.height * ratio), 32)
         resize_w = max(self._round32(img.width * ratio), 32)
-        resized = img.resize((resize_w, resize_h), resample=Image.Resampling.LANCZOS)
+        resized = (
+            img
+            if img.size == (resize_w, resize_h)
+            else img.resize((resize_w, resize_h), resample=Image.Resampling.LANCZOS)
+        )
         if resized.mode != "RGB":
             resized = resized.convert("RGB")
         array = np.asarray(resized)
@@ -83,5 +87,5 @@ class TextDetector(InferenceModel):
         y_order = np.argsort(boxes[:, 0, 1], kind="stable")
         lines = np.zeros(len(boxes), dtype=np.int32)  # indexed in y-sorted order, not box order
         np.cumsum(np.diff(boxes[y_order, 0, 1]) >= 10, out=lines[1:])  # ascending, so the diffs are already positive
-        order: NDArray[np.intp] = y_order[np.argsort(lines * 1e6 + boxes[y_order, 0, 0], kind="stable")]
+        order: NDArray[np.intp] = y_order[np.lexsort((boxes[y_order, 0, 0], lines))]
         return order

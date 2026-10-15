@@ -5,12 +5,14 @@
   import { arrivedFromSetup, offerNextSteps } from '$lib/components/timeline/next-steps.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { createDropUploadContext } from '$lib/stores/drag-and-drop-files.store';
   import type { Snippet } from 'svelte';
   interface Props {
     children?: Snippet;
   }
 
   let { children }: Props = $props();
+  createDropUploadContext();
 
   // First-run setup hands off into the app: the administrator who arrives that way is offered the
   // library's one-time "Next steps" card (LibraryNextSteps), wherever setup sent them first.

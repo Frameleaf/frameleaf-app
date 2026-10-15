@@ -138,9 +138,37 @@ class TestBase:
         rmtree.assert_called_once_with(encoder.cache_dir)
         info.assert_called_with(f"Cleared cache directory for model '{encoder.model_name}'.")
 
+    def test_clear_cache_reuses_one_stat_result(self, tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+        cache = tmp_path / "model"
+        cache.mkdir()
+        (cache / "weights").write_bytes(b"fixture")
+        encoder = OpenClipTextualEncoder("fixture", cache_dir=cache)
+        original_stat = Path.stat
+        calls: list[Path] = []
+
+        def inspect(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+            if path == cache:
+                calls.append(path)
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", inspect)
+        encoder.clear_cache()
+        assert list(cache.iterdir()) == []
+        assert calls == [cache]
+
+    def test_clear_cache_does_not_log_success_before_failed_removal(
+        self, rmtree: mock.Mock, path: mock.Mock, info: mock.Mock
+    ) -> None:
+        rmtree.side_effect = OSError("cannot remove cache")
+        encoder = OpenClipTextualEncoder("fixture", cache_dir=path)
+        with pytest.raises(OSError, match="cannot remove cache"):
+            encoder.clear_cache()
+        assert mock.call("Cleared cache directory for model 'fixture'.") not in info.call_args_list
+
     def test_clear_cache_warns_if_path_does_not_exist(
         self, rmtree: mock.Mock, path: mock.Mock, warning: mock.Mock
     ) -> None:
+        path.return_value.is_dir.return_value = False
         path.return_value.exists.return_value = False
 
         encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=path)
@@ -2468,6 +2496,47 @@ class TestCache:
 
 @pytest.mark.asyncio
 class TestLoad:
+    async def test_cache_recovery_keeps_the_load_lock(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts = False, 0
+        model.model_name, model.model_type = "fixture", ModelType.VISUAL
+        model.load.side_effect = [OSError("broken cache"), None]
+        inside = False
+
+        def enter() -> None:
+            nonlocal inside
+            inside = True
+
+        def leave(*args: Any) -> None:
+            nonlocal inside
+            inside = False
+
+        def clear() -> None:
+            assert inside
+
+        model.clear_cache.side_effect = clear
+        with mock.patch("frameleaf_ml.main.lock") as load_lock:
+            load_lock.__enter__.side_effect = enter
+            load_lock.__exit__.side_effect = leave
+            assert await load(model) is model
+        assert not inside
+        assert model.load.call_count == 2
+
+    async def test_rechecks_loaded_state_after_acquiring_lock(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setattr("frameleaf_ml.main.thread_pool", None)
+        model = mock.Mock(spec=InferenceModel)
+        model.loaded, model.load_attempts = False, 0
+
+        def complete_other_load() -> None:
+            model.loaded, model.load_attempts = True, 2
+
+        with mock.patch("frameleaf_ml.main.lock") as load_lock:
+            load_lock.__enter__.side_effect = complete_other_load
+            assert await load(model) is model
+        model.load.assert_not_called()
+        model.clear_cache.assert_not_called()
+
     async def test_load(self) -> None:
         mock_model = mock.Mock(spec=InferenceModel)
         mock_model.loaded = False

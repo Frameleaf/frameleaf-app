@@ -1,10 +1,12 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import numpy as np
 import onnx
 import onnxruntime as ort
 from numpy.typing import NDArray
+from onnx.external_data_helper import convert_model_from_external_data
 from onnx.tools.update_model_dims import update_inputs_outputs_dims
 from PIL import Image
 
@@ -19,6 +21,7 @@ from frameleaf_ml.schemas import (
     ModelTask,
     ModelType,
 )
+from frameleaf_ml.sessions import runtime_cache_dir
 
 from ._ops import align_face
 
@@ -35,8 +38,7 @@ class FaceRecognizer(InferenceModel):
     def _load(self) -> ModelSession:
         session = self._make_session(self.model_path)
         if (not self.batch_size or self.batch_size > 1) and str(session.get_inputs()[0].shape[0]) != "batch":
-            self._add_batch_axis(self.model_path)
-            session = self._make_session(self.model_path)
+            session = self._make_session(self._add_batch_axis(self.model_path))
         return session
 
     def _predict(
@@ -75,7 +77,7 @@ class FaceRecognizer(InferenceModel):
             for (x1, y1, x2, y2), embedding, score in zip(faces["boxes"], embeddings, faces["scores"])
         ]
 
-    def _add_batch_axis(self, model_path: Path) -> None:
+    def _add_batch_axis(self, model_path: Path) -> Path:
         log.debug(f"Adding batch axis to model {model_path}")
         proto = onnx.load(model_path)
         static_input_dims = [shape.dim_value for shape in proto.graph.input[0].type.tensor_type.shape.dim[1:]]
@@ -83,7 +85,18 @@ class FaceRecognizer(InferenceModel):
         input_dims = {proto.graph.input[0].name: ["batch"] + static_input_dims}
         output_dims = {proto.graph.output[0].name: ["batch"] + static_output_dims}
         updated_proto = update_inputs_outputs_dims(proto, input_dims, output_dims)
-        onnx.save(updated_proto, model_path)
+        if settings.model_downloads:
+            onnx.save(updated_proto, model_path)
+            return model_path
+
+        # Staged weights are immutable; embed external tensors in the writable derivative.
+        convert_model_from_external_data(updated_proto)
+        output_path = runtime_cache_dir(model_path) / model_path.name
+        with TemporaryDirectory(dir=output_path.parent) as directory:
+            temporary_path = Path(directory) / model_path.name
+            onnx.save(updated_proto, temporary_path)
+            temporary_path.replace(output_path)
+        return output_path
 
     @property
     def _batch_size_default(self) -> int | None:

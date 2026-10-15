@@ -112,9 +112,8 @@ export const albumOrderGroup = (
   parentId: string | null,
   firstId: string,
 ): string[] | undefined => {
-  const collectionIds = new Set(items.filter((item) => item.kind === AlbumKind.Collection).map(({ id }) => id));
   if (parentId !== null) {
-    if (!collectionIds.has(parentId)) {
+    if (items.every((item) => !(item.kind === AlbumKind.Collection && item.id === parentId))) {
       return undefined;
     }
     return items.filter((item) => item.kind === AlbumKind.Album && item.parentId === parentId).map(({ id }) => id);
@@ -131,6 +130,7 @@ export const albumOrderGroup = (
       return items.filter((item) => item.kind === AlbumKind.Space).map(({ id }) => id);
     }
     default: {
+      const collectionIds = new Set(items.filter((item) => item.kind === AlbumKind.Collection).map(({ id }) => id));
       return items
         .filter((item) => item.kind === AlbumKind.Album && !(item.parentId && collectionIds.has(item.parentId)))
         .map(({ id }) => id);

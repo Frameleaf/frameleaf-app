@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hasTransparentPixels } from './profile-image';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { createProfileImage, type AssetResponseDto } from '@frameleaf/sdk';
@@ -24,31 +25,6 @@
 
     imgElement.style.width = '100%';
   });
-
-  const hasTransparentPixels = async (blob: Blob) => {
-    const img = new Image();
-    img.src = URL.createObjectURL(blob);
-    await img.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      throw new Error('Could not get canvas context.');
-    }
-    context.drawImage(img, 0, 0);
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData?.data;
-    if (!data) {
-      throw new Error('Could not get image data.');
-    }
-    for (let index = 0; index < data.length; index += 4) {
-      if (data[index + 3] < 255) {
-        return true;
-      }
-    }
-    return false;
-  };
 
   const onSubmit = async () => {
     if (!imgElement) {

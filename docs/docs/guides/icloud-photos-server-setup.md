@@ -6,7 +6,7 @@ The feature requires a fork build containing iCloud sync, its database migration
 
 ## Deploy the bridge
 
-Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/icloud-bridge/api.md) records the transport contract and limitations.
+Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
 
 Prepare absolute paths in your deployment environment:
 
@@ -21,7 +21,7 @@ ICLOUD_STAGING_DIR=/srv/frameleaf-icloud/staging
 
 Set the UID/GID to the non-root identity that owns this installation's Frameleaf media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
 
-Staging must be a private directory disjoint from Frameleaf's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads and verified recovery copies. Check available disk space as well as the configured staging byte limit.
+Staging must be a private directory disjoint from Frameleaf's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads, verified recovery copies and private scheduled validation inputs. Check available disk space as well as the configured staging byte limit.
 
 Generate secrets on the deployment host without printing their values:
 
@@ -67,7 +67,7 @@ The first start after upgrading to iCloud source identities builds an index over
 
 `FRAMELEAF_ICLOUD_IDENTITY_MATCHING=false` switches off iCloud source identity matching between the sync and the Frameleaf app. Then only photos with the same SHA-256 are treated as the same. See [iCloud Photos Sync and the Frameleaf app](icloud-photos-sync.md#with-the-app).
 
-Identity adoption before a cloud download and scheduled weekly audits are separately disabled by default. Keep `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` and `FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION` off until the live Apple-account identity/fingerprint spike and the mandatory weekly audit worker/provider/schedule are qualified. The source includes owner-scoped weekly grants, a frozen 1% sample cohort, production through the existing sync scheduler, and a scheduled worker. Grants bind the connection configuration and privacy settings; protected audits additionally require explicit protected-media authority and the current PIN binding. Adoption rechecks weekly grant authority and also requires matching to remain enabled. Configuration or consent alone establishes no qualification. The bounded adoption path accepts only unprotected original, Live Photo motion and RAW-alternative resources with current exact source evidence and freshly verified managed bytes. It records the actual decision but does not mark those skipped cloud bytes audit-verified. Edited resources and unsupported evidence retain the ordinary download/hash path; retired authority or unsettled validation retries without publishing a decision. Unknown restart/pending-generation recovery and complete transient decoder-input peak quota accounting remain separate requirements; this source does not authorize activation.
+Identity adoption before a cloud download and scheduled weekly audits are separately disabled by default. Keep `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` and `FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION` off until the live Apple-account identity/fingerprint spike and the mandatory weekly audit worker/provider/schedule are qualified. The source includes owner-scoped weekly grants, a frozen 1% sample cohort, production through the existing sync scheduler, and a scheduled worker. Grants bind the connection configuration and privacy settings; protected audits additionally require explicit protected-media authority and the current PIN binding. Adoption rechecks weekly grant authority and also requires matching to remain enabled. Configuration or consent alone establishes no qualification. The bounded adoption path accepts only unprotected original, Live Photo motion and RAW-alternative resources with current exact source evidence and freshly verified managed bytes. It records the actual decision but does not mark those skipped cloud bytes audit-verified. Edited resources and unsupported evidence retain the ordinary download/hash path; retired authority or unsettled validation retries without publishing a decision. Before any separately authorized activation, verify old-worker drain and qualify the combined validation-input lifecycle and release guards. Unknown restart-work recovery and complete decoder-transient peak accounting remain separate requirements; this source does not authorize activation.
 
 ### Check readiness and the pinned version
 
@@ -101,6 +101,39 @@ Per-connection controls are limited to 1–4 concurrent downloads. The worker al
 | `FRAMELEAF_ICLOUD_FREE_SPACE_BYTES`  | `1073741824` (1 GiB)     | Free disk space to retain in addition to the next download |
 
 Set these on the workers that run sync. Increasing a reservation limit does not create disk space. Retained copies outside a user's current selection still consume their reservation; `staging_retained_capacity` requires reselection/recovery or additional capacity. Do not clear database reservations or empty staging to bypass it. Committed cleanup remains eligible when the budget is full.
+
+### Scheduled validation inputs and upgrades
+
+Scheduled weekly validation reserves a full expected-size input in addition to its staged source
+and any recovery copy, before creating or copying the input or starting the decoder. For a
+10-byte resource, source plus input reserves 20 bytes; source plus recovery plus destination input
+reserves 30 bytes. Input disposal refunds only its own 10 bytes. The existing connection/global
+limits and free-space watermark still apply; this adds no setting.
+
+A timeout, cancellation, disconnect or restart does not free that input's reservation. Actual
+decoder and readonly work, including handle closes, must settle before authenticated disposal.
+Normal success must dispose the input before publication. Unknown, pending, malformed or
+unsupported ownership evidence remains private and fully charged. Housekeeping can discover
+source-only inputs without a recovery copy or live Apple credentials; it cannot infer that unknown
+work has stopped. Do not delete retained files, clear database charges or edit receipt JSON to
+recover capacity. Preserve the matching staging and database checkpoint for reviewed recovery.
+
+History retains one current input and one previous disposed receipt with a persistent exact
+generation mark. This does not impose a lifetime attempt limit or change scheduled pause, resume
+or deferral behavior. Existing manual/non-scheduled behavior remains unchanged when no input
+ledger exists; unknown scheduled legacy work still requires settlement evidence.
+
+Before enabling scheduled execution after an upgrade, drain every old worker that can create or
+clean private copies and verify its in-flight decoder/readonly work has actually settled. A pause,
+timeout, restart or disabled admission flag alone does not prove drain. Preserve unknown legacy
+work rather than treating a missing new receipt as permission to remove it. Keep adoption and
+weekly execution disabled until this drain and final-candidate service/restart/release qualification,
+required review/checks and the existing live Apple/provider gates are satisfied. See the
+[private-copy disposition contract](../developer/icloud-private-disposition.md#qualification-and-upgrade-gates).
+
+The full input charge does not cover every RAW render, image buffer or native decoder scratch
+allocation. Those transients can exceed the reservation; complete peak resource accounting and
+native/device acceptance remain separate qualification work.
 
 ### Media validation timeout
 

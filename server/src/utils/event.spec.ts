@@ -14,6 +14,50 @@ describe(PendingEvents.name, () => {
     vi.useRealTimers();
   });
 
+  it('registers before starting a request that completes immediately', async () => {
+    await expect(events.wait('segment', () => events.complete('segment', result))).resolves.toBe(result);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('starts shared request work once for concurrent waiters', async () => {
+    const request = vi.fn();
+    const first = events.wait('segment', request);
+    const second = events.wait('segment', request);
+    expect(request).toHaveBeenCalledOnce();
+    events.complete('segment', result);
+    expect(await first).toBe(result);
+    expect(await second).toBe(result);
+  });
+
+  it.each([false, true])('propagates request failure and clears its deadline, async=%s', async (async) => {
+    const failure = new Error('send failed');
+    const request = () => {
+      if (async) return Promise.reject(failure);
+      throw failure;
+    };
+    await expect(events.wait('segment', request)).rejects.toBe(failure);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('makes a cancelled request stale without letting its late failure reject a new waiter', async () => {
+    const request = Promise.withResolvers<void>();
+    let isPending!: () => boolean;
+    const first = events.wait('segment', (isCurrent) => {
+      isPending = isCurrent;
+      return request.promise;
+    });
+    expect(isPending()).toBe(true);
+    events.complete('segment', result);
+    await first;
+    const next = events.wait('segment');
+    expect(isPending()).toBe(false);
+    request.reject(new Error('late failure'));
+    await Promise.resolve();
+    expect(vi.getTimerCount()).toBe(1);
+    events.complete('segment', result);
+    expect(await next).toBe(result);
+  });
+
   it('shares one promise and deadline for concurrent waits on the same key', async () => {
     const waits = Array.from({ length: 1000 }, () => events.wait('segment'));
     expect(new Set(waits).size).toBe(1);

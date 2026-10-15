@@ -94,9 +94,8 @@ export const RATE_LIMITS = Object.freeze({
     principalLimit: 30,
   },
   /**
-   * FL-292: checking a new server's setup code and claiming it (`server/setup/*`, the first-run
-   * admin sign-up): ten tries per address in ten minutes, on top of the code being replaced after
-   * five wrong ones.
+   * FL-292: claiming a new server (`server/setup/*`, the first-run admin sign-up, a restore onto a
+   * new server): ten tries per address in ten minutes.
    */
   frameleafSetup: {
     bucket: 'frameleaf-setup',

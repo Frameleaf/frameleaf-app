@@ -17,9 +17,15 @@ import { MEMORY_REMOVE_UNDO_TIMEOUT_MS, memoryManager } from './memory-manager.s
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('$app/state', () => ({
-  page: { params: { id: 'memory-1' }, url: new URL('http://localhost/memories/memory-1?assetId=asset-1') },
-}));
+const navigation = vi.hoisted((): { url?: URL } => ({}));
+vi.mock('$app/state', async () => {
+  const { SvelteURL } = await import('svelte/reactivity');
+  const url = new SvelteURL('http://localhost/memories/memory-1?assetId=asset-1');
+  navigation.url = url;
+  return {
+    page: { params: { id: 'memory-1' }, url },
+  };
+});
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { authenticated: false, user: { id: 'me' } } }));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
@@ -43,6 +49,48 @@ const memory = () =>
     assets: [{ id: 'asset-1', originalFileName: 'IMG_0001.jpg', type: 'IMAGE' }],
     isSaved: false,
   }) as unknown as MemoryResponseDto;
+
+it('retains the viewer window between photos and replaces it when memory contents change', () => {
+  const current = memory();
+  current.assets.push({ ...current.assets[0], id: 'asset-2' });
+  memoryManager.memories = [current];
+  const first = memoryManager.current!;
+  navigation.url!.searchParams.set('assetId', 'asset-2');
+  try {
+    const second = memoryManager.current!;
+    expect(second.asset.id).toBe('asset-2');
+    expect(second.viewerAssets).toBe(first.viewerAssets);
+    expect(second.previousHref).toContain('asset-1');
+    memoryManager.memories[0].assets = [current.assets[1]];
+    expect(memoryManager.current!.viewerAssets).not.toBe(second.viewerAssets);
+    expect(memoryManager.current!.viewerAssets.map(({ id }) => id)).toEqual(['asset-2']);
+  } finally {
+    navigation.url!.searchParams.set('assetId', 'asset-1');
+  }
+});
+
+it('invalidates the viewer window when an adjacent memory gains an asset', () => {
+  const previous = {
+    ...memory(),
+    memoryAt: '2026-10-15T00:00:00Z',
+    data: { year: 2020 },
+    id: 'previous',
+    assets: [{ ...memory().assets[0], id: 'before' }],
+  };
+  const next = {
+    ...memory(),
+    memoryAt: '2026-10-15T00:00:00Z',
+    data: { year: 2020 },
+    id: 'next',
+    assets: [{ ...memory().assets[0], id: 'after' }],
+  };
+  memoryManager.memories = [previous, memory(), next];
+  const window = memoryManager.current!.viewerAssets;
+  expect(window.map(({ id }) => id)).toEqual(['before', 'asset-1', 'after']);
+  memoryManager.memories[2].assets.push({ ...next.assets[0], id: 'added' });
+  expect(memoryManager.current!.viewerAssets).not.toBe(window);
+  expect(memoryManager.current!.viewerAssets.map(({ id }) => id)).toEqual(['before', 'asset-1', 'after', 'added']);
+});
 
 describe('memoryManager.removeCurrentAsset', () => {
   beforeEach(() => {

@@ -27,7 +27,6 @@ export { randomImage, randomImageFromString, randomPreview, randomThumbnail } fr
 
 export {
   SeededRandom,
-  getMockAsset,
   parseTimeBucketKey,
   selectRandom,
   selectRandomDays,

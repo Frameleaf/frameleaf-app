@@ -28,7 +28,7 @@ const IntegrityGetReportSchema = z
   })
   .meta({ id: 'IntegrityGetReportDto' });
 
-const IntegrityDeleteReportSchema = z.object({ type: IntegrityReport }).meta({ id: 'IntegrityDeleteReportDto' });
+const IntegrityDeleteReportSchema = z.object({ type: IntegrityReportSchema }).meta({ id: 'IntegrityDeleteReportDto' });
 
 const IntegrityReportResponseItemSchema = z.object({
   id: z.uuidv4().describe('Integrity report item id'),
@@ -45,6 +45,12 @@ const IntegrityReportResponseSchema = z
 
 const IntegrityReportParamSchema = z.object({ type: IntegrityReportSchema }).meta({ id: 'IntegrityReportDto' });
 
+/** FL-366: how many findings "Clear this list" forgot. */
+const IntegrityReportClearResponseSchema = z
+  .object({ cleared: z.int().nonnegative().describe('Findings removed from the list; no file or photo was changed') })
+  .meta({ id: 'IntegrityReportClearResponseDto' });
+
+export class IntegrityReportClearResponseDto extends createZodDto(IntegrityReportClearResponseSchema) {}
 export class IntegrityReportSummaryResponseDto extends createZodDto(IntegrityReportSummaryResponseSchema) {}
 export class IntegrityCheckRunsResponseDto extends createZodDto(IntegrityCheckRunsResponseSchema) {}
 export class IntegrityGetReportDto extends createZodDto(IntegrityGetReportSchema) {}

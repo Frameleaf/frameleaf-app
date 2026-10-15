@@ -68,6 +68,7 @@ class MemoryManager {
   /** Memories received from the server, including empty ones that are never listed. */
   #received = 0;
   #queued: boolean = false;
+  #generation = 0;
 
   constructor() {
     // FL-62: the first page already honours the owner's Memory settings.
@@ -112,10 +113,6 @@ class MemoryManager {
   /** Drop every memory this session state loaded and read them again (a page in flight is discarded). */
   reloadForSessionAccess() {
     this.clearCache();
-    if (this.#loading) {
-      this.#queued = true;
-      return this.#loading;
-    }
     return this.initialize();
   }
 
@@ -163,13 +160,28 @@ class MemoryManager {
     return lookup;
   });
 
+  #memoryLocation = $derived(this.#lookup.get(this.#url.memoryId ?? ''));
+
+  #viewerAssets = $derived.by(() => {
+    const location = this.#memoryLocation;
+    if (!location) {
+      return [];
+    }
+    const index = location.memoryIndex;
+    return [
+      ...(this.memories[index - 1]?.assets ?? []),
+      ...this.memories[index].assets,
+      ...(this.memories[index + 1]?.assets ?? []),
+    ];
+  });
+
   current = $derived.by((): MemoryState | undefined => {
     const { memoryId, assetId } = this.#url;
     if (memoryId === undefined || assetId === undefined) {
       return;
     }
 
-    const location = this.#lookup.get(memoryId);
+    const location = this.#memoryLocation;
     if (!location) {
       return;
     }
@@ -187,7 +199,7 @@ class MemoryManager {
     return {
       memory,
       asset: toTimelineAsset(memory.assets[assetIndex]),
-      viewerAssets: [...(previousMemory?.assets ?? []), ...memory.assets, ...(nextMemory?.assets ?? [])],
+      viewerAssets: this.#viewerAssets,
       previousMemory: this.#toAdjacentMemory(previousMemory),
       nextMemory: this.#toAdjacentMemory(nextMemory),
       previousHref:
@@ -484,8 +496,6 @@ class MemoryManager {
   }
 
   async #reload() {
-    // a page already in flight was asked for before the change; let it land, then start over
-    await this.#loading?.catch(() => undefined);
     this.clearCache();
     return this.initialize();
   }
@@ -503,7 +513,7 @@ class MemoryManager {
   loadNextPage() {
     if (this.#hasNextPage) {
       if (this.#loading === undefined) {
-        this.#loading = this.load(this.#page++);
+        void this.initialize().catch((error) => handleError(error, get(t)('errors.something_went_wrong')));
       } else {
         this.#queued = true;
       }
@@ -523,6 +533,9 @@ class MemoryManager {
   }
 
   private clearCache() {
+    this.#generation++;
+    this.#loading = undefined;
+    this.#queued = false;
     this.#hasNextPage = true;
     this.#page = 1;
     this.#total = undefined;
@@ -532,37 +545,44 @@ class MemoryManager {
 
   private initialize() {
     if (!this.#loading) {
-      this.#loading = this.load(this.#page++);
+      const loading = this.load(this.#generation).finally(() => {
+        if (this.#loading === loading) {
+          this.#loading = undefined;
+        }
+      });
+      this.#loading = loading;
     }
 
     return this.#loading;
   }
 
-  private async load(page: number) {
-    const items = await searchMemories({ ...this.#filters, page });
-
-    if (this.#queued) {
+  private async load(generation: number) {
+    do {
       this.#queued = false;
-      this.#loading = this.load(this.#page++);
-      await this.#loading;
-      return;
-    }
-
-    this.#received += items.length;
-    for (const item of items) {
-      // Empty memories (every item removed, pending deletion) are never listed.
-      if (item.assets.length > 0 && !this.#lookup.has(item.id)) {
-        this.memories.push(item);
+      const items = await searchMemories({ ...this.#filters, page: this.#page });
+      if (generation !== this.#generation) {
+        return;
       }
-    }
 
-    if (this.#total === undefined) {
-      const { total } = await memoriesStatistics(this.#filters);
+      const total = this.#total ?? (await memoriesStatistics(this.#filters)).total;
+      if (generation !== this.#generation) {
+        return;
+      }
+
+      this.#page++;
+      this.#received += items.length;
       this.#total = total;
-    }
+      const knownIds = new Set(this.memories.map(({ id }) => id));
+      for (const item of items) {
+        // Empty memories count toward pagination but never appear in the list.
+        if (item.assets.length > 0 && !knownIds.has(item.id)) {
+          knownIds.add(item.id);
+          this.memories.push(item);
+        }
+      }
 
-    this.#hasNextPage = this.#received < this.#total;
-    this.#loading = undefined;
+      this.#hasNextPage = this.#received < total;
+    } while (this.#queued && this.#hasNextPage);
   }
 
   private scheduleHourlyRefresh() {
@@ -575,23 +595,17 @@ class MemoryManager {
 
     const initialDelay = nextEvent.diff(now).as('milliseconds');
 
-    setTimeout(() => {
-      if (this.#page <= 2) {
-        this.clearCache();
-        this.loadNextPage();
+    const refresh = () => {
+      if (!authManager.authenticated || this.#page > 2) {
+        return;
       }
+      this.clearCache();
+      this.loadNextPage();
+    };
 
-      // Schedule subsequent events hourly
-      setInterval(
-        () => {
-          if (this.#page > 2) {
-            return;
-          }
-          this.clearCache();
-          this.loadNextPage();
-        },
-        60 * 60 * 1000,
-      );
+    setTimeout(() => {
+      refresh();
+      setInterval(refresh, 60 * 60 * 1000);
     }, initialDelay);
   }
 }

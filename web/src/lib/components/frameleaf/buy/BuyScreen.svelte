@@ -38,11 +38,11 @@
     serverLicenceKind,
   } from '$lib/frameleaf/cloud';
   import type { LinkNotice } from '$lib/frameleaf/license-relay';
-  import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import { setSupportBadgeVisibility } from '$lib/utils/purchase-utils';
   import {
     activateLicense,
     deleteUserLicense,
@@ -53,7 +53,6 @@
     redeemLicenseLinkCode,
     removeLicenseKey,
     setUserLicense,
-    updateMyPreferences,
     type CloudMlWalletDto,
     type LicenseProductDto,
     type LicenseProductsResponseDto,
@@ -164,6 +163,7 @@
 
   /** Back from the store tab: read the plan, key and credit again so a finished purchase shows. */
   const recheck = async () => {
+    const isCurrent = authManager.captureSession();
     if (!awaitingStore || checking || busy) {
       return;
     }
@@ -171,7 +171,13 @@
     const before = { plan: currentPlan?.state, key: !!serverKey || !!personal, credit: wallet?.availableUsd };
     try {
       await loadServerLicense();
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       const changed =
         before.plan !== currentPlan?.state ||
         before.key !== (!!serverKey || !!personal) ||
@@ -188,8 +194,16 @@
   };
 
   const reloadUser = async () => {
-    authManager.setUser(await getMyUser());
+    const isCurrent = authManager.captureSession();
+    const updated = await getMyUser();
+    if (!isCurrent()) {
+      return;
+    }
+    authManager.setUser(updated);
     await featureFlagsManager.init();
+    if (!isCurrent()) {
+      return;
+    }
     authManager.isPurchased = !!authManager.user.license || featureFlagsManager.value.supporter;
   };
 
@@ -201,6 +215,7 @@
       : $t('frameleaf_buy_supporter_individual_title');
 
   const activate = async (event?: SubmitEvent) => {
+    const isCurrent = authManager.captureSession();
     event?.preventDefault();
     if (busy) {
       return;
@@ -222,10 +237,19 @@
       } else {
         await setUserLicense({ licenseActivateDto: { key: check.key } });
       }
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       key = '';
       success = $t('frameleaf_buy_activated');
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       keyError = getServerErrorMessage(error) ?? $t('frameleaf_buy_activation_failed');
     } finally {
       busy = false;
@@ -233,6 +257,7 @@
   };
 
   const remove = async (kind: 'server' | 'individual') => {
+    const isCurrent = authManager.captureSession();
     busy = true;
     actionError = '';
     try {
@@ -241,9 +266,18 @@
       } else {
         await deleteUserLicense();
       }
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       success = $t('frameleaf_buy_removed');
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       actionError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     } finally {
       busy = false;
@@ -253,10 +287,7 @@
   const setBadgeHidden = async (hidden: boolean) => {
     actionError = '';
     try {
-      const response = await updateMyPreferences({
-        userPreferencesUpdateDto: { purchase: { showSupportBadge: !hidden } },
-      });
-      authManager.setPreferences(withoutLockedRuleIds(response));
+      await setSupportBadgeVisibility(!hidden);
     } catch (error) {
       actionError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }

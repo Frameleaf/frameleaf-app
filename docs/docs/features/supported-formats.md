@@ -3,7 +3,7 @@
 Frameleaf supports a number of image and video formats, the most common of which are outlined here.
 
 :::note
-For the full list, refer to the [Frameleaf source code](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/server/src/utils/mime-types.ts).
+For the full list, refer to the [Frameleaf source code](https://github.com/Frameleaf/frameleaf-app/blob/main/server/src/utils/mime-types.ts).
 :::
 
 ## Image formats

@@ -25,12 +25,11 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
-import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { fileStub } from 'test/fixtures/file.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
-import { getForAsset, getForPartner } from 'test/mappers.js';
+import { getForAsset } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
@@ -939,15 +938,12 @@ describe(AssetMediaService.name, () => {
   describe('downloadOriginal location policy (FL-54)', () => {
     const lease = { path: '/tmp/immich-location-free/copy.jpg', release: vitest.fn() };
 
-    const setup = ({ shareLocation }: { shareLocation: boolean }) => {
+    const setup = () => {
       const me = UserFactory.create();
       const owner = UserFactory.create();
       const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
-      mocks.partner.getAll.mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation }).sharedBy(owner).sharedWith(me).build()),
-      ]);
       mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
       return { auth: AuthFactory.create(me), asset };
     };
@@ -967,7 +963,7 @@ describe(AssetMediaService.name, () => {
     });
 
     it('serves anyone who can reach an original its bytes untouched (FL-326: locations are always shared)', async () => {
-      const { auth, asset } = setup({ shareLocation: true });
+      const { auth, asset } = setup();
 
       const response = await sut.downloadOriginal(auth, asset.id, {});
 
@@ -976,7 +972,7 @@ describe(AssetMediaService.name, () => {
     });
 
     it('never checks thumbnails or previews, which are re-encoded without metadata', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
+      const { auth, asset } = setup();
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForThumbnail.mockResolvedValue({
         imageEncoding: { dynamicRange: 'sdr', gainMap: 'none', reconstructionAvailable: false },

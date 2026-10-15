@@ -42,6 +42,41 @@ describe('upload store contracts', () => {
     expect(get(uploads).map(({ progress }) => progress)).toEqual([50, 50]);
   });
 
+  it('replaces every duplicate ID without changing the old snapshot or total', () => {
+    for (const id of ['before', 'match', 'between', 'other', 'after']) {
+      uploads.addItem(row(id));
+    }
+    uploads.updateItem('other', { id: 'match' });
+    const before = get(uploads);
+    const replacement = { ...row('match'), state: UploadState.DONE };
+    uploads.addItem(replacement);
+    const after = get(uploads);
+    expect(after).not.toBe(before);
+    expect(after.map(({ id }) => id)).toEqual(['before', 'match', 'between', 'match', 'after']);
+    expect(after[1]).toBe(replacement);
+    expect(after[3]).toBe(replacement);
+    expect(before[1]).not.toBe(replacement);
+    expect(before[3]).not.toBe(replacement);
+    for (const index of [0, 2, 4]) {
+      expect(after[index]).toBe(before[index]);
+    }
+    expect(get(uploads.stats).total).toBe(5);
+  });
+
+  it('keeps submissions from a stats observer before the new row is appended', () => {
+    let submitted = false;
+    const stop = uploads.stats.subscribe(({ total }) => {
+      if (total === 1 && !submitted) {
+        submitted = true;
+        uploads.addItem(row('observer'));
+      }
+    });
+    uploads.addItem(row('new'));
+    stop();
+    expect(get(uploads).map(({ id }) => id)).toEqual(['observer', 'new']);
+    expect(get(uploads.stats).total).toBe(2);
+  });
+
   it('preserves removal counts and the distinction between dismissing errors and clearing finished rows', () => {
     for (const id of ['waiting', 'error', 'duplicate', 'done']) {
       uploads.addItem(row(id));

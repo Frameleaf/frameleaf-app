@@ -71,7 +71,7 @@
   const buttonId = `context-menu-button-${id}`;
   const menuId = `context-menu-${id}`;
 
-  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
+  const layoutAlign = $derived.by(() => {
     let layoutAlign = align;
     if (languageManager.rtl) {
       if (align.includes('left')) {
@@ -80,9 +80,18 @@
         layoutAlign = align.replace('right', 'left') as Align;
       }
     }
+    return layoutAlign;
+  });
+
+  $effect(() => {
+    if (isOpen && menuContainer) {
+      menuContainer.focus();
+    }
+  });
+
+  const openDropdown = (event: KeyboardEvent | MouseEvent) => {
     contextMenuPosition = getContextMenuPositionFromEvent(event, layoutAlign);
     isOpen = true;
-    menuContainer?.focus();
   };
 
   const handleClick = (event: MouseEvent) => {
@@ -106,7 +115,7 @@
       return;
     }
 
-    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), align);
+    contextMenuPosition = getContextMenuPositionFromBoundingRect(buttonContainer.getBoundingClientRect(), layoutAlign);
   };
 
   const closeDropdown = () => {

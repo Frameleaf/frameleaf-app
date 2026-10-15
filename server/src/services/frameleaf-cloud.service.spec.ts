@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash } from 'node:crypto';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { arch, platform, tmpdir } from 'node:os';
@@ -712,39 +711,17 @@ describe(FrameleafCloudService.name, () => {
 
   describe('setting up a new server from the Frameleaf app (FL-292)', () => {
     const phone = { ip: '192.168.1.40', via: null };
-    const TICKET = 'ticket-from-the-code-check-0123456789';
-    const hashOf = (value: string) => createHash('sha256').update(value).digest('hex');
-    const withTicket = (overrides: { address?: string; expiresAt?: string } = {}) =>
-      metadata.set(SystemMetadataKey.FrameleafSetupCode, {
-        code: 'ABCD2345',
-        pinned: false,
-        failures: 0,
-        locked: false,
-        generatedAt: new Date().toISOString(),
-        ticket: {
-          hash: hashOf(TICKET),
-          address: overrides.address ?? phone.ip,
-          expiresAt: overrides.expiresAt ?? new Date(Date.now() + 60_000).toISOString(),
-        },
-      });
     const refusal = (code: string) => expect.objectContaining({ response: expect.objectContaining({ code }) });
     const savedServerName = () =>
       (metadata.get(SystemMetadataKey.SystemConfig) as { server?: { name?: string } } | undefined)?.server?.name;
 
     beforeEach(() => {
       mocks.user.getAdmin.mockResolvedValue(void 0);
-      mocks.crypto.hashSha256.mockImplementation((value: string | Buffer) =>
-        createHash('sha256').update(value).digest(),
-      );
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
     });
 
-    it('links with the app’s link token once the ticket is shown, under the chosen name', async () => {
-      withTicket();
-      const claimed = await sut.claimNewServer(
-        { ticket: TICKET, linkToken: 'fll_app_token_123', serverName: 'Home Server' },
-        phone,
-      );
+    it('links with the app’s link token, under the chosen name', async () => {
+      const claimed = await sut.claimNewServer({ linkToken: 'fll_app_token_123', serverName: 'Home Server' }, phone);
       expect(claimed).toEqual({ instanceId: localInstanceId(), account: expect.any(String) });
 
       const register = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
@@ -754,17 +731,15 @@ describe(FrameleafCloudService.name, () => {
       expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-1' });
       expect(JSON.stringify(storedLink())).not.toContain('fll_app_token_123');
       expect(savedServerName()).toBe('Home Server');
-      // the ticket is used up
-      expect((metadata.get(SystemMetadataKey.FrameleafSetupCode) as { ticket?: unknown }).ticket).toBeUndefined();
-      await expect(sut.claimNewServer({ ticket: TICKET, linkToken: 'fll_app_token_456' }, phone)).rejects.toEqual(
-        refusal('setup_ticket_invalid'),
+      // linked now: a second claim is refused
+      await expect(sut.claimNewServer({ linkToken: 'fll_app_token_456' }, phone)).rejects.toEqual(
+        refusal('setup_already_linked'),
       );
     });
 
     it('leaves the server name as it was when Frameleaf Cloud does not link, and saves it on a retry that links (FL-304)', async () => {
       metadata.set(SystemMetadataKey.SystemConfig, { server: { name: 'Before' } });
-      const dto = { ticket: TICKET, linkToken: 'fll_app_token_123', serverName: 'Home Server' };
-      withTicket();
+      const dto = { linkToken: 'fll_app_token_123', serverName: 'Home Server' };
 
       for (const [answer, code] of [
         [{ status: 401, body: { error: 'invalid_token' } }, 'setup_link_token_used'],
@@ -782,21 +757,15 @@ describe(FrameleafCloudService.name, () => {
         expect(storedLink()?.status).not.toBe('linked');
       }
 
-      // the same ticket, once Frameleaf Cloud links
+      // a retry, once Frameleaf Cloud links
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
       await expect(sut.claimNewServer(dto, phone)).resolves.toMatchObject({ instanceId: localInstanceId() });
       expect(savedServerName()).toBe('Home Server');
       expect(mocks.event.emit).toHaveBeenCalledWith('ConfigUpdate', expect.anything());
     });
 
-    it('refuses without a valid ticket from the same device, over remote access, and once set up', async () => {
-      const dto = { ticket: TICKET, linkToken: 'fll_app_token_123' };
-      await expect(sut.claimNewServer(dto, phone)).rejects.toEqual(refusal('setup_ticket_invalid'));
-      withTicket({ address: '192.168.1.99' });
-      await expect(sut.claimNewServer(dto, phone)).rejects.toEqual(refusal('setup_ticket_invalid'));
-      withTicket({ expiresAt: new Date(Date.now() - 1000).toISOString() });
-      await expect(sut.claimNewServer(dto, phone)).rejects.toEqual(refusal('setup_ticket_invalid'));
-      withTicket();
+    it('refuses over remote access and once set up', async () => {
+      const dto = { linkToken: 'fll_app_token_123' };
       for (const client of [
         { ip: '203.0.113.7', via: null },
         { ip: phone.ip, via: 'relay' as const },
@@ -810,26 +779,22 @@ describe(FrameleafCloudService.name, () => {
     });
 
     it('refuses without Frameleaf Cloud, when already linked, and a used link token', async () => {
-      withTicket();
       cloudUrl = null;
-      await expect(sut.claimNewServer({ ticket: TICKET, linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
+      await expect(sut.claimNewServer({ linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
         refusal('setup_cloud_unavailable'),
       );
       cloudUrl = cloud.url;
 
-      withTicket();
       cloud.on('POST /api/v1/instances', () => ({ status: 401, body: { error: 'invalid_token' } }));
-      await expect(sut.claimNewServer({ ticket: TICKET, linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
+      await expect(sut.claimNewServer({ linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
         refusal('setup_link_token_used'),
       );
-      withTicket();
-      await expect(sut.claimNewServer({ ticket: TICKET, linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
+      await expect(sut.claimNewServer({ linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
         refusal('setup_link_token_used'),
       );
 
       metadata.set(SystemMetadataKey.FrameleafCloudLink, { status: 'linked', cloudUrl: cloud.url, instanceId: 'x' });
-      withTicket();
-      await expect(sut.claimNewServer({ ticket: TICKET, linkToken: 'fll_app_token_789' }, phone)).rejects.toEqual(
+      await expect(sut.claimNewServer({ linkToken: 'fll_app_token_789' }, phone)).rejects.toEqual(
         refusal('setup_already_linked'),
       );
     });
@@ -850,20 +815,11 @@ describe(FrameleafCloudService.name, () => {
       });
     });
 
-    it('refuses a missing ticket and a malformed link token with their own codes', async () => {
-      withTicket();
-      await expect(sut.claimNewServer({ ticket: '', linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
-        refusal('setup_ticket_invalid'),
-      );
+    it('refuses a malformed link token with its own code', async () => {
       for (const linkToken of ['not-a-link-token', 'fll_short', 'fll_has spaces in it']) {
-        withTicket();
-        await expect(sut.claimNewServer({ ticket: TICKET, linkToken }, phone)).rejects.toEqual(
-          refusal('setup_link_token_invalid'),
-        );
+        await expect(sut.claimNewServer({ linkToken }, phone)).rejects.toEqual(refusal('setup_link_token_invalid'));
       }
       expect(cloud.requests.filter(({ path }) => path === '/api/v1/instances')).toHaveLength(0);
-      // a refused token leaves the ticket usable
-      expect((metadata.get(SystemMetadataKey.FrameleafSetupCode) as { ticket?: unknown }).ticket).toBeDefined();
     });
   });
 

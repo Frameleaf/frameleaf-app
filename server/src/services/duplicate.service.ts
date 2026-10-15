@@ -812,24 +812,25 @@ export class DuplicateService extends BaseService {
     asset: { id: string; duplicateId: string | null },
     duplicateAssets: AssetDuplicateResult[],
   ): Promise<string[]> {
-    const duplicateIds = [
-      ...new Set(
-        duplicateAssets
-          .filter((asset): asset is AssetDuplicateResult & { duplicateId: string } => !!asset.duplicateId)
-          .map((duplicate) => duplicate.duplicateId),
-      ),
-    ];
-
-    const targetDuplicateId = asset.duplicateId ?? duplicateIds.shift() ?? this.cryptoRepository.randomUUID();
-    const assetIdsToUpdate = duplicateAssets
-      .filter((asset) => asset.duplicateId !== targetDuplicateId)
-      .map((duplicate) => duplicate.assetId);
+    let targetDuplicateId = asset.duplicateId;
+    const sourceIds = new Set<string>();
+    const assetIdsToUpdate: string[] = [];
+    for (const duplicate of duplicateAssets) {
+      targetDuplicateId ??= duplicate.duplicateId || null;
+      if (targetDuplicateId === null || duplicate.duplicateId !== targetDuplicateId) {
+        assetIdsToUpdate.push(duplicate.assetId);
+        if (duplicate.duplicateId) {
+          sourceIds.add(duplicate.duplicateId);
+        }
+      }
+    }
+    targetDuplicateId ??= this.cryptoRepository.randomUUID();
     assetIdsToUpdate.push(asset.id);
 
     await this.duplicateRepository.merge({
       targetId: targetDuplicateId,
       assetIds: assetIdsToUpdate,
-      sourceIds: duplicateIds,
+      sourceIds: [...sourceIds],
     });
     return assetIdsToUpdate;
   }

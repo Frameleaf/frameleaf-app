@@ -60,11 +60,15 @@ export class ClusterGroupService extends BaseService {
   async acceptRequest(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.ClusterGroupRequestRead, ids: [id] });
 
-    const request = await findOrFail(() => this.clusterGroupRepository.getRequest(id), 'Request');
-
-    await this.personRepository.reassignCluster({ userId: auth.user.id, newClusterId: request.clusterGroupId });
-    await this.userRepository.update(auth.user.id, { clusterGroupId: request.clusterGroupId });
-    await this.clusterGroupRepository.deleteRequest(request.id);
+    await this.clusterGroupRepository.withMembershipChange(auth.user.id, async () => {
+      const request = await findOrFail(() => this.clusterGroupRepository.getRequest(id, true), 'Request');
+      if (request.userId !== auth.user.id) {
+        throw new BadRequestException('Request belongs to another user');
+      }
+      await this.personRepository.reassignCluster({ userId: auth.user.id, newClusterId: request.clusterGroupId });
+      await this.userRepository.update(auth.user.id, { clusterGroupId: request.clusterGroupId });
+      await this.clusterGroupRepository.deleteRequest(request.id);
+    });
   }
 
   async deleteRequest(auth: AuthDto, id: string): Promise<void> {
@@ -84,16 +88,20 @@ export class ClusterGroupService extends BaseService {
   async leave(auth: AuthDto, clusterGroupId: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.ClusterGroupLeave, ids: [clusterGroupId] });
 
-    const hasOtherMembers = await this.clusterGroupRepository.hasOtherMembers({
-      clusterGroupId,
-      userId: auth.user.id,
+    await this.clusterGroupRepository.withMembershipChange(auth.user.id, async (sourceGroupId) => {
+      if (sourceGroupId !== clusterGroupId) {
+        throw new BadRequestException('User is no longer a member of this cluster group');
+      }
+      const hasOtherMembers = await this.clusterGroupRepository.hasOtherMembers({
+        clusterGroupId,
+        userId: auth.user.id,
+      });
+      if (!hasOtherMembers) {
+        throw new BadRequestException('Cannot leave a cluster group without any other members');
+      }
+      const clusterGroup = await this.clusterGroupRepository.create();
+      await this.personRepository.reassignCluster({ userId: auth.user.id, newClusterId: clusterGroup.id });
+      await this.userRepository.update(auth.user.id, { clusterGroupId: clusterGroup.id });
     });
-    if (!hasOtherMembers) {
-      throw new BadRequestException('Cannot leave a cluster group without any other members');
-    }
-
-    const clusterGroup = await this.clusterGroupRepository.create();
-    await this.personRepository.reassignCluster({ userId: auth.user.id, newClusterId: clusterGroup.id });
-    await this.userRepository.update(auth.user.id, { clusterGroupId: clusterGroup.id });
   }
 }

@@ -93,6 +93,61 @@ describe(TranscodingService.name, () => {
   });
 
   describe('onHeartbeat', () => {
+    it('retries a failed lease write on the next heartbeat instead of treating it as renewed', async () => {
+      vi.useFakeTimers();
+      try {
+        await sut.onSessionRequest({ sessionId, assetId, ownerId });
+        vi.setSystemTime(Date.now() + HLS_LEASE_DURATION_MS / 2 + 1);
+        mocks.videoStream.extendSession.mockRejectedValueOnce(new Error('database unavailable'));
+        mocks.videoStream.extendSession.mockResolvedValueOnce(undefined);
+
+        await expect(sut.onHeartbeat({ sessionId })).rejects.toThrow('database unavailable');
+        await sut.onHeartbeat({ sessionId });
+        await sut.onHeartbeat({ sessionId });
+
+        expect(mocks.videoStream.extendSession).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shares a pending lease write and reports its failure to every waiting heartbeat', async () => {
+      vi.useFakeTimers();
+      try {
+        await sut.onSessionRequest({ sessionId, assetId, ownerId });
+        vi.setSystemTime(Date.now() + HLS_LEASE_DURATION_MS / 2 + 1);
+        const { promise, reject } = Promise.withResolvers<void>();
+        mocks.videoStream.extendSession.mockReturnValueOnce(promise);
+        const first = sut.onHeartbeat({ sessionId });
+        const second = sut.onHeartbeat({ sessionId, segmentIndex: 0 });
+        const outcomes = Promise.allSettled([first, second]);
+        const failure = new Error('database unavailable');
+        reject(failure);
+
+        expect(await outcomes).toEqual([
+          { status: 'rejected', reason: failure },
+          { status: 'rejected', reason: failure },
+        ]);
+        expect(mocks.videoStream.extendSession).toHaveBeenCalledTimes(1);
+        await sut.onHeartbeat({ sessionId });
+        expect(mocks.videoStream.extendSession).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the lease unchanged at the exact half-duration boundary', async () => {
+      vi.useFakeTimers();
+      try {
+        await sut.onSessionRequest({ sessionId, assetId, ownerId });
+        vi.setSystemTime(Date.now() + HLS_LEASE_DURATION_MS / 2);
+        await sut.onHeartbeat({ sessionId });
+        expect(mocks.videoStream.extendSession).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('extends the DB lease when remaining time falls below half', async () => {
       vi.useFakeTimers();
       try {
@@ -135,6 +190,29 @@ describe(TranscodingService.name, () => {
 
       expect(mocks.process.spawn).toHaveBeenCalledTimes(1);
       expect(mocks.process.spawn).toHaveBeenCalledWith('ffmpeg', expect.any(Array), expect.any(Object));
+    });
+
+    it('retains only the diagnostic tail of long-running transcodes', async () => {
+      const process = mockSpawn(0, '', '');
+      mocks.process.spawn.mockReturnValue(process);
+      await sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      process.stderr.emit('data', Buffer.from('old startup output\n' + 'x'.repeat(131_072)));
+      process.stderr.emit('data', Buffer.from('\nterminal failure'));
+      const exit = vi.mocked(process.on).mock.calls.find(([event]) => event === 'exit')?.[1];
+      exit?.(1);
+      const message = vi
+        .mocked(mocks.logger.error)
+        .mock.calls.find(
+          ([message]) => typeof message === 'string' && message.startsWith('FFmpeg exited with code 1'),
+        )?.[0];
+      expect(message).toBeTypeOf('string');
+      expect(String(message)).not.toContain('old startup output');
+      expect(String(message)).toMatch(/terminal failure$/);
+      expect(String(message).split('\n').slice(1).join('\n')).toHaveLength(65_536);
+      expect(mocks.websocket.serverSend).toHaveBeenCalledWith('HlsSessionResult', {
+        sessionId,
+        error: 'Transcoding process exited unexpectedly with code 1',
+      });
     });
 
     it('kills and respawns when the variant changes', async () => {

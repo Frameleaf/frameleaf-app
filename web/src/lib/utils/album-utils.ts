@@ -1,11 +1,6 @@
 import type { AlbumResponseDto } from '@frameleaf/sdk';
-import * as sdk from '@frameleaf/sdk';
 import { orderBy } from 'lodash-es';
-import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
-import { goto } from '$app/navigation';
-import { eventManager } from '$lib/managers/event-manager.svelte';
-import { Route } from '$lib/route';
 import {
   AlbumGroupBy,
   AlbumSortBy,
@@ -14,7 +9,6 @@ import {
   locale,
   type AlbumViewSettings,
 } from '$lib/stores/preferences.store';
-import { handleError } from '$lib/utils/handle-error';
 import { normalizeSearchString } from '$lib/utils/string-utils';
 
 /**
@@ -29,42 +23,16 @@ const albumSearchTokens = (value: string) => normalizeSearchString(value).match(
  * somewhere in the album name or description, so `2004 family vacation`
  * matches `2004 - Family Vacation - Disneyland` despite the punctuation.
  */
-export const matchesAlbumSearch = (album: AlbumResponseDto, searchQuery: string) => {
+export const createAlbumSearchPredicate = (searchQuery: string) => {
   const queryTokens = albumSearchTokens(searchQuery);
   if (queryTokens.length === 0) {
-    return true;
+    return () => true;
   }
 
-  const albumText = albumSearchTokens(`${album.albumName} ${album.description}`).join(' ');
-  return queryTokens.every((token) => albumText.includes(token));
-};
-
-/**
- * -------------------------
- * Albums General Management
- * -------------------------
- */
-export const createAlbum = async (name?: string, assetIds?: string[]) => {
-  try {
-    const newAlbum: AlbumResponseDto = await sdk.createAlbum({
-      createAlbumDto: {
-        albumName: name ?? '',
-        assetIds,
-      },
-    });
-    eventManager.emit('AlbumCreate', newAlbum);
-    return newAlbum;
-  } catch (error) {
-    const $t = get(t);
-    handleError(error, $t('errors.failed_to_create_album'));
-  }
-};
-
-export const createAlbumAndRedirect = async (name?: string, assetIds?: string[]) => {
-  const newAlbum = await createAlbum(name, assetIds);
-  if (newAlbum) {
-    await goto(Route.viewAlbum(newAlbum));
-  }
+  return (album: AlbumResponseDto) => {
+    const albumText = albumSearchTokens(`${album.albumName} ${album.description}`).join(' ');
+    return queryTokens.every((token) => albumText.includes(token));
+  };
 };
 
 /**
@@ -121,6 +89,57 @@ export interface AlbumGroup {
   name: string;
   albums: AlbumResponseDto[];
 }
+
+export const groupAlbumsByYear = (
+  albums: AlbumResponseDto[],
+  order: SortOrder,
+  useStartDate: boolean,
+  unknownYear: string,
+): AlbumGroup[] => {
+  const groups = Object.create(null) as Record<string, AlbumGroup>;
+  for (const album of albums) {
+    const date = useStartDate ? album.startDate : album.endDate;
+    const id = date ? String(new Date(date).getFullYear()) : unknownYear;
+    (groups[id] ??= { id, name: id, albums: [] }).albums.push(album);
+  }
+  const sign = order === SortOrder.Desc ? -1 : 1;
+  return Object.values(groups).sort((a, b) => {
+    if (a.id === unknownYear) {
+      return 1;
+    }
+    return b.id === unknownYear ? -1 : (Number.parseInt(a.id) - Number.parseInt(b.id)) * sign;
+  });
+};
+
+export const groupAlbumsByOwner = (
+  albums: AlbumResponseDto[],
+  order: SortOrder,
+  currentUserId: string,
+  language: string | undefined,
+  ownedLabel: string,
+): AlbumGroup[] => {
+  const groups = Object.create(null) as Record<string, AlbumGroup>;
+  for (const album of albums) {
+    const owner = album.albumUsers[0].user;
+    (groups[owner.id] ??= {
+      id: owner.id,
+      name: owner.id === currentUserId ? ownedLabel : owner.name,
+      albums: [],
+    }).albums.push(album);
+  }
+  const sign = order === SortOrder.Desc ? -1 : 1;
+  let collator: Intl.Collator | undefined;
+  return Object.values(groups).sort((a, b) => {
+    if (a.id === currentUserId) {
+      return -sign;
+    }
+    if (b.id === currentUserId) {
+      return sign;
+    }
+    collator ??= new Intl.Collator(language);
+    return collator.compare(a.name, b.name) * sign;
+  });
+};
 
 export interface AlbumGroupOptionMetadata {
   id: AlbumGroupBy;

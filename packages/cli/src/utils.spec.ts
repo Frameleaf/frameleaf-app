@@ -373,6 +373,56 @@ describe('Batcher', () => {
     batcher = new Batcher({ batchSize: 2, onBatch });
   });
 
+  it('preserves an item added synchronously by its batch callback', async () => {
+    const seen: unknown[][] = [];
+    batcher = new Batcher({
+      batchSize: 2,
+      onBatch: async (items) => {
+        seen.push(items);
+        if (seen.length === 1) {
+          batcher.add('later');
+        }
+      },
+    });
+    batcher.add('first');
+    await batcher.flush();
+    await batcher.flush();
+    expect(seen).toEqual([['first'], ['later']]);
+  });
+
+  it('allows callers to await completion and observe a callback failure', async () => {
+    const gate = Promise.withResolvers<void>();
+    batcher = new Batcher({ batchSize: 2, onBatch: () => gate.promise });
+    batcher.add('first');
+    const pending = batcher.flush();
+    expect(pending).toBeInstanceOf(Promise);
+    const failure = new Error('upload failed');
+    const observed = expect(pending).rejects.toBe(failure);
+    gate.reject(failure);
+    await observed;
+  });
+
+  it.each([undefined, 100])('reports an automatic batch failure with debounce %s', async (debounceTimeMs) => {
+    vi.useFakeTimers();
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failure = new Error('upload failed');
+    try {
+      batcher = new Batcher({
+        batchSize: debounceTimeMs ? 2 : 1,
+        debounceTimeMs,
+        onBatch: async () => {
+          throw failure;
+        },
+      });
+      batcher.add('first');
+      await vi.runAllTimersAsync();
+      expect(report).toHaveBeenCalledExactlyOnceWith('Batch failed:', failure);
+    } finally {
+      report.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('should trigger onBatch() when a batch limit is reached', async () => {
     batcher.add('a');
     batcher.add('b');
@@ -383,7 +433,7 @@ describe('Batcher', () => {
 
   it('should trigger onBatch() when flush() is called', async () => {
     batcher.add('a');
-    batcher.flush();
+    await batcher.flush();
     expect(onBatch).toHaveBeenCalledOnce();
     expect(onBatch).toHaveBeenCalledWith(['a']);
   });

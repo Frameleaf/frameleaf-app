@@ -69,6 +69,49 @@ const keyframeRow = (assetId: string, n: number) => ({
 });
 
 describe(AssetRepository.name, () => {
+  it.each(['/archive/photos', String.raw`/archive/100%_done\album`])(
+    'uses literal import-folder boundaries and preserves exclusion/page guards for %s',
+    async (root) => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const library = await ctx.database
+        .insertInto('library')
+        .values({
+          name: 'Literal folder fixture',
+          ownerId: user.id,
+          importPaths: [root],
+          exclusionPatterns: [],
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const add = (originalPath: string, extra = {}) =>
+        ctx.newAsset({
+          ownerId: user.id,
+          libraryId: library.id,
+          isExternal: true,
+          originalPath,
+          ...extra,
+        });
+      const { asset: inside } = await add(`${root}/inside.jpg`);
+      const { asset: nested } = await add(`${root}/nested/inside.jpg`);
+      const { asset: sibling } = await add(`${root}-old/other.jpg`);
+      const { asset: excluded } = await add(`${root}/blocked.jpg`);
+      const { asset: offline } = await add(`${root}-old/offline.jpg`, { isOffline: true });
+      const { asset: internal } = await add(`${root}-old/internal.jpg`, { isExternal: false });
+      const ids = [inside, nested, sibling, excluded, offline, internal].map(({ id }) => id);
+      for (const folder of [root, `${root}/`]) {
+        expect((await sut.getExcludedExternalAssetIds(library.id, ids, [folder], ['**/blocked.jpg'])).sort()).toEqual(
+          [sibling.id, excluded.id].sort(),
+        );
+      }
+      expect((await sut.getExcludedExternalAssetIds(library.id, ids, ['/'], [])).sort()).toEqual([]);
+      expect((await sut.getExcludedExternalAssetIds(library.id, ids, [], [])).sort()).toEqual(
+        [inside.id, nested.id, sibling.id, excluded.id].sort(),
+      );
+      expect(await sut.getExcludedExternalAssetIds(library.id, [inside.id], [root], ['**/blocked.jpg'])).toEqual([]);
+    },
+  );
+
   describe('getTimeBucket', () => {
     it('should order assets by local day first and fileCreatedAt within each day', async () => {
       const { ctx, sut } = setup();

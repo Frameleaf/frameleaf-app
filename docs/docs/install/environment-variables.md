@@ -85,7 +85,6 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `FRAMELEAF_PUSH_URL`           | Frameleaf push gateway address for notifications to the Frameleaf apps: set `https://push.frameleaf.cloud`. Unset means no push notifications are sent.                                                                                                                                 |                              | server     | api, microservices, edge |
 | `FRAMELEAF_IDENTITY_DIR`       | Folder holding this server's identity key. Must be persistent storage.<sup>\*2</sup>                                                                                                                                                                                                    | `<media>/frameleaf/identity` | server     | api, microservices, edge |
 | `FRAMELEAF_LINK_TOKEN`         | Single-use link token (`fll_…`) that links the server to a Frameleaf account when it starts, without a browser.<sup>\*3</sup>                                                                                                                                                           |                              | server     | microservices            |
-| `FRAMELEAF_SETUP_CODE`         | Pins the setup code a new server asks for (8 characters of `ABCDEFGHJKMNPQRSTUVWXYZ23456789`), for automated installs and tests. Unset, a new code is shown on the console at every start. See [Setting up a new server](/administration/system-settings#setting-up-a-new-server).      |                              | server     | api                      |
 | `FRAMELEAF_EDGE_PORT`          | Port of the direct remote-access listener.                                                                                                                                                                                                                                              |            `2443`            | server     | edge                     |
 | `FRAMELEAF_EDGE_BIND`          | Address the direct remote-access listener binds to.                                                                                                                                                                                                                                     |          `0.0.0.0`           | server     | edge                     |
 | `FRAMELEAF_ACME_DIRECTORY_URL` | ACME directory the edge worker obtains its certificates from. Only for Let's Encrypt staging or a test certificate authority.                                                                                                                                                           |        Let's Encrypt         | server     | edge                     |
@@ -218,6 +217,17 @@ To avoid this, you can preload the other models (`visual`, `recognition`, and `d
 Additional machine learning parameters can be tuned from the admin UI.
 
 :::
+
+## Studio render worker
+
+The machine learning container also runs Studio's render worker, so web Studio opens and exports on a default install. The server enrols it at every start and writes its enrolment to the `studio-worker` volume, which only the server (read-write) and the machine learning container (read-only) mount. The worker accepts that enrolment only from the container network. It uses the container's GPU when it has one and the CPU otherwise. On the CPU, projects with effects are refused with a reason instead of being rendered differently.
+
+- `FRAMELEAF_STUDIO_WORKER` (machine learning, default `true`): `false` stops the worker. Web Studio then reports that no render worker is available.
+- `FRAMELEAF_STUDIO_WORKER` (server, default `true`): `false` stops the server enrolling the worker at all.
+- `FRAMELEAF_STUDIO_WORKER_SERVER_URL` (machine learning, default `http://frameleaf-server:2283`): the server as the machine learning container reaches it.
+- `FRAMELEAF_STUDIO_WORKER_MEMORY_BYTES` (machine learning, default half the container's memory, at most 8 GiB): the working memory the worker declares. It decides the largest export resolution offered (2 GiB for 720p, 4 GiB for 1080p, 6 GiB for 1440p, 8 GiB for 2160p).
+- `FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES` (machine learning, default 8 GiB): the most media one export may read.
+- `FRAMELEAF_STUDIO_WORKER_TRUST_DIR` (both, default `/run/frameleaf/studio-worker`): where the enrolment volume is mounted.
 
 ## Prometheus
 

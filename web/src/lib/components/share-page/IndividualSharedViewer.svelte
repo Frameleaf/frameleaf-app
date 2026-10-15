@@ -9,7 +9,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
-  import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
+  import { getDropUploadContext } from '$lib/stores/drag-and-drop-files.store';
   import { handlePromiseError } from '$lib/utils';
   import { downloadArchive, ignoreCancelledDownload, navigateToAsset } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -52,19 +52,12 @@
     namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')),
   );
 
-  // Ends with the page: a subscription left behind would take files dropped on the next share into
-  // this one (FL-56, a link session's data goes with it).
-  const stopDropUploads = dragAndDropFilesStore.subscribe((value) => {
-    if (!(value.isDragging && value.files.length > 0)) {
-      return;
-    }
-    // Only a link that allows uploads takes dropped files; the server refuses the rest anyway.
+  const stopDropUploads = getDropUploadContext()?.register((files) => {
     if (sharedLink.allowUpload) {
-      handlePromiseError(handleUploadAssets(value.files));
+      handlePromiseError(handleUploadAssets(files));
     }
-    dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
-  onDestroy(stopDropUploads);
+  onDestroy(() => stopDropUploads?.());
 
   // A cancelled download is the user's choice, not an error to log.
   const download = (assetIds: string[]) =>

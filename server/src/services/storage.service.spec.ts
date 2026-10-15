@@ -1,3 +1,4 @@
+import { ErrorMessages } from 'src/constants.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { FrameleafStartupError } from 'src/utils/misc.js';
@@ -18,6 +19,49 @@ describe(StorageService.name, () => {
   });
 
   describe('onBootstrap', () => {
+    describe('media root sample verification', () => {
+      beforeEach(() => {
+        mocks.config.getEnv.mockReturnValue(
+          mockEnvData({ storage: { mediaLocation: '/new', importRoots: [], ignoreMountCheckErrors: false } }),
+        );
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(key === SystemMetadataKey.MediaLocation ? { location: '/old' } : { mountChecks: {} }),
+        );
+      });
+
+      it.each([
+        [['/old-sibling/thumb.jpg', '/old/thumb.jpg']],
+        [['/old/thumb.jpg', '/old-sibling/thumb.jpg']],
+        [['/old/thumb.jpg', '/elsewhere/thumb.jpg']],
+      ])('rejects inconsistent samples %j before migration or saving the new root', async (paths) => {
+        mocks.asset.getFileSamples.mockResolvedValue(paths.map((path) => ({ assetId: newUuid(), path })));
+
+        await expect(sut.onBootstrap()).rejects.toThrow(ErrorMessages.InconsistentMediaLocation);
+
+        expect(mocks.database.migrateFilePaths).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(SystemMetadataKey.MediaLocation, expect.anything());
+      });
+
+      it.each([
+        ['/old', ['/old', '/old/thumb.jpg']],
+        ['/old/', ['/old/thumb.jpg', '/old/nested/thumb.jpg']],
+        ['/', ['/thumb.jpg', '/nested/thumb.jpg']],
+        [String.raw`C:\old`, [String.raw`C:\old\thumb.jpg`, String.raw`C:\old/nested/thumb.jpg`]],
+        ['C:\\old\\', [String.raw`C:\old\thumb.jpg`]],
+        [String.raw`\\server\share`, [String.raw`\\server\share\thumb.jpg`]],
+      ])('accepts literal paths under %s', async (location, paths) => {
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(key === SystemMetadataKey.MediaLocation ? { location } : { mountChecks: {} }),
+        );
+        mocks.asset.getFileSamples.mockResolvedValue(paths.map((path) => ({ assetId: newUuid(), path })));
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.migrateFilePaths).toHaveBeenCalledWith(location, '/new');
+        expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MediaLocation, { location: '/new' });
+      });
+    });
+
     it('migrates a verified old marker before checking write access', async () => {
       mocks.config.getEnv.mockReturnValue(
         mockEnvData({ storage: { mediaLocation: '/data', importRoots: [], ignoreMountCheckErrors: false } }),

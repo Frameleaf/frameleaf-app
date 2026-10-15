@@ -403,8 +403,10 @@ export class BuddyBackupPeerService {
         if (response.destroyed) return;
         const chunk = bytes.subarray(offset, offset + 64 * 1024);
         await this.throttle(access, chunk.length, 'read');
-        const writable = await this.dispatch(access, 'read', () => Promise.resolve(response.write(chunk)));
-        if (!writable)
+        await this.dispatch(access, 'read', () => Promise.resolve(response.write(chunk)));
+        // The write returned inside dispatch, whose transaction commits before we get here. A socket that
+        // flushed meanwhile has already emitted 'drain', so wait only while the response still needs one.
+        if (response.writableNeedDrain && !response.destroyed)
           await once(response, 'drain', {
             signal: AbortSignal.timeout(Math.max(1, access.grant.exp * 1000 - Date.now())),
           });

@@ -122,7 +122,6 @@ describe(LibraryScanService.name, () => {
       Promise.resolve(paths),
     );
     mocks.asset.createAll.mockImplementation((rows: unknown[]) => Promise.resolve(rows.map(() => newUuid())));
-    mocks.asset.detectOfflineExternalAssets.mockResolvedValue({ numUpdatedRows: 0n } as never);
     mocks.library.countOnlineAssetsUnder.mockResolvedValue(0);
     mocks.library.getAssetIdPage.mockResolvedValue([]);
     mocks.crypto.hashSha1.mockReturnValue(Buffer.from('hash'));
@@ -504,6 +503,21 @@ describe(LibraryScanService.name, () => {
       }
     });
 
+    it('does not restore a reappearing asset from a sibling of the import folder', async () => {
+      mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'inside' }, { id: 'sibling' }]).mockResolvedValue([]);
+      mocks.assetJob.getForSyncAssets.mockResolvedValue([
+        { id: 'inside', originalPath: '/mnt/photos/inside.jpg', isOffline: true, status: AssetStatus.Active },
+        { id: 'sibling', originalPath: '/mnt/photos-old/sibling.jpg', isOffline: true, status: AssetStatus.Active },
+      ] as never);
+      mocks.asset.getExcludedExternalAssetIds.mockResolvedValue([]);
+      await sut.run(operationOf(), 'token');
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['inside'], { isOffline: false, deletedAt: null });
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining(['sibling']),
+        expect.objectContaining({ isOffline: false }),
+      );
+    });
+
     it('imports new files, checks existing items and completes', async () => {
       const existing = { id: 'asset-1', isOffline: false, libraryId: library.id, status: AssetStatus.Active };
       mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/new.jpg', '/mnt/photos/old.jpg']));
@@ -568,7 +582,7 @@ describe(LibraryScanService.name, () => {
         { examined: 0, sources: 0, close: true },
       ]);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
-      expect(mocks.asset.detectOfflineExternalAssets).not.toHaveBeenCalled();
+      expect(mocks.asset.getExcludedExternalAssetIds).not.toHaveBeenCalled();
       expect(operations.complete).toHaveBeenCalledTimes(1);
     });
 
@@ -614,7 +628,7 @@ describe(LibraryScanService.name, () => {
         { retry: false, executor: undefined },
       );
       expect(mocks.storage.walkLibrary).not.toHaveBeenCalled();
-      expect(mocks.asset.detectOfflineExternalAssets).not.toHaveBeenCalled();
+      expect(mocks.asset.getExcludedExternalAssetIds).not.toHaveBeenCalled();
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });

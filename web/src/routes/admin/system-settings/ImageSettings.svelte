@@ -1,233 +1,350 @@
 <script lang="ts">
-  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
-  import { Colorspace, ImageFormat } from '@frameleaf/sdk';
-  import { reveal } from '$lib/frameleaf/motion';
-
-  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
-  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  /**
+   * Editing & playback › Image previews (FL-366, after the approved prototype
+   * `settings-v2/care/playback.jsx`, `ImagePreviews`): opens on whether previews are being made, then
+   * one choice, "Preview quality", that writes the thumbnail and preview numbers the server keeps
+   * (`$lib/frameleaf/playback-presets`), the full-size switch, and a "Rebuild previews" button that
+   * starts the thumbnail job for every photo (`force`), as the Job manager does. Every `image.*` field
+   * stays in four closed Advanced groups.
+   *
+   * Left for later (server work): the space previews take and each choice would take, a rebuild
+   * scheduled for tonight from the save, a count of photos without a preview, and stopping a rebuild.
+   */
+  import { goto } from '$app/navigation';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Scale from '$lib/components/frameleaf/settings/editing/Scale.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
+  import {
+    applyPreviewQuality,
+    PREVIEW_QUALITIES,
+    previewQualityOf,
+    type PreviewQuality,
+  } from '$lib/frameleaf/playback-presets';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { t } from 'svelte-i18n';
+  import { handleError } from '$lib/utils/handle-error';
+  import { Colorspace, getQueue, ImageFormat, QueueCommand, QueueName, runQueueCommandLegacy } from '@frameleaf/sdk';
+  import { mdiImageMultipleOutline, mdiSync } from '@mdi/js';
+  import { onMount } from 'svelte';
+  import { t, type Translations } from 'svelte-i18n';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
   const configToEdit = $derived(settingsDraft.draft);
   const config = $derived(settingsDraft.baseline);
+
+  const quality = $derived(previewQualityOf(configToEdit.image));
+  const QUALITY_NAME: Record<PreviewQuality, Translations> = {
+    saver: 'frameleaf_play_img_saver',
+    balanced: 'frameleaf_play_img_balanced',
+    sharp: 'frameleaf_play_img_sharp',
+  };
+
+  /** The fields a rebuild would change for photos already in the library. */
+  const previewFields = (image: typeof config.image) =>
+    JSON.stringify([image.thumbnail, image.preview, image.fullsize, image.colorspace, image.extractEmbedded]);
+  const changed = $derived(previewFields(configToEdit.image) !== previewFields(config.image));
+
+  const undo = () => {
+    const saved = $state.snapshot(config.image);
+    configToEdit.image.thumbnail = { ...saved.thumbnail };
+    configToEdit.image.preview = { ...saved.preview };
+    configToEdit.image.fullsize = { ...saved.fullsize };
+    configToEdit.image.colorspace = saved.colorspace;
+    configToEdit.image.extractEmbedded = saved.extractEmbedded;
+  };
+
+  const SIZE_WORDS = [
+    'frameleaf_play_size_smaller',
+    'frameleaf_play_size_small',
+    'frameleaf_play_size_medium',
+    'frameleaf_play_size_large',
+    'frameleaf_play_size_largest',
+  ] as const;
+  const THUMBNAIL_SIZES = [200, 250, 480, 720, 1080];
+  const PREVIEW_SIZES = [720, 1080, 1440, 2160];
+  /** Size choices in words; a size saved outside them is shown as it is and kept. */
+  const sizeOptions = (sizes: number[], current: number) => {
+    const words = sizes.length === THUMBNAIL_SIZES.length ? SIZE_WORDS : SIZE_WORDS.slice(1);
+    return [
+      ...sizes.map((size, index) => ({ value: String(size), label: $t(words[index], { values: { size } }) })),
+      ...(sizes.includes(current)
+        ? []
+        : [{ value: String(current), label: $t('frameleaf_play_size_px', { values: { size: current } }) }]),
+    ];
+  };
+  const FORMATS = [
+    { value: ImageFormat.Webp, label: 'WebP' },
+    { value: ImageFormat.Jpeg, label: 'JPEG' },
+  ];
+
+  type Copy = { format: ImageFormat; progressive?: boolean };
+  /** A WebP picture cannot load progressively, so choosing WebP turns that off, as before. */
+  const setFormat = (copy: Copy, format: string) => {
+    copy.format = format as ImageFormat;
+    if (copy.format === ImageFormat.Webp) {
+      copy.progressive = false;
+    }
+  };
+
+  let waiting = $state(0);
+  let said = $state('');
+  let rebuilding = $state(false);
+
+  onMount(async () => {
+    try {
+      const queue = await getQueue({ name: QueueName.ThumbnailGeneration });
+      waiting = (queue?.statistics.active ?? 0) + (queue?.statistics.waiting ?? 0);
+    } catch {
+      // The status then says what previews are, without a count.
+    }
+  });
+
+  const rebuild = async () => {
+    rebuilding = true;
+    try {
+      await runQueueCommandLegacy({
+        name: QueueName.ThumbnailGeneration,
+        queueCommandDto: { command: QueueCommand.Start, force: true },
+      });
+      said = $t('frameleaf_play_img_rebuild_started');
+    } catch (error) {
+      handleError(error, $t('frameleaf_play_img_rebuild_failed'));
+    } finally {
+      rebuilding = false;
+    }
+  };
 </script>
 
-<div>
-  <div in:reveal>
-    <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <SettingGroup
-        key="thumbnail-settings"
-        title={$t('admin.image_thumbnail_title')}
-        subtitle={$t('admin.image_thumbnail_description')}
-      >
-        <SettingSelect
-          label={$t('admin.image_format')}
-          desc={$t('admin.image_format_description')}
-          bind:value={configToEdit.image.thumbnail.format}
-          options={[
-            { value: ImageFormat.Jpeg, text: 'JPEG' },
-            { value: ImageFormat.Webp, text: 'WebP' },
-          ]}
-          name="format"
-          isEdited={configToEdit.image.thumbnail.format !== config.image.thumbnail.format}
+<KitPage>
+  <Said message={said} onDismiss={() => (said = '')} />
+
+  {#if waiting > 0}
+    <Hero
+      icon={mdiSync}
+      title={$t('frameleaf_play_img_working')}
+      body={$t('frameleaf_play_img_working_body', { values: { count: waiting } })}
+      label={$t('frameleaf_play_img_label')}
+    />
+  {:else}
+    <Hero
+      icon={mdiImageMultipleOutline}
+      title={$t('frameleaf_play_img_ok')}
+      body={$t('frameleaf_play_img_ok_body')}
+      label={$t('frameleaf_play_img_label')}
+    />
+  {/if}
+
+  <Section title={$t('frameleaf_play_img_section')}>
+    <Row
+      label={$t('frameleaf_play_img_quality')}
+      help={quality ? $t(`frameleaf_play_img_${quality}_help` as Translations) : $t('frameleaf_play_img_custom_help')}
+    >
+      <SegmentedControl
+        label={$t('frameleaf_play_img_quality')}
+        options={[
+          ...PREVIEW_QUALITIES.map((value) => ({ value, label: $t(QUALITY_NAME[value]) })),
+          ...(quality ? [] : [{ value: 'custom', label: $t('frameleaf_play_custom') }]),
+        ]}
+        value={quality ?? 'custom'}
+        {disabled}
+        onChange={(value) => {
+          if (value !== 'custom') {
+            applyPreviewQuality(configToEdit.image, value as PreviewQuality);
+          }
+        }}
+      />
+    </Row>
+    <Row label={$t('frameleaf_play_img_full')} help={$t('frameleaf_play_img_full_help')}>
+      <Switch
+        label={$t('frameleaf_play_img_full')}
+        checked={configToEdit.image.fullsize.enabled}
+        held={disabled}
+        onChange={(value) => (configToEdit.image.fullsize.enabled = value)}
+      />
+    </Row>
+    {#if changed}
+      <Notice title={$t('frameleaf_play_img_changed')} tone="warn">
+        {$t('frameleaf_play_img_changed_body')}
+        {#snippet action()}
+          <Button onclick={undo}>{$t('frameleaf_play_undo')}</Button>
+        {/snippet}
+      </Notice>
+    {/if}
+    <Row label={$t('frameleaf_play_img_rebuild_row')} help={$t('frameleaf_play_img_rebuild_help')}>
+      <Button disabled={rebuilding} onclick={rebuild}>{$t('frameleaf_play_img_rebuild')}</Button>
+    </Row>
+    <Row label={$t('frameleaf_play_img_overnight')} help={$t('frameleaf_play_img_overnight_help')}>
+      <Button onclick={() => goto(commandCenterUrl('processing', 'nightly-tasks'))}>
+        {$t('frameleaf_play_overnight_link')}
+      </Button>
+    </Row>
+
+    <Advanced summary={$t('frameleaf_play_adv_thumbnails')}>
+      <p class="hint">{$t('frameleaf_play_adv_thumbnails_hint')}</p>
+      <Row label={$t('frameleaf_play_size')} help={$t('frameleaf_play_size_help')}>
+        <Select
+          label={$t('frameleaf_play_thumbnail_size')}
+          value={String(configToEdit.image.thumbnail.size)}
+          options={sizeOptions(THUMBNAIL_SIZES, configToEdit.image.thumbnail.size)}
           {disabled}
-          onSelect={(value) => {
-            if (value === ImageFormat.Webp) {
-              configToEdit.image.thumbnail.progressive = false;
-            }
-          }}
+          onChange={(value) => (configToEdit.image.thumbnail.size = Number(value))}
         />
-
-        <SettingSelect
-          label={$t('admin.image_resolution')}
-          desc={$t('admin.image_resolution_description')}
-          number
-          bind:value={configToEdit.image.thumbnail.size}
-          options={[
-            { value: 1080, text: '1080p' },
-            { value: 720, text: '720p' },
-            { value: 480, text: '480p' },
-            { value: 250, text: '250p' },
-            { value: 200, text: '200p' },
-          ]}
-          name="resolution"
-          isEdited={configToEdit.image.thumbnail.size !== config.image.thumbnail.size}
+      </Row>
+      <Row label={$t('frameleaf_play_format')} help={$t('frameleaf_play_format_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_play_thumbnail_format')}
+          options={FORMATS}
+          value={configToEdit.image.thumbnail.format}
           {disabled}
+          onChange={(value) => setFormat(configToEdit.image.thumbnail, value)}
         />
-
-        <SettingField
-          inputType={SettingInputFieldType.NUMBER}
-          label={$t('admin.image_quality')}
-          description={$t('admin.image_thumbnail_quality_description')}
-          bind:value={configToEdit.image.thumbnail.quality}
-          isEdited={configToEdit.image.thumbnail.quality !== config.image.thumbnail.quality}
+      </Row>
+      <Row label={$t('frameleaf_play_quality')}>
+        <Scale
+          label={$t('frameleaf_play_thumbnail_quality')}
+          low={$t('frameleaf_play_quality_low')}
+          high={$t('frameleaf_play_quality_high')}
+          value={configToEdit.image.thumbnail.quality}
           {disabled}
+          onChange={(value) => (configToEdit.image.thumbnail.quality = value)}
         />
-
-        <SettingToggle
-          title={$t('admin.image_progressive')}
-          subtitle={$t('admin.image_progressive_description')}
-          checked={configToEdit.image.thumbnail.progressive}
-          onToggle={(isChecked) => (configToEdit.image.thumbnail.progressive = isChecked)}
-          isEdited={configToEdit.image.thumbnail.progressive !== config.image.thumbnail.progressive}
-          disabled={disabled || configToEdit.image.thumbnail.format === ImageFormat.Webp}
+      </Row>
+      <Row label={$t('frameleaf_play_blurry')} help={$t('frameleaf_play_blurry_help')}>
+        <Switch
+          label={$t('frameleaf_play_thumbnail_blurry')}
+          checked={configToEdit.image.thumbnail.progressive ?? false}
+          held={disabled || configToEdit.image.thumbnail.format === ImageFormat.Webp}
+          onChange={(value) => (configToEdit.image.thumbnail.progressive = value)}
         />
-      </SettingGroup>
+      </Row>
+    </Advanced>
 
-      <SettingGroup
-        key="preview-settings"
-        title={$t('admin.image_preview_title')}
-        subtitle={$t('admin.image_preview_description')}
-      >
-        <SettingSelect
-          label={$t('admin.image_format')}
-          desc={$t('admin.image_format_description')}
-          bind:value={configToEdit.image.preview.format}
-          options={[
-            { value: ImageFormat.Jpeg, text: 'JPEG' },
-            { value: ImageFormat.Webp, text: 'WebP' },
-          ]}
-          name="format"
-          isEdited={configToEdit.image.preview.format !== config.image.preview.format}
+    <Advanced summary={$t('frameleaf_play_adv_previews')}>
+      <p class="hint">{$t('frameleaf_play_adv_previews_hint')}</p>
+      <Row label={$t('frameleaf_play_size')} help={$t('frameleaf_play_size_help')}>
+        <Select
+          label={$t('frameleaf_play_preview_size')}
+          value={String(configToEdit.image.preview.size)}
+          options={sizeOptions(PREVIEW_SIZES, configToEdit.image.preview.size)}
           {disabled}
-          onSelect={(value) => {
-            if (value === ImageFormat.Webp) {
-              configToEdit.image.preview.progressive = false;
-            }
-          }}
+          onChange={(value) => (configToEdit.image.preview.size = Number(value))}
         />
-
-        <SettingSelect
-          label={$t('admin.image_resolution')}
-          desc={$t('admin.image_resolution_description')}
-          number
-          bind:value={configToEdit.image.preview.size}
-          options={[
-            { value: 2160, text: '4K' },
-            { value: 1440, text: '1440p' },
-            { value: 1080, text: '1080p' },
-            { value: 720, text: '720p' },
-          ]}
-          name="resolution"
-          isEdited={configToEdit.image.preview.size !== config.image.preview.size}
+      </Row>
+      <Row label={$t('frameleaf_play_format')} help={$t('frameleaf_play_format_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_play_preview_format')}
+          options={FORMATS}
+          value={configToEdit.image.preview.format}
           {disabled}
+          onChange={(value) => setFormat(configToEdit.image.preview, value)}
         />
-
-        <SettingField
-          inputType={SettingInputFieldType.NUMBER}
-          label={$t('admin.image_quality')}
-          description={$t('admin.image_preview_quality_description')}
-          bind:value={configToEdit.image.preview.quality}
-          isEdited={configToEdit.image.preview.quality !== config.image.preview.quality}
+      </Row>
+      <Row label={$t('frameleaf_play_quality')}>
+        <Scale
+          label={$t('frameleaf_play_preview_quality')}
+          low={$t('frameleaf_play_quality_low')}
+          high={$t('frameleaf_play_quality_high')}
+          value={configToEdit.image.preview.quality}
           {disabled}
+          onChange={(value) => (configToEdit.image.preview.quality = value)}
         />
-
-        <SettingToggle
-          title={$t('admin.image_progressive')}
-          subtitle={$t('admin.image_progressive_description')}
-          checked={configToEdit.image.preview.progressive}
-          onToggle={(isChecked) => (configToEdit.image.preview.progressive = isChecked)}
-          isEdited={configToEdit.image.preview.progressive !== config.image.preview.progressive}
-          disabled={disabled || configToEdit.image.preview.format === ImageFormat.Webp}
+      </Row>
+      <Row label={$t('frameleaf_play_blurry')} help={$t('frameleaf_play_blurry_help')}>
+        <Switch
+          label={$t('frameleaf_play_preview_blurry')}
+          checked={configToEdit.image.preview.progressive ?? false}
+          held={disabled || configToEdit.image.preview.format === ImageFormat.Webp}
+          onChange={(value) => (configToEdit.image.preview.progressive = value)}
         />
-      </SettingGroup>
+      </Row>
+    </Advanced>
 
-      <SettingGroup
-        key="fullsize-settings"
-        title={$t('admin.image_fullsize_title')}
-        subtitle={$t('admin.image_fullsize_description')}
-      >
-        <SettingToggle
-          title={$t('admin.image_fullsize_enabled')}
-          subtitle={$t('admin.image_fullsize_enabled_description')}
-          checked={configToEdit.image.fullsize.enabled}
-          onToggle={(isChecked) => (configToEdit.image.fullsize.enabled = isChecked)}
-          isEdited={configToEdit.image.fullsize.enabled !== config.image.fullsize.enabled}
-          {disabled}
-        />
-
-        <hr class="my-4" />
-
-        <SettingSelect
-          label={$t('admin.image_format')}
-          desc={$t('admin.image_format_description')}
-          bind:value={configToEdit.image.fullsize.format}
-          options={[
-            { value: ImageFormat.Jpeg, text: 'JPEG' },
-            { value: ImageFormat.Webp, text: 'WebP' },
-          ]}
-          name="format"
-          isEdited={configToEdit.image.fullsize.format !== config.image.fullsize.format}
+    <Advanced summary={$t('frameleaf_play_adv_full')}>
+      <p class="hint">{$t('frameleaf_play_adv_full_hint')}</p>
+      <Row label={$t('frameleaf_play_format')} help={$t('frameleaf_play_format_full_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_play_full_format')}
+          options={FORMATS}
+          value={configToEdit.image.fullsize.format}
           disabled={disabled || !configToEdit.image.fullsize.enabled}
-          onSelect={(value) => {
-            if (value === ImageFormat.Webp) {
-              configToEdit.image.fullsize.progressive = false;
-            }
-          }}
+          onChange={(value) => setFormat(configToEdit.image.fullsize, value)}
         />
-
-        <SettingField
-          inputType={SettingInputFieldType.NUMBER}
-          label={$t('admin.image_quality')}
-          description={$t('admin.image_fullsize_quality_description')}
-          bind:value={configToEdit.image.fullsize.quality}
-          isEdited={configToEdit.image.fullsize.quality !== config.image.fullsize.quality}
+      </Row>
+      <Row label={$t('frameleaf_play_quality')}>
+        <Scale
+          label={$t('frameleaf_play_full_quality')}
+          low={$t('frameleaf_play_quality_low')}
+          high={$t('frameleaf_play_quality_high')}
+          value={configToEdit.image.fullsize.quality}
           disabled={disabled || !configToEdit.image.fullsize.enabled}
+          onChange={(value) => (configToEdit.image.fullsize.quality = value)}
         />
-
-        <SettingToggle
-          title={$t('admin.image_progressive')}
-          subtitle={$t('admin.image_progressive_description')}
-          checked={configToEdit.image.fullsize.progressive}
-          onToggle={(isChecked) => (configToEdit.image.fullsize.progressive = isChecked)}
-          isEdited={configToEdit.image.fullsize.progressive !== config.image.fullsize.progressive}
-          disabled={disabled ||
+      </Row>
+      <Row label={$t('frameleaf_play_blurry')} help={$t('frameleaf_play_blurry_help')}>
+        <Switch
+          label={$t('frameleaf_play_full_blurry')}
+          checked={configToEdit.image.fullsize.progressive ?? false}
+          held={disabled ||
             !configToEdit.image.fullsize.enabled ||
             configToEdit.image.fullsize.format === ImageFormat.Webp}
+          onChange={(value) => (configToEdit.image.fullsize.progressive = value)}
         />
-      </SettingGroup>
+      </Row>
+    </Advanced>
 
-      <div class="mt-4">
-        <SettingToggle
-          title={$t('admin.image_prefer_wide_gamut')}
-          subtitle={$t('admin.image_prefer_wide_gamut_setting_description')}
-          checked={configToEdit.image.colorspace === Colorspace.P3}
-          onToggle={(isChecked) => (configToEdit.image.colorspace = isChecked ? Colorspace.P3 : Colorspace.Srgb)}
-          isEdited={configToEdit.image.colorspace !== config.image.colorspace}
+    <Advanced summary={$t('frameleaf_play_adv_colour')}>
+      <Row label={$t('frameleaf_play_colour')} help={$t('frameleaf_play_colour_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_play_colour')}
+          options={[
+            { value: Colorspace.P3, label: $t('frameleaf_play_colour_p3') },
+            { value: Colorspace.Srgb, label: $t('frameleaf_play_colour_srgb') },
+          ]}
+          value={configToEdit.image.colorspace}
           {disabled}
+          onChange={(value) => (configToEdit.image.colorspace = value as Colorspace)}
         />
-      </div>
-
-      <div class="mt-4">
-        <SettingToggle
-          title={$t('admin.image_prefer_embedded_preview')}
-          subtitle={$t('admin.image_prefer_embedded_preview_setting_description')}
+      </Row>
+      <Row label={$t('frameleaf_play_camera')} help={$t('frameleaf_play_camera_help')}>
+        <Switch
+          label={$t('frameleaf_play_camera')}
           checked={configToEdit.image.extractEmbedded}
-          onToggle={() => (configToEdit.image.extractEmbedded = !configToEdit.image.extractEmbedded)}
-          isEdited={configToEdit.image.extractEmbedded !== config.image.extractEmbedded}
-          {disabled}
+          held={disabled}
+          onChange={(value) => (configToEdit.image.extractEmbedded = value)}
         />
-      </div>
-
-      <div class="mt-4">
-        <SettingToggle
-          title={$t('admin.image_enhanced_raw_rendering')}
-          subtitle={$t('admin.image_enhanced_raw_rendering_description')}
+      </Row>
+      <Row label={$t('frameleaf_play_raw')} help={$t('frameleaf_play_raw_help')}>
+        <Switch
+          label={$t('frameleaf_play_raw')}
           checked={configToEdit.image.enhancedRaw?.enabled !== false}
-          onToggle={(isChecked) => (configToEdit.image.enhancedRaw = { enabled: isChecked })}
-          isEdited={(configToEdit.image.enhancedRaw?.enabled !== false) !==
-            (config.image.enhancedRaw?.enabled !== false)}
-          {disabled}
+          held={disabled}
+          onChange={(value) => (configToEdit.image.enhancedRaw = { enabled: value })}
         />
-      </div>
+      </Row>
+    </Advanced>
+  </Section>
 
-      <SettingActions keys={['image']} {disabled} />
-    </form>
-  </div>
-</div>
+  <SettingActions keys={['image']} {disabled} />
+</KitPage>
+
+<style>
+  .hint {
+    max-width: 560px;
+    margin: 0 0 var(--fl-space-3);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
+  }
+</style>

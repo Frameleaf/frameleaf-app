@@ -19,6 +19,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
+  IntegrityReportClearResponseDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
 } from 'src/dtos/integrity.dto.js';
@@ -255,6 +256,22 @@ export class IntegrityService extends BaseService {
     }
   }
 
+  /**
+   * FL-366 "Clear this list": forgets one finding without acting on it. Unlike
+   * `deleteIntegrityReport`, nothing is trashed or deleted; the next check reports it again if the
+   * problem is still there.
+   */
+  async dismissIntegrityReport(id: string): Promise<void> {
+    await this.integrityRepository.getById(id);
+    await this.integrityRepository.deleteById(id);
+  }
+
+  /** FL-366 "Clear this list" for a whole check: empties its findings and touches no file or photo. */
+  async clearIntegrityReports(type: IntegrityReport): Promise<IntegrityReportClearResponseDto> {
+    const cleared = await this.integrityRepository.deleteByType(type);
+    return { cleared };
+  }
+
   private async queueRefreshAllUntrackedFiles() {
     this.logger.log(`Checking for out of date untracked file reports...`);
 
@@ -412,12 +429,7 @@ export class IntegrityService extends BaseService {
           return reportId;
         }
 
-        try {
-          await this.storageRepository.stat(path);
-          return;
-        } catch {
-          return reportId;
-        }
+        return (await this.pathExists(path)) ? undefined : reportId;
       }),
     );
 
@@ -491,38 +503,37 @@ export class IntegrityService extends BaseService {
     return status;
   }
 
+  private async pathExists(path: string): Promise<boolean> {
+    try {
+      await this.storageRepository.stat(path);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw error;
+      }
+      return false;
+    }
+  }
+
   private async checkMissingFiles({ items }: Omit<IIntegrityMissingFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${items.length} files to check if they are missing.`);
 
-    const results = await Promise.all(
-      items.map(async (item) => {
-        try {
-          await this.storageRepository.stat(item.path);
-          return { ...item, exists: true };
-        } catch {
-          return { ...item, exists: false };
-        }
-      }),
-    );
+    const exists = await Promise.all(items.map(({ path }) => this.pathExists(path)));
 
-    const outdatedReports = results
-      .filter(({ exists, reportId }) => exists && reportId)
-      .map(({ reportId }) => reportId!);
-
+    const outdatedReports: string[] = [];
+    const missingFiles = [];
+    for (const [index, { reportId, path, assetId, fileAssetId }] of items.entries()) {
+      if (!exists[index]) {
+        missingFiles.push({ type: IntegrityReport.MissingFile, path, assetId, fileAssetId });
+      } else if (reportId) {
+        outdatedReports.push(reportId);
+      }
+    }
     if (outdatedReports.length > 0) {
       await this.integrityRepository.deleteByIds(outdatedReports);
     }
-
-    const missingFiles = results.filter(({ exists }) => !exists);
     if (missingFiles.length > 0) {
-      await this.integrityRepository.create(
-        missingFiles.map(({ path, assetId, fileAssetId }) => ({
-          type: IntegrityReport.MissingFile,
-          path,
-          assetId,
-          fileAssetId,
-        })),
-      );
+      await this.integrityRepository.create(missingFiles);
     }
 
     this.logger.log(`Processed ${items.length} and found ${missingFiles.length} missing file(s).`);
@@ -535,12 +546,7 @@ export class IntegrityService extends BaseService {
 
     const results = await Promise.all(
       paths.map(async ({ reportId, path }) => {
-        try {
-          await this.storageRepository.stat(path);
-          return reportId;
-        } catch {
-          return;
-        }
+        return (await this.pathExists(path)) ? reportId : undefined;
       }),
     );
 
@@ -777,9 +783,10 @@ export class IntegrityService extends BaseService {
             }),
           ]);
         } catch (error) {
-          if ((error as { code?: string }).code === 'ENOENT') {
+          if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
             return reportId;
           }
+          throw error;
         }
 
         if (Buffer.from(checksum, 'hex').equals(hash.digest())) {

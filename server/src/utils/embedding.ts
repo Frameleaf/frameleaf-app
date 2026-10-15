@@ -7,16 +7,21 @@ export const parseEmbedding = (raw: string | undefined | null): Float32Array | u
   if (!raw) {
     return;
   }
-  // pgvector / ML service format: "[0.01, 0.02, ...]"
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+  let values: unknown;
+  try {
+    values = JSON.parse(raw);
+  } catch {
     return;
   }
-  const parts = trimmed.slice(1, -1).split(',');
-  const out = new Float32Array(parts.length);
-  for (let i = 0; i < parts.length; i++) {
-    // eslint-disable-next-line unicorn/prefer-number-coercion -- Number('') is 0, which would silently accept empty segments; parseFloat keeps them NaN so the guard below rejects malformed vectors.
-    out[i] = Number.parseFloat(parts[i]);
+  if (!Array.isArray(values) || values.length === 0) {
+    return;
+  }
+  const out = new Float32Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    if (typeof values[i] !== 'number') {
+      return;
+    }
+    out[i] = values[i];
     if (!Number.isFinite(out[i])) {
       return;
     }

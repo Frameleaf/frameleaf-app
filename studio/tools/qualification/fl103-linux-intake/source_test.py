@@ -13,8 +13,9 @@ class SourceChecks(unittest.TestCase):
   for path in HERE.glob('*.py'):ast.parse(path.read_text())
  def test_exact_current_recipe_and_lock(self):
   data=json.loads((ROOT/'studio/engine-build.json').read_text())
-  self.assertEqual(len(data['patches']),133)
-  self.assertEqual(data['sourceSha256'],'3aed97c3a3e98844f1d742d1d53acc6094a6b92e478c4db1bd27ac972c7a66ce')
+  # The intake's pin must name the recipe this checkout builds, so it refuses any other source.
+  self.assertEqual(intake.RECIPE_PATCH_COUNT,len(data['patches']))
+  self.assertEqual(intake.RECIPE_SOURCE_SHA256,data['sourceSha256'])
   self.assertEqual(intake.digest(ROOT/'studio/engine-package-lock.json'),data['lockfileSha256'])
   for item in data['patches']:self.assertEqual(intake.digest(ROOT/'studio'/item['path']),item['sha256'])
  def test_unit_scopes_and_limits(self):

@@ -49,7 +49,6 @@ const ActivitySearchSchema = ActivitySchema.extend({
 
 const ActivityCreateSchema = ActivitySchema.extend({
   type: ReactionTypeSchema,
-  assetId: z.uuidv4().optional().describe('Asset ID (if activity is for an asset)'),
   comment: z.string().optional().describe('Comment text (required if type is comment)'),
 })
   .refine((data) => data.type !== ReactionType.COMMENT || (data.comment && data.comment.trim() !== ''), {

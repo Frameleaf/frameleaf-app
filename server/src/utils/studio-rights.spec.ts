@@ -26,12 +26,12 @@ const row = (uses: Partial<Record<StudioRightsUse, 'allowed' | 'blocked'>> = {})
 });
 
 const MUSICGEN = 'model:Xenova/musicgen-small';
+const CHANGED_ONNX = 'runtime:onnx-cdn';
 
 /**
- * Rows whose locator changed when the ONNX Runtime and Whisper runtimes were bundled with the engine
- * (studio patch 0029), approved again by the owner at their new digests on 2026-09-29.
+ * The Whisper runtime still matches its September 29 approval; the ONNX runtime changed again.
  */
-const REAPPROVED = new Set(['runtime:onnx-cdn', 'runtime:whisper-transformers']);
+const REAPPROVED = new Set(['runtime:whisper-transformers']);
 /** The Supertonic model and the 64 voices, pinned to a commit and approved again on 2026-09-29. */
 const isPinned = (id: string) => /^voice:(kokoro|supertonic)-|^model:supertonic-3$/.test(id);
 
@@ -60,10 +60,10 @@ describe('studio rights (FL-86)', () => {
     const hostedBlocked = Object.entries(studioResourceRights)
       .filter(([, rights]) => rights.hostedUse !== 'allowed')
       .map(([id]) => id);
-    expect(hostedBlocked).toEqual([MUSICGEN]);
+    expect(hostedBlocked).toEqual([MUSICGEN, CHANGED_ONNX]);
   });
 
-  it('admits every one of the 210 resources the owner approved, and records the approval (FL-146)', () => {
+  it('admits current approvals and blocks the changed ONNX runtime (FL-146)', () => {
     const rows = Object.entries(studioResourceRights);
     expect(rows).toHaveLength(210);
     expect(STUDIO_RIGHTS_APPROVAL).toMatchObject({
@@ -71,6 +71,18 @@ describe('studio rights (FL-86)', () => {
       source: expect.stringContaining('FL-146'),
     });
     for (const [id, rights] of rows) {
+      if (id === CHANGED_ONNX) {
+        expect(rights).toMatchObject({
+          approvedOn: null,
+          redistribution: 'blocked',
+          localRuntime: 'blocked',
+          hostedUse: 'blocked',
+        });
+        for (const use of Object.values(StudioRightsUse)) {
+          expect(checkStudioRights(id, use, studioResourceRights, true)).toMatchObject({ allowed: false, id });
+        }
+        continue;
+      }
       if (id === 'model:onnx-community/whisper-tiny_timestamped') {
         // The owner approved this exact seven-file model inventory again on October 3.
         expect(rights.approvedOn, id).toBe('2026-10-03');

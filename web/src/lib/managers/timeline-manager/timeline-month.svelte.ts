@@ -13,11 +13,8 @@ import {
   formatGroupTitle,
   formatTimelineMonthTitle,
   fromTimelinePlainDate,
-  fromTimelinePlainDateTime,
   fromTimelinePlainYearMonth,
   getTimes,
-  setDifference,
-  type TimelineDateTime,
   type TimelineYearMonth,
   getOrderingDate,
 } from '$lib/utils/timeline-util';
@@ -165,13 +162,13 @@ export class TimelineMonth {
     }
     const { timelineDays } = this;
     let combinedChangedGeometry = false;
-    let idsToProcess = new SvelteSet(ids);
+    const idsToProcess = new SvelteSet(ids);
     const idsProcessed = new SvelteSet<string>();
     const combinedMoveAssets: MoveAsset[][] = [];
     let index = timelineDays.length;
     while (index--) {
       if (idsToProcess.size === 0) {
-        continue;
+        break;
       }
 
       const group = timelineDays[index];
@@ -179,8 +176,8 @@ export class TimelineMonth {
       if (moveAssets.length > 0) {
         combinedMoveAssets.push(moveAssets);
       }
-      idsToProcess = setDifference(idsToProcess, processedIds);
       for (const id of processedIds) {
+        idsToProcess.delete(id);
         idsProcessed.add(id);
       }
       combinedChangedGeometry ||= changedGeometry;
@@ -419,21 +416,6 @@ export class TimelineMonth {
         return asset;
       }
     }
-  }
-
-  findClosest(target: TimelineDateTime) {
-    const targetDate = fromTimelinePlainDateTime(target);
-    let closest = undefined;
-    let smallestDiff = Infinity;
-    for (const current of this.assetsIterator()) {
-      const currentAssetDate = fromTimelinePlainDateTime(getOrderingDate(current, this.#dateType));
-      const diff = Math.abs(targetDate.diff(currentAssetDate).as('milliseconds'));
-      if (diff < smallestDiff) {
-        smallestDiff = diff;
-        closest = current;
-      }
-    }
-    return closest;
   }
 
   cancel() {

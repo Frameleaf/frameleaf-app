@@ -3,7 +3,7 @@ import { expect, Page, test } from '@playwright/test';
 import { asBearerAuth, dockerExec, utils } from 'src/utils.js';
 
 /**
- * FL-81: the integrity checks and their report viewer against the real server — a scan, a specific
+ * FL-81 / FL-366: File checks and its path-by-path list against the real server — a scan, a specific
  * repair, the refresh ("Recheck findings"), pagination and deleting a whole report. The files live
  * in the server container's upload folder; other specs may leave untracked files there, so counts
  * are relative and the rows are found by path.
@@ -11,6 +11,8 @@ import { asBearerAuth, dockerExec, utils } from 'src/utils.js';
 test.describe.configure({ mode: 'serial' });
 
 const integrity = '/user-settings?area=maintenance&section=integrity';
+// FL-366: Maintenance's address opens the one File checks page.
+const fileChecks = '/user-settings?area=care&section=integrity-checks';
 const untrackedReport = `${integrity}&report=untracked_file`;
 const row = (page: Page, path: string) => page.getByRole('row').filter({ hasText: path });
 
@@ -36,25 +38,27 @@ test.describe('Integrity', () => {
     await utils.mkFolder(folder);
   });
 
-  test('a check run from its card counts the new untracked file', async ({ context, page }) => {
+  test('"Check now" on Stray files counts the new untracked file', async ({ context, page }) => {
     await runUntrackedCheck();
     await utils.setAuthCookies(context, admin.accessToken);
-    await page.goto(integrity);
+    await page.goto(fileChecks);
 
-    // Each check is the prototype's card (`Maintenance.jsx:449-491`): "Last run … · n findings".
-    const card = page.getByRole('article', { name: 'Untracked Files' });
-    const line = card.getByText(/Last run .* · \d+ findings?/);
+    // Each check is a row of "What is checked": its switch, "<n> found" or "None found", and "Check now".
+    const checkNow = page.getByRole('button', { name: 'Check for Stray files now' });
+    const check = page.getByRole('listitem').filter({ has: checkNow });
+    // The row's status pill: "<n> found", or "None found" / "Not checked yet" when nothing is listed.
+    const status = check.locator('.kit-pill');
     const findings = async () => {
-      const text = await line.textContent();
-      return Number(text?.match(/(\d+) findings?/)?.[1]);
+      const text = (await status.textContent()) ?? '';
+      return /\d/.test(text) ? Number(text.replaceAll(/\D/g, '')) : 0;
     };
     const previous = await findings();
 
     await utils.putTextFile('untracked', `${folder}/untracked1.png`);
-    await card.getByRole('button', { name: 'Run check' }).click();
+    await checkNow.click();
 
     await expect.poll(findings, { timeout: 20_000 }).toBe(previous + 1);
-    await expect(card.getByRole('button', { name: 'Run check' })).toBeEnabled();
+    await expect(checkNow).toBeEnabled();
   });
 
   test('deleting one finding removes that file and only that finding', async ({ context, page }) => {
@@ -64,7 +68,7 @@ test.describe('Integrity', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(untrackedReport);
-    await expect(page.getByRole('heading', { name: 'Untracked Files report' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Stray files report' })).toBeVisible();
     await page.getByLabel('Filter findings by path').fill(`${folder}/untracked`);
     await expect(row(page, `${folder}/untracked1.png`)).toBeVisible();
 

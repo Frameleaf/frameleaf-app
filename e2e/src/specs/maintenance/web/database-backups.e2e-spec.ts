@@ -1,6 +1,5 @@
 import { LoginResponseDto } from '@frameleaf/sdk';
 import { expect, Page, test } from '@playwright/test';
-import { setupCode } from 'src/fixtures.js';
 import { utils } from 'src/utils.js';
 
 /**
@@ -163,8 +162,6 @@ test.describe('Database Backups', () => {
     await utils.resetDatabase();
 
     await page.goto('/');
-    // FL-292: the restore entry on an unclaimed server takes the setup code.
-    await page.getByLabel('Setup code', { exact: true }).fill(setupCode);
     await page.getByRole('button', { name: 'Restore from backup' }).click();
 
     try {

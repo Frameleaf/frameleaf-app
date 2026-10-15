@@ -2,7 +2,6 @@ import {
   AssetMediaSize,
   AssetVisibility,
   bulkTagAssets,
-  createStack,
   deleteAssets,
   deleteStacks,
   downloadArchive as requestArchive,
@@ -14,11 +13,9 @@ import {
   updateAsset,
   updateAssets,
   type AssetResponseDto,
-  type AssetTypeEnum,
   type DownloadArchiveInfo,
   type DownloadInfoDto,
   type DownloadResponseDto,
-  type ExifResponseDto,
   type StackResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
@@ -299,24 +296,6 @@ export const downloadAssetFile = ({
     ),
   );
 
-/**
- * Returns the lowercase filename extension without a dot (.) and
- * an empty string when not found.
- */
-export function getFilenameExtension(filename: string): string {
-  const lastIndex = Math.max(0, filename.lastIndexOf('.'));
-  const startIndex = (lastIndex || Infinity) + 1;
-  return filename.slice(startIndex).toLowerCase();
-}
-
-/**
- * Returns the filename of an asset including file extension
- */
-export function getAssetFilename(asset: AssetResponseDto): string {
-  const fileExtension = getFilenameExtension(asset.originalPath);
-  return `${asset.originalFileName}.${fileExtension}`;
-}
-
 function isRotated90CW(orientation: number) {
   return [5, 6, 90].includes(orientation);
 }
@@ -329,15 +308,6 @@ export function isFlipped(orientation?: string | null) {
   const value = Number(orientation);
   return value && (isRotated270CW(value) || isRotated90CW(value));
 }
-
-export const getDimensions = (exifInfo: ExifResponseDto) => {
-  const { exifImageWidth: width, exifImageHeight: height } = exifInfo;
-  if (isFlipped(exifInfo.orientation)) {
-    return { width: height, height: width };
-  }
-
-  return { width, height };
-};
 
 export function getFileSize(asset: AssetResponseDto, maxPrecision = 4): string {
   const size = asset.exifInfo?.fileSizeInByte || 0;
@@ -391,33 +361,37 @@ async function addSupportedMimeTypes(): Promise<void> {
     return;
   }
 
-  if (globalThis.isSecureContext && typeof ImageDecoder !== 'undefined') {
-    const dynamicMimeTypes = [{ type: 'image/jxl' }, { type: 'image/heic', aliases: ['image/heif'] }];
-
-    for (const mime of dynamicMimeTypes) {
-      const isMimeTypeSupported = await ImageDecoder.isTypeSupported(mime.type);
-      if (isMimeTypeSupported) {
-        for (const mimeType of [mime.type, ...(mime.aliases || [])]) {
-          supportedImageMimeTypes.add(mimeType);
+  const probes = [
+    { type: 'image/jxl', aliases: [], sample: 'data:image/jxl;base64,/woIAAAMABKIAgC4AF3lEgA=' },
+    {
+      type: 'image/heic',
+      aliases: ['image/heif'],
+      sample:
+        'data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAABrW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAAAAAAAAAAAAAADnBpdG0AAAAAAAIAAAAQaWRhdAAAAAAAAQABAAAAOGlsb2MBAAAAREAAAgABAAAAAAAAAc0AAQAAAAAAAAAsAAIAAQAAAAAAAAABAAAAAAAAAAgAAAA4aWluZgAAAAAAAgAAABVpbmZlAgAAAQABAABodmMxAAAAABVpbmZlAgAAAAACAABncmlkAAAAANhpcHJwAAAAtmlwY28AAAB2aHZjQwEDcAAAAAAAAAAAAB7wAPz9+PgAAA8DIAABABhAAQwB//8DcAAAAwCQAAADAAADAB66AkAhAAEAKkIBAQNwAAADAJAAAAMAAAMAHqAggQWW6q6a5uBAQMCAAAADAIAAAAMAhCIAAQAGRAHBc8GJAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAUaXNwZQAAAAAAAABAAAAAQAAAABBwaXhpAAAAAAMICAgAAAAaaXBtYQAAAAAAAAACAAECgQMAAgIChAAAABppcmVmAAAAAAAAAA5kaW1nAAIAAQABAAAANG1kYXQAAAAoKAGvCchMZYA50NoPIfzz81Qfsm577GJt3lf8kLAr+NbNIoeRR7JeYA==',
+    },
+  ];
+  await Promise.all(
+    probes.map(async ({ type, aliases, sample }) => {
+      const enable = () => {
+        for (const mime of [type, ...aliases]) {
+          supportedImageMimeTypes.add(mime);
+        }
+      };
+      if (globalThis.isSecureContext && typeof ImageDecoder !== 'undefined') {
+        try {
+          if (await ImageDecoder.isTypeSupported(type)) {
+            enable();
+          }
+          return;
+        } catch {
+          // A failed capability query can still use the browser's image decoder.
         }
       }
-    }
-
-    return;
-  }
-
-  const jxlImg = new Image();
-  jxlImg.addEventListener('load', () => {
-    supportedImageMimeTypes.add('image/jxl');
-  });
-  jxlImg.src = 'data:image/jxl;base64,/woIAAAMABKIAgC4AF3lEgA='; // Small valid JPEG XL image
-
-  const heicImg = new Image();
-  heicImg.addEventListener('load', () => {
-    supportedImageMimeTypes.add('image/heic');
-  });
-  heicImg.src =
-    'data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAABrW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAAAAAAAAAAAAAADnBpdG0AAAAAAAIAAAAQaWRhdAAAAAAAAQABAAAAOGlsb2MBAAAAREAAAgABAAAAAAAAAc0AAQAAAAAAAAAsAAIAAQAAAAAAAAABAAAAAAAAAAgAAAA4aWluZgAAAAAAAgAAABVpbmZlAgAAAQABAABodmMxAAAAABVpbmZlAgAAAAACAABncmlkAAAAANhpcHJwAAAAtmlwY28AAAB2aHZjQwEDcAAAAAAAAAAAAB7wAPz9+PgAAA8DIAABABhAAQwB//8DcAAAAwCQAAADAAADAB66AkAhAAEAKkIBAQNwAAADAJAAAAMAAAMAHqAggQWW6q6a5uBAQMCAAAADAIAAAAMAhCIAAQAGRAHBc8GJAAAAFGlzcGUAAAAAAAAAAQAAAAEAAAAUaXNwZQAAAAAAAABAAAAAQAAAABBwaXhpAAAAAAMICAgAAAAaaXBtYQAAAAAAAAACAAECgQMAAgIChAAAABppcmVmAAAAAAAAAA5kaW1nAAIAAQABAAAANG1kYXQAAAAoKAGvCchMZYA50NoPIfzz81Qfsm577GJt3lf8kLAr+NbNIoeRR7JeYA=='; // Small valid HEIC/HEIF image
+      const image = new Image();
+      image.addEventListener('load', enable, { once: true });
+      image.src = sample;
+    }),
+  );
 }
 // eslint-disable-next-line unicorn/no-top-level-side-effects
 void addSupportedMimeTypes();
@@ -433,52 +407,9 @@ export function isWebCompatibleImage(asset: AssetResponseDto): boolean {
   return supportedImageMimeTypes.has(asset.originalMimeType);
 }
 
-export const getAssetType = (type: AssetTypeEnum) => {
-  switch (type) {
-    case 'IMAGE': {
-      return 'Photo';
-    }
-    case 'VIDEO': {
-      return 'Video';
-    }
-    default: {
-      return 'Asset';
-    }
-  }
-};
-
 export type StackResponse = {
   stack?: StackResponseDto;
   toDeleteIds: string[];
-};
-
-export const stackAssets = async (assets: { id: string }[], showNotification = true): Promise<StackResponse> => {
-  if (assets.length < 2) {
-    return { stack: undefined, toDeleteIds: [] };
-  }
-
-  const $t = get(t);
-
-  try {
-    const stack = await createStack({ stackCreateDto: { assetIds: assets.map(({ id }) => id) } });
-    if (showNotification) {
-      toastManager.primary({
-        description: $t('stacked_assets_count', { values: { count: stack.assets.length } }),
-        button: {
-          label: $t('view_stack'),
-          onclick: () => navigate({ targetRoute: 'current', assetId: stack.primaryAssetId }),
-        },
-      });
-    }
-
-    return {
-      stack,
-      toDeleteIds: assets.slice(1).map((asset) => asset.id),
-    };
-  } catch (error) {
-    handleError(error, $t('errors.failed_to_stack_assets'));
-    return { stack: undefined, toDeleteIds: [] };
-  }
 };
 
 export const deleteStack = async (stackIds: string[]) => {

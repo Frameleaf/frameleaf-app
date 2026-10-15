@@ -14,11 +14,12 @@ export const createSession = async (
   user: UserAdmin,
   loginDetails: LoginDetails,
   oauth: { sid?: string; bearerToken?: string } = {},
+  expectedPassword?: string,
 ) => {
   const token = deps.cryptoRepository.randomBytesAsText(32);
   const hashed = deps.cryptoRepository.hashSha256(token);
 
-  const session = await deps.sessionRepository.create({
+  const dto = {
     token: hashed,
     deviceOS: loginDetails.deviceOS,
     deviceType: loginDetails.deviceType,
@@ -26,7 +27,11 @@ export const createSession = async (
     userId: user.id,
     oauthSid: oauth.sid ?? null,
     oauthBearerToken: oauth.bearerToken ?? null,
-  });
+  };
+  const session =
+    expectedPassword === undefined
+      ? await deps.sessionRepository.create(dto)
+      : await deps.sessionRepository.create(dto, expectedPassword);
 
   return { session, response: mapLoginResponse(user, token) };
 };

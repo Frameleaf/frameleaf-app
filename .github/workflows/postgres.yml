@@ -10,14 +10,14 @@ name: Postgres Image
 'on':
   pull_request:
     branches:
-      - fork/main
+      - main
       - master/frameleaf-implementation
     paths:
       - docker/postgres/**
       - .github/workflows/postgres.yml
   push:
     branches:
-      - fork/main
+      - main
     paths:
       - docker/postgres/**
       - .github/workflows/postgres.yml
@@ -131,7 +131,7 @@ jobs:
     if:
       ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true' &&
       github.event_name == 'workflow_dispatch' && inputs.publish &&
-      (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' ||
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master/frameleaf-implementation' ||
       github.ref == 'refs/heads/aj/FL-333-pg19') }}
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 45
@@ -162,7 +162,7 @@ jobs:
             exit 1
           fi
           case "$SOURCE_REF" in
-            refs/heads/fork/main|refs/heads/master/frameleaf-implementation|refs/heads/aj/FL-333-pg19) ;;
+            refs/heads/main|refs/heads/master/frameleaf-implementation|refs/heads/aj/FL-333-pg19) ;;
             *) echo "::error::Postgres publication requires an approved delivery branch."; exit 1 ;;
           esac
           git fetch --no-tags origin "$SOURCE_REF"

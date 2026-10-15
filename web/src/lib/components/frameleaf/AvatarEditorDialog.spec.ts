@@ -11,6 +11,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
     user: { id: 'u1', name: 'Taylor', email: 't@example.test', profileImagePath: '', avatarColor: 'primary' },
     params: {},
     setUser: vi.fn(),
+    captureSession: () => () => true,
     refresh: vi.fn(),
   },
 }));

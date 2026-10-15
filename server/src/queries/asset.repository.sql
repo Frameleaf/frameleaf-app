@@ -614,7 +614,6 @@ with
       inner join asset_exif e on e."assetId" = a.id
     where
       true
-      and true
       and coalesce(
         nullif(trim(e.city), ''),
         nullif(trim(e.state), ''),
@@ -1062,20 +1061,6 @@ where
     where
       nsfw_asset.id = "asset"."id"
       and nsfw_asset.is_nsfw = true
-  )
-
--- AssetRepository.detectOfflineExternalAssets
-update "asset"
-set
-  "isOffline" = $1,
-  "deletedAt" = $2
-where
-  "isOffline" = $3
-  and "isExternal" = $4
-  and "libraryId" = $5::uuid
-  and (
-    not "originalPath" like $6
-    or "originalPath" ~ $7
   )
 
 -- AssetRepository.filterNewExternalAssetPaths

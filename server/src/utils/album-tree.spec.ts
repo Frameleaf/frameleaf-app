@@ -196,4 +196,21 @@ describe(albumOrderGroup.name, () => {
     expect(albumOrderGroup(items, null, 'space')).toEqual(['space']);
     expect(albumOrderGroup(items, null, 'unknown')).toBeUndefined();
   });
+
+  it.each([
+    { parentId: null, firstId: 'family', expected: ['family'] },
+    { parentId: null, firstId: 'space', expected: ['space'] },
+    { parentId: 'family', firstId: 'winter', expected: ['rockies', 'winter'] },
+  ])('does not build an unused collection index for $parentId / $firstId', ({ parentId, firstId, expected }) => {
+    let reads = 0;
+    const counted = items.map((item) => ({
+      ...item,
+      get kind() {
+        reads++;
+        return item.kind;
+      },
+    }));
+    expect(albumOrderGroup(counted, parentId, firstId)).toEqual(expected);
+    expect(reads).toBe(items.length + 1);
+  });
 });

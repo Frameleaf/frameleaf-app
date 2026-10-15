@@ -74,6 +74,7 @@
   });
 
   let cursorVersion = 0;
+  let destroyed = false;
   const loadCloseAssets = async (currentAsset: AssetResponseDto) => {
     const version = ++cursorVersion;
     const [nextAsset, previousAsset] = await Promise.all([getNextAsset(currentAsset), getPreviousAsset(currentAsset)]);
@@ -268,6 +269,13 @@
     }
   };
   const handleUndoDelete = async (assets: TimelineAsset[]) => {
+    if (destroyed) {
+      return;
+    }
+    const owner = cursorVersion;
+    const viewedId = assetViewerManager.asset?.id;
+    const wasViewing = assetViewerManager.isViewing;
+    const isCurrentSession = authManager.captureSession();
     timelineManager.upsertAssets(assets);
     if (assets.length === 0) {
       return;
@@ -275,6 +283,15 @@
 
     const restoredAsset = assets[0];
     const asset = await getAssetInfo({ ...authManager.params, id: restoredAsset.id });
+    if (
+      destroyed ||
+      owner !== cursorVersion ||
+      !isCurrentSession() ||
+      assetViewerManager.asset?.id !== viewedId ||
+      assetViewerManager.isViewing !== wasViewing
+    ) {
+      return;
+    }
     assetViewerManager.setAsset(asset);
     await navigate({ targetRoute: 'current', assetId: restoredAsset.id });
   };
@@ -298,6 +315,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     cursorVersion++;
     assetCacheManager.invalidate();
   });

@@ -19,10 +19,8 @@ def download_ocr_model(model: InferenceModel) -> None:
     if not model.model_path.is_file():
         raise model._unavailable(repo_id, model_source_url(), reason=f"has no {model.model_type.value}/model.onnx")
 
-    digest = hashlib.sha256()
     with model.model_path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
+        digest = hashlib.file_digest(file, "sha256")
     if digest.hexdigest() != source.sha256:
         model.model_path.unlink()
         raise model._unavailable(repo_id, model_source_url(), reason="failed its checksum")

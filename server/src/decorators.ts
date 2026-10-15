@@ -58,11 +58,11 @@ function chunks<T>(collection: Array<T> | Set<T>, size: number): Array<Array<T>>
 }
 
 /**
- * Wraps a method that takes a collection of parameters and sequentially calls it with chunks of the collection,
+ * Wraps a method that takes a collection of parameters and calls it in parallel with chunks of the collection,
  * to overcome the maximum number of parameters allowed by the database driver.
  *
  * @param options.paramIndex The index of the function parameter to chunk. Defaults to 0.
- * @param options.flatten Whether to flatten the results. Defaults to false.
+ * @param options.mergeFn Optional merger for results in chunk order.
  */
 export function Chunked(
   options: { paramIndex?: number; chunkSize?: number; mergeFn?: (results: any) => any } = {},
@@ -84,16 +84,20 @@ export function Chunked(
         return originalMethod.apply(this, arguments_);
       }
 
-      return Promise.all(
-        chunks(argument, chunkSize).map((chunk) => {
+      const prefix = arguments_.slice(0, parameterIndex);
+      const suffix = arguments_.slice(parameterIndex + 1);
+      const results: unknown[] = [];
+      try {
+        for (const chunk of chunks(argument, chunkSize)) {
           // eslint-disable-next-line unicorn/no-this-outside-of-class
-          return Reflect.apply(originalMethod, this, [
-            ...arguments_.slice(0, parameterIndex),
-            chunk,
-            ...arguments_.slice(parameterIndex + 1),
-          ]);
-        }),
-      ).then((results) => (mergeFn ? mergeFn(results) : results));
+          results.push(Reflect.apply(originalMethod, this, [...prefix, chunk, ...suffix]));
+        }
+      } catch (error) {
+        // A synchronous throw must not orphan promises returned by earlier chunks.
+        void Promise.allSettled(results);
+        throw error;
+      }
+      return Promise.all(results).then((values) => (mergeFn ? mergeFn(values) : values));
     };
   };
 }

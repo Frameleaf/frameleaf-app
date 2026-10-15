@@ -22,9 +22,18 @@ function createUploadStore() {
 
   const addItem = (newAsset: UploadAsset) => {
     uploadAssets.update(($assets) => {
-      const duplicate = $assets.some((asset) => asset.id === newAsset.id);
-      if (duplicate) {
-        return $assets.map((asset) => (asset.id === newAsset.id ? newAsset : asset));
+      let replacement: UploadAsset[] | undefined;
+      for (let index = 0; index < $assets.length; index++) {
+        const asset = $assets[index];
+        if (asset.id === newAsset.id) {
+          replacement ??= $assets.slice(0, index);
+          replacement.push(newAsset);
+        } else {
+          replacement?.push(asset);
+        }
+      }
+      if (replacement) {
+        return replacement;
       }
 
       stats.update((stats) => {

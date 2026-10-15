@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { render } from '@react-email/render';
+import { render, toPlainText } from '@react-email/render';
 import { createTransport } from 'nodemailer';
 import React, { createElement } from 'react';
 import type { EmailImageAttachment } from 'src/types.js';
@@ -167,7 +167,7 @@ export class EmailRepository {
   async renderEmail(request: EmailRenderRequest): Promise<{ html: string; text: string }> {
     const component = this.render(request);
     const html = await render(component, { pretty: false });
-    const text = await render(component, { plainText: true });
+    const text = toPlainText(html);
     return { html, text };
   }
 

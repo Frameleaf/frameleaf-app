@@ -25,6 +25,7 @@ import { BaseConfig } from 'src/utils/media.js';
 type Session = {
   assetId: string;
   expiresAt: Date;
+  leaseRenewal?: Promise<void>;
   id: string;
   lastActivityTime: Date;
   lastClientRequestedSegment: number | null;
@@ -119,17 +120,30 @@ export class TranscodingService extends BaseService {
       return;
     }
 
-    session.lastActivityTime = new Date();
+    const now = new Date();
+    session.lastActivityTime = now;
 
     if (segmentIndex !== undefined) {
       session.lastClientRequestedSegment = segmentIndex;
       this.applyBackpressure(session);
     }
 
-    const remaining = session.expiresAt.getTime() - Date.now();
-    if (remaining < HLS_LEASE_DURATION_MS / 2) {
-      session.expiresAt = new Date(Date.now() + HLS_LEASE_DURATION_MS);
-      await this.videoStreamRepository.extendSession(sessionId, session.expiresAt);
+    if (session.leaseRenewal) {
+      return session.leaseRenewal;
+    }
+    if (session.expiresAt.getTime() - now.getTime() >= HLS_LEASE_DURATION_MS / 2) {
+      return;
+    }
+
+    const expiresAt = new Date(now.getTime() + HLS_LEASE_DURATION_MS);
+    const renewal = Promise.resolve(this.videoStreamRepository.extendSession(sessionId, expiresAt)).then(() => {
+      session.expiresAt = expiresAt;
+    });
+    session.leaseRenewal = renewal;
+    try {
+      await renewal;
+    } finally {
+      session.leaseRenewal = undefined;
     }
   }
 
@@ -319,7 +333,7 @@ export class TranscodingService extends BaseService {
       if (session.process !== process) {
         return;
       }
-      stderr += chunk.toString();
+      stderr = (stderr + chunk.toString()).slice(-65_536);
     });
 
     process.on('exit', (code) => {

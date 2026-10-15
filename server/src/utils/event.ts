@@ -8,7 +8,7 @@ export class PendingEvents<T extends { [T in EmitEvent]: ArgOf<T> extends { erro
     this.timeoutMs = timeoutMs;
   }
 
-  wait(key: string): Promise<ArgOf<T>> {
+  wait(key: string, request?: (isPending: () => boolean) => void | Promise<void>): Promise<ArgOf<T>> {
     const existing = this.pending.get(key);
     if (existing) {
       return existing.promise;
@@ -16,7 +16,26 @@ export class PendingEvents<T extends { [T in EmitEvent]: ArgOf<T> extends { erro
 
     const completer = Promise.withResolvers<ArgOf<T>>();
     const timeout = setTimeout(() => this.complete(key, { error: 'Request timed out' }), this.timeoutMs);
-    this.pending.set(key, { ...completer, timeout });
+    const pending = { ...completer, timeout };
+    this.pending.set(key, pending);
+    if (request) {
+      const isPending = () => this.pending.get(key) === pending;
+      const reject = (error: unknown) => {
+        if (isPending()) {
+          clearTimeout(timeout);
+          this.pending.delete(key);
+          pending.reject(error);
+        }
+      };
+      try {
+        const started = request(isPending);
+        if (started) {
+          void started.catch(reject);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    }
     return completer.promise;
   }
 

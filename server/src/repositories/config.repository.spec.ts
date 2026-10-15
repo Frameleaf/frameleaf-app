@@ -37,7 +37,6 @@ const resetEnv = () => {
     'FRAMELEAF_CLOUD_URL',
     'FRAMELEAF_IDENTITY_DIR',
     'FRAMELEAF_LINK_TOKEN',
-    'FRAMELEAF_SETUP_CODE',
     'FRAMELEAF_EDGE_PORT',
     'FRAMELEAF_EDGE_BIND',
     'FRAMELEAF_ACME_DIRECTORY_URL',
@@ -471,7 +470,6 @@ describe('getEnv', () => {
         pushUrl: null,
         identityDir: null,
         linkToken: null,
-        setupCode: null,
         edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
         localUrl: null,
         trustedLanCidrs: [],
@@ -491,13 +489,11 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_LOCAL_URL = 'http://192.168.1.10:2283/photos';
       process.env.FRAMELEAF_ACME_DIRECTORY_URL = 'https://acme-staging-v02.api.letsencrypt.org/directory';
       process.env.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE = ' /run/secrets/frameleaf-dev-keys.json ';
-      process.env.FRAMELEAF_SETUP_CODE = 'abcd-2345';
       expect(getEnv().frameleafCloud).toEqual({
         url: 'https://frameleaf.cloud.test',
         pushUrl: 'https://push.frameleaf.cloud.test',
         identityDir: '/data/identity',
         linkToken: 'fll_abcdefgh12345678',
-        setupCode: 'ABCD2345',
         edge: {
           port: 8443,
           bind: '192.168.1.10',
@@ -514,10 +510,6 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_LINK_TOKEN = 'not-a-token';
       expect(() => getEnv()).toThrow('FRAMELEAF_LINK_TOKEN');
       delete process.env.FRAMELEAF_LINK_TOKEN;
-      // FL-292: a pinned setup code from the unambiguous alphabet only
-      process.env.FRAMELEAF_SETUP_CODE = 'ABCD-234O';
-      expect(() => getEnv()).toThrow('FRAMELEAF_SETUP_CODE');
-      delete process.env.FRAMELEAF_SETUP_CODE;
       process.env.FRAMELEAF_EDGE_PORT = '70000';
       expect(() => getEnv()).toThrow('FRAMELEAF_EDGE_PORT');
       delete process.env.FRAMELEAF_EDGE_PORT;

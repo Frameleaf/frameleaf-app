@@ -34,9 +34,12 @@ interface Options {
 }
 
 export const contextMenuNavigation: Action<HTMLElement, Options> = (node, options: Options) => {
+  let isOpen = options.isOpen;
+  let generation = 0;
+  let destroyed = false;
   const getCurrentElement = () => {
-    const { container, selectedId: activeId } = options;
-    return container?.querySelector(`#${activeId}`) as HTMLElement | null;
+    const { container, selectedId } = options;
+    return container ? getItems(container).find((item) => item.id === selectedId) : undefined;
   };
 
   /**
@@ -47,35 +50,43 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
     [...container.children].filter((child) => child.matches('[role^="menuitem"]')) as HTMLElement[];
 
   const close = () => {
+    generation++;
     const { closeDropdown, selectionChanged } = options;
     selectionChanged(undefined);
     closeDropdown();
   };
 
   const moveSelection = async (direction: 'up' | 'down', event: KeyboardEvent) => {
-    const { selectionChanged, container, openDropdown } = options;
+    const owner = generation;
+    const currentContainer = options.isOpen ? options.container : undefined;
+    const { openDropdown } = options;
     if (openDropdown) {
       openDropdown(event);
       await tick();
     }
-
-    if (!container) {
+    if (destroyed || owner !== generation || !options.isOpen) {
       return;
     }
 
+    const { container, selectedId, selectionChanged } = options;
+    if (!container || (currentContainer && currentContainer !== container)) {
+      return;
+    }
     const children = getItems(container);
     if (children.length === 0) {
       return;
     }
 
-    const currentEl = getCurrentElement();
-    const currentIndex = currentEl ? children.indexOf(currentEl) : -1;
-    const directionFactor = (direction === 'up' ? -1 : 1) + (direction === 'up' && currentIndex === -1 ? 1 : 0);
-    const newIndex = (currentIndex + directionFactor + children.length) % children.length;
+    const currentIndex = children.findIndex((item) => item.id === selectedId);
+    let newIndex = currentIndex + (direction === 'up' ? -1 : 1);
+    if (newIndex < 0) {
+      newIndex = children.length - 1;
+    } else if (newIndex >= children.length) {
+      newIndex = 0;
+    }
     const selectedNode = children[newIndex];
-    selectedNode?.scrollIntoView({ block: 'nearest' });
-
-    selectionChanged(selectedNode?.id);
+    selectedNode.scrollIntoView({ block: 'nearest' });
+    selectionChanged(selectedNode.id);
   };
 
   /** Home and End belong to an open menu only; a closed one leaves them to the page. */
@@ -108,6 +119,7 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
   const handleClick = (event: KeyboardEvent) => {
     const { selectedId, isOpen, closeDropdown } = options;
     if (isOpen && !selectedId) {
+      generation++;
       closeDropdown();
       return;
     }
@@ -131,8 +143,15 @@ export const contextMenuNavigation: Action<HTMLElement, Options> = (node, option
 
   return {
     update(newOptions) {
+      if (isOpen && !newOptions.isOpen) {
+        generation++;
+      }
+      isOpen = newOptions.isOpen;
       options = newOptions;
     },
-    destroy,
+    destroy() {
+      destroyed = true;
+      destroy?.();
+    },
   };
 };

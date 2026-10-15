@@ -87,4 +87,32 @@ describe('timezone selection', () => {
     expect(getPreferredTimeZone(DateTime.fromISO(date), 'Europe/Berlin', zones, selected)).toBe(selected);
     expect(toIsoDate(date, selected)).toBe('1890-07-15T12:34:56.123-07:00');
   });
+
+  it('keeps selection precedence independently of list order and permits explicitly named offsets', () => {
+    const date = DateTime.fromISO('2024-07-15T12:00:00+02:00', { setZone: true });
+    const userZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const fallback = { value: 'fallback', label: 'fallback', offsetMinutes: 120, valid: true };
+    const initial = { value: 'initial', label: 'initial', offsetMinutes: 60, valid: true };
+    const selected = { value: 'selected', label: 'selected', offsetMinutes: 0, valid: true };
+    const user = { value: userZone, label: userZone, offsetMinutes: 120, valid: true };
+    const zones = [fallback, user, initial, selected];
+    expect(getPreferredTimeZone(date, initial.value, zones, { ...selected })).toBe(selected);
+    expect(getPreferredTimeZone(date, initial.value, zones, { ...selected, value: 'absent' })).toBe(initial);
+    expect(getPreferredTimeZone(date, undefined, zones)).toBe(user);
+    expect(getPreferredTimeZone(date, undefined, [fallback, initial])).toBe(fallback);
+    expect(getPreferredTimeZone(date, undefined, [initial])).toEqual({
+      value: 'UTC',
+      label: 'UTC (+00:00)',
+      offsetMinutes: 0,
+      valid: true,
+    });
+  });
+
+  it('uses the first option when multiple entries match the same preference', () => {
+    const date = DateTime.fromISO('2024-07-15T12:00:00+02:00', { setZone: true });
+    const first = { value: 'explicit', label: 'first', offsetMinutes: 60, valid: true };
+    const second = { ...first, label: 'second' };
+    expect(getPreferredTimeZone(date, 'explicit', [first, second])).toBe(first);
+    expect(getPreferredTimeZone(date, undefined, [first, second], second)).toBe(first);
+  });
 });

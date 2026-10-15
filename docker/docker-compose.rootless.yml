@@ -25,6 +25,8 @@ services:
       # Do not edit the next line. If you want to change the media storage location on your system, edit the value of UPLOAD_LOCATION in the .env file
       - ${UPLOAD_LOCATION}:/data
       - /etc/localtime:/etc/localtime:ro
+      # FL-408: the bundled Studio worker's enrolment, shared read-only with machine learning
+      - ./studio-worker:/run/frameleaf/studio-worker
     env_file:
       - .env
     ports:
@@ -57,6 +59,8 @@ services:
       - NET_RAW
     volumes:
       - ./ml-model-cache:/cache
+      # FL-408: the Studio render worker enrols from here (FRAMELEAF_STUDIO_WORKER=false turns it off)
+      - ./studio-worker:/run/frameleaf/studio-worker:ro
     # Keep server credentials out of the inference worker.
     env_file:
       - path: .env.ml

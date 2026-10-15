@@ -671,7 +671,7 @@ export class LibraryScanService {
           break;
         }
         case AssetSyncResult.CHECK_OFFLINE: {
-          const inFolder = library.importPaths.some((importPath) => asset.originalPath.startsWith(importPath));
+          const inFolder = library.importPaths.some((importPath) => isSameOrInside(asset.originalPath, importPath));
           const excluded = library.exclusionPatterns.some((pattern) => picomatch.isMatch(asset.originalPath, pattern));
           if (inFolder && !excluded) {
             (asset.status === AssetStatus.Trashed ? trashedToOnline : toOnline).push(asset.id);

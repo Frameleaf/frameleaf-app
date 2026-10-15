@@ -55,7 +55,11 @@ export const handleRelease = ({ type }: ReleaseOptions) => {
     const major = `v${newVersion.major}`;
 
     // sync major tag references in docs and example env file
-    pump(Files.ExampleEnv, /^FRAMELEAF_VERSION=v\d+$/m, `FRAMELEAF_VERSION=${major}`);
+    pump(
+      Files.ExampleEnv,
+      /^FRAMELEAF_VERSION=v\d+$/m,
+      `FRAMELEAF_VERSION=${major}`,
+    );
     pump(Files.Docs.Env, /(`FRAMELEAF_VERSION`.*?)`v\d+`/, `$1\`${major}\``);
     pump(Files.Docs.Upgrading, /:v\d+/, `:${major}`);
   }
@@ -86,51 +90,17 @@ export const getNewVersion = (versionRaw: string, type: string) => {
     throw new ReleaseInputError();
   }
 
-  let newVersionRaw;
   let valid = true;
-
-  switch (type) {
-    case 'patch':
-    case 'prepatch':
-    case 'minor': {
-      newVersionRaw = inc(version, type);
-      // can only use while not in a prerelease
-      valid = !isPrerelease(version);
-      break;
-    }
-
-    case 'preminor':
-    case 'premajor': {
-      // cutting the next release line is allowed while main sits on a prerelease
-      newVersionRaw = inc(version, type);
-      break;
-    }
-
-    case 'prerelease': {
-      newVersionRaw = inc(version, type);
-      // can only use while in a prerelease
-      valid = isPrerelease(version);
-      break;
-    }
-
-    case 'release': {
-      // drop prerelease part
-      newVersionRaw = `${version.major}.${version.minor}.${version.patch}`;
-      // can only use to promote a prerelease to a release (no version change)
-      valid = isPrerelease(version);
-      break;
-    }
-
-    default: {
-      throw new ReleaseInputError();
-    }
+  if (type === 'release' || type === 'prerelease') {
+    valid = isPrerelease(version);
+  } else if (type !== 'preminor' && type !== 'premajor') {
+    valid = !isPrerelease(version);
   }
 
-  if (!newVersionRaw) {
-    throw new ReleaseInputError();
-  }
-
-  newVersionRaw = normalize(newVersionRaw);
+  const newVersionRaw =
+    type === 'release'
+      ? `${version.major}.${version.minor}.${version.patch}`
+      : normalize(inc(version, type as ReleaseType));
 
   const newVersion = semver.parse(newVersionRaw);
   if (!newVersion) {

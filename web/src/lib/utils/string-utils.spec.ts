@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { normalizeSearchString, removeAccents } from './string-utils';
+import { normalizeSearchString, removeAccents, splitSearchMatch } from './string-utils';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -33,4 +33,33 @@ it('retains boxed-string normalization and invalid-input errors', () => {
   expect(normalize.mock.contexts).toEqual([input]);
   expect(() => removeAccents(null as unknown as string)).toThrow(TypeError);
   expect(() => removeAccents(undefined as unknown as string)).toThrow(TypeError);
+});
+
+it.each([
+  ['  Summer trip  ', '  trip  ', ['  Summer ', 'trip', '  ']],
+  ['Cafe\u{301} trip', 'café', ['', 'Cafe\u{301}', ' trip']],
+  ['가족 여행', '여행', ['가족 ', '여행', '']],
+  ['가족', '\u{1161}', ['', '가', '족']],
+  ['ΟΣ trip', 'ος', ['', 'ΟΣ', ' trip']],
+  ['İstanbul', 'istan', ['', 'İstan', 'bul']],
+  ['👩‍👩‍👧‍👦 trip', '👧', ['', '👩‍👩‍👧‍👦', ' trip']],
+  ['First first', 'first', ['', 'First', ' first']],
+  ['Album', 'missing', ['Album', '', '']],
+  ['Album', ' '.repeat(3), ['Album', '', '']],
+])('highlights the original graphemes in %j for %j', (value, query, expected) => {
+  const parts = splitSearchMatch(value, query);
+  expect(parts).toEqual(expected);
+  expect(parts.join('')).toBe(value);
+});
+
+it.each([
+  ['tr', 'IŞIK İstanbul', 'ışık', ['', 'IŞIK', ' İstanbul']],
+  ['lt', 'I\u{301} trip', 'i', ['', 'I\u{301}', ' trip']],
+  ['el', 'ΟΣ trip', 'ος', ['', 'ΟΣ', ' trip']],
+])('maps original offsets with %s locale casing', (locale, value, query, expected) => {
+  const lower = String.prototype.toLocaleLowerCase;
+  vi.spyOn(String.prototype, 'toLocaleLowerCase').mockImplementation(function (this: string) {
+    return lower.call(this, locale);
+  });
+  expect(splitSearchMatch(value, query)).toEqual(expected);
 });

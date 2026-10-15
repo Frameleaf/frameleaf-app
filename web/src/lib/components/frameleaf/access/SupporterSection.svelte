@@ -15,13 +15,13 @@
   import BuyActivated from '$lib/components/frameleaf/buy/BuyActivated.svelte';
   import BuyKeyField from '$lib/components/frameleaf/buy/BuyKeyField.svelte';
   import { productKeyMessageKey, validateProductKey } from '$lib/frameleaf/cloud';
-  import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { deleteUserLicense, getMyUser, setUserLicense, updateMyPreferences } from '@frameleaf/sdk';
+  import { setSupportBadgeVisibility } from '$lib/utils/purchase-utils';
+  import { deleteUserLicense, getMyUser, setUserLicense } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
 
   let key = $state('');
@@ -33,12 +33,17 @@
   const badgeHidden = $derived(!authManager.preferences.purchase.showSupportBadge);
 
   const reloadUser = async () => {
+    const isCurrent = authManager.captureSession();
     const user = await getMyUser();
+    if (!isCurrent()) {
+      return;
+    }
     authManager.setUser(user);
     authManager.isPurchased = !!user.license || featureFlagsManager.value.supporter;
   };
 
   const activate = async (event: SubmitEvent) => {
+    const isCurrent = authManager.captureSession();
     event.preventDefault();
     if (busy) {
       return;
@@ -56,10 +61,19 @@
     keyError = '';
     try {
       await setUserLicense({ licenseActivateDto: { key: check.key } });
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       key = '';
       notice = $t('frameleaf_buy_activated');
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       keyError = getServerErrorMessage(error) ?? $t('frameleaf_buy_activation_failed');
     } finally {
       busy = false;
@@ -67,12 +81,22 @@
   };
 
   const remove = async () => {
+    const isCurrent = authManager.captureSession();
     busy = true;
     try {
       await deleteUserLicense();
+      if (!isCurrent()) {
+        return;
+      }
       await reloadUser();
+      if (!isCurrent()) {
+        return;
+      }
       notice = $t('frameleaf_buy_removed');
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     } finally {
       busy = false;
@@ -81,10 +105,7 @@
 
   const setBadgeHidden = async (hidden: boolean) => {
     try {
-      const response = await updateMyPreferences({
-        userPreferencesUpdateDto: { purchase: { showSupportBadge: !hidden } },
-      });
-      authManager.setPreferences(withoutLockedRuleIds(response));
+      await setSupportBadgeVisibility(!hidden);
     } catch (error) {
       keyError = getServerErrorMessage(error) ?? $t('frameleaf_cloud_action_failed');
     }

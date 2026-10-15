@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/*.test.cjs && tsc --project tsconfig.tests.json",
     "build": "node esbuild.js && tsc --emitDeclarationOnly && tsc-alias"
   },
   "files": [

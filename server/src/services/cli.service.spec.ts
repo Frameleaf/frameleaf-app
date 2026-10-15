@@ -27,6 +27,42 @@ describe(CliService.name, () => {
     });
   });
 
+  describe('schemaReport', () => {
+    it.each([
+      {
+        files: ['002.js', '001.js', '002.js', 'README.md'],
+        rows: ['002', '003', '003'],
+        expected: [
+          { name: '001', status: 'missing' },
+          { name: '002', status: 'applied' },
+          { name: '003', status: 'deleted' },
+        ],
+      },
+      { files: [], rows: [], expected: [] },
+      {
+        files: ['\u{FFFF}.js', '😀.js', 'A.js'],
+        rows: [],
+        expected: [
+          { name: 'A', status: 'missing' },
+          { name: '😀', status: 'missing' },
+          { name: '\u{FFFF}', status: 'missing' },
+        ],
+      },
+      { files: [], rows: ['003', '003'], expected: [{ name: '003', status: 'deleted' }] },
+    ])(
+      'reports each migration once with original code-unit ordering: $files / $rows',
+      async ({ files, rows, expected }) => {
+        const drift = {} as Awaited<ReturnType<typeof mocks.database.getSchemaDrift>>;
+        mocks.storage.readdir.mockResolvedValueOnce(files);
+        mocks.database.getMigrations.mockResolvedValueOnce(rows.map((name) => ({ name, timestamp: 'fixture' })));
+        mocks.database.getSchemaDrift.mockResolvedValueOnce(drift);
+        const report = await sut.schemaReport();
+        expect(report.migrations).toEqual(expected);
+        expect(report.drift).toBe(drift);
+      },
+    );
+  });
+
   describe('resetAdminPassword', () => {
     it('should only work when there is an admin account', async () => {
       mocks.user.getAdmin.mockResolvedValue(void 0);

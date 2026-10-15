@@ -42,6 +42,7 @@ export const ExifResponseSchema = z
 class ExifResponseDto extends createZodDto(ExifResponseSchema) {}
 
 export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
+  const fileSizeInByte = entity.fileSizeInByte ?? null;
   return {
     bitsPerSample: entity.bitsPerSample ?? null,
     colorspace: entity.colorspace ?? null,
@@ -50,7 +51,7 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     model: entity.model,
     exifImageWidth: entity.exifImageWidth,
     exifImageHeight: entity.exifImageHeight,
-    fileSizeInByte: entity.fileSizeInByte ? Number.parseInt(entity.fileSizeInByte.toString()) : null,
+    fileSizeInByte: fileSizeInByte === null ? null : Number(fileSizeInByte),
     orientation: entity.orientation,
     dateTimeOriginal: asDateTimeString(entity.dateTimeOriginal),
     modifyDate: asDateTimeString(entity.modifyDate),

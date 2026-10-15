@@ -37,9 +37,17 @@ class AnnSession:
         log.info("Loaded ANN model with ID %d", self.model)
 
     def __del__(self) -> None:
-        self.ann.unload(self.model)
-        log.info("Unloaded ANN model %d", self.model)
-        self.ann.destroy()
+        ann = getattr(self, "ann", None)
+        if ann is None:
+            return
+        del self.ann
+        try:
+            model = getattr(self, "model", None)
+            if model is not None:
+                ann.unload(model)
+                log.info("Unloaded ANN model %d", model)
+        finally:
+            ann.destroy()
 
     def get_inputs(self) -> list[SessionNode]:
         shapes = self.ann.input_shapes[self.model]

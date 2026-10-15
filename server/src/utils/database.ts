@@ -513,30 +513,31 @@ const isCJK = (c: number): boolean =>
 export const tokenizeForSearch = (text: string): string[] => {
   /* eslint-disable unicorn/prefer-code-point */
   const tokens: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const c = text.charCodeAt(i);
-    if (c <= 32) {
-      i++;
+  let index = 0;
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    if (code <= 32) {
+      index++;
       continue;
     }
-    const start = i;
-    if (isCJK(c)) {
-      while (i < text.length && isCJK(text.charCodeAt(i))) {
-        i++;
+    const start = index++;
+    if (isCJK(code)) {
+      while (index < text.length && isCJK(text.charCodeAt(index))) {
+        tokens.push(text.slice(index - 1, index + 1));
+        index++;
       }
-      if (i - start === 1) {
+      if (index === start + 1) {
         tokens.push(text[start]);
-      } else {
-        for (let k = start; k < i - 1; k++) {
-          tokens.push(text[k] + text[k + 1]);
-        }
       }
     } else {
-      while (i < text.length && text.charCodeAt(i) > 32 && !isCJK(text.charCodeAt(i))) {
-        i++;
+      while (index < text.length) {
+        const next = text.charCodeAt(index);
+        if (next <= 32 || isCJK(next)) {
+          break;
+        }
+        index++;
       }
-      tokens.push(text.slice(start, i));
+      tokens.push(text.slice(start, index));
     }
   }
   return tokens;
@@ -654,9 +655,6 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           ? qb.where('asset.deletedAt', 'is', null)
           : qb.where((eb) => othersNotTrashed(eb, options.viewingUserId!)),
       )
-      .$if(!!options.locationHiddenOwnerIds?.length, (qb) =>
-        qb.where('asset.ownerId', 'not in', options.locationHiddenOwnerIds!),
-      )
       .$if(!!options.encodedVideoPath, (qb) =>
         qb
           .innerJoin('asset_file', (join) =>
@@ -759,6 +757,9 @@ function idsPredicates(
   return predicates;
 }
 function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
+  if (filter === undefined) {
+    return [];
+  }
   const matching = (ids: string[]) => albumAssets(eb).where('album_asset.albumId', '=', anyUuid(ids));
   return idsPredicates(eb, filter, {
     matchesAny: (ids) => eb.exists(matching(ids)),
@@ -772,6 +773,9 @@ function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   });
 }
 function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
+  if (filter === undefined) {
+    return [];
+  }
   const matching = (ids: string[]) => visibleFaces(eb).where('asset_face.personGroupId', '=', anyUuid(ids));
   return idsPredicates(eb, filter, {
     matchesAny: (ids) => eb.exists(matching(ids)),
@@ -797,6 +801,9 @@ const confirmedPetObservations = (eb: AssetExpressionBuilder, ownerId: string | 
     .where('pet_observation.state', '=', PetObservationState.Confirmed)
     .where((eb) => (ownerId ? eb('pet.ownerId', '=', ownerId) : eb.lit(false)));
 function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefined, ownerId: string | undefined) {
+  if (filter === undefined) {
+    return [];
+  }
   const matching = (ids: string[]) =>
     confirmedPetObservations(eb, ownerId).where('pet_observation.petId', '=', anyUuid(ids));
   return idsPredicates(eb, filter, {
@@ -810,7 +817,14 @@ function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefi
       ),
   });
 }
-function landmarkIdsPredicates(eb: AssetExpressionBuilder, { any, none }: LandmarkIdsFilter = {}) {
+function landmarkIdsPredicates(eb: AssetExpressionBuilder, filter?: LandmarkIdsFilter) {
+  if (filter === undefined) {
+    return [];
+  }
+  const { any, none } = filter;
+  if (any === undefined && none === undefined) {
+    return [];
+  }
   const at = (ids: string[]) =>
     eb.exists(
       eb
@@ -821,6 +835,9 @@ function landmarkIdsPredicates(eb: AssetExpressionBuilder, { any, none }: Landma
   return [...(any ? [at(any)] : []), ...(none ? [eb.not(at(none))] : [])];
 }
 function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
+  if (filter === undefined) {
+    return [];
+  }
   const matching = (ids: string[]) =>
     tagAssets(eb)
       .innerJoin('tag_closure', 'tag_asset.tagId', 'tag_closure.id_descendant')
@@ -851,8 +868,11 @@ type ComparisonFilter<T> = {
 function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
   eb: ExpressionBuilder<DB, TB>,
   column: RE,
-  filter: ComparisonFilter<OperandValueExpression<DB, TB, RE>> = {},
+  filter?: ComparisonFilter<OperandValueExpression<DB, TB, RE>>,
 ) {
+  if (filter === undefined) {
+    return [];
+  }
   const predicates: Expression<SqlBool>[] = [];
   if (filter.eq !== undefined) {
     predicates.push(filter.eq === null ? eb(column, 'is', null) : eb(column, '=', filter.eq));
@@ -890,7 +910,10 @@ type StringColumn =
   | 'asset_exif.description'
   | 'asset.originalFileName'
   | 'asset.originalPath';
-function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColumn, filter: StringPatternFilter = {}) {
+function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColumn, filter?: StringPatternFilter) {
+  if (filter === undefined) {
+    return [];
+  }
   const ref = sql.ref(column);
   const predicates = comparisonPredicates(eb, column, filter);
   if (filter.like !== undefined) {
@@ -911,7 +934,10 @@ function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColum
   }
   return predicates;
 }
-function checksumPredicates(eb: AssetExpressionBuilder, filter: StringFilter = {}) {
+function checksumPredicates(eb: AssetExpressionBuilder, filter?: StringFilter) {
+  if (filter === undefined) {
+    return [];
+  }
   return comparisonPredicates(eb, 'asset.checksum', {
     eq: filter.eq === undefined ? undefined : fromChecksum(filter.eq),
     ne: filter.ne === undefined ? undefined : fromChecksum(filter.ne),
@@ -931,12 +957,12 @@ function existsPredicates(
         eq: boolean;
       }
     | undefined,
-  subquery: () => Expression<unknown>,
+  subquery: (builder: AssetExpressionBuilder) => Expression<unknown>,
 ): Expression<SqlBool>[] {
   if (!filter) {
     return [];
   }
-  const exists = eb.exists(subquery());
+  const exists = eb.exists(subquery(eb));
   return [filter.eq ? exists : eb.not(exists)];
 }
 /**
@@ -1019,10 +1045,10 @@ function branchPredicates(
     ...(branch.isFavorite ? [eb('asset.isFavorite', '=', branch.isFavorite.eq)] : []),
     ...(branch.isOffline ? [eb('asset.isOffline', '=', branch.isOffline.eq)] : []),
     ...(branch.isMotion ? [eb('asset.livePhotoVideoId', branch.isMotion.eq ? 'is not' : 'is', null)] : []),
-    ...existsPredicates(eb, branch.isEncoded, () => encodedVideoFiles(eb)),
-    ...existsPredicates(eb, branch.hasAlbums, () => albumAssets(eb)),
-    ...existsPredicates(eb, branch.hasPeople, () => visibleFaces(eb)),
-    ...existsPredicates(eb, branch.hasTags, () => tagAssets(eb)),
+    ...existsPredicates(eb, branch.isEncoded, encodedVideoFiles),
+    ...existsPredicates(eb, branch.hasAlbums, albumAssets),
+    ...existsPredicates(eb, branch.hasPeople, visibleFaces),
+    ...existsPredicates(eb, branch.hasTags, tagAssets),
     ...boolPredicates(branch.isPanorama, isPanoramaAsset),
     ...boolPredicates(branch.isScreenshot, isScreenshotAsset),
     ...comparisonPredicates(eb, 'asset_exif.city', branch.city),
@@ -1102,9 +1128,6 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
-      .$if(!!scope.locationHiddenOwnerIds?.length, (qb) =>
-        qb.where('asset.ownerId', 'not in', scope.locationHiddenOwnerIds!),
-      )
       .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
       .$if(!!scope.sharedLink, (qb) => qb.where('asset.deletedAt', 'is', null))
       .$if(!scope.sharedLink && !!viewerId, (qb) => qb.where((eb) => othersNotTrashed(eb, viewerId!)))

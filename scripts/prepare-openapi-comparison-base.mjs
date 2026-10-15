@@ -14,6 +14,10 @@ const reviewedBaseSha256 = new Set([
   "ede05156bcab7a9f84ef01ae067bd7e6441b76be1eee9ce9df84572d66456a39",
   // PR140 e4b9aaff retains the reviewed tuple validator and email constraints.
   "30bca38017a67e688d75dfefe41d781c85da6580ea2975c81caad1b52e0c31bf",
+  // PR140 67bd9a88 retains all six reviewed point and email schemas byte-for-byte as parsed values.
+  "63075e3c9b8a150c6ad8b1762f645d35cdf2ec7ee96aab327eafe3f732366d9f",
+  // PR140 9b2d92c8 retains all six reviewed point and email schemas as parsed values.
+  "44c8b84300cd558dd309b5ab8d26354b7f8306afac1764906a56506802099139",
 ]);
 const pointPointers = [
   "/components/schemas/AssetDevelopStroke/properties/points/items",

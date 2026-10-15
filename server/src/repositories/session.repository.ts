@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
@@ -82,8 +82,24 @@ export class SessionRepository {
       .execute();
   }
 
-  create(dto: Insertable<SessionTable>) {
-    return this.db.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
+  async create(dto: Insertable<SessionTable>, expectedPassword?: string) {
+    if (expectedPassword === undefined) {
+      return this.db.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
+    }
+    return this.db.transaction().execute(async (trx) => {
+      const user = await trx
+        .selectFrom('user')
+        .select('user.id')
+        .where('user.id', '=', dto.userId)
+        .where('user.password', '=', expectedPassword)
+        .where('user.deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!user) {
+        throw new UnauthorizedException('Incorrect email or password');
+      }
+      return trx.insertInto('session').values(dto).returningAll().executeTakeFirstOrThrow();
+    });
   }
 
   update(id: string, dto: Updateable<SessionTable>) {

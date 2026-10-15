@@ -188,7 +188,8 @@ export const isTimelineAssets = (assets: AssetResponseDto[] | TimelineAsset[]): 
   assets.length === 0 || 'ratio' in assets[0];
 
 export const plainDateTimeCompare = (ascending: boolean, a: TimelineDateTime, b: TimelineDateTime) => {
-  const [aDateTime, bDateTime] = ascending ? [a, b] : [b, a];
+  const aDateTime = ascending ? a : b;
+  const bDateTime = ascending ? b : a;
 
   if (aDateTime.year !== bDateTime.year) {
     return aDateTime.year - bDateTime.year;

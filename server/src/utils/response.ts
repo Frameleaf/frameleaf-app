@@ -13,6 +13,7 @@ export const waitForDrain = (response: Writable) =>
     const cleanup = () => {
       response.off('drain', onDrain);
       response.off('close', onClose);
+      response.off('finish', onClose);
       response.off('error', onError);
     };
 
@@ -33,10 +34,11 @@ export const waitForDrain = (response: Writable) =>
 
     response.once('drain', onDrain);
     response.once('close', onClose);
+    response.once('finish', onClose);
     response.once('error', onError);
 
-    // 'close' may already have fired
-    if (response.destroyed) {
+    // A terminal event may already have fired.
+    if (response.destroyed || response.writableEnded) {
       onClose();
     }
   });

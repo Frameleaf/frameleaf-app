@@ -1042,6 +1042,43 @@ describe(DuplicateService.name, () => {
       );
     });
 
+    it('does not merge the existing target group back into itself', async () => {
+      const asset = { ...hasEmbedding, duplicateId: 'existing-group' };
+      mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(asset);
+      mocks.duplicateRepository.search.mockResolvedValue([
+        { assetId: 'same-group', distance: 0.01, duplicateId: 'existing-group' },
+        { assetId: 'other-group-a', distance: 0.01, duplicateId: 'other-group' },
+        { assetId: 'ungrouped', distance: 0.01, duplicateId: null },
+        { assetId: 'other-group-b', distance: 0.01, duplicateId: 'other-group' },
+      ]);
+      mocks.duplicateRepository.merge.mockResolvedValue();
+      await expect(sut.handleSearchDuplicates({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.duplicateRepository.merge).toHaveBeenCalledWith({
+        targetId: 'existing-group',
+        sourceIds: ['other-group'],
+        assetIds: ['other-group-a', 'ungrouped', 'other-group-b', asset.id],
+      });
+    });
+
+    it('keeps existing members out of source groups when every match already belongs to the target', async () => {
+      const asset = { ...hasEmbedding, duplicateId: 'existing-group' };
+      mocks.assetJob.getForSearchDuplicatesJob.mockResolvedValue(asset);
+      mocks.duplicateRepository.search.mockResolvedValue([
+        { assetId: 'same-group', distance: 0.01, duplicateId: 'existing-group' },
+      ]);
+      mocks.duplicateRepository.merge.mockResolvedValue();
+      await expect(sut.handleSearchDuplicates({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.duplicateRepository.merge).toHaveBeenCalledWith({
+        targetId: 'existing-group',
+        sourceIds: [],
+        assetIds: [asset.id],
+      });
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledWith({
+        assetId: asset.id,
+        duplicatesDetectedAt: expect.any(Date),
+      });
+    });
+
     it('should queue enhanced frames and defer grouping when frames are missing', async () => {
       const video = { ...hasEmbedding, type: AssetType.Video };
       const duplicate = { assetId: 'asset-2', distance: 0.01, duplicateId: null };

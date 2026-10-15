@@ -103,17 +103,33 @@ export function getPreferredTimeZone(
   selectedOption?: ZoneOption,
 ) {
   const offset = date.offset;
-  const previousSelection = timezones.find((item) => item.value === selectedOption?.value);
-  const fromInitialTimeZone = timezones.find((item) => item.value === initialTimeZone);
-  const sameAsUserTimeZone = timezones.find((item) => item.offsetMinutes === offset && item.value === userTimeZone);
-  const firstWithSameOffset = timezones.find((item) => item.offsetMinutes === offset);
-  const utcFallback = {
-    label: 'UTC (+00:00)',
-    offsetMinutes: 0,
-    value: 'UTC',
-    valid: true,
-  };
-  return previousSelection ?? fromInitialTimeZone ?? sameAsUserTimeZone ?? firstWithSameOffset ?? utcFallback;
+  let fromInitialTimeZone: ZoneOption | undefined;
+  let sameAsUserTimeZone: ZoneOption | undefined;
+  let firstWithSameOffset: ZoneOption | undefined;
+  for (const item of timezones) {
+    if (item.value === selectedOption?.value) {
+      return item;
+    }
+    if (item.value === initialTimeZone) {
+      fromInitialTimeZone ??= item;
+    }
+    if (item.offsetMinutes === offset) {
+      firstWithSameOffset ??= item;
+      if (item.value === userTimeZone) {
+        sameAsUserTimeZone ??= item;
+      }
+    }
+  }
+  return (
+    fromInitialTimeZone ??
+    sameAsUserTimeZone ??
+    firstWithSameOffset ?? {
+      label: 'UTC (+00:00)',
+      offsetMinutes: 0,
+      value: 'UTC',
+      valid: true,
+    }
+  );
 }
 
 export function toDatetime(selectedDate: string, selectedZone: ZoneOption) {

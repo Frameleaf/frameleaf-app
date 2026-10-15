@@ -81,8 +81,13 @@ import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewStreamService } from 'src/services/studio-preview-stream.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
+import { RenderWorkerOrigin, isBundledRenderWorker, isInternalWorkerOrigin } from 'src/utils/bundled-render-worker.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
-import { GpuMemoryBytesSchema, evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
+import {
+  GpuMemoryBytesSchema,
+  type GpuWorkingBudgetApproval,
+  evaluateApprovedRenderSession,
+} from 'src/utils/gpu-working-budget-policy.js';
 import {
   ChunkPlan,
   RENDER_WORKER_MEDIA_OPERATION_KINDS,
@@ -95,8 +100,8 @@ import {
   AuthorizedManifest,
   DESTINATION_HEALTH_PROVIDER,
   INPUT_GRANT_TTL_MS,
+  LocalDestinationHealthProvider,
   RenderLimits,
-  UnknownDestinationHealthProvider,
   evaluateClaimAdmission,
   evaluateRunningLimits,
   isWorkerRefusal,
@@ -182,7 +187,10 @@ const mapWorker = (worker: RenderWorker, activeOperations: number): RenderWorker
   maxWallClockMs: asBigIntString(worker.maxWallClockMs),
   maxOutputBytes: asBigIntString(worker.maxOutputBytes),
   gpuMemoryBytes: asBigIntString(worker.gpuMemoryBytes),
-  gpuWorkingBudgetApproval: worker.gpuWorkingBudgetApproval,
+  // FL-408: the bundled worker's server-written trust marker is not an approved hardware profile.
+  gpuWorkingBudgetApproval: isBundledRenderWorker(worker)
+    ? null
+    : (worker.gpuWorkingBudgetApproval as GpuWorkingBudgetApproval | null),
   activeOperations,
   lastAdmittedAt: asIso(worker.lastAdmittedAt),
   lastSeenAt: asIso(worker.lastSeenAt),
@@ -338,8 +346,9 @@ export class RenderWorkerService {
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
-    // FL-110 registers the real provider; until then nothing is probed and nothing is claimed.
-    this.destinationHealth = destinationHealth ?? new UnknownDestinationHealthProvider();
+    // FL-408: this server vouches for its own `local` destination (the bundled worker runs there);
+    // FL-110 registers a provider that also probes LAN and cloud destinations.
+    this.destinationHealth = destinationHealth ?? new LocalDestinationHealthProvider();
   }
 
   /* ------------------------------------------------------------------ */
@@ -420,7 +429,11 @@ export class RenderWorkerService {
     if (dto.kinds) {
       requireRenderKinds(dto.kinds);
     }
-    await this.findWorker(id);
+    const existing = await this.findWorker(id);
+    if (isBundledRenderWorker(existing) && dto.gpuWorkingBudgetApproval !== undefined) {
+      // The bundled worker is trusted by the server's own enrolment, not by an approved profile.
+      throw new BadRequestException('The bundled Studio worker has no hardware profile to approve');
+    }
 
     const updated = await this.repository.updateWorker(id, {
       name: dto.name,
@@ -538,7 +551,18 @@ export class RenderWorkerService {
    * audited with its reason and answered with one generic message, so a caller probing the gate
    * learns nothing about which check failed.
    */
-  async admit(dto: RenderWorkerAdmissionDto): Promise<RenderWorkerSessionDto> {
+  async admit(dto: RenderWorkerAdmissionDto, origin?: RenderWorkerOrigin): Promise<RenderWorkerSessionDto> {
+    // FL-408: the bundled worker's credential is only ever presented from the container network.
+    const enrolled = await this.repository.getWorker(dto.workerId);
+    if (enrolled && isBundledRenderWorker(enrolled) && !(origin && isInternalWorkerOrigin(origin))) {
+      await this.repository.recordAudit({
+        workerId: dto.workerId,
+        event: RenderWorkerAuditEvent.Refused,
+        reason: RenderWorkerRefusalReason.InvalidCredential,
+        detail: { bundled: true, origin: 'external' },
+      });
+      throw new UnauthorizedException('Worker admission refused');
+    }
     const sessionToken = this.cryptoRepository.randomBytesAsText(32);
     const { enrolmentSecret, ...report } = dto;
     const result = await this.repository.admitSession({

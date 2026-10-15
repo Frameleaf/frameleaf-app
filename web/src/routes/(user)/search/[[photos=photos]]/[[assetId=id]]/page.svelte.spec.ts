@@ -1,6 +1,6 @@
 import { SearchAskMode, askSearch, searchAssets, searchSmart, type SearchResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { flushSync } from 'svelte';
+import { flushSync, tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
 import { discoveryUrl, emptyDiscoveryQuery } from '$lib/components/discovery/query';
@@ -297,4 +297,23 @@ describe('Ask about your photos', () => {
     render(SearchPage);
     expect(screen.queryByRole('combobox', { name: 'Ask about your photos' })).not.toBeInTheDocument();
   });
+});
+
+it.each(['live', 'unmount', 'overlap'])('restores search scroll only for the current %s navigation', async (mode) => {
+  const scroll = vi.spyOn(globalThis, 'scrollTo').mockImplementation(() => {});
+  try {
+    const view = render(SearchPage);
+    const restore = navigation.afterNavigate.mock.calls.at(-1)![0];
+    restore({ from: null });
+    if (mode === 'unmount') {
+      view.unmount();
+    } else if (mode === 'overlap') {
+      restore({ from: null });
+    }
+    await tick();
+    await tick();
+    expect(scroll).toHaveBeenCalledTimes(mode === 'unmount' ? 0 : 1);
+  } finally {
+    scroll.mockRestore();
+  }
 });

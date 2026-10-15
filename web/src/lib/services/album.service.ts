@@ -21,28 +21,17 @@ import {
   type UserResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager, type ActionItem } from '@frameleaf/ui';
-import { mdiImageOutline, mdiPlusBoxOutline, mdiUpload } from '@mdi/js';
+import { mdiImageOutline, mdiUpload } from '@mdi/js';
 import { type MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
 import { type AlbumDetailsDraft } from '$lib/frameleaf/album-directory';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
-import { createAlbumAndRedirect } from '$lib/utils/album-utils';
 import { downloadArchive } from '$lib/utils/asset-utils';
 import { openFileUploadDialog } from '$lib/utils/file-uploader';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
-
-export const getAlbumsActions = ($t: MessageFormatter) => {
-  const Create: ActionItem = {
-    title: $t('create_album'),
-    icon: mdiPlusBoxOutline,
-    onAction: () => createAlbumAndRedirect(),
-  };
-
-  return { Create };
-};
 
 export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseDto, asset: AssetResponseDto) => {
   const SetCover: ActionItem = {
@@ -117,8 +106,16 @@ export const addAssetsToAlbums = async (albumIds: string[], assetIds: string[], 
 };
 
 const notifyAddToAlbum = ($t: MessageFormatter, albumId: string, assetIds: string[], results: BulkIdResponseDto[]) => {
-  const successCount = results.filter(({ success }) => success).length;
-  const duplicateCount = results.filter(({ error }) => error === 'duplicate').length;
+  let successCount = 0;
+  let duplicateCount = 0;
+  for (const { success, error } of results) {
+    if (success) {
+      successCount++;
+    }
+    if (error === BulkIdErrorReason.Duplicate) {
+      duplicateCount++;
+    }
+  }
   let description: string | undefined;
 
   if (duplicateCount === assetIds.length) {

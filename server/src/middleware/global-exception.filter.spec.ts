@@ -51,18 +51,17 @@ describe('FL-328 server error display contract', () => {
     });
   });
 
-  it('keeps real setup refusal semantics and its allowed argument', () => {
-    const { res, body } = respond(setupRefusal(FrameleafSetupErrorCode.CodeInvalid, { attemptsLeft: 2 }));
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(body.code).toBe('setup_code_invalid');
-    expect(body.attemptsLeft).toBe(2);
-    expect(body.displayError.args).toEqual({ attemptsLeft: 2 });
+  it('keeps real setup refusal semantics', () => {
+    const { res, body } = respond(setupRefusal(FrameleafSetupErrorCode.LanOnly));
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(body.code).toBe('setup_lan_only');
+    expect(body.displayError.args).toEqual({});
   });
 
   it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '2', { token: 'private' }])(
     'excludes invalid structured arguments: %j',
-    (attemptsLeft) => {
-      expect(serverErrorDisplay(401, { code: 'setup_code_invalid', attemptsLeft }).args).toEqual({});
+    (retryAfter) => {
+      expect(serverErrorDisplay(429, { code: 'rate_limited', retryAfter }).args).toEqual({});
     },
   );
 
@@ -125,13 +124,13 @@ describe('FL-328 server error display contract', () => {
   });
 
   it('does not reuse another request’s allowed arguments, content or correlation id', () => {
-    const a = respond(new HttpException({ code: 'setup_code_invalid', attemptsLeft: 2, message: 'Account A' }, 401));
+    const a = respond(new HttpException({ code: 'rate_limited', retryAfter: 2, message: 'Account A' }, 429));
     const b = respond(
-      new HttpException({ code: 'setup_code_invalid', attemptsLeft: 0, message: 'Account B' }, 401),
+      new HttpException({ code: 'rate_limited', retryAfter: 0, message: 'Account B' }, 429),
       'request-b',
     );
-    expect(a.body.displayError.args).toEqual({ attemptsLeft: 2 });
-    expect(b.body.displayError.args).toEqual({ attemptsLeft: 0 });
+    expect(a.body.displayError.args).toEqual({ retryAfter: 2 });
+    expect(b.body.displayError.args).toEqual({ retryAfter: 0 });
     expect(JSON.stringify(b.body)).not.toContain('Account A');
     expect(b.res.header).toHaveBeenCalledWith(expect.objectContaining({ [RequestHeader.CorrelationId]: 'request-b' }));
   });

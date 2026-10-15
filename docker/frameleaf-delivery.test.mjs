@@ -64,16 +64,22 @@ for (const [filename, project, rootless] of [
     assert.equal(server.container_name, "frameleaf_server");
     assert.equal(ml.container_name, "frameleaf_machine_learning");
     assert.equal(config.services.database.container_name, "frameleaf_postgres");
+    // FL-408: the bundled Studio worker's enrolment, written by the server, read-only for ML
+    const trust = rootless ? "./studio-worker" : "studio-worker";
     assert.deepEqual(server.volumes, [
       "${UPLOAD_LOCATION}:/data",
       "/etc/localtime:/etc/localtime:ro",
+      `${trust}:/run/frameleaf/studio-worker`,
     ]);
     assert.deepEqual(config.services.database.volumes, [
       "${DB_DATA_LOCATION}:/var/lib/postgresql",
     ]);
     assert.deepEqual(ml.volumes, [
       rootless ? "./ml-model-cache:/cache" : "model-cache:/cache",
+      `${trust}:/run/frameleaf/studio-worker:ro`,
     ]);
+    // the library is never mounted into the inference container
+    assert.ok(!ml.volumes.some((volume) => volume.includes("UPLOAD_LOCATION")));
     assert.equal(config.services.database.image, databaseImage);
     assert.equal(
       config.services.database.environment.POSTGRES_DB,
@@ -91,7 +97,7 @@ for (const [filename, project, rootless] of [
       assert.equal(server.user, "1000:1000");
       assert.equal(ml.user, "1000:1000");
     } else {
-      assert.deepEqual(config.volumes, { "model-cache": null });
+      assert.deepEqual(config.volumes, { "model-cache": null, "studio-worker": null });
     }
   });
 }
@@ -227,7 +233,7 @@ for (const [file, image] of [
     const inputs = {
       BUILD_ID: "12345",
       BUILD_SOURCE_COMMIT: "a".repeat(40),
-      BUILD_SOURCE_REF: "fork/main",
+      BUILD_SOURCE_REF: "main",
       BUILD_IMAGE: `ghcr.io/frameleaf/${image}:edge`,
     };
     const values = metadata(file, inputs);
@@ -245,7 +251,7 @@ for (const [file, image] of [
       values.FRAMELEAF_SOURCE_COMMIT_URL,
       `https://github.com/Frameleaf/frameleaf-app/commit/${inputs.BUILD_SOURCE_COMMIT}`,
     );
-    assert.equal(values.FRAMELEAF_SOURCE_REF, "fork/main");
+    assert.equal(values.FRAMELEAF_SOURCE_REF, "main");
     const custom = metadata(file, {
       ...inputs,
       BUILD_SOURCE_REPOSITORY: "Frameleaf/test-build",
@@ -869,7 +875,7 @@ test("the Postgres workflow publishes the tested image once, by dispatch, withou
   assert.deepEqual(publish.needs, "build");
   assert.match(publish.if, /vars\.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true'/);
   assert.match(publish.if, /github\.event_name == 'workflow_dispatch'/);
-  assert.match(publish.if, /github\.ref == 'refs\/heads\/fork\/main'/);
+  assert.match(publish.if, /github\.ref == 'refs\/heads\/main'/);
   assert.equal(workflow.on.workflow_dispatch.inputs.publish.default, false);
   assert.equal(publish.env.IMAGE, "ghcr.io/frameleaf/frameleaf-postgres");
   // No rebuild after testing: the publisher only loads and pushes the tested archives.

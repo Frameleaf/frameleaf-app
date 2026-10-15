@@ -1,3 +1,4 @@
+import { toPlainText } from '@react-email/render';
 import * as React from 'react';
 import { Img, Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
@@ -40,7 +41,7 @@ export const AlbumInviteEmail = ({
   return (
     <ImmichLayout
       baseUrl={baseUrl}
-      preview={customTemplate ? emailContent.toString() : 'You have been added to a shared album.'}
+      preview={customTemplate ? toPlainText(emailContent.toString()) : 'You have been added to a shared album.'}
     >
       {customTemplate && (
         <Text className="m-0">

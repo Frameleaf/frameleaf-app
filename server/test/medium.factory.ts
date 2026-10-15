@@ -662,6 +662,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     }
 
     // Supply inert connection objects only to constructors that wrap their database dependency.
+    case ClusterGroupRepository:
     case AlbumRepository:
     case AssetRepository:
     case AssetJobRepository:

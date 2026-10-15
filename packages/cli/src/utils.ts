@@ -1,12 +1,4 @@
-import {
-  ApiKeyResponseDto,
-  getMyApiKey,
-  getMyUser,
-  init,
-  isHttpError,
-  isMalformedResponseError,
-  Permission,
-} from '@frameleaf/sdk';
+import { getMyApiKey, getMyUser, init, isHttpError, isMalformedResponseError, Permission } from '@frameleaf/sdk';
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -22,7 +14,6 @@ export interface BaseOptions {
 }
 
 export type AuthDto = { url: string; key: string };
-type OldAuthDto = { instanceUrl: string; apiKey: string };
 
 export const authenticate = async (options: BaseOptions): Promise<AuthDto> => {
   const { configDirectory: configDir, url, key } = options;
@@ -44,24 +35,13 @@ export const authenticate = async (options: BaseOptions): Promise<AuthDto> => {
 
 export const s = (count: number) => (count === 1 ? '' : 's');
 
-let _apiKey: ApiKeyResponseDto;
 export const requirePermissions = async (permissions: Permission[]) => {
-  if (!_apiKey) {
-    // eslint-disable-next-line unicorn/no-top-level-assignment-in-function
-    _apiKey = await getMyApiKey();
-  }
-
-  if (_apiKey.permissions.includes(Permission.All)) {
+  const { permissions: granted } = await getMyApiKey();
+  if (granted.includes(Permission.All)) {
     return;
   }
 
-  const missing: Permission[] = [];
-
-  for (const permission of permissions) {
-    if (!_apiKey.permissions.includes(permission)) {
-      missing.push(permission);
-    }
-  }
+  const missing = permissions.filter((permission) => !granted.includes(permission));
 
   if (missing.length > 0) {
     const combined = missing.map((permission) => `"${permission}"`).join(', ');
@@ -90,7 +70,7 @@ export const connect = async (url: string, key: string) => {
   init({ baseUrl: url, apiKey: key });
 
   const [error] = await withError(getMyUser());
-  if (isHttpError(error) || isMalformedResponseError(error)) {
+  if (error) {
     logError(error, `Failed to connect to server ${url}`);
     process.exit(1);
   }
@@ -117,13 +97,16 @@ export const getAuthFilePath = (dir: string) => join(dir, 'auth.yml');
 export const readAuthFile = async (dir: string) => {
   try {
     const data = await readFile(getAuthFilePath(dir));
-    // TODO add class-transform/validation
-    const auth = yaml.parse(data.toString()) as AuthDto | OldAuthDto;
-    const { instanceUrl, apiKey } = auth as OldAuthDto;
-    if (instanceUrl && apiKey) {
-      return { url: instanceUrl, key: apiKey };
+    const auth: unknown = yaml.parse(data.toString());
+    if (!auth || typeof auth !== 'object' || Array.isArray(auth)) {
+      throw new Error('Invalid authentication file');
     }
-    return auth as AuthDto;
+    const values = auth as Record<string, unknown>;
+    const { url, key } = values.instanceUrl && values.apiKey ? { url: values.instanceUrl, key: values.apiKey } : values;
+    if (typeof url !== 'string' || !url.trim() || typeof key !== 'string' || !key.trim()) {
+      throw new Error('Invalid authentication file');
+    }
+    return { url, key };
   } catch (error: Error | any) {
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
       console.log('No auth file exists. Please login first.');
@@ -262,7 +245,7 @@ export class Batcher<T = unknown> {
   private items: T[] = [];
   private readonly batchSize: number;
   private readonly debounceTimeMs?: number;
-  private readonly onBatch: (items: T[]) => void;
+  private readonly onBatch: (items: T[]) => Promise<void>;
   private debounceTimer?: NodeJS.Timeout;
 
   constructor({
@@ -279,40 +262,30 @@ export class Batcher<T = unknown> {
     this.onBatch = onBatch;
   }
 
-  private setDebounceTimer() {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-    if (this.debounceTimeMs) {
-      this.debounceTimer = setTimeout(() => this.flush(), this.debounceTimeMs);
-    }
-  }
-
-  private clearDebounceTimer() {
-    if (!this.debounceTimer) {
-      return;
-    }
-
-    clearTimeout(this.debounceTimer);
-    this.debounceTimer = undefined;
-  }
-
   add(item: T) {
     this.items.push(item);
-    this.setDebounceTimer();
+    clearTimeout(this.debounceTimer);
+    this.debounceTimer = undefined;
     if (this.items.length >= this.batchSize) {
-      this.flush();
+      this.dispatch();
+    } else if (this.debounceTimeMs) {
+      this.debounceTimer = setTimeout(() => this.dispatch(), this.debounceTimeMs);
     }
   }
 
-  flush() {
-    this.clearDebounceTimer();
+  private dispatch() {
+    void this.flush().catch((error) => console.error('Batch failed:', error));
+  }
+
+  async flush(): Promise<void> {
+    clearTimeout(this.debounceTimer);
+    this.debounceTimer = undefined;
     if (this.items.length === 0) {
       return;
     }
 
-    this.onBatch(this.items);
-
+    const items = this.items;
     this.items = [];
+    await this.onBatch(items);
   }
 }

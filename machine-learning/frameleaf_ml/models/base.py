@@ -144,7 +144,8 @@ class InferenceModel(ABC):
         return self._make_session(self.model_path)
 
     def clear_cache(self) -> None:
-        if not self.cache_dir.exists():
+        is_directory = self.cache_dir.is_dir()
+        if not is_directory and not self.cache_dir.exists():
             log.warning(
                 f"Attempted to clear cache for model '{self.model_name}', but cache directory does not exist",
             )
@@ -152,9 +153,9 @@ class InferenceModel(ABC):
         if not rmtree.avoids_symlink_attacks:
             raise RuntimeError("Attempted to clear cache, but rmtree is not safe on this platform")
 
-        if self.cache_dir.is_dir():
-            log.info(f"Cleared cache directory for model '{self.model_name}'.")
+        if is_directory:
             rmtree(self.cache_dir)
+            log.info(f"Cleared cache directory for model '{self.model_name}'.")
         else:
             log.warning(
                 (

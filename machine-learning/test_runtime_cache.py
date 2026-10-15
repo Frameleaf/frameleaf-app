@@ -1,9 +1,15 @@
 from pathlib import Path
-from unittest.mock import Mock, patch
+from types import SimpleNamespace
+from unittest.mock import Mock, PropertyMock, patch
 
+import numpy as np
+import onnx
+import onnxruntime as ort
 import pytest
+from onnx import helper, numpy_helper
 
 from frameleaf_ml.config import settings
+from frameleaf_ml.models.facial_recognition.recognition import FaceRecognizer
 from frameleaf_ml.sessions import runtime_cache_dir
 from frameleaf_ml.sessions.ann import AnnSession
 from frameleaf_ml.sessions.ort import OrtSession
@@ -71,3 +77,41 @@ def test_armnn_tuning_and_compiled_cache_are_writable_outside_staged_models(stag
             staged_model.parent
         )
         del session
+
+
+@pytest.mark.parametrize("external_weights", [False, True])
+def test_face_batch_conversion_keeps_staged_model_and_weights_unchanged(
+    staged_model: Path, external_weights: bool
+) -> None:
+    weights = np.array([1, 2, 3], dtype=np.float32)
+    graph = helper.make_graph(
+        [helper.make_node("Add", ["input", "bias"], ["output"])],
+        "synthetic-face-model",
+        [helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, [1, 3])],
+        [helper.make_tensor_value_info("output", onnx.TensorProto.FLOAT, [1, 3])],
+        [numpy_helper.from_array(weights, "bias")],
+    )
+    proto = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=10)
+    onnx.save_model(
+        proto, staged_model, save_as_external_data=external_weights, location="model.weights", size_threshold=0
+    )
+    before = {path: path.read_bytes() for path in staged_model.parent.iterdir()}
+    recognizer = FaceRecognizer("buffalo_l")
+    recognizer.batch_size = 2
+    session = Mock()
+    session.get_inputs.return_value = [SimpleNamespace(shape=(1, 3))]
+    with (
+        patch.object(FaceRecognizer, "model_path", new_callable=PropertyMock, return_value=staged_model),
+        patch.object(recognizer, "_make_session", return_value=session) as make_session,
+    ):
+        recognizer._load()
+
+    converted_path = make_session.call_args.args[0]
+    assert not converted_path.is_relative_to(staged_model.parent)
+    assert {path: path.read_bytes() for path in staged_model.parent.iterdir()} == before
+    converted = onnx.load(converted_path)
+    assert converted.graph.input[0].type.tensor_type.shape.dim[0].dim_param == "batch"
+    np.testing.assert_array_equal(numpy_helper.to_array(converted.graph.initializer[0]), weights)
+    runtime = ort.InferenceSession(str(converted_path), providers=["CPUExecutionProvider"])
+    inputs = np.array([[10, 20, 30], [40, 50, 60]], dtype=np.float32)
+    np.testing.assert_array_equal(runtime.run(None, {"input": inputs})[0], inputs + weights)

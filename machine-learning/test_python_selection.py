@@ -21,9 +21,7 @@ class PythonSelectionTests(unittest.TestCase):
             if package["name"] == "torchvision" and package["version"] == "0.29.1+cpu"
         )
         linux_wheels = [
-            wheel["url"]
-            for wheel in torchvision["wheels"]
-            if "linux" in wheel["url"] and "x86_64" in wheel["url"]
+            wheel["url"] for wheel in torchvision["wheels"] if "linux" in wheel["url"] and "x86_64" in wheel["url"]
         ]
         self.assertTrue(linux_wheels, "Locked CPU wheel is missing")
         self.assertTrue(any(f"-{wheel_abi}-{wheel_abi}-" in wheel for wheel in linux_wheels))

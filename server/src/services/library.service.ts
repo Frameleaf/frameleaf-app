@@ -69,6 +69,7 @@ export class LibraryService extends BaseService {
   private watchLibraries = false;
   private lock = false;
   private watchers: Record<string, () => Promise<void>> = {};
+  private watchRequests = new Map<string, symbol>();
 
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({
@@ -119,12 +120,17 @@ export class LibraryService extends BaseService {
       return false;
     }
 
+    const request = Symbol();
+    this.watchRequests.set(id, request);
     const library = await this.findOrFail(id);
-    if (library.importPaths.length === 0) {
+    if (!this.watchLibraries || this.watchRequests.get(id) !== request) {
       return false;
     }
 
-    await this.unwatch(id);
+    await this.stopWatcher(id);
+    if (!this.watchLibraries || this.watchRequests.get(id) !== request || library.importPaths.length === 0) {
+      return false;
+    }
 
     this.logger.log(`Starting to watch library ${library.id} with import path(s) ${library.importPaths}`);
 
@@ -133,10 +139,13 @@ export class LibraryService extends BaseService {
       ignore: library.exclusionPatterns,
     });
 
-    let _resolve: () => void;
-    const ready$ = new Promise<void>((resolve) => (_resolve = resolve));
+    const ready = Promise.withResolvers<void>();
+    let active = true;
 
     const handler = async (event: string, path: string) => {
+      if (!active || !this.watchLibraries) {
+        return;
+      }
       if (matcher(path)) {
         this.logger.debug(`File ${event} event received for ${path} in library ${library.id}`);
         await this.jobRepository.queue({
@@ -149,6 +158,9 @@ export class LibraryService extends BaseService {
     };
 
     const deletionHandler = async (path: string) => {
+      if (!active || !this.watchLibraries) {
+        return;
+      }
       this.logger.debug(`File unlink event received for ${path} in library ${library.id}`);
       await this.jobRepository.queue({
         name: JobName.LibraryRemoveAsset,
@@ -156,7 +168,7 @@ export class LibraryService extends BaseService {
       });
     };
 
-    this.watchers[id] = this.storageRepository.watch(
+    const stop = this.storageRepository.watch(
       library.importPaths,
       {
         usePolling: false,
@@ -167,7 +179,7 @@ export class LibraryService extends BaseService {
         },
       },
       {
-        onReady: () => _resolve(),
+        onReady: () => ready.resolve(),
         onAdd: (path) => {
           return handlePromiseError(handler('add', path), this.logger);
         },
@@ -179,27 +191,56 @@ export class LibraryService extends BaseService {
         },
         onError: (error) => {
           this.logger.error(`Library watcher for library ${library.id} encountered error: ${error}`);
+          ready.reject(error);
         },
       },
     );
 
-    // Wait for the watcher to initialize before returning
-    await ready$;
+    let closing: Promise<void> | undefined;
+    const close = () => {
+      active = false;
+      ready.resolve();
+      closing ??= Promise.try(stop).catch((error: unknown) => {
+        closing = undefined;
+        throw error;
+      });
+      return closing;
+    };
+    this.watchers[id] = close;
+    try {
+      await ready.promise;
+      return active && this.watchRequests.get(id) === request;
+    } catch (error) {
+      try {
+        await close();
+        if (this.watchers[id] === close) {
+          delete this.watchers[id];
+        }
+      } catch (closeError) {
+        this.logger.error(`Unable to close library watcher ${id}: ${closeError}`);
+      }
+      throw error;
+    }
+  }
 
-    return true;
+  private async stopWatcher(id: string) {
+    const close = this.watchers[id];
+    if (close) {
+      await close();
+      if (this.watchers[id] === close) {
+        delete this.watchers[id];
+      }
+    }
   }
 
   async unwatch(id: string) {
-    if (!Object.hasOwn(this.watchers, id)) {
-      return;
-    }
-
-    await this.watchers[id]();
-    delete this.watchers[id];
+    this.watchRequests.delete(id);
+    await this.stopWatcher(id);
   }
 
   @OnEvent({ name: 'AppShutdown' })
   async onShutdown() {
+    this.watchLibraries = false;
     await this.unwatchAll();
   }
 
@@ -208,8 +249,12 @@ export class LibraryService extends BaseService {
       return false;
     }
 
-    for (const id in this.watchers) {
-      await this.unwatch(id);
+    const ids = new Set([...Object.keys(this.watchers), ...this.watchRequests.keys()]);
+    const results = await Promise.allSettled([...ids].map((id) => this.unwatch(id)));
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
     }
   }
 

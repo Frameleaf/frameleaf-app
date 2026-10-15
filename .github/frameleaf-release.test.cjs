@@ -155,7 +155,7 @@ test("every supported image variant has an explicit native build contract", () =
       SOURCE_SHA: sha,
       GITHUB_SHA: sha,
       GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
-      GITHUB_REF: "refs/heads/fork/main",
+      GITHUB_REF: "refs/heads/main",
       GITHUB_EVENT_NAME: "push",
     };
     assert.deepEqual(
@@ -290,7 +290,7 @@ test("all seven ML manifests qualify only for their declared variant/platform se
 test("manual releases require a successful canonical exact-SHA Docker run", () => {
   const run = {
     head_sha: sha,
-    head_branch: "fork/main",
+    head_branch: "main",
     head_repository: { full_name: "Frameleaf/frameleaf-app" },
     event: "workflow_dispatch",
     status: "completed",
@@ -345,7 +345,7 @@ function testQualificationFixture() {
     run_attempt: 2,
     updated_at: "2026-10-04T04:00:00Z",
     head_sha: sha,
-    head_branch: "fork/main",
+    head_branch: "main",
     head_repository: { full_name: "Frameleaf/frameleaf-app" },
     event: "push",
     status: "completed",
@@ -356,7 +356,7 @@ function testQualificationFixture() {
     id: 100 + index,
     run_id: 42,
     head_sha: sha,
-    head_branch: "fork/main",
+    head_branch: "main",
     workflow_name: "Test",
     name,
     status: "completed",
@@ -1269,7 +1269,7 @@ test("manual dispatch rejects existing fresh or reused same-SHA candidates befor
   const output = path.join(directory, "outputs");
   const env = {
     GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
-    GITHUB_REF: "refs/heads/fork/main",
+    GITHUB_REF: "refs/heads/main",
     GITHUB_SHA: sha,
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_OUTPUT: output,
@@ -1599,7 +1599,7 @@ test("rollback binds each image to its qualified release source while preserving
         else if (endpoint === "actions/runs/42")
           value = {
             head_sha: qualified,
-            head_branch: "fork/main",
+            head_branch: "main",
             head_repository: { full_name: "Frameleaf/frameleaf-app" },
             event: "push",
             status: "completed",

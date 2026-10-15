@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { DateTime } from 'luxon';
 import { Stats } from 'node:fs';
 import type { PendingAssetMove } from 'src/repositories/move.repository.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
@@ -159,6 +160,26 @@ describe(StorageTemplateService.name, () => {
   });
 
   describe('handleMigrationSingle', () => {
+    it.each(['../owner-sibling/{{filename}}', '../owner'])(
+      'refuses destination outside its library: %s',
+      async (template) => {
+        const user = UserFactory.from({ storageLabel: 'owner' }).build();
+        const asset = AssetFactory.from().owner(user).exif().build();
+        const config = structuredClone(defaults);
+        config.storageTemplate.template = template;
+        sut.onConfigInit({ newConfig: config });
+        mocks.user.get.mockResolvedValue(user);
+        mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
+
+        await sut.handleMigrationSingle({ id: asset.id });
+
+        expect(mocks.move.create).not.toHaveBeenCalled();
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+        expect(mocks.asset.moveFile).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('invalid path'));
+      },
+    );
+
     it('should skip when storage template is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: false } });
 
@@ -434,7 +455,13 @@ describe(StorageTemplateService.name, () => {
         },
       ]);
 
-      expect(await sut.handleMigrationSingle({ id: asset.id })).toBe(JobStatus.Success);
+      const parse = vi.spyOn(DateTime, 'fromJSDate');
+      try {
+        expect(await sut.handleMigrationSingle({ id: asset.id })).toBe(JobStatus.Success);
+        expect(parse.mock.calls.filter(([date]) => date === asset.fileCreatedAt)).toHaveLength(3);
+      } finally {
+        parse.mockRestore();
+      }
 
       const month = (asset.fileCreatedAt.getMonth() + 1).toString().padStart(2, '0');
       expect(mocks.move.create).toHaveBeenCalledWith({

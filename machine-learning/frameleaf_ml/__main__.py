@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import DEPRECATED_ENV, log, non_prefixed_settings, settings
 from .env_aliases import deprecated_env_warning
+from .studio_worker import start_studio_worker
 
 if source_ref := os.getenv("FRAMELEAF_SOURCE_REF"):
     log.info(f"Initializing Frameleaf ML [{source_ref}]")
@@ -30,6 +31,16 @@ bind_host = non_prefixed_settings.frameleaf_host
 if is_ipv6(bind_host):
     bind_host = f"[{bind_host}]"
 bind_address = f"{bind_host}:{non_prefixed_settings.frameleaf_port}"
+
+# FL-408: the bundled Studio render worker runs beside inference, in its own process
+studio_worker = start_studio_worker()
+
+# The image's allocator preload applies to the inference workers only; Chromium in the Studio worker
+# must not load it.
+inference_env = os.environ.copy()
+mimalloc_preload = Path("/etc/frameleaf-mimalloc-preload")
+if mimalloc_preload.is_file() and (library := mimalloc_preload.read_text().strip()):
+    inference_env["LD_PRELOAD"] = library
 
 try:
     with subprocess.Popen(
@@ -56,8 +67,12 @@ try:
             "10",
             "--no-control-socket",
         ],
+        env=inference_env,
     ) as cmd:
         cmd.wait()
 except KeyboardInterrupt:
     cmd.send_signal(signal.SIGINT)
+finally:
+    if studio_worker is not None:
+        studio_worker.stop()
 exit(cmd.returncode)

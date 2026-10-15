@@ -1,19 +1,19 @@
 #!/bin/bash
 # shellcheck source=common.sh
 # shellcheck disable=SC1091
-source /immich-devcontainer/container-common.sh
+source /immich-devcontainer/container-common.sh || exit $?
 
 log "Preparing Immich Nest API Server"
 log ""
 export CI=1
-run_cmd pnpm --filter frameleaf install
+run_cmd pnpm --filter frameleaf install || exit $?
 
 log "Starting Nest API Server"
 log ""
-cd "${IMMICH_WORKSPACE}/server" || (
+cd "${IMMICH_WORKSPACE}/server" || {
     log "Immich workspace not found"
     exit 1
-)
+}
 
 while true; do
     run_cmd pnpm --filter frameleaf exec nest start --debug "0.0.0.0:9230" --watch

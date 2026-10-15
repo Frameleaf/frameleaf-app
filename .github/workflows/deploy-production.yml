@@ -1,9 +1,9 @@
 # Deploy production (FL-142, FL-145, FL-146; owner decisions 2026-09-27): "We'll just setup deploys in
 # actions. A deploy production does the release and auto signs images."
 #
-# A manual dispatch of fork/main. It replaces the former automatic Frameleaf Release workflow and keeps
+# A manual dispatch of main. It replaces the former automatic Frameleaf Release workflow and keeps
 # its promotion logic (.github/frameleaf-release.cjs `release`):
-#   release  - verify that the named candidate (the exact fork/main commit, or the digest of its
+#   release  - verify that the named candidate (the exact main commit, or the digest of its
 #              frameleaf-server candidate) is a verified build of that commit (a successful same-SHA
 #              Deploy run, verified manifests; rolling tags are never evidence), run the deployment test on
 #              those exact images, then in the protected `production` environment promote the version,
@@ -24,7 +24,7 @@ on:
         options: [release, rollout, withdraw]
         default: release
       candidate:
-        description: 'release: the exact 40-character fork/main commit SHA, or the sha256: digest of its frameleaf-server candidate'
+        description: 'release: the exact 40-character main commit SHA, or the sha256: digest of its frameleaf-server candidate'
         type: string
         default: ''
       rollout-percent:
@@ -57,7 +57,7 @@ permissions: {}
 jobs:
   candidate:
     name: Verify the verified candidate
-    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/fork/main' || inputs.dry-run)
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/main' || inputs.dry-run)
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     permissions:
       contents: read
@@ -127,7 +127,7 @@ jobs:
   release:
     name: Promote, sign and publish
     needs: [candidate, deploy-test]
-    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/main'
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     environment: production
     permissions:
@@ -194,7 +194,7 @@ jobs:
   flags:
     name: Apply ${{ inputs.action }}
     needs: flags-plan
-    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/fork/main'
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/main'
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     environment: production
     permissions:

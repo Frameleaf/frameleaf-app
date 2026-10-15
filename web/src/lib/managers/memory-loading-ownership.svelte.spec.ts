@@ -1,0 +1,131 @@
+import { memoriesStatistics, searchMemories, type MemoryResponseDto } from '@frameleaf/sdk';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { deferredPromise } from '@test-data/deferred';
+
+const state = vi.hoisted(() => ({
+  auth: { authenticated: false, user: { id: 'me' } },
+  events: {} as Record<string, () => unknown>,
+}));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: state.auth }));
+vi.mock('$lib/managers/event-manager.svelte', () => ({
+  eventManager: { on: (events: Record<string, () => unknown>) => Object.assign(state.events, events) },
+}));
+vi.mock('$lib/managers/user-preferences-manager.svelte', () => ({
+  userPreferencesManager: { memories: { showUpcoming: true, onlyFavorites: false } },
+}));
+vi.mock('$lib/frameleaf/library-access', () => ({ onLibraryAccessChange: vi.fn() }));
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  searchMemories: vi.fn(),
+  memoriesStatistics: vi.fn(),
+}));
+
+const memory = (id: string, assets = [{ id: `asset-${id}` }]) => ({ id, assets }) as MemoryResponseDto;
+let manager: typeof import('./memory-manager.svelte').memoryManager;
+
+beforeEach(async () => {
+  vi.resetModules();
+  vi.useFakeTimers();
+  vi.setSystemTime('2026-10-15T12:59:55.250Z');
+  state.auth.authenticated = false;
+  state.events = {};
+  vi.mocked(searchMemories).mockReset().mockResolvedValue([]);
+  vi.mocked(memoriesStatistics).mockReset().mockResolvedValue({ total: 0 });
+  ({ memoryManager: manager } = await import('./memory-manager.svelte'));
+});
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
+describe('memory page ownership', () => {
+  it('publishes an in-flight page before fetching the queued page, counting empty memories toward pagination', async () => {
+    const first = deferredPromise<MemoryResponseDto[]>();
+    const duplicate = memory('first', [{ id: 'ignored-duplicate' }]);
+    vi.mocked(searchMemories)
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce([duplicate, memory('second')]);
+    vi.mocked(memoriesStatistics).mockResolvedValue({ total: 5 });
+    const loading = manager.refresh();
+    manager.loadNextPage();
+    manager.loadNextPage();
+    first.resolve([memory('empty', []), memory('first'), duplicate]);
+    await loading;
+    expect(manager.memories.map(({ id }) => id)).toEqual(['first', 'second']);
+    expect(manager.memories[0].assets[0].id).toBe('asset-first');
+    expect(vi.mocked(searchMemories).mock.calls.map(([query]) => query.page)).toEqual([1, 2]);
+    expect(manager.hasNextPage).toBe(false);
+  });
+
+  it.each([false, true])('discards a response after logout without another request (queued=%s)', async (queued) => {
+    const first = deferredPromise<MemoryResponseDto[]>();
+    vi.mocked(searchMemories).mockReturnValueOnce(first.promise);
+    const loading = manager.refresh();
+    if (queued) {
+      manager.loadNextPage();
+    }
+    state.events.AuthLogout();
+    first.resolve([memory('private')]);
+    await loading;
+    expect(manager.memories).toEqual([]);
+    expect(searchMemories).toHaveBeenCalledTimes(1);
+    expect(memoriesStatistics).not.toHaveBeenCalled();
+    expect(manager.loading).toBeUndefined();
+  });
+
+  it('starts a session-state reload immediately and ignores statistics from the previous state', async () => {
+    const oldStatistics = deferredPromise<{ total: number }>();
+    const currentPage = deferredPromise<MemoryResponseDto[]>();
+    vi.mocked(searchMemories)
+      .mockResolvedValueOnce([memory('old')])
+      .mockReturnValueOnce(currentPage.promise);
+    vi.mocked(memoriesStatistics).mockReturnValueOnce(oldStatistics.promise).mockResolvedValueOnce({ total: 1 });
+    const oldLoading = manager.refresh();
+    await vi.waitFor(() => expect(memoriesStatistics).toHaveBeenCalledTimes(1));
+    const currentLoading = manager.reloadForSessionAccess();
+    expect(searchMemories).toHaveBeenCalledTimes(2);
+    oldStatistics.resolve({ total: 999 });
+    await oldLoading;
+    expect(manager.loading).toBe(currentLoading);
+    expect(manager.memories).toEqual([]);
+    currentPage.resolve([memory('current')]);
+    await currentLoading;
+    expect(manager.total).toBe(1);
+    expect(manager.memories.map(({ id }) => id)).toEqual(['current']);
+    expect(manager.loading).toBeUndefined();
+  });
+
+  it('retries a failed page rather than leaving the loader stuck or skipping it', async () => {
+    vi.mocked(searchMemories)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([memory('retry')]);
+    vi.mocked(memoriesStatistics).mockResolvedValue({ total: 1 });
+    await expect(manager.refresh()).rejects.toThrow('offline');
+    expect(manager.loading).toBeUndefined();
+    await manager.refresh();
+    expect(vi.mocked(searchMemories).mock.calls.map(([query]) => query.page)).toEqual([1, 1]);
+    expect(manager.memories.map(({ id }) => id)).toEqual(['retry']);
+  });
+
+  it('does not publish a partial page when statistics fail and retries the same page', async () => {
+    vi.mocked(searchMemories).mockResolvedValue([memory('retry')]);
+    vi.mocked(memoriesStatistics)
+      .mockRejectedValueOnce(new Error('statistics unavailable'))
+      .mockResolvedValueOnce({ total: 1 });
+    await expect(manager.refresh()).rejects.toThrow('statistics unavailable');
+    expect(manager.memories).toEqual([]);
+    expect(manager.loading).toBeUndefined();
+    await manager.refresh();
+    expect(vi.mocked(searchMemories).mock.calls.map(([query]) => query.page)).toEqual([1, 1]);
+    expect(manager.memories.map(({ id }) => id)).toEqual(['retry']);
+  });
+
+  it('keeps the hourly schedule but does not fetch while signed out', async () => {
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(searchMemories).not.toHaveBeenCalled();
+    state.auth.authenticated = true;
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(searchMemories).toHaveBeenCalledTimes(1);
+  });
+});

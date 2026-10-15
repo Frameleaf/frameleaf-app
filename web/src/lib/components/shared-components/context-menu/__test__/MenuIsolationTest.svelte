@@ -5,10 +5,12 @@
   import { mdiDotsVertical } from '@mdi/js';
 
   let {
+    hideContent = false,
     onFirst = () => {},
     onSecond = () => {},
     onStandalone = () => {},
   } = $props<{
+    hideContent?: boolean;
     onFirst?: () => void;
     onSecond?: () => void;
     onStandalone?: () => void;
@@ -16,7 +18,7 @@
 </script>
 
 <TooltipProvider>
-  <ButtonContextMenu icon={mdiDotsVertical} title="First">
+  <ButtonContextMenu icon={mdiDotsVertical} title="First" {hideContent}>
     <MenuOption text="First option" onClick={onFirst} />
   </ButtonContextMenu>
   <ButtonContextMenu icon={mdiDotsVertical} title="Second">

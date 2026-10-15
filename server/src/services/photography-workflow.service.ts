@@ -964,7 +964,8 @@ export class PhotographyWorkflowService {
     const recipient = row.value.recipients.find((r) => r.tokenHash === hash(dto.token));
     if (!recipient) throw new ForbiddenException('Invalid invitation');
     this.requireRecipient(row, recipient.id);
-    if (recipient.passwordHash && !this.crypto.compareBcrypt(dto.password ?? '', recipient.passwordHash))
+    const { passwordHash, tokenHash } = recipient;
+    if (passwordHash && !(await this.crypto.compareBcrypt(dto.password ?? '', passwordHash)))
       throw new ForbiddenException('Invalid invitation or password');
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(
@@ -975,7 +976,9 @@ export class PhotographyWorkflowService {
       ),
     ).toISOString();
     await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, (value) => {
-      this.requireRecipient({ ...row, value }, recipient.id);
+      const current = this.requireRecipient({ ...row, value }, recipient.id);
+      if (current.passwordHash !== passwordHash || current.tokenHash !== tokenHash)
+        throw new ForbiddenException('Invalid invitation or password');
       value.sessions = value.sessions.filter((s) => !expired(s.expiresAt));
       if (value.sessions.length >= 2000) throw new ConflictException('Gallery session limit reached');
       value.sessions.push({ hash: hash(token), recipientId: recipient.id, expiresAt });

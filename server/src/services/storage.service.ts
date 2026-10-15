@@ -141,7 +141,11 @@ export class StorageService extends BaseService {
         if (previous !== current) {
           this.logger.log(`Media location changed (from=${previous}, to=${current})`);
 
-          if (!path.startsWith(previous)) {
+          const windowsSource = /^[a-z]:/i.test(previous) || previous.startsWith('\\\\');
+          const source =
+            previous.endsWith('/') || (windowsSource && previous.endsWith('\\')) ? previous.slice(0, -1) : previous;
+          const prefixes = [source + '/', ...(windowsSource ? [source + '\\'] : [])];
+          if (samples.some(({ path }) => path !== source && prefixes.every((prefix) => !path.startsWith(prefix)))) {
             throw new Error(ErrorMessages.InconsistentMediaLocation);
           }
 

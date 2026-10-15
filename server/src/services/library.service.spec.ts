@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import { vitest } from 'vitest';
 import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
+import type { WatchEvents } from 'src/repositories/storage.repository.js';
 import type { ILibraryFileJob } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
@@ -837,6 +838,139 @@ describe(LibraryService.name, () => {
         mocks.cron.create.mockResolvedValue();
 
         await sut.onConfigInit({ newConfig: systemConfigStub.libraryWatchEnabled as SystemConfig });
+      });
+
+      it('ignores callbacks after a watcher closes', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        mocks.library.get.mockResolvedValue(library);
+        mocks.library.getAll.mockResolvedValue([library]);
+        let events!: Partial<WatchEvents>;
+        mocks.storage.watch.mockImplementation((_paths, _options, callbacks) => {
+          events = callbacks;
+          callbacks.onReady?.();
+          return () => Promise.resolve();
+        });
+        await sut.watchAll();
+        await sut.unwatch(library.id);
+        events.onAdd?.('/foo/photo.jpg');
+        events.onChange?.('/foo/photo.jpg');
+        events.onUnlink?.('/foo/photo.jpg');
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      });
+
+      it('cancels startup before readiness and closes only once', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        mocks.library.get.mockResolvedValue(library);
+        mocks.library.getAll.mockResolvedValue([library]);
+        const close = vitest.fn(() => Promise.resolve());
+        mocks.storage.watch.mockReturnValue(close);
+        const pending = sut.watchAll();
+        await vitest.waitFor(() => expect(mocks.storage.watch).toHaveBeenCalledOnce());
+        await Promise.all([sut.unwatch(library.id), sut.unwatch(library.id)]);
+        await expect(pending).resolves.toBeUndefined();
+        expect(close).toHaveBeenCalledOnce();
+      });
+
+      it('rejects initial watcher errors and releases the watcher', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        mocks.library.get.mockResolvedValue(library);
+        mocks.library.getAll.mockResolvedValue([library]);
+        const failure = new Error('watch unavailable');
+        const close = vitest.fn(() => Promise.resolve());
+        mocks.storage.watch.mockImplementation((_paths, _options, events) => {
+          events.onError?.(failure);
+          return close;
+        });
+        await expect(sut.watchAll()).rejects.toBe(failure);
+        expect(close).toHaveBeenCalledOnce();
+      });
+
+      it('does not install a cancelled lookup', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        const lookup = Promise.withResolvers<typeof library>();
+        mocks.library.get.mockReturnValue(lookup.promise);
+        mocks.library.getAll.mockResolvedValue([library]);
+        const pending = sut.watchAll();
+        await vitest.waitFor(() => expect(mocks.library.get).toHaveBeenCalled());
+        await sut.unwatch(library.id);
+        lookup.resolve(library);
+        await pending;
+        expect(mocks.storage.watch).not.toHaveBeenCalled();
+      });
+
+      it('keeps the newest watcher when an older lookup finishes last', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        const lookup = Promise.withResolvers<typeof library>();
+        mocks.library.get.mockReturnValueOnce(lookup.promise).mockResolvedValue(library);
+        mocks.library.getAll.mockResolvedValue([library]);
+        const pending = sut.watchAll();
+        await vitest.waitFor(() => expect(mocks.library.get).toHaveBeenCalledOnce());
+        await sut.watchAll();
+        lookup.resolve(library);
+        await pending;
+        expect(mocks.storage.watch).toHaveBeenCalledOnce();
+      });
+
+      it('stops an existing watcher when import paths become empty', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        mocks.library.get.mockResolvedValue(library);
+        mocks.library.getAll.mockResolvedValue([library]);
+        const close = vitest.fn(() => Promise.resolve());
+        mocks.storage.watch.mockImplementation(makeMockWatcher({ close }));
+        await sut.watchAll();
+        mocks.library.get.mockResolvedValue({ ...library, importPaths: [] });
+        await sut.watchAll();
+        expect(close).toHaveBeenCalledOnce();
+        expect(mocks.storage.watch).toHaveBeenCalledOnce();
+      });
+
+      it('retains a replacement when an old close is shared with unwatch', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        mocks.library.get.mockResolvedValue(library);
+        mocks.library.getAll.mockResolvedValue([library]);
+        const closing = Promise.withResolvers<void>();
+        const oldClose = vitest.fn(() => closing.promise);
+        const newClose = vitest.fn(() => Promise.resolve());
+        mocks.storage.watch
+          .mockImplementationOnce(makeMockWatcher({ close: oldClose }))
+          .mockImplementation(makeMockWatcher({ close: newClose }));
+        await sut.watchAll();
+        const stopping = sut.unwatch(library.id);
+        const replacing = sut.watchAll();
+        await vitest.waitFor(() => expect(oldClose).toHaveBeenCalledOnce());
+        closing.resolve();
+        await Promise.all([stopping, replacing]);
+        await sut.unwatch(library.id);
+        expect(newClose).toHaveBeenCalledOnce();
+        expect(oldClose).toHaveBeenCalledOnce();
+      });
+
+      it('attempts every shutdown close when one fails', async () => {
+        const libraries = [factory.library({ importPaths: ['/foo'] }), factory.library({ importPaths: ['/bar'] })];
+        mocks.library.get.mockResolvedValueOnce(libraries[0]).mockResolvedValueOnce(libraries[1]);
+        mocks.library.getAll.mockResolvedValue(libraries);
+        const failure = new Error('close unavailable');
+        const failedClose = vitest.fn(() => Promise.reject(failure));
+        const otherClose = vitest.fn(() => Promise.resolve());
+        mocks.storage.watch
+          .mockImplementationOnce(makeMockWatcher({ close: failedClose }))
+          .mockImplementationOnce(makeMockWatcher({ close: otherClose }));
+        await sut.watchAll();
+        await expect(sut.onShutdown()).rejects.toBe(failure);
+        expect(failedClose).toHaveBeenCalledOnce();
+        expect(otherClose).toHaveBeenCalledOnce();
+      });
+
+      it('does not restart watchers after shutdown during listing', async () => {
+        const library = factory.library({ importPaths: ['/foo'] });
+        const listing = Promise.withResolvers<(typeof library)[]>();
+        mocks.library.get.mockResolvedValue(library);
+        mocks.library.getAll.mockReturnValue(listing.promise);
+        const pending = sut.watchAll();
+        await sut.onShutdown();
+        listing.resolve([library]);
+        await pending;
+        expect(mocks.storage.watch).not.toHaveBeenCalled();
       });
 
       it('should watch library', async () => {

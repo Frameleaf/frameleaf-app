@@ -4,9 +4,9 @@ Frameleaf owns its application schema, PostgreSQL job processing, database image
 
 ## Baseline and worktree
 
-Use the `Frameleaf/frameleaf-app` repository and verify the `frameleaf` remote URL before remote writes. The default branch is literally `fork/main`. Fetch it immediately before starting new independent work and record the exact baseline commit. Use an isolated worktree and preserve other tasks' uncommitted files.
+Use the `Frameleaf/frameleaf-app` repository and verify the `frameleaf` remote URL before remote writes. The default branch is `main`. Fetch it immediately before starting new independent work and record the exact baseline commit. Use an isolated worktree and preserve other tasks' uncommitted files.
 
-When continuing an explicitly assigned PR or implementation branch, use its current head and integration target. For the PostgreSQL hard cut, the target is PR #140's `master/frameleaf-implementation` branch. Integration there does not authorize merging that PR into `fork/main` or publishing the application.
+When continuing an explicitly assigned PR or implementation branch, use its current head and integration target. For the PostgreSQL hard cut, the target is PR #140's `master/frameleaf-implementation` branch. Integration there does not authorize merging that PR into `main` or publishing the application.
 
 Use the active task's branch convention and commit as `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers. Record source changes, hosted validation, integration, publication and deployment as separate outcomes.
 
@@ -32,13 +32,13 @@ Use one watcher per external operation and the active task's polling circuit bre
 
 ## Build and release flow
 
-The **Deploy** workflow on `fork/main` builds owned application archives, runs integration and fresh-install deployment checks, and publishes the tested image artifacts. The separate **Deploy production** workflow resolves an exact candidate, verifies its build identity and manifests, tests that candidate, then promotes, signs and publishes within its protected release flow. Run either publishing flow only with explicit task authorization. An implementation-branch validation run does not publish a release.
+The **Deploy** workflow on `main` builds owned application archives, runs integration and fresh-install deployment checks, and publishes the tested image artifacts. The separate **Deploy production** workflow resolves an exact candidate, verifies its build identity and manifests, tests that candidate, then promotes, signs and publishes within its protected release flow. Run either publishing flow only with explicit task authorization. An implementation-branch validation run does not publish a release.
 
 Preserve source revisions, architecture digests, signatures, SBOMs, checksums and release attestations. Release and NAS manifest version 3 consumers use build identity and artifact provenance. There are no certification or qualification receipts, official-container round trips, reverse-normalization checks or upstream migration tracking dependencies.
 
 The owned `frameleaf-postgres` image contains PostgreSQL 19 beta 4 and pgvector 0.8.7, pinned by digest for AMD64 and ARM64. Its public visibility allows anonymous pulls. Every distribution creates a new PostgreSQL 19 data volume mounted at `/var/lib/postgresql`; it must not adopt an older PostgreSQL data directory. The canonical database name defaults to `frameleaf`.
 
-Compose and [NAS packaging](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/packaging/nas/README.md) consume the matching release artifacts. Hosted packaging, lifecycle and render tests do not establish physical DSM/TrueNAS/Unraid installation or store approval. Preserve those acceptance boundaries instead of treating a generated package as a deployed product.
+Compose and [NAS packaging](https://github.com/Frameleaf/frameleaf-app/blob/main/packaging/nas/README.md) consume the matching release artifacts. Hosted packaging, lifecycle and render tests do not establish physical DSM/TrueNAS/Unraid installation or store approval. Preserve those acceptance boundaries instead of treating a generated package as a deployed product.
 
 Before an authorized merge, verify the destination, exact candidate checks and merge message. Avoid replaying historical Smart Commit commands through a concatenated squash message. After integration, read back the branch ancestry and PR state. Verify publication and deployment independently when they are part of the authorized task, and close the issue only when its own acceptance is satisfied.
 

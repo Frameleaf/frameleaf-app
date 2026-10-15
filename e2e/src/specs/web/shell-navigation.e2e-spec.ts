@@ -289,8 +289,9 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     await railLink(page, 'Library Care').click();
     await page.waitForURL((url) => url.pathname === '/user-settings' && url.searchParams.get('area') === 'care');
     await expect(errorTitle(page)).toHaveCount(0);
-    await expect(page.getByText('Duplicate review', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Live Photo pairing', { exact: true }).first()).toBeVisible();
+    // FL-366: the Library care landing lists Duplicates and Things to fix (Live Photos to reconnect).
+    await expect(page.getByText('Duplicates', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Things to fix', { exact: true }).first()).toBeVisible();
   });
 
   test('keeps administration behind the administrator role', async ({ context, page }) => {

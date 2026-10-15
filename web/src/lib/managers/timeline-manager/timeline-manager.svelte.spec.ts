@@ -1401,6 +1401,20 @@ describe('TimelineManager', () => {
       await timelineManager.updateViewport({ width: 1588, height: 0 });
     });
 
+    it.each([-1, 0.5, NaN, Infinity, 14])('rejects an invalid index without loading: %s', async (index) => {
+      const load = vi.spyOn(timelineManager, 'loadTimelineMonth');
+      await expect(timelineManager.getRandomAsset(index)).resolves.toBeUndefined();
+      expect(load).not.toHaveBeenCalled();
+    });
+
+    it('does not return an asset from a month removed while loading', async () => {
+      await timelineManager.getRandomAsset(0);
+      vi.spyOn(timelineManager, 'loadTimelineMonth').mockImplementationOnce(async () => {
+        timelineManager.months = [];
+      });
+      await expect(timelineManager.getRandomAsset(0)).resolves.toBeUndefined();
+    });
+
     it('gets all assets once', async () => {
       const assetCount = timelineManager.assetCount;
       expect(assetCount).toBe(14);

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { OnUndoDelete } from '$lib/utils/actions';
+  import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { AssetResponseDto } from '@frameleaf/sdk';
 
   let {
@@ -7,11 +9,13 @@
     onClose,
     onRendered,
     onAssetSuppressed,
+    onUndoDelete,
   }: {
     cursor?: { current: AssetResponseDto };
     asset?: AssetResponseDto;
     onClose?: (refreshAsset: boolean) => void;
     onRendered?: (assetId: string) => void;
+    onUndoDelete?: OnUndoDelete;
     onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
   } = $props();
 </script>
@@ -21,3 +25,7 @@
   <button type="button" onclick={() => onRendered?.(asset.id)}>Publish photo render</button>
 {/if}
 <button type="button" onclick={() => cursor && onAssetSuppressed?.(cursor.current)}>Suppress asset</button>
+
+{#if onUndoDelete && cursor}
+  <button type="button" onclick={() => cursor && onUndoDelete?.([toTimelineAsset(cursor.current)])}>Undo delete</button>
+{/if}

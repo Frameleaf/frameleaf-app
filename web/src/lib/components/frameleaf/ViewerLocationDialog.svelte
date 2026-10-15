@@ -20,6 +20,7 @@
   import type Map from '$lib/components/shared-components/map/Map.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { getPrivateBrowserStateGeneration } from '$lib/frameleaf/private-browser-state';
   import { isLocationRemoval, locationDraft, locationPatch, parseCoordinate } from '$lib/frameleaf/viewer-location';
   import { geolocationManager } from '$lib/managers/geolocation.manager.svelte';
   import { delay } from '$lib/utils/asset-utils';
@@ -36,6 +37,7 @@
   }
 
   const { asset, onClose, onError }: Props = $props();
+  const privateGeneration = getPrivateBrowserStateGeneration();
 
   const initial = locationDraft(asset.exifInfo);
   const hintId = $props.id();
@@ -132,7 +134,7 @@
       updated = await updateAsset({ id: asset.id, updateAssetDto: patch });
       // A removal sends null coordinates; only a real point becomes the next dialog's starting point.
       if (typeof patch.latitude === 'number' && typeof patch.longitude === 'number') {
-        geolocationManager.onSelected({ lat: patch.latitude, lng: patch.longitude });
+        geolocationManager.onSelected({ lat: patch.latitude, lng: patch.longitude }, privateGeneration);
       }
       open = false;
     } catch (error) {

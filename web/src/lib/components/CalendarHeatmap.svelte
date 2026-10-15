@@ -16,34 +16,36 @@
   const startDate = $derived(DateTime.fromISO(data.from, { zone: 'utc' }));
   const padding = $derived(startDate.diff(startDate.startOf('week', { useLocaleWeeks: true })).as('days'));
 
-  const maxCount = $derived(Math.max(...data.series.map((item) => item.count), 0));
+  const maxCount = $derived.by(() => {
+    let max = 0;
+    for (const item of data.series) {
+      max = Math.max(max, item.count);
+    }
+    return max;
+  });
+  const thresholds = $derived([Math.ceil(maxCount * 0.25), Math.ceil(maxCount * 0.5), Math.ceil(maxCount * 0.75)]);
 
   const itemColors = (count: number) => {
     if (count === 0 || maxCount === 0) {
       return 'bg-gray-200 dark:bg-gray-700';
     }
 
-    if (count <= Math.ceil(maxCount * 0.25)) {
+    if (count <= thresholds[0]) {
       return 'bg-immich-primary/30';
     }
 
-    if (count <= Math.ceil(maxCount * 0.5)) {
+    if (count <= thresholds[1]) {
       return 'bg-immich-primary/50';
     }
 
-    if (count <= Math.ceil(maxCount * 0.75)) {
+    if (count <= thresholds[2]) {
       return 'bg-immich-primary/70';
     }
 
     return 'bg-immich-primary';
   };
 
-  const weekdays = $derived([
-    Info.weekdays('short', { locale: $locale })[0],
-    Info.weekdays('short', { locale: $locale })[2],
-    Info.weekdays('short', { locale: $locale })[4],
-    Info.weekdays('short', { locale: $locale })[6],
-  ]);
+  const weekdays = $derived(Info.weekdays('short', { locale: $locale }).filter((_, index) => index % 2 === 0));
 </script>
 
 <div class="mt-4 w-full">
@@ -74,11 +76,12 @@
             { month: 'short', day: 'numeric' },
             { locale: $locale },
           )}
+          {@const label = itemLabel({ date, count: day.count })}
           <div
             class="aspect-square size-full rounded-sm {itemColors(day.count)} row-start-(--heatmap-row-start)"
             style:--heatmap-row-start={idx === 0 ? padding + 1 : undefined}
-            title={itemLabel({ date, count: day.count })}
-            aria-label={itemLabel({ date, count: day.count })}
+            title={label}
+            aria-label={label}
           ></div>
         {/each}
       </div>

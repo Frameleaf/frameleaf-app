@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { GENERATION_CONSTANTS, MockTimelineAsset } from 'src/ui/generators/timeline/timeline-config.js';
+import { GENERATION_CONSTANTS } from 'src/ui/generators/timeline/timeline-config.js';
 
 /**
  * Linear Congruential Generator for deterministic pseudo-random numbers
@@ -124,60 +124,4 @@ export function parseTimeBucketKey(timeBucket: string): string {
 
   // Format as YYYY-MM-01 (first day of month)
   return `${dt.year}-${String(dt.month).padStart(2, '0')}-01`;
-}
-
-export function getMockAsset(
-  asset: MockTimelineAsset,
-  sortedDescendingAssets: MockTimelineAsset[],
-  direction: 'next' | 'previous',
-  unit: 'day' | 'month' | 'year' = 'day',
-): MockTimelineAsset | null {
-  const currentDateTime = DateTime.fromISO(asset.localDateTime, { zone: 'utc' });
-
-  const currentIndex = sortedDescendingAssets.findIndex((a) => a.id === asset.id);
-
-  if (currentIndex === -1) {
-    return null;
-  }
-
-  const step = direction === 'next' ? 1 : -1;
-  const startIndex = currentIndex + step;
-
-  if (direction === 'next' && currentIndex >= sortedDescendingAssets.length - 1) {
-    return null;
-  }
-  if (direction === 'previous' && currentIndex <= 0) {
-    return null;
-  }
-
-  const isInDifferentPeriod = (date1: DateTime, date2: DateTime): boolean => {
-    if (unit === 'day') {
-      return !date1.startOf('day').equals(date2.startOf('day'));
-    }
-    return unit === 'month' ? date1.year !== date2.year || date1.month !== date2.month : date1.year !== date2.year;
-  };
-
-  if (direction === 'next') {
-    // Search forward in array (backwards in time)
-    for (let i = startIndex; i < sortedDescendingAssets.length; i++) {
-      const nextAsset = sortedDescendingAssets[i];
-      const nextDate = DateTime.fromISO(nextAsset.localDateTime, { zone: 'utc' });
-
-      if (isInDifferentPeriod(nextDate, currentDateTime)) {
-        return nextAsset;
-      }
-    }
-  } else {
-    // Search backward in array (forwards in time)
-    for (let i = startIndex; i >= 0; i--) {
-      const prevAsset = sortedDescendingAssets[i];
-      const prevDate = DateTime.fromISO(prevAsset.localDateTime, { zone: 'utc' });
-
-      if (isInDifferentPeriod(prevDate, currentDateTime)) {
-        return prevAsset;
-      }
-    }
-  }
-
-  return null;
 }

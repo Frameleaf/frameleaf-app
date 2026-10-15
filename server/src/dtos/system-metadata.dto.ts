@@ -7,11 +7,7 @@ const AdminOnboardingUpdateSchema = z
   })
   .meta({ id: 'AdminOnboardingUpdateDto' });
 
-const AdminOnboardingResponseSchema = z
-  .object({
-    isOnboarded: z.boolean().describe('Is admin onboarded'),
-  })
-  .meta({ id: 'AdminOnboardingResponseDto' });
+const AdminOnboardingResponseSchema = AdminOnboardingUpdateSchema.meta({ id: 'AdminOnboardingResponseDto' });
 
 const ReverseGeocodingStateResponseSchema = z
   .object({

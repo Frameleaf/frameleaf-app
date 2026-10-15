@@ -101,6 +101,10 @@ export const EnvSchema = z
     IMMICH_THIRD_PARTY_DOCUMENTATION_URL: z.string().optional(),
     IMMICH_THIRD_PARTY_SUPPORT_URL: z.string().optional(),
     FRAMELEAF_ALLOW_SETUP: stringBool.optional(),
+    /** FL-408: false stops this server enrolling the bundled machine-learning Studio worker. */
+    FRAMELEAF_STUDIO_WORKER: stringBool.optional(),
+    /** FL-408: the private volume the bundled worker's enrolment is written to (shared, read only, with ML). */
+    FRAMELEAF_STUDIO_WORKER_TRUST_DIR: absolutePath,
     FRAMELEAF_TRUSTED_PROXIES: trustedProxiesSchema,
     FRAMELEAF_WORKERS_INCLUDE: z.string().optional(),
     FRAMELEAF_WORKERS_EXCLUDE: z.string().optional(),
@@ -131,17 +135,6 @@ export const EnvSchema = z
     FRAMELEAF_LINK_TOKEN: z
       .string()
       .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
-      .optional(),
-    /**
-     * FL-292: pins the setup code a new server asks for (8 characters of
-     * ABCDEFGHJKMNPQRSTUVWXYZ23456789, the dash optional), for automated installs and tests. Whoever
-     * sets it already controls the host. A pinned code is not replaced after wrong tries; it locks
-     * until the next start instead.
-     */
-    FRAMELEAF_SETUP_CODE: z
-      .string()
-      .transform((value) => value.toUpperCase().replaceAll('-', ''))
-      .pipe(z.string().regex(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/))
       .optional(),
     /** FL-154: the edge worker's direct HTTPS port (default 2443) and bind address. */
     FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
