@@ -861,6 +861,13 @@ export type PhysicalDeduplicationMigrationState = {
 };
 export type MaintenanceModeState =
   { isMaintenanceMode: true; secret: string; action?: SetMaintenanceModeDto } | { isMaintenanceMode: false };
+/** FL-360: the pause a Frameleaf Manager library move holds; `queues` are the ones it paused. */
+export type LibraryMovePauseState = {
+  operationId: string;
+  pausedAt: string;
+  leaseExpiresAt: string;
+  queues: string[];
+};
 export type MemoriesState = {
   /** memories have already been created through this date */
   lastOnThisDayDate: string;
@@ -1453,6 +1460,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
+  [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
   [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };

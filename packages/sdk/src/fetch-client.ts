@@ -2098,6 +2098,24 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type LibraryMovePauseStatusDto = {
+    /** Background jobs still running */
+    activeJobs: number;
+    /** Queues with jobs still running */
+    activeQueues: string[];
+    /** Paused, with no write request and no background job in flight */
+    drained: boolean;
+    /** When the pause lifts by itself unless the Manager renews it (ISO 8601) */
+    leaseExpiresAt: string | null;
+    /** Manager move operation holding the pause */
+    operationId: string | null;
+    /** Uploads, changes and background work are paused for a library move */
+    paused: boolean;
+    /** When the pause started (ISO 8601) */
+    pausedAt: string | null;
+    /** Write requests still being answered */
+    writesInFlight: number;
+};
 export type LicenseEntitlementsDto = {
     cloudBackup: boolean;
     cloudMl: boolean;
@@ -12855,6 +12873,14 @@ export type ServerFeaturesDto = {
     /** Whether trash feature is enabled */
     trash: boolean;
 };
+export type LibraryMovePauseDto = {
+    /** Frameleaf Manager move operation that holds the pause */
+    operationId: string;
+};
+export type LibraryMoveResumeDto = {
+    /** Frameleaf Manager move operation that holds the pause */
+    operationId: string;
+};
 export type LibrarySetupStatusDto = {
     canFinish: boolean;
     installation: string;
@@ -17856,6 +17882,29 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
         ...opts
+    }));
+}
+/**
+ * Library move pause status
+ */
+export function getLibraryMovePause(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/admin/library-move", {
+        ...opts
+    }));
+}
+/**
+ * Lift a library move pause (uploads, changes and job queues resume)
+ */
+export function resumeLibraryMovePause(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/admin/library-move/resume", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -25632,6 +25681,55 @@ export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
     }>("/server/features", {
         ...opts
     }));
+}
+/**
+ * Manager machine-authenticated library move pause status (renews the named operation)
+ */
+export function getManagerLibraryMovePause({ operationId, xFrameleafManager }: {
+    operationId?: string;
+    xFrameleafManager: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>(`/server/library-move/manager${QS.query(QS.explode({
+        operationId
+    }))}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-manager": xFrameleafManager
+        })
+    }));
+}
+/**
+ * Manager machine-authenticated pause of uploads, changes and job queues for a library move
+ */
+export function pauseManagerLibraryMove({ libraryMovePauseDto }: {
+    libraryMovePauseDto: LibraryMovePauseDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/server/library-move/manager/pause", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryMovePauseDto
+    })));
+}
+/**
+ * Manager machine-authenticated resume after a library move
+ */
+export function resumeManagerLibraryMove({ libraryMoveResumeDto }: {
+    libraryMoveResumeDto: LibraryMoveResumeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryMovePauseStatusDto;
+    }>("/server/library-move/manager/resume", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryMoveResumeDto
+    })));
 }
 /**
  * Library preparation for this authenticated device

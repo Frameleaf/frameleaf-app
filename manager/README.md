@@ -33,10 +33,16 @@ Verified offline import prepares a durable regeneration run for metadata, thumbn
 
 ## Moving media to another drive
 
-Starting a move is currently refused: the server has no accepted write-fence and
-lease-drain contract. The review can check a destination, but its Move button is
-unavailable. The journalled copy/recovery flow below is guarded source work, not
-an enabled or physically qualified release.
+Before stopping anything, Manager pauses the server (FL-360): new uploads and
+other changes are refused with 503, every job queue is paused, and Manager waits
+until no write request or job is still running (up to 30 minutes; otherwise it
+resumes the server and stops nothing). The pause is stored by the server, so it
+survives the move's own restart and a crash; Manager resumes it after the move,
+after a failed check and after recovery. If Manager never comes back, the pause
+lifts itself 30 minutes after the server starts (2 hours while it runs without a
+renewal); an administrator can also lift it with `POST /api/admin/library-move/resume`.
+A server without this pause keeps the Move button unavailable. Real-NAS, ACL and
+power-loss qualification is still outstanding.
 
 Under **Storage**, choose **Move photos to a bigger drive**, select an explicitly
 mounted destination and check it before starting. Manager supports one writable

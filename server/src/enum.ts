@@ -533,6 +533,8 @@ export enum SystemMetadataKey {
   MemoriesState = 'memories-state',
   AdminOnboarding = 'admin-onboarding',
   MaintenanceMode = 'maintenance-mode',
+  /** FL-360: a Frameleaf Manager library move has paused uploads, changes and job queues. */
+  FrameleafLibraryMovePause = 'frameleaf-library-move-pause',
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
