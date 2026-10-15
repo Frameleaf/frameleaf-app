@@ -78,6 +78,33 @@ describe(FrameleafCloudJobClient.name, () => {
     expect(repo.uploadInput).not.toHaveBeenCalled();
   });
 
+  it.each(
+    ['expiring', 'expired'].flatMap((refresh) => [
+      { refresh, changed: { inputId: 'another-input' } },
+      { refresh, changed: { sha256: 'f'.repeat(64) } },
+      { refresh, changed: { bytes: input.bytes + 1 } },
+    ]),
+  )('refuses a changed $refresh upload target ($changed)', async ({ refresh, changed }) => {
+    const repo = repository();
+    const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);
+    repo.getUploads.mockResolvedValue([
+      target({ expiresAt: refresh === 'expiring' ? '2026-09-26T04:05:30.000Z' : '2026-09-26T05:00:00.000Z' }),
+    ]);
+    if (refresh === 'expired') {
+      repo.uploadInput.mockRejectedValueOnce(new CloudTransferError('target-expired', 'expired'));
+    }
+    repo.refreshUpload.mockResolvedValue(target(changed));
+    const state = {};
+
+    await expect(
+      client.upload('job-1', [input], state, { now, record: () => Promise.resolve(true) }),
+    ).rejects.toBeInstanceOf(CloudJobInputError);
+
+    expect(repo.refreshUpload).toHaveBeenCalledExactlyOnceWith(gateway, 'job-1', input.inputId);
+    expect(repo.uploadInput).toHaveBeenCalledTimes(refresh === 'expired' ? 1 : 0);
+    expect(state).toEqual({});
+  });
+
   it('answers closed when the job no longer takes uploads, and stopped when the caller stops it', async () => {
     const repo = repository();
     const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);

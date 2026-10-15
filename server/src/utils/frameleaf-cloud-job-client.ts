@@ -22,9 +22,8 @@ import {
  * checked, and acknowledges the job so the cloud purges it (`DELETE /v2/jobs/{id}`).
  *
  * It keeps no state of its own: the caller records upload progress (`CloudJobUploadState`) and the
- * last ETag with its job, so a restart carries on from them. Restoration and Smooth motion jobs
- * (`CloudMlJobService`) use it; description batches (FL-163) can adopt it once their contract gate is
- * lifted.
+ * last ETag with its job, so a restart carries on from them. Restoration, Smooth motion jobs
+ * (`CloudMlJobService`) and description batches share it.
  */
 
 /** What a caller records per input: whether it is uploaded, and the multipart parts already sent. */
@@ -189,6 +188,9 @@ export class FrameleafCloudJobClient {
   ) {
     const signal = this.signal;
     const transfer = async (upload: CloudUploadTarget) => {
+      if (upload.inputId !== input.inputId || upload.sha256 !== input.sha256 || upload.bytes !== input.bytes) {
+        throw new CloudJobInputError(input.inputId, 'Frameleaf Cloud expects another file than the one prepared');
+      }
       if (!(await record())) {
         throw new CloudTransferError('stopped', 'The caller stopped this upload');
       }
