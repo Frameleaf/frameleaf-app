@@ -492,6 +492,13 @@ describe(JobService.name, () => {
       });
 
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.BestPhotosScore, data: { id: asset.id } });
+      const publication = mocks.websocket.clientSend.mock.calls.find(([event]) => event === 'AssetEditReadyV2');
+      expect(publication?.[1]).toBe(asset.ownerId);
+      expect(publication?.[2]).toMatchObject({
+        asset: { id: asset.id, checksum: asset.checksum.toString('base64'), isEdited: asset.isEdited },
+        edit: [],
+      });
+      expect(publication?.[2]).not.toHaveProperty('asset.originalPath');
     });
   });
 });

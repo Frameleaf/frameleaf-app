@@ -50,7 +50,15 @@ describe(TagRepository.name, () => {
         .where('assetId', '=', asset.id)
         .execute();
       expect(new Set(actual.map(({ tagId }) => tagId))).toEqual(new Set(ids));
-    });
+      await ctx.database.deleteFrom('tag_asset').where('assetId', '=', asset.id).execute();
+      const updateId = randomUUID();
+      const inserted = await sut.upsertAssetIds(
+        ids.map((tagId, index) => ({ tagId, assetId: asset.id, ...(index === 0 && { updateId }) })),
+      );
+      expect(inserted).toHaveLength(count);
+      expect(new Set(inserted.map(({ tagId }) => tagId))).toEqual(new Set(ids));
+      expect(inserted.find(({ tagId }) => tagId === ids[0])?.updateId).toBe(updateId);
+    }, 30_000);
 
     it('deduplicates replacements and clears them with an empty list', async () => {
       const { ctx, sut } = setup();
@@ -198,6 +206,47 @@ describe(TagRepository.name, () => {
   });
 
   describe('addAssetIds', () => {
+    it('handles a large duplicate input without exceeding the protocol limit', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'large' });
+      await expect(
+        sut.addAssetIds(
+          tag.id,
+          Array.from({ length: DATABASE_PARAMETER_CHUNK_SIZE + 1 }, () => asset.id),
+        ),
+      ).resolves.toBeUndefined();
+      await expect(sut.getAssetIds(tag.id, [asset.id])).resolves.toEqual(new Set([asset.id]));
+    });
+
+    it('joins an existing transaction instead of committing independently', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'outer-transaction' });
+      await expect(
+        ctx.database.transaction().execute(async (tx) => {
+          const repository = new TagRepository(tx, ctx.get(LoggingRepository));
+          const rows = await repository.upsertAssetIds([{ tagId: tag.id, assetId: asset.id }]);
+          expect(rows.map(({ tagId }) => tagId)).toEqual([tag.id]);
+          throw new Error('Fixture rollback');
+        }),
+      ).rejects.toThrow('Fixture rollback');
+      await expect(sut.getAssetIds(tag.id, [asset.id])).resolves.toEqual(new Set());
+    });
+
+    it('rolls back earlier chunks when the last insertion fails', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { tag } = await ctx.newTag({ userId: user.id, value: 'rollback' });
+      const items = Array.from({ length: DATABASE_PARAMETER_CHUNK_SIZE }, () => ({ tagId: tag.id, assetId: asset.id }));
+      items.push({ tagId: randomUUID(), assetId: asset.id });
+      await expect(sut.upsertAssetIds(items)).rejects.toMatchObject({ code: '23503' });
+      await expect(sut.getAssetIds(tag.id, [asset.id])).resolves.toEqual(new Set());
+    });
+
     it('keeps a row that is already there instead of failing', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

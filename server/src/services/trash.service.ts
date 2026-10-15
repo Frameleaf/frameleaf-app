@@ -234,7 +234,8 @@ export class TrashService extends BaseService {
   private async afterChange(auth: AuthDto, action: TrashReviewAction, assetIds: string[], sequenced: string[] = []) {
     if (sequenced.length > 0) await this.trashRepository.enqueueLocalEffects();
     // Only committed ordered transitions suppress the old broad event. Unassociated assets retain it.
-    assetIds = assetIds.filter((id) => !sequenced.includes(id));
+    const sequencedIds = new Set(sequenced);
+    assetIds = assetIds.filter((id) => !sequencedIds.has(id));
     if (assetIds.length === 0) {
       return;
     }
