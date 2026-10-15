@@ -2,6 +2,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import type { OcrBox } from '$lib/utils/ocr-utils';
   import { calculateBoundingBoxMatrix, calculateFittedFontSize } from '$lib/utils/ocr-utils';
+  import { onDestroy } from 'svelte';
 
   type Props = {
     ocrBox: OcrBox;
@@ -17,9 +18,23 @@
     calculateFittedFontSize(ocrBox.text, dimensions.width, dimensions.height, ocrBox.verticalMode) + 'px',
   );
 
+  let selectionFrame: number | undefined;
+  onDestroy(() => {
+    if (selectionFrame !== undefined) {
+      cancelAnimationFrame(selectionFrame);
+    }
+  });
+
   const handleSelectStart = (event: Event) => {
     const target = event.currentTarget as HTMLElement;
-    requestAnimationFrame(() => {
+    if (selectionFrame !== undefined) {
+      cancelAnimationFrame(selectionFrame);
+    }
+    selectionFrame = requestAnimationFrame(() => {
+      selectionFrame = undefined;
+      if (!target.isConnected) {
+        return;
+      }
       // eslint-disable-next-line unicorn/no-unnecessary-global-this
       const selection = globalThis.getSelection();
       if (selection) {
