@@ -533,6 +533,8 @@ export enum SystemMetadataKey {
   MemoriesState = 'memories-state',
   AdminOnboarding = 'admin-onboarding',
   MaintenanceMode = 'maintenance-mode',
+  /** FL-360: a Frameleaf Manager library move has paused uploads, changes and job queues. */
+  FrameleafLibraryMovePause = 'frameleaf-library-move-pause',
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
@@ -547,12 +549,6 @@ export enum SystemMetadataKey {
    * before it is ever linked.
    */
   FrameleafServerId = 'frameleaf-server-id',
-  /**
-   * FL-292: the setup code of a server without an administrator, its wrong tries and the one setup
-   * ticket it handed out (hashed). Replaced at every start and cleared once an administrator exists;
-   * never returned by any API.
-   */
-  FrameleafSetupCode = 'frameleaf-setup-code',
   /** FL-159: the cached Frameleaf Cloud service discovery document. */
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
   /**
@@ -2465,7 +2461,7 @@ export enum DatabaseLock {
   FrameleafEdge = 963,
   /** FL-162: the kept Frameleaf Cloud job estimates change one at a time, so a confirmation is taken once. */
   FrameleafCloudMlJobEstimates = 970,
-  /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
+  /** FL-292: claims of a new server happen one at a time. */
   FrameleafServerClaim = 971,
   BuddyBackup = 972,
   /** FL-362: one server runs the backup schedule and moves a run from one place to the next. */
@@ -2887,7 +2883,7 @@ export enum AdminAuditAction {
   /**
    * FL-292: `detail` is `server-claimed:web`, `server-claimed:app-password` or
    * `server-claimed:app-frameleaf` when the account was the first administrator of a new server,
-   * claimed with its setup code; otherwise null.
+   * claimed from its home network; otherwise null.
    */
   AccountCreated = 'account-created',
   /** Name, email, avatar colour or the require-password-change flag. */

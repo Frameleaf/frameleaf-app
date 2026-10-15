@@ -20,6 +20,26 @@ type Review = {
   bytes: number;
 };
 type Step = <T>(name: string, action: () => Promise<T>) => Promise<T>;
+export type ServerPauseStatus = {
+  paused: boolean;
+  operationId: string | null;
+  drained: boolean;
+  activeJobs: number;
+  writesInFlight: number;
+};
+/**
+ * The Frameleaf server's library move pause (FL-360): uploads, changes and every job queue pause,
+ * durably across restarts, until resumed or until the pause's lease runs out.
+ */
+export interface ServerPause {
+  pause(operationId: string): Promise<ServerPauseStatus>;
+  /** Also renews the pause when `operationId` holds it. */
+  status(operationId?: string): Promise<ServerPauseStatus>;
+  resume(operationId: string): Promise<unknown>;
+}
+export type DrainTiming = { timeoutMs: number; intervalMs: number };
+const DRAIN: DrainTiming = { timeoutMs: 30 * 60_000, intervalMs: 2000 };
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The existing operation lock owns the copy, mapping commit and conservative write-start intent. */
 export class LibraryMove {
@@ -32,6 +52,8 @@ export class LibraryMove {
     private directory: string,
     private backups: string,
     private execute: typeof command = command,
+    private server?: ServerPause,
+    private drain: DrainTiming = DRAIN,
   ) {}
 
   private current(): Installation {
@@ -214,7 +236,7 @@ export class LibraryMove {
     await this.physicalPaths(current, root);
     await this.fencing.assertMedia(current.mounts, current);
     const review: Review = {
-      available: false,
+      available: await this.pauseAvailable(),
       id: randomUUID(),
       expires: Date.now() + 900_000,
       current,
@@ -231,8 +253,67 @@ export class LibraryMove {
     return review;
   }
   private requireQuiescence(): void {
-    // shortcut: no accepted server write-fence/lease-drain contract exists; enable only after its qualification.
-    throw new Refusal('media_quiescence_unavailable');
+    // The server must offer the FL-360 pause; without it nothing is stopped or moved.
+    if (!this.server) throw new Refusal('media_quiescence_unavailable');
+  }
+  private async pauseAvailable(): Promise<boolean> {
+    if (!this.server) return false;
+    try {
+      const status = await this.server.status();
+      return !status.paused;
+    } catch {
+      return false;
+    }
+  }
+  private async serverRunning(current: Installation): Promise<boolean> {
+    return (await this.docker.inventory()).some(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === current.id &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server' &&
+        c.State.Running,
+    );
+  }
+  /**
+   * Pause uploads, changes and job queues on the running server and wait until nothing is in flight.
+   * A stack that is already stopped (a retried step) has nothing left to drain. Any failure lifts
+   * the pause again before it is reported, so a refused move leaves the server working.
+   */
+  private async quiesce(operation: Operation, current: Installation): Promise<void> {
+    if (!(await this.serverRunning(current))) return;
+    if (!this.server) throw new Refusal('media_quiescence_unavailable');
+    const deadline = Date.now() + this.drain.timeoutMs;
+    try {
+      let status = await this.server.pause(operation.id);
+      while (!status.drained) {
+        if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
+        if (Date.now() >= deadline) throw new Refusal('media_quiescence_timeout');
+        await delay(this.drain.intervalMs);
+        status = await this.server.status(operation.id);
+        if (!status.paused || status.operationId !== operation.id) throw new Refusal('media_quiescence_lost');
+      }
+    } catch (error) {
+      await this.resumeServer(operation, current);
+      throw error instanceof Refusal ? error : new Refusal('media_quiescence_unavailable');
+    }
+  }
+  /** Lift the pause once the server answers again; the server's own lease lifts it if this cannot. */
+  private async resumeServer(operation: Operation, current: Installation): Promise<boolean> {
+    if (!this.server) return false;
+    const deadline = Date.now() + this.drain.timeoutMs;
+    for (;;) {
+      try {
+        if (await this.serverRunning(current)) {
+          await this.server.resume(operation.id);
+          operation.receipts['move-server-resumed'] = true;
+          this.store.save(operation);
+          return true;
+        }
+      } catch {
+        /* the server is still starting */
+      }
+      if (Date.now() >= deadline) return false;
+      await delay(this.drain.intervalMs);
+    }
   }
   start(id: string, key: string): { operation: Operation; created: boolean } {
     const prior = this.store.request('move-library', key, { reviewId: id });
@@ -277,6 +358,7 @@ export class LibraryMove {
       if (digest(this.current()) !== digest(current)) throw new Refusal('installation_changed');
       await this.storage.validate(review.root, review.bytes);
       await this.fencing.assertMedia(current.mounts, current);
+      await this.quiesce(operation, current);
       const writers = (await this.docker.inventory()).filter(
         (c) => c.Config.Labels?.['app.frameleaf.manager'] === current.id,
       );
@@ -364,45 +446,59 @@ export class LibraryMove {
       operation.receipts['move-writes-intent'] = true;
       this.store.save(operation);
       await this.docker.compose(join(this.directory, 'stack'), current.project, 'up');
-      await this.restorePolicies(operation, current);
-      const server = (await this.docker.inventory()).find(
-        (c) =>
-          c.Config.Labels?.['app.frameleaf.manager'] === current.id &&
-          c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
-      );
-      if (
-        !server?.State.Running ||
-        !server.Mounts.some(
-          (m) => m.Type === 'bind' && m.Source === destination && m.Destination === current.mounts[0].target && m.RW,
-        )
-      )
-        throw new Refusal('media_mapping_changed');
-      if (server.State.Health?.Status !== 'healthy') throw new Refusal('media_move_health_unverified');
-      const manifest = JSON.parse(await readFile(join(this.state(review.id), 'manifest.json'), 'utf8')) as {
-        path: string;
-        directory: boolean;
-        sha256?: string;
-      }[];
-      const files = manifest.filter((entry) => !entry.directory);
-      const chosen = [
-        ...new Map(
-          [
-            files.find((entry) => /(^|\/)upload\//.test(entry.path)),
-            files.find((entry) => /(^|\/)thumbs\//.test(entry.path)),
-            ...files,
-          ]
-            .filter((entry): entry is (typeof files)[number] => !!entry)
-            .map((entry) => [entry.path, entry]),
-        ).values(),
-      ].slice(0, 64);
-      const script = `const fs=require('node:fs/promises'),{createHash}=require('node:crypto'),{join,resolve}=require('node:path');(async()=>{const root=process.argv[1];await fs.access(root);for(const e of JSON.parse(process.argv[2])){const p=join(root,e.path);if(!p.startsWith(root+'/')||await fs.realpath(p)!==p)throw Error();const h=createHash('sha256');const f=await fs.open(p,'r');try{if(!(await f.stat()).isFile())throw Error();for await(const b of f.createReadStream({autoClose:false}))h.update(b);}finally{await f.close();}if(h.digest('hex')!==e.sha256)throw Error();}process.stdout.write('true');})().catch(()=>process.exit(1));`;
-      if ((await this.docker.node(server.Id, script, [current.mounts[0].target, JSON.stringify(chosen)])) !== 'true')
-        throw new Refusal('media_move_access_unverified');
-      const library = (await status()) as { verificationPassed?: boolean; phase?: string };
-      if (!library.verificationPassed || library.phase === 'needs-attention')
-        throw new Refusal('media_move_library_needs_attention');
-      return { accessChecked: chosen.length, library };
+      try {
+        return await this.checkStarted(operation, current, review, destination, status);
+      } finally {
+        // Succeeded or not, the library now runs from the new folder: uploads and jobs resume.
+        await this.resumeServer(operation, current);
+      }
     });
+  }
+  private async checkStarted(
+    operation: Operation,
+    current: Installation,
+    review: Review,
+    destination: string,
+    status: () => Promise<unknown>,
+  ) {
+    await this.restorePolicies(operation, current);
+    const server = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === current.id &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
+    );
+    if (
+      !server?.State.Running ||
+      !server.Mounts.some(
+        (m) => m.Type === 'bind' && m.Source === destination && m.Destination === current.mounts[0].target && m.RW,
+      )
+    )
+      throw new Refusal('media_mapping_changed');
+    if (server.State.Health?.Status !== 'healthy') throw new Refusal('media_move_health_unverified');
+    const manifest = JSON.parse(await readFile(join(this.state(review.id), 'manifest.json'), 'utf8')) as {
+      path: string;
+      directory: boolean;
+      sha256?: string;
+    }[];
+    const files = manifest.filter((entry) => !entry.directory);
+    const chosen = [
+      ...new Map(
+        [
+          files.find((entry) => /(^|\/)upload\//.test(entry.path)),
+          files.find((entry) => /(^|\/)thumbs\//.test(entry.path)),
+          ...files,
+        ]
+          .filter((entry): entry is (typeof files)[number] => !!entry)
+          .map((entry) => [entry.path, entry]),
+      ).values(),
+    ].slice(0, 64);
+    const script = `const fs=require('node:fs/promises'),{createHash}=require('node:crypto'),{join,resolve}=require('node:path');(async()=>{const root=process.argv[1];await fs.access(root);for(const e of JSON.parse(process.argv[2])){const p=join(root,e.path);if(!p.startsWith(root+'/')||await fs.realpath(p)!==p)throw Error();const h=createHash('sha256');const f=await fs.open(p,'r');try{if(!(await f.stat()).isFile())throw Error();for await(const b of f.createReadStream({autoClose:false}))h.update(b);}finally{await f.close();}if(h.digest('hex')!==e.sha256)throw Error();}process.stdout.write('true');})().catch(()=>process.exit(1));`;
+    if ((await this.docker.node(server.Id, script, [current.mounts[0].target, JSON.stringify(chosen)])) !== 'true')
+      throw new Refusal('media_move_access_unverified');
+    const library = (await status()) as { verificationPassed?: boolean; phase?: string };
+    if (!library.verificationPassed || library.phase === 'needs-attention')
+      throw new Refusal('media_move_library_needs_attention');
+    return { accessChecked: chosen.length, library };
   }
   async stop(operation: Operation): Promise<void> {
     if (operation.receipts['move-writes-intent']) throw new Refusal('media_move_reverse_required');
@@ -443,6 +539,7 @@ export class LibraryMove {
     this.store.save(operation);
     await this.docker.compose(join(this.directory, 'stack'), review.current.project, 'up');
     await this.restorePolicies(operation, review.current);
+    await this.resumeServer(operation, review.current);
     operation.receipts['cancelled'] = 'media_move_cancelled_original_retained';
   }
   private async restorePolicies(operation: Operation, current: Installation): Promise<void> {

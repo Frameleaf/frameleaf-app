@@ -4827,16 +4827,6 @@
         "description": "Put Frameleaf into maintenance mode to restore a backup (Frameleaf must not be configured)",
         "operationId": "startDatabaseRestoreFlow",
         "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FrameleafSetupCodeDto"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "201": {
             "description": ""
@@ -5733,6 +5723,96 @@
           }
         ],
         "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-move": {
+      "get": {
+        "operationId": "getLibraryMovePause",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Library move pause status",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-move/resume": {
+      "post": {
+        "operationId": "resumeLibraryMovePause",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Lift a library move pause (uploads, changes and job queues resume)",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
         "x-immich-state": "Alpha"
       }
     },
@@ -37984,6 +38064,142 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/server/library-move/manager": {
+      "get": {
+        "operationId": "getManagerLibraryMovePause",
+        "parameters": [
+          {
+            "name": "operationId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated library move pause status (renews the named operation)",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-move/manager/pause": {
+      "post": {
+        "operationId": "pauseManagerLibraryMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryMovePauseDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated pause of uploads, changes and job queues for a library move",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-move/manager/resume": {
+      "post": {
+        "operationId": "resumeManagerLibraryMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryMoveResumeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated resume after a library move",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/library-setup": {
       "get": {
         "operationId": "getLibrarySetupStatus",
@@ -38382,7 +38598,7 @@
     },
     "/server/setup/admin": {
       "post": {
-        "description": "For the Frameleaf apps, from the home network, with a setup ticket: creates the server's first administrator with an email and password (the same account as the web first-run sign-up), for sign-in without Frameleaf Cloud. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_code_required, setup_code_invalid (with `attemptsLeft`), setup_code_replaced (too many wrong tries: a new code is on the console), setup_code_locked (a code pinned with FRAMELEAF_SETUP_CODE after too many wrong tries: restart the server), setup_ticket_invalid, setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
+        "description": "For the Frameleaf apps, from the home network, while the server has no administrator: creates the server's first administrator with an email and password (the same account as the web first-run sign-up), for sign-in without Frameleaf Cloud. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
         "operationId": "createNewServerAdmin",
         "parameters": [],
         "requestBody": {
@@ -38434,63 +38650,9 @@
         "x-immich-state": "Alpha"
       }
     },
-    "/server/setup/code": {
-      "post": {
-        "description": "For the Frameleaf apps, from the home network, while the server has no administrator: checks the setup code shown on the server's console and in its log (or its QR code), and returns a setup ticket, usable once from this device for ten minutes, to link the server or create its administrator. Five wrong codes replace the code. The code is never in any response. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_code_required, setup_code_invalid (with `attemptsLeft`), setup_code_replaced (too many wrong tries: a new code is on the console), setup_code_locked (a code pinned with FRAMELEAF_SETUP_CODE after too many wrong tries: restart the server), setup_ticket_invalid, setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
-        "operationId": "verifyServerSetupCode",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FrameleafSetupCodeDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FrameleafSetupTicketResponseDto"
-                }
-              }
-            },
-            "description": ""
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FrameleafSetupErrorDto"
-                }
-              }
-            },
-            "description": "A wrong, replaced or locked setup code"
-          }
-        },
-        "summary": "Check a new server’s setup code",
-        "tags": [
-          "Server"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.2.0",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.0",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-state": "Alpha"
-      }
-    },
     "/server/setup/link": {
       "post": {
-        "description": "For the Frameleaf apps, from the home network, with a setup ticket: links this new server with a single-use Frameleaf link token (fll_…, the same kind FRAMELEAF_LINK_TOKEN takes) under the name the person chose. The Frameleaf account that minted the token owns the server, and its first Sign in with Frameleaf (in a browser or by token exchange) creates the administrator, without a server password. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_code_required, setup_code_invalid (with `attemptsLeft`), setup_code_replaced (too many wrong tries: a new code is on the console), setup_code_locked (a code pinned with FRAMELEAF_SETUP_CODE after too many wrong tries: restart the server), setup_ticket_invalid, setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
+        "description": "For the Frameleaf apps, from the home network, while the server has no administrator: links this new server with a single-use Frameleaf link token (fll_…, the same kind FRAMELEAF_LINK_TOKEN takes) under the name the person chose. The Frameleaf account that minted the token owns the server, and its first Sign in with Frameleaf (in a browser or by token exchange) creates the administrator, without a server password. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
         "operationId": "linkNewServer",
         "parameters": [],
         "requestBody": {
@@ -64718,6 +64880,8 @@
                     "FRAMELEAF_SOURCE_COMMIT",
                     "FRAMELEAF_SOURCE_COMMIT_URL",
                     "FRAMELEAF_ALLOW_SETUP",
+                    "FRAMELEAF_STUDIO_WORKER",
+                    "FRAMELEAF_STUDIO_WORKER_TRUST_DIR",
                     "FRAMELEAF_TRUSTED_PROXIES",
                     "FRAMELEAF_WORKERS_INCLUDE",
                     "FRAMELEAF_WORKERS_EXCLUDE",
@@ -64731,7 +64895,6 @@
                     "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
                     "FRAMELEAF_IDENTITY_DIR",
                     "FRAMELEAF_LINK_TOKEN",
-                    "FRAMELEAF_SETUP_CODE",
                     "FRAMELEAF_EDGE_PORT",
                     "FRAMELEAF_EDGE_BIND",
                     "FRAMELEAF_ACME_DIRECTORY_URL",
@@ -64756,7 +64919,7 @@
                   ],
                   "type": "string"
                 },
-                "maxItems": 60,
+                "maxItems": 61,
                 "type": "array"
               },
               "version": {
@@ -65200,6 +65363,8 @@
                         "FRAMELEAF_SOURCE_COMMIT",
                         "FRAMELEAF_SOURCE_COMMIT_URL",
                         "FRAMELEAF_ALLOW_SETUP",
+                        "FRAMELEAF_STUDIO_WORKER",
+                        "FRAMELEAF_STUDIO_WORKER_TRUST_DIR",
                         "FRAMELEAF_TRUSTED_PROXIES",
                         "FRAMELEAF_WORKERS_INCLUDE",
                         "FRAMELEAF_WORKERS_EXCLUDE",
@@ -65213,7 +65378,6 @@
                         "FRAMELEAF_LICENSE_EXTRA_JWKS_FILE",
                         "FRAMELEAF_IDENTITY_DIR",
                         "FRAMELEAF_LINK_TOKEN",
-                        "FRAMELEAF_SETUP_CODE",
                         "FRAMELEAF_EDGE_PORT",
                         "FRAMELEAF_EDGE_BIND",
                         "FRAMELEAF_ACME_DIRECTORY_URL",
@@ -65238,7 +65402,7 @@
                       ],
                       "type": "string"
                     },
-                    "maxItems": 60,
+                    "maxItems": 61,
                     "type": "array"
                   },
                   "version": {
@@ -73606,18 +73770,12 @@
             "description": "The administrator’s password (min 8 characters)",
             "minLength": 8,
             "type": "string"
-          },
-          "ticket": {
-            "description": "The setup ticket POST server/setup/code returned, used once, from the same device",
-            "maxLength": 256,
-            "type": "string"
           }
         },
         "required": [
           "email",
           "name",
-          "password",
-          "ticket"
+          "password"
         ],
         "type": "object"
       },
@@ -73691,29 +73849,11 @@
         },
         "type": "object"
       },
-      "FrameleafSetupCodeDto": {
-        "properties": {
-          "code": {
-            "description": "The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional)",
-            "maxLength": 32,
-            "type": "string"
-          }
-        },
-        "required": [
-          "code"
-        ],
-        "type": "object"
-      },
       "FrameleafSetupErrorCode": {
         "description": "Why setting up this server was refused",
         "enum": [
           "setup_lan_only",
           "setup_complete",
-          "setup_code_required",
-          "setup_code_invalid",
-          "setup_code_replaced",
-          "setup_code_locked",
-          "setup_ticket_invalid",
           "setup_cloud_unavailable",
           "setup_already_linked",
           "setup_link_token_invalid",
@@ -73724,12 +73864,6 @@
       },
       "FrameleafSetupErrorDto": {
         "properties": {
-          "attemptsLeft": {
-            "description": "For setup_code_invalid: wrong tries left before the code is replaced",
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
           "code": {
             "$ref": "#/components/schemas/FrameleafSetupErrorCode"
           },
@@ -73816,16 +73950,10 @@
             "maxLength": 100,
             "minLength": 1,
             "type": "string"
-          },
-          "ticket": {
-            "description": "The setup ticket POST server/setup/code returned, used once, from the same device",
-            "maxLength": 256,
-            "type": "string"
           }
         },
         "required": [
-          "linkToken",
-          "ticket"
+          "linkToken"
         ],
         "type": "object"
       },
@@ -73978,24 +74106,6 @@
           "light"
         ],
         "type": "string"
-      },
-      "FrameleafSetupTicketResponseDto": {
-        "properties": {
-          "expiresAt": {
-            "description": "When the ticket stops working",
-            "format": "date-time",
-            "type": "string"
-          },
-          "ticket": {
-            "description": "Proof the setup code was entered: use it once, from this device, before it expires",
-            "type": "string"
-          }
-        },
-        "required": [
-          "expiresAt",
-          "ticket"
-        ],
-        "type": "object"
       },
       "FrameleafSetupUpdateDto": {
         "additionalProperties": false,
@@ -79361,6 +79471,91 @@
           "other_library"
         ],
         "type": "string"
+      },
+      "LibraryMovePauseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Frameleaf Manager move operation that holds the pause",
+            "pattern": "^[A-Za-z0-9-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "LibraryMovePauseStatusDto": {
+        "properties": {
+          "activeJobs": {
+            "description": "Background jobs still running",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "activeQueues": {
+            "description": "Queues with jobs still running",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "drained": {
+            "description": "Paused, with no write request and no background job in flight",
+            "type": "boolean"
+          },
+          "leaseExpiresAt": {
+            "description": "When the pause lifts by itself unless the Manager renews it (ISO 8601)",
+            "nullable": true,
+            "type": "string"
+          },
+          "operationId": {
+            "description": "Manager move operation holding the pause",
+            "nullable": true,
+            "type": "string"
+          },
+          "paused": {
+            "description": "Uploads, changes and background work are paused for a library move",
+            "type": "boolean"
+          },
+          "pausedAt": {
+            "description": "When the pause started (ISO 8601)",
+            "nullable": true,
+            "type": "string"
+          },
+          "writesInFlight": {
+            "description": "Write requests still being answered",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activeJobs",
+          "activeQueues",
+          "drained",
+          "leaseExpiresAt",
+          "operationId",
+          "paused",
+          "pausedAt",
+          "writesInFlight"
+        ],
+        "type": "object"
+      },
+      "LibraryMoveResumeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Frameleaf Manager move operation that holds the pause",
+            "pattern": "^[A-Za-z0-9-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
       },
       "LibraryRemovalDto": {
         "properties": {
@@ -113203,16 +113398,6 @@
           "password": {
             "description": "User password",
             "example": "password",
-            "type": "string"
-          },
-          "setupCode": {
-            "description": "The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator",
-            "maxLength": 32,
-            "type": "string"
-          },
-          "setupTicket": {
-            "description": "Instead of the code: a setup ticket from POST server/setup/code, from the same device",
-            "maxLength": 256,
             "type": "string"
           }
         },
