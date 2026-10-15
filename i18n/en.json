@@ -10433,7 +10433,6 @@
   "frameleaf_setup_cloud_backup_title": "Cloud backup",
   "frameleaf_setup_cloud_unreachable_body": "Setup can't reach Frameleaf Cloud from this server right now. Continue with a local account; you can link a Frameleaf account later from Settings.",
   "frameleaf_setup_cloud_unreachable_title": "Frameleaf Cloud isn't reachable yet",
-  "frameleaf_setup_code": "Code {code}",
   "frameleaf_setup_continue_local": "Continue with local account",
   "frameleaf_setup_continue_setup": "Continue setup",
   "frameleaf_setup_creating_account": "Creating your account…",

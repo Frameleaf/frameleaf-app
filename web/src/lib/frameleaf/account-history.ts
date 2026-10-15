@@ -26,7 +26,7 @@ export const describeAdminEvent = (
 ): string => {
   switch (action) {
     case AdminAuditAction.AccountCreated: {
-      // FL-292: the first administrator of a new server, claimed with its setup code
+      // FL-292: the first administrator of a new server, claimed from its home network
       if (detail === 'server-claimed:web') {
         return $t('frameleaf_account_history_server_claimed_web');
       }

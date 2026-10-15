@@ -2881,7 +2881,7 @@ export enum AdminAuditAction {
   /**
    * FL-292: `detail` is `server-claimed:web`, `server-claimed:app-password` or
    * `server-claimed:app-frameleaf` when the account was the first administrator of a new server,
-   * claimed with its setup code; otherwise null.
+   * claimed from its home network; otherwise null.
    */
   AccountCreated = 'account-created',
   /** Name, email, avatar colour or the require-password-change flag. */
