@@ -58,7 +58,9 @@ source 10 plus recovery 10 plus destination input 10 reserves 30. Disposing only
 The existing verification JSON carries a purpose-authenticated `auditValidationInputs` envelope.
 It binds the owner, request, operation and resource lease, whole-item claim, fresh source evidence,
 stage, planned exclusive paths and actual private directory/input identities. Recovery-destination
-inputs also bind the recovery generation. Persist the empty input's custody before writing, then
+inputs also bind the recovery generation. A reused existing candidate validates as an
+`existing-destination` input with no recovery generation, and is refused while an undisposed
+recovery copy exists. Persist the empty input's custody before writing, then
 persist its final identity before decoder submission. Exclusive creation conflicts, failed closes
 or failed identity writes retain the reservation; they do not establish an absent input.
 

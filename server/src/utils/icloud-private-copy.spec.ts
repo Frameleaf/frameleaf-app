@@ -260,6 +260,26 @@ describe('validation input envelopes', () => {
       ),
     ).toBe(true);
   });
+  it.each([
+    ['recovery-destination', null, '/library/upload/owner/candidate.jpg', false],
+    ['existing-destination', null, '/library/upload/owner/candidate.jpg', true],
+    ['existing-destination', randomUUID(), '/library/upload/owner/candidate.jpg', false],
+  ] as const)('binds %s with copy generation %s at %s: %s', (stage, copyGeneration, validationPath, valid) => {
+    expect(validValidationInputs(inputEnvelope('settled', { stage, copyGeneration, validationPath }))).toBe(valid);
+  });
+  it('refuses an existing destination that is the staged source', () => {
+    const envelope = inputEnvelope('settled', { stage: 'existing-destination', copyGeneration: null });
+    const payload = envelope.payload.current.payload;
+    expect(
+      validValidationInputs(
+        inputEnvelope('settled', {
+          stage: 'existing-destination',
+          copyGeneration: null,
+          validationPath: payload.fresh.payload.path,
+        }),
+      ),
+    ).toBe(false);
+  });
   it('binds owner and purpose scopes without claiming shape validation authenticates', () => {
     const envelope = inputEnvelope('disposed');
     const current = envelope.payload.current;

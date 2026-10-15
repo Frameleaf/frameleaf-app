@@ -122,6 +122,7 @@ describe('validation input accounting baseline', () => {
     const repository = {
       beginPrivateWork: vi.fn(() => Promise.resolve(randomUUID())),
       validationInputs: vi.fn().mockResolvedValue(undefined),
+      privateCopy: vi.fn().mockResolvedValue(undefined),
       planValidationInput: vi.fn().mockResolvedValue(undefined),
       storeValidationInput: vi.fn((_input, expected, payload) =>
         Promise.resolve({

@@ -189,6 +189,8 @@ export async function unlinkOwnedPrivateCopy(path: string, identity: PrivateCopy
 
 export type ValidationInputKey = { resourceId: string; sequence: string; pathNonce: string };
 export type ValidationInputState = 'reserved' | 'preparing' | 'running' | 'settled' | 'disposed';
+export const validationInputStages = ['source', 'recovery-destination', 'existing-destination'] as const;
+export type ValidationInputStage = (typeof validationInputStages)[number];
 export type ValidationInputPayload = ValidationInputKey & {
   version: 1;
   purpose: 'scheduled-weekly-validation-input';
@@ -200,7 +202,11 @@ export type ValidationInputPayload = ValidationInputKey & {
   resourceLeaseToken: string;
   itemClaimId: string;
   sourceAssetId: string;
-  stage: 'source' | 'recovery-destination';
+  /**
+   * `source` decodes the staged download, `recovery-destination` the owned promoted recovery copy
+   * (bound to its generation) and `existing-destination` an already-managed reuse candidate.
+   */
+  stage: ValidationInputStage;
   fresh: ScheduledFreshDownload;
   validationPath: string;
   sourceIdentity: PrivateCopyIdentity;
@@ -278,9 +284,9 @@ function validValidationInput(record: unknown): record is ValidationInputRecord 
     typeof input.sourceAssetId !== 'string' ||
     !input.sourceAssetId ||
     !['reserved', 'preparing', 'running', 'settled', 'disposed'].includes(input.state) ||
-    !['source', 'recovery-destination'].includes(input.stage) ||
+    !validationInputStages.includes(input.stage) ||
     !(input.copyGeneration === null || (typeof input.copyGeneration === 'string' && uuid.test(input.copyGeneration))) ||
-    (input.stage === 'source' ? input.copyGeneration !== null : input.copyGeneration === null) ||
+    (input.stage === 'recovery-destination' ? input.copyGeneration === null : input.copyGeneration !== null) ||
     !Number.isSafeInteger(input.reservedInputBytes) ||
     input.reservedInputBytes <= 0 ||
     !Array.isArray(input.pending) ||
@@ -321,7 +327,7 @@ function validValidationInput(record: unknown): record is ValidationInputRecord 
     canonicalPath(payload.path) &&
     payload.path === `${input.stagingDirectory}/complete` &&
     (input.stage !== 'source' || input.validationPath === payload.path) &&
-    (input.stage !== 'recovery-destination' || input.validationPath !== payload.path) &&
+    (input.stage === 'source' || input.validationPath !== payload.path) &&
     validInputIdentity({ ...payload.identity, uid: input.sourceIdentity.uid }) &&
     payload.identity.size === input.reservedInputBytes &&
     typeof payload.sha1 === 'string' &&

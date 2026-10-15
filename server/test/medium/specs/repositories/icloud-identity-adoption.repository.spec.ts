@@ -2597,6 +2597,10 @@ describe('iCloud exact identity adoption', () => {
       describe('fresh scheduled stream provenance and real decoder ownership', { timeout: 15_000 }, () => {
         async function createStageFixture(protectedOriginal = false, decoder?: MediaIntegrityService) {
           const fixture = await scheduledAuthorityFixture(protectedOriginal);
+          // The scheduled byte worker always holds the source-byte reservation before staging; validation-input
+          // custody (FL-296) refuses a staged resource whose reservedBytes is not exactly source+copy+input.
+          await sql`UPDATE public.icloud_resource SET "reservedBytes"="expectedSize"
+            WHERE id=${fixture.resource.id}::uuid`.execute(db);
           const input = { ownerId: fixture.f.user.id, authority: fixture.authority, resource: fixture.resource };
           const root = join(await realpath(dirname(fixture.f.originalPath)), 'scheduled-stage');
           vi.stubEnv('FRAMELEAF_ICLOUD_STAGING_PATH', root);
@@ -2987,7 +2991,8 @@ describe('iCloud exact identity adoption', () => {
             try {
               await restarted.housekeeping();
               expect((await fixture.state()).lastError).toBe('scheduled_private_copy_retained_pending-settlement');
-              expect((await fixture.state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
+              // Source + recovery copy + the still-owned full-size decoder input (FL-296 validation-input charge).
+              expect((await fixture.state()).reservedBytes).toBe(3 * fixture.f.bytes.length);
               expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
             } finally {
               decoderDone.resolve();
@@ -3188,11 +3193,12 @@ describe('iCloud exact identity adoption', () => {
             await fixture.retire();
             done.resolve();
             decoder.mockRestore();
-            await validation.settled;
+            // FL-296: settlement under the forged work generation cannot persist, so the decoder input stays owned.
+            await expect(validation.settled).rejects.toThrow('scheduled_audit_input_changed');
             await fixture.staging.cleanupRetired(fixture.input);
             expect(await fixture.state()).toMatchObject({
               status: 'failed',
-              reservedBytes: 2 * fixture.f.bytes.length,
+              reservedBytes: 3 * fixture.f.bytes.length,
             });
             expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
             expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
