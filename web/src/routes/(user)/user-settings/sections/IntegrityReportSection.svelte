@@ -21,6 +21,8 @@
   } from '$lib/frameleaf/maintenance-report';
   import { Route } from '$lib/route';
   import {
+    handleClearIntegrityReports,
+    handleDismissIntegrityReport,
     handleRemoveAllIntegrityReportItems,
     handleRemoveIntegrityReportItem,
     integrityActionKey,
@@ -40,20 +42,29 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
     type: IntegrityReport;
     /** How often the queue is polled for a finished check; tests shorten it. */
     pollMs?: number;
+    /** Where "back" goes: the page the list was opened from (File checks, FL-366). */
+    backHref?: string;
   };
 
-  let { type, pollMs = 2000 }: Props = $props();
+  let { type, pollMs = 2000, backHref = Route.systemMaintenance({ section: 'integrity' }) }: Props = $props();
 
   const refreshJobs: Record<IntegrityReport, ManualJobName> = {
     [IntegrityReport.UntrackedFile]: ManualJobName.IntegrityUntrackedFilesRefresh,
     [IntegrityReport.MissingFile]: ManualJobName.IntegrityMissingFilesRefresh,
     [IntegrityReport.ChecksumMismatch]: ManualJobName.IntegrityChecksumMismatchRefresh,
+  };
+
+  // FL-366: the checks are named for what they find.
+  const CHECK_NAMES: Record<IntegrityReport, Translations> = {
+    [IntegrityReport.MissingFile]: 'frameleaf_care_fc_missing_name',
+    [IntegrityReport.ChecksumMismatch]: 'frameleaf_care_fc_damaged_name',
+    [IntegrityReport.UntrackedFile]: 'frameleaf_care_fc_stray_name',
   };
 
   // Only these checks point at a file on disk that can be downloaded.
@@ -91,7 +102,7 @@
       } while (cursor);
       const runs = await getIntegrityCheckRuns().catch(() => undefined);
       const text = maintenanceReportText({
-        title: $t(`admin.maintenance_integrity_${type}`),
+        title: $t(CHECK_NAMES[type]),
         lastRunAt: runs?.[type],
         paths,
       });
@@ -172,15 +183,15 @@
 <OnEvents {onIntegrityReportDeleted} {onIntegrityReportDeleteStatus} />
 
 <section class="report" aria-labelledby="fl-integrity-report-title">
-  <a class="back" href={Route.systemMaintenance({ section: 'integrity' })}>
+  <a class="back" href={backHref}>
     <Icon icon={mdiArrowLeft} size="16" aria-hidden={true} />
-    {$t('admin.frameleaf_maintenance_integrity_title')}
+    {$t('frameleaf_care_fc_title')}
   </a>
   <div class="report-head">
     <div>
       <h2 id="fl-integrity-report-title">
         {$t('admin.frameleaf_maintenance_report_title', {
-          values: { title: $t(`admin.maintenance_integrity_${type}`) },
+          values: { title: $t(CHECK_NAMES[type]) },
         })}
       </h2>
       <p class="summary">
@@ -201,6 +212,15 @@
       <button type="button" class="button" disabled={exporting} onclick={() => void downloadReportFile()}>
         <Icon icon={mdiFileDocumentOutline} size="16" aria-hidden={true} />
         {$t('admin.frameleaf_maintenance_report_download_file')}
+      </button>
+      <!-- FL-366: the harmless way to empty the list comes before the destructive one. -->
+      <button
+        type="button"
+        class="button"
+        disabled={deletingAll || integrityReport.items.length === 0}
+        onclick={() => void handleClearIntegrityReports(type)}
+      >
+        {$t('frameleaf_care_fc_clear')}
       </button>
       <button
         type="button"
@@ -249,6 +269,15 @@
                   {$t('download')}
                 </a>
               {/if}
+              <button
+                type="button"
+                class="button"
+                disabled={deletingAll || deleting.has(id)}
+                aria-label={$t('frameleaf_care_fc_remove') + ' ' + path}
+                onclick={() => void handleDismissIntegrityReport(id)}
+              >
+                {$t('frameleaf_care_fc_remove')}
+              </button>
               <button
                 type="button"
                 class="button danger"

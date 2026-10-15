@@ -3,10 +3,10 @@ import { BrowserContext, expect, test } from '@playwright/test';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 
 /**
- * Library Care → Physical deduplication (FL-73), the design template's `PhysicalDedupManager.jsx`,
- * against a mocked server: applying can only start from the plan on screen once the server has
- * reviewed it, a stale plan is refused and never applied, preparing is blocked by a configuration
- * error, and a finished apply is verified with what can and cannot be undone said plainly.
+ * Library Care → Merge older copies (FL-73, restyled in FL-366), against a mocked server: merging
+ * can only start from the list on screen once the server has checked it, a stale list is refused and
+ * never merged, looking is blocked while merging is off, and a finished merge is verified with what
+ * can and cannot be undone said plainly.
  */
 // universal storage (FL-326): deduplication moved from Storage to Library Care
 const page_ = '/user-settings?area=care&section=deduplication';
@@ -174,17 +174,18 @@ test.describe('Physical deduplication', () => {
     await setupBaseMockApiRoutes(context, faker.string.uuid());
   });
 
-  test('never offers Apply for a plan the server has not reviewed', async ({ context, page }) => {
+  test('never offers Merge for a list the server has not checked', async ({ context, page }) => {
     const requests = await setupDedupMocks(context, basePreview());
     await page.goto(page_);
 
-    await expect(page.getByRole('heading', { name: 'PD-ABABABAB' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Apply reviewed plan' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '1 extra copy can be merged' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Merge these copies' })).toBeDisabled();
 
-    await page.getByRole('button', { name: 'Mark plan reviewed' }).click();
-    await page.getByRole('button', { name: 'Apply reviewed plan' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Apply this reviewed plan?' });
-    const confirm = dialog.getByRole('button', { name: 'Apply this plan' });
+    await page.getByRole('checkbox', { name: 'I have checked this list' }).check();
+    await page.getByRole('button', { name: 'Merge these copies' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Merge 1 copy?' });
+    await expect(dialog.getByText(/The extra files move to File trash/)).toBeVisible();
+    const confirm = dialog.getByRole('button', { name: 'Merge 1 copy' });
     await expect(confirm).toBeDisabled();
     await dialog.getByRole('textbox').fill('APPLY PD-00000000');
     await expect(confirm).toBeDisabled();
@@ -198,38 +199,38 @@ test.describe('Physical deduplication', () => {
       ]);
   });
 
-  test('asks for a new review when a group decision changes after the review', async ({ context, page }) => {
+  test('asks to check the list again when a group decision changes after the check', async ({ context, page }) => {
     const requests = await setupDedupMocks(context, basePreview());
     await page.goto(page_);
 
-    await page.getByRole('button', { name: 'Mark plan reviewed' }).click();
-    await expect(page.getByRole('button', { name: 'Apply reviewed plan' })).toBeVisible();
-    await page.getByRole('checkbox', { name: 'Share this original in the plan' }).uncheck();
+    await page.getByRole('checkbox', { name: 'I have checked this list' }).check();
+    await expect(page.getByRole('button', { name: 'Merge these copies' })).toBeEnabled();
+    await page.getByRole('checkbox', { name: 'Merge these', exact: true }).uncheck();
 
-    await expect(page.getByRole('button', { name: 'Apply reviewed plan' })).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: 'I have checked this list' })).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Merge these copies' })).toBeDisabled();
     expect(requests.applies).toEqual([]);
   });
 
-  test('refuses a stale plan and applies nothing', async ({ context, page }) => {
+  test('refuses a stale list and merges nothing', async ({ context, page }) => {
     const requests = await setupDedupMocks(context, basePreview(), { stale: true });
     await page.goto(page_);
 
-    await page.getByRole('button', { name: 'Mark plan reviewed' }).click();
+    await page.getByRole('checkbox', { name: 'I have checked this list' }).click();
 
-    await expect(page.getByRole('alert')).toContainText('This plan no longer matches the library');
-    await expect(page.getByRole('button', { name: 'Apply reviewed plan' })).toHaveCount(0);
+    await expect(page.getByRole('alert')).toContainText('This list no longer matches the library');
+    await expect(page.getByRole('button', { name: 'Merge these copies' })).toBeDisabled();
     expect(requests.reviews).toHaveLength(1);
     expect(requests.applies).toEqual([]);
   });
 
-  test('blocks preparing a plan until file reuse is enabled', async ({ context, page }) => {
+  test('keeps Find exact copies off while merging is turned off, without a dead end', async ({ context, page }) => {
     await setupDedupMocks(context, basePreview({ plan: null, enabled: false }));
     await page.goto(page_);
 
-    await expect(page.getByText('Enable file reuse before preparing a plan.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Prepare preview plan' })).toBeDisabled();
-    await page.getByRole('button', { name: 'Open settings' }).click();
-    await page.waitForURL(/openSetting=dedup-owner/);
+    await expect(page.getByText('Merging older copies is turned off on this server.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Find exact copies' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Open settings' })).toHaveCount(0);
   });
 
   test('verifies a finished apply and says a removed copy cannot be undone', async ({ context, page }) => {

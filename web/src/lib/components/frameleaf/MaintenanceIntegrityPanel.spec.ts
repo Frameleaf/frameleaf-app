@@ -6,10 +6,12 @@ import en from '../../../../../i18n/en.json';
 import MaintenanceIntegrityPanel from './MaintenanceIntegrityPanel.svelte';
 
 const handleRemoveAllIntegrityReportItems = vi.fn();
+const handleClearIntegrityReports = vi.fn();
 
 vi.mock('$lib/services/integrity.service', async (original) => ({
   ...(await original<typeof import('$lib/services/integrity.service')>()),
   handleRemoveAllIntegrityReportItems: (...args: unknown[]) => handleRemoveAllIntegrityReportItems(...args),
+  handleClearIntegrityReports: (...args: unknown[]) => handleClearIntegrityReports(...args),
 }));
 
 const jobNames = {
@@ -54,6 +56,10 @@ describe('MaintenanceIntegrityPanel (FL-81 CC-21/22)', () => {
     expect(act).toHaveTextContent('Delete files from disk');
     await fireEvent.click(act);
     expect(handleRemoveAllIntegrityReportItems).toHaveBeenCalledWith(IntegrityReport.UntrackedFile, 2);
+
+    // FL-366: the harmless way to empty a list sits beside it and touches no file
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear the Untracked Files list' }));
+    expect(handleClearIntegrityReports).toHaveBeenCalledWith(IntegrityReport.UntrackedFile);
   });
 
   it('shows a running check', () => {
