@@ -39,6 +39,11 @@
 {% do server_container.add_storage(values.consts.base_path, values.storage.data) %}
 {% do perm_container.add_or_skip_action("data", values.storage.data, perms_config) %}
 
+{# FL-408: the bundled Studio worker's enrolment; the server writes it, machine learning reads it #}
+{% set studio_worker_config = {"type": "volume", "volume_config": {"volume_name": "studio-worker", "auto_permissions": true}} %}
+{% do server_container.add_storage(values.consts.studio_worker_path, studio_worker_config) %}
+{% do perm_container.add_or_skip_action("studio-worker", studio_worker_config, perms_config) %}
+
 {% for store in values.storage.additional_storage %}
   {% do server_container.add_storage(store.mount_path, store) %}
   {% do perm_container.add_or_skip_action(store.mount_path, store, perms_config) %}
@@ -74,6 +79,8 @@
     {% do ml_container.x.environment.add_env("HF_ENDPOINT", values.frameleaf.hugging_face_endpoint) %}
   {% endif %}
   {% do ml_container.x.environment.add_user_envs(values.frameleaf.ml_additional_envs | default([])) %}
+  {% do ml_container.x.environment.add_env("FRAMELEAF_STUDIO_WORKER_SERVER_URL", "http://%s:%d"|format(values.consts.server_container_name, values.network.web_port.port_number)) %}
+  {% do ml_container.x.add_storage(values.consts.studio_worker_path, dict(studio_worker_config, read_only=true)) %}
   {% set ml_cache_config = dict(values.storage.ml_cache, **{"volume_config": {"volume_name": "ml-cache"}}) %}
   {% do ml_container.x.add_storage(values.consts.ml_cache_path, ml_cache_config) %}
   {% do perm_container.add_or_skip_action("ml-cache", ml_cache_config, perms_config) %}

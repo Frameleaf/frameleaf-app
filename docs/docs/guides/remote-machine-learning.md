@@ -33,6 +33,9 @@ services:
     #   service: # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
     volumes:
       - model-cache:/cache
+    environment:
+      # The Studio render worker can only enrol on the server's host; see the note below.
+      FRAMELEAF_STUDIO_WORKER: 'false'
     restart: always
     ports:
       - 3003:3003
@@ -42,6 +45,10 @@ volumes:
 ```
 
 3. Start the remote machine learning container by running `docker compose up -d`
+
+:::note Studio
+Studio's render worker runs only in a machine learning container on the same host as the server, because it enrols through the `studio-worker` volume the two containers share. A remote container cannot share it; without the setting above, its worker logs `Cannot enrol: no studio-worker volume is mounted` and stops. Keep the local `frameleaf-machine-learning` container if you use web Studio. If you remove it (see [Forcing remote processing](#forcing-remote-processing)), Studio reports that it is not available on this server. See [Studio render worker](/install/environment-variables#studio-render-worker).
+:::
 
 :::info
 Version mismatches between both hosts may cause bugs and instability, so remember to update this container as well when updating the local Frameleaf instance.

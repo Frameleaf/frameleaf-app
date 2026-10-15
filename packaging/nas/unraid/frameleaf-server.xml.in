@@ -15,6 +15,7 @@
   <ReadMe>https://github.com/Frameleaf/unraid-apps#manual-server-and-ml-installation</ReadMe>
   <Config Name="Web port" Target="2283" Default="2283" Mode="tcp" Description="Frameleaf web interface" Type="Port" Display="always" Required="true" Mask="false">2283</Config>
   <Config Name="Library" Target="/data" Default="/mnt/user/appdata/frameleaf/library" Mode="rw" Description="Persistent original media and generated files; back up with the database" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/frameleaf/library</Config>
+  <Config Name="Studio worker enrolment" Target="/run/frameleaf/studio-worker" Default="/mnt/user/appdata/frameleaf/studio-worker" Mode="rw" Description="Private folder the server writes the bundled Studio render worker's enrolment to; frameleaf-ml mounts the same folder read-only" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/frameleaf/studio-worker</Config>
   <Config Name="Database host" Target="DB_HOSTNAME" Default="frameleaf-postgres" Description="PostgreSQL 19 container name on the frameleaf network" Type="Variable" Display="always" Required="true" Mask="false">frameleaf-postgres</Config>
   <Config Name="Database name" Target="DB_DATABASE_NAME" Default="frameleaf" Description="Database name" Type="Variable" Display="advanced" Required="true" Mask="false">frameleaf</Config>
   <Config Name="Database user" Target="DB_USERNAME" Default="frameleaf" Description="PostgreSQL user" Type="Variable" Display="always" Required="true" Mask="false">frameleaf</Config>

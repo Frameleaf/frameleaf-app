@@ -37,6 +37,9 @@ export async function storagePath(path: string, roots: string[], bytes: number):
   if (space.bavail * space.bsize < bytes + 64 * 1024 * 1024) throw new Refusal('insufficient_disk_space');
   return actual;
 }
+/** FL-408: the bundled Studio worker's enrolment, shared by the server (rw) and machine learning (ro). */
+export const STUDIO_WORKER_VOLUME = 'studio-worker';
+export const STUDIO_WORKER_TARGET = '/run/frameleaf/studio-worker';
 function composeMount(m: Mount, volumes: Record<string, unknown>, index: number) {
   if (m.type === 'bind')
     return {
@@ -67,7 +70,8 @@ export async function renderCompose(
     throw new Refusal('unsupported_compose_bundle');
   const { server, machineLearning, postgres } = release.nas.images;
   [server, machineLearning, postgres].forEach((i) => imageDigest.parse(i));
-  const volumes: Record<string, unknown> = { 'model-cache': {} };
+  // FL-408: the server writes the bundled Studio worker's enrolment here; machine learning reads it.
+  const volumes: Record<string, unknown> = { 'model-cache': {}, [STUDIO_WORKER_VOLUME]: {} };
   const media = installation.mounts.map((m, i) => composeMount(m, volumes, i));
   const labels = { 'app.frameleaf.manager': installation.id };
   const application = ApplicationConfig.parse(config ?? { environment: {}, settings: null });
@@ -93,6 +97,13 @@ export async function renderCompose(
     target: '/run/frameleaf/manager-token',
     read_only: true,
     bind: { create_host_path: false },
+  });
+  media.push({
+    type: 'volume',
+    source: STUDIO_WORKER_VOLUME,
+    target: STUDIO_WORKER_TARGET,
+    read_only: false,
+    volume: { nocopy: true },
   });
   if (application.authority === 'file') {
     const settings = {
@@ -169,7 +180,10 @@ export async function renderCompose(
       image: machineLearning,
       labels,
       restart: 'unless-stopped',
-      volumes: [{ type: 'volume', source: 'model-cache', target: '/cache' }],
+      volumes: [
+        { type: 'volume', source: 'model-cache', target: '/cache' },
+        { type: 'volume', source: STUDIO_WORKER_VOLUME, target: STUDIO_WORKER_TARGET, read_only: true },
+      ],
     };
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const compose = JSON.parse(

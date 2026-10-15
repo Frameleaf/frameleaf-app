@@ -95,7 +95,11 @@ Configure the server's `DB_HOSTNAME`, `DB_DATABASE_NAME`, `DB_USERNAME` and mask
 `DB_PASSWORD` to match PostgreSQL. Map the library folder to `/data` and select the
 web host port. For local ML, install `frameleaf-ml` on the same network and use
 `http://frameleaf-ml:3003`; without ML set
-`FRAMELEAF_MACHINE_LEARNING_ENABLED=false`. Keep application, ML, database and
+`FRAMELEAF_MACHINE_LEARNING_ENABLED=false`. Both templates map the same
+`studio-worker` folder (server read-write, ML read-only): the server writes the
+bundled Studio render worker's enrolment there, so web Studio opens and exports.
+An ML container on another host cannot share that folder, so Studio stays
+unavailable without a local `frameleaf-ml`. Keep application, ML, database and
 release evidence from the same supported release. Preserve matched database and
 media backups before upgrades. See the
 [manual container guide](https://github.com/Frameleaf/frameleaf-app/blob/master/frameleaf-implementation/docker/README.md).

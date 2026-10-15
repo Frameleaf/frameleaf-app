@@ -222,6 +222,8 @@ Additional machine learning parameters can be tuned from the admin UI.
 
 The machine learning container also runs Studio's render worker, so web Studio opens and exports on a default install. The server enrols it at every start and writes its enrolment to the `studio-worker` volume, which only the server (read-write) and the machine learning container (read-only) mount. The worker accepts that enrolment only from the container network. It uses the container's GPU when it has one and the CPU otherwise. On the CPU, projects with effects are refused with a reason instead of being rendered differently.
 
+The `studio-worker` volume only works when both containers run on the same Docker host. Docker Compose, TrueNAS, Unraid and Manager (including Synology) all mount it for you. A machine learning container on another host ([remote machine learning](/guides/remote-machine-learning)) cannot share it, so its worker cannot enrol. It logs `Cannot enrol: no studio-worker volume is mounted` once and stops; machine learning itself keeps working. Studio then stays unavailable unless a machine learning container on the server's host runs the worker. There is no network enrolment for a remote worker. If the volume is mounted but no enrolment appears within 5 minutes, the worker logs that it is still waiting.
+
 - `FRAMELEAF_STUDIO_WORKER` (machine learning, default `true`): `false` stops the worker. Web Studio then reports that no render worker is available.
 - `FRAMELEAF_STUDIO_WORKER` (server, default `true`): `false` stops the server enrolling the worker at all.
 - `FRAMELEAF_STUDIO_WORKER_SERVER_URL` (machine learning, default `http://frameleaf-server:2283`): the server as the machine learning container reaches it.

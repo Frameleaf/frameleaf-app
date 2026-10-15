@@ -37,6 +37,45 @@ test('Docker and NAS inference workers receive no server environment or private 
   const template = fs.readFileSync(path.join(__dirname, 'unraid/frameleaf-ml.xml.in'), 'utf8');
   assert.doesNotMatch(template, /DB_PASSWORD|FRAMELEAF_IDENTITY_DIR|docker\.sock|Target="\/data"/);
   assert.match(template, /Target="\/cache"/);
+  // FL-408: the ML template's only other path is the Studio worker's enrolment folder, read-only.
+  const paths = [...template.matchAll(/<Config [^>]*Type="Path"[^>]*>/g)].map(([config]) => config);
+  assert.deepEqual(
+    paths.map((config) => [config.match(/Target="([^"]+)"/)[1], config.match(/Mode="([^"]+)"/)[1]]),
+    [
+      ['/cache', 'rw'],
+      ['/run/frameleaf/studio-worker', 'ro'],
+    ],
+  );
+});
+test('NAS packaging shares the Studio worker enrolment: server read-write, ML read-only (FL-408)', () => {
+  const folder = (name) => {
+    const config = fs
+      .readFileSync(path.join(__dirname, `unraid/${name}.xml.in`), 'utf8')
+      .match(/<Config [^>]*Target="\/run\/frameleaf\/studio-worker"[^>]*>([^<]*)<\/Config>/);
+    assert(config, `${name} must mount the Studio worker enrolment`);
+    return {
+      mode: config[0].match(/Mode="([^"]+)"/)[1],
+      host: config[1],
+      fallback: config[0].match(/Default="([^"]+)"/)[1],
+    };
+  };
+  const server = folder('frameleaf-server');
+  const ml = folder('frameleaf-ml');
+  assert.deepEqual([server.mode, ml.mode], ['rw', 'ro']);
+  assert.equal(server.host, ml.host);
+  assert.equal(server.fallback, ml.fallback);
+  const truenas = fs.readFileSync(path.join(__dirname, 'truenas/templates/docker-compose.yaml'), 'utf8');
+  assert.match(truenas, /"volume_name": "studio-worker"/);
+  assert.match(truenas, /server_container\.add_storage\(values\.consts\.studio_worker_path, studio_worker_config\)/);
+  assert.match(
+    truenas,
+    /ml_container\.x\.add_storage\(values\.consts\.studio_worker_path, dict\(studio_worker_config, read_only=true\)\)/,
+  );
+  assert.match(truenas, /FRAMELEAF_STUDIO_WORKER_SERVER_URL/);
+  assert.match(
+    fs.readFileSync(path.join(__dirname, 'truenas/ix_values.yaml'), 'utf8'),
+    /studio_worker_path: \/run\/frameleaf\/studio-worker/,
+  );
 });
 test(
   'TrueNAS rendering rejects missing, empty, changed and symlinked libraries before import',
@@ -225,6 +264,9 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
       /<Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/,
     );
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
+    for (const name of ['frameleaf-server', 'frameleaf-ml']) {
+      assert(read(`unraid/templates/${name}.xml`).includes('Target="/run/frameleaf/studio-worker"'), name);
+    }
     assert.equal(read('unraid/LICENSE'), fs.readFileSync(path.join(__dirname, '../../LICENSE'), 'utf8'));
     assert(read('unraid/README.md').includes('PostgreSQL'));
     for (const name of ['frameleaf-server', 'frameleaf-ml']) {
