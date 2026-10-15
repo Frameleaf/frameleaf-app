@@ -97,6 +97,10 @@ const plans: Record<string, string[]> = {
 const moveRefusals: Record<string, string> = {
   media_quiescence_unavailable:
     'This server cannot yet confirm that all uploads and jobs have safely stopped. The move is unavailable; nothing was stopped or moved.',
+  media_quiescence_timeout:
+    'Uploads and background work did not finish in time. Nothing was stopped or moved, and Frameleaf is working normally again. Try again later.',
+  media_quiescence_lost:
+    'Frameleaf stopped holding uploads and background work before the move began. Nothing was stopped or moved; try again.',
   unsupported_media_mappings:
     'This move supports one writable media folder. External folders and named volumes need a separate move plan.',
   unsupported_media_entry:
