@@ -23403,7 +23403,7 @@
     },
     "/map/statistics": {
       "get": {
-        "description": "Count what the map settings would add: the viewer's own located archived items and the located items of partners who share their locations, under the same date and favorite filters, and the viewer's own items without a location.",
+        "description": "Count what the map settings would add, under the same date and favorite filters: the viewer's own located archived items and the viewer's own items without a location. The partner count is always 0, since partners' items arrive as the viewer's own copies.",
         "operationId": "getMapStatistics",
         "parameters": [
           {
@@ -36107,7 +36107,7 @@
     },
     "/search/facets": {
       "post": {
-        "description": "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own; places of partners who hide their locations are left out.",
+        "description": "Count the assets a metadata search body matches by people, media type, places, cameras, lenses, rating, favorites and tags. People and tags are the caller's own.",
         "operationId": "searchFacets",
         "parameters": [],
         "requestBody": {
