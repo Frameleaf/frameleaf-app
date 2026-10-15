@@ -780,11 +780,11 @@ async function* sqlRollback(inputStream: Readable, databaseUsername: string, fen
   }
 }
 
-function createSqlProgressStreams(cb: (progress: number) => void): [PassThrough, Writable] {
-  const STDIN_START_MARKER = new TextEncoder().encode('FROM stdin');
-  const STDIN_END_MARKER = new TextEncoder().encode(String.raw`\.`);
+export function createSqlProgressStreams(cb: (progress: number) => void): [PassThrough, Writable] {
+  const STDIN_START_MARKER = Buffer.from('FROM stdin');
+  const STDIN_END_MARKER = Buffer.from(String.raw`\.`);
 
-  let isReadingStdin = false;
+  let sequence = STDIN_START_MARKER;
   let sequenceIdx = 0;
 
   let linesSent = 0;
@@ -809,39 +809,33 @@ function createSqlProgressStreams(cb: (progress: number) => void): [PassThrough,
   const source = new PassThrough({
     transform(chunk, _encoding, callback) {
       for (const byte of chunk) {
-        if (!isReadingStdin && byte === 10 && lastByte !== 10) {
+        if (sequence === STDIN_START_MARKER && byte === 10 && lastByte !== 10) {
           linesSent += 1;
         }
 
         lastByte = byte;
 
-        const sequence = isReadingStdin ? STDIN_END_MARKER : STDIN_START_MARKER;
-        if (sequence[sequenceIdx] === byte) {
-          sequenceIdx += 1;
-
-          if (sequence.length === sequenceIdx) {
-            sequenceIdx = 0;
-            isReadingStdin = !isReadingStdin;
-          }
-        } else {
+        if (sequence[sequenceIdx] !== byte) {
           sequenceIdx = 0;
+          continue;
+        }
+        sequenceIdx += 1;
+        if (sequenceIdx === sequence.length) {
+          sequenceIdx = 0;
+          sequence = sequence === STDIN_START_MARKER ? STDIN_END_MARKER : STDIN_START_MARKER;
         }
       }
 
       cbDebounced();
-      // eslint-disable-next-line unicorn/no-this-outside-of-class
-      this.push(chunk);
-      callback();
+      callback(null, chunk);
     },
   });
 
   const sink = new Writable({
     write(chunk, _encoding, callback) {
       advanceJobProgress(chunk.byteLength);
-      for (const byte of chunk) {
-        if (byte === 10) {
-          linesProcessed++;
-        }
+      for (let newline = chunk.indexOf(10); newline !== -1; newline = chunk.indexOf(10, newline + 1)) {
+        linesProcessed++;
       }
 
       cbDebounced();

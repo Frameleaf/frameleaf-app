@@ -136,11 +136,7 @@ export class TimelineMonth {
   }
 
   getAssets() {
-    // eslint-disable-next-line unicorn/no-array-reduce
-    return this.timelineDays.reduce(
-      (accumulator: TimelineAsset[], g: TimelineDay) => accumulator.concat(g.getAssets()),
-      [],
-    );
+    return this.timelineDays.flatMap((day) => day.getAssets());
   }
 
   sortTimelineDays() {
