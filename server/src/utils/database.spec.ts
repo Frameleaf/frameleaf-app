@@ -29,7 +29,7 @@ describe(boundPoolClose.name, () => {
 
 describe('desktop inference database diagnostics', () => {
   afterEach(() => vi.restoreAllMocks());
-  it.each(['desktop_ml_task', 'desktop_ml_attempt'])(
+  it.each(['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session'])(
     'redacts private inputs, output and error details for %s',
     async (table) => {
       const config = getKyselyConfig({
@@ -37,6 +37,7 @@ describe('desktop inference database diagnostics', () => {
         url: 'postgres://postgres:postgres@127.0.0.1:1/frameleaf',
       });
       const database = new Kysely(config);
+      // eslint-disable-next-line import-x/no-named-as-default-member -- postgres exposes this class on its default ESM export.
       const error = Object.assign(new postgres.PostgresError('private photo contents'), {
         code: '23514',
         detail: 'private photo contents',

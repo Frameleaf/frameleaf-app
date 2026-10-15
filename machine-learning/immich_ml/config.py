@@ -228,5 +228,9 @@ def __getattr__(name: str) -> type:
     if name in {"CustomUvicornServer", "CustomUvicornWorker"}:
         from . import gunicorn_worker
 
-        return getattr(gunicorn_worker, name)
+        return (
+            gunicorn_worker.CustomUvicornServer
+            if name == "CustomUvicornServer"
+            else gunicorn_worker.CustomUvicornWorker
+        )
     raise AttributeError(name)

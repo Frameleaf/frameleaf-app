@@ -25,7 +25,7 @@ export class DesktopDeviceService {
       protocolVersion: 1,
       serverId: await stableServerId({ systemMetadataRepository: this.systemMetadataRepository }),
       enrollmentPolicy: 'administrators',
-      features: { enrollment: true, worker: false, sources: false, nativeHost: false },
+      features: { enrollment: true, worker: false, workerSession: true, sources: false, nativeHost: false },
     };
   }
 

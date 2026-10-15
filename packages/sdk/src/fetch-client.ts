@@ -5897,6 +5897,7 @@ export type DesktopCapabilitiesDto = {
         nativeHost: false;
         sources: false;
         worker: false;
+        workerSession: true;
     };
     protocolVersion: number;
     serverId: string;
@@ -5927,6 +5928,20 @@ export type DesktopEnrollmentDto = {
     requestId: string;
     signature: string;
     timestamp: number;
+};
+export type DesktopSessionRequestDto = {
+    deviceId: string;
+    requestId: string;
+    signature: string;
+    timestamp: number;
+};
+export type DesktopSessionDto = {
+    authorizationEpoch: number;
+    expiresAt: string;
+    modelKeys: string[];
+    scopes: DesktopWorkerScope[];
+    sessionId: string;
+    workerToken: string;
 };
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
@@ -20976,6 +20991,21 @@ export function enrollDesktopDevice({ desktopEnrollmentDto }: {
     })));
 }
 /**
+ * Issue an installation-bound library worker credential
+ */
+export function issueDesktopWorkerSession({ desktopSessionRequestDto }: {
+    desktopSessionRequestDto: DesktopSessionRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DesktopSessionDto;
+    }>("/desktop/devices/session", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopSessionRequestDto
+    })));
+}
+/**
  * Revoke this account’s desktop device
  */
 export function revokeDesktopDevice({ id }: {
@@ -30870,6 +30900,9 @@ export enum DesktopDeviceState {
     Preparing = "preparing",
     Paused = "paused",
     Revoked = "revoked"
+}
+export enum DesktopWorkerScope {
+    LibraryInference = "library-inference"
 }
 export enum DevelopPresetMaskKind {
     Radial = "radial",

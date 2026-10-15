@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "f7efeae0fec7d56fe87d9e5167d030d49a72b423",
+  "sourceCommit": "bf1ee2f66795f92648d349ed0cec9e3593855525",
   "sourceHashes": {
     "src/enum.ts": "0407d6c7792379d5e1355e6a971d89bbaeda62e3cf078c93084daecdeb48c864",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -7,7 +7,7 @@
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
     "src/schema/frameleaf-feature-schema.ts": "dc478c5b3e85e0dbec52300f6c5b2a07f55a5175c96fca7a401c42748c1f081b",
     "src/schema/functions.ts": "5ff1337608e67da06f0361799668700355cdb5f47cb67f9c9ee879fb11318bf5",
-    "src/schema/index.ts": "a8ea4642e98b47ced581caabf876fdbf00eaa1384a1d2edf557e70194a89fded",
+    "src/schema/index.ts": "35dc005a70432d5671779b4b3bbb98f54aa204cfee4bb7c82f8ec19312858e47",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
@@ -49,7 +49,8 @@
     "src/schema/tables/cluster-group-request.table.ts": "028ade594e1de7cc3d12b4af20509ccc009a590fb92eafea72823dd4ea968dca",
     "src/schema/tables/cluster-group.table.ts": "57b156f30aafb96a7fa754795270129e0b4eb7c9aed7af96646ba343bb5c4a30",
     "src/schema/tables/desktop-device.table.ts": "0995b5f099f41e6e4fbb3b39ac50b71f194fdffbaad08cad64ad78fb2d452d80",
-    "src/schema/tables/desktop-ml-task.table.ts": "3fdd809b2fb814e13508089c066503d4f706840442cc7abff53a944b531bfada",
+    "src/schema/tables/desktop-ml-task.table.ts": "7234d9e8c76e6ebb3f7d4f5ad49fb2e7d28bf653c04a7a85030ffa1b932d1958",
+    "src/schema/tables/desktop-worker-session.table.ts": "ed271d1cdcda9a18524c2a0330a268aca82ccd7862f803d9865af26972d20e7d",
     "src/schema/tables/duplicate-decision.table.ts": "40e198b76121bafe69c17f282136a480e78658c2f3efcc884987fe56c4cd4316",
     "src/schema/tables/face-search.table.ts": "dcf3d20474ef65a7fc155081d9b04a5151be688268cfd113df1cf2e040f0bde9",
     "src/schema/tables/geodata-places.table.ts": "2c0be153c56497bfa21053ce9834ae8a6e4c6ae3c7677643302f44ce5d0c333e",
@@ -131,6 +132,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "cc27e4c2efe66872bca6a47f05fe74b3e1ccc9a571d345077854c5133a774d05",
-  "rawMetadataSha256": "f6dc6733bd620e48e4ff2b8fd12b41f35b8d52a274b1af3249593d95b716d04b"
+  "dumpSha256": "c052d43bcc87b1141ecb756340a625f463b16922ca2ae2a3f4d2303761bc57fa",
+  "rawMetadataSha256": "64b8fae4cb65336471de89f689232a9e40fe312b11562132780d95b94154fb02"
 }

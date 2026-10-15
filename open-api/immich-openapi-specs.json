@@ -18614,6 +18614,60 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/desktop/devices/session": {
+      "post": {
+        "operationId": "issueDesktopWorkerSession",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopSessionRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopSessionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Issue an installation-bound library worker credential",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/desktop/devices/{id}": {
       "delete": {
         "operationId": "revokeDesktopDevice",
@@ -70993,11 +71047,18 @@
                   false
                 ],
                 "type": "boolean"
+              },
+              "workerSession": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
               }
             },
             "required": [
               "enrollment",
               "worker",
+              "workerSession",
               "sources",
               "nativeHost"
             ],
@@ -71184,6 +71245,90 @@
       "DesktopRoutePreservation": {
         "enum": [
           "all"
+        ],
+        "type": "string"
+      },
+      "DesktopSessionDto": {
+        "properties": {
+          "authorizationEpoch": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "modelKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/DesktopWorkerScope"
+            },
+            "type": "array"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "workerToken": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorizationEpoch",
+          "expiresAt",
+          "modelKeys",
+          "scopes",
+          "sessionId",
+          "workerToken"
+        ],
+        "type": "object"
+      },
+      "DesktopSessionRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 88,
+            "minLength": 88,
+            "type": "string"
+          },
+          "timestamp": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deviceId",
+          "requestId",
+          "signature",
+          "timestamp"
+        ],
+        "type": "object"
+      },
+      "DesktopWorkerScope": {
+        "enum": [
+          "library-inference"
         ],
         "type": "string"
       },

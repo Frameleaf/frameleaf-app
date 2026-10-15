@@ -1,5 +1,5 @@
 {
-  "databaseName": "desktop_broker_baseline",
+  "databaseName": "desktop_worker_baseline",
   "schemaName": "public",
   "tables": [
     {
@@ -39595,6 +39595,15 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resultSha256",
+          "tableName": "desktop_ml_task",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -39617,9 +39626,9 @@
         {
           "type": "check",
           "name": "desktop_ml_task_state_check",
-          "definition": "CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text])))",
+          "definition": "CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text, ('consumed'::character varying)::text])))",
           "tableName": "desktop_ml_task",
-          "expression": "(((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text])))",
+          "expression": "(((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text, ('consumed'::character varying)::text])))",
           "synchronize": true
         },
         {
@@ -39747,6 +39756,15 @@
           "numericPrecision": 32,
           "numericScale": 0,
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workerSessionId",
+          "tableName": "desktop_ml_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -39823,6 +39841,166 @@
             "deviceId"
           ],
           "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_worker_session",
+      "columns": [
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "desktop_worker_session",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "lastSequence",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "photoSessionId",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "tokenHash",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "modelKeys",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_worker_session",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "desktop_worker_session_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "desktop_worker_session",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "desktop_worker_session_deviceid_uq",
+          "definition": "UNIQUE (\"deviceId\")",
+          "tableName": "desktop_worker_session",
+          "columnNames": [
+            "deviceId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_session_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_session",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_session_photoSessionId_fkey",
+          "definition": "FOREIGN KEY (\"photoSessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_session",
+          "columnNames": [
+            "photoSessionId"
+          ],
+          "referenceTableName": "session",
           "referenceColumnNames": [
             "id"
           ],

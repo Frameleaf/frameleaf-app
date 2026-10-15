@@ -1,7 +1,8 @@
 import { Kysely, sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository, type DesktopMlTables } from 'src/repositories/desktop-ml.repository.js';
+import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -10,17 +11,19 @@ import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
-let brokerDb: Kysely<DB & DesktopMlTables>;
+let brokerDb: Kysely<DB & DesktopMlTables & DesktopWorkerTables>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  brokerDb = db.withTables<DesktopMlTables>();
+  brokerDb = db.withTables<DesktopMlTables & DesktopWorkerTables>();
 });
 afterAll(async () => {
   await db?.destroy();
 });
 const setup = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-  const { user } = await ctx.newUser();
+  const { user } = await ctx.newUser({ isAdmin: true });
+  const { session: photoSession } = await ctx.newSession({ userId: user.id });
+  const modelKey = randomUUID();
   const devices = new DesktopDeviceRepository(db);
   const workers = await Promise.all(
     [1, 2].map((n) =>
@@ -36,8 +39,22 @@ const setup = async () => {
       }),
     ),
   );
-  const grants = workers.map((row) => ({ deviceId: row!.id, authorizationEpoch: row!.authorizationEpoch }));
-  const modelKey = randomUUID();
+  const sessions = await Promise.all(
+    workers.map((row) =>
+      new DesktopWorkerRepository(db).issue({
+        deviceId: row!.id,
+        authorizationEpoch: row!.authorizationEpoch,
+        photoSessionId: photoSession.id!,
+        tokenHash: createHash('sha256').update(randomUUID()).digest(),
+        modelKeys: [modelKey],
+      }),
+    ),
+  );
+  const grants = workers.map((row, index) => ({
+    deviceId: row!.id,
+    authorizationEpoch: row!.authorizationEpoch,
+    sessionId: sessions[index]!.id,
+  }));
   const request = {
     ownerId: user.id,
     modelKey,
@@ -61,6 +78,7 @@ it('two repository instances racing claim one task once and preserve scoped inpu
   const index = claims.findIndex(Boolean);
   const claim = claims[index]!;
   expect(claim.task.id).toBe(task.id);
+  expect(new Date(claim.attempt.expiresAt)).toEqual(request.deadlineAt);
   expect(claim.task).not.toHaveProperty('input');
   expect(await sut.result(task.id)).not.toHaveProperty('input');
   expect(await sut.input(grants[index], claim.attempt.id)).toEqual(request.input);
@@ -177,8 +195,8 @@ it('one worker cannot drain queued tasks while it has an active lease', async ()
   const { sut, grants, request } = await setup();
   await sut.create(request);
   await sut.create(request);
-  expect(await sut.claim(grants[0], [request.modelKey])).toBeDefined();
-  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  const first = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect((await sut.claim(grants[0], [request.modelKey]))?.attempt.id).toBe(first.attempt.id);
   expect(await sut.claim(grants[1], [request.modelKey])).toBeDefined();
 });
 
@@ -253,4 +271,37 @@ it('NAS cancellation removes task input and fences a worker already holding the 
   expect(await sut.result(task.id)).toBeUndefined();
   expect(await second.input(grants[0], claim.attempt.id)).toBeUndefined();
   expect(await second.complete(grants[0], claim.attempt.id, {})).toBe(false);
+});
+
+it('returns an identical result acknowledgment after NAS consumption, without retaining the private output', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(true);
+  await sut.discard(task.id);
+  expect(await sut.result(task.id)).toBeUndefined();
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(true);
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [9, 9] })).toBe(false);
+  const receipt = await brokerDb
+    .selectFrom('desktop_ml_task')
+    .select(['input', 'result', 'config'])
+    .where('id', '=', task.id)
+    .executeTakeFirst();
+  expect(receipt).toEqual({ input: null, result: null, config: {} });
+});
+
+it('requires an exact NAS-approved model and rechecks scope for every lease operation', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create({ ...request, modelKey: request.modelKey.slice(0, -1) });
+  expect(await sut.claim(grants[0], [request.modelKey.slice(0, -1)])).toBeUndefined();
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  await brokerDb
+    .updateTable('desktop_worker_session')
+    .set({ modelKeys: sql<string[]>`'[]'::jsonb` })
+    .where('id', '=', grants[0].sessionId)
+    .execute();
+  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
+  expect(await sut.complete(grants[0], claim.attempt.id, { vector: [1] })).toBe(false);
 });

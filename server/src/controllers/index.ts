@@ -1,4 +1,3 @@
-import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -30,6 +29,7 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
+import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';

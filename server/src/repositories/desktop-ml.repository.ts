@@ -3,7 +3,14 @@ import { type Kysely, type Selectable, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import z from 'zod';
+import {
+  type DesktopWorkerGrant,
+  type DesktopWorkerTables,
+  lockDesktopWorker,
+} from 'src/repositories/desktop-worker.repository.js';
 import { DB } from 'src/schema/index.js';
+
+export type { DesktopWorkerGrant } from 'src/repositories/desktop-worker.repository.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -11,8 +18,7 @@ export type DesktopMlTables = {
   desktop_ml_task: DesktopMlTaskTable;
   desktop_ml_attempt: DesktopMlAttemptTable;
 };
-type DesktopMlDatabase = DB & DesktopMlTables;
-export type DesktopWorkerGrant = { deviceId: string; authorizationEpoch: number };
+type DesktopMlDatabase = DB & DesktopMlTables & DesktopWorkerTables;
 type Task = Selectable<DesktopMlTaskTable>;
 type Attempt = Selectable<DesktopMlAttemptTable>;
 type TaskMetadata = Omit<Task, 'input'>;
@@ -29,6 +35,7 @@ const taskColumns = [
   'generation',
   'attemptId',
   'result',
+  'resultSha256',
   'createdAt',
   'deadlineAt',
 ] as const;
@@ -39,14 +46,15 @@ export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey
 };
 const jsonObject = z.record(z.string(), z.json());
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
-const leaseEnd = (deadline: Date) => sql<Date>`least(${deadline}, clock_timestamp() + interval '90 seconds')`;
+const leaseEnd = (deadline: Date, credentialExpiry: Date) =>
+  sql<Date>`least(${deadline}, ${credentialExpiry}, clock_timestamp() + interval '120 seconds')`;
 
 @Injectable()
 export class DesktopMlRepository {
   private db: Kysely<DesktopMlDatabase>;
 
   constructor(@InjectKysely() db: Kysely<DB>) {
-    this.db = db.withTables<DesktopMlTables>();
+    this.db = db.withTables<DesktopMlTables & DesktopWorkerTables>();
   }
 
   async create(request: DesktopMlRequest): Promise<TaskMetadata> {
@@ -67,6 +75,7 @@ export class DesktopMlRepository {
       const count = await db
         .selectFrom('desktop_ml_task')
         .select(db.fn.countAll<string>().as('count'))
+        .where('state', '!=', 'consumed')
         .executeTakeFirstOrThrow();
       if (Number(count.count) >= 32) throw new Error('desktop_broker_busy');
       const row = await db
@@ -78,6 +87,7 @@ export class DesktopMlRepository {
           inputSha256: sha256(request.input),
           attemptId: null,
           result: null,
+          resultSha256: null,
         })
         .returning(taskColumns)
         .executeTakeFirstOrThrow();
@@ -88,11 +98,15 @@ export class DesktopMlRepository {
   async claim(grant: DesktopWorkerGrant, modelKeys: string[]): Promise<DesktopMlClaim | undefined> {
     if (modelKeys.length === 0 || modelKeys.length > 64) return;
     return this.db.transaction().execute(async (db) => {
-      if (!(await this.device(db, grant))) return;
+      const worker = await this.device(db, grant);
+      if (!worker) return;
+      modelKeys = modelKeys.filter((key) => worker.modelKeys.includes(key));
+      if (modelKeys.length === 0) return;
       const busy = await db
         .selectFrom('desktop_ml_attempt as attempt')
         .innerJoin('desktop_ml_task as task', 'task.attemptId', 'attempt.id')
-        .select('attempt.id')
+        .select(['attempt.id', 'task.modelKey'])
+        .forUpdate('task')
         .where('attempt.deviceId', '=', grant.deviceId)
         .where('attempt.authorizationEpoch', '=', grant.authorizationEpoch)
         .where('attempt.expiresAt', '>', sql<Date>`clock_timestamp()`)
@@ -101,7 +115,21 @@ export class DesktopMlRepository {
         .where('task.deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .limit(1)
         .executeTakeFirst();
-      if (busy) return;
+      if (busy) {
+        if (!modelKeys.includes(busy.modelKey)) return;
+        const attempt = await db
+          .selectFrom('desktop_ml_attempt')
+          .selectAll()
+          .where('id', '=', busy.id)
+          .executeTakeFirstOrThrow();
+        if (attempt.workerSessionId !== grant.sessionId) return;
+        const task = await db
+          .selectFrom('desktop_ml_task')
+          .select(taskColumns)
+          .where('id', '=', attempt.taskId)
+          .executeTakeFirstOrThrow();
+        return { task, attempt };
+      }
 
       const task = await db
         .selectFrom('desktop_ml_task')
@@ -140,9 +168,10 @@ export class DesktopMlRepository {
         .values({
           taskId: task.id,
           deviceId: grant.deviceId,
+          workerSessionId: grant.sessionId,
           authorizationEpoch: grant.authorizationEpoch,
           generation: task.generation + 1,
-          expiresAt: leaseEnd(new Date(task.deadlineAt)),
+          expiresAt: leaseEnd(new Date(task.deadlineAt), new Date(worker.expiresAt)),
           outcome: null,
         })
         .returningAll()
@@ -169,10 +198,10 @@ export class DesktopMlRepository {
 
   async heartbeat(grant: DesktopWorkerGrant, attemptId: string): Promise<boolean> {
     return (
-      (await this.withAttempt(grant, attemptId, async (db, task) => {
+      (await this.withAttempt(grant, attemptId, async (db, task, credentialExpiry) => {
         await db
           .updateTable('desktop_ml_attempt')
-          .set({ expiresAt: leaseEnd(new Date(task.deadlineAt)) })
+          .set({ expiresAt: leaseEnd(new Date(task.deadlineAt), credentialExpiry) })
           .where('id', '=', attemptId)
           .execute();
         return true;
@@ -183,17 +212,26 @@ export class DesktopMlRepository {
   /** Stages a result only. The NAS dispatcher must revalidate asset/route authority before adopting it. */
   async complete(grant: DesktopWorkerGrant, attemptId: string, value: Record<string, unknown>): Promise<boolean> {
     const result = jsonObject.parse(value);
-    if (Buffer.byteLength(canonicalJson(result)) > 4 * 1024 * 1024) throw new Error('desktop_result_too_large');
+    const encoded = canonicalJson(result);
+    if (Buffer.byteLength(encoded) > 4 * 1024 * 1024) throw new Error('desktop_result_too_large');
+    const resultSha256 = sha256(encoded);
+    const accepted = await this.withAttempt(grant, attemptId, async (db, task) => {
+      await db
+        .updateTable('desktop_ml_task')
+        .set({ state: 'completed', result, resultSha256, input: null })
+        .where('id', '=', task.id)
+        .execute();
+      await db.updateTable('desktop_ml_attempt').set({ outcome: 'completed' }).where('id', '=', attemptId).execute();
+      return true;
+    });
+    if (accepted) return true;
     return (
-      (await this.withAttempt(grant, attemptId, async (db, task) => {
-        await db
-          .updateTable('desktop_ml_task')
-          .set({ state: 'completed', result, input: null })
-          .where('id', '=', task.id)
-          .execute();
-        await db.updateTable('desktop_ml_attempt').set({ outcome: 'completed' }).where('id', '=', attemptId).execute();
-        return true;
-      })) ?? false
+      (await this.withAttempt(
+        grant,
+        attemptId,
+        (_db, task) => Promise.resolve(task.resultSha256 === resultSha256),
+        'finished',
+      )) ?? false
     );
   }
 
@@ -237,7 +275,12 @@ export class DesktopMlRepository {
   }
 
   result(id: string): Promise<TaskMetadata | undefined> {
-    return this.db.selectFrom('desktop_ml_task').select(taskColumns).where('id', '=', id).executeTakeFirst();
+    return this.db
+      .selectFrom('desktop_ml_task')
+      .select(taskColumns)
+      .where('id', '=', id)
+      .where('state', '!=', 'consumed')
+      .executeTakeFirst();
   }
 
   async assertAdoption(
@@ -249,12 +292,20 @@ export class DesktopMlRepository {
       const attempt = await db
         .selectFrom('desktop_ml_attempt as attempt')
         .innerJoin('desktop_ml_task as task', 'task.attemptId', 'attempt.id')
-        .select(['attempt.id', 'attempt.deviceId', 'attempt.authorizationEpoch', 'attempt.generation'])
+        .select([
+          'attempt.id',
+          'attempt.deviceId',
+          'attempt.workerSessionId',
+          'attempt.authorizationEpoch',
+          'attempt.generation',
+        ])
         .where('task.id', '=', id)
         .where('task.state', '=', 'completed')
         .where('attempt.outcome', '=', 'completed')
         .executeTakeFirst();
-      if (!attempt || !(await this.device(db, attempt))) throw new Error('desktop_result_authority_lost');
+      if (!attempt?.workerSessionId) throw new Error('desktop_result_authority_lost');
+      const worker = await this.device(db, { ...attempt, sessionId: attempt.workerSessionId });
+      if (!worker || !worker.modelKeys.includes(expected.modelKey)) throw new Error('desktop_result_authority_lost');
       const task = await db
         .selectFrom('desktop_ml_task')
         .select('id')
@@ -272,43 +323,43 @@ export class DesktopMlRepository {
         .executeTakeFirst();
       if (!task) throw new Error('desktop_result_authority_lost');
     };
-    if (transaction) await assert(transaction.withTables<DesktopMlTables>());
+    if (transaction) await assert(transaction.withTables<DesktopMlTables & DesktopWorkerTables>());
     else await this.db.transaction().execute(assert);
   }
 
   async discard(id: string): Promise<void> {
     await this.db
+      .updateTable('desktop_ml_task')
+      .set({ state: 'consumed', result: null, input: null, config: sql<Record<string, unknown>>`'{}'::jsonb` })
+      .where('id', '=', id)
+      .where('state', '=', 'completed')
+      .execute();
+    await this.db
       .deleteFrom('desktop_ml_task')
       .where('id', '=', id)
-      .where('state', 'in', ['completed', 'cancelled', 'failed'])
+      .where('state', 'in', ['cancelled', 'failed'])
       .execute();
   }
 
   private device(db: Transaction<DesktopMlDatabase>, grant: DesktopWorkerGrant) {
-    return db
-      .selectFrom('desktop_device')
-      .select('id')
-      .where('id', '=', grant.deviceId)
-      .where('authorizationEpoch', '=', grant.authorizationEpoch)
-      .where('state', '=', 'preparing')
-      .where('mode', '=', 'client-worker')
-      .where('revokedAt', 'is', null)
-      .forUpdate()
-      .executeTakeFirst();
+    return lockDesktopWorker(db, grant);
   }
 
   private withAttempt<T>(
     grant: DesktopWorkerGrant,
     id: string,
-    operation: (db: Transaction<DesktopMlDatabase>, task: TaskMetadata) => Promise<T>,
+    operation: (db: Transaction<DesktopMlDatabase>, task: TaskMetadata, credentialExpiry: Date) => Promise<T>,
+    state: 'running' | 'finished' = 'running',
   ): Promise<T | undefined> {
     return this.db.transaction().execute(async (db) => {
-      if (!(await this.device(db, grant))) return;
+      const worker = await this.device(db, grant);
+      if (!worker) return;
       const attempt = await db
         .selectFrom('desktop_ml_attempt')
         .selectAll()
         .where('id', '=', id)
         .where('deviceId', '=', grant.deviceId)
+        .where('workerSessionId', '=', grant.sessionId)
         .where('authorizationEpoch', '=', grant.authorizationEpoch)
         .executeTakeFirst();
       if (!attempt) return;
@@ -318,20 +369,21 @@ export class DesktopMlRepository {
         .where('id', '=', attempt.taskId)
         .where('attemptId', '=', id)
         .where('generation', '=', attempt.generation)
-        .where('state', '=', 'running')
+        .where('state', 'in', state === 'running' ? ['running'] : ['completed', 'consumed'])
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .forUpdate()
         .executeTakeFirst();
-      if (!task) return;
+      if (!task || !worker.modelKeys.includes(task.modelKey)) return;
       const live = await db
         .selectFrom('desktop_ml_attempt')
         .select('id')
         .where('id', '=', id)
-        .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
-        .where('outcome', 'is', null)
+        .$if(state === 'running', (query) => query.where('outcome', 'is', null))
+        .$if(state === 'finished', (query) => query.where('outcome', '=', 'completed'))
+        .$if(state === 'running', (query) => query.where('expiresAt', '>', sql<Date>`clock_timestamp()`))
         .executeTakeFirst();
       if (!live) return;
-      return operation(db, task);
+      return operation(db, task, new Date(worker.expiresAt));
     });
   }
 }

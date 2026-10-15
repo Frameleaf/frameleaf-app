@@ -2,17 +2,22 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { DesktopSessionDto, DesktopSessionRequestDto } from 'src/dtos/desktop-worker.dto.js';
 import { DesktopCapabilitiesDto, DesktopDeviceDto, DesktopEnrollmentDto } from 'src/dtos/desktop.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
+import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 const history = () => new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
 @ApiTags(ApiTag.Server)
 @Controller('desktop')
 export class DesktopDeviceController {
-  constructor(private service: DesktopDeviceService) {}
+  constructor(
+    private service: DesktopDeviceService,
+    private workerAuth: DesktopWorkerAuthService,
+  ) {}
 
   @Get('capabilities')
   @Authenticated({ permission: false })
@@ -33,6 +38,13 @@ export class DesktopDeviceController {
   @Endpoint({ summary: 'Enroll or resume this desktop identity', history: history() })
   enrollDesktopDevice(@Auth() auth: AuthDto, @Body() dto: DesktopEnrollmentDto): Promise<DesktopDeviceDto> {
     return this.service.enroll(auth, dto);
+  }
+
+  @Post('devices/session')
+  @Authenticated({ permission: false })
+  @Endpoint({ summary: 'Issue an installation-bound library worker credential', history: history() })
+  issueDesktopWorkerSession(@Auth() auth: AuthDto, @Body() dto: DesktopSessionRequestDto): Promise<DesktopSessionDto> {
+    return this.workerAuth.issue(auth, dto);
   }
 
   @Delete('devices/:id/session')
