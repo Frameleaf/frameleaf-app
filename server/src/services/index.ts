@@ -1,4 +1,3 @@
-import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -36,6 +35,8 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
+import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
@@ -159,6 +160,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 
 export const services = [
   DesktopDeviceService,
+  DesktopMlService,
   FrameleafLibraryMoveService,
   FrameleafLibrarySetupService,
   ICloudAuditService,

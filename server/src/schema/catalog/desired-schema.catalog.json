@@ -1,5 +1,5 @@
 {
-  "databaseName": "frameleaf",
+  "databaseName": "desktop_broker_baseline",
   "schemaName": "public",
   "tables": [
     {
@@ -39442,6 +39442,387 @@
             "userId"
           ],
           "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_ml_task",
+      "columns": [
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deadlineAt",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "inputSha256",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "config",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "generation",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "input",
+          "tableName": "desktop_ml_task",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "state",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "inputKind",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "modelKey",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "attemptId",
+          "tableName": "desktop_ml_task",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "configSha256",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "authorityKey",
+          "tableName": "desktop_ml_task",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "result",
+          "tableName": "desktop_ml_task",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "desktop_ml_task_modelkey_state_createdat_idx",
+          "definition": "CREATE INDEX desktop_ml_task_modelkey_state_createdat_idx ON public.desktop_ml_task USING btree (\"modelKey\", state, \"createdAt\")",
+          "tableName": "desktop_ml_task",
+          "columnNames": [
+            "modelKey",
+            "state",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "desktop_ml_task_state_check",
+          "definition": "CHECK (((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text])))",
+          "tableName": "desktop_ml_task",
+          "expression": "(((state)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('failed'::character varying)::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_ml_task_kind_check",
+          "definition": "CHECK (((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
+          "tableName": "desktop_ml_task",
+          "expression": "(((\"inputKind\")::text = ANY (ARRAY[('image'::character varying)::text, ('text'::character varying)::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_ml_task_input_size_check",
+          "definition": "CHECK ((octet_length(input) <= 16777216))",
+          "tableName": "desktop_ml_task",
+          "expression": "((octet_length(input) <= 16777216))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_ml_task_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "desktop_ml_task",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_ml_task_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_ml_task",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_ml_attempt",
+      "columns": [
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "generation",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "outcome",
+          "tableName": "desktop_ml_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "taskId",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "desktop_ml_attempt",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "desktop_ml_attempt_deviceid_expiresat_idx",
+          "definition": "CREATE INDEX desktop_ml_attempt_deviceid_expiresat_idx ON public.desktop_ml_attempt USING btree (\"deviceId\", \"expiresAt\")",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "deviceId",
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_ml_attempt_taskid_createdat_idx",
+          "definition": "CREATE INDEX desktop_ml_attempt_taskid_createdat_idx ON public.desktop_ml_attempt USING btree (\"taskId\", \"createdAt\")",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "taskId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "desktop_ml_attempt_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "desktop_ml_attempt_taskid_generation_uq",
+          "definition": "UNIQUE (\"taskId\", generation)",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "taskId",
+            "generation"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_ml_attempt_taskId_fkey",
+          "definition": "FOREIGN KEY (\"taskId\") REFERENCES desktop_ml_task(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "taskId"
+          ],
+          "referenceTableName": "desktop_ml_task",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_ml_attempt_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_ml_attempt",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
           "referenceColumnNames": [
             "id"
           ],

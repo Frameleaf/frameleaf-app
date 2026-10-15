@@ -109,11 +109,14 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       if (isAssetChecksumConstraint(event.error)) {
         return;
       }
+      const privateInference = /\bdesktop_ml_(?:task|attempt)\b/u.test(event.query.sql);
       console.error('Query failed :', {
         durationMs: event.queryDurationMillis,
-        error: event.error,
+        error: privateInference
+          ? { code: event.error instanceof PostgresError ? event.error.code : undefined }
+          : event.error,
         sql: event.query.sql,
-        params: event.query.parameters,
+        params: privateInference ? '[redacted]' : event.query.parameters,
       });
     },
   };

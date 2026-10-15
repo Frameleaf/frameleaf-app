@@ -1,4 +1,3 @@
-import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -30,6 +29,8 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
+import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -124,6 +125,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
   DesktopDeviceRepository,
+  DesktopMlRepository,
   ICloudAuditRepository,
   ICloudScheduledStagingRepository,
   ICloudScheduledWorkerRepository,
