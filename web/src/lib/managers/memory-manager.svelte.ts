@@ -252,6 +252,12 @@ class MemoryManager {
     return location ? this.memories[location.memoryIndex] : undefined;
   }
 
+  #captureState() {
+    const generation = this.#generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => generation === this.#generation && isCurrentSession();
+  }
+
   /** Fetch a memory that is not part of the loaded pages, i.e. when opening a link to an older one. */
   async loadMemory(id: string) {
     const memory = this.#getMemory(id);
@@ -259,7 +265,11 @@ class MemoryManager {
       return memory;
     }
 
+    const isCurrent = this.#captureState();
     const [loaded] = await searchMemories({ id }).catch(() => []);
+    if (!isCurrent()) {
+      return;
+    }
     // A memory whose items were all removed has nothing to show (it is deleted once its Undo closes).
     if (!loaded || loaded.assets.length === 0) {
       return;
@@ -307,8 +317,12 @@ class MemoryManager {
 
     // Captured before the item disappears, since `current` is derived from the loaded assets.
     const { nextHref, previousHref } = current;
+    const isCurrentSession = authManager.captureSession();
     const asset = memory.assets[assetIndex];
     const removed = await removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (!isCurrentSession()) {
+      return;
+    }
     if (removed.find((result) => result.id === asset.id)?.success !== true) {
       throw new Error('Unable to remove the item from this memory');
     }
@@ -319,13 +333,16 @@ class MemoryManager {
       this.memories = this.memories.filter((item) => item !== memory);
     }
     await this.#goto(nextHref ?? previousHref ?? this.memoriesHref);
+    if (!isCurrentSession()) {
+      return;
+    }
 
     const translate = get(t);
     // Undo and the end of the window race for one outcome; whichever runs first wins.
     let settled = false;
     const finalize = emptied
       ? setTimeout(() => {
-          if (settled) {
+          if (settled || !isCurrentSession()) {
             return;
           }
           settled = true;
@@ -341,12 +358,12 @@ class MemoryManager {
           label: translate('undo'),
           onclick: () => {
             close();
-            if (settled) {
+            if (settled || !isCurrentSession()) {
               return;
             }
             settled = true;
             clearTimeout(finalize);
-            void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied).catch((error) =>
+            void this.#restoreAsset(memory, memoryIndex, asset, assetIndex, emptied, isCurrentSession).catch((error) =>
               handleError(error, translate('errors.something_went_wrong')),
             );
           },
@@ -362,8 +379,12 @@ class MemoryManager {
     asset: AssetResponseDto,
     assetIndex: number,
     emptied: boolean,
+    isCurrentSession: () => boolean,
   ) {
     const restored = await addMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } });
+    if (!isCurrentSession()) {
+      return;
+    }
     if (restored.find((result) => result.id === asset.id)?.success !== true) {
       throw new Error('Unable to restore the item to this memory');
     }
@@ -385,7 +406,11 @@ class MemoryManager {
 
     const { id } = current.asset;
     const isFavorite = !current.asset.isFavorite;
+    const isCurrentSession = authManager.captureSession();
     await updateAsset({ id, updateAssetDto: { isFavorite } });
+    if (!isCurrentSession()) {
+      return;
+    }
     for (const memory of this.memories) {
       for (const asset of memory.assets) {
         if (asset.id === id) {
@@ -407,8 +432,11 @@ class MemoryManager {
     }
 
     const isSaved = !memory.isSaved;
+    const isCurrentSession = authManager.captureSession();
     await updateMemory({ id, memoryUpdateDto: { isSaved } });
-    memory.isSaved = isSaved;
+    if (isCurrentSession()) {
+      memory.isSaved = isSaved;
+    }
   }
 
   /**
@@ -422,10 +450,17 @@ class MemoryManager {
       return;
     }
 
+    const isCurrentSession = authManager.captureSession();
     if (this.current?.memory.id === id) {
       await this.#goto(this.current.nextMemory?.href ?? this.current.previousMemory?.href ?? this.memoriesHref);
     }
+    if (!isCurrentSession()) {
+      return;
+    }
     const updated = await updateMemory({ id, memoryUpdateDto: { isHidden: true } });
+    if (!isCurrentSession()) {
+      return;
+    }
     this.memories = this.memories.filter((item) => item.id !== id);
     this.hidden = [{ ...memory, ...updated, assets: updated.assets ?? memory.assets }, ...this.hidden];
   }
@@ -437,7 +472,11 @@ class MemoryManager {
       return;
     }
 
+    const isCurrentSession = authManager.captureSession();
     const updated = await updateMemory({ id, memoryUpdateDto: { isHidden: false } });
+    if (!isCurrentSession()) {
+      return;
+    }
     const restored = { ...memory, ...updated, assets: updated.assets ?? memory.assets };
     this.hidden = this.hidden.filter((item) => item.id !== id);
     if (restored.assets.length > 0 && !this.#lookup.has(id)) {
@@ -449,7 +488,11 @@ class MemoryManager {
 
   /** The owner's hidden memories, for the index's "Hidden memories" section. */
   async loadHidden() {
+    const isCurrent = this.#captureState();
     const items = await searchMemories({ isHidden: true, order: MemorySearchOrder.Desc, size: 250 });
+    if (!isCurrent()) {
+      return;
+    }
     this.hidden = items.filter((item) => item.assets.length > 0);
   }
 
@@ -464,7 +507,11 @@ class MemoryManager {
       return;
     }
 
+    const isCurrentSession = authManager.captureSession();
     const updated = await updateMemory({ id, memoryUpdateDto: curation });
+    if (!isCurrentSession()) {
+      return;
+    }
     if (curation.title !== undefined) {
       memory.title = updated.title ?? null;
     }
@@ -478,7 +525,11 @@ class MemoryManager {
 
   /** The owner's show-less rules, for Memory settings. */
   async loadShowLess() {
-    this.showLess = await getMemoryShowLess();
+    const isCurrent = this.#captureState();
+    const rules = await getMemoryShowLess();
+    if (isCurrent()) {
+      this.showLess = rules;
+    }
   }
 
   /**
@@ -486,13 +537,23 @@ class MemoryManager {
    * every search and stops generating them, so the index reloads rather than guessing which to drop.
    */
   async addShowLess(rule: MemoryShowLessDto) {
+    const isCurrentSession = authManager.captureSession();
     await addMemoryShowLess({ memoryShowLessDto: rule });
-    await Promise.all([this.loadShowLess(), this.#reload()]);
+    if (!isCurrentSession()) {
+      return;
+    }
+    const loading = this.#reload();
+    await Promise.all([this.loadShowLess(), loading]);
   }
 
   async removeShowLess(rule: MemoryShowLessDto) {
+    const isCurrentSession = authManager.captureSession();
     await removeMemoryShowLess({ memoryShowLessDto: { kind: rule.kind, value: rule.value } });
-    await Promise.all([this.loadShowLess(), this.#reload()]);
+    if (!isCurrentSession()) {
+      return;
+    }
+    const loading = this.#reload();
+    await Promise.all([this.loadShowLess(), loading]);
   }
 
   async #reload() {
@@ -541,6 +602,8 @@ class MemoryManager {
     this.#total = undefined;
     this.#received = 0;
     this.memories = [];
+    this.hidden = [];
+    this.showLess = [];
   }
 
   private initialize() {

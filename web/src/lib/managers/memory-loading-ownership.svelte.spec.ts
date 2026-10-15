@@ -1,9 +1,23 @@
-import { memoriesStatistics, searchMemories, type MemoryResponseDto } from '@frameleaf/sdk';
+import {
+  getMemoryShowLess,
+  MemoryShowLessKind,
+  memoriesStatistics,
+  searchMemories,
+  type MemoryResponseDto,
+} from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deferredPromise } from '@test-data/deferred';
 
+const session = vi.hoisted(() => ({ generation: 0 }));
 const state = vi.hoisted(() => ({
-  auth: { authenticated: false, user: { id: 'me' } },
+  auth: {
+    authenticated: false,
+    user: { id: 'me' },
+    captureSession: () => {
+      const generation = session.generation;
+      return () => generation === session.generation;
+    },
+  },
   events: {} as Record<string, () => unknown>,
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: state.auth }));
@@ -19,6 +33,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchMemories: vi.fn(),
   memoriesStatistics: vi.fn(),
+  getMemoryShowLess: vi.fn(),
 }));
 
 const memory = (id: string, assets = [{ id: `asset-${id}` }]) => ({ id, assets }) as MemoryResponseDto;
@@ -127,5 +142,46 @@ describe('memory page ownership', () => {
     state.auth.authenticated = true;
     await vi.advanceTimersByTimeAsync(3_600_000);
     expect(searchMemories).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('direct memory read ownership', () => {
+  it.each([
+    ['memory', 'logout'],
+    ['hidden', 'logout'],
+    ['rules', 'logout'],
+    ['memory', 'session'],
+    ['hidden', 'session'],
+    ['rules', 'session'],
+  ] as const)('does not republish %s after %s', async (kind, change) => {
+    const response = deferredPromise<MemoryResponseDto[]>();
+    const rules = deferredPromise<Awaited<ReturnType<typeof getMemoryShowLess>>>();
+    vi.mocked(searchMemories).mockReturnValueOnce(response.promise);
+    vi.mocked(getMemoryShowLess).mockReturnValueOnce(rules.promise);
+    const loading =
+      kind === 'memory'
+        ? manager.loadMemory('private')
+        : kind === 'hidden'
+          ? manager.loadHidden()
+          : manager.loadShowLess();
+    if (change === 'logout') {
+      state.events.AuthLogout();
+    } else {
+      session.generation++;
+    }
+    response.resolve([memory('private')]);
+    rules.resolve([{ kind: MemoryShowLessKind.Person, value: 'private-person' }]);
+    await loading;
+    expect(manager.memories).toEqual([]);
+    expect(manager.hidden).toEqual([]);
+    expect(manager.showLess).toEqual([]);
+  });
+
+  it('clears already loaded hidden memories and show-less rules on logout', () => {
+    manager.hidden = [memory('private')];
+    manager.showLess = [{ kind: MemoryShowLessKind.Person, value: 'private-person' }];
+    state.events.AuthLogout();
+    expect(manager.hidden).toEqual([]);
+    expect(manager.showLess).toEqual([]);
   });
 });

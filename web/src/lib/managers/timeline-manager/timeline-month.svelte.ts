@@ -456,9 +456,11 @@ export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto):
       originalFileName: bucketAssets.originalFileName?.[i] ?? null,
     };
 
-    if (bucketAssets.latitude?.at(i) && bucketAssets.longitude?.at(i)) {
-      timelineAsset.latitude = bucketAssets.latitude?.[i];
-      timelineAsset.longitude = bucketAssets.longitude?.[i];
+    const latitude = bucketAssets.latitude?.[i];
+    const longitude = bucketAssets.longitude?.[i];
+    if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null) {
+      timelineAsset.latitude = latitude;
+      timelineAsset.longitude = longitude;
     }
     // The list view's columns (S-15), where the source sends them.
     if (bucketAssets.width) {

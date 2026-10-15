@@ -476,6 +476,15 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   public override destroy() {
+    this.#requestedOptions = TimelineManager.#INIT_OPTIONS;
+    this.invalidateLiveProjection();
+    this.initTask.cancel();
+    for (const month of this.months) {
+      month.loader?.cancelToken?.abort();
+      month.cancel();
+    }
+    this.months = [];
+    this.albumAssets.clear();
     this.disconnect();
     this.isInitialized = false;
 
