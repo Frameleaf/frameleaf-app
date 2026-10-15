@@ -1,3 +1,4 @@
+import { DesktopMlTaskTable, DesktopMlAttemptTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
@@ -215,6 +216,8 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 export class ImmichDatabase {
   tables = [
     DesktopDeviceTable,
+    DesktopMlTaskTable,
+    DesktopMlAttemptTable,
     AssetLocalEffectStreamTable,
     AssetLocalEffectTable,
     AssetLocalEffectCursorTable,
@@ -417,6 +420,8 @@ export interface Migrations {
 
 export interface DB extends QueueDatabase {
   desktop_device: DesktopDeviceTable;
+  desktop_ml_task: DesktopMlTaskTable;
+  desktop_ml_attempt: DesktopMlAttemptTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;
