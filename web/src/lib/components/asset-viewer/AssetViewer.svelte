@@ -804,7 +804,14 @@
         break;
       }
       case AssetAction.SET_PERSON_FEATURED_PHOTO: {
-        const assetInfo = await getAssetInfo({ id: asset.id });
+        if (!viewerAlive || action.asset.id !== asset.id) {
+          break;
+        }
+        const isCurrent = captureView();
+        const assetInfo = await getAssetInfo({ id: action.asset.id });
+        if (!isCurrent()) {
+          break;
+        }
         cursor.current = { ...asset, people: assetInfo.people };
         eventManager.emit('AssetUpdate', cursor.current);
         break;

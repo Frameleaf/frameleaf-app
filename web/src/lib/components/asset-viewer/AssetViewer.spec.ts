@@ -6,6 +6,7 @@ import {
   getAssetDevelop,
   getAssetInfo,
   getStack,
+  updatePerson,
   removeAssetFromStack,
   deleteStacks,
   getFaces,
@@ -34,6 +35,7 @@ import '$lib/stores/websocket';
 import { getAssetUrls } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import { stubFocusVisible } from '@test-data/focus-visible';
@@ -127,6 +129,7 @@ vi.mock('@frameleaf/sdk', async () => {
     deleteStacks: vi.fn().mockResolvedValue(undefined),
     removeAssetFromStack: vi.fn(),
     getStack: vi.fn(),
+    updatePerson: vi.fn(),
     // The More menu reads the albums that hold the item, for its "Album cover" entry.
     getAllAlbums: vi.fn().mockResolvedValue([]),
   };
@@ -260,6 +263,55 @@ describe('AssetViewer', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByTestId('viewer-stack-strip')).toBeInTheDocument();
   });
+
+  it.each(['before', 'after'])(
+    'keeps a featured-photo refresh owned when navigation occurs %s the lookup',
+    async (change) => {
+      vi.mocked(getAssetInfo).mockReset();
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const person = personFactory.build({ name: 'Person', isHidden: false });
+      const original = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, people: [person] });
+      const replacement = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, people: [] });
+      const update = deferred<typeof person>();
+      const lookup = deferred<AssetResponseDto>();
+      vi.mocked(updatePerson).mockReturnValueOnce(update.promise);
+      if (change === 'before') {
+        vi.mocked(getAssetInfo).mockResolvedValueOnce(original);
+      } else {
+        vi.mocked(getAssetInfo).mockReturnValueOnce(lookup.promise);
+      }
+      const dialog = vi.spyOn(modalManager, 'show').mockResolvedValue({ kind: 'person', person });
+      const onAction = vi.fn();
+      const onAssetUpdate = vi.fn();
+      const props = { cursor: { current: original }, showNavigation: false, onAction, onAssetUpdate };
+      const view = renderWithTooltips(AssetViewer, props);
+      try {
+        await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_more_actions' }));
+        await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' }));
+        await waitFor(() => expect(updatePerson).toHaveBeenCalled());
+        if (change === 'before') {
+          await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+        }
+        update.resolve(person);
+        if (change === 'after') {
+          await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: original.id }));
+          await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+          lookup.resolve(original);
+        }
+        await waitFor(() => expect(onAction).toHaveBeenCalled());
+        expect(onAssetUpdate).not.toHaveBeenCalled();
+        if (change === 'before') {
+          expect(getAssetInfo).not.toHaveBeenCalled();
+        }
+      } finally {
+        update.resolve(person);
+        lookup.resolve(original);
+        dialog.mockRestore();
+      }
+    },
+  );
 
   it('notifies the parent when the current asset changes through an event', async () => {
     const user = userAdminFactory.build();

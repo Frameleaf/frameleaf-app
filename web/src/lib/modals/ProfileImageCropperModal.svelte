@@ -5,7 +5,7 @@
   import { createProfileImage, type AssetResponseDto } from '@frameleaf/sdk';
   import { FormModal, toastManager } from '@frameleaf/ui';
   import domtoimage from 'dom-to-image';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import PhotoViewer from '../components/asset-viewer/PhotoViewer.svelte';
 
@@ -15,6 +15,9 @@
   }
 
   let { asset, onClose }: Props = $props();
+
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
 
   let imgElement: HTMLDivElement | undefined = $state();
 
@@ -31,6 +34,9 @@
       return;
     }
 
+    const assetId = asset.id;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => !destroyed && asset.id === assetId && isCurrentSession();
     try {
       const imgElementHeight = imgElement.offsetHeight;
       const imgElementWidth = imgElement.offsetWidth;
@@ -39,20 +45,34 @@
         height: imgElementHeight,
       });
 
-      if (await hasTransparentPixels(blob)) {
+      if (!isCurrent()) {
+        return;
+      }
+      const transparent = await hasTransparentPixels(blob);
+      if (!isCurrent()) {
+        return;
+      }
+      if (transparent) {
         toastManager.danger($t('errors.profile_picture_transparent_pixels'));
         return;
       }
       const file = new File([blob], 'profile-picture.png', { type: 'image/png' });
       // the photo is recorded so the picture is replaced if the photo is later Locked
-      await createProfileImage({ createProfileImageDto: { file, assetId: asset.id } });
+      await createProfileImage({ createProfileImageDto: { file, assetId } });
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('profile_picture_set'));
 
       await authManager.refresh();
 
-      onClose();
+      if (isCurrent()) {
+        onClose();
+      }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_set_profile_picture'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_set_profile_picture'));
+      }
     }
   };
 </script>
