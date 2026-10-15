@@ -1030,7 +1030,6 @@ describe(SearchService.name, () => {
         viewerId: me,
         facets: [SearchFacetField.Type, SearchFacetField.People],
         limit: 10,
-        locationHiddenOwnerIds: [],
         suppressedPersonIds: ['person-locked'],
         suppressedTagIds: ['tag-locked'],
         covers: false,

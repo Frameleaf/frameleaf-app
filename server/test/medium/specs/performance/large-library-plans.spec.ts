@@ -140,7 +140,6 @@ describe('large-library query plans (FL-139)', () => {
         viewerId: ownerId,
         facets: Object.values(SearchFacetField),
         limit: 10,
-        locationHiddenOwnerIds: [],
         suppressedPersonIds: [],
         suppressedTagIds: [],
         covers: true,
