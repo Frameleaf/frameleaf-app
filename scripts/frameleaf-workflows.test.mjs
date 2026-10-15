@@ -1492,9 +1492,10 @@ test("integration image is a guarded manual pre-release that never writes releas
     w.jobs["deploy-test"].steps.at(-1).run,
     "node .github/frameleaf-deploy-test.cjs",
   );
+  // GitHub-hosted: Namespace cannot bind the Compose file's /etc/localtime
   assert.deepEqual(w.jobs["deploy-test"].strategy.matrix.runner, [
-    "nscloud-ubuntu-24.04-amd64-8x16",
-    "nscloud-ubuntu-24.04-arm64-8x16",
+    "ubuntu-24.04",
+    "ubuntu-24.04-arm",
   ]);
   const guard = w.jobs.guard.steps[0].run;
   const sha = "a".repeat(40);

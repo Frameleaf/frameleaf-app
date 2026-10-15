@@ -99,12 +99,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runner:
-          [nscloud-ubuntu-24.04-amd64-8x16, nscloud-ubuntu-24.04-arm64-8x16]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
         include:
-          - runner: nscloud-ubuntu-24.04-amd64-8x16
+          - runner: ubuntu-24.04
             architecture: amd64
-          - runner: nscloud-ubuntu-24.04-arm64-8x16
+          - runner: ubuntu-24.04-arm
             architecture: arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
