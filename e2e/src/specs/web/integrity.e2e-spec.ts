@@ -46,10 +46,11 @@ test.describe('Integrity', () => {
     // Each check is a row of "What is checked": its switch, "<n> found" or "None found", and "Check now".
     const checkNow = page.getByRole('button', { name: 'Check for Stray files now' });
     const check = page.getByRole('listitem').filter({ has: checkNow });
-    const status = check.getByText(/^(None found|[\d,]+ found)$/);
+    // "Not checked yet" until the page has a recorded run; both mean nothing is listed.
+    const status = check.getByText(/^(None found|Not checked yet|[\d,]+ found)$/);
     const findings = async () => {
       const text = (await status.textContent()) ?? '';
-      return text.startsWith('None') ? 0 : Number(text.replaceAll(/\D/g, ''));
+      return /^(None|Not)/.test(text) ? 0 : Number(text.replaceAll(/\D/g, ''));
     };
     const previous = await findings();
 
