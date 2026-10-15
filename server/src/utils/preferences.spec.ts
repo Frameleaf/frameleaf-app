@@ -18,6 +18,28 @@ const stored = (value: Record<string, unknown>) =>
   [{ key: UserMetadataKey.Preferences, value }] as unknown as UserMetadataItem[];
 
 describe('preferences (FL-77 admin casting permission)', () => {
+  it('stores false, zero and changed arrays while dropping empty/default/unknown values without mutation', () => {
+    const preferences = getPreferences([]);
+    preferences.memories.duration = 0;
+    preferences.emailNotifications.albumInvite = false;
+    preferences.privacy.suppression.personIds = ['fixture-person'];
+    Object.assign(preferences.folders, { sidebarWeb: undefined });
+    Object.assign(preferences.tags, { enabled: null });
+    Object.assign(preferences.notifications, { locale: '' });
+    Object.assign(preferences, { unknownPreference: { enabled: true } });
+    const before = structuredClone(preferences);
+
+    const partial = getPreferencesPartial(preferences);
+
+    expect(partial).toEqual({
+      memories: { duration: 0 },
+      emailNotifications: { albumInvite: false },
+      privacy: { suppression: { personIds: ['fixture-person'] } },
+    });
+    expect(partial.privacy?.suppression?.personIds).toBe(preferences.privacy.suppression.personIds);
+    expect(preferences).toEqual(before);
+  });
+
   describe('getPreferences', () => {
     it('defaults to casting allowed by the administrator and off for the user', () => {
       expect(getPreferences([]).cast).toEqual({ gCastEnabled: false, adminDisabled: false });

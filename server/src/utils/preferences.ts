@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { get, isEqual, set } from 'lodash-es';
+import { get, isEqual, isNil, set } from 'lodash-es';
 import { createHash } from 'node:crypto';
 import { SAVED_SEARCH_MAX_COUNT, type UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
 import { AssetOrder, UserMetadataKey } from 'src/enum.js';
@@ -184,11 +184,11 @@ export const getPreferencesPartial = (newPreferences: UserPreferences) => {
   const partial: DeepPartial<UserPreferences> = {};
   for (const property of getKeysDeep(defaultPreferences)) {
     const newValue = get(newPreferences, property);
-    const isEmpty = [undefined, null, ''].includes(newValue);
+    if (newValue === '' || isNil(newValue)) {
+      continue;
+    }
     const defaultValue = get(defaultPreferences, property);
-    const matchesDefault = newValue === defaultValue || isEqual(newValue, defaultValue);
-
-    if (isEmpty || matchesDefault) {
+    if (newValue === defaultValue || isEqual(newValue, defaultValue)) {
       continue;
     }
 

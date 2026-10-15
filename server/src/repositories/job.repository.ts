@@ -46,7 +46,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
-import { FrameleafStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -134,8 +134,16 @@ export class JobRepository {
     // discovery
     for (const Service of services) {
       const instance = this.moduleRef.get<any>(Service);
-      for (const methodName of getMethodNames(instance)) {
+      const prototype = Object.getPrototypeOf(instance);
+      for (const methodName of Object.getOwnPropertyNames(prototype)) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, methodName);
+        if (!descriptor || descriptor.get || descriptor.set) {
+          continue;
+        }
         const handler = instance[methodName];
+        if (typeof handler !== 'function') {
+          continue;
+        }
         const config = reflector.get<JobConfig>(MetadataKey.JobConfig, handler);
         if (!config) {
           continue;

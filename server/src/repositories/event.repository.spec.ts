@@ -1,4 +1,5 @@
 import { ModuleRef, Reflector } from '@nestjs/core';
+import { OnEvent } from 'src/decorators.js';
 import { BootstrapEventPriority, FrameleafWorker } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -37,6 +38,61 @@ const setupServices = (worker: FrameleafWorker) => {
 
 describe(EventRepository.name, () => {
   describe('setup', () => {
+    it('keeps stable numeric priority, receiver binding and worker filtering without repeated worker lists', async () => {
+      const calls: string[] = [];
+      class Handlers {
+        first() {
+          calls.push(this.constructor.name + '.first');
+        }
+        tied() {
+          calls.push(this.constructor.name + '.tied');
+        }
+        early() {
+          calls.push(this.constructor.name + '.early');
+        }
+        excluded() {
+          throw new Error('excluded worker');
+        }
+        get inaccessible() {
+          throw new Error('accessors must not be evaluated');
+        }
+      }
+      for (const [method, priority] of [
+        ['first', 0],
+        ['tied', 0],
+        ['early', -1],
+      ] as const) {
+        OnEvent({ name: 'AppBootstrap', priority })(
+          Handlers.prototype,
+          method,
+          Object.getOwnPropertyDescriptor(Handlers.prototype, method)!,
+        );
+      }
+      OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })(
+        Handlers.prototype,
+        'excluded',
+        Object.getOwnPropertyDescriptor(Handlers.prototype, 'excluded')!,
+      );
+      const reflector = new Reflector();
+      const instance = new Handlers();
+      const sut = new EventRepository(
+        { get: (token: unknown) => (token === Reflector ? reflector : instance) } as unknown as ModuleRef,
+        { getWorker: () => FrameleafWorker.Api } as ConfigRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+      const values = vi.spyOn(Object, 'values');
+      let workerLists: number;
+      try {
+        sut.setup({ services: [Handlers] });
+        workerLists = values.mock.calls.filter(([target]) => target === FrameleafWorker).length;
+      } finally {
+        values.mockRestore();
+      }
+      await sut.emit('AppBootstrap');
+      expect(calls).toEqual(['Handlers.early', 'Handlers.first', 'Handlers.tied']);
+      expect(workerLists).toBeLessThanOrEqual(1);
+    });
+
     it.each([FrameleafWorker.Api, FrameleafWorker.Microservices])(
       'publishes the restart notification before the %s worker exits',
       (worker) => {

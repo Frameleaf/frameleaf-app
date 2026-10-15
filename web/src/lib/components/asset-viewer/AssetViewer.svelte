@@ -613,25 +613,23 @@
             }
           }
         } else {
-          hasNext = order === 'previous' ? await goToAsset(cursor.previousAsset) : await goToAsset(cursor.nextAsset);
+          hasNext = await goToAsset(order === 'previous' ? cursor.previousAsset : cursor.nextAsset);
         }
 
         if ($slideshowState !== SlideshowState.PlaySlideshow) {
           return;
         }
 
+        if (!hasNext && $slideshowRepeat && slideshowStartAssetId) {
+          await assetViewerManager.setAssetId(slideshowStartAssetId);
+          hasNext = true;
+        }
+
         if (hasNext) {
           $restartSlideshowProgress = true;
-          return;
+        } else {
+          await handleStopSlideshow();
         }
-
-        if ($slideshowRepeat && slideshowStartAssetId) {
-          await assetViewerManager.setAssetId(slideshowStartAssetId);
-          $restartSlideshowProgress = true;
-          return;
-        }
-
-        await handleStopSlideshow();
       }, $t('error_while_navigating'))
       .then(() => {
         if (!queuedWhileBusy) {
