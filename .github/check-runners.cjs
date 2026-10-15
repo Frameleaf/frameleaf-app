@@ -37,6 +37,11 @@ const hosted = new Map([
   ["test.yml/success-check-e2e", "ubuntu-24.04"],
   // No Namespace runner ever picked up nscloud-windows-2022-amd64-8x16.
   ["test.yml/cli-unit-tests-win", "windows-latest"],
+  // Namespace Docker cannot create the release Compose file's /etc/localtime bind source
+  // ("mkdir …/etc/localtime: file exists"), so the server container never starts.
+  ["docker.yml/deploy-test", hostedLinux],
+  ["integration-image.yml/deploy-test", hostedLinux],
+  ["deploy-production.yml/deploy-test", hostedLinux],
 ]);
 const hostedSeen = new Set();
 let count = 0;
