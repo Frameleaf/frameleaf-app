@@ -124,15 +124,15 @@ Repository SQL results, service/mock results, final-head execution and activatio
 claims. Qualify the final combined candidate after all lifecycle and release guards are present.
 Prerequisite repository passes do not establish final service, restart or publication acceptance.
 
-| Area | Required final-candidate evidence |
-| --- | --- |
-| Admission and quota | Actual source/destination copy refuses before creation and decoder submission at connection/global limits; full source/recovery/input sums and free-space refusal remain correct. |
-| Concurrent accounting | Independent PostgreSQL sessions and exact blocking-lock witnesses cover identical nonce replay, distinct-resource connection/global contenders and item-before-budget order for allocation, recovery and disposal. |
-| Disposal and retry | Hold actual post-unlink/pre-disposed-CAS work; a successor remains blocked; commit refunds exactly once; rollback retains charge and parent for same-generation retry. Live replacement claims and path references refuse unlink. |
-| Service lifetime | Actual late decoder and readonly/hash/proof work and failed closes prevent settlement/publication; success disposes before publication; pause/resume/deferral continues beyond eight validations. |
-| Restart and release | Source-only and terminal discovery progresses past disposed history; unknown/malformed work retains charge; every source/recovery/audit/sync/cascade release boundary preserves that evidence. |
-| Compatibility | Surrounding manual audit, ordinary sync, recovery quota/cleanup and weekly consent suites pass; existing seals and historical records retain their meaning. |
-| Delivery | Fresh whole-branch review and required exact-head hosted checks pass before an authorized release. Old-worker drain is separately verified before scheduled execution. |
+| Area                  | Required final-candidate evidence                                                                                                                                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admission and quota   | Actual source/destination copy refuses before creation and decoder submission at connection/global limits; full source/recovery/input sums and free-space refusal remain correct.                                                 |
+| Concurrent accounting | Independent PostgreSQL sessions and exact blocking-lock witnesses cover identical nonce replay, distinct-resource connection/global contenders and item-before-budget order for allocation, recovery and disposal.                |
+| Disposal and retry    | Hold actual post-unlink/pre-disposed-CAS work; a successor remains blocked; commit refunds exactly once; rollback retains charge and parent for same-generation retry. Live replacement claims and path references refuse unlink. |
+| Service lifetime      | Actual late decoder and readonly/hash/proof work and failed closes prevent settlement/publication; success disposes before publication; pause/resume/deferral continues beyond eight validations.                                 |
+| Restart and release   | Source-only and terminal discovery progresses past disposed history; unknown/malformed work retains charge; every source/recovery/audit/sync/cascade release boundary preserves that evidence.                                    |
+| Compatibility         | Surrounding manual audit, ordinary sync, recovery quota/cleanup and weekly consent suites pass; existing seals and historical records retain their meaning.                                                                       |
+| Delivery              | Fresh whole-branch review and required exact-head hosted checks pass before an authorized release. Old-worker drain is separately verified before scheduled execution.                                                            |
 
 Before enabling scheduled execution on an upgraded deployment, drain every old worker that can
 create or clean these copies and verify its in-flight work has actually settled. Disabling new
