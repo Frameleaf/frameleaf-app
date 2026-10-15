@@ -521,12 +521,14 @@ export class MediaRepository {
     let firstDuration: number | null = null;
     let variableFrameRate = false;
     let presentationValid = true;
+    let failure: Error | undefined;
     const parseLine = (line: string) => {
       if (!line) {
         return;
       }
       if (++scannedPackets > (options?.maxPackets ?? Infinity)) {
-        lifetime.stop(new Error('Media packet probe exceeds its resource limit'));
+        failure = new Error('Media packet probe exceeds its resource limit');
+        lifetime.stop(failure);
         return;
       }
       const [ptsStr, durationStr, flags] = line.split(',', 3);
@@ -588,7 +590,6 @@ export class MediaRepository {
     });
 
     return new Promise<VideoPacketInfo | null>((resolve, reject) => {
-      let failure: Error | undefined;
       ffprobe.on('error', (error) => {
         failure = error;
       });
@@ -598,6 +599,7 @@ export class MediaRepository {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
         parseLine(remainder);
+        if (failure) return reject(failure);
         if (postDiscard.length === 0) {
           return resolve(null);
         }
