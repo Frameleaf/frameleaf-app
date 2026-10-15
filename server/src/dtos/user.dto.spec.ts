@@ -1,4 +1,21 @@
-import { UserAdminCreateSchema, UserUpdateMeSchema } from 'src/dtos/user.dto.js';
+import { UserAdminCreateSchema, UserUpdateMeSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserAvatarColor } from 'src/enum.js';
+import { UserFactory } from 'test/factories/user.factory.js';
+
+it.each([
+  ['', UserAvatarColor.Primary],
+  ['a', UserAvatarColor.Orange],
+  ['🍁', UserAvatarColor.Amber],
+  ['猫🍁', UserAvatarColor.Red],
+])('keeps the stable code-point avatar color for %j', (email, expected) => {
+  expect(mapUser(UserFactory.create({ email })).avatarColor).toBe(expected);
+});
+
+it('keeps an explicitly chosen avatar color', () => {
+  expect(mapUser(UserFactory.create({ email: 'a', avatarColor: UserAvatarColor.Red })).avatarColor).toBe(
+    UserAvatarColor.Red,
+  );
+});
 
 describe('update user DTO', () => {
   it('should allow emails without a tld', () => {

@@ -388,19 +388,16 @@ export class DatabaseRepository {
   }
 
   async withLock<R>(lock: DatabaseLock, callback: () => Promise<R>): Promise<R> {
-    let res;
-    await this.asyncLock.acquire(DatabaseLock[lock], async () => {
-      await this.db.connection().execute(async (connection) => {
+    return this.asyncLock.acquire(DatabaseLock[lock], () =>
+      this.db.connection().execute(async (connection) => {
         try {
           await this.acquireLock(lock, connection);
-          res = await callback();
+          return await callback();
         } finally {
           await this.releaseLock(lock, connection);
         }
-      });
-    });
-
-    return res as R;
+      }),
+    );
   }
 
   /**

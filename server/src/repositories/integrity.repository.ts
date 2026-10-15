@@ -172,9 +172,11 @@ export class IntegrityRepository {
       .select(['type', this.db.fn.countAll<number>().as('count')])
       .groupBy('type')
       .execute();
-    return Object.fromEntries(
-      Object.values(IntegrityReport).map((type) => [type, counts.find((count) => count.type === type)?.count || 0]),
-    ) as Record<IntegrityReport, number>;
+    const byType = new Map(counts.map(({ type, count }) => [type, count]));
+    return Object.fromEntries(Object.values(IntegrityReport).map((type) => [type, byType.get(type) || 0])) as Record<
+      IntegrityReport,
+      number
+    >;
   }
   @GenerateSql({ params: [{ cursor: DummyValue.NUMBER, limit: 100 }, DummyValue.STRING] })
   async getIntegrityReport(pagination: ReportPaginationOptions, type: IntegrityReport) {

@@ -237,6 +237,33 @@ describe(DownloadService.name, () => {
   });
 
   describe('getDownloadInfo', () => {
+    it.each([
+      { sizes: [], totalSize: 0, archives: [] },
+      {
+        sizes: [5, 5, 1, 0, null],
+        totalSize: 11,
+        archives: [
+          { assetIds: ['asset-0', 'asset-1', 'asset-2'], size: 11 },
+          { assetIds: ['asset-3', 'asset-4'], size: 0 },
+        ],
+      },
+      { sizes: [11], totalSize: 11, archives: [{ assetIds: ['asset-0'], size: 11 }] },
+    ])(
+      'keeps strict archive thresholds and omits empty trailing groups: $sizes',
+      async ({ sizes, totalSize, archives }) => {
+        mocks.user.getMetadata.mockResolvedValue([]);
+        mocks.downloadRepository.downloadUserId.mockReturnValue(
+          makeStream(sizes.map((size, index) => ({ id: `asset-${index}`, livePhotoVideoId: null, size }))),
+        );
+        await expect(
+          sut.getDownloadInfo(authStub.admin, { userId: authStub.admin.user.id, archiveSize: 10 }),
+        ).resolves.toEqual({
+          totalSize,
+          archives,
+        });
+      },
+    );
+
     it('should throw an error for an invalid dto', async () => {
       await expect(sut.getDownloadInfo(authStub.admin, {})).rejects.toBeInstanceOf(BadRequestException);
     });

@@ -60,10 +60,11 @@ export const UserLicenseSchema = UserSupporterSchema;
 
 const emailToAvatarColor = (email: string): UserAvatarColor => {
   const values = Object.values(UserAvatarColor);
-  const randomIndex = Math.floor(
-    [...email].map((letter) => letter.codePointAt(0) ?? 0).reduce((a, b) => a + b, 0) % values.length,
-  );
-  return values[randomIndex];
+  let sum = 0;
+  for (const letter of email) {
+    sum += letter.codePointAt(0) ?? 0;
+  }
+  return values[sum % values.length];
 };
 
 export const mapUser = (entity: MaybeDehydrated<User | UserAdmin>): UserResponseDto => {

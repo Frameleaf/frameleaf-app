@@ -73,16 +73,15 @@ export class DownloadService extends BaseService {
     const preferences = getPreferences(metadata);
     const motionIds = new Set<string>();
     const archives: DownloadArchiveInfo[] = [];
-    let archive: DownloadArchiveInfo = { size: 0, assetIds: [] };
+    let archive: DownloadArchiveInfo | undefined;
 
     const addToArchive = ({ id, size }: { id: string; size: number | null }) => {
+      if (!archive || archive.size > targetSize) {
+        archive = { size: 0, assetIds: [] };
+        archives.push(archive);
+      }
       archive.assetIds.push(id);
       archive.size += Number(size || 0);
-
-      if (archive.size > targetSize) {
-        archives.push(archive);
-        archive = { size: 0, assetIds: [] };
-      }
     };
 
     for await (const asset of assets) {
@@ -105,10 +104,6 @@ export class DownloadService extends BaseService {
 
         addToArchive(motionAsset);
       }
-    }
-
-    if (archive.assetIds.length > 0) {
-      archives.push(archive);
     }
 
     let totalSize = 0;

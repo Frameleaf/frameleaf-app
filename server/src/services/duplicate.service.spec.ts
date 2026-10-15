@@ -881,6 +881,34 @@ describe(DuplicateService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: asset1.id } }]);
     });
 
+    it.each([
+      { latitudes: [-0, 0, NaN, Infinity], expected: 0 },
+      { latitudes: [12, 12, NaN, -Infinity], expected: 12 },
+      { latitudes: [12, 13, 12], expected: null },
+      { latitudes: [NaN, Infinity], expected: null },
+    ])('merges only unanimous finite coordinates: $latitudes', async ({ latitudes, expected }) => {
+      const assets = latitudes.map((latitude) => AssetFactory.from().exif({ latitude, longitude: 21 }).build());
+      const [keeper, ...removed] = assets;
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(removed.map(({ id }) => id)));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: assets as unknown as MapAsset[],
+      });
+      await expect(
+        sut.resolve(authStub.admin, {
+          groups: [{ duplicateId: 'group-1', keepAssetIds: [keeper.id], trashAssetIds: removed.map(({ id }) => id) }],
+        }),
+      ).resolves.toEqual([{ id: 'group-1', success: true }]);
+      const updates = mocks.asset.updateAllExif.mock.calls.map(([, update]) => update);
+      if (expected === null) {
+        expect(updates.every((update) => !('latitude' in update) && !('longitude' in update))).toBe(true);
+      } else {
+        expect(updates).toContainEqual(expect.objectContaining({ latitude: expected, longitude: 21 }));
+        expect(updates.find((update) => 'latitude' in update)?.latitude).toBe(expected);
+      }
+    });
+
     it('merges trimmed description lines in first-seen order without duplicates', async () => {
       const keeper = AssetFactory.from().exif({ description: ' first \r\nsecond\n\n' }).build();
       const removed = AssetFactory.from().exif({ description: '\tsecond\n third \nfirst\n' }).build();

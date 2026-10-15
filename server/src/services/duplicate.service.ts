@@ -105,16 +105,18 @@ const uniqueNonEmptyLines = (values: Array<string | null | undefined>): string[]
 };
 
 const getUniqueCoordinate = (assets: MapAsset[], key: 'latitude' | 'longitude'): number | null => {
-  const values = assets
-    .map((asset) => asset.exifInfo?.[key])
-    .filter((value): value is number => Number.isFinite(value));
-
-  if (values.length === 0) {
-    return null;
+  let coordinate: number | null = null;
+  for (const asset of assets) {
+    const value = asset.exifInfo?.[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      continue;
+    }
+    if (coordinate !== null && coordinate !== value) {
+      return null;
+    }
+    coordinate = value === 0 ? 0 : value;
   }
-
-  const unique = new Set(values);
-  return unique.size === 1 ? [...unique][0] : null;
+  return coordinate;
 };
 
 @Injectable()
