@@ -84,9 +84,11 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   // FL-71: "Logs & diagnostics" also holds the local analytics settings; the search models page
   // holds Ask Search, which is its own top-level group.
   logging: ['logging', 'analytics'],
-  'machine-learning': ['machineLearning', 'localFeatures'],
+  // FL-366: Search & intelligence is one page per feature; what is not listed under a feature in
+  // `SECTION_CONFIG_PATHS` (the master switch, Ask Search) belongs to Visual search.
+  'smart-search': ['machineLearning', 'localFeatures'],
   location: ['map', 'reverseGeocoding'],
-  metadata: ['metadata'],
+  faces: ['metadata'],
   'nightly-tasks': ['nightlyTasks'],
   // Queue concurrency, edited in the Job manager's concurrency dialog (FL-71).
   queues: ['job'],
@@ -109,7 +111,14 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
 const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   'libraryCare.livePhotoRepair': 'repair',
   'libraryCare.rawRecovery': 'repair',
-  'libraryCare.duplicateReview': 'repair',
+  // FL-366: one look-alike switch on Duplicates drives both settings.
+  'libraryCare.duplicateReview': 'duplicates',
+  'machineLearning.duplicateDetection': 'duplicates',
+  'machineLearning.facialRecognition': 'faces',
+  'machineLearning.ocr': 'documents',
+  'machineLearning.nsfwDetection': 'sensitive-detection',
+  'machineLearning.imageDescription': 'descriptions',
+  'machineLearning.clip.zeroShotTagging': 'descriptions',
   'libraryCare.incrementalEnrichment': 'enrichment-care',
   'libraryCare.manualMetadata': 'enrichment-care',
   libraryCare: 'integrity-checks',

@@ -1,4 +1,11 @@
-import { createJob, deleteIntegrityReport, IntegrityReport, ManualJobName } from '@frameleaf/sdk';
+import {
+  clearIntegrityReports,
+  createJob,
+  deleteIntegrityReport,
+  dismissIntegrityReport,
+  IntegrityReport,
+  ManualJobName,
+} from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -7,8 +14,12 @@ import { getFormatter } from '$lib/utils/i18n';
 
 /**
  * Acting on a finding is destructive: an untracked file is deleted from disk, and an item whose file
- * is missing or no longer matches its checksum is moved to the trash (`IntegrityService`). Nothing
- * here only clears a list, so every button, title and confirmation names what is removed.
+ * is missing or no longer matches its checksum is moved to the trash (`IntegrityService`), so every
+ * such button, title and confirmation names what is removed.
+ *
+ * FL-366 adds the harmless way to empty a list: `handleClearIntegrityReports` (a whole check) and
+ * `handleDismissIntegrityReport` (one finding) only forget findings. No file or photo is touched,
+ * and anything still wrong is listed again at the next check, so they ask nothing first.
  */
 const untracked = (reportType: IntegrityReport) => reportType === IntegrityReport.UntrackedFile;
 
@@ -137,5 +148,34 @@ export const handleRemoveIntegrityReportItem = async (reportId: string, reportTy
       id: reportId,
       isDeleting: false,
     });
+  }
+};
+
+/**
+ * "Clear this list" (FL-366): forgets every finding of one check. Nothing is deleted or moved, so it
+ * asks nothing first; the toast says so. Resolves to how many findings were forgotten.
+ */
+export const handleClearIntegrityReports = async (reportType: IntegrityReport) => {
+  const $t = await getFormatter();
+  try {
+    const { cleared } = await clearIntegrityReports({ $type: reportType });
+    eventManager.emit('IntegrityReportDeleted', { type: reportType });
+    toastManager.success($t('frameleaf_care_list_cleared', { values: { count: cleared } }));
+    return cleared;
+  } catch (error) {
+    handleError(error, $t('frameleaf_care_list_clear_failed'));
+  }
+};
+
+/** "Remove from list" (FL-366): forgets one finding. The file and the photo stay as they are. */
+export const handleDismissIntegrityReport = async (reportId: string) => {
+  const $t = await getFormatter();
+  try {
+    await dismissIntegrityReport({ id: reportId });
+    eventManager.emit('IntegrityReportDeleted', { id: reportId });
+    toastManager.success($t('frameleaf_care_list_removed'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('frameleaf_care_list_remove_failed'));
   }
 };

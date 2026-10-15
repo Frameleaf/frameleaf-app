@@ -11,11 +11,13 @@
    * (`getIntegrityCheckRuns`), so a check reads "Last run …" and its findings, as the template's does
    * (`Maintenance.jsx:466-469`). Where the template says "Never run", production says "No completed
    * run recorded": runs from before the server recorded them, and runs that did not finish, are
-   * unknown rather than absent (truthfulness deviation). Deleting a report acts on its findings (files are deleted or items trashed, see
-   * `handleRemoveAllIntegrityReportItems`), which the confirmation says in full.
+   * unknown rather than absent (truthfulness deviation). "Clear this list" (FL-366) only forgets a
+   * report's findings; acting on them (files are deleted or items trashed, see
+   * `handleRemoveAllIntegrityReportItems`) is the separate red button, whose confirmation says it in full.
    */
   import { Route } from '$lib/route';
   import {
+    handleClearIntegrityReports,
     handleRemoveAllIntegrityReportItems,
     integrityActionKey,
     integrityActionLabelKey,
@@ -160,6 +162,15 @@
           <div class="mt-row-meta"><span class="mt-sev">{findings(integrityReport[reportType])}</span></div>
           <div class="mt-actions">
             <a class="button" href={Route.systemMaintenanceIntegrityReport({ reportType })}>{$t('open')}</a>
+            <!-- FL-366: forgetting the findings comes before acting on them; it touches no file or photo. -->
+            <button
+              type="button"
+              class="button"
+              aria-label={$t('frameleaf_care_fc_clear_named', { values: { name: title } })}
+              onclick={() => void handleClearIntegrityReports(reportType)}
+            >
+              {$t('frameleaf_care_fc_clear')}
+            </button>
             <button
               type="button"
               class="button danger"

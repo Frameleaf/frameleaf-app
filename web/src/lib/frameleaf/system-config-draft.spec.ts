@@ -52,7 +52,16 @@ describe('diffConfig (FL-66)', () => {
     expect(sectionForConfigPath('libraryCare.healthScan')).toBe('integrity-checks');
     expect(sectionForConfigPath('libraryCare.rawRecovery')).toBe('repair');
     expect(sectionForConfigPath('libraryCare.manualMetadata')).toBe('enrichment-care');
-    expect(sectionForConfigPath('localFeatures.askSearch.enabled')).toBe('machine-learning');
+    expect(sectionForConfigPath('localFeatures.askSearch.enabled')).toBe('smart-search');
+    // FL-366: each Search & intelligence feature has its own page.
+    expect(sectionForConfigPath('machineLearning.clip.modelName')).toBe('smart-search');
+    expect(sectionForConfigPath('machineLearning.facialRecognition.minFaces')).toBe('faces');
+    expect(sectionForConfigPath('metadata.faces.import')).toBe('faces');
+    expect(sectionForConfigPath('machineLearning.ocr.maxResolution')).toBe('documents');
+    expect(sectionForConfigPath('machineLearning.nsfwDetection.threshold')).toBe('sensitive-detection');
+    expect(sectionForConfigPath('machineLearning.imageDescription.enabled')).toBe('descriptions');
+    expect(sectionForConfigPath('machineLearning.duplicateDetection.maxDistance')).toBe('duplicates');
+    expect(sectionForConfigPath('libraryCare.duplicateReview')).toBe('duplicates');
     expect(sectionForConfigPath('analytics.historyDays')).toBe('logging');
     expect(sectionForConfigPath('unknownGroup.anything')).toBeUndefined();
   });

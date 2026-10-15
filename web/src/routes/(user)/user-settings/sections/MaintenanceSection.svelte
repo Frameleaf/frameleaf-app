@@ -144,7 +144,7 @@
   };
 </script>
 
-<OnEvents {onJobCreate} />
+<OnEvents {onJobCreate} onIntegrityReportDeleted={loadIntegrity} />
 
 {#if section === 'mode'}
   <MaintenanceModeCard

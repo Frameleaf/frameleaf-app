@@ -78,7 +78,7 @@ export enum OpenQueryParam {
   /** The trash retention settings, from the Trash page (FL-47). */
   TRASH = 'trash',
   /** The image description / enrichment settings, from the Jobs manager's Enrichment tasks entry (FL-59). */
-  IMAGE_DESCRIPTION = 'machine-learning',
+  IMAGE_DESCRIPTION = 'descriptions',
   /** Originals & preservation, from Library Care's preservation verification (FL-74). */
   PRESERVATION = 'preservation',
 }

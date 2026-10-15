@@ -10,8 +10,7 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
  * durable plan followed item by item, which a reload returns to, with cancel and retry. No request
  * ever asks for speech transcription.
  */
-const workbench =
-  '/user-settings?area=intelligence&section=machine-learning&isOpen=machine-learning&openSetting=workbench';
+const workbench = '/user-settings?area=intelligence&section=descriptions&openSetting=workbench';
 
 const makeAsset = (ownerId: string, isVideo: boolean, name: string): AssetResponseDto => {
   const config: TimelineAssetConfig = {
