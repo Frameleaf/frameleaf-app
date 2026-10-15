@@ -40,13 +40,11 @@ export class PartnerTable {
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
 
+  /** Retired (FL-326): partners receive their own copies. Still sent in `SyncPartnerV1` for older clients. */
   @Column({ type: 'boolean', default: false })
   inTimeline!: Generated<boolean>;
 
-  /**
-   * Set by the sharing user (`sharedById`): whether `sharedWithId` may see the sharer's asset locations.
-   * Off for a new partnership until the sharer turns it on (prototype default, FL-146 AL-40).
-   */
+  /** Retired (FL-326): locations are always shared with partners. Kept, unread, for existing rows. */
   @Column({ type: 'boolean', default: false })
   shareLocation!: Generated<boolean>;
 

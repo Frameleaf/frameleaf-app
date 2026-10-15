@@ -82,8 +82,6 @@ export const isSendable = (asset: Pick<AssetResponseDto, 'visibility' | 'isTrash
 export type SendCopyDeps = {
   getInfo: (id: string) => Promise<AssetResponseDto>;
   getOriginal: (id: string) => Promise<Blob>;
-  /** Owners who hide their asset locations from this user (partners with `shareLocation` off). */
-  getLocationHiddenOwners: () => Promise<Set<string>>;
   /** The server serves a shared link the edited file, so the copy is named after it. */
   servesEdited: boolean;
   share: (data: ShareData) => Promise<void>;
@@ -100,8 +98,6 @@ export type PreparedCopies = {
   files: File[];
   /** Locked or trashed items left out before download. */
   skipped: number;
-  /** Items of a partner who hides their locations from this user, left out before download. */
-  locationHidden: number;
   /** Items the server refused or that failed to download. */
   failed: number;
 };
@@ -129,16 +125,11 @@ export type SendCopyResult = PreparedCopies & {
   retry?: () => Promise<SendCopyResult>;
 };
 
-// FL-326 (owner decision 2026-10-03): locations are always shared with partners, who hold their own
-// copies, so no owner's items are held back for their location any more.
-const locationHiddenOwners = (): Promise<Set<string>> => Promise.resolve(new Set());
-
 const defaultDeps = (): SendCopyDeps => ({
   getInfo: (id) => getAssetInfo({ ...authManager.params, id }),
   // Originals only: `edited` is left unset, so the endpoint serves the file as it was imported
   // (a shared link is always served the edited file, which `servesEdited` names).
   getOriginal: (id) => downloadAsset({ ...authManager.params, id }),
-  getLocationHiddenOwners: locationHiddenOwners,
   servesEdited: !!getSharedLink(),
   share: (data) => browserNavigator()?.share?.(data) ?? Promise.reject(new DOMException('', 'NotSupportedError')),
   canShare: (data) => !!browserNavigator()?.canShare?.(data),
@@ -192,7 +183,7 @@ type Resolved = { outcome?: 'too-large'; prepared: PreparedCopies };
 
 /** Looks every item up and downloads the sendable originals, a few at a time. */
 export const prepareCopies = async (ids: readonly string[], deps: SendCopyDeps): Promise<Resolved> => {
-  const prepared: PreparedCopies = { files: [], skipped: 0, locationHidden: 0, failed: 0 };
+  const prepared: PreparedCopies = { files: [], skipped: 0, failed: 0 };
   const lookups = await mapSettled([...new Set(ids)], SEND_COPY_CONCURRENCY, (id) => deps.getInfo(id));
   const infos: AssetResponseDto[] = [];
   for (const lookup of lookups) {
@@ -205,25 +196,20 @@ export const prepareCopies = async (ids: readonly string[], deps: SendCopyDeps):
     }
   }
 
-  const userId = authManager.authenticated ? authManager.user.id : undefined;
-  const hidden = infos.some((info) => info.ownerId !== userId) ? await deps.getLocationHiddenOwners() : new Set();
-  const sendable = infos.filter((info) => !hidden.has(info.ownerId));
-  prepared.locationHidden = infos.length - sendable.length;
-
   // Known sizes are checked before anything is downloaded; an item without a recorded size is
   // counted as it arrives, and the set is abandoned as soon as the total passes the cap.
   const maxBytes = deps.maxBytes ?? SEND_COPY_MAX_BYTES;
-  const known = sendable.reduce((total, info) => total + (info.exifInfo?.fileSizeInByte ?? 0), 0);
+  const known = infos.reduce((total, info) => total + (info.exifInfo?.fileSizeInByte ?? 0), 0);
   if (known > maxBytes) {
     return { outcome: 'too-large', prepared };
   }
 
-  if (sendable.length > 0) {
-    deps.onPreparing?.(sendable.length);
+  if (infos.length > 0) {
+    deps.onPreparing?.(infos.length);
   }
   let received = 0;
   let overCap = false;
-  const downloads = await mapSettled(sendable, SEND_COPY_CONCURRENCY, async (info) => {
+  const downloads = await mapSettled(infos, SEND_COPY_CONCURRENCY, async (info) => {
     if (overCap) {
       throw new RangeError('over the byte cap');
     }
@@ -281,7 +267,7 @@ export const sendCopies = async (
   deps: SendCopyDeps = defaultDeps(),
   permitted: boolean = sendCopyPermitted(),
 ): Promise<SendCopyResult> => {
-  const empty: PreparedCopies = { files: [], skipped: 0, locationHidden: 0, failed: 0 };
+  const empty: PreparedCopies = { files: [], skipped: 0, failed: 0 };
   if (!permitted) {
     return { ...empty, outcome: 'not-permitted' };
   }
@@ -313,7 +299,7 @@ const stickyToast = (item: ToastShow) => {
 /** Reports what happened; the share sheet itself is the success feedback. */
 const report = (result: SendCopyResult) => {
   const $t = get(t);
-  const count = result.files.length + result.skipped + result.locationHidden + result.failed;
+  const count = result.files.length + result.skipped + result.failed;
   switch (result.outcome) {
     case 'too-many': {
       toastManager.warning($t('frameleaf_send_copy_too_many', { values: { limit: SEND_COPY_LIMIT } }));
@@ -352,9 +338,6 @@ const report = (result: SendCopyResult) => {
   if (result.skipped > 0) {
     toastManager.info($t('frameleaf_send_copy_skipped', { values: { count: result.skipped } }));
   }
-  if (result.locationHidden > 0) {
-    toastManager.info($t('frameleaf_send_copy_skipped_location', { values: { count: result.locationHidden } }));
-  }
   if (result.failed > 0 && result.outcome !== 'nothing') {
     toastManager.warning($t('frameleaf_send_copy_partial', { values: { count: result.failed } }));
   }
@@ -362,7 +345,7 @@ const report = (result: SendCopyResult) => {
 
 /**
  * The entry points' action: one send at a time, with progress and the outcome in toasts. Nothing
- * fails silently: an unexpected error (a partner lookup that fails, say) is reported as a failure.
+ * fails silently: an unexpected error (a share check that throws, say) is reported as a failure.
  */
 export const sendCopiesWithFeedback = async (
   ids: readonly string[],
@@ -388,7 +371,7 @@ export const sendCopiesWithFeedback = async (
     };
     report(await sendCopies(ids, deps, permitted));
   } catch {
-    report({ files: [], skipped: 0, locationHidden: 0, failed: ids.length, outcome: 'failed' });
+    report({ files: [], skipped: 0, failed: ids.length, outcome: 'failed' });
   } finally {
     closePreparing?.();
     sending = false;

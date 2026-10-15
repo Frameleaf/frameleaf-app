@@ -237,11 +237,6 @@ describe(TimelineService.name, () => {
       });
 
       expect(mocks.partner.getAll).not.toHaveBeenCalled();
-      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
-        'bucket',
-        expect.not.objectContaining({ locationHiddenOwnerIds: expect.anything() }),
-        authStub.admin,
-      );
     });
 
     it('should check permissions to read tag', async () => {

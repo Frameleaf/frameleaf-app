@@ -35,7 +35,6 @@ const asset = (id: string, overrides: Partial<AssetResponseDto> = {}) =>
 const deps = (overrides: Partial<SendCopyDeps> = {}, assets: Record<string, AssetResponseDto> = {}): SendCopyDeps => ({
   getInfo: vi.fn((id: string) => Promise.resolve(assets[id] ?? asset(id))),
   getOriginal: vi.fn(() => Promise.resolve(new Blob(['original'], { type: 'image/jpeg' }))),
-  getLocationHiddenOwners: vi.fn(() => Promise.resolve(new Set<string>())),
   servesEdited: false,
   share: vi.fn(() => Promise.resolve()),
   canShare: vi.fn(() => true),
@@ -106,26 +105,7 @@ describe('prepareCopies', () => {
   });
 });
 
-describe('prepareCopies privacy and memory', () => {
-  it('leaves out a partner who keeps locations private before downloading their originals (B2)', async () => {
-    const dependencies = deps(
-      { getLocationHiddenOwners: vi.fn(() => Promise.resolve(new Set(['partner']))) },
-      { b: asset('b', { ownerId: 'partner' }), c: asset('c', { ownerId: 'other-partner' }) },
-    );
-    const { prepared } = await prepareCopies(['a', 'b', 'c'], dependencies);
-    expect(prepared.files.map((file) => file.name)).toEqual(['a.jpg', 'c.jpg']);
-    expect(prepared.locationHidden).toBe(1);
-    expect(dependencies.getOriginal).not.toHaveBeenCalledWith('b');
-  });
-
-  it('does not look the partners up when every item is the viewer’s own', async () => {
-    signIn('me');
-    const dependencies = deps();
-    await prepareCopies(['a'], dependencies);
-    expect(dependencies.getLocationHiddenOwners).not.toHaveBeenCalled();
-    authManager.reset();
-  });
-
+describe('prepareCopies memory', () => {
   it('refuses a set larger than the byte cap before downloading anything', async () => {
     const big = asset('a', { exifInfo: { fileSizeInByte: SEND_COPY_MAX_BYTES } });
     const dependencies = deps({}, { a: big, b: asset('b', { exifInfo: { fileSizeInByte: 1 } }) });
@@ -249,12 +229,13 @@ describe('byte cap for items without a recorded size', () => {
 });
 
 describe('sendCopiesWithFeedback', () => {
-  it('reports a failed partner lookup instead of failing silently', async () => {
+  it('reports an unexpected error instead of failing silently', async () => {
     const danger = vi.spyOn(toastManager, 'danger').mockImplementation(() => {});
-    const dependencies = deps(
-      { getLocationHiddenOwners: vi.fn(() => Promise.reject(new Error('offline'))) },
-      { a: asset('a', { ownerId: 'partner' }) },
-    );
+    const dependencies = deps({
+      canShare: vi.fn(() => {
+        throw new Error('offline');
+      }),
+    });
     await expect(sendCopiesWithFeedback(['a'], dependencies, true)).resolves.toBeUndefined();
     expect(danger).toHaveBeenCalledOnce();
     expect(dependencies.share).not.toHaveBeenCalled();

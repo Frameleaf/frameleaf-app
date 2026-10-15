@@ -1818,20 +1818,6 @@ where
 order by
   "memory_asset"."updateId" asc
 
--- SyncRepository.partner.getCreatedAfter
-select
-  "sharedById",
-  "createId",
-  "shareLocation"
-from
-  "partner"
-where
-  "sharedWithId" = $1
-  and "createId" >= $2
-  and "createId" < $3
-order by
-  "partner"."createId" asc
-
 -- SyncRepository.partner.getDeletes
 select
   "id",

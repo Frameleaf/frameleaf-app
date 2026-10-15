@@ -34,7 +34,7 @@ export class MapController {
   @Endpoint({
     summary: 'Retrieve map statistics',
     description:
-      "Count what the map settings would add: the viewer's own located archived items and the located items of partners who share their locations, under the same date and favorite filters, and the viewer's own items without a location.",
+      "Count what the map settings would add, under the same date and favorite filters: the viewer's own located archived items and the viewer's own items without a location. The partner count is always 0, since partners' items arrive as the viewer's own copies.",
     history: new HistoryBuilder().added('v3'),
   })
   getMapStatistics(@Auth() auth: AuthDto, @Query() options: MapMarkerDto): Promise<MapStatisticsResponseDto> {
