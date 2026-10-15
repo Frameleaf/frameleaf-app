@@ -1,6 +1,7 @@
 <script lang="ts">
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { keepThisDeleteOthers } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { AssetResponseDto, StackResponseDto } from '@frameleaf/sdk';
@@ -20,19 +21,23 @@
   let { stack, asset, onAction, text }: Props = $props();
 
   const handleKeepThisDeleteOthers = async () => {
+    const target = asset;
+    const targetStack = stack;
+    const handleAction = onAction;
+    const isCurrentSession = authManager.captureSession();
     const isConfirmed = await modalManager.showDialog({
       title: $t('keep_this_delete_others'),
       prompt: $t('confirm_keep_this_delete_others'),
       confirmText: $t('delete_others'),
     });
 
-    if (!isConfirmed) {
+    if (!isConfirmed || !isCurrentSession()) {
       return;
     }
 
-    const keptAsset = await keepThisDeleteOthers(asset, stack);
-    if (keptAsset) {
-      onAction({ type: AssetAction.UNSTACK, assets: [toTimelineAsset(keptAsset)] });
+    const keptAsset = await keepThisDeleteOthers(target, targetStack);
+    if (keptAsset && isCurrentSession()) {
+      handleAction({ type: AssetAction.UNSTACK, assets: [toTimelineAsset(keptAsset)] });
     }
   };
 </script>

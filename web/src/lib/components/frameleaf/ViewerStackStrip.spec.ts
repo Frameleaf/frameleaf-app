@@ -15,7 +15,7 @@ import en from '../../../../../i18n/en.json';
  * Both are the owner's only.
  */
 
-const auth = vi.hoisted(() => ({ user: { id: 'owner' }, authenticated: true }));
+const auth = vi.hoisted(() => ({ user: { id: 'owner' }, authenticated: true, captureSession: () => () => true }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 
 const setup = (ownerId = 'owner') => {

@@ -57,21 +57,25 @@
   };
 
   const handleKeepThis = async () => {
+    const target = asset;
+    const targetStack = stack;
+    const handleAction = onAction;
+    const isCurrentSession = authManager.captureSession();
     const isConfirmed = await modalManager.showDialog({
       title: $t('keep_this_delete_others'),
       prompt: $t('confirm_keep_this_delete_others'),
       confirmText: $t('delete_others'),
     });
 
-    if (!isConfirmed) {
+    if (!isConfirmed || !isCurrentSession()) {
       return;
     }
 
     busy = true;
     try {
-      const keptAsset = await keepThisDeleteOthers(asset, stack);
-      if (keptAsset) {
-        onAction({ type: AssetAction.UNSTACK, assets: [toTimelineAsset(keptAsset)] });
+      const keptAsset = await keepThisDeleteOthers(target, targetStack);
+      if (keptAsset && isCurrentSession()) {
+        handleAction({ type: AssetAction.UNSTACK, assets: [toTimelineAsset(keptAsset)] });
       }
     } finally {
       busy = false;
