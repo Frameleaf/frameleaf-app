@@ -7,6 +7,7 @@ import type { MediaOperation } from 'src/repositories/media-operation.repository
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import { recordSyncIdentity, releaseSyncClaim } from 'src/repositories/icloud-identity.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
@@ -122,6 +123,7 @@ export class ICloudSyncRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
+    private staging: ICloudScheduledStagingRepository,
   ) {}
   async active<T>(callback: (db: Kysely<DB>) => Promise<T>, transaction?: Kysely<DB>): Promise<T> {
     return transaction ? callback(transaction) : this.db.transaction().execute(callback);
@@ -449,6 +451,7 @@ export class ICloudSyncRepository {
       // Repair reservations leaked by earlier workers only when no staged file remains.
       await sql`UPDATE public.icloud_resource SET "reservedBytes"=0 WHERE "reservedBytes">0
         AND "leaseToken" IS NULL AND "stagingPath" IS NULL AND "auditRequestId" IS NULL
+        AND NOT coalesce(verification ? 'auditValidationInputs',false)
         AND status IN ('needs-review','preserve-trashed','unsupported','failed')`.execute(db);
 
       const connection =
@@ -463,6 +466,7 @@ export class ICloudSyncRepository {
         candidate =
           await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM public.icloud_resource
           WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('pending','retry','staging','validated','promoted','committed')
+          AND NOT coalesce(verification ? 'auditValidationInputs',false)
           AND (status='committed' OR coalesce((source->>'current')::boolean,true))
           AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt"<now()) AND ("nextAttemptAt" IS NULL OR "nextAttemptAt"<=now())
           ORDER BY CASE WHEN status='committed' THEN 0 ELSE 1 END,"createdAt",id FOR UPDATE SKIP LOCKED LIMIT 1`
@@ -603,7 +607,15 @@ export class ICloudSyncRepository {
         AND "leaseToken"=${resource.leaseToken}::uuid FOR UPDATE`
         .execute(db)
         .then(({ rows }) => rows[0]);
-      if (!current) return;
+      if (!current || Object.hasOwn(current.verification ?? {}, 'auditValidationInputs')) return;
+      if (current.auditRequestId) {
+        const request = (
+          await sql<{ purpose: string }>`SELECT purpose FROM public.icloud_identity_audit
+          WHERE id=${current.auditRequestId}::uuid AND "ownerId"=${current.ownerId}::uuid
+            AND "connectionId"=${current.connectionId}::uuid`.execute(db)
+        ).rows[0];
+        if (request?.purpose !== 'manual-session') return;
+      }
       const terminal =
         ['finalized', 'needs-review', 'preserve-trashed', 'unsupported', 'failed'].includes(status) ||
         (status === 'retry' && current.attempts >= 7);
@@ -808,6 +820,15 @@ export class ICloudSyncRepository {
         AND (status IN ('validated', 'promoted', 'committed') OR "pendingJobs" <> '[]'::jsonb) LIMIT 1`.execute(db);
       if (inFlight.length > 0) {
         return 'in-flight';
+      }
+      const { rows: retained } = await sql<ICloudResource>`SELECT * FROM public.icloud_resource
+        WHERE "connectionId"=${id}::uuid
+          AND (verification ? 'auditValidationInputs' OR ("auditRequestId" IS NOT NULL AND status NOT IN ('finalized','removed'))) FOR UPDATE`.execute(
+        db,
+      );
+      for (const resource of retained) {
+        if (!(await this.staging.authenticateDisposedValidationInputs(db as Transaction<DB>, resource)))
+          return 'in-flight';
       }
       const { rows: staged } = await sql<ICloudResource>`SELECT *, "expectedSize"::float8 AS "expectedSize"
         FROM public.icloud_resource WHERE "connectionId" = ${id}::uuid AND "stagingPath" IS NOT NULL
@@ -1086,7 +1107,9 @@ export class ICloudSyncRepository {
       const { rows } = await sql`SELECT id FROM public.icloud_resource WHERE id=${resource.id}::uuid
         AND "ownerId"=${resource.ownerId}::uuid AND "sourceAssetId"=${resource.sourceAssetId}
         AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">now() AND status='committed'
-        AND "auditRequestId" IS NULL AND "pendingJobs"='[]'::jsonb FOR UPDATE`.execute(db);
+        AND "auditRequestId" IS NULL AND NOT coalesce(verification ? 'auditValidationInputs',false) AND "pendingJobs"='[]'::jsonb FOR UPDATE`.execute(
+        db,
+      );
       if (rows.length === 0) {
         return false;
       }
@@ -1109,7 +1132,11 @@ export class ICloudSyncRepository {
       await sql`UPDATE public.icloud_resource SET status = 'pending', "lastError" = 'icloud_claimed',
         "leaseToken" = NULL, "leaseExpiresAt" = NULL, "reservedBytes" = 0, "nextAttemptAt" = ${until},
         "updatedAt" = now()
-        WHERE id = ${resource.id}::uuid AND "leaseToken" = ${resource.leaseToken}::uuid`.execute(db);
+        WHERE id = ${resource.id}::uuid AND "leaseToken" = ${resource.leaseToken}::uuid
+          AND ("auditRequestId" IS NULL OR EXISTS (SELECT 1 FROM public.icloud_identity_audit q
+            WHERE q.id="auditRequestId" AND q."ownerId"=public.icloud_resource."ownerId"
+              AND q."connectionId"=public.icloud_resource."connectionId" AND q.purpose='manual-session'))
+          AND NOT coalesce(verification ? 'auditValidationInputs',false)`.execute(db);
     });
   }
   async defer(connectionId: string, ownerId: string, reason: string): Promise<void> {

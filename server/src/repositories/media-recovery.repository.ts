@@ -408,23 +408,31 @@ export class MediaRecoveryRepository {
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
       const editAuthority = new ICloudEditAuthorityRepository(trx);
-      const editItem = await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
-      if (editItem) {
-        await lockICloudItemClaims(trx, input.ownerId, [editItem]);
+      // Scheduled resources are excluded from edit hints; select only their immutable item prefix here.
+      const item =
+        input.audit?.purpose === 'scheduled-weekly'
+          ? (
+              await sql<{ sourceAssetId: string }>`SELECT s."sourceAssetId" FROM public.icloud_identity_audit q
+              JOIN public.icloud_resource s ON s.id=q."sourceResourceId" AND s."ownerId"=q."ownerId"
+              WHERE q.id=${input.audit.auditRequestId}::uuid AND q."ownerId"=${input.ownerId}::uuid
+                AND q."operationId"=${input.audit.operationId}::uuid AND q.purpose='scheduled-weekly'`.execute(trx)
+            ).rows[0]?.sourceAssetId
+          : await editAuthority.itemHint(trx, input.ownerId, 'icloud-sync', input.resourceId);
+      if (input.audit?.purpose === 'scheduled-weekly' && !item) return;
+      if (item) {
+        await lockICloudItemClaims(trx, input.ownerId, [item]);
       }
-      if (input.audit?.purpose === 'scheduled-weekly' && input.outcome !== 'reused') {
-        await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(trx);
-      }
-      if (
-        input.audit?.purpose === 'scheduled-weekly' &&
-        !(await guardScheduledAudit(trx as Transaction<DB>, input.audit, input.ownerId, {
+      if (input.audit?.purpose === 'scheduled-weekly') {
+        if (input.outcome !== 'reused') {
+          await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(trx);
+        }
+        const guarded = await guardScheduledAudit(trx as Transaction<DB>, input.audit, input.ownerId, {
           resource: { id: input.resourceId, leaseToken: input.leaseToken },
           candidateAssetIds: input.candidate ? [input.candidate.id] : [],
           managedPaths: [input.proposedPath, ...(input.candidate ? [input.candidate.originalPath] : [])],
           recoveryChecksum: input.verified.sha256,
-        }))
-      ) {
-        return;
+        });
+        if (!guarded || guarded.source.sourceAssetId !== item) return;
       }
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const resource = await this.lockResource(trx, input);

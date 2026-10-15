@@ -40,7 +40,9 @@ import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudEditAuthorityRepository } from 'src/repositories/icloud-edit-authority.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -1341,7 +1343,7 @@ describe('administrative iCloud edit authority', () => {
   });
   it('uses current sync health and the actual 72-hour boundary for automatic administrative handover', async () => {
     const f = await fixture(),
-      sync = new ICloudSyncRepository(db);
+      sync = new ICloudSyncRepository(db, new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()));
     const connection = (await sync.create(f.user.id, 'fixture', ICloudConfigSchema.parse({ includeEdits: true })))!;
     await sync.update(connection.id, f.user.id, { state: 'connected' });
     await identities.release(f.user.id, [f.claim.id], 'device:' + f.deviceKey);
@@ -1806,7 +1808,10 @@ describe('administrative iCloud edit authority', () => {
         await edits.successor(f.auth, decision(f, first));
         priorRender = (await publish(first)).resultAssetId!;
       }
-      const sync = new ICloudSyncRepository(db);
+      const sync = new ICloudSyncRepository(
+        db,
+        new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()),
+      );
       const recovery = new MediaRecoveryRepository(db);
       const connection = (await sync.create(f.user.id, 'fixture', ICloudConfigSchema.parse({ includeEdits: true })))!;
       await sync.update(connection.id, f.user.id, { state: 'connected' });
