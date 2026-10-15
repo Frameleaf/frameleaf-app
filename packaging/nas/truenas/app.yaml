@@ -9,7 +9,7 @@ date_added: "2026-09-28"
 description: Frameleaf is a self-hosted photo and video library.
 home: https://frameleaf.net
 host_mounts: []
-icon: https://raw.githubusercontent.com/Frameleaf/frameleaf-app/fork/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg
+icon: https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/brand-kit/frameleaf-app-icon.svg
 keywords:
   - photos
   - backup

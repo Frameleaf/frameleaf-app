@@ -1,5 +1,5 @@
 # CLI container builds. Publication to ghcr.io/frameleaf/frameleaf-cli is a manual dispatch with publish
-# selected on the exact current fork/main, gated by FRAMELEAF_ENABLE_CLI_PUBLISH=true. Releases are created
+# selected on the exact current main, gated by FRAMELEAF_ENABLE_CLI_PUBLISH=true. Releases are created
 # with the workflow token, which never triggers this workflow, so there is no release trigger; release
 # promotion refuses to promote until frameleaf-cli:latest exists (FL-191).
 # Both native architectures build once, smoke-test their exported image, and retain an OCI archive.
@@ -8,7 +8,7 @@ name: CLI Build
 'on':
   pull_request:
     branches:
-      - fork/main
+      - main
     paths:
       - packages/cli/**
       - packages/sdk/**
@@ -16,7 +16,7 @@ name: CLI Build
       - .github/workflows/cli.yml
   push:
     branches:
-      - fork/main
+      - main
     paths:
       - packages/cli/**
       - packages/sdk/**
@@ -25,7 +25,7 @@ name: CLI Build
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the exact current fork/main CLI image (requires FRAMELEAF_ENABLE_CLI_PUBLISH)
+        description: Publish the exact current main CLI image (requires FRAMELEAF_ENABLE_CLI_PUBLISH)
         type: boolean
         required: true
         default: false
@@ -161,7 +161,7 @@ jobs:
     environment: production
     if:
       ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_CLI_PUBLISH == 'true' &&
-      github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main' }}
+      github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main' }}
     runs-on: nscloud-ubuntu-24.04-amd64-8x16
     timeout-minutes: 45
     permissions:
@@ -184,11 +184,11 @@ jobs:
             echo "::error::Invalid release commit SHA."
             exit 1
           fi
-          git fetch --no-tags origin refs/heads/fork/main
+          git fetch --no-tags origin refs/heads/main
           branch_sha=$(git rev-parse FETCH_HEAD)
           head_sha=$(git rev-parse HEAD)
           if [[ "$branch_sha" != "$CANDIDATE_SHA" || "$head_sha" != "$CANDIDATE_SHA" ]]; then
-            echo "::error::CLI publication requires the exact current fork/main commit."
+            echo "::error::CLI publication requires the exact current main commit."
             exit 1
           fi
       - name: Download both qualified archives
@@ -287,7 +287,7 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |-
           set -euo pipefail
-          git fetch --no-tags origin refs/heads/fork/main
+          git fetch --no-tags origin refs/heads/main
           [[ "$(git rev-parse FETCH_HEAD)" == "$SOURCE_SHA" ]]
           oras tag "ghcr.io/frameleaf/frameleaf-cli@$DIGEST" latest
           [[ "$(oras resolve ghcr.io/frameleaf/frameleaf-cli:latest)" == "$DIGEST" ]]

@@ -213,7 +213,7 @@ const table = (headers, rows) => {
   return [line(headers), `| ${widths.map((size) => '-'.repeat(size)).join(' | ')} |`, ...rows.map((row) => line(row))];
 };
 const link = (label, url) => (url ? `[${mdx(label)}](${url})` : mdx(label));
-const repositoryUrl = (file) => `https://github.com/Frameleaf/frameleaf-app/blob/fork/main/${file}`;
+const repositoryUrl = (file) => `https://github.com/Frameleaf/frameleaf-app/blob/main/${file}`;
 
 /** Attachment A of an Open RAIL-M licence: the use restrictions that must be passed on. */
 export const railUseRestrictions = (text) => {

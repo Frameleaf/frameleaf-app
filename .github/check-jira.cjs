@@ -14,7 +14,7 @@ const workflow = load(
   ),
 );
 assert.deepEqual(workflow.permissions, {});
-assert.deepEqual(workflow.on.pull_request.branches, ["fork/main"]);
+assert.deepEqual(workflow.on.pull_request.branches, ["main"]);
 assert.ok(workflow.on.pull_request.types.includes("edited"));
 const job = workflow.jobs["issue-key"];
 assert.deepEqual(job.permissions, { contents: "read" });

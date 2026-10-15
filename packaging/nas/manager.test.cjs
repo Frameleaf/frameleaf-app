@@ -84,7 +84,7 @@ for template in templates:
       assert.equal(bind.source, bind.target);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));
     assert.deepEqual(await fs.readdir(output), ['manager-manifest.json', 'truenas', 'unraid']);
-    for (const head_branch of ['fork/main', 'aj/frameleaf-manager-release']) {
+    for (const head_branch of ['main', 'aj/frameleaf-manager-release']) {
       const admitted = path.join(directory, head_branch.replaceAll('/', '-'));
       await buildManager(file, admitted, { run, request: async () => ({ ...build, head_branch }) });
       assert.equal(JSON.parse(await fs.readFile(path.join(admitted, 'manager-manifest.json'), 'utf8')).image, manifest.image);

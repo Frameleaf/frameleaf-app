@@ -63,7 +63,7 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl: 'https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs/',
+          editUrl: 'https://github.com/Frameleaf/frameleaf-app/tree/main/docs/',
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),

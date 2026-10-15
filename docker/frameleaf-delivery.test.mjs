@@ -233,7 +233,7 @@ for (const [file, image] of [
     const inputs = {
       BUILD_ID: "12345",
       BUILD_SOURCE_COMMIT: "a".repeat(40),
-      BUILD_SOURCE_REF: "fork/main",
+      BUILD_SOURCE_REF: "main",
       BUILD_IMAGE: `ghcr.io/frameleaf/${image}:edge`,
     };
     const values = metadata(file, inputs);
@@ -251,7 +251,7 @@ for (const [file, image] of [
       values.FRAMELEAF_SOURCE_COMMIT_URL,
       `https://github.com/Frameleaf/frameleaf-app/commit/${inputs.BUILD_SOURCE_COMMIT}`,
     );
-    assert.equal(values.FRAMELEAF_SOURCE_REF, "fork/main");
+    assert.equal(values.FRAMELEAF_SOURCE_REF, "main");
     const custom = metadata(file, {
       ...inputs,
       BUILD_SOURCE_REPOSITORY: "Frameleaf/test-build",
@@ -848,7 +848,7 @@ test("the Postgres workflow publishes the tested image once, by dispatch, withou
   assert.deepEqual(publish.needs, "build");
   assert.match(publish.if, /vars\.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true'/);
   assert.match(publish.if, /github\.event_name == 'workflow_dispatch'/);
-  assert.match(publish.if, /github\.ref == 'refs\/heads\/fork\/main'/);
+  assert.match(publish.if, /github\.ref == 'refs\/heads\/main'/);
   assert.equal(workflow.on.workflow_dispatch.inputs.publish.default, false);
   assert.equal(publish.env.IMAGE, "ghcr.io/frameleaf/frameleaf-postgres");
   // No rebuild after testing: the publisher only loads and pushes the tested archives.

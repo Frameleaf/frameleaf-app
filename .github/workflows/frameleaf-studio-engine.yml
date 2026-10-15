@@ -1,7 +1,7 @@
 name: Frameleaf Studio engine
 'on':
   pull_request:
-    branches: [fork/main, master/frameleaf-implementation]
+    branches: [main, master/frameleaf-implementation]
     paths:
       - studio/**
       - web/src/lib/frameleaf/studio/**
@@ -17,7 +17,7 @@ name: Frameleaf Studio engine
       - scripts/ci-registry-images.test.mjs
       - .github/workflows/frameleaf-studio-engine.yml
   push:
-    branches: [fork/main]
+    branches: [main]
     paths:
       - studio/**
       - web/src/lib/frameleaf/studio/**

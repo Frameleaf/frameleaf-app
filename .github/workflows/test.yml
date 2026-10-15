@@ -9,11 +9,11 @@ name: Test
         type: boolean
   pull_request:
     branches:
-      - fork/main
+      - main
       - master/frameleaf-implementation
   push:
     branches:
-      - fork/main
+      - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -674,7 +674,7 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
-      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      # Deploy workflow on main); without it the server base compiles from source on every run.
       - name: Login to owned GHCR namespace for the build cache
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -996,7 +996,7 @@ jobs:
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
       # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
-      # Deploy workflow on fork/main); without it the server base compiles from source on every run.
+      # Deploy workflow on main); without it the server base compiles from source on every run.
       - name: Login to owned GHCR namespace for the build cache
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

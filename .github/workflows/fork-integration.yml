@@ -2,7 +2,7 @@ name: Fork integration
 
 on:
   pull_request:
-    branches: ['fork/main', 'master/frameleaf-implementation']
+    branches: ['main', 'master/frameleaf-implementation']
   workflow_call:
   workflow_dispatch:
     inputs:

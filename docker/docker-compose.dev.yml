@@ -92,7 +92,7 @@ services:
       FRAMELEAF_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
       FRAMELEAF_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
       FRAMELEAF_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
-      FRAMELEAF_DOCS_URL: https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs
+      FRAMELEAF_DOCS_URL: https://github.com/Frameleaf/frameleaf-app/tree/main/docs
       FRAMELEAF_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
       FRAMELEAF_HELMET_FILE: "true"
     ports:

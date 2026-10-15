@@ -7,7 +7,7 @@
 Jira: https://heroit.atlassian.net/browse/FL-
 
 <!-- Include the assigned FL-123 key in the PR title and commit subjects. Target
-Frameleaf/frameleaf-app's literal fork/main branch. Describe the final behavior,
+Frameleaf/frameleaf-app's main branch. Describe the final behavior,
 then record reproducible evidence and any acceptance criteria still outstanding. -->
 
 <!-- Follow AGENTS.md and CONTRIBUTING.md. Commands must be in

@@ -2,11 +2,11 @@ name: Migration Order
 'on':
   pull_request:
     branches:
-      - fork/main
+      - main
       - master/frameleaf-implementation
   push:
     branches:
-      - fork/main
+      - main
       - master/frameleaf-implementation
 permissions:
   contents: read
