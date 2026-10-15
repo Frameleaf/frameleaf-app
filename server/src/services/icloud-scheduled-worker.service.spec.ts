@@ -102,3 +102,53 @@ describe('scheduled iCloud publication descriptor settlement', () => {
     expect(identities.release).toHaveBeenCalledOnce();
   });
 });
+
+describe('scheduled validation input settlement gate', () => {
+  it('refuses publication and completion when input disposal rejects settlement', async () => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    const digest = Buffer.alloc(32, 1);
+    const settled = Promise.reject(new Error('input disposal refused'));
+    void settled.catch(() => {});
+    const repository = {
+      dispatch: vi.fn().mockResolvedValue([{ id: 'audit', result: 'pending' }]),
+      stopState: vi.fn().mockResolvedValue({ live: true }),
+      check: vi.fn().mockResolvedValue({ source: { sourceAssetId: 'ITEM' }, request: { expectedSha256: digest } }),
+      bindClaim: vi.fn().mockResolvedValue(true),
+      allocate: vi.fn().mockResolvedValue({ id: 'resource', leaseToken: 'lease' }),
+      publishMatch: vi.fn(),
+      settleUnavailable: vi.fn(),
+    };
+    const staging = {
+      download: vi.fn().mockResolvedValue({}),
+      validate: vi.fn().mockResolvedValue({
+        result: Promise.resolve({ status: 'validated', verified: { sha256: digest } }),
+        settled,
+      }),
+      holdPublicationFiles: vi.fn(),
+      cleanupRetired: vi.fn(),
+    };
+    const operations = { reportProgress: vi.fn().mockResolvedValue(true), complete: vi.fn(), fail: vi.fn() };
+    const recovery = { reconcile: vi.fn() };
+    const sut = new ICloudScheduledWorkerService(
+      repository as never,
+      {
+        claim: vi.fn().mockResolvedValue([{ id: 'claim', holder: 'icloud-sync:audit:operation' }]),
+        release: vi.fn(),
+      } as never,
+      staging as never,
+      recovery as never,
+      operations as never,
+      { enabled: () => true } as never,
+    );
+    try {
+      await sut.run({ id: 'operation', ownerId: 'owner' } as never, 'token');
+      expect(repository.publishMatch).not.toHaveBeenCalled();
+      expect(staging.holdPublicationFiles).not.toHaveBeenCalled();
+      expect(recovery.reconcile).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

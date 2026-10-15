@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Stats, constants } from 'node:fs';
-import { FileHandle, link, lstat, mkdir, mkdtemp, open, realpath, rm, statfs, unlink } from 'node:fs/promises';
+import { FileHandle, link, lstat, mkdir, open, realpath, statfs, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -26,8 +26,23 @@ import {
 } from 'src/services/media-integrity.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { appleFingerprintHash, isAppleFingerprint } from 'src/utils/icloud-identity.js';
-import { privateCopyIdentity, privateCopyScope, validPrivateCopy } from 'src/utils/icloud-private-copy.js';
+import {
+  ValidationInputEnvelope,
+  privateCopyIdentity,
+  privateCopyScope,
+  validPrivateCopy,
+  validValidationInputs,
+} from 'src/utils/icloud-private-copy.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+
+class ScheduledReadonlyUnsettledError extends Error {}
+const closeReadonly = async (file: FileHandle) => {
+  try {
+    await file.close();
+  } catch (error) {
+    throw new ScheduledReadonlyUnsettledError('scheduled_audit_readonly_unsettled', { cause: error });
+  }
+};
 
 export type ScheduledValidationOutcome =
   | {
@@ -118,6 +133,8 @@ export class ICloudScheduledStagingService {
   cleanupRetired(input: ScheduledStagingInput) {
     const cleanup = (async () => {
       await Promise.allSettled(this.ownedWork.get(input.resource.id) ?? new Set<Promise<void>>());
+      const envelope = await this.repository.validationInputs(input);
+      if (envelope && !(await this.repository.disposeValidationInput(input, envelope))) return;
       await this.repository.disposePrivateCopy(input);
       await this.repository.disposeRefusedStaging(input);
     })()
@@ -129,6 +146,41 @@ export class ICloudScheduledStagingService {
 
   /** Restart can resume sealed settled copies; unknown/pending generations remain charged. */
   async housekeeping() {
+    for (const resource of await this.repository.retainedValidationInputs()) {
+      const record = resource.verification?.auditValidationInputs;
+      if (!validValidationInputs(record)) {
+        await this.repository.retainValidationInput(resource, 'unproven');
+        continue;
+      }
+      const payload = record.payload.current.payload;
+      if (!['settled', 'disposed'].includes(payload.state) || payload.pending.length > 0) {
+        await this.repository.retainValidationInput(resource, 'pending-settlement');
+        continue;
+      }
+      const input: ScheduledStagingInput = {
+        ownerId: resource.ownerId,
+        resource: { id: resource.id, leaseToken: payload.resourceLeaseToken },
+        authority: {
+          purpose: 'scheduled-weekly',
+          auditRequestId: payload.auditRequestId,
+          operationId: payload.operationId,
+          operationClaimToken: payload.operationClaimToken,
+        },
+      };
+      try {
+        await Promise.allSettled(this.ownedWork.get(resource.id) ?? new Set<Promise<void>>());
+        const authenticated = await this.repository.validationInputs(input);
+        if (!authenticated) {
+          await this.repository.retainValidationInput(resource, 'unproven');
+        } else if (await this.repository.disposeValidationInput(input, authenticated)) {
+          await this.repository.deferDisposedValidationInput(input);
+        } else {
+          await this.repository.retainValidationInput(resource, 'fence-or-unlink');
+        }
+      } catch {
+        await this.repository.retainValidationInput(resource, 'fence-or-unlink');
+      }
+    }
     for (const resource of await this.repository.retiredPrivateCopies()) {
       const record = resource.verification?.auditPrivateCopy;
       if (!validPrivateCopy(record) || !record.payload.identity) {
@@ -290,7 +342,9 @@ export class ICloudScheduledStagingService {
       await this.checkpoint(input, signal);
       return value;
     } catch (error) {
-      await dispose?.(value).catch(() => {});
+      await dispose?.(value).catch((error_) => {
+        if (error_ instanceof ScheduledReadonlyUnsettledError) throw error_;
+      });
       throw error;
     }
   }
@@ -345,7 +399,7 @@ export class ICloudScheduledStagingService {
       input,
       () => open(path, constants.O_RDONLY | constants.O_NOFOLLOW),
       signal,
-      (file) => file.close(),
+      (file) => closeReadonly(file),
     );
     try {
       const before = await this.step(input, () => handle.stat(), signal);
@@ -381,7 +435,7 @@ export class ICloudScheduledStagingService {
       }
       return { ...result, identity: fileIdentity(final) };
     } finally {
-      await handle.close();
+      await closeReadonly(handle);
     }
   }
 
@@ -718,44 +772,88 @@ export class ICloudScheduledStagingService {
     signal?: AbortSignal,
     destination?: string,
   ): Promise<ScheduledFreshValidation> {
-    // Durable pending ownership precedes preliminary readonly work and the unique input copy too.
-    // A preparation failure without a complete settlement record remains conservatively retained.
-    const privateWork = await this.repository.beginPrivateWork(input);
-    try {
-      const { directory, path } = await this.directory(input, signal);
-      const receipt = await this.cached(input, path, signal);
-      const validationPath = destination ?? path;
-      const destinationIdentity = destination
-        ? (await this.readOwned(input, destination, signal)).identity
-        : receipt.payload.identity;
-      const copyDirectory = await this.step(
-        input,
-        () => mkdtemp(join(directory, '.validation-')),
-        signal,
-        (path) => rm(path, { recursive: true, force: true }),
-      );
-      let started = false;
+    const preparing = (async () => {
+      let envelope: ValidationInputEnvelope;
+      let privateWork: string;
       try {
-        const copyPath = join(copyDirectory, 'input');
-        const copy = await this.step(
-          input,
-          () => open(copyPath, 'wx', 0o600),
-          signal,
-          (handle) => handle.close(),
+        const preliminaryWork = await this.repository.beginPrivateWork(input);
+        if (!preliminaryWork) throw new Error('scheduled_audit_unavailable');
+        const { directory, path } = await this.directory(input, signal);
+        const receipt = await this.cached(input, path, signal);
+        const validationPath = destination ?? path;
+        const destinationIdentity = destination
+          ? (await this.readOwned(input, destination, signal)).identity
+          : receipt.payload.identity;
+        const sourceIdentity = privateCopyIdentity(await lstat(validationPath));
+        await this.repository.finishPrivateWork(input, preliminaryWork);
+        const expected = (await this.repository.validationInputs(input)) ?? null;
+        const planned = await this.repository.planValidationInput(input, {
+          expected,
+          pathNonce: randomUUID(),
+          stage: destination ? 'recovery-destination' : 'source',
+          fresh: receipt,
+          validationPath,
+          sourceIdentity,
+          stagingDirectory: directory,
+        });
+        if (!planned) throw new Error('scheduled_audit_unavailable');
+        envelope = planned;
+        // Legacy work must be settled for admission; the new token then precedes all input writes.
+        privateWork = await this.repository.beginPrivateWork(input);
+        if (!privateWork) throw new Error('scheduled_audit_unavailable');
+        const persist = async (next: typeof planned.payload.current.payload) => {
+          const stored = await this.repository.storeValidationInput(input, envelope, next);
+          if (!stored) throw new Error('scheduled_audit_input_changed');
+          envelope = stored;
+        };
+        const disk = await this.step(input, () => statfs(directory, { bigint: true }), signal);
+        const minimum = BigInt(readAliasedEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES') ?? 1024 ** 3);
+        if (
+          minimum < 0n ||
+          disk.bavail * disk.bsize - BigInt(planned.payload.current.payload.reservedInputBytes) < minimum
+        ) {
+          throw new Error('scheduled_audit_disk_full');
+        }
+        const payload = envelope.payload.current.payload;
+        await mkdir(payload.directoryPath, { mode: 0o700 });
+        const copyPath = payload.inputPath;
+        const copy = await open(
+          copyPath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
         );
+        let finalIdentity;
         try {
+          const parent = await lstat(payload.directoryPath);
+          const empty = await copy.stat();
+          if (
+            !parent.isDirectory() ||
+            (parent.mode & 0o077) !== 0 ||
+            !ownedFile(empty) ||
+            (await realpath(payload.directoryPath)) !== payload.directoryPath ||
+            (process.getuid && parent.uid !== process.getuid())
+          )
+            throw new Error('scheduled_audit_input_unowned');
+          await persist({
+            ...payload,
+            state: 'preparing',
+            pending: [privateWork],
+            directoryIdentity: privateCopyIdentity(parent),
+            inputIdentity: privateCopyIdentity(empty),
+          });
           const observed = await this.readOwned(input, validationPath, signal, copy);
           if (
             !sameFile(observed.identity, destinationIdentity) ||
             observed.sha256 !== receipt.payload.sha256 ||
             observed.sha1 !== receipt.payload.sha1
-          ) {
+          )
             throw new Error('scheduled_audit_staging_changed');
-          }
           await this.step(input, () => copy.sync(), signal);
+          finalIdentity = privateCopyIdentity(await copy.stat());
         } finally {
           await copy.close();
         }
+        await persist({ ...envelope.payload.current.payload, state: 'running', inputIdentity: finalIdentity });
         const { resource } = await this.checkpoint(input, signal);
         const type = resource.source.type;
         if (type !== AssetType.Image && type !== AssetType.Video) {
@@ -773,8 +871,7 @@ export class ICloudScheduledStagingService {
           },
           deep: true,
         });
-        started = true;
-        const decoderCleanup = validation.settled.then(() => rm(copyDirectory, { recursive: true, force: true }));
+
         let cancelled = false;
         const refusal = Promise.withResolvers<ScheduledValidationOutcome>();
         const cancel = () => {
@@ -858,35 +955,46 @@ export class ICloudScheduledStagingService {
               return { status: 'unavailable' };
             }
             return { status: 'validated', receipt, validation: proof, verified };
-          } catch {
+          } catch (error) {
+            if (error instanceof ScheduledReadonlyUnsettledError) throw error;
             return { status: 'unavailable' };
           } finally {
             clearInterval(timer);
             signal?.removeEventListener('abort', cancel);
+            await checking;
           }
         })();
         // Result refusal/timeout is not settlement. Include late hashing/readonly/receipt work,
         // actual decoder termination and removal of its unique input before issuing the seal.
-        const settled = Promise.all([decoderCleanup, work])
-          .then(async () => {
-            await this.repository.finishPrivateWork(input, privateWork);
-          })
-          .catch(() => {})
-          .finally(() => this.cleanups.delete(settled));
-        this.cleanups.add(settled);
-        this.trackOwnedWork(input.resource.id, settled);
-        const result = Promise.race([work, refusal.promise]).finally(() => {
+        const settled = Promise.allSettled([validation.settled, work]).then(async (results) => {
+          const failed = results.filter((result) => result.status === 'rejected');
+          if (failed.length > 0)
+            throw new AggregateError(
+              failed.map((result) => result.reason),
+              'scheduled_audit_input_unsettled',
+            );
+          await persist({ ...envelope.payload.current.payload, state: 'settled', pending: [] });
+          if (!(await this.repository.disposeValidationInput(input, envelope)))
+            throw new Error('scheduled_audit_input_retained');
+          await this.repository.finishPrivateWork(input, privateWork);
+        });
+        const result = Promise.race([
+          work.catch((): ScheduledValidationOutcome => ({ status: 'unavailable' })),
+          refusal.promise,
+        ]).finally(() => {
           clearInterval(timer);
           signal?.removeEventListener('abort', cancel);
         });
         return { result, settled, cancel };
-      } finally {
-        if (!started) {
-          await rm(copyDirectory, { recursive: true, force: true }).catch(() => {});
-        }
+      } catch {
+        // Unknown custody or failed persistence/close retains the complete reservation and token.
+        throw new Error('scheduled_audit_unavailable');
       }
-    } catch {
-      throw new Error('scheduled_audit_unavailable');
-    }
+    })();
+    this.trackOwnedWork(
+      input.resource.id,
+      preparing.then((validation) => validation.settled),
+    );
+    return preparing;
   }
 }

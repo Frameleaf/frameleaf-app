@@ -7,7 +7,9 @@ import {
   recordSyncIdentity,
   releaseSyncClaim,
 } from 'src/repositories/icloud-identity.repository.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -61,7 +63,7 @@ describe(ICloudIdentityRepository.name, () => {
   beforeAll(async () => {
     db = await getKyselyDB();
 
-    sync = new ICloudSyncRepository(db);
+    sync = new ICloudSyncRepository(db, new ICloudScheduledStagingRepository(db, new ICloudTransportRepository()));
     sut = new ICloudIdentityRepository(db);
   });
   afterAll(async () => {
