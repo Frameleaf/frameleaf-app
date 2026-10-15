@@ -420,8 +420,6 @@ export interface Migrations {
 
 export interface DB extends QueueDatabase {
   desktop_device: DesktopDeviceTable;
-  desktop_ml_task: DesktopMlTaskTable;
-  desktop_ml_attempt: DesktopMlAttemptTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;
