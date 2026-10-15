@@ -1,4 +1,5 @@
 import { render as renderComponent, toPlainText } from '@react-email/render';
+import { createTransport } from 'nodemailer';
 import { NO_LINK_ALBUM, NO_LINK_SIGN_IN, NO_LINK_TEST } from 'src/emails/components/no-link.js';
 import { EmailRenderRequest, EmailRepository, EmailTemplate } from 'src/repositories/email.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -9,6 +10,11 @@ vi.mock('@react-email/render', async (original) => {
   return { ...renderer, render: vi.fn(renderer.render) };
 });
 
+vi.mock('nodemailer', async (original) => {
+  const mailer = await original<typeof import('nodemailer')>();
+  return { ...mailer, createTransport: vi.fn(mailer.createTransport) };
+});
+
 describe(EmailRepository.name, () => {
   let sut: EmailRepository;
 
@@ -16,6 +22,31 @@ describe(EmailRepository.name, () => {
     vi.mocked(renderComponent).mockClear();
     // eslint-disable-next-line no-sparse-arrays
     sut = new EmailRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+  });
+
+  describe('sendEmail', () => {
+    it.each(['replies@example.com', undefined])('preserves reply-to %s in SMTP MIME', async (replyTo) => {
+      const transport = createTransport({ streamTransport: true, buffer: true, newline: 'windows' });
+      const close = vi.spyOn(transport, 'close');
+      const send = vi.spyOn(transport, 'sendMail');
+      vi.mocked(createTransport).mockReturnValueOnce(transport);
+      await sut.sendEmail({
+        from: 'sender@example.com',
+        to: 'recipient@example.com',
+        replyTo,
+        subject: 'Fixture',
+        html: '<p>Fixture</p>',
+        text: 'Fixture',
+        smtp: { host: 'unused.example.com' },
+      });
+      const mime = (await send.mock.results[0].value).message.toString();
+      if (replyTo) {
+        expect(mime).toContain(`Reply-To: ${replyTo}\r\n`);
+      } else {
+        expect(mime).not.toContain('Reply-To:');
+      }
+      expect(close).toHaveBeenCalledOnce();
+    });
   });
 
   describe('renderEmail', () => {

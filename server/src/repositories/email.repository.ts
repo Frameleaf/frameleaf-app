@@ -174,6 +174,7 @@ export class EmailRepository {
   async sendEmail({
     to,
     from,
+    replyTo,
     subject,
     html,
     text,
@@ -190,7 +191,7 @@ export class EmailRepository {
     }));
 
     try {
-      return await transport.sendMail({ to, from, subject, html, text, attachments });
+      return await transport.sendMail({ to, from, replyTo, subject, html, text, attachments });
     } finally {
       transport.close();
     }
