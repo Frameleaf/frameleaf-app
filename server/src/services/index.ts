@@ -38,6 +38,7 @@ import { DatabaseService } from 'src/services/database.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
+import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
@@ -163,6 +164,7 @@ export const services = [
   DesktopDeviceService,
   DesktopMlService,
   DesktopWorkerAuthService,
+  DesktopWorkerService,
   FrameleafLibraryMoveService,
   FrameleafLibrarySetupService,
   ICloudAuditService,

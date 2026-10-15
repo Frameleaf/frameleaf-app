@@ -27,6 +27,7 @@ it('issues a separate worker session through the validated photo-authenticated d
     };
     const response = await request(ctx.getHttpServer()).post('/desktop/devices/session').send(dto);
     expect(response.status).toBe(201);
+    expect(response.headers['cache-control']).toBe('no-store');
     expect(response.body).toMatchObject({ workerToken: 'a'.repeat(64), modelKeys: [] });
     expect(issue).toHaveBeenCalledWith(expect.objectContaining({ user: expect.anything() }), dto);
     expect(

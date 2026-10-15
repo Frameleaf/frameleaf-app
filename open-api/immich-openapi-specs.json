@@ -18764,6 +18764,421 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/desktop/tasks/{id}/fail": {
+      "post": {
+        "operationId": "failDesktopTask",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerAckDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report a bounded desktop attempt failure",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/tasks/{id}/input": {
+      "get": {
+        "operationId": "readDesktopTaskInput",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read only the input bound to this desktop attempt handle",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/tasks/{id}/result": {
+      "post": {
+        "operationId": "completeDesktopTask",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerAckDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stage an idempotent desktop inference result for NAS validation",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/worker/claim": {
+      "post": {
+        "operationId": "claimDesktopTask",
+        "parameters": [
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerClaimDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim one qualified desktop inference attempt",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/worker/heartbeat": {
+      "post": {
+        "operationId": "heartbeatDesktopTask",
+        "parameters": [
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerHeartbeatDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Renew a bounded desktop inference lease",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/worker/session": {
+      "delete": {
+        "operationId": "revokeDesktopWorkerSession",
+        "parameters": [
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerAckDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Revoke this desktop worker grant",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "operationId": "renewDesktopWorkerSession",
+        "parameters": [
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopSessionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rotate a live installation-bound worker credential",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/develop-presets": {
       "get": {
         "description": "Your saved develop presets, by name.",
@@ -71227,6 +71642,13 @@
         ],
         "type": "string"
       },
+      "DesktopInputKind": {
+        "enum": [
+          "text",
+          "image"
+        ],
+        "type": "string"
+      },
       "DesktopMode": {
         "enum": [
           "local-server",
@@ -71323,6 +71745,146 @@
           "requestId",
           "signature",
           "timestamp"
+        ],
+        "type": "object"
+      },
+      "DesktopWorkerAckDto": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "type": "object"
+      },
+      "DesktopWorkerClaimDto": {
+        "properties": {
+          "task": {
+            "nullable": true,
+            "properties": {
+              "authorizationEpoch": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "configJson": {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              "configSha256": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "deviceId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "executionDeadline": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "expiresAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "generation": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "inputKind": {
+                "$ref": "#/components/schemas/DesktopInputKind"
+              },
+              "inputSha256": {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              "maxInputBytes": {
+                "exclusiveMinimum": true,
+                "maximum": 16777216,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "modelKey": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "sessionId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "taskId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "taskId",
+              "deviceId",
+              "sessionId",
+              "authorizationEpoch",
+              "generation",
+              "modelKey",
+              "configJson",
+              "configSha256",
+              "inputSha256",
+              "inputKind",
+              "maxInputBytes",
+              "expiresAt",
+              "executionDeadline"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "type": "object"
+      },
+      "DesktopWorkerHeartbeatDto": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "DesktopWorkerPayloadDto": {
+        "additionalProperties": false,
+        "properties": {
+          "payload": {
+            "maxLength": 4194304,
+            "type": "string"
+          }
+        },
+        "required": [
+          "payload"
         ],
         "type": "object"
       },

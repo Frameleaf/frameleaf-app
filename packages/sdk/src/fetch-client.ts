@@ -5943,6 +5943,34 @@ export type DesktopSessionDto = {
     sessionId: string;
     workerToken: string;
 };
+export type DesktopWorkerPayloadDto = {
+    payload: string;
+};
+export type DesktopWorkerAckDto = {
+    accepted: boolean;
+};
+export type DesktopWorkerClaimDto = {
+    task: {
+        authorizationEpoch: number;
+        configJson: string;
+        configSha256: string;
+        deviceId: string;
+        executionDeadline: string;
+        expiresAt: string;
+        generation: number;
+        id: string;
+        inputKind: DesktopInputKind;
+        inputSha256: string;
+        maxInputBytes: number;
+        modelKey: string;
+        sessionId: string;
+        taskId: string;
+    } | null;
+};
+export type DesktopWorkerHeartbeatDto = {
+    accepted: boolean;
+    expiresAt: string | null;
+};
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
     blacks?: number;
@@ -21028,6 +21056,137 @@ export function endDesktopSession({ id }: {
     }));
 }
 /**
+ * Report a bounded desktop attempt failure
+ */
+export function failDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/tasks/${encodeURIComponent(id)}/fail`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read only the input bound to this desktop attempt handle
+ */
+export function readDesktopTaskInput({ id, xFrameleafDesktopProof }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/desktop/tasks/${encodeURIComponent(id)}/input`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Stage an idempotent desktop inference result for NAS validation
+ */
+export function completeDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/tasks/${encodeURIComponent(id)}/result`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Claim one qualified desktop inference attempt
+ */
+export function claimDesktopTask({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerClaimDto;
+    }>("/desktop/worker/claim", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Renew a bounded desktop inference lease
+ */
+export function heartbeatDesktopTask({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerHeartbeatDto;
+    }>("/desktop/worker/heartbeat", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Revoke this desktop worker grant
+ */
+export function revokeDesktopWorkerSession({ xFrameleafDesktopProof }: {
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>("/desktop/worker/session", {
+        ...opts,
+        method: "DELETE",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Rotate a live installation-bound worker credential
+ */
+export function renewDesktopWorkerSession({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopSessionDto;
+    }>("/desktop/worker/session", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
  * List develop presets
  */
 export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
@@ -30903,6 +31062,10 @@ export enum DesktopDeviceState {
 }
 export enum DesktopWorkerScope {
     LibraryInference = "library-inference"
+}
+export enum DesktopInputKind {
+    Text = "text",
+    Image = "image"
 }
 export enum DevelopPresetMaskKind {
     Radial = "radial",

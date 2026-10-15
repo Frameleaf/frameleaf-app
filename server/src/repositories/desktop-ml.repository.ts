@@ -197,16 +197,19 @@ export class DesktopMlRepository {
   }
 
   async heartbeat(grant: DesktopWorkerGrant, attemptId: string): Promise<boolean> {
-    return (
-      (await this.withAttempt(grant, attemptId, async (db, task, credentialExpiry) => {
-        await db
-          .updateTable('desktop_ml_attempt')
-          .set({ expiresAt: leaseEnd(new Date(task.deadlineAt), credentialExpiry) })
-          .where('id', '=', attemptId)
-          .execute();
-        return true;
-      })) ?? false
-    );
+    return (await this.heartbeatLease(grant, attemptId)) !== undefined;
+  }
+
+  heartbeatLease(grant: DesktopWorkerGrant, attemptId: string): Promise<Date | undefined> {
+    return this.withAttempt(grant, attemptId, async (db, task, credentialExpiry) => {
+      const attempt = await db
+        .updateTable('desktop_ml_attempt')
+        .set({ expiresAt: leaseEnd(new Date(task.deadlineAt), credentialExpiry) })
+        .where('id', '=', attemptId)
+        .returning('expiresAt')
+        .executeTakeFirstOrThrow();
+      return new Date(attempt.expiresAt);
+    });
   }
 
   /** Stages a result only. The NAS dispatcher must revalidate asset/route authority before adopting it. */

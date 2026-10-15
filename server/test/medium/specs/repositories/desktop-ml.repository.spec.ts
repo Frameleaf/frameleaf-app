@@ -305,3 +305,20 @@ it('requires an exact NAS-approved model and rechecks scope for every lease oper
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, { vector: [1] })).toBe(false);
 });
+
+it('returns the exact renewed lease expiry for the outbound heartbeat response', async () => {
+  const { sut, grants, request } = await setup();
+  request.deadlineAt = new Date(Date.now() + 300_000);
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const expiresAt = await sut.heartbeatLease(grants[0], claim.attempt.id);
+  expect(expiresAt).toBeDefined();
+  const stored = await brokerDb
+    .selectFrom('desktop_ml_attempt')
+    .select('expiresAt')
+    .where('id', '=', claim.attempt.id)
+    .executeTakeFirstOrThrow();
+  expect(new Date(expiresAt!)).toEqual(new Date(stored.expiresAt));
+  await new DesktopWorkerRepository(db).revoke(grants[0]);
+  expect(await sut.heartbeatLease(grants[0], claim.attempt.id)).toBeUndefined();
+});

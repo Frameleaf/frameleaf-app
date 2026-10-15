@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { DesktopSessionDto, DesktopSessionRequestDto } from 'src/dtos/desktop-worker.dto.js';
@@ -43,7 +44,12 @@ export class DesktopDeviceController {
   @Post('devices/session')
   @Authenticated({ permission: false })
   @Endpoint({ summary: 'Issue an installation-bound library worker credential', history: history() })
-  issueDesktopWorkerSession(@Auth() auth: AuthDto, @Body() dto: DesktopSessionRequestDto): Promise<DesktopSessionDto> {
+  issueDesktopWorkerSession(
+    @Auth() auth: AuthDto,
+    @Body() dto: DesktopSessionRequestDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopSessionDto> {
+    response.setHeader('Cache-Control', 'no-store');
     return this.workerAuth.issue(auth, dto);
   }
 

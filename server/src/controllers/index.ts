@@ -30,6 +30,7 @@ import { ConfigPublicController } from 'src/controllers/config-public.controller
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
+import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
@@ -110,6 +111,7 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
   DesktopDeviceController,
+  DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
   FrameleafLibraryMoveController,
   FrameleafLibrarySetupController,
