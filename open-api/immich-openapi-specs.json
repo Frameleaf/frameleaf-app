@@ -5419,6 +5419,57 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/integrity/report/{id}/dismiss": {
+      "post": {
+        "description": "Forget one integrity finding without acting on it: no file is deleted and no photo is moved to the trash. The next check reports it again if the problem remains.",
+        "operationId": "dismissIntegrityReport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove one finding from its list",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/integrity/report/{id}/file": {
       "get": {
         "description": "Download the untracked/broken file if one exists",
@@ -5471,6 +5522,62 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/integrity/report/{type}/clear": {
+      "post": {
+        "description": "Empty the findings of one integrity check without acting on them: no file is deleted and no photo is moved to the trash. The next check reports what is still wrong.",
+        "operationId": "clearIntegrityReports",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/IntegrityReport"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityReportClearResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clear the list of one integrity check",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
             "state": "Alpha"
           }
         ],
@@ -78123,6 +78230,20 @@
           "checksum_mismatch"
         ],
         "type": "string"
+      },
+      "IntegrityReportClearResponseDto": {
+        "properties": {
+          "cleared": {
+            "description": "Findings removed from the list; no file or photo was changed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "type": "object"
       },
       "IntegrityReportResponseDto": {
         "properties": {
