@@ -4,6 +4,7 @@ import argparse
 import hmac
 import os
 import sys
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from .schemas import InferenceEntries
 class NativeRuntimeOptions:
     cache_dir: Path
     port: int
+    provider: str = "CPUExecutionProvider"
 
 
 def configure_runtime(options: NativeRuntimeOptions, environment: Mapping[str, str]) -> dict[str, str]:
@@ -33,6 +35,8 @@ def configure_runtime(options: NativeRuntimeOptions, environment: Mapping[str, s
         MACHINE_LEARNING_MODEL_DOWNLOADS="false",
         MACHINE_LEARNING_CACHE_FOLDER=str(options.cache_dir.resolve()),
         MACHINE_LEARNING_WORKERS="1",
+        MACHINE_LEARNING_ANN="false",
+        MACHINE_LEARNING_RKNN="false",
         MACHINE_LEARNING_REQUEST_THREADS="1",
         FRAMELEAF_HOST="127.0.0.1",
         FRAMELEAF_PORT=str(options.port),
@@ -85,8 +89,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
+    from .native_ort import PROVIDERS
+
+    parser.add_argument("--provider", choices=PROVIDERS, default="CPUExecutionProvider")
     options = parser.parse_args()
-    configured = configure_runtime(NativeRuntimeOptions(options.cache_dir, options.port), os.environ)
+    configured = configure_runtime(NativeRuntimeOptions(options.cache_dir, options.port, options.provider), os.environ)
     # Settings are module-level singletons: this entry point must configure them before any model import.
     if "immich_ml.config" in sys.modules:
         raise RuntimeError("native_runtime_must_start_in_fresh_process")
@@ -95,18 +102,27 @@ def main() -> None:
 
     import uvicorn
 
+    from .native_ort import configure
+
+    configure(options.provider)
     from .main import app, get_entries
 
     app.dependency_overrides[get_entries] = library_entries
 
-    uvicorn.run(
-        NativeScope(app, configured["FRAMELEAF_ML_AUTH_TOKEN"]),
-        host="127.0.0.1",
-        port=options.port,
-        workers=1,
-        access_log=False,
-        limit_concurrency=2,
-    )
+    previous_temp = tempfile.tempdir
+    with tempfile.TemporaryDirectory(prefix="frameleaf-native-") as runtime:
+        tempfile.tempdir = runtime
+        try:
+            uvicorn.run(
+                NativeScope(app, configured["FRAMELEAF_ML_AUTH_TOKEN"]),
+                host="127.0.0.1",
+                port=options.port,
+                workers=1,
+                access_log=False,
+                limit_concurrency=2,
+            )
+        finally:
+            tempfile.tempdir = previous_temp
 
 
 if __name__ == "__main__":
