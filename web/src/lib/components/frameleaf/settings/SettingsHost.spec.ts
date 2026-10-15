@@ -58,6 +58,19 @@ vi.mock('$lib/components/frameleaf/settings/server/ServerLanding.svelte', async 
 vi.mock('$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
 }));
+// FL-366: so do Library care, Maintenance, Search & intelligence and Editing & playback.
+vi.mock('$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
+vi.mock('$lib/components/frameleaf/settings/editing/EditingLanding.svelte', async () => ({
+  default: (await import('../../../../test-data/components/MockText.svelte')).default,
+}));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAdminConfigHistory: vi.fn().mockResolvedValue({ entries: [] }),
@@ -228,46 +241,25 @@ describe('the Command Center (FL-71)', () => {
     expect(screen.queryByLabelText('Notifications pages')).toBeNull();
   });
 
-  it("lists Library care's repair tools after its sections", async () => {
-    open('/user-settings?area=care');
-    const { container } = render(SettingsHost, { sections });
-    const directory = container.querySelector<HTMLElement>('.cc-directory')!;
-    expect(within(directory).getByRole('heading', { level: 2, name: 'Tools' })).toBeInTheDocument();
-    await userEvent.click(within(directory).getByRole('button', { name: /Missing media/ }));
-    // The tool stays under Library care (design review finding 67).
-    expect(state.goto).toHaveBeenCalledWith(
-      '/user-settings?area=utilities&section=missing-media&from=care',
-      expect.any(Object),
-    );
-  });
-
-  it('lists every repair tool for an administrator, in the Utilities order', () => {
-    open('/user-settings?area=care');
-    const { container } = render(SettingsHost, { sections });
-    const tools = within(container.querySelector<HTMLElement>('.cc-directory')!)
-      .getByRole('heading', { level: 2, name: 'Tools' })
-      .closest('section')!;
-    expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
-      'Duplicate review',
-      'Live Photo pairing',
-      'Missing media',
-      'Damaged media',
-      'File trash',
-    ]);
-  });
-
-  it('lists only the repair tools an account without administration may run', () => {
-    open('/user-settings?area=care', false);
-    const { container } = render(SettingsHost, {
-      sections: [...sections.filter((section) => !section.admin), accountSection('repair', 'Repair queues')],
-    });
-    const tools = within(container.querySelector<HTMLElement>('.cc-directory')!)
-      .getByRole('heading', { level: 2, name: 'Tools' })
-      .closest('section')!;
-    expect([...tools.querySelectorAll(':scope button strong')].map((title) => title.textContent)).toEqual([
-      'Duplicate review',
-      'Live Photo pairing',
-    ]);
+  it('opens Library care, Search & intelligence, Editing & playback and Maintenance on landing pages (FL-366)', () => {
+    for (const [area, title] of [
+      ['care', 'Library care'],
+      ['intelligence', 'Search & intelligence'],
+      ['editing', 'Editing & playback'],
+      ['maintenance', 'Maintenance'],
+    ]) {
+      open(`/user-settings?area=${area}`);
+      const { container, unmount } = render(SettingsHost, {
+        sections: [
+          ...sections,
+          serverSection('smart-search', 'Visual search'),
+          serverSection('image', 'Image previews'),
+        ],
+      });
+      expect(container.querySelector('.cc-directory')).toBeNull();
+      expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it('does not repeat a page name that matches its area in the overline', () => {
@@ -560,8 +552,9 @@ describe('the Command Center (FL-71)', () => {
       for (const area of ['backup', 'maintenance', 'cloud']) {
         open(`/user-settings?area=${area}`);
         const { container, unmount } = render(SettingsHost, { sections });
-        const directory = within(container.querySelector<HTMLElement>('.cc-directory')!);
-        expect(directory.queryByRole('button', { name: /Backup schedule|Backups & restore|Cloud backup/ })).toBeNull();
+        // Maintenance opens on its own landing page (FL-366), which links to the one Backup page.
+        const page = within(container.querySelector<HTMLElement>('.cc-directory') ?? container);
+        expect(page.queryByRole('button', { name: /Backup schedule|Backups & restore|Cloud backup/ })).toBeNull();
         unmount();
       }
     });

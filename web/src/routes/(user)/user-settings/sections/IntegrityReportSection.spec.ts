@@ -88,4 +88,23 @@ describe('IntegrityReportSection (FL-81)', () => {
     });
     expect(screen.queryByRole('button', { name: en.load_more })).not.toBeInTheDocument();
   });
+
+  it('offers "Clear this list" and "Remove from list" before the destructive actions (FL-366)', async () => {
+    sdkMock.getIntegrityReport.mockResolvedValue({ items: [finding('a'), finding('b')] });
+    sdkMock.clearIntegrityReports.mockResolvedValue({ cleared: 2 });
+    sdkMock.dismissIntegrityReport.mockResolvedValue(undefined as never);
+
+    render(IntegrityReportSection, { type: IntegrityReport.UntrackedFile, pollMs: 60_000 });
+    expect(await screen.findByRole('heading', { name: 'Stray files report' })).toBeInTheDocument();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove from list /data/upload/a.png' }));
+    expect(sdkMock.dismissIntegrityReport).toHaveBeenCalledWith({ id: 'a' });
+    await waitFor(() => expect(screen.queryByText('/data/upload/a.png')).not.toBeInTheDocument());
+    expect(sdkMock.deleteIntegrityReport).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear this list' }));
+    expect(sdkMock.clearIntegrityReports).toHaveBeenCalledWith({ $type: IntegrityReport.UntrackedFile });
+    await waitFor(() => expect(screen.queryByText('/data/upload/b.png')).not.toBeInTheDocument());
+    expect(sdkMock.createJob).not.toHaveBeenCalled();
+  });
 });

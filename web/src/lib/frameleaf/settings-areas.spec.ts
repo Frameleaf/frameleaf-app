@@ -15,6 +15,7 @@ import {
   honoursScope,
   isAreaAvailable,
   isBackupSection,
+  isPlainArea,
   isScreenArea,
   presentedArea,
   presentedAreaForSection,
@@ -300,8 +301,33 @@ describe('Frameleaf settings areas', () => {
         'repair',
         'enrichment-care',
       ]);
-      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'deduplication', 'enrichment-care']);
+      expect(areaSectionKeys('care')).toEqual([
+        'integrity-checks',
+        'repair',
+        'duplicates',
+        'deduplication',
+        'enrichment-care',
+      ]);
       expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
+    });
+
+    it('opens the prototype addresses and the folded tuning pages on the page that took them (FL-366)', () => {
+      expect(resolveSettingsSection('care', { section: 'health' })).toBe('integrity-checks');
+      expect(resolveSettingsSection('care', { section: 'advanced-integrity-budget' })).toBe('integrity-checks');
+      expect(resolveSettingsSection('care', { section: 'exact-copies' })).toBe('deduplication');
+      expect(resolveSettingsSection('care', { section: 'advanced-duplicate-matching' })).toBe('duplicates');
+      expect(resolveSettingsSection('intelligence', { section: 'metadata' })).toBe('faces');
+      expect(resolveSettingsSection('intelligence', { section: 'smart-album-pets' })).toBe('smart-albums');
+      expect(resolveSettingsSection('intelligence', { section: 'advanced-search-labels' })).toBe('descriptions');
+      expect(resolveSettingsSection('editing', { section: 'previews' })).toBe('image');
+      expect(resolveSettingsSection('editing', { section: 'advanced-hls' })).toBe('video-transcoding');
+      // The old Search & recognition page is the area's landing page now.
+      expect(resolveSettingsSection('intelligence', { section: 'machine-learning' })).toBeUndefined();
+      expect(resolveSettingsArea({ isOpen: 'machine-learning' })).toBe('intelligence');
+      expect(areaForSection('metadata')).toBe('intelligence');
+      for (const area of ['care', 'intelligence', 'editing', 'maintenance'] as const) {
+        expect(isPlainArea(area)).toBe(true);
+      }
     });
 
     it('keeps the server and account notifications apart', () => {

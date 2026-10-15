@@ -1,38 +1,41 @@
 <script lang="ts">
   /**
-   * Physical deduplication preview, review and apply (FL-71, FL-73), ported from the design
-   * template's `PhysicalDedupManager.jsx`. The template kept a sample plan in localStorage; this
-   * page reads the server's dry-run result (`getPhysicalDeduplicationPreview`), prepares a new one
-   * through `requestPhysicalDeduplicationPreview`, has the server check the plan against the
-   * library again when it is marked reviewed (`reviewPhysicalDeduplicationPlan`), and applies
-   * exactly that reviewed plan as a durable job (`applyPhysicalDeduplicationPlan`).
+   * Library care › Merge older copies (FL-71, FL-73; restyled for FL-366 after the approved prototype
+   * `settings-v2/care/duplicates.jsx` `ExactCopies`). Exact copies added before Frameleaf began storing
+   * identical files once: the page reads the server's last search (`getPhysicalDeduplicationPreview`),
+   * looks again through `requestPhysicalDeduplicationPreview`, has the server check the list against
+   * the library again when "I have checked this list" is ticked (`reviewPhysicalDeduplicationPlan`), and
+   * merges exactly that checked list as a durable job (`applyPhysicalDeduplicationPlan`).
    *
    * Rules carried over from the server contract:
-   * - A preview retains originals in the account chosen here. Applying uses that reviewed plan's
-   *   account; the server checks that it still exists. There is no saved global retained account.
-   * - Each group can be left as it is. The review binds those decisions to the plan, and changing a
-   *   decision after the review asks for a new review.
-   * - Anything that changed since the preview is refused (409); the page then shows the current
-   *   state instead of applying something nobody reviewed.
-   * - Thumbnails are the requester's own asset access (`canView`), never widened by admin rights.
-   *   Another account's Locked copies are counted, never listed.
-   * - No plan is prepared while file reuse is off or no account to retain originals in is saved or
-   *   chosen (FL-73, UT-23): the prototype's configuration error (PhysicalDedupManager.jsx:536-574).
-   * - The estimate, the logical asset bytes, the physical shared-original bytes and the bytes an
-   *   apply measurably removed are separate figures (FL-73).
-   * - A finished apply can be verified (FL-73): every retained original hashed again, every copy
-   *   checked to resolve to it. The page says plainly what can be undone: a copy whose own file was
-   *   removed cannot go back; a copy whose own file is still on disk can.
+   * - The list keeps the shared file with the person chosen on this page ("Keep the shared file
+   *   with"); the server checks that account still exists. There is no saved account elsewhere, so the
+   *   page never sends anyone to another setting first.
+   * - Each group can be left as it is. The check binds those decisions to the list, and changing a
+   *   decision after the check asks for a new one.
+   * - Anything that changed since the search is refused (409); the page then shows the current state
+   *   instead of merging something nobody checked. Merging also needs the typed phrase.
+   * - Pictures are the requester's own access (`canView`), never widened by admin rights. Another
+   *   account's Locked copies are counted, never listed.
+   * - The extra files move to File trash; the space comes back when it is emptied. The estimate, the
+   *   byte counts and what a merge measurably removed sit apart in the closed Details (FL-73).
+   * - A finished merge can be verified (FL-73): every kept file hashed again, every copy checked to
+   *   resolve to it, with what can and cannot be undone said plainly.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import PhysicalDedupThumb from '$lib/components/frameleaf/PhysicalDedupThumb.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
+  import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
+  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
+  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import TypedConfirmation from '$lib/components/frameleaf/settings/TypedConfirmation.svelte';
   import { matchesTyped } from '$lib/components/frameleaf/settings/typed-confirmation';
-  import Pane from '$lib/components/frameleaf/Pane.svelte';
-  import PhysicalDedupThumb from '$lib/components/frameleaf/PhysicalDedupThumb.svelte';
-  import Picker from '$lib/components/frameleaf/Picker.svelte';
-  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import {
     applyBlockedReason,
@@ -42,7 +45,6 @@
     canVerifyApply,
     checksumAlgorithmKey,
     confirmationPhrase,
-    DEDUP_OWNER_SETTING,
     DEDUP_SCOPE_ALL,
     dedupConfigurationError,
     formatBytes,
@@ -60,8 +62,6 @@
     undoKey,
     verificationItemKey,
   } from '$lib/frameleaf/physical-dedup';
-  import { goto } from '$app/navigation';
-  import { OpenQueryParam } from '$lib/constants';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -86,17 +86,16 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
-    mdiAccountMultipleOutline,
     mdiCheckCircleOutline,
-    mdiCompare,
+    mdiContentCopy,
     mdiDownload,
-    mdiFolderSearchOutline,
     mdiHelpCircleOutline,
-    mdiHistory,
     mdiLinkVariant,
     mdiLinkVariantOff,
     mdiLockOutline,
+    mdiMagnify,
     mdiMinusCircleOutline,
+    mdiProgressClock,
     mdiShieldCheckOutline,
     mdiShieldSearch,
   } from '@mdi/js';
@@ -115,9 +114,9 @@
 
   let preview = $state(initial);
   let scope = $state(DEDUP_SCOPE_ALL);
-  let previewMaster = $state<string | undefined>(initial.savedMasterUserId ?? users[0]?.id);
-  let view = $state<'media' | 'table'>('media');
-  /** Retained originals whose group the administrator decided to leave as it is. */
+  /** The person whose folders keep the shared file: the one chosen here is the one used. */
+  let keeper = $state<string | undefined>(initial.plan?.masterUserId ?? initial.savedMasterUserId ?? users[0]?.id);
+  /** Kept files whose group the administrator decided to leave as it is. */
   const excluded = new SvelteSet<string>();
   let review = $state<PhysicalDeduplicationReviewResponseDto | null>(null);
   let confirmOpen = $state(false);
@@ -125,27 +124,28 @@
   let notice = $state('');
   let conflict = $state('');
   let busy = $state(false);
-  /** The latest verification of an applied plan (FL-73), and the copy being restored. */
+  /** The latest verification of a finished merge (FL-73), and the copy being restored. */
   let verification = $state<PhysicalDeduplicationVerificationDto | null>(null);
   let verifying = $state<string | null>(null);
   let pollTimer: ReturnType<typeof setInterval> | undefined;
 
   const plan = $derived(preview.plan);
-  const masterSaved = $derived(!!preview.savedMasterUserId);
-  const effectiveMaster = $derived(preview.savedMasterUserId ?? previewMaster ?? null);
+  const effectiveMaster = $derived(keeper ?? null);
   const nameOf = (id: string | null | undefined) => users.find((user) => user.id === id)?.name ?? id ?? '';
-  // Prototype PhysicalDedupManager.jsx:487-531: both pickers list account names only, and a scope
-  // that is no longer offered (it became the retained account) reads "Selected account".
+  // Looking only in the keeper's own photos finds nothing to merge, so that choice is not offered;
+  // a scope that is no longer offered (it became the keeper) still reads as "Only …'s photos".
   const scopeOptions = $derived.by(() => {
     const options = [
-      { label: $t('frameleaf_dedup_scope_all'), value: DEDUP_SCOPE_ALL },
-      ...users.filter((user) => user.id !== effectiveMaster).map((user) => ({ label: user.name, value: user.id })),
+      { label: $t('frameleaf_dupes_merge_everyone'), value: DEDUP_SCOPE_ALL },
+      ...users
+        .filter((user) => user.id !== effectiveMaster)
+        .map((user) => ({ label: $t('frameleaf_dupes_merge_only', { values: { name: user.name } }), value: user.id })),
     ];
     return options.some((option) => option.value === scope)
       ? options
-      : [...options, { label: $t('frameleaf_dedup_selected_account'), value: scope }];
+      : [...options, { label: $t('frameleaf_dupes_merge_only', { values: { name: nameOf(scope) } }), value: scope }];
   });
-  const masterOptions = $derived(users.map((user) => ({ label: user.name, value: user.id })));
+  const keeperOptions = $derived(users.map((user) => ({ label: user.name, value: user.id })));
   const configError = $derived(
     dedupConfigurationError({
       enabled: preview.enabled,
@@ -156,12 +156,13 @@
   const groups = $derived(plan ? groupPlanCopies(plan) : []);
   const selection = $derived(plan ? planSelection(plan, excluded) : null);
   const stale = $derived(plan ? planStaleReason(plan, { scope, masterUserId: effectiveMaster }) : null);
-  /** The newest job applying the plan on screen. */
+  /** The newest job merging the list on screen. */
   const planApply = $derived(applyForPlan(preview.applies, plan));
   const metrics = $derived(plan ? planMetrics(plan, planApply) : null);
-  /** Whichever job is applying a plan right now, this one or another administrator's. */
+  /** Whichever job is merging right now, this one or another administrator's. */
   const activeApply = $derived(preview.applies.find((apply) => isApplyActive(apply)) ?? null);
   const applied = $derived(planApply?.status === MediaOperationStatus.Completed);
+  const merged = $derived(applied || plan?.mode === PhysicalDeduplicationPlanMode.Apply);
   const applyBlocked = $derived(
     plan
       ? applyBlockedReason({
@@ -177,7 +178,7 @@
   const reviewBlocked = $derived(blocksReview(applyBlocked));
   /**
    * Decisions stay open while no copy is selected, so leaving every group out can be undone; they
-   * only lock while a preview is prepared or a plan is being or has been applied.
+   * only lock while Frameleaf is looking or a list is being or has been merged.
    */
   const decisionsLocked = $derived(['running', 'applying', 'applied'].includes(applyBlocked ?? ''));
   const reviewed = $derived(reviewMatches(review, plan, excluded));
@@ -185,7 +186,7 @@
     !!plan && reviewed && !stale && !applyBlocked && !busy && matchesTyped(confirmationPhrase(plan), confirmation),
   );
 
-  /** Prototype PhysicalDedupManager.jsx:315-318: `{owner} · {bytes}{detail ? " · " + detail : ""}`. */
+  /** `{owner} · {bytes}{detail ? " · " + detail : ""}`. */
   const detailSuffix = (item: Parameters<typeof mediaDetail>[0]) => {
     const detail = mediaDetail(item);
     return detail ? ` · ${detail}` : '';
@@ -203,14 +204,13 @@
         excluded.clear();
         review = null;
         if (next.plan) {
-          notice = $t('frameleaf_dedup_notice_preview_ready');
-          view = 'media';
+          notice = $t('frameleaf_dupes_merge_notice_found');
         }
       }
       if (wasApplying && !next.applying) {
         const finished = applyForPlan(next.applies, next.plan);
         if (finished?.status === MediaOperationStatus.Completed) {
-          notice = $t('frameleaf_dedup_notice_applied');
+          notice = $t('frameleaf_dupes_merge_notice_merged');
         }
       }
       if (!next.running && !next.applying) {
@@ -242,12 +242,12 @@
     startPolling();
   }
 
-  /** A 409 means the plan on screen no longer describes the library; show what is true now. */
+  /** A 409 means the list on screen no longer describes the library; show what is true now. */
   const handleConflict = async (error: unknown, fallback: string) => {
     if (isHttpError(error) && error.status === 409) {
       review = null;
       confirmOpen = false;
-      conflict = $t('frameleaf_dedup_conflict');
+      conflict = $t('frameleaf_dupes_merge_conflict');
       await refresh();
       if (preview.applying) {
         startPolling();
@@ -265,7 +265,7 @@
     try {
       await requestPhysicalDeduplicationPreview({
         physicalDeduplicationPreviewRequestDto: {
-          masterUserId: masterSaved ? undefined : effectiveMaster,
+          masterUserId: effectiveMaster,
           scopeUserId: scope === DEDUP_SCOPE_ALL ? undefined : scope,
         },
       });
@@ -292,6 +292,7 @@
     confirmation = '';
   };
 
+  /** "I have checked this list": the server checks every file on it again before merging is offered. */
   const markReviewed = async () => {
     if (!plan) {
       return;
@@ -305,12 +306,22 @@
           excludedRetainedAssetIds: normalizeExcluded(excluded),
         },
       });
-      notice = $t('frameleaf_dedup_notice_reviewed', { values: { plan: plan.planId } });
+      notice = $t('frameleaf_dupes_merge_notice_checked');
     } catch (error) {
       await handleConflict(error, $t('frameleaf_dedup_unable_to_review'));
     } finally {
       busy = false;
     }
+  };
+
+  const onChecked = async (box: HTMLInputElement) => {
+    if (box.checked) {
+      await markReviewed();
+    } else {
+      review = null;
+      confirmation = '';
+    }
+    box.checked = reviewed;
   };
 
   const apply = async () => {
@@ -331,7 +342,7 @@
       });
       confirmOpen = false;
       confirmation = '';
-      notice = $t('frameleaf_dedup_notice_applying', { values: { plan: plan.planId } });
+      notice = $t('frameleaf_dupes_merge_notice_merging');
       preview = { ...preview, applying: true };
       await refresh();
       startPolling();
@@ -360,7 +371,7 @@
     }
   };
 
-  /** Verify a finished apply (FL-73): nothing is written. */
+  /** Verify a finished merge (FL-73): nothing is written. */
   const verify = async (job: PhysicalDeduplicationApplyDto) => {
     busy = true;
     verifying = job.operationId;
@@ -393,13 +404,6 @@
     }
   };
 
-  /**
-   * Storage → the retained-account setting (prototype `onNavigate("storage", "advanced-dedup-owner")`);
-   * here that control lives in the storage section's file reuse group, which scrolls to and focuses it.
-   */
-  const openOwnerSetting = () =>
-    goto(Route.systemSettings({ isOpen: OpenQueryParam.STORAGE_TEMPLATE, openSetting: DEDUP_OWNER_SETTING }));
-
   const exportReview = () => {
     if (!plan) {
       return;
@@ -417,19 +421,19 @@
   const blockedMessage = $derived.by(() => {
     switch (applyBlocked) {
       case 'running': {
-        return $t('frameleaf_dedup_apply_blocked_running');
+        return $t('frameleaf_dupes_merge_blocked_running');
       }
       case 'applying': {
-        return $t('frameleaf_dedup_apply_blocked_applying');
+        return $t('frameleaf_dupes_merge_blocked_applying');
       }
       case 'applied': {
-        return $t('frameleaf_dedup_apply_blocked_applied');
+        return $t('frameleaf_dupes_merge_blocked_applied');
       }
       case 'disabled': {
-        return $t('frameleaf_dedup_apply_blocked_disabled');
+        return $t('frameleaf_dupes_merge_blocked_disabled');
       }
       case 'no-shares': {
-        return $t('frameleaf_dedup_apply_blocked_no_shares');
+        return $t('frameleaf_dupes_merge_blocked_no_shares');
       }
       default: {
         return '';
@@ -439,99 +443,121 @@
 
   const staleMessage = $derived(
     stale === 'scope'
-      ? $t('frameleaf_dedup_stale_scope')
+      ? $t('frameleaf_dupes_merge_stale_scope')
       : stale === 'master'
-        ? $t('frameleaf_dedup_stale_master')
+        ? $t('frameleaf_dupes_merge_stale_keeper')
         : '',
   );
-
-  const planBadge = $derived.by(() => {
-    if (planApply && isApplyActive(planApply)) {
-      return { label: $t('frameleaf_dedup_plan_applying'), tone: 'blue' as const };
-    }
-    if (applied) {
-      return { label: $t('frameleaf_dedup_plan_applied'), tone: 'teal' as const };
-    }
-    if (plan?.mode === PhysicalDeduplicationPlanMode.Apply) {
-      // Its job stopped or failed after changing some files; the rest need a new plan.
-      return { label: $t('frameleaf_dedup_plan_partly_applied'), tone: 'warning' as const };
-    }
-    if (reviewed) {
-      return { label: $t('frameleaf_dedup_plan_reviewed'), tone: 'blue' as const };
-    }
-    return { label: $t('frameleaf_dedup_plan_preview'), tone: 'blue' as const };
-  });
 
   const configErrorMessage = $derived(
     configError === 'disabled'
-      ? $t('frameleaf_dedup_config_disabled')
+      ? $t('frameleaf_dupes_merge_disabled')
       : configError === 'no-master'
-        ? $t('frameleaf_dedup_config_no_master')
+        ? $t('frameleaf_dupes_merge_no_account')
         : '',
   );
+
+  /** The answer the page opens on. */
+  const hero = $derived.by(() => {
+    if (preview.running) {
+      return {
+        tone: 'quiet' as const,
+        icon: mdiMagnify,
+        title: $t('frameleaf_dupes_merge_hero_looking'),
+        body: $t('frameleaf_dupes_merge_hero_looking_body'),
+      };
+    }
+    if (activeApply) {
+      return {
+        tone: 'quiet' as const,
+        icon: mdiProgressClock,
+        title: $t('frameleaf_dupes_merge_hero_merging'),
+        body: $t('frameleaf_dupes_merge_hero_merging_body'),
+      };
+    }
+    if (!plan || !metrics) {
+      return {
+        tone: 'quiet' as const,
+        icon: mdiMagnify,
+        title: $t('frameleaf_dupes_merge_hero_start'),
+        body: $t('frameleaf_dupes_merge_hero_start_body'),
+      };
+    }
+    if (merged) {
+      return {
+        tone: 'good' as const,
+        icon: mdiCheckCircleOutline,
+        title: $t('frameleaf_dupes_merge_hero_merged'),
+        body: $t('frameleaf_dupes_merge_hero_merged_body'),
+      };
+    }
+    if (metrics.copiesToShare > 0) {
+      return {
+        tone: 'good' as const,
+        icon: mdiContentCopy,
+        title: $t('frameleaf_dupes_merge_hero_found', { values: { count: metrics.copiesToShare } }),
+        body: $t('frameleaf_dupes_merge_hero_found_body', {
+          values: { originals: metrics.retainedOriginals, size: formatBytes(metrics.reclaimableBytes) },
+        }),
+      };
+    }
+    return {
+      tone: 'good' as const,
+      icon: mdiCheckCircleOutline,
+      title: $t('frameleaf_dupes_merge_hero_none'),
+      body: $t('frameleaf_dupes_merge_hero_none_body'),
+    };
+  });
 </script>
 
-<div class="dedup">
-  <div class="toolbar">
-    <div class="toolbar-field">
-      <Picker
-        label={$t('frameleaf_dedup_scan_scope')}
+<KitPage>
+  <Hero
+    tone={hero.tone}
+    icon={hero.icon}
+    title={hero.title}
+    body={hero.body}
+    label={$t('frameleaf_dupes_merge_status')}
+  />
+
+  <Section title={$t('frameleaf_dupes_merge_where')}>
+    <Row label={$t('frameleaf_dupes_merge_look_in')}>
+      <Select
+        label={$t('frameleaf_dupes_merge_look_in')}
         options={scopeOptions}
-        selectedOption={scopeOptions.find((option) => option.value === scope)}
+        value={scope}
         disabled={preview.running}
-        onSelect={(option) => {
-          scope = option?.value ?? DEDUP_SCOPE_ALL;
+        onChange={(value) => {
+          scope = value;
           confirmation = '';
         }}
       />
-    </div>
-    {#if masterSaved}
-      <div class="retained-saved">
-        <span>{$t('frameleaf_dedup_retain_in')}</span>
-        <strong>{nameOf(preview.savedMasterUserId)}</strong>
-        <!-- Prototype PhysicalDedupManager.jsx:508-515: a Button to Storage → retained account. -->
-        <Button onclick={openOwnerSetting}>{$t('frameleaf_dedup_retained_change')}</Button>
-      </div>
-    {:else}
-      <div class="toolbar-field">
-        <Picker
-          label={$t('frameleaf_dedup_retain_in')}
-          options={masterOptions}
-          selectedOption={masterOptions.find((option) => option.value === previewMaster)}
-          disabled={preview.running}
-          onSelect={(option) => {
-            previewMaster = option?.value;
-            confirmation = '';
-          }}
-        />
-      </div>
+    </Row>
+    <Row label={$t('frameleaf_dupes_merge_keep_with')} help={$t('frameleaf_dupes_merge_keep_with_help')}>
+      <Select
+        label={$t('frameleaf_dupes_merge_keep_with')}
+        options={keeperOptions}
+        value={keeper ?? ''}
+        disabled={preview.running}
+        onChange={(value) => {
+          keeper = value;
+          confirmation = '';
+        }}
+      />
+    </Row>
+    {#if configErrorMessage}
+      <Notice tone="warn" title={configErrorMessage} />
     {/if}
-    <div class="toolbar-actions">
-      <Button variant="primary" disabled={!!configError || preview.running || busy} onclick={prepare}>
-        <Icon icon={mdiFolderSearchOutline} size="1em" aria-hidden={true} />
-        {plan ? $t('frameleaf_dedup_prepare_new') : $t('frameleaf_dedup_prepare')}
+    <div class="actions">
+      <Button
+        variant={plan ? 'default' : 'primary'}
+        disabled={!!configError || preview.running || busy}
+        onclick={prepare}
+      >
+        <Icon icon={mdiMagnify} size="1em" aria-hidden={true} />
+        {plan ? $t('frameleaf_dupes_look_again') : $t('frameleaf_dupes_merge_find')}
       </Button>
     </div>
-  </div>
-
-  <!-- Prototype PhysicalDedupManager.jsx:546-574: the scope note, then the configuration error. -->
-  <p class="scope-note">
-    <Icon icon={mdiAccountMultipleOutline} size="1.125rem" aria-hidden={true} />
-    <span>
-      {scope === DEDUP_SCOPE_ALL
-        ? $t('frameleaf_dedup_scope_all_body')
-        : $t('frameleaf_dedup_scope_one_body', { values: { name: nameOf(scope) } })}
-      {#if !masterSaved}
-        {$t('frameleaf_dedup_preview_uses_chosen')}
-      {/if}
-    </span>
-  </p>
-  {#if configErrorMessage}
-    <p class="message error config-error" role="status">
-      <span>{configErrorMessage}</span>
-      <Button onclick={openOwnerSetting}>{$t('frameleaf_dedup_open_settings')}</Button>
-    </p>
-  {/if}
+  </Section>
 
   {#if preview.running}
     <Status message={$t('frameleaf_dedup_plan_running')} busy />
@@ -544,11 +570,10 @@
 
   {#if activeApply}
     {@const current = activeApply}
-    <section class="apply-panel" aria-label={$t('frameleaf_dedup_apply_panel_label')}>
+    <section class="apply-panel" aria-label={$t('frameleaf_dupes_merge_running_label')}>
       <div class="apply-head">
         <div>
           <Badge value={$t(applyStatusKey(current))} label={$t(applyStatusKey(current))} tone="blue" />
-          <strong>{current.planId}</strong>
           <small>
             {$t('frameleaf_dedup_apply_by', {
               values: { name: current.requestedByName, time: time(current.createdAt) },
@@ -571,7 +596,7 @@
         {/if}
       </div>
       <progress
-        aria-label={$t('frameleaf_dedup_apply_panel_label')}
+        aria-label={$t('frameleaf_dupes_merge_running_label')}
         max={Math.max(current.total, 1)}
         value={current.processed}
       ></progress>
@@ -594,103 +619,25 @@
     </section>
   {/if}
 
-  {#if !plan}
-    <Pane label={$t('admin.physical_deduplication')}>
-      <div class="empty">
-        <Icon icon={mdiCompare} size="2rem" aria-hidden={true} />
-        <h2>{$t('frameleaf_dedup_empty_start_title')}</h2>
-        <p>{$t('frameleaf_dedup_empty_start_body')}</p>
-      </div>
-    </Pane>
-  {:else}
-    <div class="plan-heading">
-      <div>
-        <Badge value={planBadge.label} label={planBadge.label} tone={planBadge.tone} />
-        <h2>{plan.planId}</h2>
-        <p>
-          {$t('frameleaf_dedup_plan_meta', {
-            values: {
-              time: time(plan.ranAt),
-              scope: plan.scopeUserId
-                ? (plan.scopeUserName ?? nameOf(plan.scopeUserId))
-                : $t('frameleaf_dedup_scope_all'),
-              name: plan.masterUserName,
-            },
+  {#if plan && metrics}
+    <Section title={$t('frameleaf_dupes_merge_list')} description={$t('frameleaf_dupes_merge_list_body')}>
+      {#if staleMessage}
+        <p class="message" role="status">{staleMessage}</p>
+      {/if}
+      {#if plan.copiesTruncated}
+        <p class="message" role="status">
+          {$t('frameleaf_dedup_truncated_applies', {
+            values: { count: plan.copies.length, applicable: plan.applicableCopies },
           })}
         </p>
-      </div>
-      <div class="plan-tools">
-        <SegmentedControl
-          label={$t('frameleaf_dedup_view_label')}
-          options={[
-            { value: 'media', label: $t('frameleaf_dedup_view_media') },
-            { value: 'table', label: $t('frameleaf_dedup_view_evidence') },
-          ]}
-          value={view}
-          onChange={(next) => (view = next === 'table' ? 'table' : 'media')}
-        />
-        <Button onclick={exportReview}>
-          <Icon icon={mdiDownload} size="1em" aria-hidden={true} />
-          {$t('frameleaf_dedup_export')}
-        </Button>
-      </div>
-    </div>
+      {/if}
+      {#if selection && selection.hiddenCopies > 0}
+        <p class="message" role="status">
+          <Icon icon={mdiLockOutline} size="1em" aria-hidden={true} />
+          {$t('frameleaf_dedup_hidden_copies', { values: { count: selection.hiddenCopies } })}
+        </p>
+      {/if}
 
-    {#if metrics}
-      <div class="metrics">
-        <div class="metric">
-          <span>{$t('frameleaf_dedup_metric_copies')}</span><strong>{metrics.copiesToShare}</strong>
-        </div>
-        <div class="metric">
-          <span>{$t('frameleaf_dedup_metric_retained')}</span><strong>{metrics.retainedOriginals}</strong>
-        </div>
-        <div class="metric">
-          <span>{$t('frameleaf_dedup_metric_reclaim')}</span><strong>{formatBytes(metrics.reclaimableBytes)}</strong>
-        </div>
-        <div class="metric">
-          <span>{$t('frameleaf_dedup_metric_skipped')}</span><strong>{metrics.skippedCopies}</strong>
-        </div>
-      </div>
-      <!-- FL-73: logical asset bytes, physical shared-original bytes and measured reclaimed bytes, apart. -->
-      <dl class="bytes" aria-label={$t('frameleaf_dedup_bytes_label')}>
-        <div>
-          <dt>{$t('frameleaf_dedup_bytes_logical')}</dt>
-          <dd>{formatBytes(metrics.logicalBytes)}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_dedup_bytes_shared')}</dt>
-          <dd>{formatBytes(metrics.sharedOriginalBytes)}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_dedup_bytes_measured')}</dt>
-          <dd>
-            {metrics.measuredReclaimedBytes === null
-              ? $t('frameleaf_dedup_bytes_not_applied')
-              : formatBytes(metrics.measuredReclaimedBytes)}
-          </dd>
-        </div>
-      </dl>
-      <p class="note">{$t('frameleaf_dedup_bytes_note')}</p>
-    {/if}
-
-    {#if staleMessage}
-      <p class="message" role="status">{staleMessage}</p>
-    {/if}
-    {#if plan.copiesTruncated}
-      <p class="message" role="status">
-        {$t('frameleaf_dedup_truncated_applies', {
-          values: { count: plan.copies.length, applicable: plan.applicableCopies },
-        })}
-      </p>
-    {/if}
-    {#if selection && selection.hiddenCopies > 0}
-      <p class="message" role="status">
-        <Icon icon={mdiLockOutline} size="1em" aria-hidden={true} />
-        {$t('frameleaf_dedup_hidden_copies', { values: { count: selection.hiddenCopies } })}
-      </p>
-    {/if}
-
-    {#if view === 'media'}
       <div class="groups">
         {#each groups as group (group.key)}
           {@const first = group.copies[0]}
@@ -715,7 +662,7 @@
                 <div class="retained-text">
                   <span class="pill retained">
                     <Icon icon={mdiShieldCheckOutline} size="0.8125rem" aria-hidden={true} />
-                    {$t('frameleaf_dedup_retained_badge')}
+                    {$t('frameleaf_dupes_merge_kept_file')}
                   </span>
                   <strong>{group.retained.originalFileName}</strong>
                   <small>
@@ -738,7 +685,7 @@
                         disabled={busy || decisionsLocked}
                         onchange={() => toggleGroup(group.retained!.assetId)}
                       />
-                      <span>{$t('frameleaf_dedup_group_include')}</span>
+                      <span>{$t('frameleaf_dupes_merge_include')}</span>
                     </label>
                   {/if}
                   <details class="evidence">
@@ -776,11 +723,11 @@
                         aria-hidden={true}
                       />
                       {#if shares}
-                        {$t('frameleaf_dedup_decision_share', { values: { size: formatBytes(copy.sizeInBytes) } })}
+                        {$t('frameleaf_dupes_merge_copy_back', { values: { size: formatBytes(copy.sizeInBytes) } })}
                       {:else if copy.decision === PhysicalDeduplicationDecision.Share}
-                        {$t('frameleaf_dedup_decision_kept')}
+                        {$t('frameleaf_dupes_merge_copy_left')}
                       {:else}
-                        {$t('frameleaf_dedup_decision_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
+                        {$t('frameleaf_dupes_merge_copy_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
                       {/if}
                     </span>
                     <details class="evidence">
@@ -807,7 +754,7 @@
                           <dt>{$t('frameleaf_dedup_table_evidence')}</dt>
                           <dd>
                             {copy.checksumMatch
-                              ? $t('frameleaf_dedup_evidence_match')
+                              ? $t('frameleaf_dupes_merge_same_file')
                               : $t('frameleaf_dedup_evidence_no_match')}
                           </dd>
                         </div>
@@ -823,161 +770,200 @@
           <div class="empty">{$t('frameleaf_dedup_empty_scope')}</div>
         {/if}
       </div>
-    {:else}
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{$t('frameleaf_dedup_table_copy')}</th>
-              <th scope="col">{$t('frameleaf_dedup_table_retained')}</th>
-              <th scope="col">{$t('frameleaf_dedup_table_evidence')}</th>
-              <th scope="col">{$t('frameleaf_dedup_table_references')}</th>
-              <th scope="col">{$t('frameleaf_dedup_table_decision')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each plan.copies as copy (copy.assetId)}
-              {@const retained = plan.retained.find((item) => item.assetId === copy.retainedAssetId)}
-              {@const kept = !!copy.retainedAssetId && excluded.has(copy.retainedAssetId)}
-              {@const shares = copy.decision === PhysicalDeduplicationDecision.Share && !kept}
-              <tr>
-                <th scope="row">
-                  <span class="cell-media">
-                    <PhysicalDedupThumb assetId={copy.assetId} type={copy.type} canView={copy.canView} size="cell" />
-                    <span>
-                      <strong>{copy.originalFileName}</strong>
-                      <small>{copy.ownerName} · {formatBytes(copy.sizeInBytes)}</small>
-                    </span>
-                  </span>
-                  <details>
-                    <summary>{$t('frameleaf_dedup_file_location')}</summary>
-                    <code>{copy.originalPath}</code>
-                  </details>
-                </th>
-                <td>
-                  {#if retained}
-                    <!-- Prototype PhysicalDedupManager.jsx:418-426 (UT-24). -->
-                    <strong>{retained.ownerName}</strong>
-                    <small class:unavailable-text={!retained.fileAvailable}>
-                      {retained.fileAvailable
-                        ? $t('frameleaf_dedup_table_file_available')
-                        : $t('frameleaf_dedup_table_file_unavailable')}
-                    </small>
-                    <details>
-                      <summary>{$t('frameleaf_dedup_retained_location')}</summary>
-                      <code>{retained.originalPath}</code>
-                    </details>
-                  {:else}
-                    <span class="muted">{$t('frameleaf_dedup_evidence_no_match')}</span>
-                  {/if}
-                </td>
-                <td>
-                  <span>
-                    {copy.checksumMatch
-                      ? $t('frameleaf_dedup_evidence_match')
-                      : $t('frameleaf_dedup_evidence_no_match')}
-                  </span>
-                  <details>
-                    <!-- PhysicalDedupManager.jsx:438-440: the summary names the evidence, a line names the algorithm. -->
-                    <summary>{$t('frameleaf_dedup_checksum_evidence')}</summary>
-                    <small
-                      >{$t('frameleaf_dedup_checksum_algorithm', {
-                        values: { algorithm: $t(checksumAlgorithmKey(copy.checksum)) },
-                      })}</small
-                    >
-                    <code>{copy.checksum}</code>
-                    {#if retained}
-                      <small>{$t('frameleaf_dedup_evidence_retained')}</small>
-                      <code>{retained.checksum}</code>
-                    {/if}
-                  </details>
-                </td>
-                <td>
-                  {#if retained}
-                    <strong>
-                      {retained.referencesBefore} → {kept ? retained.referencesBefore : retained.referencesAfter}
-                    </strong>
-                    <small>{$t('frameleaf_dedup_across_plan')}</small>
-                  {:else}
-                    <span class="muted">—</span>
-                  {/if}
-                </td>
-                <td>
-                  <strong class:share={shares}>
-                    {#if shares}
-                      {$t('frameleaf_dedup_decision_share', { values: { size: formatBytes(copy.sizeInBytes) } })}
-                    {:else if copy.decision === PhysicalDeduplicationDecision.Share}
-                      {$t('frameleaf_dedup_decision_kept')}
-                    {:else}
-                      {$t('frameleaf_dedup_decision_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
-                    {/if}
-                  </strong>
-                </td>
-              </tr>
-            {/each}
-            {#if plan.copies.length === 0}
-              <tr><td colspan="5"><div class="empty">{$t('frameleaf_dedup_empty_scope')}</div></td></tr>
-            {/if}
-          </tbody>
-        </table>
-      </div>
-    {/if}
 
-    <p class="note">{$t('frameleaf_dedup_note')}</p>
+      <Row label={$t('frameleaf_dupes_merge_space')} help={$t('frameleaf_dupes_merge_space_help')}>
+        <strong class="value">{formatBytes(metrics.reclaimableBytes)}</strong>
+      </Row>
 
-    <div class="queue-actions">
-      <div class="queue-note">
-        <Icon icon={mdiShieldCheckOutline} size="1.125rem" aria-hidden={true} />
-        <span>
+      <div class="queue-actions">
+        <p class="queue-note">
           {#if selection && selection.keptGroups > 0 && !applyBlocked}
-            {$t('frameleaf_dedup_selection', { values: { copies: selection.copies, kept: selection.keptGroups } })}
+            {$t('frameleaf_dupes_merge_selection', {
+              values: { copies: selection.copies, kept: selection.keptGroups },
+            })}
           {:else}
-            {blockedMessage || $t('frameleaf_dedup_apply_requires')}
+            {blockedMessage || $t('frameleaf_dupes_merge_requires')}
           {/if}
-        </span>
-      </div>
-      <div class="queue-buttons">
-        {#if applied || plan.mode === PhysicalDeduplicationPlanMode.Apply}
-          <span class="done">
-            <Icon icon={mdiCheckCircleOutline} size="1em" aria-hidden={true} />
-            {$t('frameleaf_dedup_plan_recorded')}
-          </span>
-          {#if planApply && canVerifyApply(planApply)}
-            {@const job = planApply}
-            <Button disabled={busy} onclick={() => verify(job)}>
-              <Icon icon={mdiShieldSearch} size="1em" aria-hidden={true} />
-              {$t('frameleaf_dedup_verify')}
+        </p>
+        <div class="queue-buttons">
+          {#if merged}
+            <span class="done">
+              <Icon icon={mdiCheckCircleOutline} size="1em" aria-hidden={true} />
+              {$t('frameleaf_dupes_merge_done')}
+            </span>
+            {#if planApply && canVerifyApply(planApply)}
+              {@const job = planApply}
+              <Button disabled={busy} onclick={() => verify(job)}>
+                <Icon icon={mdiShieldSearch} size="1em" aria-hidden={true} />
+                {$t('frameleaf_dedup_verify')}
+              </Button>
+            {/if}
+          {:else}
+            <label class="checked">
+              <input
+                type="checkbox"
+                checked={reviewed}
+                disabled={!!stale || reviewBlocked || busy}
+                onchange={(event) => onChecked(event.currentTarget)}
+              />
+              <span>{$t('frameleaf_dupes_merge_checked')}</span>
+            </label>
+            <Button
+              variant="primary"
+              disabled={!reviewed || !!stale || !!applyBlocked || busy}
+              onclick={() => {
+                confirmation = '';
+                conflict = '';
+                confirmOpen = true;
+              }}
+            >
+              {$t('frameleaf_dupes_merge_go')}
             </Button>
           {/if}
-        {:else if !reviewed}
-          <Button disabled={!!stale || reviewBlocked || busy} onclick={markReviewed}>
-            {$t('frameleaf_dedup_mark_reviewed')}
-          </Button>
-        {:else}
-          <Button
-            variant="primary"
-            disabled={!!stale || !!applyBlocked || busy}
-            onclick={() => {
-              confirmation = '';
-              conflict = '';
-              confirmOpen = true;
-            }}
-          >
-            {$t('frameleaf_dedup_apply')}
-          </Button>
-        {/if}
+        </div>
       </div>
-    </div>
+
+      <Advanced summary={$t('frameleaf_dupes_merge_details')}>
+        <p class="note">
+          {$t('frameleaf_dupes_merge_plan', { values: { plan: plan.planId, time: time(plan.ranAt) } })}
+        </p>
+        <Facts
+          rows={[
+            { label: $t('frameleaf_dedup_metric_copies'), value: String(metrics.copiesToShare) },
+            { label: $t('frameleaf_dedup_metric_retained'), value: String(metrics.retainedOriginals) },
+            { label: $t('frameleaf_dedup_metric_reclaim'), value: formatBytes(metrics.reclaimableBytes) },
+            { label: $t('frameleaf_dedup_metric_skipped'), value: String(metrics.skippedCopies) },
+          ]}
+        />
+        <!-- FL-73: logical asset bytes, physical shared-original bytes and measured reclaimed bytes, apart. -->
+        <dl class="bytes" aria-label={$t('frameleaf_dedup_bytes_label')}>
+          <div>
+            <dt>{$t('frameleaf_dedup_bytes_logical')}</dt>
+            <dd>{formatBytes(metrics.logicalBytes)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_dedup_bytes_shared')}</dt>
+            <dd>{formatBytes(metrics.sharedOriginalBytes)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_dedup_bytes_measured')}</dt>
+            <dd>
+              {metrics.measuredReclaimedBytes === null
+                ? $t('frameleaf_dedup_bytes_not_applied')
+                : formatBytes(metrics.measuredReclaimedBytes)}
+            </dd>
+          </div>
+        </dl>
+        <p class="note">{$t('frameleaf_dedup_bytes_note')}</p>
+        <p class="note">{$t('frameleaf_dedup_note')}</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">{$t('frameleaf_dedup_table_copy')}</th>
+                <th scope="col">{$t('frameleaf_dedup_table_retained')}</th>
+                <th scope="col">{$t('frameleaf_dedup_table_evidence')}</th>
+                <th scope="col">{$t('frameleaf_dedup_table_references')}</th>
+                <th scope="col">{$t('frameleaf_dedup_table_decision')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each plan.copies as copy (copy.assetId)}
+                {@const retained = plan.retained.find((item) => item.assetId === copy.retainedAssetId)}
+                {@const kept = !!copy.retainedAssetId && excluded.has(copy.retainedAssetId)}
+                {@const shares = copy.decision === PhysicalDeduplicationDecision.Share && !kept}
+                <tr>
+                  <th scope="row">
+                    <span class="cell-media">
+                      <PhysicalDedupThumb assetId={copy.assetId} type={copy.type} canView={copy.canView} size="cell" />
+                      <span>
+                        <strong>{copy.originalFileName}</strong>
+                        <small>{copy.ownerName} · {formatBytes(copy.sizeInBytes)}</small>
+                      </span>
+                    </span>
+                    <details>
+                      <summary>{$t('frameleaf_dedup_file_location')}</summary>
+                      <code>{copy.originalPath}</code>
+                    </details>
+                  </th>
+                  <td>
+                    {#if retained}
+                      <strong>{retained.ownerName}</strong>
+                      <small class:unavailable-text={!retained.fileAvailable}>
+                        {retained.fileAvailable
+                          ? $t('frameleaf_dedup_table_file_available')
+                          : $t('frameleaf_dedup_table_file_unavailable')}
+                      </small>
+                      <details>
+                        <summary>{$t('frameleaf_dedup_retained_location')}</summary>
+                        <code>{retained.originalPath}</code>
+                      </details>
+                    {:else}
+                      <span class="muted">{$t('frameleaf_dedup_evidence_no_match')}</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <span>
+                      {copy.checksumMatch
+                        ? $t('frameleaf_dedup_evidence_match')
+                        : $t('frameleaf_dedup_evidence_no_match')}
+                    </span>
+                    <details>
+                      <summary>{$t('frameleaf_dedup_checksum_evidence')}</summary>
+                      <small
+                        >{$t('frameleaf_dedup_checksum_algorithm', {
+                          values: { algorithm: $t(checksumAlgorithmKey(copy.checksum)) },
+                        })}</small
+                      >
+                      <code>{copy.checksum}</code>
+                      {#if retained}
+                        <small>{$t('frameleaf_dedup_evidence_retained')}</small>
+                        <code>{retained.checksum}</code>
+                      {/if}
+                    </details>
+                  </td>
+                  <td>
+                    {#if retained}
+                      <strong>
+                        {retained.referencesBefore} → {kept ? retained.referencesBefore : retained.referencesAfter}
+                      </strong>
+                      <small>{$t('frameleaf_dedup_across_plan')}</small>
+                    {:else}
+                      <span class="muted">—</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <strong class:share={shares}>
+                      {#if shares}
+                        {$t('frameleaf_dupes_merge_copy_back', { values: { size: formatBytes(copy.sizeInBytes) } })}
+                      {:else if copy.decision === PhysicalDeduplicationDecision.Share}
+                        {$t('frameleaf_dupes_merge_copy_left')}
+                      {:else}
+                        {$t('frameleaf_dupes_merge_copy_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
+                      {/if}
+                    </strong>
+                  </td>
+                </tr>
+              {/each}
+              {#if plan.copies.length === 0}
+                <tr><td colspan="5"><div class="empty">{$t('frameleaf_dedup_empty_scope')}</div></td></tr>
+              {/if}
+            </tbody>
+          </table>
+        </div>
+        <div class="actions">
+          <Button onclick={exportReview}>
+            <Icon icon={mdiDownload} size="1em" aria-hidden={true} />
+            {$t('frameleaf_dupes_merge_download')}
+          </Button>
+        </div>
+      </Advanced>
+    </Section>
   {/if}
 
   {#if preview.applies.length > 0}
-    <details class="history">
-      <summary>
-        <Icon icon={mdiHistory} size="1.125rem" aria-hidden={true} />
-        {$t('frameleaf_dedup_history')}
-        <span class="count">{preview.applies.length}</span>
-      </summary>
-      <ol>
+    <Advanced summary={$t('frameleaf_dupes_merge_history')}>
+      <ol class="history">
         {#each preview.applies as entry (entry.operationId)}
           <li>
             <div>
@@ -1006,12 +992,12 @@
           </li>
         {/each}
       </ol>
-    </details>
+    </Advanced>
   {/if}
 
   {#if verification}
     {@const report = verification}
-    <!-- FL-73 verification: no prototype screen; composed from this page's apply panel and copy list. -->
+    <!-- FL-73 verification: no prototype screen; composed from this page's merge panel and copy list. -->
     <section class="verify-panel" aria-label={$t('frameleaf_dedup_verify_title', { values: { plan: report.planId } })}>
       <div class="apply-head">
         <div>
@@ -1075,46 +1061,27 @@
       {/if}
     </section>
   {/if}
-</div>
+</KitPage>
 
-<Dialog title={$t('frameleaf_dedup_confirm_title')} closeLabel={$t('close')} bind:open={confirmOpen}>
+<Dialog
+  title={$t('frameleaf_dupes_merge_confirm_title', { values: { count: review?.copies ?? 0 } })}
+  closeLabel={$t('close')}
+  bind:open={confirmOpen}
+>
   {#if plan && review}
     <div class="confirm">
-      <p>{$t('frameleaf_dedup_confirm_body')}</p>
-      <dl>
-        <div>
-          <dt>{$t('frameleaf_dedup_confirm_plan')}</dt>
-          <dd>{plan.planId}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_dedup_scan_scope')}</dt>
-          <dd>
-            {plan.scopeUserId ? (plan.scopeUserName ?? nameOf(plan.scopeUserId)) : $t('frameleaf_dedup_scope_all')}
-          </dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_dedup_retain_in')}</dt>
-          <dd>{plan.masterUserName}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_dedup_metric_copies')}</dt>
-          <dd>{review.copies}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_dedup_confirm_estimate')}</dt>
-          <dd>{formatBytes(review.estimatedBytes)}</dd>
-        </div>
-        {#if review.excludedRetainedAssetIds.length > 0}
-          <div>
-            <dt>{$t('frameleaf_dedup_confirm_kept')}</dt>
-            <dd>{review.excludedRetainedAssetIds.length}</dd>
-          </div>
-        {/if}
-      </dl>
+      <p>
+        {$t('frameleaf_dupes_merge_confirm_body', {
+          values: { originals: review.retainedOriginals, name: plan.masterUserName },
+        })}
+      </p>
+      <p class="quiet">
+        {$t('frameleaf_dupes_merge_confirm_trash', { values: { size: formatBytes(review.estimatedBytes) } })}
+      </p>
       {#if review.hiddenCopies > 0}
         <p>{$t('frameleaf_dedup_hidden_copies', { values: { count: review.hiddenCopies } })}</p>
       {/if}
-      <p>{$t('frameleaf_dedup_confirm_backup')}</p>
+      <p class="quiet">{$t('frameleaf_dedup_confirm_backup')}</p>
       <div class="confirm-typed">
         <TypedConfirmation
           label={$t('frameleaf_dedup_confirm_label', { values: { phrase: confirmationPhrase(plan) } })}
@@ -1128,7 +1095,7 @@
       <div class="confirm-actions">
         <Button onclick={() => (confirmOpen = false)} disabled={busy}>{$t('cancel')}</Button>
         <Button variant="danger" disabled={!canConfirm} onclick={apply}>
-          {$t('frameleaf_dedup_apply_confirm')}
+          {$t('frameleaf_dupes_merge_confirm_button', { values: { count: review.copies } })}
         </Button>
       </div>
     </div>
@@ -1136,43 +1103,12 @@
 </Dialog>
 
 <style>
-  .dedup {
+  .actions {
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    color: var(--fl-text);
-  }
-  .toolbar {
-    display: flex;
-    align-items: flex-end;
     flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-  .toolbar-field {
-    min-width: 14rem;
-    flex: 1 1 14rem;
-  }
-  .retained-saved {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    min-height: 2.75rem;
+    gap: var(--fl-space-2);
     justify-content: flex-end;
   }
-  .retained-saved > span {
-    font-size: var(--fl-font-micro);
-    font-weight: 600;
-    color: var(--fl-muted);
-  }
-  .retained-saved > strong {
-    font-weight: 550;
-  }
-  .toolbar-actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-inline-start: auto;
-  }
-  .scope-note,
   .note {
     margin: 0;
     color: var(--fl-muted);
@@ -1187,74 +1123,25 @@
     background: var(--fl-raised);
     font-size: var(--fl-font-small);
   }
+  .message.error {
+    border-color: var(--fl-danger);
+    color: var(--fl-danger);
+  }
+  .message :global(svg) {
+    vertical-align: -0.125em;
+  }
   .empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
     padding: 2.75rem 1.25rem;
     text-align: center;
     color: var(--fl-muted);
   }
-  .empty h2 {
-    margin: 0;
-    color: var(--fl-text);
-    font-size: 1rem;
-  }
-  .empty p {
-    margin: 0;
-    max-width: 36rem;
-    font-size: var(--fl-font-small);
-  }
-  .plan-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 1rem;
-    padding-block-start: 1rem;
-    border-block-start: 1px solid var(--fl-border);
-  }
-  .plan-heading h2 {
-    margin: 0.3125rem 0 0.1875rem;
-    font-size: 0.9375rem;
-  }
-  .plan-heading p {
-    margin: 0;
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
-  }
-  .plan-tools {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  .metrics {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-    gap: 0.625rem;
-  }
-  .metric {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.75rem 0.875rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
-  }
-  .metric span {
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
-  }
-  .metric strong {
-    font-size: 1.125rem;
+  .value {
+    font-weight: 600;
   }
   .groups {
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
+    gap: var(--fl-space-3);
   }
   .group {
     display: grid;
@@ -1396,6 +1283,7 @@
     overflow-wrap: anywhere;
   }
   .table-wrap {
+    margin-block: var(--fl-space-3);
     overflow-x: auto;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
@@ -1417,8 +1305,6 @@
     font-size: var(--fl-font-micro);
     font-weight: 600;
     color: var(--fl-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   tbody th {
     min-width: 10rem;
@@ -1449,88 +1335,80 @@
   .muted {
     color: var(--fl-muted);
   }
+  .unavailable-text {
+    color: var(--fl-danger) !important;
+  }
+  .group-decision,
+  .checked {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .group-decision {
+    margin-block-start: 0.25rem;
+  }
+  .group-decision input,
+  .checked input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--fl-accent);
+  }
   .queue-actions {
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    padding: 0.75rem 0.875rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
+    gap: var(--fl-space-3);
   }
   .queue-note {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    margin: 0;
+    flex: 1 1 16rem;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
   .queue-buttons {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3);
   }
-  .confirm p {
-    margin: 0 0 0.75rem;
+  .done {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--fl-teal);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
   }
-  .confirm dl {
+  .bytes {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-    gap: 0.5rem;
-    margin: 0 0 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--fl-space-2);
+    margin: var(--fl-space-3) 0;
   }
-  .confirm dt {
+  .bytes div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+  }
+  .bytes dt {
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
   }
-  .confirm dd {
+  .bytes dd {
     margin: 0;
-    font-weight: 550;
+    font-weight: 600;
   }
-  .confirm-typed {
-    margin-block: 1rem;
-  }
-  .confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .message.error {
-    border-color: var(--fl-danger);
-    color: var(--fl-danger);
-  }
-  /* The template's `.jm-message.jm-error` with its "Open settings" button (UT-23). */
-  .config-error {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .unavailable-text {
-    color: var(--fl-danger);
-  }
-  .message :global(svg) {
-    vertical-align: -0.125em;
-  }
-  .group-decision {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4375rem;
-    margin-block-start: 0.25rem;
-    font-size: var(--fl-font-small);
-    cursor: pointer;
-  }
-  .group-decision input {
-    width: 1rem;
-    height: 1rem;
-    accent-color: var(--fl-accent);
-  }
-  .apply-panel {
+  .apply-panel,
+  .verify-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
     padding: 0.875rem 1rem;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
@@ -1541,13 +1419,13 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--fl-space-3);
   }
   .apply-head > div:first-child {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
   }
   .apply-head small {
     color: var(--fl-muted);
@@ -1555,7 +1433,7 @@
   }
   .apply-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
   }
   .apply-panel progress {
     width: 100%;
@@ -1570,36 +1448,10 @@
     color: var(--fl-accent);
     text-decoration: underline;
   }
-  .done {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    color: var(--fl-teal);
-    font-size: var(--fl-font-small);
-    font-weight: 600;
-  }
   .history {
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
-  }
-  .history summary {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 0.875rem;
-    font-size: var(--fl-font-small);
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .history .count {
-    color: var(--fl-muted);
-    font-weight: 400;
-  }
-  .history ol {
     list-style: none;
     margin: 0;
-    padding: 0 0.875rem 0.75rem;
+    padding: 0;
   }
   .history li {
     display: flex;
@@ -1623,61 +1475,11 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
   }
-  .scope-note {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-  .scope-note :global(svg) {
-    flex-shrink: 0;
-    margin-block-start: 0.125rem;
-  }
-  .config-error {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-  .bytes {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-    gap: 0.625rem;
-    margin: 0;
-  }
-  .bytes div {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    padding: 0.5rem 0.875rem;
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-raised);
-  }
-  .bytes dt {
-    font-size: var(--fl-font-micro);
-    color: var(--fl-muted);
-  }
-  .bytes dd {
-    margin: 0;
-    font-weight: 600;
-  }
-  .unavailable-text {
-    color: var(--fl-danger) !important;
-  }
   .history-end {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
     flex-shrink: 0;
-  }
-  .verify-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.875rem 1rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
   }
   .verify-items {
     list-style: none;
@@ -1708,6 +1510,20 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
   }
+  .confirm p {
+    margin: 0 0 0.75rem;
+  }
+  .confirm p.quiet {
+    color: var(--fl-muted);
+  }
+  .confirm-typed {
+    margin-block: 1rem;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
+  }
   @media (max-width: 56rem) {
     .group {
       grid-template-columns: 1fr;
@@ -1725,9 +1541,6 @@
     }
   }
   @media (max-width: 44rem) {
-    .toolbar-actions {
-      width: 100%;
-    }
     .copies {
       grid-template-columns: 1fr;
     }
