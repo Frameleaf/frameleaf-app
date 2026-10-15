@@ -1,7 +1,9 @@
-import { bulkTagAssets, getAllTags, getAssetInfo, untagAssets, upsertTags } from '@frameleaf/sdk';
+import { bulkTagAssets, getAllTags, getAssetInfo, untagAssets, upsertTags, type TagResponseDto } from '@frameleaf/sdk';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import DetailPanelTags from './DetailPanelTags.svelte';
 
@@ -101,3 +103,62 @@ describe('DetailPanelTags (V-25)', () => {
     expect(assetViewerManager.focusRequest).toBeNull();
   });
 });
+
+it.each(['current', 'replace', 'close', 'session'])(
+  'keeps created-tag continuation with its original photo: %s',
+  async (change) => {
+    const asset = assetFactory.build({ isTrashed: false, tags: [] });
+    const replacement = assetFactory.build({ isTrashed: false, tags: [] });
+    const pending = deferredPromise<TagResponseDto[]>();
+    vi.mocked(getAllTags).mockResolvedValue([]);
+    vi.mocked(upsertTags).mockReturnValueOnce(pending.promise);
+    vi.mocked(getAssetInfo).mockResolvedValue(asset);
+    vi.mocked(bulkTagAssets).mockClear();
+    const onAssetRefresh = vi.fn();
+    const view = render(DetailPanelTags, { asset, isOwner: true, onAssetRefresh });
+    const input = screen.getByRole('combobox');
+    await fireEvent.focus(input);
+    await fireEvent.input(input, { target: { value: 'Hiking' } });
+    await fireEvent.click(await screen.findByRole('option', { name: /frameleaf_info_create_tag/ }));
+    await waitFor(() => expect(upsertTags).toHaveBeenCalled());
+    if (change === 'replace') await view.rerender({ asset: replacement });
+    if (change === 'close') view.unmount();
+    if (change === 'session') authManager.reset();
+    pending.resolve([tag('new', 'Hiking')]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (change === 'current') {
+      expect(bulkTagAssets).toHaveBeenCalledWith({ tagBulkAssetsDto: { tagIds: ['new'], assetIds: [asset.id] } });
+      expect(onAssetRefresh).toHaveBeenCalledWith(asset);
+    } else {
+      expect(bulkTagAssets).not.toHaveBeenCalled();
+      expect(onAssetRefresh).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it.each(['current', 'replace', 'return', 'close', 'session'])(
+  'publishes a tag refresh only to its owning view: %s',
+  async (change) => {
+    const asset = assetFactory.build({ isTrashed: false, tags: [tag('old', 'Original')] });
+    const replacement = assetFactory.build({ isTrashed: false, tags: [tag('other', 'Replacement')] });
+    const updated = { ...asset, tags: [] };
+    const pending = deferredPromise<typeof asset>();
+    vi.mocked(untagAssets).mockResolvedValueOnce([]);
+    vi.mocked(getAssetInfo).mockReturnValueOnce(pending.promise);
+    vi.mocked(getAssetInfo).mockClear();
+    const onAssetRefresh = vi.fn();
+    const view = render(DetailPanelTags, { asset, isOwner: true, onAssetRefresh });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_info_remove_tag' }));
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
+    if (change === 'replace' || change === 'return') await view.rerender({ asset: replacement });
+    if (change === 'return') await view.rerender({ asset });
+    if (change === 'close') view.unmount();
+    if (change === 'session') authManager.reset();
+    pending.resolve(updated);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (change === 'current') expect(onAssetRefresh).toHaveBeenCalledWith(updated);
+    else expect(onAssetRefresh).not.toHaveBeenCalled();
+    if (change === 'replace') expect(screen.getByText('Replacement')).toBeInTheDocument();
+    if (change === 'return') expect(screen.getByText('Original')).toBeInTheDocument();
+  },
+);
