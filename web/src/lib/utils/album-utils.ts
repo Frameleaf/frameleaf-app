@@ -194,7 +194,7 @@ export const isAlbumGroupCollapsed = (settings: AlbumViewSettings, groupId: stri
   if (settings.groupBy === AlbumGroupBy.None) {
     return false;
   }
-  return getCollapsedAlbumGroups(settings).includes(groupId);
+  return settings.collapsedGroups?.[settings.groupBy]?.includes(groupId) ?? false;
 };
 
 export const toggleAlbumGroupCollapsing = (groupId: string) => {
@@ -212,19 +212,6 @@ export const toggleAlbumGroupCollapsing = (groupId: string) => {
     collapsedGroups.splice(groupIndex, 1);
   }
   albumViewSettings.set(settings);
-};
-
-export const collapseAllAlbumGroups = (groupIds: string[]) => {
-  albumViewSettings.update((settings) => {
-    const collapsedGroups = getCollapsedAlbumGroups(settings);
-    collapsedGroups.length = 0;
-    collapsedGroups.push(...groupIds);
-    return settings;
-  });
-};
-
-export const expandAllAlbumGroups = () => {
-  collapseAllAlbumGroups([]);
 };
 
 interface AlbumSortOption {
