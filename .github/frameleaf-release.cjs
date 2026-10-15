@@ -219,8 +219,8 @@ function validateBuildInput(env) {
     architecture: platform.split("/")[1],
     runner:
       platform === "linux/amd64"
-        ? "nscloud-ubuntu-24.04-amd64-8x16"
-        : "nscloud-ubuntu-24.04-arm64-8x16",
+        ? "ubuntu-24.04"
+        : "ubuntu-24.04-arm",
   }));
 }
 function validateIndex(index, spec, sha) {

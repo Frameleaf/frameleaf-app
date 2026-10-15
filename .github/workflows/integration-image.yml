@@ -41,7 +41,7 @@ env:
 jobs:
   guard:
     name: Refuse anything but master/frameleaf-implementation
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions: {}
     steps:
       - name: Require the Frameleaf repository, the integration branch and a push or manual dispatch
@@ -70,13 +70,13 @@ jobs:
       fail-fast: true
       matrix:
         runner:
-          [nscloud-ubuntu-24.04-amd64-8x16, nscloud-ubuntu-24.04-arm64-8x16]
+          [ubuntu-24.04, ubuntu-24.04-arm]
         include:
-          - runner: nscloud-ubuntu-24.04-amd64-8x16
+          - runner: ubuntu-24.04
             platform: linux/amd64
             architecture: amd64
             cache: linux-amd64-cpu-prod
-          - runner: nscloud-ubuntu-24.04-arm64-8x16
+          - runner: ubuntu-24.04-arm
             platform: linux/arm64
             architecture: arm64
             cache: linux-arm64-cpu-prod
@@ -242,7 +242,7 @@ jobs:
     name: Push the tested images and tag integration-<sha>
     needs: deploy-test
     if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: nscloud-ubuntu-24.04-amd64-8x16
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
