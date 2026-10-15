@@ -375,7 +375,10 @@ export class EditOperationTracker {
     }
 
     try {
-      await run.rendering();
+      if (!(await run.rendering())) {
+        if (!run.done && (await run.cancelled())) await options.onCancelled?.();
+        return JobStatus.Skipped;
+      }
       const status = await work(run);
       await run.finish(status);
       return status;
