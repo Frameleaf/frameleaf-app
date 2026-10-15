@@ -79,6 +79,22 @@ export class UnknownDestinationHealthProvider implements DestinationHealthProvid
   }
 }
 
+/**
+ * FL-408: the destination health this server can vouch for without probing anything remote. The
+ * `local` destination is this deployment's own hardware, including the bundled machine-learning
+ * container's Studio worker; a worker reaching this server to claim is itself the evidence that
+ * it is up, and admission already holds what it reported about its renderer. LAN and cloud
+ * destinations stay `unknown` until FL-110 probes them, so nothing is claimed for them.
+ */
+export class LocalDestinationHealthProvider implements DestinationHealthProvider {
+  check(destination: MediaOperationDestination): Promise<DestinationHealth> {
+    if (destination === MediaOperationDestination.Local) {
+      return Promise.resolve({ destination, state: 'available', reason: null, checkedAt: new Date() });
+    }
+    return Promise.resolve({ destination, state: 'unknown', reason: null, checkedAt: null });
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Limits                                                               */
 /* ------------------------------------------------------------------ */

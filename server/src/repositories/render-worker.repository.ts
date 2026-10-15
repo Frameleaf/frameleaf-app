@@ -23,6 +23,7 @@ import {
   RenderWorkerSessionTable,
   RenderWorkerTable,
 } from 'src/schema/tables/render-worker.table.js';
+import { evaluateBundledAdmissionBudget, isBundledRenderWorker } from 'src/utils/bundled-render-worker.js';
 import { notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import {
   GpuWorkingBudgetApprovalSchema,
@@ -149,6 +150,18 @@ export class RenderWorkerRepository {
         .executeTakeFirst(),
     )) as unknown as RenderWorker | undefined;
   }
+  /** FL-408: rotate an active worker's enrolment secret digest. Live sessions are unaffected. */
+  async setEnrolmentSecret(id: string, enrolmentSecret: Buffer): Promise<boolean> {
+    const result = await this.write((db) =>
+      db
+        .updateTable('render_worker')
+        .set({ enrolmentSecret })
+        .where('id', '=', id)
+        .where('status', '=', RenderWorkerStatus.Active)
+        .executeTakeFirst(),
+    );
+    return Number(result.numUpdatedRows) === 1;
+  }
   /** Record a successful admission and the newest report it was based on; later replays fail against it. */
   async markAdmitted(id: string, conformanceReportedAt: Date): Promise<void> {
     await this.write((db) =>
@@ -220,6 +233,9 @@ export class RenderWorkerRepository {
           .forUpdate()
           .executeTakeFirst();
         if (!worker) return { admitted: false, reason: RenderWorkerRefusalReason.InvalidCredential };
+        if (isBundledRenderWorker(worker)) {
+          return this.admitBundledSession(db, worker as unknown as RenderWorker, input);
+        }
         const approval = GpuWorkingBudgetApprovalSchema.safeParse(worker.gpuWorkingBudgetApproval);
         if (!approval.success)
           return {
@@ -352,6 +368,120 @@ export class RenderWorkerRepository {
       }
       throw error;
     }
+  }
+
+  /**
+   * FL-408: admit the server-enrolled bundled worker. The same freshness, replay, engine and
+   * single-active-claim rules as any worker; instead of hardware working-budget evidence the
+   * session records what the worker reported: its working memory and the outputs its conformance
+   * encode produced. A software renderer is allowed here because it is declared, not hidden.
+   * Called inside the admission transaction with the worker row locked.
+   */
+  private async admitBundledSession(
+    db: Kysely<DB>,
+    worker: RenderWorker,
+    input: {
+      report: Omit<RenderWorkerAdmissionDto, 'enrolmentSecret'>;
+      token: Buffer;
+      ttlMs: number;
+    },
+  ): Promise<
+    | { admitted: true; session: RenderWorkerSession }
+    | {
+        admitted: false;
+        reason: RenderWorkerRefusalReason;
+        budgetReason?: Extract<GpuWorkingBudgetDecision, { valid: false }>['reason'];
+      }
+  > {
+    const { report } = input;
+    const {
+      rows: [{ now }],
+    } = await sql<{ now: Date }>`SELECT clock_timestamp() AS now`.execute(db);
+    const conformanceReportedAt = new Date(report.conformanceReportedAt);
+    const admission = evaluateSessionAdmission({
+      worker: {
+        revoked: worker.status !== RenderWorkerStatus.Active,
+        engineDigest: worker.engineDigest,
+        conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
+        lastConformanceReportedAt: worker.lastConformanceReportedAt ? new Date(worker.lastConformanceReportedAt) : null,
+      },
+      report: { engineDigest: report.engineDigest, conformanceReportedAt, softwareRenderer: false },
+      now,
+    });
+    if (!admission.admitted) return admission;
+    if (report.gpuWorkingBudgetEvidence) {
+      // Hardware evidence belongs to an administrator-approved profile, never to the bundled worker.
+      return {
+        admitted: false,
+        reason: RenderWorkerRefusalReason.GpuMemoryInsufficient,
+        budgetReason: 'evidence-invalid',
+      };
+    }
+    const expiresAt = new Date(now.getTime() + input.ttlMs);
+    const budget = evaluateBundledAdmissionBudget({
+      reportedBytes: report.gpuMemoryBytes,
+      conformanceExpiresAt: new Date(conformanceReportedAt.getTime() + worker.conformanceMaxAgeMs),
+      credentialExpiresAt: expiresAt,
+    });
+    if (!budget.valid) {
+      return { admitted: false, reason: RenderWorkerRefusalReason.GpuMemoryInsufficient, budgetReason: budget.reason };
+    }
+    const active = await db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('claimedBy', '=', worker.id)
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .limit(1)
+      .executeTakeFirst();
+    if (active) return { admitted: false, reason: RenderWorkerRefusalReason.WorkerConcurrency };
+    // One live session at a time: a restarted container replaces the session it lost.
+    await db
+      .updateTable('render_worker_session')
+      .set({ revokedAt: now })
+      .where('workerId', '=', worker.id)
+      .where('revokedAt', 'is', null)
+      .execute();
+    const session = await db
+      .insertInto('render_worker_session')
+      .values({
+        workerId: worker.id,
+        token: input.token,
+        scopes: worker.kinds.filter(isRenderWorkerMediaOperationKind),
+        gpuMemoryBytes: budget.qualifiedBytes,
+        gpuWorkingBudgetEvidence: null,
+        engineDigest: report.engineDigest,
+        conformanceReportedAt,
+        codecs: report.codecs ?? [],
+        colorPrecision: report.colorPrecision ?? null,
+        expiresAt,
+      })
+      .returningAll()
+      .returning(memoryBytes)
+      .executeTakeFirstOrThrow();
+    await sql`INSERT INTO public.render_worker_session_capability ("sessionId", codecs, formats)
+      VALUES (${session.id}::uuid, ${pgTextArray(report.codecs ?? [])}::text[], ${pgTextArray(report.formats ?? [])}::text[])`.execute(
+      db,
+    );
+    await db
+      .updateTable('render_worker')
+      .set({ lastAdmittedAt: now, lastSeenAt: now, lastConformanceReportedAt: conformanceReportedAt })
+      .where('id', '=', worker.id)
+      .execute();
+    await db
+      .insertInto('render_worker_audit')
+      .values({
+        workerId: worker.id,
+        event: RenderWorkerAuditEvent.Admitted,
+        detail: {
+          sessionId: session.id,
+          bundled: true,
+          softwareRenderer: report.softwareRenderer,
+          gpuMemoryBytes: budget.qualifiedBytes,
+          expiresAt: expiresAt.toISOString(),
+        },
+      })
+      .execute();
+    return { admitted: true, session: session as unknown as RenderWorkerSession };
   }
 
   async createSession(session: RenderWorkerSessionCreate): Promise<RenderWorkerSession> {
@@ -680,10 +810,15 @@ export class RenderWorkerRepository {
         .forUpdate()
         .executeTakeFirst();
       if (!worker) return refuse(RenderWorkerRefusalReason.InvalidCredential);
+      // FL-408: the bundled worker has no measured device lifetime; its own identity is the device.
+      const bundled = isBundledRenderWorker(worker);
       const approval = GpuWorkingBudgetApprovalSchema.safeParse(worker.gpuWorkingBudgetApproval);
-      if (!approval.success) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, 'profile-unapproved');
-      const lifetime = approval.data.evidence.deviceLifetimeId;
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'gpu-working-budget:' + lifetime}, 0))`.execute(db);
+      if (!bundled && !approval.success)
+        return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, 'profile-unapproved');
+      const lifetime = approval.success ? approval.data.evidence.deviceLifetimeId : null;
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lifetime ? 'gpu-working-budget:' + lifetime : 'bundled-render-worker:' + worker.id}, 0))`.execute(
+        db,
+      );
       const session = await db
         .selectFrom('render_worker_session')
         .selectAll()
@@ -719,11 +854,13 @@ export class RenderWorkerRepository {
         db,
       );
       const capabilities = capabilitiesResult.rows[0];
-      const histories = await db
-        .selectFrom('render_worker_session')
-        .select('workerId')
-        .where(sql<string>`"gpuWorkingBudgetEvidence"->>'deviceLifetimeId'`, '=', lifetime)
-        .execute();
+      const histories = lifetime
+        ? await db
+            .selectFrom('render_worker_session')
+            .select('workerId')
+            .where(sql<string>`"gpuWorkingBudgetEvidence"->>'deviceLifetimeId'`, '=', lifetime)
+            .execute()
+        : [];
       const lifetimeWorkers = [...new Set([worker.id, ...histories.map((row) => row.workerId)])];
       const active = await db
         .selectFrom('media_operation')
@@ -758,7 +895,8 @@ export class RenderWorkerRepository {
       const budget = evaluateApprovedRenderSession({ worker, session, capabilities, now });
       if (!budget.valid) return refuse(RenderWorkerRefusalReason.GpuMemoryInsufficient, budget.reason);
       const health = options.destinationHealth;
-      const completedAt = Date.parse(approval.data.evidence.completedAt);
+      // Health must be newer than the measurement it vouches for; a bundled session has none.
+      const completedAt = approval.success ? Date.parse(approval.data.evidence.completedAt) : 0;
       // Destination health has an independent 30-second deadline, shorter than measurement freshness.
       if (
         health.destination !== worker.destination ||

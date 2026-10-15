@@ -1,5 +1,6 @@
 import z from 'zod';
 import { MediaOperationKind, RenderWorkerStatus } from 'src/enum.js';
+import { evaluateBundledRenderSession, isBundledRenderWorker } from 'src/utils/bundled-render-worker.js';
 import {
   GpuWorkingBudgetContext,
   GpuWorkingBudgetDecision,
@@ -142,6 +143,10 @@ export const evaluateApprovedRenderSession = (input: {
   now: Date;
 }): GpuWorkingBudgetDecision => {
   const { worker, session, capabilities, now } = input;
+  // FL-408: the server-enrolled bundled worker reports its renderer instead of hardware evidence.
+  if (isBundledRenderWorker(worker)) {
+    return evaluateBundledRenderSession({ worker, session, capabilities, now });
+  }
   if (
     session.workerId !== worker.id ||
     session.engineDigest !== worker.engineDigest ||
