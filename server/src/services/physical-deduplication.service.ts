@@ -561,9 +561,11 @@ export class PhysicalDeduplicationService extends BaseService {
       if (copyOnDisk !== 'match') {
         return skipped(copyOnDisk === 'missing' ? 'copy-missing' : 'copy-mismatch');
       }
+      // FL-412: only a sidecar beside the copy's own file is the copy's; one beside the retained file is
+      // the retained owner's and never moves into another account
+      await this.migrateSidecarFile(item.assetId, item.ownerId, item.originalPath);
     }
 
-    await this.migrateSidecarFile(item.assetId, item.ownerId, item.originalPath);
     await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(item.assetId, physicalFile);
     const reclaimed = await this.removeReviewedCopy(item, physicalFile.path, true);
     const generated = await this.shareGeneratedFiles(item.assetId, item.retainedAssetId);
@@ -647,7 +649,9 @@ export class PhysicalDeduplicationService extends BaseService {
     if (copyOnDisk === 'mismatch') {
       return { state: 'skipped', reason: 'copy-mismatch' };
     }
-    if (copyOnDisk === 'match') {
+    // FL-412: a copy already on the primary's path has no file (and no sidecar) of its own there: registering
+    // it would claim the primary's file, and its "sidecar" would be the primary owner's
+    if (copyOnDisk === 'match' && copy.originalPath !== physicalFile.path) {
       // Register the copy's own file, so the trashing stage can find it once nothing references it.
       await this.physicalFileRepository.ensureOriginalPhysicalFile(copyAssetId);
       await this.migrateSidecarFile(copyAssetId, copy.ownerId, copy.originalPath);

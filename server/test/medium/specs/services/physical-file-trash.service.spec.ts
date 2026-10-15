@@ -75,6 +75,9 @@ const setup = async () => {
   return { sut, ctx, storage, trash, entry, bytes, user };
 };
 
+// FL-412: a stored file is stood in for by its path: proven to hold the content, with a fixed identity
+const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
+
 describe(PhysicalFileTrashService.name, () => {
   it.each([
     ['imported-photo.jpg', 'sha1', ChecksumAlgorithm.sha1File],
@@ -173,7 +176,7 @@ describe(PhysicalFileTrashService.name, () => {
         files.linkUploadedOriginal(
           duplicate.id,
           { checksum, sizeInBytes: contents.length },
-          { exists: () => Promise.resolve(true) },
+          { verify: onDisk, identify: onDisk },
         ),
       ).resolves.toMatchObject({ linked: true, physicalFile: { id: physical.id } });
     },

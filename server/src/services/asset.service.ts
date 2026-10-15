@@ -708,6 +708,8 @@ export class AssetService extends BaseService {
     // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
     // another asset references (a deduplicated original).
     let removedOriginalPath: string | undefined;
+    // FL-412: read before the row goes. A shared original's file is the other assets' too.
+    const sharedOriginal = await this.physicalFileRepository.isOriginalShared(id);
     const removedAsset = await this.assetRepository.remove(asset, {
       files: (removed) => {
         const assetFiles = getAssetFiles(removed.files);
@@ -738,7 +740,11 @@ export class AssetService extends BaseService {
         // and a copy across filesystems staged beside the new one (always Frameleaf's own)
         for (const move of removed.pendingMoves) {
           const isOwnersFile = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
-          if (ownsOriginal || !isOwnersFile) {
+          // FL-412: a shared original's unfinished move can have left the only copy at either path, and the
+          // assets that keep the file still need it: both stay on disk (Library Care's missing-file check
+          // finds the copy if it is at the new path)
+          const keepsSharedOriginal = sharedOriginal && move.pathType === AssetPathType.Original;
+          if ((ownsOriginal || !isOwnersFile) && !keepsSharedOriginal) {
             files.push(move.oldPath, move.newPath);
           }
           files.push(move.stagedPath);
