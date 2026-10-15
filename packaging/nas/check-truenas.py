@@ -58,7 +58,17 @@ for enabled in (False, True):
         assert "FRAMELEAF_IDENTITY_DIR" not in ml["environment"]
         assert "DB_PASSWORD" not in ml["environment"]
         assert ml["environment"]["MACHINE_LEARNING_WORKERS"] == "2"
-        assert all(mount["target"] == candidate["consts"]["ml_cache_path"] for mount in ml["volumes"])
+        # FL-408: besides the model cache, only the Studio worker's enrolment volume, read-only.
+        studio = candidate["consts"]["studio_worker_path"]
+        assert {mount["target"] for mount in ml["volumes"]} == {candidate["consts"]["ml_cache_path"], studio}
+        assert all(mount["read_only"] for mount in ml["volumes"] if mount["target"] == studio)
+        assert [mount["source"] for mount in ml["volumes"] if mount["target"] == studio] == ["studio-worker"]
+        server_url = f'http://server:{candidate["network"]["web_port"]["port_number"]}'
+        assert ml["environment"]["FRAMELEAF_STUDIO_WORKER_SERVER_URL"] == server_url
+    # The server always writes the enrolment, read-write, to the named volume machine learning shares.
+    server_studio = [m for m in result["services"]["server"]["volumes"] if m["target"] == "/run/frameleaf/studio-worker"]
+    assert len(server_studio) == 1 and not server_studio[0]["read_only"] and server_studio[0]["source"] == "studio-worker"
+    assert "studio-worker" in result["volumes"]
     # FL-300: no metrics ports are asked for, published or passed to the server
     assert not any("METRICS" in name for name in result["services"]["server"]["environment"])
     assert "api_metrics_port" not in candidate["network"] and "microservices_metrics_port" not in candidate["network"]

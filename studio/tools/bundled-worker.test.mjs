@@ -16,7 +16,7 @@ import {
   outputDimensions,
   outputMismatch,
 } from './bundled-worker-recipe.mjs';
-import { readTrust, workerConfig, workingMemoryBytes } from './bundled-worker.mjs';
+import { NO_TRUST_VOLUME, readTrust, trustVolumeMounted, workerConfig, workingMemoryBytes } from './bundled-worker.mjs';
 import { isSoftwareAdapter, toneWav } from './bundled-worker-renderer.mjs';
 
 const GIB = 1024 ** 3;
@@ -199,6 +199,20 @@ describe('bundled worker configuration', () => {
       assert.equal(await readTrust(file), null);
       await writeFile(file, JSON.stringify({ version: 1, workerId: 'w', enrolmentSecret: 's' }));
       assert.deepEqual(await readTrust(file), { version: 1, workerId: 'w', enrolmentSecret: 's' });
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('reports plainly that it cannot enrol without the shared volume (ML on another host)', async () => {
+    const folder = await mkdtemp(path.join(os.tmpdir(), 'fl408-trust-'));
+    try {
+      assert.equal(await trustVolumeMounted(path.join(folder, 'enrolment.json')), true);
+      assert.equal(await trustVolumeMounted(path.join(folder, 'missing', 'enrolment.json')), false);
+      await writeFile(path.join(folder, 'file'), '');
+      assert.equal(await trustVolumeMounted(path.join(folder, 'file', 'enrolment.json')), false);
+      assert.match(NO_TRUST_VOLUME, /^Cannot enrol: .*another host cannot enrol, so Studio stays unavailable/);
+      assert.match(NO_TRUST_VOLUME, /FRAMELEAF_STUDIO_WORKER=false/);
     } finally {
       await rm(folder, { recursive: true, force: true });
     }

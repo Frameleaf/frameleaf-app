@@ -193,6 +193,14 @@ jobs:
       - name: Verify runtime imports without downloading models
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import frameleaf_ml.models.image_description'
+      - name: Verify the bundled Studio worker runtime (FL-408)
+        run: |
+          docker run --rm --entrypoint sh fork-ml-test -c 'set -e
+            test -f "$FRAMELEAF_STUDIO_WORKER_ENTRY"
+            node --version
+            "$FRAMELEAF_STUDIO_CHROMIUM" --version
+            ffprobe -version | head -n 1
+            "$FRAMELEAF_STUDIO_CHROMIUM" --headless=new --no-sandbox --disable-gpu --dump-dom "data:text/html,<p>studio-ok</p>" 2>/dev/null | grep -q studio-ok'
       - name: Verify the CUDA image-description stack without a GPU
         if: matrix.device == 'cuda'
         run: |

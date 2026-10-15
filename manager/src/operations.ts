@@ -8,7 +8,7 @@ import { Discovery, COMPATIBLE_SETTINGS } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
 import { Backups, sourceBackups } from './backups.js';
 import { Fencing } from './fencing.js';
-import { ApplicationConfig, renderCompose, storagePath } from './compose.js';
+import { ApplicationConfig, renderCompose, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { LibraryMove, type ServerPauseStatus } from './library-move.js';
@@ -696,7 +696,10 @@ export class Operations {
         : {}),
     };
     // Dedicated CLI container can read every reviewed media mapping, but cannot mutate any media.
-    app.volumes = app.volumes.map((mount: Record<string, unknown>) => ({ ...mount, read_only: true }));
+    // It never enrols the Studio worker, so it does not get that volume (FL-408).
+    app.volumes = app.volumes
+      .filter((mount: Record<string, unknown>) => mount.target !== STUDIO_WORKER_TARGET)
+      .map((mount: Record<string, unknown>) => ({ ...mount, read_only: true }));
     app.volumes.push({
       type: 'bind',
       source: join(this.directory(), 'import.json').replaceAll('$', () => '$$'),

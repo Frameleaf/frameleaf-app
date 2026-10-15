@@ -30,7 +30,8 @@ case "$ID" in
         > /etc/apt/sources.list.d/google-chrome.list
       apt-get update
       apt-get install -y --no-install-recommends google-chrome-stable
-      apt-get remove -y gnupg wget
+      # Only gnupg goes: google-chrome-stable depends on wget, so removing wget removed the browser too.
+      apt-get remove -y gnupg
       ln -sf /usr/bin/google-chrome-stable /usr/local/bin/frameleaf-studio-browser
     else
       echo "No Studio browser for $ID on $(dpkg --print-architecture); the Studio worker will not run" >&2
@@ -43,3 +44,8 @@ esac
 apt-get autoremove -yqq
 apt-get clean
 rm -rf /var/lib/apt/lists/*
+# A browser link that points nowhere would leave the worker silently off on a base that should run it.
+if [ -L /usr/local/bin/frameleaf-studio-browser ] && [ ! -x /usr/local/bin/frameleaf-studio-browser ]; then
+  echo "The Studio browser $(readlink /usr/local/bin/frameleaf-studio-browser) is missing" >&2
+  exit 1
+fi
