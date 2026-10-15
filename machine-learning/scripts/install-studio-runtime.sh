@@ -12,6 +12,7 @@
 # /usr/local/bin/frameleaf-studio-browser names the browser. Without one the worker reports that
 # it cannot run and Studio stays unavailable; the image itself never fails over it.
 set -eu
+# shellcheck source=/dev/null
 . /etc/os-release
 export DEBIAN_FRONTEND=noninteractive
 apt-get update

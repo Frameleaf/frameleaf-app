@@ -295,6 +295,7 @@ test.describe('Settings area directories', () => {
     await expect(page.getByRole('button', { name: 'Library analytics' }).locator('.tile')).toBeVisible();
     await page.getByRole('button', { name: 'Library care', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Library care' })).toBeVisible();
-    await expect(directory.getByRole('heading', { level: 2, name: 'Identical files' })).toBeVisible();
+    // FL-366: Library care opens on its landing page, not a grouped directory.
+    await expect(page.getByText('Duplicates', { exact: true }).first()).toBeVisible();
   });
 });
