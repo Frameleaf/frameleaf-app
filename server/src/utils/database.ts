@@ -17,7 +17,7 @@ import {
 } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { PostgresJSDialect } from 'kysely-postgres-js';
-import { Notice, PostgresError } from 'postgres';
+import postgres, { type Notice, type PostgresError } from 'postgres';
 import type { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { LockableProperty, Person, columns, lockableProperties } from 'src/database.js';
@@ -113,7 +113,7 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
       console.error('Query failed :', {
         durationMs: event.queryDurationMillis,
         error: privateInference
-          ? { code: event.error instanceof PostgresError ? event.error.code : undefined }
+          ? { code: event.error instanceof postgres.PostgresError ? event.error.code : undefined }
           : event.error,
         sql: event.query.sql,
         params: privateInference ? '[redacted]' : event.query.parameters,

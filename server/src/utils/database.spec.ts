@@ -1,5 +1,5 @@
 import { CompiledQuery, Kysely } from 'kysely';
-import { PostgresError } from 'postgres';
+import postgres from 'postgres';
 import { boundPoolClose, getKyselyConfig } from 'src/utils/database.js';
 import { DATABASE_CLOSE_TIMEOUT_SECONDS, RESTART_BUDGET } from 'src/utils/shutdown.js';
 
@@ -37,7 +37,7 @@ describe('desktop inference database diagnostics', () => {
         url: 'postgres://postgres:postgres@127.0.0.1:1/frameleaf',
       });
       const database = new Kysely(config);
-      const error = Object.assign(new PostgresError('private photo contents'), {
+      const error = Object.assign(new postgres.PostgresError('private photo contents'), {
         code: '23514',
         detail: 'private photo contents',
       });
