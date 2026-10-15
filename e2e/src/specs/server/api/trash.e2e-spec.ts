@@ -90,36 +90,44 @@ describe('/trash', () => {
       expect(existsSync(before.originalPath)).toBe(false);
     });
 
-    it('should remove offline assets', async () => {
-      utils.createImageFile(`${testAssetDir}/temp/trash-empty/offline/offline.png`);
+    // The background queue can hold an earlier test's retry for 30 s: a Best Photos score that raced its
+    // asset into the trash fails publication and is retried after the queue's 30 s backoff. Waiting for
+    // the queue therefore needs more than the default 15 s, like the other offline-library tests here.
+    it('should remove offline assets', { timeout: process.env.CI ? 150_000 : 50_000 }, async ({ signal }) => {
+      // a fixture folder of its own, so a retry never collides with an earlier attempt's library
+      const fixtureFolder = `temp/trash-empty-${randomUUID()}`;
+      utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      try {
+        const library = await utils.createLibrary(admin.accessToken, {
+          ownerId: admin.userId,
+          importPaths: [`${testAssetDirInternal}/${fixtureFolder}/offline`],
+        });
 
-      const library = await utils.createLibrary(admin.accessToken, {
-        ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/trash-empty/offline`],
-      });
+        await utils.scan(admin.accessToken, library.id, signal);
 
-      await utils.scan(admin.accessToken, library.id);
+        const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
+        expect(assets.items.length).toBe(1);
+        const asset = assets.items[0];
 
-      const { assets } = await utils.searchAssets(admin.accessToken, { libraryId: library.id });
-      expect(assets.items.length).toBe(1);
-      const asset = assets.items[0];
+        await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
 
-      await utils.updateLibrary(admin.accessToken, library.id, { exclusionPatterns: ['**/offline/**'] });
+        await utils.scan(admin.accessToken, library.id, signal);
 
-      await utils.scan(admin.accessToken, library.id);
+        const assetBefore = await utils.getAssetInfo(admin.accessToken, asset.id);
+        expect(assetBefore).toMatchObject({ isTrashed: true, isOffline: true });
 
-      const assetBefore = await utils.getAssetInfo(admin.accessToken, asset.id);
-      expect(assetBefore).toMatchObject({ isTrashed: true, isOffline: true });
+        utils.createImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
 
-      utils.createImageFile(`${testAssetDir}/temp/trash-empty/offline/offline.png`);
+        const { status } = await request(app).post('/trash/empty').set('Authorization', `Bearer ${admin.accessToken}`);
+        expect(status).toBe(200);
 
-      const { status } = await request(app).post('/trash/empty').set('Authorization', `Bearer ${admin.accessToken}`);
-      expect(status).toBe(200);
+        await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask', undefined, signal);
 
-      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
-
-      const assetAfter = await utils.getAssetInfo(admin.accessToken, asset.id);
-      expect(assetAfter).toMatchObject({ isTrashed: true, isOffline: true });
+        const assetAfter = await utils.getAssetInfo(admin.accessToken, asset.id);
+        expect(assetAfter).toMatchObject({ isTrashed: true, isOffline: true });
+      } finally {
+        utils.removeImageFile(`${testAssetDir}/${fixtureFolder}/offline/offline.png`);
+      }
     });
 
     it.skip('should not delete offline assets from disk', async () => {
