@@ -167,6 +167,7 @@ def test_bound_native_app_refuses_changed_request_and_changed_runtime(monkeypatc
     binding = Binding()
 
     async def predict(**kwargs):
+        assert main.active_requests > 0, "native request must retain existing idle-shutdown fencing"
         binding.changed = True
         return main.ORJSONResponse({"clip": "[1,2]"})
 

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import orjson
-from fastapi import FastAPI, File, Form, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -95,7 +95,7 @@ def create_native_app(binding: "NativeBinding | None") -> FastAPI:
     app = FastAPI(lifespan=main.lifespan)
     app.get("/ping")(main.ping)
 
-    @app.post("/predict")
+    @app.post("/predict", dependencies=[Depends(main.update_state)])
     async def predict(
         entries: str = Form(), image: bytes | None = File(default=None), text: str | None = Form(default=None)
     ) -> JSONResponse:
