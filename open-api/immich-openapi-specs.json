@@ -5619,6 +5619,96 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/library-move": {
+      "get": {
+        "operationId": "getLibraryMovePause",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Library move pause status",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-move/resume": {
+      "post": {
+        "operationId": "resumeLibraryMovePause",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Lift a library move pause (uploads, changes and job queues resume)",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/license": {
       "delete": {
         "description": "Removes the supporter key from this server, deactivating it with Frameleaf Cloud when reachable. A Frameleaf Cloud plan is not affected.",
@@ -37865,6 +37955,142 @@
           }
         ],
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/server/library-move/manager": {
+      "get": {
+        "operationId": "getManagerLibraryMovePause",
+        "parameters": [
+          {
+            "name": "operationId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-manager",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated library move pause status (renews the named operation)",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-move/manager/pause": {
+      "post": {
+        "operationId": "pauseManagerLibraryMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryMovePauseDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated pause of uploads, changes and job queues for a library move",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/library-move/manager/resume": {
+      "post": {
+        "operationId": "resumeManagerLibraryMove",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryMoveResumeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryMovePauseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Manager machine-authenticated resume after a library move",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
       }
     },
     "/server/library-setup": {
@@ -79124,6 +79350,91 @@
           "other_library"
         ],
         "type": "string"
+      },
+      "LibraryMovePauseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Frameleaf Manager move operation that holds the pause",
+            "pattern": "^[A-Za-z0-9-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "LibraryMovePauseStatusDto": {
+        "properties": {
+          "activeJobs": {
+            "description": "Background jobs still running",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "activeQueues": {
+            "description": "Queues with jobs still running",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "drained": {
+            "description": "Paused, with no write request and no background job in flight",
+            "type": "boolean"
+          },
+          "leaseExpiresAt": {
+            "description": "When the pause lifts by itself unless the Manager renews it (ISO 8601)",
+            "nullable": true,
+            "type": "string"
+          },
+          "operationId": {
+            "description": "Manager move operation holding the pause",
+            "nullable": true,
+            "type": "string"
+          },
+          "paused": {
+            "description": "Uploads, changes and background work are paused for a library move",
+            "type": "boolean"
+          },
+          "pausedAt": {
+            "description": "When the pause started (ISO 8601)",
+            "nullable": true,
+            "type": "string"
+          },
+          "writesInFlight": {
+            "description": "Write requests still being answered",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activeJobs",
+          "activeQueues",
+          "drained",
+          "leaseExpiresAt",
+          "operationId",
+          "paused",
+          "pausedAt",
+          "writesInFlight"
+        ],
+        "type": "object"
+      },
+      "LibraryMoveResumeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "description": "Frameleaf Manager move operation that holds the pause",
+            "pattern": "^[A-Za-z0-9-]{1,64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
       },
       "LibraryRemovalDto": {
         "properties": {

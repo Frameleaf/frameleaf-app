@@ -17,6 +17,7 @@ import { AuthGuard } from 'src/middleware/auth.guard.js';
 import { ErrorInterceptor } from 'src/middleware/error.interceptor.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
+import { LibraryMoveFenceGuard } from 'src/middleware/library-move-fence.guard.js';
 import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
 import { RateLimitFailureInterceptor, RateLimitGuard } from 'src/middleware/rate-limit.guard.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
@@ -60,6 +61,8 @@ const apiMiddleware = [
   ...commonMiddleware,
   { provide: APP_GUARD, useClass: RateLimitGuard },
   { provide: APP_GUARD, useClass: AuthGuard },
+  // FL-360: refuses library writes while a Frameleaf Manager library move holds the pause
+  { provide: APP_GUARD, useClass: LibraryMoveFenceGuard },
   // FL-161: counts a failed password (401) against the email or shared link it was tried for
   { provide: APP_INTERCEPTOR, useClass: RateLimitFailureInterceptor },
 ];
