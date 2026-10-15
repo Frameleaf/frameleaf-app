@@ -2,6 +2,7 @@ import { toastManager } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import Toast from '$lib/components/frameleaf/Toast.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 
 /**
  * Frameleaf toasts. Every existing `toastManager.primary/success/info/warning/danger/show` call
@@ -46,7 +47,22 @@ export const toastAction = (
   message: string,
   { label, onAction, tone = 'primary', timeout = TOAST_ACTION_TIMEOUT_MS }: ToastActionOptions,
 ): void => {
-  toastManager.show({ description: message, color: tone, button: { label, onclick: onAction } }, { timeout });
+  const isCurrent = authManager.captureSession();
+  toastManager.show(
+    {
+      description: message,
+      color: tone,
+      button: {
+        label,
+        onclick: () => {
+          if (isCurrent()) {
+            return onAction();
+          }
+        },
+      },
+    },
+    { timeout },
+  );
 };
 
 /**
