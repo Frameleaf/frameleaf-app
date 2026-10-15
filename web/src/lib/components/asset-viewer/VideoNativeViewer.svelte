@@ -116,7 +116,7 @@
   const Actions = $derived(getAssetActions($t, asset));
   const canEditVideo = $derived(isEnabled(Actions.Edit));
   const editVideoLabel = $derived($t('editor_video_edit'));
-  let activeSession: { assetId: string; id: string } | undefined;
+  let activeSession: { assetId: string; id: string; url: string } | undefined;
   let rebuildCount = 0;
 
   const MAX_REBUILDS = 1;
@@ -222,8 +222,9 @@
       return;
     }
     activeSession = undefined;
-    const url = getAssetHlsSessionUrl(session.assetId, session.id);
-    void fetch(url, { method: 'DELETE' }).catch(() => console.warn('Failed to release HLS session', session));
+    void fetch(session.url, { method: 'DELETE' }).catch(() =>
+      console.warn('Failed to release HLS session', { assetId: session.assetId, id: session.id }),
+    );
   };
 
   const isHlsElement = (el: HTMLVideoElement | undefined): el is HlsVideoElement => {
@@ -247,6 +248,7 @@
       },
     });
 
+    const sessionParams = { ...authManager.params };
     let disposed = false;
     const onManifestParsed = async () => {
       if (disposed) {
@@ -256,7 +258,7 @@
       api.stopLoad();
       const id = api.levels[0]?.url[0]?.match(SESSION_ID_REGEX)?.[1];
       if (id) {
-        activeSession = { assetId, id };
+        activeSession = { assetId, id, url: getAssetHlsSessionUrl(assetId, id, sessionParams) };
       }
 
       const keep = await mediaCapabilitiesManager.efficientLevels(api.levels);

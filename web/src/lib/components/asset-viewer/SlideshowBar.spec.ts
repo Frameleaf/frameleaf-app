@@ -1,10 +1,12 @@
 import { AssetTypeEnum, AssetVisibility } from '@frameleaf/sdk';
-import { fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
 import { get } from 'svelte/store';
-import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+import TestWrapper from '$lib/components/TestWrapper.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { renderWithTooltips } from '$tests/helpers';
-import { progressBarCalls } from '@test-data/components/progress-bar-calls';
+import { progressBarCalls, progressBarFixture } from '@test-data/components/progress-bar-calls';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { stubFocusVisible } from '@test-data/focus-visible';
 import SlideshowBar from './SlideshowBar.svelte';
@@ -41,6 +43,9 @@ const lastBinding = () => mocks.bindMediaSession.mock.calls.at(-1)?.[0] as Bindi
 
 describe('SlideshowBar (FL-36)', () => {
   beforeEach(() => {
+    progressBarFixture.reset = undefined;
+    slideshowStore.slideshowNavigation.set(SlideshowNavigation.DescendingOrder);
+    authManager.reset();
     mocks.bindMediaSession.mockImplementation(() => mocks.cleanup);
     slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
   });
@@ -83,6 +88,67 @@ describe('SlideshowBar (FL-36)', () => {
     flushSync();
     return cog;
   };
+
+  it.each([SlideshowNavigation.DescendingOrder, SlideshowNavigation.AscendingOrder])(
+    'advances the current slide in %s order after its progress reset',
+    async (direction) => {
+      slideshowStore.slideshowNavigation.set(direction);
+      const { onNext, onPrevious } = renderBar();
+      await tick();
+      await progressBarFixture.done?.();
+      expect(direction === SlideshowNavigation.AscendingOrder ? onPrevious : onNext).toHaveBeenCalledOnce();
+      expect(direction === SlideshowNavigation.AscendingOrder ? onNext : onPrevious).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['close', 'pause', 'settings', 'session', 'pause then resume'] as const)(
+    'does not advance after %s while resetting progress',
+    async (change) => {
+      let finish!: () => void;
+      progressBarFixture.reset = () => new Promise<void>((resolve) => (finish = resolve));
+      const { onNext, onPrevious, unmount } = renderBar();
+      await tick();
+      const done = progressBarFixture.done?.();
+      expect(finish).toBeDefined();
+      if (change === 'close') {
+        unmount();
+      } else if (change === 'session') {
+        authManager.reset();
+      } else if (change === 'settings') {
+        openSettingsFromFooter();
+      } else {
+        slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+        await tick();
+        if (change === 'pause then resume') {
+          slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+        }
+      }
+      await tick();
+      finish();
+      await done;
+      expect(onNext).not.toHaveBeenCalled();
+      expect(onPrevious).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])('retires a pending reset when the slide changes (return: %s)', async (returnToOriginal) => {
+    let finish!: () => void;
+    progressBarFixture.reset = () => new Promise<void>((resolve) => (finish = resolve));
+    const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+    const props = { assetType: AssetTypeEnum.Image, asset, onNext: vi.fn(), onPrevious: vi.fn() };
+    const result = render(TestWrapper, { component: SlideshowBar, componentProps: props });
+    await tick();
+    const done = progressBarFixture.done?.();
+    expect(finish).toBeDefined();
+    await result.rerender({ component: SlideshowBar, componentProps: { ...props, asset: assetFactory.build() } });
+    if (returnToOriginal) {
+      await result.rerender({ component: SlideshowBar, componentProps: props });
+    }
+    finish();
+    await done;
+    expect(props.onNext).not.toHaveBeenCalled();
+    expect(props.onPrevious).not.toHaveBeenCalled();
+  });
 
   it('keeps the screen awake while playing and lets go when paused', async () => {
     renderBar();

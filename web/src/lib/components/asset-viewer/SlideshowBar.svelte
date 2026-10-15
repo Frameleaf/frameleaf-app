@@ -23,6 +23,7 @@
   import ProgressBar from '$lib/components/shared-components/progress-bar/ProgressBar.svelte';
   import { ProgressBarStatus } from '$lib/constants';
   import { bindMediaSession, MEDIA_SESSION_ARTIST } from '$lib/frameleaf/media-session';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -91,8 +92,23 @@
     };
   });
 
+  let alive = true;
+  let advanceOwner: object | undefined;
+  $effect.pre(() => {
+    advanceOwner = { assetId: asset?.id, assetType, state: $slideshowState, settingsOpen: $settingsOpen };
+  });
+
   const handleDone = async () => {
-    await progressBar?.resetProgress();
+    if (!alive || !advancing) {
+      return;
+    }
+    const owner = advanceOwner;
+    const bar = progressBar;
+    const isCurrentSession = authManager.captureSession();
+    await bar?.resetProgress();
+    if (!alive || !isCurrentSession() || owner !== advanceOwner || bar !== progressBar || !advancing) {
+      return;
+    }
 
     if ($slideshowNavigation === SlideshowNavigation.AscendingOrder) {
       onPrevious();
@@ -244,6 +260,7 @@
     }
   });
   onDestroy(() => {
+    alive = false;
     releaseWakeLock('slideshow').catch(() => {});
   });
 

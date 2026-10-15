@@ -16,7 +16,10 @@
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAssetInfo } from '@frameleaf/sdk';
+  import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import { handleError } from '$lib/utils/handle-error';
+  import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
   import { invalidateAll } from '$app/navigation';
   import Portal from '$lib/elements/Portal.svelte';
   import type { PageData } from './$types';
@@ -64,9 +67,25 @@
     }
   };
 
-  const onViewAsset = async (id: string) => {
-    const asset = await getAssetInfo({ ...authManager.params, id });
-    assetViewerManager.setAsset(asset);
+  let alive = true;
+  let openRequest = 0;
+  onDestroy(() => {
+    alive = false;
+  });
+  const onViewAsset = async (id: string, cached?: AssetResponseDto) => {
+    const request = ++openRequest;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => alive && request === openRequest && isCurrentSession();
+    try {
+      const asset = cached ?? (await getAssetInfo({ ...authManager.params, id }));
+      if (isCurrent()) {
+        assetViewerManager.setAsset(asset);
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        handleError(error, $t('errors.something_went_wrong'));
+      }
+    }
   };
 
   /**
@@ -85,11 +104,11 @@
     previousAsset: getPreviousAsset(recents, assetViewerManager.asset),
   });
   const filmstripAssets = $derived(recents.map((asset) => toTimelineAsset(asset)));
-  const openInPlace = async ({ id }: { id: string }) => {
-    assetViewerManager.setAsset(
-      recents.find((asset) => asset.id === id) ?? (await getAssetInfo({ ...authManager.params, id })),
+  const openInPlace = ({ id }: { id: string }) =>
+    onViewAsset(
+      id,
+      recents.find((asset) => asset.id === id),
     );
-  };
 
   /**
    * FL-50: Explore → a card's results → Back returns to the same place on the page. The page scrolls
@@ -146,7 +165,10 @@
         showNavigation={recents.length > 1}
         {filmstripAssets}
         onNavigateToAsset={openInPlace}
-        onClose={() => assetViewerManager.showAssetViewer(false)}
+        onClose={() => {
+          openRequest++;
+          assetViewerManager.showAssetViewer(false);
+        }}
         onAssetUpdate={(updatedAsset) => {
           // assetCursor is `$derived` from `assetViewerManager.asset`. Mutating cursor.current
           // locally would be lost on the next recompute; push the refreshed asset into the

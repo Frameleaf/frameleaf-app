@@ -277,8 +277,8 @@ export const getAssetHlsUrl = (id: string) => {
   return createUrl(`/assets/${id}/video/stream/main.m3u8`, authManager.params);
 };
 
-export const getAssetHlsSessionUrl = (id: string, sessionId: string) => {
-  return createUrl(`/assets/${id}/video/stream/${sessionId}`, authManager.params);
+export const getAssetHlsSessionUrl = (id: string, sessionId: string, params = authManager.params) => {
+  return createUrl(`/assets/${id}/video/stream/${sessionId}`, params);
 };
 
 export const getProfileImageUrl = (user: UserResponseDto) =>
