@@ -67,7 +67,7 @@
     mdiImageMultipleOutline,
     mdiLinkVariant,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type PartnerSharing = {
@@ -78,6 +78,13 @@
     backfill?: PartnerResponseDto['backfill'];
   };
 
+  let alive = true;
+  const isCurrentSession = authManager.captureSession();
+  const isCurrentView = () => alive && isCurrentSession();
+  onDestroy(() => {
+    alive = false;
+    dialogGeneration++;
+  });
   let clusterGroupId: string = $state('');
   let members: UserResponseDto[] = $state([]);
   let sentRequests: ClusterGroupRequestResponseDto[] = $state([]);
@@ -113,12 +120,18 @@
   let dialog = $state<DialogState | null>(null);
   let dialogOpen = $state(false);
   let working = $state(false);
+  let dialogGeneration = 0;
   $effect(() => {
     if (!dialogOpen) {
       dialog = null;
+      dialogGeneration++;
     }
   });
   const openDialog = (next: DialogState) => {
+    if (!isCurrentView()) {
+      return;
+    }
+    dialogGeneration++;
     dialog = next;
     dialogOpen = true;
   };
@@ -131,11 +144,22 @@
   // The account's sharing groups: a shortcut for picking people, managed in their own dialog.
   let groups = $state<RecipientGroupResponseDto[] | null>(null);
   let groupsOpen = $state(false);
+  let groupsRequest = 0;
   const loadGroups = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++groupsRequest;
+    const current = () => isCurrentView() && request === groupsRequest;
     try {
-      groups = await getRecipientGroups();
+      const result = await getRecipientGroups();
+      if (current()) {
+        groups = result;
+      }
     } catch (error) {
-      handleError(error, $t('frameleaf_sharing_groups_error'));
+      if (current()) {
+        handleError(error, $t('frameleaf_sharing_groups_error'));
+      }
     }
   };
 
@@ -192,21 +216,40 @@
     };
   });
 
+  let accountsRequest = 0;
   const loadAccounts = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++accountsRequest;
+    const current = () => isCurrentView() && request === accountsRequest;
     accountsStatus = 'loading';
     try {
-      accounts = await searchUsers();
-      accountsStatus = 'loaded';
+      const result = await searchUsers();
+      if (current()) {
+        accounts = result;
+        accountsStatus = 'loaded';
+      }
     } catch (error) {
-      accountsStatus = 'error';
-      handleError(error, $t('frameleaf_people_sharing.accounts_error'));
+      if (current()) {
+        accountsStatus = 'error';
+        handleError(error, $t('frameleaf_people_sharing.accounts_error'));
+      }
     }
   };
 
+  let groupRefreshRequest = 0;
   const refresh = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++groupRefreshRequest;
+    const current = () => isCurrentView() && request === groupRefreshRequest;
     try {
       const { clusterGroupId: id } = await getMyUser();
-      clusterGroupId = id;
+      if (!current()) {
+        return;
+      }
 
       const [groupUsers, sent, received] = await Promise.all([
         getClusterGroupUsers({ id }),
@@ -214,15 +257,26 @@
         getClusterGroupRequests(),
       ]);
 
-      members = groupUsers;
-      sentRequests = sent;
-      receivedRequests = received;
+      if (current()) {
+        clusterGroupId = id;
+        members = groupUsers;
+        sentRequests = sent;
+        receivedRequests = received;
+      }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_load_cluster_group'));
+      if (current()) {
+        handleError(error, $t('errors.unable_to_load_cluster_group'));
+      }
     }
   };
 
+  let partnerRefreshRequest = 0;
   const refreshPartners = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
+    const request = ++partnerRefreshRequest;
+    const current = () => isCurrentView() && request === partnerRefreshRequest;
     let sharedBy: PartnerResponseDto[];
     let sharedWith: PartnerResponseDto[];
     try {
@@ -231,7 +285,12 @@
         getPartners({ direction: PartnerDirection.SharedWith }),
       ]);
     } catch (error) {
-      handleError(error, $t('frameleaf_people_sharing.partners_error'));
+      if (current()) {
+        handleError(error, $t('frameleaf_people_sharing.partners_error'));
+      }
+      return;
+    }
+    if (!current()) {
       return;
     }
 
@@ -253,31 +312,45 @@
   };
 
   const run = async (action: () => Promise<unknown>, done: string, errorKey: Translations) => {
+    if (!isCurrentView() || working) {
+      return false;
+    }
     working = true;
     try {
       await action();
-      notice = done;
+      if (!isCurrentSession()) {
+        return false;
+      }
+      if (alive) {
+        notice = done;
+      }
       return true;
     } catch (error) {
-      handleError(error, $t(errorKey));
+      if (isCurrentView()) {
+        handleError(error, $t(errorKey));
+      }
       return false;
     } finally {
-      working = false;
+      if (isCurrentView()) {
+        working = false;
+      }
     }
   };
 
   const confirmDialog = async () => {
-    if (!dialog) {
+    if (!dialog || !isCurrentView() || working) {
       return;
     }
     const current = dialog;
+    const generation = dialogGeneration;
+    const groupId = clusterGroupId;
     let ok: boolean;
     switch (current.kind) {
       case 'invite': {
         ok = await run(
           () =>
             createClusterGroupRequest({
-              id: clusterGroupId,
+              id: groupId,
               clusterGroupRequestCreateDto: { userId: current.userId },
             }),
           $t('frameleaf_people_sharing.invitation_sent'),
@@ -297,7 +370,7 @@
       }
       case 'erase': {
         ok = await run(
-          () => clusterGroupRegeneratePeople({ id: clusterGroupId }),
+          () => clusterGroupRegeneratePeople({ id: groupId }),
           $t('frameleaf_sharing_erase_started'),
           'errors.something_went_wrong',
         );
@@ -312,20 +385,31 @@
         await refresh();
       }
     }
-    if (ok) {
+    if (ok && isCurrentView() && generation === dialogGeneration) {
       dialogOpen = false;
     }
   };
 
   const reviewInvitation = async (request: ClusterGroupRequestResponseDto) => {
     openDialog({ kind: 'review', request });
+    const generation = dialogGeneration;
+    if (!isCurrentView()) {
+      return;
+    }
     try {
       const groupMembers = await getClusterGroupUsers({ id: request.clusterGroupId });
-      if (dialog?.kind === 'review' && dialog.request.id === request.id) {
+      if (
+        isCurrentView() &&
+        generation === dialogGeneration &&
+        dialog?.kind === 'review' &&
+        dialog.request.id === request.id
+      ) {
         dialog = { ...dialog, members: groupMembers };
       }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_load_cluster_group'));
+      if (isCurrentView() && generation === dialogGeneration) {
+        handleError(error, $t('errors.unable_to_load_cluster_group'));
+      }
     }
   };
 
@@ -335,15 +419,16 @@
   };
 
   const leave = async () => {
+    const groupId = clusterGroupId;
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_sharing_leave_title'),
       prompt: $t('frameleaf_sharing_leave_prompt'),
       confirmText: $t('frameleaf_people_sharing.leave_action'),
       danger: true,
     });
-    if (confirmed) {
+    if (confirmed && isCurrentView() && groupId === clusterGroupId) {
       await run(
-        () => leaveClusterGroup({ id: clusterGroupId }),
+        () => leaveClusterGroup({ id: groupId }),
         $t('frameleaf_people_sharing.left'),
         'errors.unable_to_leave_cluster_group',
       );
@@ -352,21 +437,23 @@
   };
 
   const stopSharing = async (partner: PartnerSharing) => {
+    const userId = me;
+    const partnerId = partner.user.id;
     const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_sharing_stop_title', { values: { name: partner.user.name } }),
       prompt: $t('frameleaf_people_sharing.stop_prompt', { values: { name: partner.user.name } }),
       confirmText: $t('frameleaf_people_sharing.stop_action'),
       danger: true,
     });
-    if (confirmed) {
+    if (confirmed && isCurrentView()) {
       const stopped = await run(
-        () => removePartner({ id: partner.user.id }),
+        () => removePartner({ id: partnerId }),
         $t('frameleaf_people_sharing.stopped'),
         'errors.unable_to_remove_partner',
       );
       if (stopped) {
         // FL-54: this tab's open pages drop the partner at once, as the server tells other tabs.
-        eventManager.emit('PartnerRevoke', { sharedById: authManager.user.id, sharedWithId: partner.user.id });
+        eventManager.emit('PartnerRevoke', { sharedById: userId, sharedWithId: partnerId });
       }
       await refreshPartners();
     }

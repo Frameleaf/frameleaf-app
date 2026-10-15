@@ -279,12 +279,16 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.#viewState = true;
   }
 
-  async setAssetId(id: string): Promise<AssetResponseDto> {
+  async setAssetId(
+    id: string,
+    options: { isCurrent?: () => boolean; onSet?: () => void } = {},
+  ): Promise<AssetResponseDto> {
     const request = ++this.#assetRequest;
     const isCurrentSession = authManager.captureSession();
     const asset = await getAssetInfo({ ...authManager.params, id });
-    if (request === this.#assetRequest && isCurrentSession()) {
+    if (request === this.#assetRequest && isCurrentSession() && (!options.isCurrent || options.isCurrent())) {
       this.setAsset(asset);
+      options.onSet?.();
     }
     return asset;
   }

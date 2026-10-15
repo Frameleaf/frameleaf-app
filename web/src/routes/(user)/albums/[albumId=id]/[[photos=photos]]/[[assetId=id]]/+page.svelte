@@ -114,6 +114,9 @@
 
   const currentUserId = $derived(authManager.user.id);
   const albumId = $derived(album.id);
+  let alive = true;
+  const albumView = $derived({ albumId, isCurrentSession: authManager.captureSession() });
+  const isCurrentView = (view: typeof albumView) => alive && view === albumView && view.isCurrentSession();
   const isCollection = $derived(album.kind === AlbumKind.Collection);
   // FL-55: a shared space has one comment system, the threaded one, here as on the space's own page.
   const isSpace = $derived(album.kind === AlbumKind.Space);
@@ -309,31 +312,61 @@
   /* ------------------------------------------------------------------ */
   let albumRefreshRequest = 0;
   const refreshAlbum = async () => {
+    const view = albumView;
+    if (!isCurrentView(view)) {
+      return;
+    }
     const request = ++albumRefreshRequest;
     const requestedAlbum = album;
     const refreshedAlbum = await getAlbumInfo({ id: requestedAlbum.id });
     // Navigation or a newer server event already replaced this album snapshot.
-    if (request === albumRefreshRequest && album === requestedAlbum) {
+    if (isCurrentView(view) && request === albumRefreshRequest && album === requestedAlbum) {
       album = refreshedAlbum;
     }
   };
 
-  const refreshEverything = async () => {
+  const refreshEverything = async (view = albumView) => {
+    const manager = timelineManager;
+    if (!isCurrentView(view)) {
+      return;
+    }
     await refreshAlbum();
+    if (!isCurrentView(view) || manager !== timelineManager) {
+      return;
+    }
     await invalidate('album:data');
-    await timelineManager?.refresh();
+    if (isCurrentView(view) && manager === timelineManager) {
+      await manager?.refresh();
+    }
   };
 
-  const handleStartSlideshow = async () => {
-    const asset =
-      $slideshowNavigation === SlideshowNavigation.Shuffle
-        ? await timelineManager?.getRandomAsset()
-        : timelineManager?.months[0]?.timelineDays[0]?.viewerAssets[0]?.asset;
-    const first = asset ?? (collectionAssets[0] ? toTimelineAsset(collectionAssets[0]) : undefined);
-    if (first) {
-      handlePromiseError(
-        assetViewerManager.setAssetId(first.id).then(() => ($slideshowState = SlideshowState.PlaySlideshow)),
-      );
+  let slideshowRequest = 0;
+  const handleStartSlideshow = async (view = albumView) => {
+    const request = ++slideshowRequest;
+    const manager = timelineManager;
+    const isCurrent = () => isCurrentView(view) && request === slideshowRequest && manager === timelineManager;
+    if (!isCurrent()) {
+      return;
+    }
+    try {
+      const asset =
+        $slideshowNavigation === SlideshowNavigation.Shuffle
+          ? await manager?.getRandomAsset()
+          : manager?.months[0]?.timelineDays[0]?.viewerAssets[0]?.asset;
+      if (!isCurrent()) {
+        return;
+      }
+      const first = asset ?? (collectionAssets[0] ? toTimelineAsset(collectionAssets[0]) : undefined);
+      if (first) {
+        await assetViewerManager.setAssetId(first.id, {
+          isCurrent,
+          onSet: () => ($slideshowState = SlideshowState.PlaySlideshow),
+        });
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
+      }
     }
   };
 
@@ -394,6 +427,7 @@
   });
 
   onDestroy(() => {
+    alive = false;
     collectionRequest++;
     activityManager.reset();
   });
@@ -499,7 +533,7 @@
   {onAlbumDelete}
   {onAlbumAddAssets}
   {onAlbumRemoveAssets}
-  onAlbumShare={refreshEverything}
+  onAlbumShare={() => refreshEverything()}
   {onAlbumUserUpdate}
   {onAlbumUserDelete}
   {onAlbumUpdate}
@@ -508,24 +542,27 @@
 <CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Cast, Close]} />
 
 {#snippet header()}
-  <AlbumHeader
-    {album}
-    {childAlbums}
-    {parent}
-    collections={editableCollections}
-    likeCount={activityManager.likeCount}
-    commentCount={activityManager.commentCount}
-    {activityOpen}
-    canShowOwnerBadges={containsEditors}
-    ownerBadges={showAlbumUsers}
-    {assetCount}
-    onAlbumChange={(next) => (album = next)}
-    onRefresh={refreshEverything}
-    onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
-    onSlideshow={() => handlePromiseError(handleStartSlideshow())}
-    onToggleActivity={() => (activityOpen = !activityOpen)}
-    onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
-  />
+  {#key albumId}
+    {@const view = albumView}
+    <AlbumHeader
+      {album}
+      {childAlbums}
+      {parent}
+      collections={editableCollections}
+      likeCount={activityManager.likeCount}
+      commentCount={activityManager.commentCount}
+      {activityOpen}
+      canShowOwnerBadges={containsEditors}
+      ownerBadges={showAlbumUsers}
+      {assetCount}
+      onAlbumChange={(next) => (album = next)}
+      onRefresh={() => refreshEverything(view)}
+      onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
+      onSlideshow={() => handlePromiseError(handleStartSlideshow(view))}
+      onToggleActivity={() => (activityOpen = !activityOpen)}
+      onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
+    />
+  {/key}
 {/snippet}
 
 <!--
