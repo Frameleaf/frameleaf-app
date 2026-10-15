@@ -7,7 +7,6 @@ import { goto } from '$app/navigation';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import {
-  AlbumFilter,
   AlbumGroupBy,
   AlbumSortBy,
   SortOrder,
@@ -111,18 +110,6 @@ export const sortOptionsMetadata: AlbumSortOptionMetadata[] = [
     columnStyle: 'text-center hidden xl:block xl:w-[15%] 2xl:w-[12%]',
   },
 ];
-
-export const findSortOptionMetadata = (sortBy: string) => {
-  // Default is sort by most recent photo
-  const defaultSortOption = sortOptionsMetadata[4];
-  return sortOptionsMetadata.find(({ id }) => sortBy === id) ?? defaultSortOption;
-};
-
-export const findFilterOption = (filter: string) => {
-  // Default is All filter
-  const defaultFilterOption = AlbumFilter.All;
-  return Object.values(AlbumFilter).find((key) => filter === AlbumFilter[key]) ?? defaultFilterOption;
-};
 
 /**
  * --------------
@@ -236,7 +223,11 @@ const sortOptions: AlbumSortOption = {
   /** Sort by album title */
   [AlbumSortBy.Title]: (order, albums) => {
     const sortSign = order === SortOrder.Desc ? -1 : 1;
-    return albums.slice().sort((a, b) => a.albumName.localeCompare(b.albumName, get(locale)) * sortSign);
+    let collator: Intl.Collator | undefined;
+    return albums.slice().sort((a, b) => {
+      collator ??= new Intl.Collator(get(locale));
+      return collator.compare(a.albumName, b.albumName) * sortSign;
+    });
   },
 
   /** Sort by asset count */
@@ -268,7 +259,7 @@ const sortOptions: AlbumSortOption = {
 };
 
 export const sortAlbums = (albums: AlbumResponseDto[], { sortBy, orderBy }: { sortBy: string; orderBy: string }) => {
-  const sort = sortOptions[sortBy] ?? sortOptions[AlbumSortBy.DateModified];
+  const sort = Object.hasOwn(sortOptions, sortBy) ? sortOptions[sortBy] : sortOptions[AlbumSortBy.DateModified];
   const order = stringToSortOrder(orderBy);
 
   return sort(order, albums);
