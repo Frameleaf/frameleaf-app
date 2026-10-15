@@ -23,7 +23,11 @@ test('Docker and NAS inference workers receive no server environment or private 
     const compose = load(fs.readFileSync(path.resolve(__dirname, '../../docker', name), 'utf8'));
     const ml = compose.services['frameleaf-machine-learning'];
     assert.deepEqual(ml.env_file, [{ path: '.env.ml', required: false }], name);
-    assert(ml.volumes.every((mount) => mount.endsWith(':/cache')), name);
+    // FL-408: besides the model cache, only the Studio worker's enrolment volume, read-only.
+    assert(
+      ml.volumes.every((mount) => mount.endsWith(':/cache') || /^\.?\/?studio-worker:\/run\/frameleaf\/studio-worker:ro$/.test(mount)),
+      name,
+    );
     assert.deepEqual(compose.services['frameleaf-server'].env_file, ['.env'], name);
   }
   // The development file uses Compose's !reset tag, so compare its ML service alone.
