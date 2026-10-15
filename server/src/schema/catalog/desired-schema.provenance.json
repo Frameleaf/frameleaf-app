@@ -1,7 +1,7 @@
 {
   "sourceCommit": "329acd7dd35cb07b91c68253635120c90f577a40",
   "sourceHashes": {
-    "src/enum.ts": "f1ff6fb80675fb35f36d37e2ac9da4835a0b297596e80510d2d0985434511ba0",
+    "src/enum.ts": "0407d6c7792379d5e1355e6a971d89bbaeda62e3cf078c93084daecdeb48c864",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/queue/schema.ts": "6093d34aad84f8926892a0a0b17a7824c676470e1a25607a358936495a8651a2",
     "src/schema/enums.ts": "6f7ec2f2d59677c4806c85fc069bcd50aa93ed8b9b8cc3c3bc2ab632c9eb5347",
@@ -82,7 +82,7 @@
     "src/schema/tables/plugin.table.ts": "e29234679dd17e282b10a3e32672f5b4d0a9a2eb0b8560436d0a91f1f2b2df12",
     "src/schema/tables/preservation.table.ts": "63c0980d90689f8ad844b56e3d4f2c673c67905a2a440623994d14998fae6baf",
     "src/schema/tables/push-device.table.ts": "9a217577f14d42ba35b2f1d42520a6f68a4c1ef5fa032c5fc50595564eec8523",
-    "src/schema/tables/render-worker.table.ts": "92dc6ecca7a61769f3e1e8af507c68763d4ec7c59e621a82b72a8823b9df252e",
+    "src/schema/tables/render-worker.table.ts": "4692e94f2c240c98be411a39bd95f2a426e276bf031febb18c2d2868a746e1ec",
     "src/schema/tables/safety-proof.table.ts": "b29cf0ffa0c25ef94ee3e120f6e904b7854f38cf3c6b98440b674bf2dfa3d6e9",
     "src/schema/tables/session.table.ts": "0c24659924204115116b5878f13f7228a2dbc37f6065477b2e89fb82852fda0b",
     "src/schema/tables/shared-link-asset.table.ts": "026a663bcb9c11ce3675359a46d097b654e05019427dcb01ed8c1a0af8b4ca07",
