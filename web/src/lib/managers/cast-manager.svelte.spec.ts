@@ -1,4 +1,5 @@
 import { createSession, type SessionCreateResponseDto } from '@frameleaf/sdk';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { deferredPromise } from '@test-data/deferred';
 
 const mocks = vi.hoisted(() => ({
@@ -42,6 +43,59 @@ beforeEach(async () => {
   mocks.generation = 0;
   mocks.destination.isConnected = true;
   manager = (await import('./cast-manager.svelte')).castManager;
+});
+
+it('shares initialization until destination discovery settles', async () => {
+  const pending = deferredPromise<boolean>();
+  mocks.destination.initialize.mockReturnValue(pending.promise);
+  const first = manager['initialize']();
+  const second = manager['initialize']();
+  expect(manager.initialized).toBe(false);
+  expect(mocks.destination.initialize).toHaveBeenCalledOnce();
+  pending.resolve(true);
+  await Promise.all([first, second]);
+  expect(manager.initialized).toBe(true);
+  expect(manager.availableDestinations).toHaveLength(1);
+  await manager['initialize']();
+  expect(mocks.destination.initialize).toHaveBeenCalledOnce();
+});
+
+it('allows initialization to retry after a destination fails', async () => {
+  const failure = new Error('framework unavailable');
+  mocks.destination.initialize.mockRejectedValueOnce(failure).mockResolvedValueOnce(true);
+  await expect(manager['initialize']()).rejects.toBe(failure);
+  expect(manager.initialized).toBe(false);
+  expect(manager.availableDestinations).toHaveLength(0);
+  await manager['initialize']();
+  expect(manager.initialized).toBe(true);
+  expect(manager.availableDestinations).toHaveLength(1);
+  expect(mocks.destination.initialize).toHaveBeenCalledTimes(2);
+});
+
+it('handles discovery failure from the application hook without an unhandled rejection', async () => {
+  const failure = new Error('framework unavailable');
+  mocks.destination.initialize.mockRejectedValueOnce(failure);
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const events = vi.mocked(eventManager.on).mock.calls[0][0];
+  events.AppInit?.();
+  await vi.waitFor(() => expect(log).toHaveBeenCalledWith('Failed to initialize casting', failure));
+  expect(manager.initialized).toBe(false);
+});
+
+it('publishes discovery together so a retry cannot duplicate a partial result', async () => {
+  const failure = new Error('second destination failed');
+  mocks.destination.initialize.mockResolvedValue(true);
+  const second = {
+    ...manager['castDestinations'][0],
+    initialize: vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(true),
+  };
+  manager['castDestinations'].push(second);
+  await expect(manager['initialize']()).rejects.toBe(failure);
+  expect(manager.availableDestinations).toHaveLength(0);
+  await manager['initialize']();
+  expect(manager.availableDestinations).toHaveLength(2);
+  expect(mocks.destination.initialize).toHaveBeenCalledTimes(2);
+  expect(second.initialize).toHaveBeenCalledTimes(2);
 });
 
 it('shares one pending token request across concurrent selections', async () => {

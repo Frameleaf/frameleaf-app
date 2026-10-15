@@ -44,6 +44,7 @@ class CastManager {
 
   availableDestinations = $state<ICastDestination[]>([]);
   initialized = $state(false);
+  private initialization: Promise<void> | undefined;
 
   isCasting = $derived<boolean>(this.current?.isConnected ?? false);
   receiverName = $derived<string | null>(this.current?.receiverName ?? null);
@@ -68,24 +69,27 @@ class CastManager {
     ];
 
     eventManager.on({
-      AppInit: () => void this.initialize(),
+      AppInit: () => void this.initialize().catch((error) => console.error('Failed to initialize casting', error)),
     });
   }
 
-  private async initialize() {
-    // this goes first to prevent multiple calls to initialize
+  private initialize(): Promise<void> {
     if (this.initialized) {
-      return;
+      return Promise.resolve();
     }
-    this.initialized = true;
-
-    // try to initialize each cast destination
-    for (const castDestination of this.castDestinations) {
-      const destAvailable = await castDestination.initialize();
-      if (destAvailable) {
-        this.availableDestinations.push(castDestination);
+    this.initialization ??= (async () => {
+      const available: ICastDestination[] = [];
+      for (const destination of this.castDestinations) {
+        if (await destination.initialize()) {
+          available.push(destination);
+        }
       }
-    }
+      this.availableDestinations.push(...available);
+      this.initialized = true;
+    })().finally(() => {
+      this.initialization = undefined;
+    });
+    return this.initialization;
   }
 
   // monitor all cast destinations for changes
