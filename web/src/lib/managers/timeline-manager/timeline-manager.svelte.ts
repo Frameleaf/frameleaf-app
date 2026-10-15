@@ -722,17 +722,6 @@ export class TimelineManager extends VirtualScrollManager {
     this.removeAssets(ids);
   }
 
-  protected upsertSegmentForAsset(asset: TimelineAsset) {
-    const dateTime = getOrderingDate(asset, this.#options.dateType || TimeBucketDateType.Taken);
-    let month = getTimelineMonthByDate(this, dateTime);
-
-    if (!month) {
-      month = new TimelineMonth(this, dateTime, 1, true, this.#options.order, this.#options.dateType);
-      this.months.push(month);
-    }
-    return month;
-  }
-
   /**
    * Adds assets to existing segments, creating new segments as needed.
    *
@@ -745,8 +734,27 @@ export class TimelineManager extends VirtualScrollManager {
     }
     const context = new GroupInsertionCache();
     const monthCount = this.months.length;
+    const monthLookup = assets.length > 1 ? new Map<string, TimelineMonth>() : undefined;
+    if (monthLookup) {
+      for (const month of this.months) {
+        const { year, month: calendarMonth } = month.yearMonth;
+        const key = `${year}/${calendarMonth}`;
+        // Preserve the first strict calendar match; NaN never matches itself.
+        if (!Number.isNaN(year) && !Number.isNaN(calendarMonth) && !monthLookup.has(key)) {
+          monthLookup.set(key, month);
+        }
+      }
+    }
     for (const asset of assets) {
-      this.upsertSegmentForAsset(asset).addTimelineAsset(asset, context);
+      const dateTime = getOrderingDate(asset, this.#options.dateType || TimeBucketDateType.Taken);
+      const key = `${dateTime.year}/${dateTime.month}`;
+      let month = monthLookup ? monthLookup.get(key) : getTimelineMonthByDate(this, dateTime);
+      if (!month) {
+        month = new TimelineMonth(this, dateTime, 1, true, this.#options.order, this.#options.dateType);
+        this.months.push(month);
+        monthLookup?.set(key, month);
+      }
+      month.addTimelineAsset(asset, context);
     }
     if (this.months.length !== monthCount) {
       this.postCreateSegments();

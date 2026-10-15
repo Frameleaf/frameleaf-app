@@ -93,6 +93,62 @@ describe('canonical system configuration storage', () => {
     });
   });
 
+  it('discards an in-flight configuration read invalidated before it finishes', async () => {
+    const started = Promise.withResolvers<void>();
+    const stale = Promise.withResolvers<unknown>();
+    let reads = 0;
+    mocks.systemMetadata.get.mockImplementation((key) => {
+      if (key === SystemMetadataKey.SystemConfig && ++reads === 1) {
+        started.resolve();
+        return stale.promise as never;
+      }
+      return Promise.resolve(cloneDeep(metadata.get(key)) as never);
+    });
+    const pending = getConfig(repos(), { withCache: true });
+    await started.promise;
+    metadata.set(SystemMetadataKey.SystemConfig, { trash: { days: defaults.trash.days + 2 } });
+    clearConfigCache();
+    stale.resolve({ trash: { days: defaults.trash.days + 1 } });
+
+    expect((await pending).trash.days).toBe(defaults.trash.days + 2);
+    expect((await getConfig(repos(), { withCache: true })).trash.days).toBe(defaults.trash.days + 2);
+    expect(reads).toBe(2);
+  });
+
+  it('coalesces concurrent forced refreshes even when the clock does not advance', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1234);
+    const started = Promise.withResolvers<void>();
+    const refresh = Promise.withResolvers<unknown>();
+    let reads = 0;
+    mocks.systemMetadata.get.mockImplementation((key) => {
+      if (key === SystemMetadataKey.SystemConfig && ++reads === 2) {
+        started.resolve();
+        return refresh.promise as never;
+      }
+      return Promise.resolve(cloneDeep(metadata.get(key)) as never);
+    });
+    try {
+      await getConfig(repos(), { withCache: true });
+      const first = getConfig(repos(), { withCache: false });
+      await started.promise;
+      const second = getConfig(repos(), { withCache: false });
+      await Promise.resolve();
+      refresh.resolve({});
+      const [a, b] = await Promise.all([first, second]);
+      expect(a).toBe(b);
+      expect(reads).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('releases the configuration lock after a read rejects', async () => {
+    const failure = new Error('synthetic configuration read failure');
+    mocks.systemMetadata.get.mockRejectedValueOnce(failure);
+    await expect(getConfig(repos(), { withCache: false })).rejects.toBe(failure);
+    expect(await getConfig(repos(), { withCache: true })).toEqual(defaults);
+  });
+
   it('loads Frameleaf settings and ordinary settings from the same canonical document', async () => {
     metadata.set(SystemMetadataKey.SystemConfig, {
       smartAlbums: { enabled: true },
