@@ -36,3 +36,9 @@ it('retains legacy behavior only when no index is admitted', async () => {
   vi.mocked(repository.getActive).mockRejectedValue(new Error('desktop_clip_index_invalid'));
   await expect(repository.selectProfile(modelName, 'image')).rejects.toThrow('desktop_clip_index_invalid');
 });
+
+it('rejects forged space contents even when the revision and space key are unchanged', async () => {
+  await expect(
+    repository.assertCurrent({ ...binding, space: { ...space, visualModelKey: `clip:${'f'.repeat(64)}` } }),
+  ).rejects.toThrow('desktop_clip_index_changed');
+});

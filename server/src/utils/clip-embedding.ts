@@ -1,4 +1,5 @@
 import z from 'zod';
+import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 
 export type ClipEmbedding = string | { embedding: string; modelKey: string };
 
@@ -17,4 +18,23 @@ export const clipEmbeddingForStorage = (
     })
     .parse(value);
   return { embedding, producerModelKey: modelKey };
+};
+
+/** Decode before scheduling publication; both NAS HTTP and desktop results use this contract. */
+export const parseBoundClipResult = (value: unknown, profile: DesktopModelProfile) => {
+  const result = z
+    .strictObject({
+      clip: z.string().max(4 * 1024 * 1024),
+      imageWidth: z.number().int().positive().optional(),
+      imageHeight: z.number().int().positive().optional(),
+    })
+    .parse(value);
+  if (
+    profile.spec.fixtureKind === 'image'
+      ? result.imageWidth === undefined || result.imageHeight === undefined
+      : result.imageWidth !== undefined || result.imageHeight !== undefined
+  )
+    throw new Error('producer_result_invalid');
+  z.array(z.number().finite()).length(profile.embeddingDimensions).parse(JSON.parse(result.clip));
+  return { embedding: result.clip, modelKey: profile.modelKey };
 };

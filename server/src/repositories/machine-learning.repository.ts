@@ -39,6 +39,7 @@ import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
 import {
@@ -262,6 +263,8 @@ export type MlUsage = {
  * hook the selection owner installs; the repository calls it exactly once per request.
  */
 export type MlSelection = {
+  /** Internal admitted background pool; never reconstructed from an API response. */
+  desktopClip?: (payload: ModelPayload, profile: DesktopModelProfile) => Promise<unknown>;
   destinationId: string;
   kind: MlDestinationKind;
   workload: MlWorkload;
@@ -941,6 +944,7 @@ export class MachineLearningRepository implements RestorationInference {
     config: MachineLearningRequest,
     bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T },
   ): Promise<T> {
+    if (selection.desktopClip) throw new Error('desktop_bound_profile_required');
     if (selection.endpoint.cloud) {
       throw new CloudJobsUnavailableError(selection.workload);
     }
@@ -1059,30 +1063,34 @@ export class MachineLearningRepository implements RestorationInference {
     const size = await this.measure(payload);
     if (!size || size > 16 * 1024 * 1024) throw new Error('producer_input_invalid');
     const { protocolVersion, modelKey, entries, models, preprocessingSha256 } = profile.spec;
+    const parse = (value: unknown) => {
+      const parsed = z
+        .strictObject({
+          protocolVersion: z.literal(1),
+          modelKey: z.literal(profile.modelKey),
+          preprocessingSha256: z.literal(profile.spec.preprocessingSha256),
+          result: z.unknown(),
+        })
+        .parse(value);
+      return parseBoundClipResult(parsed.result, profile);
+    };
+    if (selection.desktopClip) {
+      const started = Date.now();
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopClip(payload, profile);
+        received = Buffer.byteLength(JSON.stringify(result));
+        const value = parse({ protocolVersion, modelKey, preprocessingSha256, result });
+        outcome = 'success';
+        return value;
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    }
     return this.predict(selection, payload, entries as MachineLearningRequest, {
       binding: { protocolVersion, modelKey, entries, models, preprocessingSha256 },
-      parse: (value) => {
-        const parsed = z
-          .strictObject({
-            protocolVersion: z.literal(1),
-            modelKey: z.literal(profile.modelKey),
-            preprocessingSha256: z.literal(profile.spec.preprocessingSha256),
-            result: z.strictObject({
-              clip: z.string().max(4 * 1024 * 1024),
-              imageWidth: z.number().int().positive().optional(),
-              imageHeight: z.number().int().positive().optional(),
-            }),
-          })
-          .parse(value);
-        if (
-          image
-            ? parsed.result.imageWidth === undefined || parsed.result.imageHeight === undefined
-            : parsed.result.imageWidth !== undefined || parsed.result.imageHeight !== undefined
-        )
-          throw new Error('producer_result_invalid');
-        z.array(z.number().finite()).length(profile.embeddingDimensions).parse(JSON.parse(parsed.result.clip));
-        return { embedding: parsed.result.clip, modelKey: parsed.modelKey };
-      },
+      parse,
     });
   }
 

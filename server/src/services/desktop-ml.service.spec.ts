@@ -17,7 +17,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   repository.create.mockResolvedValue({ id: 'task' });
   repository.cancel.mockResolvedValue(true);
-  service = new DesktopMlService(repository as never);
+  service = new DesktopMlService(repository as never, {} as never);
 });
 afterEach(() => vi.restoreAllMocks());
 const options = () => ({
@@ -98,4 +98,19 @@ it('defers the device fence into the NAS queue publication transaction', async (
   await adoption!('publication-transaction' as never);
   expect(repository.assertAdoption).toHaveBeenCalledWith('task', { id: 'task' }, 'publication-transaction');
   expect(repository.cancel).not.toHaveBeenCalled();
+});
+
+it('rechecks selected NAS authority inside deferred publication before adopting worker output', async () => {
+  let adoption: ((tx: never) => Promise<void>) | undefined;
+  vi.spyOn(context, 'deferJobAdoption').mockImplementation((callback) => {
+    adoption = callback;
+    return true;
+  });
+  vi.spyOn(context, 'afterJobCommit').mockResolvedValue(undefined);
+  repository.result.mockResolvedValue({ state: 'completed', result: {}, authorityKey: 'authority', modelKey: 'model' });
+  const input = options();
+  await service.dispatch(input);
+  input.assertAuthority.mockRejectedValue(new Error('policy revoked before publication'));
+  await expect(adoption!('transaction' as never)).rejects.toThrow('policy revoked before publication');
+  expect(repository.assertAdoption).not.toHaveBeenCalled();
 });

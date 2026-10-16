@@ -1,14 +1,28 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { QueueExecution } from 'src/queue/types.js';
+import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
+import { defaults } from 'src/config.js';
+import { AssetType, JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository, type DesktopMlTables } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
-import { newMediumService } from 'test/medium.factory.js';
+import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -20,11 +34,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.destroy();
 });
-const setup = async (withQualification = true) => {
+const setup = async (withQualification = true, profile?: DesktopModelProfile) => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser({ isAdmin: true });
   const { session: photoSession } = await ctx.newSession({ userId: user.id });
-  const modelKey = randomUUID();
+  const modelKey = profile?.modelKey ?? randomUUID();
   const devices = new DesktopDeviceRepository(db);
   const workers = await Promise.all(
     [1, 2].map((n) =>
@@ -61,9 +75,9 @@ const setup = async (withQualification = true) => {
     ownerId: user.id,
     modelKey,
     authorityKey: 'asset-and-route-generation-1',
-    config: { clip: { textual: { modelName: 'fixture' } } },
-    input: Buffer.from('fixture input'),
-    inputKind: 'text' as const,
+    config: profile?.spec.entries ?? { clip: { textual: { modelName: 'fixture' } } },
+    input: profile ? Buffer.from(profile.fixtureBase64, 'base64') : Buffer.from('fixture input'),
+    inputKind: profile?.spec.fixtureKind ?? ('text' as const),
     deadlineAt: new Date(Date.now() + 120_000),
   };
   if (withQualification) await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
@@ -235,7 +249,7 @@ it('dispatches a bounded request through a second worker connection and deletes 
     return task;
   });
   const authority = vi.fn().mockResolvedValue(undefined);
-  const dispatch = new DesktopMlService(sut).dispatch({
+  const dispatch = new DesktopMlService(sut, new DesktopClipIndexRepository(db)).dispatch({
     request,
     assertAuthority: authority,
     decodeResult: (value) => value,
@@ -260,7 +274,7 @@ it('NAS cancellation removes task input and fences a worker already holding the 
     return task;
   });
   const controller = new AbortController();
-  const dispatch = new DesktopMlService(sut).dispatch({
+  const dispatch = new DesktopMlService(sut, new DesktopClipIndexRepository(db)).dispatch({
     request,
     assertAuthority: async () => {},
     decodeResult: (value) => value,
@@ -466,4 +480,107 @@ it('qualification authorizes only the exact request configuration and input kind
   expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
   const task = await sut.create(request);
   expect((await sut.claim(grants[0], [request.modelKey]))?.task.id).toBe(task.id);
+});
+
+it('publishes a synthetic pool result only with the real index and broker transaction fences', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const profile = profiles.find((p) => p.spec.fixtureKind === 'image')!;
+  const space = JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-spaces.json'), 'utf8')).spaces[0];
+  for (const table of [
+    'smart_search',
+    'smart_search_description',
+    'asset_video_duplicate_frame',
+    'video_moment_frame_embedding',
+  ])
+    await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
+  const index = new DesktopClipIndexRepository(db);
+  const binding = await index.admit(space.spaceKey);
+  const { sut, second, grants, request } = await setup(true, profile);
+  const asset = mediumFactory.assetInsert({ ownerId: request.ownerId, type: AssetType.Image });
+  await new AssetRepository(db).create(asset);
+  const root = await mkdtemp(join(tmpdir(), 'frameleaf-pool-database-'));
+  const path = join(root, 'fixture.png');
+  const ready = Promise.withResolvers<Awaited<ReturnType<typeof sut.create>>>();
+  const create = sut.create.bind(sut);
+  vi.spyOn(sut, 'create').mockImplementation(async (input) => {
+    const row = await create(input);
+    ready.resolve(row);
+    return row;
+  });
+  const context: QueueExecution = {
+    claim: {
+      id: randomUUID(),
+      token: randomUUID(),
+      queue: 'smart-search',
+      name: JobName.SmartSearch,
+      data: { id: asset.id },
+      workerId: 'synthetic-NAS',
+      attempt: 1,
+      runId: null,
+      itemKey: null,
+      deadlineMs: 120_000,
+      startedAt: new Date(),
+    },
+    signal: new AbortController().signal,
+    progress: vi.fn(),
+    progressUnits: 0,
+    adoptions: [],
+    followups: [],
+    buffering: false,
+  };
+  const ml = new MachineLearningRepository(LoggingRepository.create(), undefined, undefined, undefined, index);
+  ml.setup(defaults.machineLearning);
+  const pool = new DesktopMlService(sut, index);
+  const search = new SearchRepository(db);
+  const authority = vi.fn().mockResolvedValue(undefined);
+  try {
+    await writeFile(path, request.input);
+    const prepared = queueExecution.run(context, async () => {
+      const selected = pool.selectClipPool(
+        {
+          destinationId: 'synthetic-NAS-route',
+          kind: MlDestinationKind.Local,
+          workload: MlWorkload.Clip,
+          endpoint: { url: 'https://unused.invalid', assertAuthority: authority },
+          record: vi.fn(),
+        },
+        {
+          ownerId: request.ownerId,
+          authorityKey: 'synthetic-explicit-pool-policy',
+          binding,
+          assertAuthority: authority,
+        },
+      );
+      const result = await ml.encodeImage(selected, path, {
+        ...defaults.machineLearning.clip,
+        modelName: profile.modelName,
+      });
+      await search.upsert(asset.id!, result);
+    });
+    const task = await ready.promise;
+    const claim = (await second.claim(grants[0], [profile.modelKey]))!;
+    expect(await second.input(grants[0], claim.attempt.id)).toEqual(request.input);
+    expect(await second.complete(grants[0], claim.attempt.id, profile.spec.expectedOutput)).toBe(true);
+    await prepared;
+    expect(await search.getEmbedding(asset.id!)).toBeUndefined();
+    expect(context.adoptions).toHaveLength(2);
+    await db.transaction().execute((tx) =>
+      queueExecution.run(context, () =>
+        publicationTransaction.run(tx, async () => {
+          for (const adopt of context.adoptions) await adopt(tx);
+        }),
+      ),
+    );
+    for (const after of context.afterCommit ?? []) await after();
+    const persisted = await search.getEmbedding(asset.id!);
+    expect(persisted?.producerModelKey).toBe(profile.modelKey);
+    expect(JSON.parse(persisted!.embedding).map((v: number) => Math.fround(v))).toEqual(
+      JSON.parse(String(profile.spec.expectedOutput.clip)).map((v: number) => Math.fround(v)),
+    );
+    expect(await sut.result(task.id)).toBeUndefined();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

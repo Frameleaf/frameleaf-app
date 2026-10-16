@@ -145,7 +145,7 @@ export class DesktopClipIndexRepository {
   /** Supply the publication transaction to retain the index fence until claim adoption commits. */
   async assertCurrent(binding: DesktopClipIndexBinding, target: Kysely<DB> = this.db): Promise<void> {
     const active = await this.getActive(target);
-    if (!active || active.revisionId !== binding.revisionId || active.space.spaceKey !== binding.space.spaceKey)
+    if (!active || active.revisionId !== binding.revisionId || identity(active.space) !== identity(binding.space))
       throw new Error('desktop_clip_index_changed');
   }
 }

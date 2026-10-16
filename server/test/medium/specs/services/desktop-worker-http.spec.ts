@@ -5,6 +5,7 @@ import z from 'zod';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
@@ -99,7 +100,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
     { modelKey, config: { clip: { textual: { modelName: 'fixture' } } }, inputKind: 'text' },
   );
   const authority = vi.fn().mockResolvedValue(undefined);
-  const dispatched = new DesktopMlService(broker).dispatch({
+  const dispatched = new DesktopMlService(broker, new DesktopClipIndexRepository(db)).dispatch({
     request: {
       ownerId: user.id,
       modelKey,
