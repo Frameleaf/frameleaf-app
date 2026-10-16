@@ -31,6 +31,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
+import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
@@ -128,6 +129,7 @@ export const repositories = [
   DesktopDeviceRepository,
   DesktopMlRepository,
   DesktopWorkerRepository,
+  DesktopWorkerChallengeRepository,
   ICloudAuditRepository,
   ICloudScheduledStagingRepository,
   ICloudScheduledWorkerRepository,

@@ -21,3 +21,18 @@ A valid signature establishes factory release identity. It does not prove that
 a computer executed that runtime, validate its qualification report, authorize
 a model grant, or resolve legacy embedding-index compatibility. Session-bound
 challenge/admission must perform those additional checks before issuing work.
+
+Desktop qualification challenges are persisted with a NAS-generated nonce,
+credential generation, exact approved profile/specification, factory runtime
+identity and expiry. Issuance retries must keep the same profile/runtime binding.
+Each device retains at most 16 current challenges, for at most ten minutes and
+never beyond the worker credential's expiry. Rotation, revocation and photo
+logout fence pending evidence.
+
+Validated receipts bind provider execution, stable runtime facts, fixture/model/
+preprocessing identity and inference deadline. The fingerprint encoder matches
+Python's sorted ASCII-escaped JSON, including UTF-16 surrogates. Only the report
+digest and runtime fingerprint are retained; database errors redact challenge
+parameters. Recording a receipt does not grant model scope. Selected NAS model/
+index authority, admission endpoints and automatic worker orchestration remain
+required before inference can be enabled.

@@ -29,7 +29,7 @@ describe(boundPoolClose.name, () => {
 
 describe('desktop inference database diagnostics', () => {
   afterEach(() => vi.restoreAllMocks());
-  it.each(['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session'])(
+  it.each(['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session', 'desktop_worker_challenge'])(
     'redacts private inputs, output and error details for %s',
     async (table) => {
       const config = getKyselyConfig({
