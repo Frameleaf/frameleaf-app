@@ -1016,6 +1016,10 @@ describe(CloudMlBatchService.name, () => {
 
     it('replays an attempted submission with its own key, even past its expiry, before estimating again (review P2)', async () => {
       const later = new Date('2026-09-26T05:00:00.000Z');
+      // the upload targets expire at 05:00 too, so the job client has them signed again
+      mocks.frameleafCloudMl.refreshUpload.mockImplementation((_gateway, _jobId, inputId) =>
+        Promise.resolve({ ...uploadTarget(inputId), expiresAt: '2026-09-26T06:00:00.000Z' }),
+      );
 
       await sut.step(estimated({ attemptedAt: now.toISOString() }), 'claim-1', later);
 
