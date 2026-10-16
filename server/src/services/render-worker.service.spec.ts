@@ -2323,13 +2323,21 @@ describe(RenderWorkerService.name, () => {
     });
 
     it('publishes the frame before completing the render', async () => {
-      const result = await sut.complete(SESSION_A, rendering.id, {
+      const publication = Promise.withResolvers<{ published: boolean }>();
+      studioPreviews.onRenderCompleted.mockReturnValueOnce(publication.promise);
+      const completion = sut.complete(SESSION_A, rendering.id, {
         claimToken: 'claim-1',
         resultAssetId: null,
         output,
       } as never);
 
-      expect(result).toEqual({ accepted: true, refusal: null });
+      try {
+        await vi.waitFor(() => expect(studioPreviews.onRenderCompleted).toHaveBeenCalled());
+        expect(operations.complete).not.toHaveBeenCalled();
+      } finally {
+        publication.resolve({ published: true });
+      }
+      expect(await completion).toEqual({ accepted: true, refusal: null });
       expect(studioPreviews.onRenderCompleted).toHaveBeenCalledWith(
         expect.objectContaining({ id: rendering.id }),
         output,
@@ -2683,7 +2691,8 @@ describe(RenderWorkerService.name, () => {
           sut.complete(SESSION_A, validating.id, { claimToken: 'claim-1', artifactSequence: 0, resultAssetId: null }),
         ).rejects.toBeInstanceOf(NotFoundException);
         expect(studioExports.onRenderCompleted).not.toHaveBeenCalled();
-        expect(operations.completeCheckpoint).not.toHaveBeenCalled();
+        expect(operations.withExportArtifact).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
       },
     );
 
