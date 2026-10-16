@@ -128,14 +128,40 @@ describe('Studio export dialog', () => {
     const groups = within(format).getAllByRole('group');
     expect(groups.map((group) => group.getAttribute('label'))).toEqual([
       'frameleaf_studio_export_video_group',
+      'frameleaf_studio_export_more_video_group',
+      'frameleaf_studio_export_audio_group',
       'frameleaf_studio_export_stills_group',
     ]);
     expect(within(groups[0]).getAllByRole('option')[0]).toHaveValue(StudioExportFormat.Mp4HevcMain10);
-    expect(within(groups[1]).getAllByRole('option')).toHaveLength(3);
+    // FL-105: every other container and codec, and the sound alone; each unverified one says why.
+    expect(within(groups[1]).getAllByRole('option')).toHaveLength(13);
+    expect(within(groups[2]).getAllByRole('option')).toHaveLength(3);
+    expect(within(groups[3]).getAllByRole('option')).toHaveLength(3);
+    const mkv = within(groups[1]).getByRole('option', { name: 'frameleaf_studio_export_format_mkv_vp9' });
+    expect(mkv).toBeDisabled();
+    expect(mkv).toHaveAttribute('title', 'frameleaf_studio_render_refusal_codec_unavailable');
 
     const sizes = within(screen.getByLabelText('frameleaf_studio_export_resolution')).getAllByRole('option');
     expect(sizes.map((option) => (option as HTMLOptionElement).value)).not.toContain(StudioExportResolution.Original);
     expect(screen.getByTestId('studio-export-summary')).toHaveTextContent('frameleaf_studio_export_summary');
+  });
+
+  it('exports sound alone without picture settings or captions (FL-105)', async () => {
+    const onExport = vi.fn();
+    const row = evidence();
+    row.candidates![0].outputFormats = [...row.candidates![0].outputFormats, StudioExportFormat.AudioWav];
+    render(StudioExportDialog, { open: true, sequenceName: 'Lake trip', renderEvidence: [row], onExport });
+    await fireEvent.change(screen.getByLabelText('frameleaf_studio_export_format'), {
+      target: { value: StudioExportFormat.AudioWav },
+    });
+    expect(screen.getByLabelText('frameleaf_studio_export_resolution')).toBeDisabled();
+    expect(screen.queryByLabelText('frameleaf_studio_export_subtitles')).toBeNull();
+    expect(screen.queryByTestId('studio-export-smooth-motion')).toBeNull();
+    await fireEvent.click(exportButton());
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ format: StudioExportFormat.AudioWav, color: StudioExportColor.Preserve }),
+    );
+    expect(onExport.mock.calls[0][0]).not.toHaveProperty('subtitleMode');
   });
 
   it('starts from a preset, leaves unsupported ones disabled, and keeps the rare choices under Advanced', async () => {

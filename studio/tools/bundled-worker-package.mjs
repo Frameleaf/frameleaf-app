@@ -19,9 +19,11 @@ export const WORKER_MODULES = [
   'bundled-worker.mjs',
   'bundled-worker-client.mjs',
   'bundled-worker-executor.mjs',
+  'bundled-worker-formats.mjs',
   'bundled-worker-recipe.mjs',
   'bundled-worker-renderer.mjs',
 ];
+export const RUNTIME_MODULES = ['subtitle-sidecar.mjs'];
 export const ENGINE_RUNTIME_PACKAGES = ['playwright', 'playwright-core', 'zod'];
 
 export async function packageWorker(destination) {
@@ -31,6 +33,9 @@ export async function packageWorker(destination) {
   await mkdir(tools, { recursive: true });
   for (const file of WORKER_MODULES) await cp(path.join(studio, 'tools', file), path.join(tools, file));
   await cp(path.join(studio, 'engine-build.json'), path.join(target, 'studio', 'engine-build.json'));
+  // FL-105: the caption producer the server seals sidecar and embedded captions with.
+  await mkdir(path.join(target, 'studio', 'runtime'), { recursive: true });
+  for (const file of RUNTIME_MODULES) await cp(path.join(studio, 'runtime', file), path.join(target, 'studio', 'runtime', file));
   await cp(path.join(studio, 'notices'), path.join(target, 'studio', 'notices'), { recursive: true });
 
   const manifest = JSON.parse(await readFile(path.join(engine, 'package.json'), 'utf8'));

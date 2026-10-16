@@ -97,11 +97,13 @@ describe('bundled worker recipe', () => {
   });
 
   const refusals = [
-    ['another format', (claim) => (claim.settings.format = 'webm-av1'), 'unsupported_format'],
+    ['a format it does not write', (claim) => (claim.settings.format = 'avi-mpeg4'), 'unsupported_format'],
+    ['a 10-bit format', (claim) => (claim.settings.format = 'webm-av1'), 'needs_10bit'],
     ['HDR colour', (claim) => (claim.settings.color = 'hdr10'), 'unsupported_color'],
     ['an HDR source picture', (claim) => (claim.snapshot.contract.video = { minBitDepth: 10, transfer: 'arib-std-b67' }), 'hdr_unsupported'],
     ['a still image', (claim) => (claim.snapshot.contract.image = { format: 'sdr-jpeg' }), 'unsupported_format'],
-    ['a subtitle file', (claim) => (claim.settings.subtitleMode = 'sidecar'), 'subtitles_unsupported'],
+    ['a subtitle file without its seal', (claim) => (claim.settings.subtitleMode = 'sidecar'), 'subtitles_unsupported'],
+    ['captions on sound alone', (claim) => Object.assign(claim.settings, { format: 'audio-mp3', subtitleMode: 'burn' }), 'subtitles_unsupported'],
     ['a nested composition', (claim) => claim.snapshot.studio.graph.timeline.items.push({ id: 'c', type: 'composition', from: 0, durationInFrames: 10 }), 'unsupported_item'],
     ['an animation', (claim) => claim.snapshot.studio.graph.timeline.items.push({ id: 'l', type: 'lottie', mediaId: ASSET, from: 0, durationInFrames: 10 }), 'unsupported_item'],
     ['generated media', (claim) => (claim.snapshot.studio.graph.timeline.items[0].generatedId = 'g'), 'unsupported_source'],
@@ -146,12 +148,14 @@ describe('bundled worker recipe', () => {
     const recipe = bundledRecipe(claimOf(), { softwareRenderer: true });
     const video = { codec_type: 'video', codec_name: 'h264', width: 1280, height: 720, duration: '4.000000' };
     const audio = { codec_type: 'audio', codec_name: 'aac', channels: 2, sample_rate: '48000', duration: '4.021333' };
-    assert.equal(outputMismatch(recipe, [video, audio]), null);
-    assert.match(outputMismatch(recipe, [{ ...video, codec_name: 'vp9' }, audio]), /H\.264/);
-    assert.match(outputMismatch(recipe, [{ ...video, width: 640 }, audio]), /640/);
-    assert.match(outputMismatch(recipe, [video]), /no audio/);
-    assert.match(outputMismatch(recipe, [video, { ...audio, channels: 1 }]), /2-channel/);
-    assert.match(outputMismatch(recipe, [video, { ...audio, duration: '4.075000' }]), /end more than a frame apart/);
+    const of = (...streams) => ({ streams, format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' } });
+    assert.equal(outputMismatch(recipe, of(video, audio)), null);
+    assert.match(outputMismatch(recipe, of({ ...video, codec_name: 'vp9' }, audio)), /h264/);
+    assert.match(outputMismatch(recipe, { ...of(video, audio), format: { format_name: 'matroska,webm' } }), /not mp4/);
+    assert.match(outputMismatch(recipe, of({ ...video, width: 640 }, audio)), /640/);
+    assert.match(outputMismatch(recipe, of(video)), /no audio/);
+    assert.match(outputMismatch(recipe, of(video, { ...audio, channels: 1 })), /2-channel/);
+    assert.match(outputMismatch(recipe, of(video, { ...audio, duration: '4.075000' })), /end more than a frame apart/);
     assert.ok(avDrift([video, { ...audio, duration: '4.075000' }], 30).excess > 0);
     assert.equal(avDrift([video], 30), null);
   });
@@ -279,10 +283,13 @@ const fakeRenderer = ({ softwareRenderer = true, fail, onRender } = {}) => {
   };
 };
 
-const streams = async () => [
-  { codec_type: 'video', codec_name: 'h264', width: 1280, height: 720, duration: '4.000000' },
-  { codec_type: 'audio', codec_name: 'aac', channels: 2, sample_rate: '48000', duration: '4.010000' },
-];
+const streams = async () => ({
+  streams: [
+    { codec_type: 'video', codec_name: 'h264', width: 1280, height: 720, duration: '4.000000' },
+    { codec_type: 'audio', codec_name: 'aac', channels: 2, sample_rate: '48000', duration: '4.010000' },
+  ],
+  format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+});
 
 describe('bundled worker executor', () => {
   let workRoot;
@@ -345,10 +352,10 @@ describe('bundled worker executor', () => {
     const server = await fakeServer(claim);
     try {
       const result = await run(claim, server, fakeRenderer());
-      assert.deepEqual(result, { status: 'refused', operationId: claim.operationId, code: 'unsupported_format' });
+      assert.deepEqual(result, { status: 'refused', operationId: claim.operationId, code: 'needs_10bit' });
       const fail = server.calls.find((call) => call.route.endsWith('/fail'));
-      assert.equal(fail.body.errorCode, 'bundled_unsupported_format');
-      assert.match(fail.body.error, /MP4/);
+      assert.equal(fail.body.errorCode, 'bundled_needs_10bit');
+      assert.match(fail.body.error, /10-bit picture.*Choose ProRes 422/);
       assert.ok(!server.calls.some((call) => call.route.endsWith('/checkpoints')));
     } finally {
       await server.close();

@@ -345,6 +345,7 @@ export const readBuddyStudioProject = (manifest: BuddyManifest, projectId: strin
           engineDigest: embedded.source.engineDigest,
         },
         { inPoint: embedded.source.inPoint, outPoint: embedded.source.outPoint },
+        String((row.settings as { format?: unknown }).format),
       );
       if (canonicalJson(derived) !== canonicalJson(embedded) || row.engineDigest !== embedded.source.engineDigest)
         throw new Error('Buddy embedded subtitle authority changed');

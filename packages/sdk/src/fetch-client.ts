@@ -8188,7 +8188,7 @@ export type MlDestinationCreateDto = {
 };
 export type StudioRenderCandidateDto = {
     dolbyVision: boolean;
-    /** Output formats whose MP4 mov_text profile and encoder this same session verified */
+    /** Output formats whose embedded caption track (the container's text codec) and profile this same session verified */
     embeddedOutputFormats?: StudioExportFormat[];
     gpuMemoryBytes: number | null;
     hdr10: boolean;
@@ -31223,7 +31223,23 @@ export enum StudioExportFormat {
     Prores422Hq = "prores-422-hq",
     SdrJpeg = "sdr-jpeg",
     HdrJpeg = "hdr-jpeg",
-    HdrHeic = "hdr-heic"
+    HdrHeic = "hdr-heic",
+    Mp4Hevc = "mp4-hevc",
+    Mp4Av1 = "mp4-av1",
+    MovH264 = "mov-h264",
+    MovHevc = "mov-hevc",
+    MovProres422 = "mov-prores-422",
+    MkvH264 = "mkv-h264",
+    MkvHevc = "mkv-hevc",
+    MkvVp8 = "mkv-vp8",
+    MkvVp9 = "mkv-vp9",
+    MkvAv1 = "mkv-av1",
+    WebmVp8 = "webm-vp8",
+    WebmVp9 = "webm-vp9",
+    WebmAv1Sdr = "webm-av1-sdr",
+    AudioMp3 = "audio-mp3",
+    AudioAac = "audio-aac",
+    AudioWav = "audio-wav"
 }
 export enum MlStudioFeature {
     SpeechToText = "speech-to-text",
