@@ -880,6 +880,48 @@ describe(PartnerCopyService.name, () => {
       return { sut, ctx, origins, bob, source, copyId, tag, tags: BaseService.create(TagService, sut) };
     };
 
+    it.each([AssetOriginField.Faces, AssetOriginField.Visibility])(
+      'keeps a recipient %s override completed after replay reads its origin',
+      async (field) => {
+        const { sut, ctx, origins, bob, source, copyId } = await tagEditFixture(true);
+        if (field === AssetOriginField.Faces) {
+          await ctx.newAssetFace({ assetId: source.id, personGroupId: null, boundingBoxX1: 40 });
+        } else {
+          await ctx.get(AssetRepository).lock([source.id], AssetLockReason.Marked, source.ownerId);
+          await ctx.get(AssetRepository).lock([copyId], AssetLockReason.Marked, bob.id);
+        }
+        const getOrigin = origins.getOrigin.bind(origins);
+        let edited = false;
+        const snapshot = vi.spyOn(origins, 'getOrigin').mockImplementation(async (kind, id) => {
+          const origin = await getOrigin(kind, id);
+          if (kind === 'asset' && id === copyId && !edited) {
+            edited = true;
+            if (field === AssetOriginField.Faces) {
+              await ctx.newAssetFace({ assetId: copyId, personGroupId: null, boundingBoxX1: 10 });
+            } else {
+              await ctx.get(AssetRepository).unlock([copyId]);
+            }
+            await origins.markOverridden('asset', [copyId], [field], bob.id);
+          }
+          return origin;
+        });
+        try {
+          await expect(sut.copyAsset(source.id, bob.id, source.ownerId)).resolves.toBe(copyId);
+        } finally {
+          snapshot.mockRestore();
+        }
+        expect(edited).toBe(true);
+        if (field === AssetOriginField.Faces) {
+          expect(
+            await db.selectFrom('asset_face').select('boundingBoxX1').where('assetId', '=', copyId).execute(),
+          ).toEqual([{ boundingBoxX1: 10 }]);
+        } else {
+          expect(await ctx.get(AssetRepository).getLockReasons([copyId])).toEqual([]);
+        }
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(field);
+      },
+    );
+
     it('keeps a tag rename completed after a replay reads its origin', async () => {
       const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(true);
       const getOrigin = origins.getOrigin.bind(origins);

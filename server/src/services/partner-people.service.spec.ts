@@ -1,10 +1,11 @@
 import { ConflictException } from '@nestjs/common';
 import type { FaceCorrection, PartnerPersonLink } from 'src/repositories/person.repository.js';
-import { JobName } from 'src/enum.js';
+import { AssetLockReason, JobName } from 'src/enum.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -105,6 +106,60 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('copyFaces', () => {
+    it.each([AssetOriginField.Faces, AssetOriginField.Visibility, null])(
+      'uses current replay override %s and prepares matching outside the origin transaction',
+      async (field) => {
+        const copy = BaseService.create(PartnerCopyService, sut);
+        const source = AssetFactory.create({ id: SOURCE_ASSET, ownerId: A, livePhotoVideoId: null });
+        const target = AssetFactory.create({ id: TARGET_ASSET, ownerId: B });
+        mocks.asset.getById.mockImplementation((id) => Promise.resolve(id === SOURCE_ASSET ? source : target));
+        const snapshot = {
+          id: TARGET_ASSET,
+          sourceId: SOURCE_ASSET,
+          ownerId: B,
+          rootOwnerId: A,
+          partnerSharedById: A,
+          overriddenFields: [],
+          following: true,
+        };
+        mocks.partnerOrigin.getOrigin.mockImplementation((_kind, id) =>
+          Promise.resolve(id === TARGET_ASSET ? snapshot : undefined),
+        );
+        mocks.partnerOrigin.libraryHasChecksum.mockResolvedValue(true);
+        mocks.partnerOrigin.getCopyId.mockResolvedValue(TARGET_ASSET);
+        mocks.partnerOrigin.getFollowingAlbumCopiesHolding.mockResolvedValue([]);
+        mocks.asset.getLockReasons.mockResolvedValue([{ assetId: SOURCE_ASSET, reason: AssetLockReason.Marked }]);
+        mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
+        mocks.user.getMetadata.mockResolvedValue([]);
+        let held = false;
+        mocks.partnerOrigin.withFollowingOrigin.mockImplementation(async (_kind, _sourceId, _id, apply) => {
+          held = true;
+          try {
+            return await apply({ ...snapshot, overriddenFields: field ? [field] : [] });
+          } finally {
+            held = false;
+          }
+        });
+        const getConfig = BaseService.prototype.getConfig;
+        const config = vi.spyOn(BaseService.prototype, 'getConfig').mockImplementation(function (
+          this: BaseService,
+          options,
+        ) {
+          if (held) throw new Error('configuration read inside replay transaction');
+          return getConfig.call(this, options);
+        });
+        try {
+          await expect(copy.copyAsset(SOURCE_ASSET, B, A)).resolves.toBe(TARGET_ASSET);
+          if (field === AssetOriginField.Faces) expect(mocks.person.getFacesForPartnerCopy).not.toHaveBeenCalled();
+          else expect(mocks.person.getFacesForPartnerCopy).toHaveBeenCalledWith(SOURCE_ASSET);
+          if (field === AssetOriginField.Visibility) expect(mocks.asset.lock).not.toHaveBeenCalled();
+          else expect(mocks.asset.lock).toHaveBeenCalledWith([TARGET_ASSET], AssetLockReason.Marked, null);
+        } finally {
+          config.mockRestore();
+        }
+      },
+    );
+
     it.each([0, 0.25])('uses prepared face matching distance %s without loading configuration', async (maxDistance) => {
       const config = vi.spyOn(sut, 'getConfig').mockRejectedValue(new Error('configuration read inside transaction'));
       try {

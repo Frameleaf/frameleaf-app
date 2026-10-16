@@ -288,23 +288,32 @@ export class PartnerCopyService extends BaseService {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
       }
     }
+    const maxDistance = !overriddenFields.includes(AssetOriginField.Faces)
+      ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
+      : undefined;
     await this.partnerOriginRepository.withFollowingOrigin('asset', source.id, copyId, async (origin) => {
       if (!origin.overriddenFields.includes(AssetOriginField.Tags)) {
         await this.copyTags(source.id, copyId, targetOwnerId);
       }
+      if (!origin.overriddenFields.includes(AssetOriginField.Faces)) {
+        await this.copyFaces({
+          sourceAssetId: source.id,
+          targetAssetId: copyId,
+          targetOwnerId,
+          partnerSharedById,
+          maxDistance,
+        });
+      }
+      // A recipient's lock/unlock completed after the replay snapshot remains their choice.
+      if (!origin.overriddenFields.includes(AssetOriginField.Visibility)) {
+        await locks.mirrorLockedState({
+          sourceAssetId: source.id,
+          sourceOwnerId: source.ownerId,
+          targetAssetId: copyId,
+          targetOwnerId,
+        });
+      }
     });
-    if (!overriddenFields.includes(AssetOriginField.Faces)) {
-      await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
-    }
-    // the source may have been locked or unlocked meanwhile
-    if (!overriddenFields.includes(AssetOriginField.Visibility)) {
-      await locks.mirrorLockedState({
-        sourceAssetId: source.id,
-        sourceOwnerId: source.ownerId,
-        targetAssetId: copyId,
-        targetOwnerId,
-      });
-    }
     // spec §4.4: an album copy whose membership still follows its source gains the new copy
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
