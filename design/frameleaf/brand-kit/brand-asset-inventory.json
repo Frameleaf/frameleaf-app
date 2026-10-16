@@ -50,7 +50,7 @@
     "suppliedVectors": 7
   },
   "digests": {
-    "approvedReferenceLedgerSha256": "ef4f49cac8e0f22f2b5753b0db42c9b4b0ead62b37ed7a6e23516fdede22350a",
+    "approvedReferenceLedgerSha256": "60a0e9e61eb15c05c4fff440017c4ede21256a2876c6708378efffa70b20adc8",
     "suppliedSourceLedgerSha256": "59f073d84b24756562e8047f7db74a098c049c3f2ed817d479d08e399d4aaced"
   },
   "expectedDuplicateContent": [],

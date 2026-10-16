@@ -18,8 +18,10 @@
  *   node scripts/frameleaf-studio-rights.mjs --write   regenerate it
  */
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const ATTRIBUTION_PATH = 'studio/dependency-attribution.json';
 export const SERVER_MIRROR_PATH = 'server/src/utils/studio-rights.generated.ts';
@@ -325,7 +327,9 @@ export async function main(argv, root) {
   return 0;
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+// Compare real paths: a URL built from argv misses encoded characters (a space) and symlinked checkouts,
+// and a missed match exits 0 without checking anything.
+const invokedDirectly = process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   process.exitCode = await main(process.argv.slice(2), process.cwd());
 }

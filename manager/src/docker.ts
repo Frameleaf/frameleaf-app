@@ -253,6 +253,8 @@ export class Docker {
   }
   async restartPolicy(id: string, policy: string): Promise<void> {
     containerId.parse(id);
+    // Docker reports an unset policy as "", which means the same as "no" but is not a valid --restart value.
+    if (policy === '') policy = 'no';
     if (!/^(?:no|always|unless-stopped|on-failure(?::\d+)?)$/.test(policy)) throw new Refusal('invalid_restart_policy');
     await this.execute('docker', ['update', '--restart', policy, id]);
   }

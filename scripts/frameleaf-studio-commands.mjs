@@ -9,9 +9,11 @@
  */
 
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 export const SCHEMA_VERSION = 1;
 export const ENGINE = 'freecut';
@@ -1986,7 +1988,9 @@ export async function main(argv, root) {
   return 0;
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+// Compare real paths: a URL built from argv misses encoded characters (a space) and symlinked checkouts,
+// and a missed match exits 0 without checking anything.
+const invokedDirectly = process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   const rootIndex = process.argv.indexOf('--repository');
   const root = rootIndex === -1 ? process.cwd() : process.argv[rootIndex + 1];

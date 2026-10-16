@@ -1632,3 +1632,27 @@ test("rollback binds each image to its qualified release source while preserving
     });
   }
 });
+
+test("a rollout without a percentage is refused instead of offering the release to every server", async (t) => {
+  const tag = "frameleaf-v3.2.0-2";
+  const writes = [];
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if ((options.method || "GET") !== "GET") writes.push(String(url));
+    return new Response(
+      JSON.stringify({ id: 2, draft: false, body: "rollout: 10%\n\nNotes" }),
+      { status: 200 },
+    );
+  });
+  for (const value of [undefined, "", " "])
+    await assert.rejects(
+      releaseFlags({
+        GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+        ACTION: "rollout",
+        RELEASE_TAG: tag,
+        ROLLOUT_PERCENT: value,
+        DRY_RUN: "false",
+      }),
+      /Rollout must be a whole percentage from 0 to 100/,
+    );
+  assert.deepEqual(writes, []);
+});

@@ -17,7 +17,7 @@ import {
   outputMismatch,
 } from './bundled-worker-recipe.mjs';
 import { NO_TRUST_VOLUME, readTrust, trustVolumeMounted, workerConfig, workingMemoryBytes } from './bundled-worker.mjs';
-import { isSoftwareAdapter, toneWav } from './bundled-worker-renderer.mjs';
+import { createEngineRenderer, isSoftwareAdapter, toneWav } from './bundled-worker-renderer.mjs';
 
 const GIB = 1024 ** 3;
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -482,5 +482,54 @@ describe('lease', () => {
     assert.equal(lease.state.reason, 'LEASE_LOST');
     lease.release();
     now = 5000;
+  });
+});
+
+describe('renderer', () => {
+  /** A stand-in prepared engine: a browser whose render runs until the browser is closed. */
+  const fakeEngine = async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-fake-engine-'));
+    const write = async (file, text) => {
+      await import('node:fs/promises').then(({ mkdir }) => mkdir(path.dirname(path.join(dir, file)), { recursive: true }));
+      await writeFile(path.join(dir, file), text);
+    };
+    await write('package.json', '{"name":"engine","type":"module"}');
+    await write('dist/headless.html', '<html></html>');
+    await write(
+      'node_modules/playwright/index.js',
+      `module.exports.chromium = { launch: async () => {
+        let closed; const gone = new Promise((_, reject) => { closed = reject; }); gone.catch(() => {});
+        const page = { route: async () => {}, goto: async () => {}, waitForFunction: async () => {}, evaluate: async () => null,
+          exposeBinding: async () => {}, gone };
+        return { newPage: async () => page, close: async () => closed(new Error('browser closed')) };
+      } };`,
+    );
+    await write(
+      'headless/server.mjs',
+      "export const createHarnessServer = async () => ({ harnessUrl: 'http://127.0.0.1:1/', mediaUrl: () => '', close: async () => {} });",
+    );
+    await write('headless/lib/cli.mjs', 'export const chromeLaunchArgs = () => [];');
+    await write('headless/lib/render-core.mjs', 'export const renderJob = (page) => page.gone;');
+    return dir;
+  };
+
+  it('stops a render whose lease was lost before the browser opened instead of rendering to the end', async () => {
+    const engineDir = await fakeEngine();
+    try {
+      const renderer = await createEngineRenderer({ engineDir, chromiumPath: '/bin/true', ffmpeg: '/usr/bin/true' });
+      const reason = new Error('LEASE_LOST');
+      const rendering = renderer.render({
+        project: {},
+        files: new Map(),
+        settings: { fps: 30 },
+        bounds: { inPoint: 0, outPoint: 30 },
+        outputPath: path.join(engineDir, 'out.mp4'),
+        signal: AbortSignal.abort(reason),
+      });
+      const stalled = new Promise((resolve) => setTimeout(() => resolve('still rendering'), 2000).unref());
+      assert.equal(await Promise.race([rendering.then(() => 'finished', (error) => error), stalled]), reason);
+    } finally {
+      await rm(engineDir, { recursive: true, force: true });
+    }
   });
 });
