@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -63,7 +63,8 @@ describe('Matched import metadata fills', () => {
     const entered = Promise.withResolvers<void>();
     const held = Promise.withResolvers<void>();
     const editing = db.transaction().execute(async (tx) => {
-      await tx.selectFrom('asset_origin').selectAll().where('assetId', '=', asset.id).forUpdate().execute();
+      // asset_origin is outside the Kysely schema; PartnerOriginRepository reads it with raw SQL too
+      await sql`SELECT 1 FROM public.asset_origin WHERE "assetId" = ${asset.id}::uuid FOR UPDATE`.execute(tx);
       entered.resolve();
       await held.promise;
     });

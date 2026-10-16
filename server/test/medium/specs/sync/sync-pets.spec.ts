@@ -90,13 +90,8 @@ it.each(['suppression', 'deletion'] as const)(
     const first = await ctx.syncStream(auth, types);
     await ctx.syncAckAll(auth, first);
     const target = await pets.create({ ownerId: auth.user.id, name: 'Merged' });
-    await pets.mergeInto(auth.user.id, {
-      sourceId: pet.id,
-      targetId: target.id,
-      reassign: [observation.id],
-      promote: [],
-      discard: [],
-    });
+    // the target has no observations, so the merge plan reassigns the source's observation
+    await pets.mergeInto(auth.user.id, { sourceId: pet.id, targetId: target.id });
     const merged = await ctx.syncStream(auth, types);
     expect(events(merged)).toContainEqual(
       expect.objectContaining({
@@ -124,13 +119,7 @@ it('retries a merge between reconciliation and preparation under a fresh generat
   const { ctx, auth, pet, observation, pets, repo } = await setup();
   const [queued] = await repo.reconcile(auth, 'petObservation');
   const target = await pets.create({ ownerId: auth.user.id, name: 'Merge during delivery' });
-  await pets.mergeInto(auth.user.id, {
-    sourceId: pet.id,
-    targetId: target.id,
-    reassign: [observation.id],
-    promote: [],
-    discard: [],
-  });
+  await pets.mergeInto(auth.user.id, { sourceId: pet.id, targetId: target.id });
   expect(await repo.prepare(auth, 'petObservation', queued.eventId)).toBeUndefined();
   const [fresh] = await repo.reconcile(auth, 'petObservation');
   expect(fresh.eventId).not.toBe(queued.eventId);

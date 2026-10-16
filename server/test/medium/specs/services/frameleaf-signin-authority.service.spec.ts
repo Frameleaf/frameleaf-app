@@ -180,7 +180,13 @@ const setup = async (flow: 'callback' | 'exchange') => {
     cloudUrl: 'https://cloud.test',
     instanceId: 'instance',
     linkedAt: new Date().toISOString(),
-    oidc: { issuer: config.issuerUrl, clientId: config.clientId, scope: config.scope },
+    oidc: {
+      issuer: config.issuerUrl,
+      clientId: config.clientId,
+      scope: config.scope,
+      roleClaim: 'frameleaf_role',
+      storageLabelClaim: '',
+    },
   };
   await metadata.set(SystemMetadataKey.FrameleafCloudLink, link);
   const now = Math.floor(Date.now() / 1000);
