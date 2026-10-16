@@ -2730,6 +2730,10 @@ describe('iCloud exact identity adoption', () => {
           await sql`DELETE FROM public.icloud_resource WHERE id=${fixture.resource.id}::uuid`.execute(db);
           await sql`UPDATE public.media_operation SET status='queued',"claimToken"=NULL,"claimExpiresAt"=NULL
             WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
+          // Claiming the operation again starts a new worker incarnation; item claims are bound to an
+          // incarnation (scheduledAuditClaimHolder), so the admission fixture's claim is expired here.
+          await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+            WHERE "ownerId"=${fixture.f.user.id}::uuid`.execute(db);
           const outbox = operations();
           const claimed = await db.transaction().execute(async (tx) => {
             // Other tests' durable queue rows stay untouched; real SKIP LOCKED selects this obligation.
