@@ -200,10 +200,21 @@ describe('SharedSpaceDetail header (FL-83 AL-42)', () => {
     expect(sdkMock.getAllSharedLinks).not.toHaveBeenCalled();
   });
 
-  it('opens the Activity panel from a Comments button that says how many entries are new (SHARING-P7)', async () => {
+  it('opens the Comments panel from a Comments button that says how many entries are new (SHARING-P7)', async () => {
     renderSpace(spaceAs(AlbumUserRole.Owner), { activity: activity(3) });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Comments, 3 new' }));
+    expect(panel()).toBe('activity');
+  });
+
+  // Owner, 2026-10-16: the tab is "Comments", never "Activity", which is the app's own workspace.
+  it('names the conversation tab Comments', async () => {
+    renderSpace(spaceAs(AlbumUserRole.Owner));
+
+    const sections = within(screen.getByRole('group', { name: 'Shared space sections' }));
+    expect(sections.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
+    expect(sections.queryByRole('button', { name: /Activity/ })).toBeNull();
+    await fireEvent.click(sections.getByRole('button', { name: /^Comments/ }));
     expect(panel()).toBe('activity');
   });
 

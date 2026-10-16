@@ -155,12 +155,13 @@
     albums: $t('frameleaf_spaces_panel_albums'),
     people: $t('frameleaf_spaces_panel_people'),
     places: $t('frameleaf_spaces_panel_places'),
-    activity: $t('frameleaf_spaces_panel_activity'),
+    // Owner, 2026-10-16: "Comments", so it is never taken for the app's own Activity.
+    activity: $t('frameleaf_spaces_panel_comments'),
     members: $t('frameleaf_spaces_panel_members'),
   });
   // The loader's feed until the member marks the space seen; then the server's newer one.
   let activityFeed = $derived<SharedSpaceActivityResponseDto | null>(activity);
-  // The Activity segment carries how much has happened since this member last marked the space seen.
+  // The Comments segment carries how much has happened since this member last marked the space seen.
   const panelOptions = $derived(
     SPACE_PANELS.map((value) => ({
       value,
@@ -552,7 +553,7 @@
           </button>
         {/if}
 
-        <!-- The space's own map and conversation are its Places and Activity panels. -->
+        <!-- The space's own map and conversation are its Places and Comments panels. -->
         <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => choosePanel('places')}>
           <Icon icon={mdiMapOutline} size="18" />
           <span>{$t('map')}</span>
