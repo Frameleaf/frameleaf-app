@@ -483,38 +483,52 @@ export class FrameleafCloudService extends BaseService {
    * linked to someone else.
    */
   private async connectLinkingAdministrator(link: FrameleafCloudLink, actorId: string | undefined, email?: string) {
-    if (!actorId || !link.accountId) {
+    const accountId = link.accountId;
+    if (!actorId || !accountId) {
       return;
     }
     try {
-      const [actor, existing, owner] = await Promise.all([
-        this.userRepository.get(actorId, { withDeleted: false }),
-        this.frameleafAccountRepository.getLinkByUser(actorId),
-        this.frameleafAccountRepository.getLinkBySub(link.accountId),
-      ]);
-      if (!actor?.isAdmin || existing || owner) {
-        return;
-      }
-      await this.frameleafAccountRepository.upsertLink({
-        userId: actor.id,
-        sub: link.accountId,
-        email: (email ?? actor.email).trim().toLowerCase(),
-        emailVerified: true,
-        role: 'admin',
-        autoRegistered: false,
-        // FL-235: the account that approved the link owns the server
-        access: 'owner',
-      });
-      await this.recordAdminEvents([
-        {
+      await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        const current = await this.readLink(link.cloudUrl);
+        if (
+          this.configRepository.getEnv().frameleafCloud.url !== link.cloudUrl ||
+          current?.status !== 'linked' ||
+          current.instanceId !== link.instanceId ||
+          current.accountId !== accountId ||
+          current.linkedAt !== link.linkedAt ||
+          !isEqual(current.oidc, link.oidc)
+        ) {
+          return;
+        }
+        const [actor, existing, owner] = await Promise.all([
+          this.userRepository.get(actorId, { withDeleted: false }),
+          this.frameleafAccountRepository.getLinkByUser(actorId),
+          this.frameleafAccountRepository.getLinkBySub(accountId),
+        ]);
+        if (!actor?.isAdmin || existing || owner) {
+          return;
+        }
+        await this.frameleafAccountRepository.upsertLink({
           userId: actor.id,
-          actorId: actor.id,
-          action: AdminAuditAction.FrameleafAccountLinked,
-          subject: actor.name,
-          detail: link.accountLabel ?? null,
-        },
-      ]);
-      this.logger.log(`Connected ${actor.email} to the Frameleaf account that linked this server`);
+          sub: accountId,
+          email: (email ?? actor.email).trim().toLowerCase(),
+          emailVerified: true,
+          role: 'admin',
+          autoRegistered: false,
+          // FL-235: the account that approved the link owns the server
+          access: 'owner',
+        });
+        await this.recordAdminEvents([
+          {
+            userId: actor.id,
+            actorId: actor.id,
+            action: AdminAuditAction.FrameleafAccountLinked,
+            subject: actor.name,
+            detail: link.accountLabel ?? null,
+          },
+        ]);
+        this.logger.log(`Connected ${actor.email} to the Frameleaf account that linked this server`);
+      });
     } catch (error) {
       this.logger.warn(`Could not connect the linking administrator to their Frameleaf account: ${error}`);
     }
