@@ -561,19 +561,25 @@ export class PhysicalFileRepository {
             await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
           }
           await options.untrash(entry.path, target);
-          await sql`DELETE FROM public.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
-          const physicalFile = await this.registerOriginal(trx, {
-            canonicalAssetId: asset.id,
-            checksum: file.checksum,
-            path: target,
-            sizeInBytes: file.sizeInBytes,
-          });
-          await trx
-            .updateTable('asset')
-            .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
-            .where('id', '=', asUuid(asset.id))
-            .execute();
-          return { physicalFile, linked: true };
+          try {
+            await sql`DELETE FROM public.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
+            const physicalFile = await this.registerOriginal(trx, {
+              canonicalAssetId: asset.id,
+              checksum: file.checksum,
+              path: target,
+              sizeInBytes: file.sizeInBytes,
+            });
+            await trx
+              .updateTable('asset')
+              .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+              .where('id', '=', asUuid(asset.id))
+              .execute();
+            return { physicalFile, linked: true };
+          } catch (error) {
+            // the rollback keeps the trash row: the file goes back to where that row says it is
+            await options.untrash(target, entry.path).catch(() => {});
+            throw error;
+          }
         }
       }
       await this.lockPath(trx, asset.originalPath);
