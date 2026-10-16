@@ -1691,6 +1691,60 @@ describe(CloudMlJobService.name, () => {
       expect(written().cost).toMatchObject({ outcome: 'charged', totalUsd: 0.2026 });
     });
 
+    it.each(['verified', 'checksum changed', 'size changed', 'missing', 'unreadable'])(
+      'qualifies a %s cached output before resuming publication',
+      async (state) => {
+        const result = completedWithOutputs();
+        mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+          notModified: false,
+          data: result,
+          etag: null,
+          retryAfterSeconds: null,
+        });
+        rendering();
+        mocks.crypto.hashFileDigests.mockClear();
+        mocks.crypto.hashFileDigests.mockImplementation(async (file) => {
+          const path = file.toString();
+          const cached = path.includes('/out-');
+          const first = path.endsWith('out-v1-s0.mp4');
+          if (first && (state === 'missing' || state === 'unreadable')) {
+            throw Object.assign(new Error(state), { code: state === 'missing' ? 'ENOENT' : 'EACCES' });
+          }
+          const sha256 = Buffer.from(SHA, 'hex');
+          if (first && state === 'checksum changed') sha256[0] ^= 0xff;
+          return {
+            sha1: Buffer.alloc(20),
+            sha256,
+            sizeInBytes: cached ? 10 + Number(first && state === 'size changed') : BYTES,
+          };
+        });
+        const resumed = claimed({
+          phase: CloudMlJobPhase.Ending,
+          job: runningRecord(),
+          downloaded: ['v1-s0', 'v1-s1'],
+        });
+
+        await sut.step(resumed, 'claim', now);
+
+        const checked = mocks.crypto.hashFileDigests.mock.calls
+          .filter(([file]) => file.toString().includes('/out-'))
+          .map(([file]) => file.toString());
+        expect(checked).toHaveLength(state === 'unreadable' ? 1 : 2);
+        if (state === 'unreadable') {
+          expect(mocks.frameleafCloudMl.downloadOutput).not.toHaveBeenCalled();
+          expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+          expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+          expect(mocks.storage.unlink).not.toHaveBeenCalledWith(expect.stringContaining('out-v1-s0.mp4'));
+        } else {
+          expect(mocks.frameleafCloudMl.downloadOutput.mock.calls.map(([, output]) => output.outputId)).toEqual(
+            state === 'verified' ? [] : ['v1-s0'],
+          );
+          expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewReady);
+          expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalled();
+        }
+      },
+    );
+
     it('keeps nothing when an output does not match its SHA-256, and downloads it again later', async () => {
       mocks.frameleafCloudMl.getJobView.mockResolvedValue({
         notModified: false,

@@ -1706,7 +1706,15 @@ export class CloudMlJobService {
     try {
       files = await client.download(view, document ? [...outputs, document] : outputs, run.snapshot.workDir, {
         done: run.result.downloaded,
-        exists: (file) => this.storageRepository.checkFileExists(file),
+        exists: async (file, output) => {
+          try {
+            const { sha256, sizeInBytes } = await this.cryptoRepository.hashFileDigests(file);
+            return sizeInBytes === output.bytes && sha256.toString('hex') === output.sha256;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
+            throw error;
+          }
+        },
         remove: (file) => this.storageRepository.unlink(file).catch(() => {}),
         fileName: (output) => `out-${output.outputId}${this.extensionOf(output.contentType)}`,
         record: (outputId) => {

@@ -226,9 +226,9 @@ export class FrameleafCloudJobClient {
 
   /**
    * Download the outputs of an ended job into `directory`, each checked against its SHA-256 while it
-   * streams (a mismatch keeps nothing and throws `sha256-mismatch`). Outputs in `done` whose file is
-   * still there are not fetched again; `record` is called after every new one. Files come back in the
-   * order the outputs are given.
+   * streams (a mismatch keeps nothing and throws `sha256-mismatch`). Outputs in `done` whose file
+   * still matches its record are not fetched again; `record` is called after every new one. Files come
+   * back in the order the outputs are given.
    */
   async download(
     view: CloudJobView,
@@ -236,7 +236,7 @@ export class FrameleafCloudJobClient {
     directory: string,
     options: {
       done: readonly string[];
-      exists: (file: string) => Promise<boolean>;
+      exists: (file: string, output: CloudOutputDownload) => Promise<boolean>;
       remove: (file: string) => Promise<void>;
       fileName: (output: CloudOutputDownload) => string;
       record: (outputId: string) => Promise<boolean>;
@@ -248,7 +248,7 @@ export class FrameleafCloudJobClient {
     const files: string[] = [];
     for (const output of outputs) {
       const file = path.join(directory, options.fileName(output));
-      if (!options.done.includes(output.outputId) || !(await options.exists(file))) {
+      if (!options.done.includes(output.outputId) || !(await options.exists(file, output))) {
         const headers = view.result.headers;
         await this.withRetries(async () => {
           // a broken download keeps nothing, so every attempt starts from an empty file

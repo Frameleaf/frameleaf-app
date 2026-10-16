@@ -172,16 +172,18 @@ describe(FrameleafCloudJobClient.name, () => {
     const client = new FrameleafCloudJobClient(repo as unknown as FrameleafCloudMlRepository, gateway);
     const view = jobViewSchema.parse(cloudContractFixture('ml/storage/job-completed-result.json'));
     const outputs = view.result!.outputs;
+    const exists = vi.fn().mockResolvedValue(true);
 
     const files = await client.download(view, outputs, '/work', {
       done: ['a1'],
-      exists: () => Promise.resolve(true),
+      exists,
       remove: () => Promise.resolve(),
       fileName: (output) => `out-${output.outputId}.json`,
       record: () => Promise.resolve(true),
     });
 
     expect(files).toEqual(['/work/out-a1.json', '/work/out-a2.json']);
+    expect(exists).toHaveBeenCalledExactlyOnceWith('/work/out-a1.json', outputs[0]);
     expect(repo.downloadOutput).toHaveBeenCalledTimes(1);
     expect(repo.downloadOutput).toHaveBeenCalledWith(gateway, outputs[1], view.result!.headers, '/work/out-a2.json', {
       signal: undefined,
