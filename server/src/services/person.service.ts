@@ -67,7 +67,6 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -456,7 +455,7 @@ export class PersonService extends BaseService {
 
     await this.refreshFeaturePhotos(auth.user.id, [restoreTo, face.personGroupId], face.id);
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
-    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+    await this.noteFaceEdit([face.assetId]);
 
     const [undone] = await this.mapCorrections(auth, [{ ...entry, faceId: face.id, undoneAt: new Date() }]);
     return undone;
@@ -632,7 +631,7 @@ export class PersonService extends BaseService {
       await this.createNewFeaturePhoto(changeFeaturePhoto.values().toArray());
     }
     await this.refreshIdentities(auth.user.id, { assetIds });
-    await this.noteFaceEdit(auth.user.id, assetIds);
+    await this.noteFaceEdit(assetIds);
     return result;
   }
 
@@ -671,7 +670,7 @@ export class PersonService extends BaseService {
       await this.createNewFeaturePhoto([face.person]);
     }
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
-    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+    await this.noteFaceEdit([face.assetId]);
 
     return mapPerson(await this.findOrFail(auth, personGroupId));
   }
@@ -1444,7 +1443,14 @@ export class PersonService extends BaseService {
         this.logger.log(`Merging ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
 
         try {
-          await this.personRepository.reassignFaces(mergeData);
+          await this.personRepository.withMergeWrite(async () => {
+            await this.personRepository.reassignFaces(mergeData);
+            await this.personRepository.repointPartnerPersonLinks(
+              targetPerson.ownerId,
+              mergeId,
+              targetPerson.personGroupId,
+            );
+          });
           await this.removeAllPersonGroups([mergeId], targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
@@ -1470,10 +1476,6 @@ export class PersonService extends BaseService {
             },
           ]);
           await this.refreshIdentities(targetPerson.ownerId, { personGroupIds: [targetPerson.personGroupId] });
-          // FL-326: later partner copies of a merged-away person's faces land on the survivor
-          await this.duringForkWrites('re-point partner people', () =>
-            this.personRepository.repointPartnerPersonLinks(targetPerson.ownerId, mergeId, targetPerson.personGroupId),
-          );
         } catch (error: any) {
           this.logger.error(`Unable to record the merge of ${mergeId}: ${error}`, error?.stack);
         }
@@ -1536,7 +1538,7 @@ export class PersonService extends BaseService {
     }
     // FL-57: a new face of a named person can change what generated text should say
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
-    await this.noteFaceEdit(auth.user.id, [asset.id]);
+    await this.noteFaceEdit([asset.id]);
 
     return this.mapStoredFace(auth, id);
   }
@@ -1627,7 +1629,7 @@ export class PersonService extends BaseService {
     }
 
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
-    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+    await this.noteFaceEdit([face.assetId]);
 
     return this.mapStoredFace(auth, id);
   }
@@ -1742,17 +1744,23 @@ export class PersonService extends BaseService {
     });
     await this.refreshFeaturePhotos(auth.user.id, [face.personGroupId], id);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
-    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+    await this.noteFaceEdit([face.assetId]);
   }
 
-  /** FL-326: a face edit makes a partner copy's faces its owner's; copies of these items re-copy them. */
-  private noteFaceEdit(userId: string, assetIds: string[]) {
-    return recordAssetEdit(
-      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-      userId,
-      [...new Set(assetIds)],
-      [AssetOriginField.Faces],
-    );
+  /** Face overrides commit with the edit; dispatch changes to following copies afterward. */
+  private async noteFaceEdit(assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+    const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', [...new Set(assetIds)]);
+    if (sources.length > 0) {
+      await this.jobRepository.queueAll(
+        sources.map((sourceId) => ({
+          name: JobName.PartnerPropagate as const,
+          data: { kind: 'asset' as const, sourceId, fields: [AssetOriginField.Faces] },
+        })),
+      );
+    }
   }
 
   private async requireFaceSource(asset: FaceSource, assetId: string, expectedSourceRevision?: string) {

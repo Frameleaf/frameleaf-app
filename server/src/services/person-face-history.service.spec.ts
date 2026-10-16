@@ -28,6 +28,7 @@ describe('PersonService face history (FL-57)', () => {
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
+    mocks.person.withMergeWrite.mockImplementation(async (write) => write());
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
     mocks.person.getVisibleEvidenceAssetIds.mockResolvedValue(new Set());
     mocks.person.getForMergePerson.mockResolvedValue([]);
