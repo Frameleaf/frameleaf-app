@@ -12,7 +12,6 @@ import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.tabl
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
-import { isLocked } from 'src/utils/locked.js';
 
 export type AlbumPermissionId = {
   albumId: string;
@@ -429,9 +428,8 @@ export class AlbumUserRepository {
    * for somebody is the link's own `name` and `coverAssetId`, never the
    * owner's private naming of their own faces.
    *
-   * A Locked photo is never the cover (FL-53). Moving a photo into the Locked
-   * folder already replaces it (`releaseLockedCoverReferences`); the read still
-   * answers no cover rather than a Locked id, whatever wrote the row.
+   * Recheck the stored cover against the space's visible assets on every read,
+   * so a removed, trashed, Hidden, Locked or sensitive photo is no longer named.
    */
   async getLinkedPeople(spaceId: string, forSync = false): Promise<SharedSpacePersonLink[]> {
     return this.db
@@ -441,7 +439,6 @@ export class AlbumUserRepository {
           .onRef('person.ownerId', '=', 'link.personOwnerId')
           .onRef('person.personGroupId', '=', 'link.personGroupId'),
       )
-      .leftJoin('asset as cover', (join) => join.onRef('cover.id', '=', 'link.coverAssetId').on(isLocked('cover')))
       .where('link.albumId', '=', spaceId)
       .$if(forSync, (qb) =>
         qb
@@ -454,24 +451,19 @@ export class AlbumUserRepository {
         'link.personOwnerId as personOwnerId',
         'link.personGroupId as personGroupId',
         'link.name as name',
-        ...(forSync
-          ? []
-          : [sql<string | null>`case when "cover"."id" is null then "link"."coverAssetId" end`.as('coverAssetId')]),
         'link.createdAt as createdAt',
       ])
-      .$if(forSync, (qb) =>
-        qb.select((eb) =>
-          eb
-            .selectFrom('asset')
-            .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
-            .whereRef('asset.id', '=', 'link.coverAssetId')
-            .whereRef('album_asset.albumId', '=', 'link.albumId')
-            .where('asset.deletedAt', 'is', null)
-            .$call(withDefaultVisibility)
-            .$call((query) => withHiddenContentFilter(query, { excludeNsfw: true }))
-            .select('asset.id')
-            .as('coverAssetId'),
-        ),
+      .select((eb) =>
+        eb
+          .selectFrom('asset')
+          .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+          .whereRef('asset.id', '=', 'link.coverAssetId')
+          .whereRef('album_asset.albumId', '=', 'link.albumId')
+          .where('asset.deletedAt', 'is', null)
+          .$call(withDefaultVisibility)
+          .$call((query) => withHiddenContentFilter(query, { excludeNsfw: true }))
+          .select('asset.id')
+          .as('coverAssetId'),
       )
       .orderBy('link.name', 'asc')
       .orderBy('link.createdAt', 'asc')

@@ -84,6 +84,81 @@ beforeAll(async () => {
 });
 
 describe(SharedSpaceService.name, () => {
+  describe('linked person cover readback', () => {
+    it.each(['visible', 'outside', 'trash', 'hidden', 'locked', 'sensitive'] as const)(
+      'retains the published identity while rechecking a %s cover',
+      async (state) => {
+        const { sut, albums, ctx } = setup();
+        const { user: owner } = await ctx.newUser();
+        const { user: member } = await ctx.newUser();
+        const space = await albums.create(authOf(owner.id), {
+          albumName: 'Cover readback',
+          kind: AlbumKind.Space,
+          albumUsers: [{ userId: member.id, role: AlbumUserRole.Viewer }],
+        });
+        await sut.accept(authOf(member.id), space.id);
+        const { asset } = await ctx.newAsset({ ownerId: owner.id });
+        await ctx.newAlbumAsset({ albumId: space.id, assetId: asset.id });
+        const { person } = await ctx.newPerson({ ownerId: owner.id, name: 'Private identity' });
+        const linked = await ctx.get(AlbumUserRepository).createLinkedPerson({
+          albumId: space.id,
+          personOwnerId: owner.id,
+          personGroupId: person.personGroupId,
+          name: 'Published identity',
+          coverAssetId: asset.id,
+        });
+        expect((await sut.getPeople(authOf(member.id), space.id)).linked[0].coverAssetId).toBe(asset.id);
+
+        switch (state) {
+          case 'visible': {
+            break;
+          }
+          case 'outside': {
+            await ctx.database
+              .deleteFrom('album_asset')
+              .where('albumId', '=', space.id)
+              .where('assetId', '=', asset.id)
+              .execute();
+            break;
+          }
+          case 'trash': {
+            await ctx.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
+            break;
+          }
+          case 'hidden': {
+            await ctx.database
+              .updateTable('asset')
+              .set({ visibility: AssetVisibility.Hidden })
+              .where('id', '=', asset.id)
+              .execute();
+            break;
+          }
+          case 'locked': {
+            await ctx.database
+              .insertInto('asset_lock')
+              .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: null })
+              .execute();
+            break;
+          }
+          case 'sensitive': {
+            await sql`update public.asset set is_nsfw = true where id = ${asset.id}::uuid`.execute(ctx.database);
+            break;
+          }
+        }
+        const people = await sut.getPeople(authOf(member.id), space.id);
+        expect(people.linked).toEqual([
+          expect.objectContaining({
+            id: linked.id,
+            name: 'Published identity',
+            coverAssetId: state === 'visible' ? asset.id : null,
+          }),
+        ]);
+        expect(JSON.stringify(people.linked)).not.toContain('Private identity');
+        expect(JSON.stringify(people.linked)).not.toContain(person.personGroupId);
+      },
+    );
+  });
+
   describe('preview items (FL-349)', () => {
     it('names the newest items an invitee may see and opens only their thumbnails', async () => {
       const context = setup();
