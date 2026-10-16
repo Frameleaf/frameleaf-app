@@ -8,7 +8,7 @@ let service: DesktopWorkerService;
 beforeEach(() => {
   vi.resetAllMocks();
   auth.authenticate.mockResolvedValue(grant);
-  service = new DesktopWorkerService(auth as never, broker as never, sessions as never);
+  service = new DesktopWorkerService(auth as never, broker as never, sessions as never, broker as never);
 });
 it('authenticates the exact claim bytes and returns only immutable task/lease metadata', async () => {
   broker.claim.mockResolvedValue({
@@ -112,4 +112,13 @@ it('never invokes the broker when credential authentication fails', async () => 
     service.claim('photo-token', 'proof', '{"modelKeys":["m"],"waitMs":0}', new AbortController().signal),
   ).rejects.toThrow();
   expect(broker.claim).not.toHaveBeenCalled();
+});
+
+it('checks durable source and policy authority instead of serving raw broker input', async () => {
+  const authority = { input: vi.fn().mockRejectedValue(new Error('desktop_pool_source_changed')) };
+  const guarded = new DesktopWorkerService(auth as never, broker as never, sessions as never, authority as never);
+  broker.input.mockResolvedValue(Buffer.from('must not disclose'));
+  await expect(guarded.input('token', 'proof', 'attempt')).rejects.toThrow('desktop_pool_source_changed');
+  expect(authority.input).toHaveBeenCalledWith(grant, 'attempt');
+  expect(broker.input).not.toHaveBeenCalled();
 });

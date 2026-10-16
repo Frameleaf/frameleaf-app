@@ -44,6 +44,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
+import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-authority.js';
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS, DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
@@ -678,37 +679,17 @@ export class JobRepository {
       return;
     }
     const context = queueExecution.getStore()!;
-    const read = async (tx?: Transaction<DB>) => {
-      const {
-        rows: [row],
-      } = await sql<{ checksum: Buffer; ownerId: string; revision: unknown }>`select a.checksum, a."ownerId",
-        jsonb_build_object('originalPath', a."originalPath", 'modifiedAt', a."fileModifiedAt", 'ownerId', a."ownerId",
-          'visibility', a.visibility, 'deletedAt', a."deletedAt",
-          'lock', (select to_jsonb(l) from asset_lock l where l."assetId" = a.id),
-          'files', (select jsonb_agg(jsonb_build_array(f.id, f.path, f.type, f."isEdited") order by f.id)
-            from asset_file f where f."assetId" = a.id and ${derivatives}::boolean),
-          'edits', (select jsonb_agg(jsonb_build_array(e.sequence, e.action, e.parameters) order by e.sequence, e.id)
-            from asset_edit e where e."assetId" = a.id and ${derivatives}::boolean)) revision
-        from asset a where a.id = ${assetId}::uuid`.execute(tx ?? publicationTransaction.getStore() ?? this.store.db);
-      return row;
-    };
-    const source = await read();
-    if (!source) {
-      return;
-    }
-    const assertCurrent = async (tx?: Transaction<DB>) => {
-      const current = await read(tx);
-      if (
-        !current ||
-        !Buffer.from(current.checksum).equals(source.checksum) ||
-        JSON.stringify(current.revision) !== JSON.stringify(source.revision)
-      ) {
-        throw new Error('Asset inputs changed before publication');
-      }
-    };
-    (context.sourceAuthorities ??= new Map()).set(assetId, { ownerId: source.ownerId, assertCurrent });
+    const source = await readAssetSource(publicationTransaction.getStore() ?? this.store.db, assetId, derivatives);
+    if (!source) return;
+    const assertCurrent = (tx?: Transaction<DB>) =>
+      assertAssetSource(tx ?? publicationTransaction.getStore() ?? this.store.db, source);
+    (context.sourceAuthorities ??= new Map()).set(assetId, {
+      ownerId: source.ownerId,
+      snapshot: source,
+      assertCurrent,
+    });
     deferJobAdoption(async () => {
-      await assertPublicationSource(assetId, source.checksum);
+      await assertPublicationSource(assetId, Buffer.from(source.checksum, 'hex'));
       await assertCurrent();
     });
   }

@@ -39835,6 +39835,15 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "disclosure",
+          "tableName": "desktop_ml_task",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -40190,6 +40199,15 @@
           "nullable": false,
           "isArray": false,
           "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastSeenAt",
+          "tableName": "desktop_worker_session",
+          "nullable": true,
+          "isArray": false,
           "synchronize": true
         }
       ],

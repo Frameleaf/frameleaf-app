@@ -7,6 +7,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { desktopSourceSnapshot } from 'test/desktop-source-authority.js';
 
 const ownerId = '8da8d162-c2c3-4d1d-b6e1-9148b0bfd327';
 const other = '2bd5aa96-614a-4df1-bd20-1c285bd8be63';
@@ -51,7 +52,9 @@ beforeEach(() => {
     adoptions: [],
     buffering: false,
     progressUnits: 0,
-    sourceAuthorities: new Map([['asset', { ownerId, assertCurrent: assertSource }]]),
+    sourceAuthorities: new Map([
+      ['asset', { ownerId, snapshot: desktopSourceSnapshot(ownerId), assertCurrent: assertSource }],
+    ]),
   };
   policies.snapshot.mockResolvedValue(structuredClone(policy));
   routes.getRouteStates.mockResolvedValue([
@@ -108,7 +111,11 @@ it.each(['unknown', 'ambiguous', 'index'])('waits without falling back for %s au
       break;
     }
     case 'ambiguous': {
-      context.sourceAuthorities!.set('other', { ownerId: other, assertCurrent: vi.fn() });
+      context.sourceAuthorities!.set('other', {
+        ownerId: other,
+        snapshot: desktopSourceSnapshot(other),
+        assertCurrent: vi.fn(),
+      });
       break;
     }
     case 'index': {
@@ -132,7 +139,11 @@ it('retains a captured source guard if another asset is guarded later', async ()
   const factory = vi.spyOn(service, 'selectClipPool').mockReturnValue(selection);
   await queueExecution.run(context, async () => {
     await select('asset');
-    context.sourceAuthorities!.set('asset', { ownerId: other, assertCurrent: vi.fn() });
+    context.sourceAuthorities!.set('asset', {
+      ownerId: other,
+      snapshot: desktopSourceSnapshot(other),
+      assertCurrent: vi.fn(),
+    });
     await factory.mock.calls[0][1].assertAuthority();
     expect(assertSource).toHaveBeenCalledTimes(2);
     policies.assertCurrent.mockRejectedValue(new Error('revoked'));

@@ -10,6 +10,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, type MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import { desktopSourceSnapshot } from 'test/desktop-source-authority.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newTestService } from 'test/utils.js';
 
@@ -250,7 +251,9 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
   service = new DesktopMlService(repository as never, index as never, policies as never, routes as never, ml);
   service.onBootstrap();
   ml.setup(settings.machineLearning);
-  context.sourceAuthorities = new Map([[ownerId, { ownerId, assertCurrent: vi.fn() }]]);
+  context.sourceAuthorities = new Map([
+    [ownerId, { ownerId, snapshot: desktopSourceSnapshot(ownerId), assertCurrent: vi.fn() }],
+  ]);
   mocks.machineLearning.selectBackgroundPool.mockImplementation(ml.selectBackgroundPool.bind(ml));
   mocks.assetJob.getForClipEncoding.mockResolvedValue({
     id: ownerId,

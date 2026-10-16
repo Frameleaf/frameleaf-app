@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "8b750c467aac308f947775b34cb4ddbb4cde2dbd",
+  "sourceCommit": "ed54b209f82ae47b3446a98862b516dbb82d9ece",
   "sourceHashes": {
     "src/enum.ts": "27c6c3931db575028b7d773091d468dc3c8dc3d358057c29b4b82e221320fda6",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -50,10 +50,10 @@
     "src/schema/tables/cluster-group.table.ts": "57b156f30aafb96a7fa754795270129e0b4eb7c9aed7af96646ba343bb5c4a30",
     "src/schema/tables/desktop-clip-index.table.ts": "cf15fc0dfa735f4944ecb22f6c912969c6a78bf5ea2db70413944332a9771a26",
     "src/schema/tables/desktop-device.table.ts": "0995b5f099f41e6e4fbb3b39ac50b71f194fdffbaad08cad64ad78fb2d452d80",
-    "src/schema/tables/desktop-ml-task.table.ts": "f0e2bfe685967f4990c1a526b1bb7299d3933e6dcb4650fa6cac9832dfe7ec5c",
+    "src/schema/tables/desktop-ml-task.table.ts": "2601eaf52edd78f90c772c402e141348b0f841f36bd330a88c223b1397acd240",
     "src/schema/tables/desktop-worker-challenge.table.ts": "61676827da731356c280bea2958feaccf0b2124563ae1d5c6bb2137cffd93c5a",
     "src/schema/tables/desktop-worker-qualification.table.ts": "3291ad28e62d41af662aa50124c30cb0a31afb471b0376f2c10c42e4c533b84d",
-    "src/schema/tables/desktop-worker-session.table.ts": "ed271d1cdcda9a18524c2a0330a268aca82ccd7862f803d9865af26972d20e7d",
+    "src/schema/tables/desktop-worker-session.table.ts": "b3954a978e49bcc37946cdcd0a668e06f5fae2fdb02d91645f798543081e0fcd",
     "src/schema/tables/duplicate-decision.table.ts": "40e198b76121bafe69c17f282136a480e78658c2f3efcc884987fe56c4cd4316",
     "src/schema/tables/face-search.table.ts": "dcf3d20474ef65a7fc155081d9b04a5151be688268cfd113df1cf2e040f0bde9",
     "src/schema/tables/geodata-places.table.ts": "2c0be153c56497bfa21053ce9834ae8a6e4c6ae3c7677643302f44ce5d0c333e",
@@ -136,6 +136,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "007757f1b3d961f3e45f3b2d20aabd8552e7c9bf00c61075bc4129a44d04e645",
-  "rawMetadataSha256": "dc699e475c9ff2190ddb917271e3b84ddbea819a14d43abc7318bd680fa1eca9"
+  "dumpSha256": "530a431e78db086ee84c9f510d324346b26550913148889df7cd217a5e3d3bf7",
+  "rawMetadataSha256": "f21dd14cb8d820c467e83408887febb7e7a19b9cc2a4a74b13e8f70b1a95ea92"
 }

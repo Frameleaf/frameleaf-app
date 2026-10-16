@@ -14,6 +14,7 @@ import {
 import { DesktopSessionDto } from 'src/dtos/desktop-worker.dto.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -32,6 +33,7 @@ export class DesktopWorkerService {
     private auth: DesktopWorkerAuthService,
     private broker: DesktopMlRepository,
     private sessions: DesktopWorkerRepository,
+    private authority: DesktopMlService,
   ) {}
 
   async claim(
@@ -79,7 +81,7 @@ export class DesktopWorkerService {
 
   async input(authorization: string | undefined, proof: string | undefined, id: string): Promise<Buffer> {
     const grant = await this.auth.authenticate(authorization, proof, `input:${id}`, '');
-    const bytes = await this.broker.input(grant, id);
+    const bytes = await this.authority.input(grant, id);
     if (!bytes) throw new UnauthorizedException('desktop_lease_invalid');
     return bytes;
   }

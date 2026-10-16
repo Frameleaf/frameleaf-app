@@ -7,11 +7,12 @@ import { join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import { defaults } from 'src/config.js';
-import { AssetType, JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { AssetType, AssetVisibility, JobName, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository, type DesktopMlTables } from 'src/repositories/desktop-ml.repository.js';
@@ -19,10 +20,18 @@ import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositor
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import {
+  down as removeDisclosure,
+  up as addDisclosure,
+} from 'src/schema/migrations/2100000002981-DesktopMlDisclosure.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -103,8 +112,8 @@ it('two repository instances racing claim one task once and preserve scoped inpu
   expect(new Date(claim.attempt.expiresAt)).toEqual(request.deadlineAt);
   expect(claim.task).not.toHaveProperty('input');
   expect(await sut.result(task.id)).not.toHaveProperty('input');
-  expect(await sut.input(grants[index], claim.attempt.id)).toEqual(request.input);
-  expect(await sut.input(grants[1 - index], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[index], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
+  expect(await sut.input(grants[1 - index], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(
     await brokerDb.selectFrom('desktop_ml_attempt').selectAll().where('taskId', '=', task.id).execute(),
   ).toHaveLength(1);
@@ -121,7 +130,7 @@ it('expired attempts cannot read, renew or complete after another worker takes o
     .execute();
   const replacement = (await second.claim(grants[1], [request.modelKey]))!;
   expect(replacement.task.generation).toBe(first.task.generation + 1);
-  expect(await sut.input(grants[0], first.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], first.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(grants[0], first.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], first.attempt.id, { vector: [1, 2] })).toBe(false);
   expect(await second.complete(grants[1], replacement.attempt.id, { vector: [3, 4] })).toBe(true);
@@ -139,7 +148,7 @@ it('sign-out and permanent revocation invalidate leases even after a fresh sign-
   await sut.create(request);
   const claim = (await sut.claim(grants[0], [request.modelKey]))!;
   await devices.endSession(request.ownerId, grants[0].deviceId);
-  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, {})).toBe(false);
   expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
@@ -184,7 +193,7 @@ it('only an exact qualified model key may claim a task; a deadline bounds renewa
     .set({ deadlineAt: sql`now() - interval '1 second'` })
     .where('id', '=', task.id)
     .execute();
-  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, {})).toBe(false);
 });
@@ -261,7 +270,7 @@ it('dispatches a bounded request through a second worker connection and deletes 
   });
   const task = await ready.promise;
   const claim = (await second.claim(grants[0], [request.modelKey]))!;
-  expect(await second.input(grants[0], claim.attempt.id)).toEqual(request.input);
+  expect(await second.input(grants[0], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
   expect(await second.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(true);
   expect(await dispatch).toEqual({ clip: [1, 2] });
   expect(authority).toHaveBeenCalledTimes(2);
@@ -291,7 +300,7 @@ it('NAS cancellation removes task input and fences a worker already holding the 
   controller.abort();
   await rejection;
   expect(await sut.result(task.id)).toBeUndefined();
-  expect(await second.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await second.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await second.complete(grants[0], claim.attempt.id, {})).toBe(false);
 });
 
@@ -323,7 +332,7 @@ it('requires an exact NAS-approved model and rechecks scope for every lease oper
     .set({ modelKeys: sql<string[]>`'[]'::jsonb` })
     .where('id', '=', grants[0].sessionId)
     .execute();
-  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, { vector: [1] })).toBe(false);
 });
@@ -357,7 +366,7 @@ it('fences stale authenticated broker operations across renewal while a fresh cr
   const sessions = new DesktopWorkerRepository(db);
   const nextHash = Buffer.alloc(32, 29);
   expect(await sessions.rotate(grants[0], session.tokenHash, nextHash)).toBeDefined();
-  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
   expect(await sut.fail(grants[0], claim.attempt.id)).toBe(false);
@@ -365,10 +374,10 @@ it('fences stale authenticated broker operations across renewal while a fresh cr
   const current = (await sessions.consume(session.id, nextHash, 1))!;
   for (const credentialHash of [Buffer.alloc(0), Buffer.alloc(31), Buffer.alloc(32, 99), undefined]) {
     const malformed = { ...current, credentialHash } as typeof current;
-    expect(await sut.input(malformed, claim.attempt.id)).toBeUndefined();
+    expect(await sut.input(malformed, claim.attempt.id, () => Promise.resolve())).toBeUndefined();
     expect(await sut.claim(malformed, [request.modelKey])).toBeUndefined();
   }
-  expect(await sut.input(current, claim.attempt.id)).toEqual(request.input);
+  expect(await sut.input(current, claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
   expect(await sut.heartbeat(current, claim.attempt.id)).toBe(true);
   expect(await sut.complete(current, claim.attempt.id, { clip: [1, 2] })).toBe(true);
 });
@@ -421,7 +430,7 @@ it('a new photo association cannot resume or publish an old attempt when the sam
     await seedDesktopQualification(db, current, request);
     replacements.push(current);
   }
-  expect(await sut.input(replacements[0], active.attempt.id)).toBeUndefined();
+  expect(await sut.input(replacements[0], active.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(replacements[0], active.attempt.id)).toBe(false);
   expect(await sut.complete(replacements[0], active.attempt.id, { clip: [9, 9] })).toBe(false);
   expect(await sut.fail(replacements[0], active.attempt.id)).toBe(false);
@@ -461,12 +470,12 @@ it('qualification expiry and replacement fence input, renewal, completion and st
     .set({ createdAt: sql`now() - interval '2 hours'`, expiresAt: sql`now() - interval '1 hour'` })
     .where('id', '=', proof.id)
     .execute();
-  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
   expect(await sut.fail(grants[0], claim.attempt.id)).toBe(false);
   await seedDesktopQualification(db, grants[0], request);
-  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
   expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
   const secondTask = await sut.create(request);
   const second = (await sut.claim(grants[1], [request.modelKey]))!;
@@ -566,7 +575,7 @@ it('publishes a synthetic pool result only with the real index and broker transa
     });
     const task = await ready.promise;
     const claim = (await second.claim(grants[0], [profile.modelKey]))!;
-    expect(await second.input(grants[0], claim.attempt.id)).toEqual(request.input);
+    expect(await second.input(grants[0], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
     expect(await second.complete(grants[0], claim.attempt.id, profile.spec.expectedOutput)).toBe(true);
     await prepared;
     expect(await search.getEmbedding(asset.id!)).toBeUndefined();
@@ -650,7 +659,7 @@ it.each(['unclaimed', 'stale-worker'] as const)(
       await sql`update desktop_worker_session set "lastSeenAt"=clock_timestamp()-interval '91 seconds'
       where id=${grants[0].sessionId}::uuid`.execute(db);
       await firstExecution;
-      expect(await helper.input(grants[0], held.attempt.id)).toBeUndefined();
+      expect(await helper.input(grants[0], held.attempt.id, () => Promise.resolve())).toBeUndefined();
       expect(await helper.complete(grants[0], held.attempt.id, { clip: [9, 9] })).toBe(false);
     } else await firstExecution;
     const blocked = await db
@@ -824,10 +833,14 @@ it('never claims another account task even when its qualified model and configur
   try {
     const assignedA = (await a.sut.claim(a.grants[0], [key]))!;
     expect(assignedA.task.id).toBe(own.id);
-    expect(await a.sut.input(a.grants[0], assignedA.attempt.id)).toEqual(Buffer.from('synthetic A'));
+    expect(await a.sut.input(a.grants[0], assignedA.attempt.id, () => Promise.resolve())).toEqual(
+      Buffer.from('synthetic A'),
+    );
     const assignedB = (await b.sut.claim(b.grants[0], [key]))!;
     expect(assignedB.task.id).toBe(foreign.id);
-    expect(await b.sut.input(b.grants[0], assignedB.attempt.id)).toEqual(Buffer.from('synthetic B'));
+    expect(await b.sut.input(b.grants[0], assignedB.attempt.id, () => Promise.resolve())).toEqual(
+      Buffer.from('synthetic B'),
+    );
   } finally {
     for (const task of [own, foreign]) {
       await a.sut.cancel(task.id);
@@ -850,7 +863,7 @@ it.each(['running', 'completed'] as const)(
         .set({ ownerId: b.request.ownerId })
         .where('id', '=', task.id)
         .execute();
-      expect(await a.sut.input(a.grants[0], lease.attempt.id)).toBeUndefined();
+      expect(await a.sut.input(a.grants[0], lease.attempt.id, () => Promise.resolve())).toBeUndefined();
       expect(await a.sut.heartbeat(a.grants[0], lease.attempt.id)).toBe(false);
       expect(await a.sut.complete(a.grants[0], lease.attempt.id, { clip: [1, 2] })).toBe(false);
       if (state === 'running') expect(await a.sut.claim(a.grants[0], [a.request.modelKey])).toBeUndefined();
@@ -864,3 +877,297 @@ it.each(['running', 'completed'] as const)(
     }
   },
 );
+
+it('revalidates disclosure authority inside the authenticated lease before returning input', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const authorize = vi.fn().mockRejectedValue(new Error('desktop_pool_policy_changed'));
+  await expect(sut.input(grants[0], claim.attempt.id, authorize)).rejects.toThrow('desktop_pool_policy_changed');
+  expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ ownerId: request.ownerId }), expect.anything());
+});
+
+it('reconstructs durable disclosure on a fresh service and refuses revoked source, policy, route, config and job authority', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync('resources/desktop/model-catalogue.json', 'utf8'),
+  ).profiles;
+  const profile = profiles.find((p) => p.spec.fixtureKind === 'image')!;
+  const space = JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')).spaces[0];
+  for (const table of [
+    'smart_search',
+    'smart_search_description',
+    'asset_video_duplicate_frame',
+    'video_moment_frame_embedding',
+  ])
+    await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
+  const index = new DesktopClipIndexRepository(db);
+  const binding = await index.admit(space.spaceKey);
+  const { sut: broker, grants, request } = await setup(true, profile);
+  const { sut: base, ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { asset } = await ctx.newAsset({ ownerId: request.ownerId });
+  const metadata = new SystemMetadataRepository(db);
+  const configRepo = new ConfigRepository();
+  const originalConfig = await base.readConfigForUpdate({
+    configRepo,
+    metadataRepo: metadata,
+    logger: LoggingRepository.create(),
+  });
+  const config = structuredClone(defaults);
+  config.machineLearning.clip.modelName = profile.modelName;
+  config.machineLearning.urls = ['https://disclosure-fixture.invalid'];
+  const writeConfig = (enabled: boolean) =>
+    metadata.withConfigTransaction((metadataRepo) =>
+      base.updateConfig(
+        { ...config, machineLearning: { ...config.machineLearning, enabled } },
+        { configRepo, metadataRepo, logger: LoggingRepository.create() },
+      ),
+    );
+  const policies = new DesktopAssistancePolicyService(metadata);
+  await policies.enable(request.ownerId);
+  const savedPolicy = await policies.snapshot();
+  const routes = new MlDestinationRepository(db);
+  const destination = await routes.create({
+    kind: MlDestinationKind.Local,
+    name: 'synthetic disclosure NAS',
+    url: config.machineLearning.urls[0],
+    authToken: null,
+    enabled: true,
+    workloads: [MlWorkload.Clip],
+    budgetLimitUsd: null,
+    maxRuntimeMinutes: null,
+    maxUploadBytes: null,
+  });
+  await routes.setDefaultRoute(MlWorkload.Clip, destination.id);
+  const store = new SqlQueueStore(db);
+  const workerId = randomUUID();
+  const queue = 'disclosure-' + randomUUID();
+  await store.initialize([queue], workerId);
+  await store.enqueue([
+    {
+      queue,
+      name: JobName.SmartSearch,
+      data: { id: asset.id },
+      safeToRetry: true,
+      sensitive: false,
+      deadlineMs: 120_000,
+    },
+  ]);
+  const [claim] = await store.claim(queue, workerId);
+  const controller = new AbortController();
+  const execution: QueueExecution = {
+    claim,
+    signal: controller.signal,
+    progress: vi.fn(),
+    progressUnits: 0,
+    adoptions: [],
+    followups: [],
+    buffering: false,
+  };
+  const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+  const root = await mkdtemp(join(tmpdir(), 'frameleaf-disclosure-'));
+  const path = join(root, 'synthetic.png');
+  let taskId: string | undefined;
+  let dispatched: Promise<unknown> | undefined;
+  try {
+    await writeConfig(true);
+    const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
+    ml.setup(config.machineLearning);
+    const service = new DesktopMlService(broker, index, policies, routes, ml);
+    service.onBootstrap();
+    const ready = Promise.withResolvers<Awaited<ReturnType<typeof broker.create>>>();
+    const create = broker.create.bind(broker);
+    vi.spyOn(broker, 'create').mockImplementation(async (input) => {
+      const row = await create(input);
+      ready.resolve(row);
+      return row;
+    });
+    await writeFile(path, request.input);
+    dispatched = queueExecution.run(execution, async () => {
+      await jobs.guardAssetSource(asset.id);
+      const selected = await ml.selectBackgroundPool(
+        {
+          destinationId: destination.id,
+          kind: destination.kind,
+          workload: MlWorkload.Clip,
+          endpoint: { url: destination.url!, assertAuthority: () => Promise.resolve() },
+          record: vi.fn(),
+        },
+        asset.id,
+      );
+      return ml.encodeImage(selected, path, config.machineLearning.clip);
+    });
+    // Observe rejection immediately so teardown cancellation cannot become an unhandled promise.
+    void dispatched.catch(() => {});
+    const task = await ready.promise;
+    taskId = task.id;
+    expect(task.disclosure).not.toBeNull();
+    expect(JSON.stringify(task.disclosure)).not.toContain('authToken');
+    const attempt = (await new DesktopMlRepository(db).claim(grants[0], [request.modelKey]))!;
+    const input = () => {
+      const freshMetadata = new SystemMetadataRepository(db);
+      const freshRoutes = new MlDestinationRepository(db);
+      const freshIndex = new DesktopClipIndexRepository(db);
+      const freshMl = new MachineLearningRepository(
+        LoggingRepository.create(),
+        freshRoutes,
+        configRepo,
+        freshMetadata,
+        freshIndex,
+      );
+      freshMl.setup(config.machineLearning);
+      return new DesktopMlService(
+        new DesktopMlRepository(db),
+        freshIndex,
+        new DesktopAssistancePolicyService(freshMetadata),
+        freshRoutes,
+        freshMl,
+      ).input(grants[0], attempt.attempt.id);
+    };
+    expect(await input()).toEqual(request.input);
+    const changed = async (mutate: () => Promise<unknown>, restore: () => Promise<unknown>, error: string) => {
+      await mutate();
+      try {
+        await expect(input()).rejects.toThrow(error);
+      } finally {
+        await restore();
+      }
+      expect(await input()).toEqual(request.input);
+    };
+    await changed(
+      () => db.updateTable('asset').set({ originalPath: '/synthetic/replaced' }).where('id', '=', asset.id).execute(),
+      () => db.updateTable('asset').set({ originalPath: asset.originalPath }).where('id', '=', asset.id).execute(),
+      'Asset inputs changed',
+    );
+    await changed(
+      () => db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', asset.id).execute(),
+      () => db.updateTable('asset').set({ visibility: asset.visibility }).where('id', '=', asset.id).execute(),
+      'Asset inputs changed',
+    );
+    await changed(
+      () =>
+        metadata.withConfigTransaction((m) =>
+          m.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
+        ),
+      () => metadata.withConfigTransaction((m) => m.set(SystemMetadataKey.FrameleafDesktopAssistance, savedPolicy)),
+      'desktop_pool_policy_changed',
+    );
+    await changed(
+      () => routes.update(destination.id, { enabled: false }),
+      () => routes.update(destination.id, { enabled: true }),
+      'desktop_pool_destination_changed',
+    );
+    await changed(
+      () => routes.update(destination.id, { authToken: 'synthetic-changed-token' }),
+      () => routes.update(destination.id, { authToken: null }),
+      'desktop_pool_destination_changed',
+    );
+    await changed(
+      () => writeConfig(false),
+      () => writeConfig(true),
+      'desktop_pool_config_changed',
+    );
+    await changed(
+      () =>
+        db.updateTable('desktop_clip_index').set({ revisionId: randomUUID() }).where('scope', '=', 'clip').execute(),
+      () =>
+        db
+          .updateTable('desktop_clip_index')
+          .set({ revisionId: binding.revisionId })
+          .where('scope', '=', 'clip')
+          .execute(),
+      'desktop_clip_index_changed',
+    );
+    await changed(
+      () => sql`update job set token=gen_random_uuid() where id=${claim.id}::uuid`.execute(db),
+      () => sql`update job set token=${claim.token}::uuid where id=${claim.id}::uuid`.execute(db),
+      'desktop_pool_queue_changed',
+    );
+    await changed(
+      () =>
+        sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '1 second' where id=${claim.id}::uuid`.execute(
+          db,
+        ),
+      () =>
+        sql`update job set "leaseExpiresAt"=clock_timestamp()+interval '60 seconds' where id=${claim.id}::uuid`.execute(
+          db,
+        ),
+      'desktop_pool_queue_changed',
+    );
+    await changed(
+      () => sql`update job set "cancelRequestedAt"=clock_timestamp() where id=${claim.id}::uuid`.execute(db),
+      () => sql`update job set "cancelRequestedAt"=null where id=${claim.id}::uuid`.execute(db),
+      'desktop_pool_queue_changed',
+    );
+    await changed(
+      () => brokerDb.updateTable('desktop_ml_task').set({ disclosure: null }).where('id', '=', task.id).execute(),
+      () =>
+        brokerDb
+          .updateTable('desktop_ml_task')
+          .set({ disclosure: task.disclosure })
+          .where('id', '=', task.id)
+          .execute(),
+      'desktop_input_authority_invalid',
+    );
+    await routes.clearRoute(MlWorkload.Clip);
+    await expect(input()).rejects.toThrow('desktop_pool_route_changed');
+  } finally {
+    controller.abort();
+    await dispatched?.catch(() => {});
+    if (taskId) {
+      await broker.cancel(taskId);
+      await broker.discard(taskId);
+    }
+    await rm(root, { recursive: true, force: true });
+    await metadata.withConfigTransaction((metadataRepo) =>
+      base.updateConfig(originalConfig, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
+    );
+  }
+});
+
+it('migrates old broker tasks to unproven disclosure and reverses without deleting their rows', async () => {
+  const schema = 'disclosure_' + randomUUID().replaceAll('-', '');
+  await db.schema.createSchema(schema).execute();
+  const scratch = db.withSchema(schema) as Kysely<any>;
+  try {
+    await scratch.schema
+      .createTable('desktop_ml_task')
+      .addColumn('id', 'integer', (c) => c.primaryKey())
+      .execute();
+    await scratch.insertInto('desktop_ml_task').values({ id: 1 }).execute();
+    await addDisclosure(scratch);
+    expect(await scratch.selectFrom('desktop_ml_task').selectAll().execute()).toEqual([{ id: 1, disclosure: null }]);
+    await removeDisclosure(scratch);
+    expect(await scratch.selectFrom('desktop_ml_task').selectAll().execute()).toEqual([{ id: 1 }]);
+  } finally {
+    await db.schema.dropSchema(schema).cascade().execute();
+  }
+});
+
+it('does not hold a worker row while waiting for disclosure configuration authority', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const entered = Promise.withResolvers<void>();
+  let receiving: Promise<Buffer | undefined> | undefined;
+  try {
+    await db.transaction().execute(async (blocking) => {
+      await lockEffectiveConfig(blocking, 'write');
+      receiving = sut.input(grants[0], claim.attempt.id, async (_task, tx) => {
+        entered.resolve();
+        await lockEffectiveConfig(tx, 'read');
+      });
+      void receiving.catch(() => {});
+      await entered.promise;
+      await db.transaction().execute(async (observer) => {
+        const { rows } =
+          await sql`SELECT id FROM desktop_device WHERE id=${grants[0].deviceId}::uuid FOR UPDATE NOWAIT`.execute(
+            observer,
+          );
+        expect(rows).toHaveLength(1);
+      });
+    });
+    expect(await receiving).toEqual(request.input);
+  } finally {
+    await receiving?.catch(() => {});
+  }
+});

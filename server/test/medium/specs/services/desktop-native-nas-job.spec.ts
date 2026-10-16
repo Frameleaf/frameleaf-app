@@ -195,7 +195,7 @@ it.skipIf(!desktop || !pack || !cache)(
       );
       http = await controllerSetup(DesktopWorkerController, [
         { provide: ConfigRepository, useValue: configRepo },
-        { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker, workers) },
+        { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker, workers, pool) },
         { provide: DesktopQualificationService, useValue: qualification },
       ]);
       const parseJson = json({ limit: '10mb' }); // Match configureExpress's production report limit.

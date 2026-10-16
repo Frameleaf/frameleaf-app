@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 import z from 'zod';
-import type { Transaction } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import { OnEvent } from 'src/decorators.js';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
@@ -14,7 +14,11 @@ import {
   type DesktopClipIndexBinding,
   DesktopClipIndexRepository,
 } from 'src/repositories/desktop-clip-index.repository.js';
-import { DesktopMlRepository, DesktopMlRequest } from 'src/repositories/desktop-ml.repository.js';
+import {
+  DesktopMlRepository,
+  DesktopMlRequest,
+  type DesktopWorkerGrant,
+} from 'src/repositories/desktop-ml.repository.js';
 import {
   type DesktopPoolOptions,
   MachineLearningRepository,
@@ -23,8 +27,15 @@ import {
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
+import { assertAssetSource } from 'src/utils/asset-source-authority.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import {
+  type DesktopMlDisclosure,
+  desktopEndpointDigest,
+  desktopMlDisclosureSchema,
+} from 'src/utils/desktop-ml-disclosure.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS } from 'src/utils/execution-database.js';
+import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 @Injectable()
@@ -95,6 +106,19 @@ export class DesktopMlService {
       ownerId,
       authorityKey: `${account.revisionId}:${revisionId}`,
       binding: selected.binding,
+      disclosure: {
+        version: 1,
+        source: source.snapshot,
+        policyRevision: account.revisionId,
+        routeRevision: revisionId,
+        destinationId: selection.destinationId,
+        kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
+        endpointSha256: desktopEndpointDigest(selection.endpoint),
+        modelName: options.modelName,
+        indexRevision: selected.binding.revisionId,
+        spaceKey: selected.binding.space.spaceKey,
+        job: { id: context.claim.id, token: context.claim.token },
+      },
       assertAuthority,
     });
   }
@@ -105,6 +129,7 @@ export class DesktopMlService {
       ownerId: string;
       authorityKey: string;
       binding: DesktopClipIndexBinding;
+      disclosure?: DesktopMlDisclosure;
       assertAuthority: (tx?: Transaction<DB>) => Promise<void>;
     },
   ): MlSelection {
@@ -121,6 +146,7 @@ export class DesktopMlService {
     const ownerId = z.uuid().parse(options.ownerId);
     const policy = z.string().min(1).max(256).parse(options.authorityKey);
     const binding = structuredClone(options.binding);
+    const disclosure = options.disclosure ? structuredClone(options.disclosure) : undefined;
     const authorize = options.assertAuthority;
     const endpoint = Object.freeze({ ...selection.endpoint });
     const claim = {
@@ -134,7 +160,16 @@ export class DesktopMlService {
         throw new Error('desktop_pool_queue_changed');
     };
     const authorityKey = createHash('sha256')
-      .update(canonicalJson({ policy, ownerId, destinationId: selection.destinationId, binding, claim }))
+      .update(
+        canonicalJson({
+          policy,
+          ownerId,
+          destinationId: selection.destinationId,
+          binding,
+          claim,
+          disclosure: disclosure ?? null,
+        }),
+      )
       .digest('hex');
     const assertAuthority = async (tx?: Transaction<DB>) => {
       assertClaim();
@@ -156,6 +191,7 @@ export class DesktopMlService {
           request: {
             ownerId,
             authorityKey,
+            disclosure,
             modelKey: profile.modelKey,
             config: profile.spec.entries,
             input,
@@ -172,6 +208,44 @@ export class DesktopMlService {
           signal: context.signal,
         });
       },
+    });
+  }
+
+  input(grant: DesktopWorkerGrant, attemptId: string): Promise<Buffer | undefined> {
+    return this.repository.input(grant, attemptId, async (task, tx) => {
+      const parsed = desktopMlDisclosureSchema.safeParse(task.disclosure);
+      if (!parsed.success) throw new Error('desktop_input_authority_invalid');
+      const authority = parsed.data;
+      if (task.ownerId !== authority.source.ownerId) throw new Error('desktop_input_owner_changed');
+      if (!this.policies || !this.machineLearning) throw new Error('desktop_input_authority_unavailable');
+      await this.policies.assertCurrent(task.ownerId, authority.policyRevision, tx);
+      const routes = new MlDestinationRepository(tx);
+      const destination = await routes.getById(authority.destinationId);
+      const endpoint = destination && resolveEndpoint(destination);
+      if (
+        !destination ||
+        destination.kind !== authority.kind ||
+        !endpoint ||
+        desktopEndpointDigest(endpoint) !== authority.endpointSha256
+      )
+        throw new Error('desktop_pool_destination_changed');
+      const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
+      await routes.assertRecoveryAuthority(destination);
+      await routes.assertDefaultRoute(selection, authority.routeRevision, tx);
+      await this.machineLearning.assertDesktopPoolConfig(selection, authority.modelName, tx);
+      const binding = await this.index.getActive(tx);
+      if (
+        !binding ||
+        binding.revisionId !== authority.indexRevision ||
+        binding.space.spaceKey !== authority.spaceKey ||
+        ![binding.space.visualModelKey, ...binding.space.textModelKeys].includes(task.modelKey)
+      )
+        throw new Error('desktop_clip_index_changed');
+      await assertAssetSource(tx, authority.source);
+      const { rows } = await sql`SELECT id FROM job WHERE id=${authority.job.id}::uuid
+        AND token=${authority.job.token}::uuid AND state='active' AND "cancelRequestedAt" IS NULL
+        AND "leaseExpiresAt">clock_timestamp()`.execute(tx);
+      if (rows.length !== 1) throw new Error('desktop_pool_queue_changed');
     });
   }
 

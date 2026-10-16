@@ -14,6 +14,7 @@ import { DB } from 'src/schema/index.js';
 export type { DesktopWorkerGrant } from 'src/repositories/desktop-worker.repository.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worker-qualification.table.js';
+import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopMlTables = {
@@ -29,6 +30,7 @@ const taskColumns = [
   'ownerId',
   'modelKey',
   'authorityKey',
+  'disclosure',
   'config',
   'configSha256',
   'inputSha256',
@@ -45,6 +47,7 @@ export type DesktopMlClaim = { task: Omit<Task, 'input'>; attempt: Attempt; qual
 export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey' | 'config' | 'inputKind'> & {
   input: Buffer;
   deadlineAt: Date;
+  disclosure?: DesktopMlDisclosure;
 };
 const jsonObject = z.record(z.string(), z.json());
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
@@ -64,6 +67,8 @@ export class DesktopMlRepository {
       throw new Error('desktop_input_size_invalid');
     if (request.deadlineAt.getTime() <= Date.now() || request.deadlineAt.getTime() > Date.now() + 600_000)
       throw new Error('desktop_deadline_invalid');
+    const disclosure = request.disclosure === undefined ? null : desktopMlDisclosureSchema.parse(request.disclosure);
+    if (Buffer.byteLength(canonicalJson(disclosure)) > 256 * 1024) throw new Error('desktop_authority_too_large');
     const config = jsonObject.parse(request.config);
     const encoded = canonicalJson(config);
     if (Buffer.byteLength(encoded) > 64 * 1024) throw new Error('desktop_config_too_large');
@@ -84,6 +89,7 @@ export class DesktopMlRepository {
         .insertInto('desktop_ml_task')
         .values({
           ...request,
+          disclosure,
           config,
           configSha256: sha256(encoded),
           inputSha256: sha256(request.input),
@@ -223,10 +229,46 @@ export class DesktopMlRepository {
     });
   }
 
-  input(grant: DesktopWorkerGrant, attemptId: string): Promise<Buffer | undefined> {
-    return this.withAttempt(grant, attemptId, async (db, task) => {
-      const row = await db.selectFrom('desktop_ml_task').select('input').where('id', '=', task.id).executeTakeFirst();
-      return row?.input ?? undefined;
+  input(
+    grant: DesktopWorkerGrant,
+    attemptId: string,
+    authorize: (task: TaskMetadata, tx: Transaction<DB>) => Promise<void>,
+  ): Promise<Buffer | undefined> {
+    return this.db.transaction().execute(async (db) => {
+      const pending = await db
+        .selectFrom('desktop_ml_task as task')
+        .innerJoin('desktop_ml_attempt as attempt', 'task.attemptId', 'attempt.id')
+        .innerJoin('desktop_device as device', 'device.id', 'attempt.deviceId')
+        .select(taskColumns.map((column) => `task.${column}` as const))
+        .where('attempt.id', '=', attemptId)
+        .where('attempt.deviceId', '=', grant.deviceId)
+        .where('attempt.workerSessionId', '=', grant.sessionId)
+        .where('attempt.authorizationEpoch', '=', grant.authorizationEpoch)
+        .whereRef('device.userId', '=', 'task.ownerId')
+        .whereRef('attempt.generation', '=', 'task.generation')
+        .where('attempt.outcome', 'is', null)
+        .where('attempt.expiresAt', '>', sql<Date>`clock_timestamp()`)
+        .where('task.state', '=', 'running')
+        .where('task.deadlineAt', '>', sql<Date>`clock_timestamp()`)
+        .executeTakeFirst();
+      if (!pending) return;
+      // Match activation/publication lock order before taking any worker row, then recheck before bytes.
+      await authorize(pending, db);
+      return this.withAttempt(
+        grant,
+        attemptId,
+        async (tx, task) => {
+          await authorize(task, tx);
+          const row = await tx
+            .selectFrom('desktop_ml_task')
+            .select('input')
+            .where('id', '=', task.id)
+            .executeTakeFirst();
+          return row?.input ?? undefined;
+        },
+        'running',
+        db,
+      );
     });
   }
 
@@ -402,7 +444,13 @@ export class DesktopMlRepository {
   async discard(id: string): Promise<void> {
     await this.db
       .updateTable('desktop_ml_task')
-      .set({ state: 'consumed', result: null, input: null, config: sql<Record<string, unknown>>`'{}'::jsonb` })
+      .set({
+        state: 'consumed',
+        result: null,
+        input: null,
+        disclosure: null,
+        config: sql<Record<string, unknown>>`'{}'::jsonb`,
+      })
       .where('id', '=', id)
       .where('state', '=', 'completed')
       .execute();
@@ -443,8 +491,9 @@ export class DesktopMlRepository {
     id: string,
     operation: (db: Transaction<DesktopMlDatabase>, task: TaskMetadata, credentialExpiry: Date) => Promise<T>,
     state: 'running' | 'finished' = 'running',
+    transaction?: Transaction<DesktopMlDatabase>,
   ): Promise<T | undefined> {
-    return this.db.transaction().execute(async (db) => {
+    const execute = async (db: Transaction<DesktopMlDatabase>) => {
       const worker = await this.device(db, grant);
       if (!worker) return;
       const attempt = await db
@@ -483,6 +532,7 @@ export class DesktopMlRepository {
         task,
         new Date(Math.min(new Date(worker.expiresAt).getTime(), new Date(qualification.expiresAt).getTime())),
       );
-    });
+    };
+    return transaction ? execute(transaction) : this.db.transaction().execute(execute);
   }
 }

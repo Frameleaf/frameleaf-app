@@ -36,7 +36,10 @@ beforeAll(async () => {
   ctx = await controllerSetup(DesktopWorkerController, [
     { provide: ConfigRepository, useValue: new ConfigRepository() },
     { provide: DesktopQualificationService, useValue: {} },
-    { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker as never, {} as never) },
+    {
+      provide: DesktopWorkerService,
+      useValue: new DesktopWorkerService(auth, broker as never, {} as never, broker as never),
+    },
   ]);
   app = express();
   app.use(frameleafViaMiddleware('edge-secret'));

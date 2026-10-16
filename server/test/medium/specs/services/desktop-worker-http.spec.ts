@@ -59,7 +59,10 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
   const serverId = await stableServerId({ systemMetadataRepository: metadata });
   const broker = new DesktopMlRepository(db);
   const auth = new DesktopWorkerAuthService(sessions, metadata);
-  const worker = new DesktopWorkerService(auth, broker, sessions);
+  const worker = new DesktopWorkerService(auth, broker, sessions, {
+    // This fixture isolates signed HTTP transport; durable disclosure uses the real service fixture.
+    input: (grant, id) => broker.input(grant, id, () => Promise.resolve()),
+  } as DesktopMlService);
   const http = await controllerSetup(DesktopWorkerController, [
     { provide: ConfigRepository, useValue: new ConfigRepository() },
     { provide: DesktopWorkerService, useValue: worker },

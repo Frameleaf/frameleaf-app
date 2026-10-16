@@ -1052,26 +1052,32 @@ export class MachineLearningRepository implements RestorationInference {
     return this.desktopPoolSelector(selection, {
       jobId,
       modelName,
-      assertConfig: async (tx?: Transaction<DB>) => {
-        const current =
-          this.configRepo && this.metadataRepo
-            ? (
-                await readConfig({
-                  configRepo: this.configRepo,
-                  metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
-                  logger: this.logger,
-                })
-              ).machineLearning
-            : this.config;
-        if (
-          !current.enabled ||
-          !current.clip.enabled ||
-          current.clip.modelName !== modelName ||
-          (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
-        )
-          throw new Error('desktop_pool_config_changed');
-      },
+      assertConfig: (tx?: Transaction<DB>) => this.assertDesktopPoolConfig(selection, modelName, tx),
     });
+  }
+
+  async assertDesktopPoolConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    modelName: string,
+    tx?: Transaction<DB>,
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.clip.enabled ||
+      current.clip.modelName !== modelName ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
   }
 
   async captureClipRead() {
