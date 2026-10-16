@@ -122,7 +122,7 @@ const workflows = () => ({
   manager: workflow("manager"),
   tests: workflow("test"),
   studio: workflow("frameleaf-studio-engine"),
-  fork: workflow("fork-integration"),
+  fork: workflow("frameleaf-quality"),
 });
 
 test("eight CI jobs route every observed registry caller to its exact frozen mirror manifest", () =>

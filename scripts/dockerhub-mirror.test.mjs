@@ -21,7 +21,7 @@ const { load } = createRequire(path.join(root, "server/package.json"))(
 const helper = path.join(root, "scripts/configure-dockerhub-mirror.sh");
 const workflows = {
   "check-openapi.yml": ["check-openapi"],
-  "fork-integration.yml": ["machine-learning-containers"],
+  "frameleaf-quality.yml": ["machine-learning-containers"],
   "frameleaf-studio-engine.yml": ["lifecycle-evidence"],
   "manager.yml": ["manager"],
   "test.yml": [

@@ -196,7 +196,16 @@ describe('AssetService', () => {
 
     it('allows editing the still of a Live Photo', () => {
       setOwnerUser();
-      const asset = assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: 'motion', ownerId });
+      // Fixed path and state: a random factory path ending in .gif or .svg, or a trashed asset, is correctly not editable.
+      const asset = assetFactory.build({
+        type: AssetTypeEnum.Image,
+        livePhotoVideoId: 'motion',
+        ownerId,
+        originalPath: '/upload/still.heic',
+        originalFileName: 'still.heic',
+        isTrashed: false,
+        exifInfo: undefined,
+      });
       expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(true);
     });
 
