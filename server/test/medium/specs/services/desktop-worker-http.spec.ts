@@ -68,6 +68,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
         new DesktopWorkerChallengeRepository(db),
         new ConfigRepository(),
         metadata,
+        { verify: () => Promise.resolve({ assertCurrent: () => Promise.resolve() }) } as never,
       ),
     },
   ]);

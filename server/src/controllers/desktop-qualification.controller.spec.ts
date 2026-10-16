@@ -137,6 +137,8 @@ const repository = { session: vi.fn(), consume: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
+const nasProducer = { verify: vi.fn() };
+
 const proof = (operation: string, raw: string) => {
   const dto = { sessionId, sequence: 1, timestamp: Date.now(), signature: '' };
   dto.signature = sign(
@@ -159,7 +161,13 @@ beforeAll(async () => {
     { provide: DesktopWorkerService, useValue: {} },
     {
       provide: DesktopQualificationService,
-      useValue: new DesktopQualificationService(auth, challenges as never, {} as never, metadata as never),
+      useValue: new DesktopQualificationService(
+        auth,
+        challenges as never,
+        {} as never,
+        metadata as never,
+        nasProducer as never,
+      ),
     },
   ]);
   app = express();
@@ -170,6 +178,7 @@ beforeAll(async () => {
 afterAll(async () => ctx.close());
 beforeEach(() => {
   vi.clearAllMocks();
+  nasProducer.verify.mockReset().mockResolvedValue({ assertCurrent: vi.fn().mockResolvedValue(undefined) });
   repository.session.mockResolvedValue({
     publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
     authorizationEpoch: 2,
@@ -372,10 +381,19 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
       challenges as never,
       {} as never,
       {} as never,
+      nasProducer as never,
     );
     await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
     expect(challenges.issue).not.toHaveBeenCalled();
   } finally {
     authority.spaces = undefined;
   }
+});
+
+it('refuses a qualification challenge when the selected NAS producer cannot be verified', async () => {
+  nasProducer.verify.mockRejectedValue(new Error('producer offline'));
+  const response = await post('/desktop/worker/challenges', 'challenge', payload());
+  expect(response.status).toBe(409);
+  expect(response.body.message).toBe('desktop_nas_producer_unavailable');
+  expect(challenges.issue).not.toHaveBeenCalled();
 });

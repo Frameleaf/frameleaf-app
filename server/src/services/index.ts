@@ -37,6 +37,7 @@ import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
@@ -164,6 +165,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 export const services = [
   DesktopDeviceService,
   DesktopMlService,
+  DesktopNasProducerService,
   DesktopQualificationService,
   DesktopWorkerAuthService,
   DesktopWorkerService,

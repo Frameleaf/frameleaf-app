@@ -14,6 +14,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { findDesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
@@ -50,6 +51,7 @@ export class DesktopQualificationService {
     private challenges: DesktopWorkerChallengeRepository,
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    private nasProducer: DesktopNasProducerService,
   ) {}
 
   async issue(
@@ -65,6 +67,14 @@ export class DesktopQualificationService {
       runtime = verifyDesktopRuntimeAttestation(request.runtime, profile);
     } catch {
       throw new BadRequestException('desktop_runtime_attestation_invalid');
+    }
+    try {
+      const space = findDesktopClipSpace(this.spaces, profile.modelKey)!;
+      const producer = await this.nasProducer.verify(space.spaceKey);
+      await producer.assertCurrent();
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      throw new ConflictException('desktop_nas_producer_unavailable', { cause: error });
     }
     let row;
     try {
