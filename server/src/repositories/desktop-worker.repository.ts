@@ -121,12 +121,9 @@ export class DesktopWorkerRepository {
         expiresAt: expires,
         revokedAt: null,
       };
-      return db
-        .insertInto('desktop_worker_session')
-        .values(values)
-        .onConflict((oc) => oc.column('deviceId').doUpdateSet(values))
-        .returningAll()
-        .executeTakeFirst();
+      // A new photo association must never revive attempts or qualifications from an earlier sign-in.
+      await db.deleteFrom('desktop_worker_session').where('deviceId', '=', input.deviceId).execute();
+      return db.insertInto('desktop_worker_session').values(values).returningAll().executeTakeFirst();
     });
   }
 

@@ -54,3 +54,5 @@ installation proof, over the exact UTF-8 payload string:
 API arrival and edge forwarding preserve only the explicitly permitted desktop
 proof header; the worker authentication layer validates it. Client-supplied
 arrival claims continue to be stripped or rejected.
+
+Worker sign-in replaces the session ID under the device lock and deletes prior qualification challenges. Ordinary token renewal preserves that session ID and existing leases. Reapproving the same model after a new sign-in cannot revive an earlier attempt or staged result; orphaned running attempts remain bounded by their existing lease deadline.

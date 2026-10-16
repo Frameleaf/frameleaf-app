@@ -373,3 +373,36 @@ it('preserves NAS adoption of a staged result through token renewal and still re
     .execute();
   await expect(sut.assertAdoption(task.id, task)).rejects.toThrow('desktop_result_authority_lost');
 });
+
+it('a new photo association cannot resume or publish an old attempt when the same model is reapproved', async () => {
+  const { sut, grants, request } = await setup();
+  const running = await sut.create(request);
+  const active = (await sut.claim(grants[0], [request.modelKey]))!;
+  const staged = await sut.create(request);
+  const other = (await sut.claim(grants[1], [request.modelKey]))!;
+  expect(await sut.complete(grants[1], other.attempt.id, { clip: [1, 2] })).toBe(true);
+  const sessions = new DesktopWorkerRepository(db);
+  const replacements = [];
+  for (const grant of grants) {
+    const previous = await brokerDb
+      .selectFrom('desktop_worker_session')
+      .selectAll()
+      .where('id', '=', grant.sessionId)
+      .executeTakeFirstOrThrow();
+    const session = (await sessions.issue({
+      deviceId: grant.deviceId,
+      authorizationEpoch: grant.authorizationEpoch,
+      photoSessionId: previous.photoSessionId,
+      tokenHash: createHash('sha256').update(randomUUID()).digest(),
+      modelKeys: [request.modelKey],
+    }))!;
+    replacements.push((await sessions.consume(session.id, session.tokenHash, 1))!);
+  }
+  expect(await sut.input(replacements[0], active.attempt.id)).toBeUndefined();
+  expect(await sut.heartbeat(replacements[0], active.attempt.id)).toBe(false);
+  expect(await sut.complete(replacements[0], active.attempt.id, { clip: [9, 9] })).toBe(false);
+  expect(await sut.fail(replacements[0], active.attempt.id)).toBe(false);
+  expect(await sut.claim(replacements[0], [request.modelKey])).toBeUndefined();
+  await expect(sut.assertAdoption(staged.id, staged)).rejects.toThrow('desktop_result_authority_lost');
+  expect((await sut.result(running.id))?.state).toBe('running');
+});

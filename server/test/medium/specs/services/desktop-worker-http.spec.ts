@@ -4,14 +4,17 @@ import request from 'supertest';
 import z from 'zod';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
+import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
@@ -53,8 +56,20 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
   const metadata = new SystemMetadataRepository(db);
   const serverId = await stableServerId({ systemMetadataRepository: metadata });
   const broker = new DesktopMlRepository(db);
-  const worker = new DesktopWorkerService(new DesktopWorkerAuthService(sessions, metadata), broker, sessions);
-  const http = await controllerSetup(DesktopWorkerController, [{ provide: DesktopWorkerService, useValue: worker }]);
+  const auth = new DesktopWorkerAuthService(sessions, metadata);
+  const worker = new DesktopWorkerService(auth, broker, sessions);
+  const http = await controllerSetup(DesktopWorkerController, [
+    { provide: DesktopWorkerService, useValue: worker },
+    {
+      provide: DesktopQualificationService,
+      useValue: new DesktopQualificationService(
+        auth,
+        new DesktopWorkerChallengeRepository(db),
+        new ConfigRepository(),
+        metadata,
+      ),
+    },
+  ]);
   const abort = new AbortController();
   let sequence = 0;
   const call = (method: 'get' | 'post', path: string, operation: string, payload = '') => {

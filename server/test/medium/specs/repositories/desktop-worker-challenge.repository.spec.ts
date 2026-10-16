@@ -215,3 +215,32 @@ it('refuses evidence after administrator removal or device revocation', async ()
   expect(await sut.read(grant, row.id)).toBeUndefined();
   expect(await sut.record(grant, row.id, receipt(row))).toBe(false);
 });
+
+it('sign-in replacement deletes prior challenge evidence and cannot reuse its request identity', async () => {
+  const { sut, workers, grant, photo } = await setup();
+  const requestId = randomUUID();
+  const row = (await sut.issue(grant, requestId, profile, runtime))!;
+  expect(await sut.record(grant, row.id, receipt(row))).toBe(true);
+  const session = (await workers.issue({
+    deviceId: grant.deviceId,
+    authorizationEpoch: grant.authorizationEpoch,
+    photoSessionId: photo.id!,
+    tokenHash: Buffer.alloc(32, 31),
+    modelKeys: [],
+  }))!;
+  const current = (await workers.consume(session.id, session.tokenHash, 1))!;
+  expect(await sut.read(grant, row.id)).toBeUndefined();
+  expect(await sut.record(grant, row.id, receipt(row))).toBe(false);
+  expect(await sut.read(current, row.id)).toBeUndefined();
+  expect(await sut.record(current, row.id, receipt(row))).toBe(false);
+  expect(
+    await challengeDb
+      .selectFrom('desktop_worker_challenge')
+      .select('id')
+      .where('deviceId', '=', grant.deviceId)
+      .execute(),
+  ).toHaveLength(0);
+  const fresh = (await sut.issue(current, requestId, profile, runtime))!;
+  expect(fresh.id).not.toBe(row.id);
+  expect(fresh.reportSha256).toBeNull();
+});

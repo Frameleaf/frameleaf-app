@@ -59,17 +59,17 @@ const setup = async () => {
   };
   return { sut: new DesktopWorkerRepository(db), second: new DesktopWorkerRepository(db), devices, user, input, keys };
 };
-it('keeps one association through retry and rotation, and invalidates the previous secret', async () => {
+it('replaces the sign-in association but keeps it through token renewal', async () => {
   const { sut, input } = await setup();
   const first = (await sut.issue(input))!;
   const hash = Buffer.alloc(32, 8);
   const retried = (await sut.issue({ ...input, tokenHash: hash }))!;
-  expect(retried.id).toBe(first.id);
+  expect(retried.id).not.toBe(first.id);
   expect(await sut.session(first.id, input.tokenHash)).toBeUndefined();
-  const grant = (await sut.consume(first.id, hash, 1))!;
+  const grant = (await sut.consume(retried.id, hash, 1))!;
   const rotated = await sut.rotate(grant, hash, Buffer.alloc(32, 7));
-  expect(rotated).toMatchObject({ id: first.id, lastSequence: 0, modelKeys: ['approved-model'] });
-  expect(await sut.consume(first.id, hash, 2)).toBeUndefined();
+  expect(rotated).toMatchObject({ id: retried.id, lastSequence: 0, modelKeys: ['approved-model'] });
+  expect(await sut.consume(retried.id, hash, 2)).toBeUndefined();
 });
 it('two API instances accept a signed request counter only once', async () => {
   const { sut, second, input } = await setup();
@@ -94,9 +94,10 @@ it('rechecks administrator status, parent session, device epoch and grant expiry
     .where('id', '=', session.id)
     .execute();
   expect(await sut.consume(session.id, input.tokenHash, 1)).toBeUndefined();
-  await sut.issue(input);
+  const replacement = (await sut.issue(input))!;
+  expect(await sut.session(replacement.id, input.tokenHash)).toBeDefined();
   await devices.endSession(user.id, input.deviceId);
-  expect(await sut.consume(session.id, input.tokenHash, 1)).toBeUndefined();
+  expect(await sut.consume(replacement.id, input.tokenHash, 1)).toBeUndefined();
   expect(await sut.issue(input)).toBeUndefined();
 });
 it('photo sign-out and explicit worker revocation cannot be renewed with the old credential', async () => {
@@ -105,11 +106,16 @@ it('photo sign-out and explicit worker revocation cannot be renewed with the old
   const grant = (await sut.consume(session.id, input.tokenHash, 1))!;
   expect(await sut.revoke(grant)).toBe(true);
   expect(await sut.rotate(grant, input.tokenHash, Buffer.alloc(32, 5))).toBeUndefined();
-  await sut.issue(input);
+  const replacement = (await sut.issue(input))!;
+  expect(await sut.session(replacement.id, input.tokenHash)).toBeDefined();
   await db.deleteFrom('session').where('id', '=', input.photoSessionId).execute();
-  expect(await sut.session(session.id, input.tokenHash)).toBeUndefined();
+  expect(await sut.session(replacement.id, input.tokenHash)).toBeUndefined();
   expect(
-    await workerDb.selectFrom('desktop_worker_session').select('id').where('id', '=', session.id).executeTakeFirst(),
+    await workerDb
+      .selectFrom('desktop_worker_session')
+      .select('id')
+      .where('id', '=', replacement.id)
+      .executeTakeFirst(),
   ).toBeUndefined();
 });
 it('refuses a parent photo session belonging to another account', async () => {
@@ -149,19 +155,19 @@ it('uses the real signed credential through issuance, replay fencing and parent 
   await expect(auth.authenticate('Bearer ' + credential.workerToken, proof(2), 'claim', '{}')).rejects.toThrow();
 });
 
-it('fences an already-authenticated grant after stable-ID reissue or token rotation', async () => {
+it('fences an already-authenticated grant after sign-in reissue or token rotation', async () => {
   const { sut, second, input } = await setup();
   const session = (await sut.issue(input))!;
   const stale = (await sut.consume(session.id, input.tokenHash, 1))!;
   const replacementHash = Buffer.alloc(32, 11);
   const replacement = (await second.issue({ ...input, tokenHash: replacementHash }))!;
-  expect(replacement.id).toBe(session.id);
+  expect(replacement.id).not.toBe(session.id);
   expect(await sut.revoke(stale)).toBe(false);
-  const current = (await sut.consume(session.id, replacementHash, 1))!;
+  const current = (await sut.consume(replacement.id, replacementHash, 1))!;
   const nextHash = Buffer.alloc(32, 12);
   expect(await second.rotate(current, replacementHash, nextHash)).toBeDefined();
   expect(await sut.revoke(current)).toBe(false);
   expect(await sut.rotate(current, replacementHash, Buffer.alloc(32, 13))).toBeUndefined();
-  const renewed = (await sut.consume(session.id, nextHash, 1))!;
+  const renewed = (await sut.consume(replacement.id, nextHash, 1))!;
   expect(await sut.revoke(renewed)).toBe(true);
 });
