@@ -109,6 +109,15 @@ describe('Matched import metadata fills', () => {
     },
   );
 
+  it('rolls back a direct lock when override recording fails without publishing effects', async () => {
+    const { sut, ctx, auth, asset, jobs } = await setup();
+    vi.spyOn(ctx.get(PartnerOriginRepository), 'markOverridden').mockRejectedValueOnce(new Error('marker failed'));
+    await expect(sut.lock(auth, { ids: [asset.id] })).rejects.toThrow('marker failed');
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', asset.id).execute()).toEqual([]);
+    expect(jobs.queueAll).not.toHaveBeenCalled();
+    expect(jobs.queue).not.toHaveBeenCalled();
+  });
+
   it('fills an absent EXIF row and commits metadata locks with its sidecar job', async () => {
     const { sut, auth, asset, assets } = await setup();
     await sut.fillMissingMetadata(auth, asset.id, {
@@ -129,6 +138,28 @@ describe('Matched import metadata fills', () => {
     const jobs = await db.selectFrom('job').select(['name', 'data']).execute();
     expect(jobs).toContainEqual({ name: JobName.SidecarWrite, data: { id: asset.id } });
   });
+
+  it.each([AssetVisibility.Archive, AssetVisibility.Locked])(
+    'rolls back bulk metadata and %s when override recording fails',
+    async (visibility) => {
+      const { sut, ctx, auth, asset, assets, jobs } = await setup();
+      const { asset: second } = await ctx.newAsset({ ownerId: auth.user.id });
+      const ids = [asset.id, second.id];
+      vi.spyOn(ctx.get(PartnerOriginRepository), 'markOverridden').mockRejectedValueOnce(new Error('marker failed'));
+      await expect(sut.updateAll(auth, { ids, description: 'Mine', isFavorite: true, visibility })).rejects.toThrow(
+        'marker failed',
+      );
+      for (const id of ids) {
+        expect(await assets.getById(id, { exifInfo: true })).toMatchObject({
+          isFavorite: false,
+          visibility: AssetVisibility.Timeline,
+          exifInfo: null,
+        });
+      }
+      expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).toEqual([]);
+      expect(jobs.queueAll).not.toHaveBeenCalled();
+    },
+  );
 
   it('preserves description and coordinates committed after the earlier missing-field snapshot', async () => {
     const { sut, auth, asset, assets, jobs } = await setup();

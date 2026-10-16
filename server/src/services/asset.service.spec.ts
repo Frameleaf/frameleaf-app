@@ -1226,6 +1226,44 @@ describe(AssetService.name, () => {
   });
 
   describe('updateAll', () => {
+    it.each([AssetVisibility.Archive, AssetVisibility.Locked])(
+      'admits origin edits before bulk %s writes',
+      async (visibility) => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        await expect(
+          sut.updateAll(authStub.admin, { ids: ['asset-1'], description: 'Mine', visibility }),
+        ).rejects.toThrow('origin busy');
+        expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+        expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it('records bulk overrides before commit and dispatches sidecars afterward', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+        const result = await write();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          ['asset-1'],
+          ['description'],
+          authStub.admin.user.id,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.job.queueAll.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], description: 'Mine' });
+      expect(committed).toBe(true);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+
     it('should require asset write access for all ids', async () => {
       const auth = AuthFactory.create();
       await expect(sut.updateAll(auth, { ids: ['asset-1'] })).rejects.toBeInstanceOf(BadRequestException);
@@ -1447,6 +1485,15 @@ describe(AssetService.name, () => {
   });
 
   describe('lock (FL-34)', () => {
+    it('takes origin admission before locking or publishing lock effects', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      await expect(sut.lock(authStub.admin, { ids: ['asset-1'] })).rejects.toThrow('origin busy');
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('should lock assets of the caller as their own lock without asking for the PIN', async () => {
       const auth = authStub.admin;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));

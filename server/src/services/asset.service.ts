@@ -427,52 +427,81 @@ export class AssetService extends BaseService {
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    const storedVisibility = await this.applyLockedVisibility(auth, ids, visibility);
-    const assetDto = omitBy(
-      { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
-      isUndefined,
-    );
-    // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
-    const clearLocation = latitude === null && longitude === null;
-    const exifDto = omitBy(
-      {
-        latitude: clearLocation ? undefined : (latitude ?? undefined),
-        longitude: clearLocation ? undefined : (longitude ?? undefined),
-        rating,
-        description,
-        dateTimeOriginal,
+    const { locationVideoIds, locked } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      ids,
+      [],
+      async () => {
+        const locked =
+          visibility === AssetVisibility.Locked
+            ? await this.assetRepository.lock(ids, AssetLockReason.Marked, auth.user.id)
+            : [];
+        const storedVisibility = visibility === AssetVisibility.Locked ? undefined : visibility;
+        const assetDto = omitBy(
+          { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
+          isUndefined,
+        );
+        // FL-51: null coordinates remove the location (the geolocation utility's "Remove location")
+        const clearLocation = latitude === null && longitude === null;
+        const exifDto = omitBy(
+          {
+            latitude: clearLocation ? undefined : (latitude ?? undefined),
+            longitude: clearLocation ? undefined : (longitude ?? undefined),
+            rating,
+            description,
+            dateTimeOriginal,
+          },
+          isUndefined,
+        );
+
+        // FL-36 (V-24): moving items releases their typed place names, as a single edit does
+        // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
+        const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
+        if (Object.keys(exifDto).length > 0) {
+          await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
+        }
+
+        // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
+        const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
+        if (clearLocation) {
+          await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
+        }
+
+        const extractedTimeZone = extractTimeZone(dateTimeOriginal);
+
+        const updatedDateTimes =
+          (dateTimeRelative !== undefined && dateTimeRelative !== 0) ||
+          timeZone !== undefined ||
+          extractedTimeZone?.type === 'fixed'
+            ? await this.assetRepository.updateDateTimeOriginal(
+                ids,
+                dateTimeRelative,
+                timeZone ?? extractedTimeZone?.name,
+              )
+            : [];
+
+        for (const { assetId, dateTimeOriginal } of updatedDateTimes) {
+          await this.assetRepository.update({
+            id: assetId,
+            ...getAssetDateTimeUpdates(dateTimeOriginal?.toISOString()),
+          });
+        }
+
+        if (Object.keys(assetDto).length > 0) {
+          await this.assetRepository.updateAll(ids, assetDto);
+        }
+
+        await this.partnerOriginRepository.markOverridden('asset', ids, getAssetEditFields(dto), auth.user.id);
+        return { locationVideoIds, locked };
       },
-      isUndefined,
     );
-
-    // FL-36 (V-24): moving items releases their typed place names, as a single edit does
-    // (`updateExif`), so reverse geocoding names the new spot instead of keeping the old place.
-    const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
-    if (Object.keys(exifDto).length > 0) {
-      await this.assetRepository.updateAllExif(ids, exifDto, moved ? [...placeProperties] : []);
-    }
-
-    // FL-51: a Live Photo's paired video carries the same location, so it goes with the photo's
-    const locationVideoIds = clearLocation ? await this.getLivePhotoVideoIds(ids) : [];
-    if (clearLocation) {
-      await this.assetRepository.clearLocation([...ids, ...locationVideoIds]);
-    }
-
-    const extractedTimeZone = extractTimeZone(dateTimeOriginal);
-
-    const updatedDateTimes =
-      (dateTimeRelative !== undefined && dateTimeRelative !== 0) ||
-      timeZone !== undefined ||
-      extractedTimeZone?.type === 'fixed'
-        ? await this.assetRepository.updateDateTimeOriginal(ids, dateTimeRelative, timeZone ?? extractedTimeZone?.name)
-        : [];
-
-    for (const { assetId, dateTimeOriginal } of updatedDateTimes) {
-      await this.assetRepository.update({ id: assetId, ...getAssetDateTimeUpdates(dateTimeOriginal?.toISOString()) });
-    }
-
-    if (Object.keys(assetDto).length > 0) {
-      await this.assetRepository.updateAll(ids, assetDto);
+    if (locked.length > 0) {
+      await this.afterAssetsLocked(locked);
+      const pushed = new Set(ids);
+      await this.notifyAssetsUpdated(
+        locked.filter((id) => !pushed.has(id)),
+        auth.user.id,
+      );
     }
 
     // FL-326: edited fields of partner copies are the owner's from now on; copies of these items follow
@@ -545,7 +574,15 @@ export class AssetService extends BaseService {
    */
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    await this.lockAssets(auth, dto.ids, AssetLockReason.Marked);
+    const locked = await this.partnerOriginRepository.withOriginEdit('asset', dto.ids, [], async () => {
+      const locked = await this.assetRepository.lock(dto.ids, AssetLockReason.Marked, auth.user.id);
+      await this.partnerOriginRepository.markOverridden('asset', dto.ids, [AssetOriginField.Visibility], auth.user.id);
+      return locked;
+    });
+    if (locked.length > 0) {
+      await this.afterAssetsLocked(locked);
+      await this.notifyAssetsUpdated(locked, auth.user.id);
+    }
     // FL-326: locking a partner copy makes its visibility the owner's; copies of these items follow it
     await recordAssetEdit(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
@@ -553,32 +590,6 @@ export class AssetService extends BaseService {
       dto.ids,
       [AssetOriginField.Visibility],
     );
-  }
-
-  /**
-   * `visibility: locked` in a request (older clients, the upstream "Move to Locked folder") is a lock
-   * record, never a stored visibility (FL-34). Any other visibility is stored as asked and never unlocks:
-   * a locked asset stays locked, whatever its stored visibility, until its owner unlocks it through
-   * `POST /assets/unlock` from an unlocked session. Returns the visibility to store, if any.
-   */
-  private async applyLockedVisibility(
-    auth: AuthDto,
-    ids: string[],
-    visibility?: AssetVisibility,
-  ): Promise<AssetVisibility | undefined> {
-    if (visibility === undefined) {
-      return undefined;
-    }
-
-    if (visibility === AssetVisibility.Locked) {
-      // `update` and `updateAll` push the final state of `ids` (and their stacks) once they are done
-      await this.lockAssets(auth, ids, AssetLockReason.Marked, { pushedByCaller: ids });
-      return undefined;
-    }
-
-    // Never an unlock (FL-34): only `POST /assets/unlock` removes a lock, from an unlocked session,
-    // recording the owner's review. Any other visibility is stored and the lock, if any, stays.
-    return visibility;
   }
 
   /**
