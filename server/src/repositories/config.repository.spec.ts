@@ -35,6 +35,7 @@ const resetEnv = () => {
     'NO_COLOR',
 
     'FRAMELEAF_CLOUD_URL',
+    'FRAMELEAF_PUSH_URL',
     'FRAMELEAF_IDENTITY_DIR',
     'FRAMELEAF_LINK_TOKEN',
     'FRAMELEAF_EDGE_PORT',
