@@ -35,6 +35,7 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
@@ -164,6 +165,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
   DesktopMlService,

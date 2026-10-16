@@ -4,6 +4,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import z from 'zod';
+import type { Transaction } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { MlWorkload } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
@@ -41,9 +43,13 @@ export class DesktopNasProducerService {
     if (!space) throw new ConflictException('desktop_clip_space_unavailable');
     const modelKeys = [space.visualModelKey, ...space.textModelKeys];
     const profiles = modelKeys.map((key) => this.models.profiles.find((p) => p.modelKey === key)!);
-    const snapshot = async () => {
+    const snapshot = async (tx?: Transaction<DB>) => {
       const config = await getConfig(
-        { configRepo: this.configRepo, metadataRepo: this.metadataRepo, logger: this.logger },
+        {
+          configRepo: this.configRepo,
+          metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+          logger: this.logger,
+        },
         { withCache: false },
       );
       if (
@@ -52,12 +58,19 @@ export class DesktopNasProducerService {
         profiles.some((p) => p.modelName !== config.machineLearning.clip.modelName)
       )
         throw new ConflictException('desktop_nas_model_unavailable');
-      const route = (await this.destinations.getRouteStates()).find((r) => r.workload === MlWorkload.Clip);
+      const route = (await (tx ? new MlDestinationRepository(tx) : this.destinations).getRouteStates()).find(
+        (r) => r.workload === MlWorkload.Clip,
+      );
       if (!route || route.origin !== 'default' || !route.destinationId || !route.revisionId)
         throw new ConflictException('desktop_route_review_required');
-      const active = await this.index.getActive();
+      const active = tx ? await this.index.getActive(tx) : await this.index.getActive();
       if (active && active.space.spaceKey !== spaceKey) throw new ConflictException('desktop_clip_index_changed');
-      return { route, clip: config.machineLearning.clip, revisionId: active?.revisionId ?? null };
+      return {
+        route,
+        clip: config.machineLearning.clip,
+        urls: config.machineLearning.urls,
+        revisionId: active?.revisionId ?? null,
+      };
     };
     const initial = await snapshot();
     const identity = canonicalJson(initial);
@@ -105,11 +118,17 @@ export class DesktopNasProducerService {
       spaceKey,
       modelKeys: Object.freeze(modelKeys),
       destinationId: selection.destinationId,
+      routeRevisionId: initial.route.revisionId!,
+      selection,
       verifiedAt,
-      assertCurrent: async () => {
+      assertCurrent: async (tx?: Transaction<DB>) => {
         if (Date.now() < verifiedAt || Date.now() - verifiedAt > 60_000)
           throw new ConflictException('desktop_nas_producer_expired');
-        await assertCurrent();
+        if (tx) {
+          if (canonicalJson(await snapshot(tx)) !== identity)
+            throw new ConflictException('desktop_nas_producer_changed');
+          await selection.endpoint.assertAuthority?.();
+        } else await assertCurrent();
       },
     });
   }

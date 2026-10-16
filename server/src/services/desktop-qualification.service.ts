@@ -14,6 +14,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
@@ -28,6 +29,7 @@ import { desktopRuntimeMinimumEpoch, verifyDesktopRuntimeAttestation } from 'src
 import { canonicalJson } from 'src/utils/object.js';
 
 type Challenge = NonNullable<Awaited<ReturnType<DesktopWorkerChallengeRepository['read']>>>;
+type AcceptedQualification = NonNullable<Awaited<ReturnType<DesktopWorkerChallengeRepository['readAccepted']>>>;
 const parse = <T>(schema: z.ZodType<T>, payload: string): T => {
   try {
     if (Buffer.byteLength(payload) > 4 * 1024 * 1024) throw new Error('payload_too_large');
@@ -52,6 +54,7 @@ export class DesktopQualificationService {
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private nasProducer: DesktopNasProducerService,
+    private activation: DesktopAssistanceActivationService,
   ) {}
 
   async issue(
@@ -135,7 +138,12 @@ export class DesktopQualificationService {
     } catch {
       throw new BadRequestException('desktop_qualification_report_invalid');
     }
-    return { accepted: await this.challenges.record(grant, id, receipt) };
+    if (!(await this.challenges.record(grant, id, receipt))) return { accepted: false };
+    const qualification = await this.challenges.readAccepted(grant, id);
+    if (!qualification) throw new UnauthorizedException('desktop_qualification_invalid');
+    this.assertAccepted(qualification, profile);
+    await this.activation.activate(grant, qualification, findDesktopClipSpace(this.spaces, profile.modelKey)!.spaceKey);
+    return { accepted: true };
   }
 
   async accepted(
@@ -147,14 +155,7 @@ export class DesktopQualificationService {
     const row = await this.challenges.readAccepted(grant, id);
     if (!row) throw new UnauthorizedException('desktop_qualification_invalid');
     const profile = await this.selected(row.modelKey, row.runtime.provider, row.runtime.sourceRevision);
-    const digest = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
-    if (
-      row.profileSha256 !== digest(profile) ||
-      row.configSha256 !== digest(profile.spec.entries) ||
-      row.inputKind !== profile.spec.fixtureKind ||
-      row.runtime.epoch < desktopRuntimeMinimumEpoch()
-    )
-      throw new ConflictException('desktop_model_profile_changed');
+    this.assertAccepted(row, profile);
     return {
       id: row.id,
       deviceId: row.deviceId,
@@ -170,6 +171,17 @@ export class DesktopQualificationService {
       qualifiedAt: new Date(row.createdAt).toISOString(),
       expiresAt: new Date(row.expiresAt).toISOString(),
     };
+  }
+
+  private assertAccepted(row: AcceptedQualification, profile: DesktopModelProfile) {
+    const digest = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+    if (
+      row.profileSha256 !== digest(profile) ||
+      row.configSha256 !== digest(profile.spec.entries) ||
+      row.inputKind !== profile.spec.fixtureKind ||
+      row.runtime.epoch < desktopRuntimeMinimumEpoch()
+    )
+      throw new ConflictException('desktop_model_profile_changed');
   }
 
   private async selected(modelKey: string, provider: string, source: string): Promise<DesktopModelProfile> {

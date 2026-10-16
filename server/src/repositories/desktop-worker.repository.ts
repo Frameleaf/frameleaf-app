@@ -1,9 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { type Kysely, type QueryExecutorProvider, type Selectable, sql } from 'kysely';
+import { type Kysely, type QueryExecutorProvider, type Selectable, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
+import type {
+  DesktopQualificationTables,
+  DesktopWorkerQualificationTable,
+} from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { DB } from 'src/schema/index.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopWorkerTables = { desktop_worker_session: DesktopWorkerSessionTable };
 export type DesktopWorkerGrant = {
@@ -62,6 +67,76 @@ export class DesktopWorkerRepository {
   private db: Kysely<WorkerDatabase>;
   constructor(@InjectKysely() db: Kysely<DB>) {
     this.db = db.withTables<DesktopWorkerTables>();
+  }
+
+  async owner(grant: DesktopWorkerGrant): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('desktop_device as device')
+      .innerJoin('desktop_worker_session as worker', 'worker.deviceId', 'device.id')
+      .select('device.userId')
+      .where('device.id', '=', grant.deviceId)
+      .where('worker.id', '=', grant.sessionId)
+      .where('worker.tokenHash', '=', grant.credentialHash)
+      .where('worker.authorizationEpoch', '=', grant.authorizationEpoch)
+      .executeTakeFirst();
+    return row?.userId;
+  }
+
+  async grantQualifiedModel(
+    input: {
+      grant: DesktopWorkerGrant;
+      ownerId: string;
+      qualification: Selectable<DesktopWorkerQualificationTable>;
+      modelKeys: readonly string[];
+    },
+    transaction: Transaction<DB>,
+  ): Promise<boolean> {
+    const { grant, ownerId, qualification: expected } = input;
+    const allowed = models.parse(input.modelKeys);
+    if (!allowed.includes(expected.modelKey)) return false;
+    const db = transaction.withTables<DesktopWorkerTables & DesktopQualificationTables>();
+    const worker = await lockDesktopWorker(db, grant);
+    if (!worker) return false;
+    const device = await db
+      .selectFrom('desktop_device')
+      .select('userId')
+      .where('id', '=', grant.deviceId)
+      .executeTakeFirst();
+    if (device?.userId !== ownerId) return false;
+    const current = await db
+      .selectFrom('desktop_worker_qualification')
+      .selectAll()
+      .where('id', '=', expected.id)
+      .where('deviceId', '=', grant.deviceId)
+      .where('sessionId', '=', grant.sessionId)
+      .where('authorizationEpoch', '=', grant.authorizationEpoch)
+      .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+      .executeTakeFirst();
+    if (
+      !current ||
+      (['modelKey', 'profileSha256', 'configSha256', 'inputKind', 'runtimeFingerprint', 'reportSha256'] as const).some(
+        (key) => current[key] !== expected[key],
+      ) ||
+      canonicalJson(current.runtime) !== canonicalJson(expected.runtime)
+    )
+      return false;
+    const live = await db
+      .selectFrom('desktop_worker_qualification')
+      .select('modelKey')
+      .where('deviceId', '=', grant.deviceId)
+      .where('sessionId', '=', grant.sessionId)
+      .where('authorizationEpoch', '=', grant.authorizationEpoch)
+      .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('modelKey', 'in', allowed)
+      .execute();
+    const retained = worker.modelKeys.filter((key) => live.some((row) => row.modelKey === key));
+    const keys = [...new Set([...retained, current.modelKey])].sort();
+    await db
+      .updateTable('desktop_worker_session')
+      .set({ modelKeys: sql<string[]>`${keys}::jsonb` })
+      .where('id', '=', grant.sessionId)
+      .execute();
+    return true;
   }
 
   device(userId: string, id: string) {

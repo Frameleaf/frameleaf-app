@@ -81,7 +81,7 @@ it.each(['disabled', 'model', 'unknown-space'])('refuses %s before sending a fix
   await expect(service.verify(reason === 'unknown-space' ? 'unknown' : space.spaceKey)).rejects.toThrow();
   expect(ml.encodeBoundClip).not.toHaveBeenCalled();
 });
-it.each(['config', 'route', 'index', 'endpoint', 'vector', 'golden', 'key', 'failure'])(
+it.each(['config', 'urls', 'route', 'index', 'endpoint', 'vector', 'golden', 'key', 'failure'])(
   'refuses %s changes without another model or destination',
   async (reason) => {
     let fixture: string | undefined;
@@ -90,6 +90,10 @@ it.each(['config', 'route', 'index', 'endpoint', 'vector', 'golden', 'key', 'fai
       switch (reason) {
         case 'config': {
           settings.machineLearning.clip.modelName = 'ViT-B-16__openai';
+          break;
+        }
+        case 'urls': {
+          settings.machineLearning.urls = ['https://changed.invalid'];
           break;
         }
         case 'route': {

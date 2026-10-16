@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import express, { type Express, json } from 'express';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -134,11 +135,24 @@ const report = () => {
     ],
   };
 };
+const acceptedRow = () => ({
+  ...row(),
+  deviceId: id,
+  sessionId,
+  authorizationEpoch: 2,
+  configSha256: createHash('sha256').update(canonicalJson(profile.spec.entries)).digest('hex'),
+  inputKind: 'text',
+  createdAt: new Date(),
+  expiresAt: new Date(Date.now() + 3_600_000),
+  runtimeFingerprint: report().runtimeFingerprint,
+  reportSha256: createHash('sha256').update(canonicalJson(report())).digest('hex'),
+});
 const repository = { session: vi.fn(), consume: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
 const nasProducer = { verify: vi.fn() };
+const activation = { activate: vi.fn() };
 
 const proof = (operation: string, raw: string) => {
   const dto = { sessionId, sequence: 1, timestamp: Date.now(), signature: '' };
@@ -169,6 +183,7 @@ beforeAll(async () => {
         {} as never,
         metadata as never,
         nasProducer as never,
+        activation as never,
       ),
     },
   ]);
@@ -180,6 +195,8 @@ beforeAll(async () => {
 afterAll(async () => ctx.close());
 beforeEach(() => {
   vi.clearAllMocks();
+  activation.activate.mockReset().mockResolvedValue(undefined);
+  challenges.readAccepted.mockResolvedValue(acceptedRow());
   nasProducer.verify.mockReset().mockResolvedValue({ assertCurrent: vi.fn().mockResolvedValue(undefined) });
   repository.session.mockResolvedValue({
     publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
@@ -265,6 +282,8 @@ it('binds challenge reads and report submission to the exact operation, fresh sp
     accepted: true,
   });
   expect(challenges.record.mock.calls[0][2]).toBeInstanceOf(DesktopQualificationReceipt);
+  activation.activate.mockRejectedValueOnce(new ConflictException('desktop_pool_policy_changed'));
+  expect((await post('/desktop/worker/challenges/' + id + '/report', 'qualification:' + id, raw)).status).toBe(409);
   expect((await post('/desktop/worker/challenges/' + id + '/report', 'qualification:other', raw)).status).toBe(401);
   expect(
     (
@@ -300,20 +319,10 @@ it.skipIf(!process.env.FRAMELEAF_FACTORY_ATTESTATION)(
 );
 
 it('reads only safe current accepted evidence using a distinct signed operation', async () => {
-  const accepted = {
-    ...row(),
-    deviceId: id,
-    sessionId,
-    authorizationEpoch: 2,
-    configSha256: createHash('sha256').update(canonicalJson(profile.spec.entries)).digest('hex'),
-    inputKind: 'text',
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 3_600_000),
-    runtimeFingerprint: report().runtimeFingerprint,
-    reportSha256: createHash('sha256').update(canonicalJson(report())).digest('hex'),
-  };
+  const accepted = acceptedRow();
   challenges.readAccepted.mockResolvedValue(accepted);
   const path = `/desktop/worker/qualifications/${id}`;
+  activation.activate.mockRejectedValueOnce(new ConflictException('desktop_pool_policy_changed'));
   const response = await request(app)
     .get(path)
     .auth(token, { type: 'bearer' })
@@ -384,6 +393,7 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
       {} as never,
       {} as never,
       nasProducer as never,
+      activation as never,
     );
     await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
     expect(challenges.issue).not.toHaveBeenCalled();

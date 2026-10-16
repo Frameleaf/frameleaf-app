@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Kysely, sql } from 'kysely';
+import { type Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -119,43 +119,51 @@ export class DesktopClipIndexRepository {
   }
 
   /** Call only after selected NAS producer/config verification; this does not grant worker scope. */
-  async admit(spaceKey: string): Promise<DesktopClipIndexBinding> {
+  async admit(
+    spaceKey: string,
+    admission?: {
+      transaction: Transaction<DB>;
+      assertAuthority: () => Promise<void>;
+    },
+  ): Promise<DesktopClipIndexBinding> {
     const space = this.spaces.spaces.find((space) => space.spaceKey === spaceKey);
     if (!space) throw new Error('desktop_clip_space_unavailable');
     try {
-      return await this.db
-        .transaction()
-        .setIsolationLevel('read committed')
-        .execute(async (tx) => {
-          await sql`SELECT pg_advisory_xact_lock(912741, 1)`.execute(tx);
-          const current = await this.getActive(tx);
-          if (current) {
-            if (current.space.spaceKey !== spaceKey) throw new Error('desktop_clip_index_changed');
-            return current;
-          }
-          const gate = await tx
-            .selectFrom('desktop_clip_index')
-            .select('scope')
-            .where('scope', '=', 'unadmitted')
-            .forUpdate()
-            .executeTakeFirst();
-          if (!gate) throw new Error('desktop_clip_index_invalid');
-          await this.assertDimensions(tx, space);
-          await tx
-            .insertInto('desktop_clip_index')
-            .values({ scope: 'clip', revisionId: randomUUID(), space })
-            .execute();
-          const allowed = keys(space);
-          await tx
-            .insertInto('desktop_clip_producer')
-            .values(allowed.map((key) => ({ key, scope: 'clip' as const })))
-            .onConflict((oc) => oc.column('key').doUpdateSet({ scope: 'clip' }))
-            .execute();
-          // Foreign keys serialize concurrent publications and refuse unknown or incompatible existing vectors.
-          await tx.deleteFrom('desktop_clip_producer').where('key', 'not in', allowed).execute();
-          await tx.deleteFrom('desktop_clip_index').where('scope', '=', 'unadmitted').execute();
-          return (await this.getActive(tx))!;
-        });
+      const admit = async (tx: Transaction<DB>) => {
+        const {
+          rows: [isolation],
+        } = await sql<{ level: string }>`SELECT current_setting('transaction_isolation') level`.execute(tx);
+        if (isolation.level !== 'read committed') throw new Error('desktop_clip_publication_isolation');
+        await sql`SELECT pg_advisory_xact_lock(912741, 1)`.execute(tx);
+        await admission?.assertAuthority();
+        const current = await this.getActive(tx);
+        if (current) {
+          if (current.space.spaceKey !== spaceKey) throw new Error('desktop_clip_index_changed');
+          return current;
+        }
+        const gate = await tx
+          .selectFrom('desktop_clip_index')
+          .select('scope')
+          .where('scope', '=', 'unadmitted')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!gate) throw new Error('desktop_clip_index_invalid');
+        await this.assertDimensions(tx, space);
+        await tx.insertInto('desktop_clip_index').values({ scope: 'clip', revisionId: randomUUID(), space }).execute();
+        const allowed = keys(space);
+        await tx
+          .insertInto('desktop_clip_producer')
+          .values(allowed.map((key) => ({ key, scope: 'clip' as const })))
+          .onConflict((oc) => oc.column('key').doUpdateSet({ scope: 'clip' }))
+          .execute();
+        // Foreign keys serialize concurrent publications and refuse unknown or incompatible existing vectors.
+        await tx.deleteFrom('desktop_clip_producer').where('key', 'not in', allowed).execute();
+        await tx.deleteFrom('desktop_clip_index').where('scope', '=', 'unadmitted').execute();
+        return (await this.getActive(tx))!;
+      };
+      return admission
+        ? await admit(admission.transaction)
+        : await this.db.transaction().setIsolationLevel('read committed').execute(admit);
     } catch (error) {
       if (
         typeof error === 'object' &&

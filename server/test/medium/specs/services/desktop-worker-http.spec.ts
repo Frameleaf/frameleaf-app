@@ -71,6 +71,9 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
         new ConfigRepository(),
         metadata,
         { verify: () => Promise.resolve({ assertCurrent: () => Promise.resolve() }) } as never,
+        {
+          activate: () => Promise.reject(new Error('activation_not_available_in_broker_fixture')),
+        } as never,
       ),
     },
   ]);
