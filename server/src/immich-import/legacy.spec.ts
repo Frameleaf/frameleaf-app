@@ -17,6 +17,7 @@ describe('legacy source views', () => {
         'asset_exif',
         'asset_face',
         'asset_file',
+        'face_search',
         'memory_asset',
         'person',
         'shared_link_asset',
@@ -31,6 +32,12 @@ describe('legacy source views', () => {
     expect(views.album_user).toContain('"albumsId" AS "albumId"');
     expect(views.album_user).toContain('UNION ALL');
     expect(views.asset_file.match(/UNION ALL/g)).toHaveLength(2);
+  });
+
+  it('drops the embeddings of the cross-owner faces 3.0 deletes, since they cascade with the face', () => {
+    expect(frozenSource('2.7.5').views.face_search).toContain('NOT EXISTS (SELECT 1 FROM public.asset_face f');
+    expect(frozenSource('2.7.5').views.face_search).toContain('f.id = t."faceId"');
+    expect(frozenSource('3.0.0').views.face_search).toBeUndefined();
   });
 
   it('only emits SELECTs', () => {

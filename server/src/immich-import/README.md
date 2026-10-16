@@ -200,7 +200,7 @@ change, so a release that already ran it reads that table directly. The views co
 - 2.7 `checksumAlgorithm` (`sha1-path` for external assets, otherwise `sha1`);
 - 3.0 album owner from `album.ownerId` into `album_user`, text roles, video
   duration from `HH:MM:SS.mmm` to milliseconds, and cross-owner faces dropped
-  (a person featuring one loses that cover face);
+  with their embeddings (a person featuring one loses that cover face);
 - 3.0.3 hidden Live Photo stills made visible again;
 - 3.2 empty passwords and album descriptions as NULL, ownerless 3.0/3.1 albums and
   their members, assets, activity and links dropped, cross-owner memory assets dropped;

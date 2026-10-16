@@ -135,6 +135,11 @@ export const sourceViews = (
       columns: lacks(M.isVisible) ? { isVisible: 'true' } : {},
       where: lacks(M.crossOwnerFaces) ? [`NOT ${crossOwnerFace('t.id')}`] : [],
     },
+    // The deleted faces' embeddings cascade with them; reading them would orphan face_search at the destination.
+    face_search: {
+      from: 'public.face_search t',
+      where: lacks(M.crossOwnerFaces) ? [`NOT ${crossOwnerFace('t."faceId"')}`] : [],
+    },
     asset_file: {
       from: 'public.asset_file t',
       columns: fileFlags,
