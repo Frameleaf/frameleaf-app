@@ -223,6 +223,8 @@ const versionedService = () =>
       UserRepository,
       MediaRepository,
       MediaOperationRepository,
+      // FL-412: deleting an item asks whether its original is shared.
+      PhysicalFileRepository,
       // FL-113: the editor reads the ffmpeg settings to explain HDR handling.
       ConfigRepository,
       SystemMetadataRepository,

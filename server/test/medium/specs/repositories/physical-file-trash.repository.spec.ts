@@ -37,6 +37,9 @@ beforeAll(async () => {
   StorageCore.setMediaLocation('/data');
 });
 
+// FL-412: a stored file is stood in for by its path: proven to hold the content, with a fixed identity
+const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
+
 describe(PhysicalFileTrashRepository.name, () => {
   describe('deleteUnreferencedPath with the file trash', () => {
     it('moves the last copy of an original to the file trash instead of unlinking it', async () => {
@@ -219,7 +222,7 @@ describe(PhysicalFileTrashRepository.name, () => {
       const result = await files.linkUploadedOriginal(
         upload.id,
         { checksum, sizeInBytes: 1000 },
-        { exists: () => Promise.resolve(true), untrash },
+        { verify: onDisk, identify: onDisk, untrash },
       );
 
       expect(result).toMatchObject({ linked: true, physicalFile: { canonicalAssetId: upload.id } });
