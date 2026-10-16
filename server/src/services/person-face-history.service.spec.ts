@@ -26,6 +26,8 @@ describe('PersonService face history (FL-57)', () => {
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
     // face writes run inside the partner-origin edit admission; let it pass through
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+    // person edits run inside the person-origin admission (no origin row here), as in person.service.spec.ts
+    mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
     mocks.person.withMergeWrite.mockImplementation(async (write) => write());
