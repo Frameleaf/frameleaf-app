@@ -1,4 +1,5 @@
 import { getAlbumInfo, getPerson, getPet, getTagById, getVisitedLandmarks } from '@frameleaf/sdk';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 
 /**
  * Name lookups for a person/pet/tag (and an album, for the FL-49 search chips) behind an id-list
@@ -21,6 +22,7 @@ import { getAlbumInfo, getPerson, getPet, getTagById, getVisitedLandmarks } from
 export type FilterEntityKind = 'person' | 'pet' | 'tag' | 'album' | 'landmark';
 
 const nameCache = new Map<string, Promise<string | null>>();
+let watchesAccess = false;
 
 const cacheKey = (kind: FilterEntityKind, id: string) => `${kind}:${id}`;
 
@@ -53,10 +55,16 @@ const fetchEntityName = async (kind: FilterEntityKind, id: string): Promise<stri
 
 /** Resolve and cache one entity's display name for a filename. See the module doc for what `null` covers. */
 export const resolveEntityName = (kind: FilterEntityKind, id: string): Promise<string | null> => {
+  if (!watchesAccess) {
+    onLibraryAccessChange(() => nameCache.clear());
+    watchesAccess = true;
+  }
   const key = cacheKey(kind, id);
   let cached = nameCache.get(key);
   if (!cached) {
-    cached = fetchEntityName(kind, id).catch(() => null);
+    cached = fetchEntityName(kind, id)
+      .then((name) => (nameCache.get(key) === cached ? name : null))
+      .catch(() => null);
     nameCache.set(key, cached);
   }
   return cached;

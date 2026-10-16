@@ -1,4 +1,5 @@
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { SNAPSHOT_MAX_ITEMS } from '$lib/frameleaf/bulk-operations';
 import {
   createLandmarkAlbum,
   dismissLandmarkAlbum,
@@ -13,6 +14,37 @@ describe('createLandmarkAlbum', () => {
   const found = (ids: string[]) => ({ assets: { items: ids.map((id) => ({ id })), total: ids.length } }) as never;
 
   beforeEach(() => vi.resetAllMocks());
+
+  it.each([SNAPSHOT_MAX_ITEMS, SNAPSHOT_MAX_ITEMS + 1])(
+    'creates only a complete matching set (%s items)',
+    async (total) => {
+      sdkMock.searchAssets.mockImplementation(({ metadataSearchDto }) => {
+        const start = Number(metadataSearchDto.cursor ?? 0);
+        const size = Math.min(metadataSearchDto.size ?? 1000, total - start);
+        return Promise.resolve({
+          assets: {
+            items: Array.from({ length: size }, (_, index) => ({ id: String(start + index) })),
+            total,
+            nextCursor: start + size < total ? String(start + size) : null,
+          },
+        } as never);
+      });
+      sdkMock.createAlbum.mockResolvedValue({ id: 'album' } as never);
+      sdkMock.addAssetsToAlbum.mockResolvedValue([]);
+
+      const pending = createLandmarkAlbum(visit);
+      if (total > SNAPSHOT_MAX_ITEMS) {
+        await expect(pending).rejects.toThrow('The complete landmark visit could not be collected');
+        expect(sdkMock.createAlbum).not.toHaveBeenCalled();
+        expect(sdkMock.addAssetsToAlbum).not.toHaveBeenCalled();
+      } else {
+        await expect(pending).resolves.toBe('album');
+        const added = sdkMock.addAssetsToAlbum.mock.calls.flatMap(([{ bulkIdsDto }]) => bulkIdsDto.ids);
+        expect(added).toHaveLength(total);
+        expect(new Set(added).size).toBe(total);
+      }
+    },
+  );
 
   it('puts everything taken at the landmark on those days in a new album', async () => {
     sdkMock.searchAssets.mockResolvedValue(found(['a', 'b']));

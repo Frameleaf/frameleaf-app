@@ -32,6 +32,34 @@ describe('rovingFocus (FL-139)', () => {
     languageManager.setLanguage('en');
   });
 
+  it.each(['disabled', 'aria-disabled'])('removes an initially %s radio from the tab sequence', (attribute) => {
+    const { root, buttons } = radioGroup();
+    buttons[0].setAttribute(attribute, 'true');
+    const action = rovingFocus(root);
+    expect(buttons.map((button) => button.tabIndex)).toEqual([-1, 0, -1]);
+    action.destroy();
+  });
+
+  it.each(['disabled', 'aria-disabled'])('removes a newly %s radio from the tab sequence', async (attribute) => {
+    const { root, buttons } = radioGroup();
+    const action = rovingFocus(root);
+    buttons[0].setAttribute(attribute, 'true');
+    await vi.waitFor(() => expect(buttons.map((button) => button.tabIndex)).toEqual([-1, 0, -1]));
+    action.destroy();
+  });
+
+  it('keeps nested group tab stops independent', () => {
+    const outer = radioGroup();
+    const inner = radioGroup();
+    outer.root.append(inner.root);
+    const innerAction = rovingFocus(inner.root);
+    const outerAction = rovingFocus(outer.root);
+    expect(outer.buttons.map((button) => button.tabIndex)).toEqual([0, -1, -1]);
+    expect(inner.buttons.map((button) => button.tabIndex)).toEqual([0, -1, -1]);
+    outerAction.destroy();
+    innerAction.destroy();
+  });
+
   it('makes a radio group one tab stop, and moves and checks with the arrows', async () => {
     const { root, buttons, checked } = radioGroup();
     const action = rovingFocus(root);

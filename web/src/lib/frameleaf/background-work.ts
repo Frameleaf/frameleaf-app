@@ -86,7 +86,8 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
     return [];
   }
   const queues = summary.canManageQueues ? summary.queues.map((queue) => fromQueue(queue)) : [];
-  const runs = summary.canReadJobRuns ? (summary.durableRuns ?? []).map((run) => fromRun(run)) : [];
+  const runs = summary.canReadJobRuns ? (summary.durableRuns ?? []) : [];
+  const runTotals = new Map<QueueName, { settled: number; total: number; enumerated: boolean }>();
 
   const byKind = new Map<QueueName, BackgroundWorkCard>();
   for (const card of queues) {
@@ -94,10 +95,16 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
       byKind.set(card.queueName, card);
     }
   }
-  for (const card of runs) {
+  for (const run of runs) {
+    const card = fromRun(run);
     if (!card) {
       continue;
     }
+    const totals = runTotals.get(card.queueName) ?? { settled: 0, total: 0, enumerated: true };
+    totals.settled += settledItems(run);
+    totals.total += run.total;
+    totals.enumerated &&= run.enumerationDone;
+    runTotals.set(card.queueName, totals);
     const existing = byKind.get(card.queueName);
     if (!existing) {
       byKind.set(card.queueName, card);
@@ -109,7 +116,7 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
         stage,
         waiting: existing.waiting + card.waiting,
         running: existing.running + card.running,
-        progress: stage === 'running' ? (existing.progress ?? card.progress) : null,
+        progress: stage === 'running' && totals.enumerated ? percent(totals.settled, totals.total) : null,
       });
     }
   }

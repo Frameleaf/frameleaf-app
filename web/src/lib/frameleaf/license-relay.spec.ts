@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   KEY_IN_LINK_NOTICE,
   PENDING_LINK_CODE,
@@ -15,6 +15,27 @@ const KEY = 'FL-S8NL-49G8-J583';
 
 describe('licence link relay (CLD-004)', () => {
   beforeEach(() => sessionStorage.clear());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(['missing', 'blocked', 'full'])('does not claim to keep a code when storage is %s', (state) => {
+    if (state === 'missing') {
+      vi.stubGlobal('sessionStorage', undefined);
+    } else if (state === 'blocked') {
+      vi.spyOn(globalThis, 'sessionStorage', 'get').mockImplementation(() => {
+        throw new DOMException('Storage blocked', 'SecurityError');
+      });
+    } else {
+      vi.stubGlobal('sessionStorage', {
+        setItem: () => {
+          throw new DOMException('Storage full', 'QuotaExceededError');
+        },
+      });
+    }
+    expect(holdPendingLinkCode(CODE)).toBe(false);
+  });
 
   it('reads a one-time link code from the query, and nothing that is not shaped like one', () => {
     expect(readLinkAddress(`https://photos.test/link?target=frameleaf_license&linkCode=${CODE}`)).toEqual({

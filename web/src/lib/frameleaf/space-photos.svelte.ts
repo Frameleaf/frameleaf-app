@@ -73,7 +73,13 @@ export class SpacePhotoSet {
         return;
       }
       const known = next === 1 ? new Set<string>() : new Set(this.assets.map(({ id }) => id));
-      const fresh = results.items.filter(({ id }) => !known.has(id));
+      const fresh = results.items.filter(({ id }) => {
+        if (known.has(id)) {
+          return false;
+        }
+        known.add(id);
+        return true;
+      });
       this.assets = next === 1 ? fresh : [...this.assets, ...fresh];
       this.exhausted = results.nextPage === null;
       this.page = next;

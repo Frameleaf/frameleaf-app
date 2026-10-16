@@ -48,6 +48,40 @@ const summary = (patch: Partial<DurableRunningJobs>): DurableRunningJobs => ({
 });
 
 describe('buildBackgroundWorkCards (SHARING-P1)', () => {
+  it.each([false, true])('weights combined run progress by item totals (reverse=%s)', (reverse) => {
+    const runs = [
+      run(QueueName.MetadataExtraction, {
+        id: 'small',
+        state: 'running',
+        active: 1,
+        paused: 0,
+        completed: 20,
+        total: 100,
+      }),
+      run(QueueName.MetadataExtraction, {
+        id: 'large',
+        state: 'running',
+        active: 1,
+        paused: 0,
+        completed: 90,
+        total: 1000,
+      }),
+    ];
+    const cards = buildBackgroundWorkCards(summary({ durableRuns: reverse ? [...runs].reverse() : runs }));
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ stage: 'running', waiting: 0, running: 2, progress: 10 });
+  });
+
+  it.each([false, true])('withholds combined progress until every run is enumerated (reverse=%s)', (reverse) => {
+    const runs = [
+      run(QueueName.MetadataExtraction, { id: 'known', state: 'running', active: 1 }),
+      run(QueueName.MetadataExtraction, { id: 'discovering', state: 'running', active: 1, enumerationDone: false }),
+    ];
+    const cards = buildBackgroundWorkCards(summary({ durableRuns: reverse ? [...runs].reverse() : runs }));
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ stage: 'running', running: 2, progress: null });
+  });
+
   it('makes one card per busy kind of work, in the Background work order, and none for idle ones', () => {
     const cards = buildBackgroundWorkCards(
       summary({
