@@ -47,7 +47,8 @@ export class HardwareCheckService extends BaseService {
 
   async runCheck(): Promise<HardwareCheckResponseDto> {
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.HardwareCheck);
-    const check = await this.check(1);
+    const destinations = await this.mlDestinationRepository.getAll();
+    const check = await this.check(1, destinations);
     // A benchmark measured on other hardware says nothing about this one.
     const same =
       previous?.benchmark &&
@@ -68,7 +69,8 @@ export class HardwareCheckService extends BaseService {
    * record the throughput of each kind of work the model sliders estimate, or why it has none.
    */
   async runBenchmark(): Promise<HardwareCheckResponseDto> {
-    const check = await this.check(BENCHMARK_EMBEDDINGS);
+    const destinations = await this.mlDestinationRepository.getAll();
+    const check = await this.check(BENCHMARK_EMBEDDINGS, destinations);
     const embeddingMs = check.ml.test?.gpu || check.ml.test?.ok ? check.ml.test.value : null;
     const transcodeSpeed = check.server.test?.value ?? null;
     const factors = benchmarkFactors(
@@ -83,21 +85,20 @@ export class HardwareCheckService extends BaseService {
         transcodeSpeed,
         mlFactor: factors.ml,
         serverFactor: factors.server,
-        workloads: await this.benchmarkWorkloads(check.ml.gpu.usable === true),
+        workloads: await this.benchmarkWorkloads(check.ml.gpu.usable === true, destinations),
       },
     };
     await this.systemMetadataRepository.set(SystemMetadataKey.HardwareCheck, result);
     return result;
   }
 
-  private async check(embeddings: number): Promise<Omit<HardwareCheck, 'benchmark'>> {
-    const destinations = await this.mlDestinationRepository.getAll();
+  private async check(embeddings: number, destinations: MlDestinationRow[]): Promise<Omit<HardwareCheck, 'benchmark'>> {
     const [serverFacts, mlReport, workers] = await Promise.all([
       this.hardwareProbeRepository.readServer(),
       this.readMlContainer(destinations),
       this.readWorkers(destinations),
     ]);
-    const embedding = await this.timeEmbeddings(embeddings, mlReport);
+    const embedding = await this.timeEmbeddings(embeddings, mlReport, this.localDestination(destinations));
     const findings = detectHardwareFindings(serverFacts, mlReport);
     return {
       checkedAt: new Date().toISOString(),
@@ -175,15 +176,26 @@ export class HardwareCheckService extends BaseService {
     return [...render, ...restoration];
   }
 
-  /** Time search embeddings through the route search uses; null when search is off or not routed. */
-  private async timeEmbeddings(times: number, report: MlContainerReport | null): Promise<ContainerTest | null> {
+  /** Time the search route only when it still names the local container whose hardware was read. */
+  private async timeEmbeddings(
+    times: number,
+    report: MlContainerReport | null,
+    local?: MlDestinationRow,
+  ): Promise<ContainerTest | null> {
     const { machineLearning } = await this.getConfig({ withCache: true });
-    if (!machineLearning.enabled || !machineLearning.clip.enabled) {
+    if (!machineLearning.enabled || !machineLearning.clip.enabled || !local) {
       return null;
     }
     const gpu = !!report && report.gpus.length > 0 && report.backend !== 'CPU';
     try {
       const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip, jobName: 'HardwareCheck' });
+      if (
+        selection.destinationId !== local.id ||
+        selection.endpoint.url !== local.url ||
+        selection.endpoint.authToken !== (local.authToken ?? undefined)
+      ) {
+        return null;
+      }
       const timings: number[] = [];
       for (let index = 0; index < times; index++) {
         const started = performance.now();
@@ -205,8 +217,7 @@ export class HardwareCheckService extends BaseService {
    * Cloud); restoration comes from what its worker measured on the GPU it has now; the rest have no
    * local runner or no measurement, and say so.
    */
-  private async benchmarkWorkloads(mlGpu: boolean): Promise<WorkloadBenchmark[]> {
-    const destinations = await this.mlDestinationRepository.getAll();
+  private async benchmarkWorkloads(mlGpu: boolean, destinations: MlDestinationRow[]): Promise<WorkloadBenchmark[]> {
     const studioWorker = destinations.some(
       (row) =>
         row.enabled && row.kind !== MlDestinationKind.FrameleafCloud && row.workloads.includes(MlWorkload.StudioAi),
@@ -236,6 +247,13 @@ export class HardwareCheckService extends BaseService {
         destinationId: local.id,
         jobName: 'HardwareBenchmark',
       });
+      if (
+        selection.destinationId !== local.id ||
+        selection.endpoint.url !== local.url ||
+        selection.endpoint.authToken !== (local.authToken ?? undefined)
+      ) {
+        throw new Error('Local ML destination changed during the hardware benchmark');
+      }
       const timings = await this.hardwareProbeRepository.withTestImage(async (path) => {
         const measured: number[] = [];
         // The first photo loads the model; only the ones after it are timed.
