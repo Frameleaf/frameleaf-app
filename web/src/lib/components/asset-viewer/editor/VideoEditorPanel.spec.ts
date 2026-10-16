@@ -61,6 +61,16 @@ describe('VideoEditorPanel component', () => {
     vi.clearAllMocks();
   });
 
+  it('rounds a time to tenths before splitting it into minutes and seconds', async () => {
+    vi.mocked(getAssetEdits).mockResolvedValue({
+      assetId: asset.id,
+      edits: [],
+      originalVideo: { width: 1920, height: 1080, durationMs: 59_960 },
+    });
+    const view = renderWithTooltips(VideoEditorPanel, { asset, onClose: vi.fn() });
+    expect(await view.findByText('editor_video_end: 1:00')).toBeInTheDocument();
+  });
+
   it('loads a chosen version recipe into the draft and publishes it only on Save version (FL-39)', async () => {
     const onDraftChange = vi.fn();
     const onClose = vi.fn();
