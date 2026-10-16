@@ -9124,7 +9124,6 @@ export type PhotographyGalleryDto = {
     }[];
     recipient: {
         canDownload: boolean;
-        /** Recipient ID, or "preview" for a client preview session */
         id: string;
         name: string;
     };

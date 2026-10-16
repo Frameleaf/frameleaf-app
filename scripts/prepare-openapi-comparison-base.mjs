@@ -20,6 +20,8 @@ const reviewedBaseSha256 = new Set([
   "44c8b84300cd558dd309b5ab8d26354b7f8306afac1764906a56506802099139",
   // PR140 a85264d9 retains the same six reviewed point and email schema values.
   "5f7928cb6fcfe56e717621f812b65d541191676d23ef14f77665d91061b93dcb",
+  // master/frameleaf-implementation 2d803cdc6b retains the same six reviewed point and email schema values.
+  "f87d328a38369c300f890f33a3793e4c9bc5b4b5f56810440337981939dad62e",
 ]);
 const pointPointers = [
   "/components/schemas/AssetDevelopStroke/properties/points/items",
