@@ -15,6 +15,8 @@ import type { Kysely } from 'kysely';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { DB } from 'src/schema/index.js';
 import { defaults } from 'src/config.js';
+import { AuthController } from 'src/controllers/auth.controller.js';
+import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { AssetFileType, JobName, JobStatus, MetadataKey, MlDestinationKind, MlWorkload, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
@@ -29,7 +31,7 @@ import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
-import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -37,9 +39,14 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { AuthService } from 'src/services/auth.service.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
+import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
@@ -49,7 +56,6 @@ import { OcrService } from 'src/services/ocr.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
-import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
 
@@ -171,8 +177,11 @@ it.skipIf(!desktop || !pack || !cache)(
       await metadata.withConfigTransaction((metadataRepo) =>
         sut.updateConfig(config, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
       );
-      const { user } = await ctx.newUser({ isAdmin: !ocr });
-      const { session: photo } = await ctx.newSession({ userId: user.id });
+      const password = randomBytes(32).toString('hex');
+      const { user } = await ctx.newUser({
+        isAdmin: !ocr,
+        password: await ctx.get(CryptoRepository).hashBcrypt(password, 4),
+      });
       const index = new DesktopClipIndexRepository(db);
       const routes = new MlDestinationRepository(db);
       Object.assign(sut, { mlDestinationRepository: routes });
@@ -223,11 +232,33 @@ it.skipIf(!desktop || !pack || !cache)(
         routes,
         policies,
       );
-      http = await controllerSetup(DesktopWorkerController, [
-        { provide: ConfigRepository, useValue: configRepo },
-        { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker, workers, pool) },
-        { provide: DesktopQualificationService, useValue: qualification },
-      ]);
+      const { sut: authentication } = newMediumService(AuthService, {
+        database: db,
+        real: [
+          ConfigRepository,
+          CryptoRepository,
+          SessionRepository,
+          SharedLinkRepository,
+          SystemMetadataRepository,
+          UserRepository,
+        ],
+        mock: [LoggingRepository],
+      });
+      http = await controllerSetup(
+        [AuthController, DesktopDeviceController, DesktopWorkerController],
+        [
+          { provide: AuthService, useValue: authentication },
+          {
+            provide: DesktopDeviceService,
+            useValue: new DesktopDeviceService(new DesktopDeviceRepository(db), metadata, policies),
+          },
+          { provide: DesktopWorkerAuthService, useValue: auth },
+          { provide: DesktopAssistancePolicyService, useValue: policies },
+          { provide: ConfigRepository, useValue: configRepo },
+          { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker, workers, pool) },
+          { provide: DesktopQualificationService, useValue: qualification },
+        ],
+      );
       const parseJson = json({ limit: '10mb' }); // Match configureExpress's production report limit.
       tls = createServer(
         {
@@ -305,51 +336,31 @@ it.skipIf(!desktop || !pack || !cache)(
         }
       };
       const identity = await message('NATIVE_IDENTITY');
-      const device = (await new DesktopDeviceRepository(db).enroll({
-        userId: user.id,
-        installationId: identity.installationId,
-        publicKey: identity.publicKey,
-        name: 'real native test process',
-        platform: identity.platform,
-        architecture: identity.architecture,
-        mode: 'client-worker',
-        state: 'preparing',
-      }))!;
-      const token = randomBytes(32).toString('hex');
-      const session = (await workers.issue({
-        deviceId: device.id,
-        authorizationEpoch: device.authorizationEpoch,
-        photoSessionId: photo.id!,
-        tokenHash: createHash('sha256').update(token).digest(),
-        modelKeys: [],
-      }))!;
-      const serverId = await stableServerId({ systemMetadataRepository: metadata });
+      expect(await new DesktopDeviceRepository(db).list(user.id)).toHaveLength(0);
       native.stdin!.write(
         JSON.stringify({
-          saved: {
-            server: `https://tun.eu1.relays.frameleaf.test:${address.port}`,
-            serverId,
-            accountId: user.id,
-            name: 'synthetic',
-            token: 'unused-photo-token',
-            deviceName: 'native fixture',
-            mode: 'client-worker',
-            deviceId: device.id,
-          },
-          worker: {
-            serverId,
-            accountId: user.id,
-            deviceId: device.id,
-            sessionId: session.id,
-            authorizationEpoch: device.authorizationEpoch,
-            workerToken: token,
-            expiresAt: session.expiresAt.toISOString(),
-            nextSequence: 1,
-          },
+          server: `https://tun.eu1.relays.frameleaf.test:${address.port}`,
+          email: user.email,
+          password,
           caPem: readFileSync('test/fixtures/frameleaf-relay/ca.cert.pem', 'utf8'),
           workRoot: join(root, 'desktop'),
         }) + '\n',
       );
+      const signedIn = await message('NATIVE_SIGNED_IN');
+      expect(signedIn.accountId).toBe(user.id);
+      const devices = await new DesktopDeviceRepository(db).list(user.id);
+      expect(devices).toHaveLength(1);
+      expect(devices[0]).toMatchObject({
+        id: signedIn.deviceId,
+        installationId: identity.installationId,
+        publicKey: identity.publicKey,
+      });
+      const session = await (db as Kysely<DB & DesktopWorkerTables>)
+        .selectFrom('desktop_worker_session')
+        .selectAll()
+        .where('id', '=', signedIn.sessionId)
+        .executeTakeFirstOrThrow();
+      expect(session.deviceId).toBe(signedIn.deviceId);
       expect(await message('NATIVE_QUALIFIED')).toEqual({ roles: workload === 'clip' ? 3 : 1 });
       expect((await workers.session(session.id, session.tokenHash))!.modelKeys).toHaveLength(
         workload === 'clip' ? 3 : 1,
