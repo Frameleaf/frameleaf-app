@@ -969,6 +969,62 @@ describe(SharedSpaceService.name, () => {
       );
     });
 
+    it('never ends a page inside a millisecond, so the millisecond `before` cursor skips nothing', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      const at = (iso: string) => new Date(iso);
+      // stored with microseconds, read back by the driver at millisecond precision
+      const boundary = '2026-10-16T10:00:00.123Z';
+      const newest = event({
+        albumId: space.id,
+        actorId: owner.id,
+        type: SharedSpaceEventType.AlbumLinked,
+        subject: 'Album',
+        createdAt: at('2026-10-16T10:00:01.000Z'),
+      });
+      const tied = [1, 2, 3].map(() =>
+        event({
+          albumId: space.id,
+          actorId: owner.id,
+          type: SharedSpaceEventType.AlbumLinked,
+          subject: 'Album',
+          createdAt: at(boundary),
+        }),
+      );
+      const older = event({
+        albumId: space.id,
+        actorId: owner.id,
+        type: SharedSpaceEventType.AlbumLinked,
+        subject: 'Album',
+        createdAt: at('2026-10-16T09:00:00.000Z'),
+      });
+      const all = [newest, ...tied, older];
+      mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
+      mocks.albumUser.getSpaceEvents.mockImplementation((_id, { before, since, from, take }) =>
+        Promise.resolve(
+          since
+            ? []
+            : all
+                .filter(({ createdAt }) => (!before || createdAt < before) && (!from || createdAt >= from))
+                .slice(0, take),
+        ),
+      );
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
+      mocks.user.get.mockResolvedValue(owner);
+
+      const first = await sut.getActivity(AuthFactory.create(editor), space.id, { take: 2 });
+      expect(first.events.map(({ id }) => id)).toEqual([newest.id, ...tied.map(({ id }) => id)]);
+      expect(first.hasMore).toBe(true);
+
+      // the web pages on with the oldest event's millisecond timestamp
+      const second = await sut.getActivity(AuthFactory.create(editor), space.id, {
+        before: first.events.at(-1)!.createdAt,
+        take: 2,
+      });
+      expect(second.events.map(({ id }) => id)).toEqual([older.id]);
+      expect(second.hasMore).toBe(false);
+    });
+
     it('counts as unread only what others did after the member’s marker, among what they may see', async () => {
       const { space, owner, editor } = spaceWithEditor();
       asEditor(space);

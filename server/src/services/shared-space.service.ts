@@ -85,6 +85,8 @@ const PREVIEW_ASSET_LIMIT = 12;
 /** How many feed events a page carries by default, and the most the unread count will inspect. */
 const ACTIVITY_PAGE = 50;
 const UNREAD_EVENT_LIMIT = 500;
+/** A bound on the events one millisecond can add to a feed page (see `eventPage`). */
+const MILLISECOND_EVENT_LIMIT = 1000;
 
 /**
  * What one member may see of a space's media, for the feed and the comments.
@@ -681,13 +683,13 @@ export class SharedSpaceService extends BaseService {
     const visit = await this.albumUserRepository.getSpaceVisit({ albumId: id, userId: auth.user.id });
     const lastSeenAt = visit?.lastSeenAt;
 
-    const [page, sinceVisit] = await Promise.all([
-      this.albumUserRepository.getSpaceEvents(id, { before, take: take + 1 }),
+    const [{ events: pageEvents, hasMore }, sinceVisit] = await Promise.all([
+      this.eventPage(id, before, take),
       this.albumUserRepository.getSpaceEvents(id, { since: lastSeenAt, take: UNREAD_EVENT_LIMIT }),
     ]);
 
     const [visible, unread] = await Promise.all([
-      this.narrowEvents(auth, id, page.slice(0, take)),
+      this.narrowEvents(auth, id, pageEvents),
       this.narrowEvents(auth, id, sinceVisit),
     ]);
 
@@ -716,7 +718,7 @@ export class SharedSpaceService extends BaseService {
       events,
       lastVisitedAt: visit ? asDateTimeString(visit.lastSeenAt) : null,
       unreadCount: unread.filter((event) => isNewSpaceEvent(event, auth.user.id, lastSeenAt)).length,
-      hasMore: page.length > take,
+      hasMore,
     };
   }
 
@@ -931,6 +933,32 @@ export class SharedSpaceService extends BaseService {
 
     requireReplyOnSameItem(root, assetId);
     return root;
+  }
+
+  /**
+   * One page of the feed, newest first. The next page is asked for with `before` set to the oldest
+   * event's time, which clients only hold to the millisecond, so a page never ends inside a
+   * millisecond: it carries every event of its last one (a few more than `take` at most), and the
+   * next page starts strictly before it.
+   */
+  private async eventPage(spaceId: string, before: Date | undefined, take: number) {
+    const page = await this.albumUserRepository.getSpaceEvents(spaceId, { before, take: take + 1 });
+    if (page.length <= take) {
+      return { events: page, hasMore: false };
+    }
+    const last = page[take - 1].createdAt.getTime();
+    if (page[take].createdAt.getTime() !== last) {
+      return { events: page.slice(0, take), hasMore: true };
+    }
+    const millisecond = await this.albumUserRepository.getSpaceEvents(spaceId, {
+      from: new Date(last),
+      before: new Date(last + 1),
+      take: MILLISECOND_EVENT_LIMIT,
+    });
+    const shown = new Set(page.slice(0, take).map(({ id }) => id));
+    const events = [...page.slice(0, take), ...millisecond.filter(({ id }) => !shown.has(id))];
+    const older = await this.albumUserRepository.getSpaceEvents(spaceId, { before: new Date(last), take: 1 });
+    return { events, hasMore: older.length > 0 };
   }
 
   /** Narrow a page of stored events to what this member may see, dropping what they may not. */
