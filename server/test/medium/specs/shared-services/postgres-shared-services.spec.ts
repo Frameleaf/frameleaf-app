@@ -121,14 +121,41 @@ describe('PostgreSQL shared services', () => {
       Array.from({ length: 48 }, (_, index) => index + 1),
     );
     expect(hits.every((hit) => hit.resetSeconds >= 598 && hit.resetSeconds <= 600)).toBe(true);
-    await Promise.all(Array.from({ length: 48 }, (_, index) => workers[index % 4].release('counter')));
-    await expect(workers[0].hit('counter', 600)).resolves.toEqual({ count: 1, resetSeconds: 600 });
+    await Promise.all(
+      Array.from({ length: 48 }, (_, index) => workers[index % 4].release('counter', hits[index].windowExpiresAt!)),
+    );
+    const restarted = await workers[0].hit('counter', 600);
+    expect(restarted).toEqual({ count: 1, resetSeconds: 600, windowExpiresAt: expect.any(String) });
     await database.query(
       `UPDATE public.frameleaf_rate_limit SET expires_at = clock_timestamp() - interval '1 second' WHERE key = $1`,
       ['counter'],
     );
-    await workers[1].release('counter');
-    await expect(workers[2].hit('counter', 600)).resolves.toEqual({ count: 1, resetSeconds: 600 });
+    await workers[1].release('counter', restarted.windowExpiresAt!);
+    await expect(workers[2].hit('counter', 600)).resolves.toEqual({
+      count: 1,
+      resetSeconds: 600,
+      windowExpiresAt: expect.any(String),
+    });
+  });
+
+  it('does not refund a replacement counter window with a late request from the expired window', async () => {
+    const repository = admission();
+    const old = await repository.hit('refund-window', 600);
+    await database.query(
+      "UPDATE public.frameleaf_rate_limit SET expires_at = clock_timestamp() - interval '1 second' WHERE key = $1",
+      ['refund-window'],
+    );
+    const current = await repository.hit('refund-window', 600);
+    expect(current.count).toBe(1);
+    expect(current.windowExpiresAt).not.toBe(old.windowExpiresAt);
+    await repository.release('refund-window', old.windowExpiresAt!);
+    expect(
+      (await database.query('SELECT count FROM public.frameleaf_rate_limit WHERE key = $1', ['refund-window'])).rows,
+    ).toEqual([{ count: 1 }]);
+    await repository.release('refund-window', current.windowExpiresAt!);
+    expect(
+      (await database.query('SELECT count FROM public.frameleaf_rate_limit WHERE key = $1', ['refund-window'])).rows,
+    ).toEqual([{ count: 0 }]);
   });
 
   it('reports the remaining window when an older waiting hit loses row creation to a newer hit', async () => {
@@ -166,7 +193,11 @@ describe('PostgreSQL shared services', () => {
         },
         { timeout: 1000, interval: 10 },
       );
-      await expect(admission().hit('ordered-counter', 600)).resolves.toEqual({ count: 1, resetSeconds: 600 });
+      await expect(admission().hit('ordered-counter', 600)).resolves.toEqual({
+        count: 1,
+        resetSeconds: 600,
+        windowExpiresAt: expect.any(String),
+      });
       const winner = await database.query<{ expiresAt: string; startedAfterWaiter: boolean }>(
         `SELECT expires_at::text AS "expiresAt",
            expires_at - interval '600 seconds' > a.query_start AS "startedAfterWaiter"

@@ -22,7 +22,7 @@ import {
   rateLimitChecks,
 } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { envData, mockEnvData, newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
 import { newCryptoRepositoryMock } from 'test/repositories/crypto.repository.mock.js';
 
@@ -43,6 +43,7 @@ class TestController {
 }
 
 const IDENTITY_DIR = '/data/frameleaf/identity';
+const WINDOW = '2030-01-01 00:00:00.000123+00';
 
 // the crypto mock's keyed hash: `${purpose}:${value} (keyed)`
 const keyed = (principal: string) => `rate-limit:${principal} (keyed)`;
@@ -77,10 +78,10 @@ const memoryCounters = () => {
   const counters = new Map<string, number>();
   return {
     counters,
-    hit: vi.fn((key: string, windowSeconds: number) => {
+    hit: vi.fn((key: string, windowSeconds: number): Promise<RateLimitHit> => {
       const count = (counters.get(key) ?? 0) + 1;
       counters.set(key, count);
-      return Promise.resolve({ count, resetSeconds: windowSeconds });
+      return Promise.resolve({ count, resetSeconds: windowSeconds, windowExpiresAt: WINDOW });
     }),
     release: vi.fn((key: string) => {
       const count = (counters.get(key) ?? 0) - 1;
@@ -152,7 +153,13 @@ describe(RateLimitGuard.name, () => {
     expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:login:ip:198.51.100.7', 600);
     expect(store.hit).toHaveBeenNthCalledWith(2, principalKey, 600);
     expect(request.frameleafRateLimitFailures).toEqual([
-      { key: principalKey, limit: RATE_LIMITS.login.principalLimit, windowSeconds: 600, counts: 'failures' },
+      {
+        key: principalKey,
+        limit: RATE_LIMITS.login.principalLimit,
+        windowSeconds: 600,
+        counts: 'failures',
+        windowExpiresAt: WINDOW,
+      },
     ]);
   });
 
@@ -341,7 +348,13 @@ describe(RateLimitFailureInterceptor.name, () => {
     { release } as unknown as RateLimitRepository,
   );
   const failures = [
-    { key: 'frameleaf:rate-limit:login:principal:x', limit: 10, windowSeconds: 600, counts: 'failures' as const },
+    {
+      key: 'frameleaf:rate-limit:login:principal:x',
+      limit: 10,
+      windowSeconds: 600,
+      counts: 'failures' as const,
+      windowExpiresAt: WINDOW,
+    },
   ];
   const contextWith = (request: Partial<RateLimitedRequest>) =>
     ({ getType: () => 'http', switchToHttp: () => ({ getRequest: () => request }) }) as unknown as ExecutionContext;
@@ -383,7 +396,7 @@ describe(RateLimitFailureInterceptor.name, () => {
       ),
     ).rejects.toBeInstanceOf(HttpException);
     expect(release).toHaveBeenCalledTimes(2);
-    expect(release).toHaveBeenCalledWith('frameleaf:rate-limit:login:principal:x');
+    expect(release).toHaveBeenCalledWith('frameleaf:rate-limit:login:principal:x', WINDOW);
   });
 
   it('leaves requests without failure-counted checks alone', async () => {
@@ -410,6 +423,11 @@ describe(RateLimitFailureInterceptor.name, () => {
       ),
     ).resolves.toBe('ok');
     expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('never refunds a counter without the window that admitted the request', async () => {
+    await sut.release([{ ...failures[0], windowExpiresAt: undefined }]);
+    expect(release).not.toHaveBeenCalled();
   });
 });
 
