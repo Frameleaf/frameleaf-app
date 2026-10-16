@@ -662,7 +662,8 @@ describe(SearchService.name, () => {
       const hiddenIds = hiddenResponse.assets.items.map(({ id }) => id);
 
       expect(hiddenIds).toEqual(expect.arrayContaining([visible.id, markedSafe.id, tagOnly.id]));
-      expect(hiddenIds).not.toEqual(expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]));
+      expect(hiddenIds).not.toContain(unreviewedNsfw.id);
+      expect(hiddenIds).not.toContain(markedNsfw.id);
 
       const unlockedResponse = await sut.searchMetadata(factory.auth({ user: { id: user.id } }), {});
       expect(unlockedResponse.assets.items.map(({ id }) => id)).toEqual(
