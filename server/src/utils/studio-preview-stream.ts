@@ -246,7 +246,7 @@ export const isOpenStream = (operation: Pick<StreamOperation, 'status'>) => OPEN
  * round from this claim; `offered` waits for the browser's answer; `answered` is up to the peers.
  */
 export const streamState = (operation: StreamOperation, signal: StreamSignal, now: Date): StreamState => {
-  if (!isOpenStream(operation)) {
+  if (signal.closeReason || !isOpenStream(operation)) {
     return 'closed';
   }
   if (!CLAIMED.has(operation.status) || streamWorkerLost(operation, now)) {

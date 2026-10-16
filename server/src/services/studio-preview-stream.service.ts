@@ -373,7 +373,7 @@ export class StudioPreviewStreamService {
 
     const shouldClose =
       isOpenStream(operation) && !operation.cancelRequestedAt
-        ? streamCloseReason({ createdAt: operation.createdAt as unknown as Date, signal, now })
+        ? (signal.closeReason ?? streamCloseReason({ createdAt: operation.createdAt as unknown as Date, signal, now }))
         : null;
     if (shouldClose) {
       await this.close(operation, shouldClose);
@@ -430,7 +430,11 @@ export class StudioPreviewStreamService {
       return { accepted: false };
     }
     const signal = readStreamSignal(operation.result);
-    if (dto.negotiation !== signal.negotiation || (signal.offer && signal.offer.attempt === operation.attempt)) {
+    if (
+      signal.closeReason ||
+      dto.negotiation !== signal.negotiation ||
+      (signal.offer && signal.offer.attempt === operation.attempt)
+    ) {
       return { accepted: false };
     }
     const offered = await this.operations.mergeStreamSignal(
@@ -529,11 +533,11 @@ export class StudioPreviewStreamService {
   }
 
   private assertOpen(operation: MediaOperation) {
-    if (isOpenStream(operation) && !operation.cancelRequestedAt) {
+    const signal = readStreamSignal(operation.result);
+    if (isOpenStream(operation) && !operation.cancelRequestedAt && !signal.closeReason) {
       return;
     }
 
-    const signal = readStreamSignal(operation.result);
     throw new GoneException({
       message: 'This preview stream has ended',
       code: 'studio_preview_stream_closed',
