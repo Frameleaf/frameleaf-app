@@ -14,7 +14,13 @@ const setup = () => {
     instanceId: 'instance',
     accountId: 'owner',
     linkedAt: '2026-10-16T00:00:00Z',
-    oidc: { issuer: 'https://id.cloud.test', clientId: 'instance', scope: 'openid' },
+    oidc: {
+      issuer: 'https://id.cloud.test',
+      clientId: 'instance',
+      scope: 'openid',
+      roleClaim: 'frameleaf_role',
+      storageLabelClaim: '',
+    },
   };
   let current = { ...link };
   const env = mocks.config.getEnv();

@@ -26,7 +26,7 @@ describe(TagService.name, () => {
 
   it.each(['rename', 'merge', 'delete'] as const)('keeps tag %s behind owner edit admission', async (action) => {
     mocks.access.tag.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
-    mocks.tag.update.mockResolvedValue(tagStub.tag);
+    mocks.tag.update.mockResolvedValue(tagStub.tagCreate);
     mocks.tag.merge.mockResolvedValue({ tag: tagStub.tag, merged: [], taggedAssetIds: [], assetIds: [] });
     mocks.tag.delete.mockResolvedValue([]);
     mocks.user.getMetadata.mockResolvedValue([]);

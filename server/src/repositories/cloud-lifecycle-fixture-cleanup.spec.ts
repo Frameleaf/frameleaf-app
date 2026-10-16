@@ -1,5 +1,5 @@
 import { access, mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { type Server, createServer } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LibraryMlLifecycleAdapter,
@@ -41,7 +41,7 @@ describe('ML lifecycle fixture cleanup', () => {
   });
   const run = (testing: ReturnType<typeof api>) =>
     new LibraryMlLifecycleAdapter(testing as unknown as LifecycleTestingApi).run('output-sha256');
-  const listener = () => vi.mocked(createServer).mock.results[0].value;
+  const listener = (): Server => vi.mocked(createServer).mock.results[0].value;
 
   it('closes the listener when the recorded server factory throws', async () => {
     const testing = api();

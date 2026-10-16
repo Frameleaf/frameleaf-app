@@ -40,7 +40,7 @@ describe('classification review effects', () => {
     }
   });
 
-  it.each([ClassificationMatchDecision.Accepted, ClassificationMatchDecision.Rejected])(
+  it.each([ClassificationMatchDecision.Accepted, ClassificationMatchDecision.Rejected] as const)(
     'keeps an explicit %s decision available when only automatic application is disabled',
     async (decision) => {
       const { db, queries } = scriptedKysely(({ sql }) => {

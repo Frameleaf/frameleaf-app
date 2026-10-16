@@ -217,7 +217,7 @@ describe('retained export library transfer with actual temporary files', () => {
       scope: StudioExportScope.Project,
       outputPath: kept,
       outputChecksum: checksum,
-      outputSizeInBytes: String(bytes.length),
+      outputSizeInBytes: bytes.length,
       outputContentType: 'video/mp4',
       outputRemovedAt: null,
     } as StudioExportVersion;
