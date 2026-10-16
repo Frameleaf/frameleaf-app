@@ -1952,7 +1952,7 @@ test("action upgrades preserve later mise authentication and the existing uv cac
       }
     }
   }
-  const ml = workflow("fork-integration.yml").jobs[
+  const ml = workflow("frameleaf-quality.yml").jobs[
     "machine-learning"
   ].steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"));
   assert.equal(ml.with["save-cache"], true);
