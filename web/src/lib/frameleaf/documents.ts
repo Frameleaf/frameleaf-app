@@ -91,7 +91,16 @@ export const otherCandidates = (field: DocumentFieldResponseDto) =>
 /** Adds a page to what is already listed without repeating a photo a shifting offset returned twice. */
 export const appendDocumentPage = <T extends { id: string }>(current: T[], page: T[]): T[] => {
   const seen = new Set(current.map((item) => item.id));
-  return [...current, ...page.filter((item) => !seen.has(item.id))];
+  return [
+    ...current,
+    ...page.filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    }),
+  ];
 };
 
 export const isAbortError = (error: unknown): boolean =>
