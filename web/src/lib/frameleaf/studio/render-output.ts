@@ -42,7 +42,7 @@ const MEMORY_BY_RESOLUTION: Readonly<Record<StudioExportResolution, number>> = {
   [StudioExportResolution.$2160P]: 8 * 1024 ** 3,
 };
 
-/** The bit depth each format writes (mirrors `FORMAT_BIT_DEPTH`). */
+/** The picture precision each format promises (mirrors `STUDIO_EXPORT_FORMAT_SPECS.bitDepth`). */
 const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
   [StudioExportFormat.SdrJpeg]: 8,
   [StudioExportFormat.HdrJpeg]: 10,
@@ -51,7 +51,40 @@ const FORMAT_BIT_DEPTH: Readonly<Record<StudioExportFormat, number>> = {
   [StudioExportFormat.Mp4H264]: 8,
   [StudioExportFormat.WebmAv1]: 10,
   [StudioExportFormat.Prores422Hq]: 10,
+  [StudioExportFormat.Mp4Hevc]: 8,
+  [StudioExportFormat.Mp4Av1]: 8,
+  [StudioExportFormat.MovH264]: 8,
+  [StudioExportFormat.MovHevc]: 8,
+  [StudioExportFormat.MovProres422]: 8,
+  [StudioExportFormat.MkvH264]: 8,
+  [StudioExportFormat.MkvHevc]: 8,
+  [StudioExportFormat.MkvVp8]: 8,
+  [StudioExportFormat.MkvVp9]: 8,
+  [StudioExportFormat.MkvAv1]: 8,
+  [StudioExportFormat.WebmVp8]: 8,
+  [StudioExportFormat.WebmVp9]: 8,
+  [StudioExportFormat.WebmAv1Sdr]: 8,
+  [StudioExportFormat.AudioMp3]: 8,
+  [StudioExportFormat.AudioAac]: 8,
+  [StudioExportFormat.AudioWav]: 8,
 };
+
+export const STUDIO_STILL_FORMATS: readonly StudioExportFormat[] = [
+  StudioExportFormat.SdrJpeg,
+  StudioExportFormat.HdrJpeg,
+  StudioExportFormat.HdrHeic,
+];
+
+/** FL-105: the project's sound alone. No picture, no captions; it stays with its project. */
+export const STUDIO_AUDIO_FORMATS: readonly StudioExportFormat[] = [
+  StudioExportFormat.AudioMp3,
+  StudioExportFormat.AudioAac,
+  StudioExportFormat.AudioWav,
+];
+
+/** SDR video formats: the only ones that can carry captions as a file or a track. */
+const isSdrVideoFormat = (format: StudioExportFormat) =>
+  !STUDIO_STILL_FORMATS.includes(format) && !STUDIO_AUDIO_FORMATS.includes(format) && FORMAT_BIT_DEPTH[format] === 8;
 
 const colorSupported = (settings: StudioRenderSettings, evidence: StudioRenderCandidateDto) => {
   const depth = Math.max(FORMAT_BIT_DEPTH[settings.format], settings.color === StudioExportColor.Preserve ? 8 : 10);
@@ -92,12 +125,13 @@ export const evaluateStudioRender = (
   // The API derives this list with requiredOutput/provesOutput, including exact writer/container proof.
   const sidecar = settings.subtitleMode === StudioExportSubtitleMode.Sidecar;
   const embedded = settings.subtitleMode === StudioExportSubtitleMode.Embedded;
+  if ((sidecar || embedded) && (!isSdrVideoFormat(settings.format) || settings.color !== StudioExportColor.Preserve)) {
+    return { supported: false, refusal: 'codec-unavailable' };
+  }
   if (
-    (sidecar || embedded) &&
-    (settings.format !== StudioExportFormat.Mp4H264 ||
-      settings.color !== StudioExportColor.Preserve ||
-      settings.resolution !== StudioExportResolution.$720P ||
-      (settings.quality ?? StudioExportQuality.High) !== StudioExportQuality.High)
+    STUDIO_AUDIO_FORMATS.includes(settings.format) &&
+    settings.subtitleMode !== undefined &&
+    settings.subtitleMode !== StudioExportSubtitleMode.Off
   ) {
     return { supported: false, refusal: 'codec-unavailable' };
   }
@@ -138,9 +172,14 @@ export const studioRenderChoices = (
     verdict: evaluateStudioRender(evidence, destination, {
       ...current,
       format,
-      ...([StudioExportFormat.SdrJpeg, StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(format) && {
+      ...(STUDIO_STILL_FORMATS.includes(format) && {
         resolution: StudioExportResolution.Original,
         color: StudioExportColor.Preserve,
+      }),
+      ...(STUDIO_AUDIO_FORMATS.includes(format) && {
+        resolution: StudioExportResolution.$720P,
+        color: StudioExportColor.Preserve,
+        subtitleMode: undefined,
       }),
     }),
   })),

@@ -198,6 +198,7 @@ describe('AssetService', () => {
 
     it.each(['jpg', 'heic'])('allows editing the %s still of a Live Photo', (extension) => {
       setOwnerUser();
+      // Fixed path and state: a random factory path ending in .gif or .svg, or a trashed asset, is correctly not editable.
       const asset = assetFactory.build({
         type: AssetTypeEnum.Image,
         livePhotoVideoId: 'motion',
@@ -205,6 +206,8 @@ describe('AssetService', () => {
         originalPath: `/upload/photo.${extension}`,
         originalFileName: `photo.${extension}`,
         originalMimeType: extension === 'jpg' ? 'image/jpeg' : 'image/heic',
+        isTrashed: false,
+        exifInfo: undefined,
       });
       expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(true);
     });

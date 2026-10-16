@@ -163,9 +163,15 @@ describe('effective configuration transaction authority', () => {
           observer,
         );
         expect(holders).toHaveLength(1);
-        await sql`SELECT pg_terminate_backend(${terminate === 'outer' ? holders[0].pid : writerPid!})`.execute(
-          observer,
-        );
+        const terminated = terminate === 'outer' ? holders[0].pid : writerPid!;
+        await sql`SELECT pg_terminate_backend(${terminated})`.execute(observer);
+        // pg_terminate_backend only signals; the backend releases its locks once it has exited.
+        await vi.waitFor(async () => {
+          const { rows } = await sql<{ pid: number }>`SELECT pid FROM pg_stat_activity WHERE pid=${terminated}`.execute(
+            observer,
+          );
+          expect(rows).toHaveLength(0);
+        });
         await observer.transaction().execute(async (tx) => {
           const { rows } = await sql<{
             acquired: boolean;

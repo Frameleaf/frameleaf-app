@@ -118253,7 +118253,23 @@
           "prores-422-hq",
           "sdr-jpeg",
           "hdr-jpeg",
-          "hdr-heic"
+          "hdr-heic",
+          "mp4-hevc",
+          "mp4-av1",
+          "mov-h264",
+          "mov-hevc",
+          "mov-prores-422",
+          "mkv-h264",
+          "mkv-hevc",
+          "mkv-vp8",
+          "mkv-vp9",
+          "mkv-av1",
+          "webm-vp8",
+          "webm-vp9",
+          "webm-av1-sdr",
+          "audio-mp3",
+          "audio-aac",
+          "audio-wav"
         ],
         "type": "string"
       },
@@ -120739,11 +120755,10 @@
             "type": "boolean"
           },
           "embeddedOutputFormats": {
-            "description": "Output formats whose MP4 mov_text profile and encoder this same session verified",
+            "description": "Output formats whose embedded caption track (the container's text codec) and profile this same session verified",
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },
-            "maxItems": 1,
             "type": "array"
           },
           "gpuMemoryBytes": {
@@ -120771,7 +120786,6 @@
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },
-            "maxItems": 1,
             "type": "array"
           }
         },

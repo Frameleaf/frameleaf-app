@@ -1079,6 +1079,44 @@ describe(MlDestinationService.name, () => {
         expect(JSON.stringify(studio)).not.toContain('sha256:engine');
       });
 
+      it('publishes the FL-105 matrix a worker advertised, with captions per container', async () => {
+        const capabilities = {
+          codecs: ['webcodecs-avc', 'aac', 'libvpx-vp9', 'prores_ks', 'pcm_s16le', 'libopus', 'mov_text', 'webvtt'],
+          formats: [
+            'mp4',
+            'mov',
+            'webm',
+            'wav',
+            'mp4-h264',
+            'mov-h264',
+            'mov-prores-422',
+            'webm-vp9',
+            'audio-wav',
+            'srt-sidecar-v2',
+            'embedded-text-v2',
+          ],
+        };
+        mocks.renderWorker.listLiveSessions.mockResolvedValue([liveSession({}, { id: 'bundled', ...capabilities })]);
+        mocks.renderWorker.getSessionCapabilities.mockResolvedValue(capabilities);
+        const { studio } = await sut.getCapabilities();
+        const [candidate] = studio.render[0].candidates!;
+        // ProRes 422 HQ is listed by its original evidence rule; the 8-bit colour precision then refuses it.
+        expect(candidate.outputFormats).toEqual([
+          'mp4-h264',
+          'prores-422-hq',
+          'mov-h264',
+          'mov-prores-422',
+          'webm-vp9',
+          'audio-wav',
+        ]);
+        expect(candidate.maxBitDepth).toBe(8);
+        expect(candidate.sidecarOutputFormats).toEqual(['mp4-h264', 'mov-h264', 'mov-prores-422', 'webm-vp9']);
+        // No subrip writer: MKV would need it, and no MKV format was advertised anyway.
+        expect(candidate.embeddedOutputFormats).toEqual(['mp4-h264', 'mov-h264', 'mov-prores-422', 'webm-vp9']);
+        const candidatesSchema = MlCapabilitiesResponseDto.schema.shape.studio.shape.render.element.shape.candidates;
+        expect(candidatesSchema.parse(studio.render[0].candidates)).toEqual(studio.render[0].candidates);
+      });
+
       it('publishes same-session export proof without combining different workers (FL-342)', async () => {
         const gib = 1024 ** 3;
         mocks.renderWorker.listLiveSessions.mockResolvedValue([
