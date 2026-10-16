@@ -4,6 +4,7 @@ import request from 'supertest';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
@@ -33,6 +34,7 @@ beforeAll(async () => {
     { get: vi.fn().mockResolvedValue({ id: 'server' }) } as never,
   );
   ctx = await controllerSetup(DesktopWorkerController, [
+    { provide: ConfigRepository, useValue: new ConfigRepository() },
     { provide: DesktopQualificationService, useValue: {} },
     { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker as never, {} as never) },
   ]);
@@ -113,3 +115,52 @@ it('returns scoped binary input without JSON conversion and binds the attempt pa
   ).toBe(401);
   expect((await request(app).get('/desktop/tasks/not-uuid/input')).status).toBe(400);
 });
+
+it.each(['wan', 'relay'])('does not let a valid signed worker claim through verified %s arrival', async (via) => {
+  const payload = JSON.stringify({ modelKeys: ['clip:model'], waitMs: 0 });
+  const response = await request(app)
+    .post('/desktop/worker/claim')
+    .set('x-frameleaf-via-auth', 'edge-secret')
+    .set('x-frameleaf-via', via)
+    .set('Authorization', 'Bearer ' + token)
+    .set('x-frameleaf-desktop-proof', proof('claim', payload))
+    .send({ payload });
+  expect(response.status).toBe(403);
+  expect(broker.claim).not.toHaveBeenCalled();
+});
+
+it.each([
+  '/desktop/worker/challenges',
+  `/desktop/worker/challenges/${id}/report`,
+  '/desktop/worker/heartbeat',
+  `/desktop/tasks/${id}/result`,
+  `/desktop/tasks/${id}/fail`,
+])('refuses remote work before payload processing: %s', async (path) => {
+  const response = await request(app)
+    .post(path)
+    .set('x-frameleaf-via-auth', 'edge-secret')
+    .set('x-frameleaf-via', 'relay')
+    .send({});
+  expect(response.status).toBe(403);
+});
+it.each([`/desktop/tasks/${id}/input`, `/desktop/worker/challenges/${id}`, `/desktop/worker/qualifications/${id}`])(
+  'refuses remote input or qualification reads: %s',
+  async (path) => {
+    const response = await request(app)
+      .get(path)
+      .set('x-frameleaf-via-auth', 'edge-secret')
+      .set('x-frameleaf-via', 'wan');
+    expect(response.status).toBe(403);
+  },
+);
+it.each(['post', 'delete'] as const)(
+  'keeps remote credential %s controls behind signed authentication',
+  async (method) => {
+    const response = await request(app)
+      [method]('/desktop/worker/session')
+      .set('x-frameleaf-via-auth', 'edge-secret')
+      .set('x-frameleaf-via', 'relay')
+      .send({ payload: '{}' });
+    expect(response.status).toBe(401);
+  },
+);

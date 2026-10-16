@@ -10,6 +10,7 @@ import {
   Post,
   Res,
   StreamableFile,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -27,6 +28,7 @@ import {
 import { DesktopSessionDto, DesktopWorkerPayloadDto } from 'src/dtos/desktop-worker.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { DesktopWorkerLanGuard } from 'src/middleware/desktop-worker-lan.guard.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -47,6 +49,7 @@ export class DesktopWorkerController {
   ) {}
 
   @Post('worker/challenges')
+  @UseGuards(DesktopWorkerLanGuard)
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Issue an installation-signed model qualification challenge', history: history() })
@@ -61,6 +64,7 @@ export class DesktopWorkerController {
   }
 
   @Get('worker/challenges/:id')
+  @UseGuards(DesktopWorkerLanGuard)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Read an unexpired challenge for the current desktop credential', history: history() })
   async readDesktopQualificationChallenge(
@@ -74,6 +78,7 @@ export class DesktopWorkerController {
   }
 
   @Post('worker/challenges/:id/report')
+  @UseGuards(DesktopWorkerLanGuard)
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({
@@ -92,6 +97,7 @@ export class DesktopWorkerController {
   }
 
   @Get('worker/qualifications/:id')
+  @UseGuards(DesktopWorkerLanGuard)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Read accepted runtime evidence without granting processing scope', history: history() })
   async readDesktopAcceptedQualification(
@@ -105,6 +111,7 @@ export class DesktopWorkerController {
   }
 
   @Post('worker/claim')
+  @UseGuards(DesktopWorkerLanGuard)
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Claim one qualified desktop inference attempt', history: history() })
@@ -126,6 +133,7 @@ export class DesktopWorkerController {
   }
 
   @Get('tasks/:id/input')
+  @UseGuards(DesktopWorkerLanGuard)
   @Authenticated({ public: true })
   @FileResponse()
   @Endpoint({ summary: 'Read only the input bound to this desktop attempt handle', history: history() })
@@ -141,6 +149,7 @@ export class DesktopWorkerController {
   }
 
   @Post('worker/heartbeat')
+  @UseGuards(DesktopWorkerLanGuard)
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Renew a bounded desktop inference lease', history: history() })
@@ -153,6 +162,7 @@ export class DesktopWorkerController {
   }
 
   @Post('tasks/:id/result')
+  @UseGuards(DesktopWorkerLanGuard)
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Stage an idempotent desktop inference result for NAS validation', history: history() })
@@ -166,6 +176,7 @@ export class DesktopWorkerController {
   }
 
   @Post('tasks/:id/fail')
+  @UseGuards(DesktopWorkerLanGuard)
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Report a bounded desktop attempt failure', history: history() })

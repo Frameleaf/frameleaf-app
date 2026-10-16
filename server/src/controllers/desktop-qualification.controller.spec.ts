@@ -7,6 +7,7 @@ import request from 'supertest';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
@@ -158,6 +159,7 @@ beforeAll(async () => {
   const metadata = { get: vi.fn().mockResolvedValue({ id: 'server' }) };
   const auth = new DesktopWorkerAuthService(repository as never, metadata as never);
   ctx = await controllerSetup(DesktopWorkerController, [
+    { provide: ConfigRepository, useValue: new ConfigRepository() },
     { provide: DesktopWorkerService, useValue: {} },
     {
       provide: DesktopQualificationService,

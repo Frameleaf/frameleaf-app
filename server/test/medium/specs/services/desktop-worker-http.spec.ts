@@ -61,6 +61,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
   const auth = new DesktopWorkerAuthService(sessions, metadata);
   const worker = new DesktopWorkerService(auth, broker, sessions);
   const http = await controllerSetup(DesktopWorkerController, [
+    { provide: ConfigRepository, useValue: new ConfigRepository() },
     { provide: DesktopWorkerService, useValue: worker },
     {
       provide: DesktopQualificationService,
