@@ -518,19 +518,22 @@
         <span>{$t('frameleaf_albums_create_album')}</span>
       </button>
     {:else if editor && !album.isSmart}
-      <Menu label={$t('add_photos')} align="start">
-        {#snippet trigger()}
-          <span class="trigger-content"><Icon icon={mdiPlus} size="18" />{$t('add_photos')}</span>
-        {/snippet}
-        <MenuItem onSelect={() => onAddPhotos?.()}>
-          <Icon icon={mdiImageMultipleOutline} size="18" />
-          {$t('frameleaf_album_select_from_library')}
-        </MenuItem>
-        <MenuItem onSelect={() => void upload()}>
-          <Icon icon={mdiUpload} size="18" />
-          {$t('frameleaf_album_upload_from_computer')}
-        </MenuItem>
-      </Menu>
+      <!-- CollectionHeader.jsx:1373: Add photos is the header's primary menu. -->
+      <div class="primary-menu">
+        <Menu label={$t('add_photos')} align="start">
+          {#snippet trigger()}
+            <span class="trigger-content"><Icon icon={mdiPlus} size="18" />{$t('add_photos')}</span>
+          {/snippet}
+          <MenuItem onSelect={() => onAddPhotos?.()}>
+            <Icon icon={mdiImageMultipleOutline} size="18" />
+            {$t('frameleaf_album_select_from_library')}
+          </MenuItem>
+          <MenuItem onSelect={() => void upload()}>
+            <Icon icon={mdiUpload} size="18" />
+            {$t('frameleaf_album_upload_from_computer')}
+          </MenuItem>
+        </Menu>
+      </div>
     {/if}
 
     {#if rule}
@@ -554,7 +557,7 @@
       {#if owner}
         <button type="button" class="action" onclick={openLinks}>
           <Icon icon={mdiLinkVariant} size="18" />
-          <span>{$t('shared_links')}</span>
+          <span>{$t('frameleaf_spaces_links')}</span>
         </button>
       {/if}
 
@@ -604,7 +607,7 @@
         {#if owner}
           <MenuItem onSelect={openLinks}>
             <Icon icon={mdiLinkVariant} size="18" />
-            {$t('shared_links')}
+            {$t('frameleaf_spaces_links')}
           </MenuItem>
         {/if}
         {#if mapEnabled}
@@ -1063,6 +1066,20 @@
     .strip-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    /* collections.css:1800: phones drop the icon tile so the title and description use the full width. */
+    .icon-wrap {
+      display: none;
+    }
+  }
+  /* The prototype's primary Add photos menu (CollectionHeader.jsx:1373, Menu primary). */
+  .primary-menu {
+    display: contents;
+  }
+  .primary-menu :global(.menu-root > button) {
+    font-weight: 600;
+    color: var(--fl-accent-text);
+    background: var(--fl-accent);
+    border-color: var(--fl-accent);
   }
   .new-tile {
     display: flex;

@@ -977,4 +977,10 @@
       padding: 0.75rem;
     }
   }
+  /* collections.css:1800, as on the album header: phones drop the icon tile so the text uses the full width. */
+  @media (max-width: 700px) {
+    .icon-wrap {
+      display: none;
+    }
+  }
 </style>

@@ -1083,10 +1083,10 @@
     gap: 0.5rem;
     padding-inline-start: 0.625rem;
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-panel);
     color: var(--fl-muted);
-    min-width: 14rem;
+    min-width: 15rem;
   }
   .search input {
     flex: 1;
@@ -1104,11 +1104,13 @@
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
   }
+  /* The prototype's segmented pill (collections.css .al-view): raised track, the chosen view lifted. */
   .view {
     display: inline-flex;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    overflow: hidden;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
   }
   .view button {
     display: inline-flex;
@@ -1116,12 +1118,17 @@
     justify-content: center;
     padding: 0 0.625rem;
     border: 0;
-    background: var(--fl-panel);
+    border-radius: var(--fl-radius-pill);
+    background: transparent;
     color: var(--fl-muted);
   }
-  .view button[aria-pressed='true'] {
-    background: var(--fl-raised);
+  .view button:hover {
     color: var(--fl-text);
+  }
+  .view button[aria-pressed='true'] {
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    box-shadow: var(--fl-shadow-1);
   }
   .filters {
     display: flex;
@@ -1129,18 +1136,22 @@
     gap: var(--fl-space-2);
     margin: 0 0 var(--fl-space-5);
   }
+  /* collections.css .al-filters: filled raised pills, the chosen one in the text colour. */
   .filters button {
     padding: 0 0.875rem;
-    border: 1px solid var(--fl-border);
+    border: 0;
     border-radius: var(--fl-radius-pill);
-    background: var(--fl-panel);
-    color: var(--fl-text);
+    background: var(--fl-raised);
+    color: var(--fl-muted);
     font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .filters button:hover {
+    color: var(--fl-text);
   }
   .filters button[aria-selected='true'] {
-    background: var(--fl-accent);
-    border-color: var(--fl-accent);
-    color: var(--fl-accent-text);
+    background: var(--fl-text);
+    color: var(--fl-canvas);
   }
   .menu-separator {
     height: 1px;

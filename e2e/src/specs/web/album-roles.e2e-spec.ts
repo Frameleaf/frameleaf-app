@@ -86,7 +86,7 @@ test.describe('Album roles', () => {
       // Invite is the owner's; everyone else sees who is in the album.
       await expect(page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(row.share ? 1 : 0);
       await expect(page.getByRole('button', { name: 'Members', exact: true })).toHaveCount(row.share ? 0 : 1);
-      await expect(page.getByRole('button', { name: 'Shared links' })).toHaveCount(row.links ? 1 : 0);
+      await expect(page.getByRole('button', { name: 'Links', exact: true })).toHaveCount(row.links ? 1 : 0);
       // Likes and comments are offered to every role.
       await expect(page.getByRole('button', { name: /^Likes & comments/ })).toBeVisible();
 

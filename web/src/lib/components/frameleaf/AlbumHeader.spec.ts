@@ -84,7 +84,7 @@ describe('AlbumHeader', () => {
     const add = within(await screen.findByRole('menu', { name: 'Add photos' }));
     expect(add.getByRole('menuitem', { name: /Upload from computer/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Shared links' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Links' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit title' })).toBeInTheDocument();
 
@@ -100,7 +100,7 @@ describe('AlbumHeader', () => {
     expect(screen.getByRole('button', { name: 'Add photos' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Members' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Shared links' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Links' })).toBeNull();
     expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
 
     const more = await openMore();
@@ -114,7 +114,7 @@ describe('AlbumHeader', () => {
 
     expect(screen.queryByRole('button', { name: 'Add photos' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Shared links' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Links' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit title' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Members' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
@@ -192,12 +192,12 @@ describe('AlbumHeader', () => {
       const toolbar = screen.getByRole('toolbar');
       expect(within(toolbar).getByRole('button', { name: 'Add photos' })).toBeInTheDocument();
       expect(within(toolbar).getByRole('button', { name: 'Share' })).toBeInTheDocument();
-      for (const name of ['Shared links', 'Slideshow', 'Download', /^Likes & comments/]) {
+      for (const name of ['Links', 'Slideshow', 'Download', /^Likes & comments/]) {
         expect(within(toolbar).queryByRole('button', { name })).toBeNull();
       }
 
       const menu = await openMore();
-      for (const name of ['Shared links', 'Slideshow', 'Download', 'Likes & comments']) {
+      for (const name of ['Links', 'Slideshow', 'Download', 'Likes & comments']) {
         expect(
           menu.getByRole(name === 'Likes & comments' ? 'menuitemcheckbox' : 'menuitem', { name }),
         ).toBeInTheDocument();
@@ -226,7 +226,7 @@ describe('AlbumHeader', () => {
       expect(within(toolbar).getByRole('button', { name: 'Members' })).toBeInTheDocument();
 
       const menu = await openMore();
-      expect(menu.queryByRole('menuitem', { name: 'Shared links' })).toBeNull();
+      expect(menu.queryByRole('menuitem', { name: 'Links' })).toBeNull();
       for (const name of ['Slideshow', 'Download']) {
         expect(menu.getByRole('menuitem', { name })).toBeInTheDocument();
       }

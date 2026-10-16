@@ -334,7 +334,7 @@ describe('AlbumDirectory', () => {
     const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
     await fireEvent.click(menu.getByRole('menuitem', { name: 'Share' }));
 
-    const dialog = within(await screen.findByRole('dialog', { name: 'Share this album' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'Share album' }));
     const people = await dialog.findByRole('listbox', { name: 'People to invite' });
     expect(within(people).getByRole('option', { name: /Jamie/ })).toBeInTheDocument();
     expect(dialog.queryByRole('combobox', { name: /search/i })).toBeNull();

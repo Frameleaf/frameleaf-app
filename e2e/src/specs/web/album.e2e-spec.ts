@@ -659,8 +659,8 @@ test.describe('Album', () => {
 
     await toolbar.getByRole('button', { name: 'More actions' }).click();
     const menu = page.getByRole('menu', { name: 'More actions' });
-    for (const name of ['Shared links', 'Slideshow', 'Download']) {
-      await expect(menu.getByRole('menuitem', { name })).toBeVisible();
+    for (const name of ['Links', 'Slideshow', 'Download']) {
+      await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
     }
     await expect(menu.getByRole('menuitemcheckbox', { name: 'Likes & comments' })).toBeVisible();
   });

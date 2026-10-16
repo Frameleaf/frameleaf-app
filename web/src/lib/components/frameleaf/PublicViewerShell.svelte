@@ -191,6 +191,17 @@
     align-items: center;
     gap: var(--fl-space-3) var(--fl-space-2);
   }
+  /* sharing.css phone header: brand and actions share the first row, the title runs full width under them. */
+  @media (max-width: 700px) {
+    .pv-title {
+      flex-basis: 100%;
+      order: 3;
+      min-width: 0;
+    }
+    .pv-actions {
+      margin-inline-start: auto;
+    }
+  }
   .pv-selectbar {
     display: flex;
     align-items: center;

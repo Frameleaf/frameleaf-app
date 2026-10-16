@@ -262,7 +262,7 @@ describe('Frameleaf Activity page', () => {
     expect(card?.querySelector(':scope .fla-chip .fla-dot')).not.toBeNull();
     // The prototype's summary names only what is not zero.
     expect(container.querySelector('.fla-summary')?.textContent).toBe('1 running');
-    expect(screen.getByRole('button', { name: /^running/i }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /^in progress/i }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: /^all/i }).getAttribute('aria-pressed')).toBe('true');
   });
 
