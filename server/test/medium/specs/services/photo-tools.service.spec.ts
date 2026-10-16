@@ -128,14 +128,24 @@ const exists = (path: string) =>
     .then(() => true)
     .catch(() => false);
 
+let previousMediaLocation: string | undefined;
+
 beforeAll(async () => {
   database = await getKyselyDB();
+  try {
+    previousMediaLocation = StorageCore.getMediaLocation();
+  } catch {
+    // no media location configured for this run
+  }
   root = await mkdtemp(join(tmpdir(), 'fl64-'));
   StorageCore.setMediaLocation(root);
   await mkdir(join(root, 'library'), { recursive: true });
 });
 
 afterAll(async () => {
+  if (previousMediaLocation !== undefined) {
+    StorageCore.setMediaLocation(previousMediaLocation);
+  }
   await rm(root, { recursive: true, force: true });
 });
 

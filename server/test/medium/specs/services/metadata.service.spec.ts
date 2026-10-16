@@ -2,7 +2,7 @@ import { createPostgres } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Stats, mkdirSync } from 'node:fs';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -71,7 +71,9 @@ const setup = (db?: Kysely<DB>) => {
 const createTestFile = async (exifData: Record<string, any>) => {
   const { ctx } = setup();
   const data = newRandomImage();
-  const filePath = join(tmpdir(), 'test.png');
+  const dir = await mkdtemp(join(tmpdir(), 'metadata-test-'));
+  onTestFinished(() => rm(dir, { recursive: true, force: true }));
+  const filePath = join(dir, 'test.png');
   await writeFile(filePath, data);
   await ctx.get(MetadataRepository).writeTags(filePath, exifData);
   return { filePath };
@@ -479,8 +481,21 @@ describe('sidecar writes (FL-195)', () => {
 describe('partner copy sidecar writes', () => {
   it("keep the source's time zone and local time when the copy's owner edits it", async () => {
     const media = await mkdtemp(join(tmpdir(), 'partner-copy-sidecar-'));
+    let previousMediaLocation: string | undefined;
+    try {
+      previousMediaLocation = StorageCore.getMediaLocation();
+    } catch {
+      // no media location configured for this run
+    }
     StorageCore.reset();
     StorageCore.setMediaLocation(media);
+    onTestFinished(async () => {
+      StorageCore.reset();
+      if (previousMediaLocation !== undefined) {
+        StorageCore.setMediaLocation(previousMediaLocation);
+      }
+      await rm(media, { recursive: true, force: true });
+    });
     const { sut, ctx } = newMediumService(MetadataService, {
       database: defaultDatabase,
       real: [

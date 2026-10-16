@@ -131,6 +131,10 @@ describe(DuplicateService.name, () => {
           { fileSizeInByte: 10_000 },
         );
         const config = await ctx.getConfig();
+        onTestFinished(async () => {
+          await ctx.updateConfig(config);
+          clearConfigCache();
+        });
         await ctx.updateConfig({
           ...config,
           machineLearning: {
@@ -759,6 +763,10 @@ describe(DuplicateService.name, () => {
         const trashed = await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId });
 
         const config = await ctx.getConfig();
+        onTestFinished(async () => {
+          await ctx.updateConfig(config);
+          clearConfigCache();
+        });
         await ctx.updateConfig({ ...config, trash: { ...config.trash, enabled: false } });
         clearConfigCache();
 

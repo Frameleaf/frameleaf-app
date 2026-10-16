@@ -38,9 +38,6 @@ import { getLibraryQueueDB } from 'test/medium/library-queue-database.js';
 import { MediumTestContext, testAssetsDir } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 
-// `validateImportPath` checks candidate paths against the media location
-StorageCore.setMediaLocation('/photos');
-
 let defaultDatabase: Kysely<DB>;
 
 const fileModifiedAt = new Date(1_700_000_000_000);
@@ -167,11 +164,25 @@ const setup = (db?: Kysely<DB>) => {
   return { sut: ctx.sut, ctx };
 };
 
+let previousMediaLocation: string | undefined;
+
 beforeAll(async () => {
+  try {
+    previousMediaLocation = StorageCore.getMediaLocation();
+  } catch {
+    // no media location configured for this run
+  }
+  // `validateImportPath` checks candidate paths against the media location
+  StorageCore.setMediaLocation('/photos');
   defaultDatabase = await getLibraryQueueDB();
 });
 
-afterAll(async () => defaultDatabase.destroy());
+afterAll(async () => {
+  if (previousMediaLocation !== undefined) {
+    StorageCore.setMediaLocation(previousMediaLocation);
+  }
+  await defaultDatabase.destroy();
+});
 
 describe(LibraryService.name, () => {
   let tempDir: string;
