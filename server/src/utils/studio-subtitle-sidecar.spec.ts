@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { prepareSidecarPlan, resolveEffectiveTrackStates, serializeSrt } from '#studio-subtitle-sidecar';
-import { buildStudioSidecarSemanticPlan, sealStudioSidecar, sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
+import {
+  StudioSidecarSealSchema,
+  buildStudioSidecarSemanticPlan,
+  sealStudioSidecar,
+  sidecarSealOf,
+} from 'src/utils/studio-subtitle-sidecar.js';
 
 const fps = 30_000 / 1001;
 const track = (id: string, order = 0, extra = {}) => ({ id, order, visible: true, ...extra });
@@ -47,6 +52,24 @@ function graph() {
   };
 }
 describe('shared durable-sidecar semantic producer only', () => {
+  it.each(['not-a-number', '1.5', '1e3', '', '-1', '9007199254740992'])(
+    'refuses invalid byte size %s as validation failure',
+    (sizeInBytes) => {
+      const binding = { revisionDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64), engineDigest: 'c'.repeat(64) };
+      const seal = { ...sealStudioSidecar(graph(), binding), sizeInBytes };
+      expect(StudioSidecarSealSchema.safeParse(seal)).toMatchObject({ success: false });
+      expect(() => sidecarSealOf({ subtitleMode: 'sidecar', subtitleSeal: seal })).toThrow(
+        'Required subtitle authority is unavailable',
+      );
+    },
+  );
+
+  it.each(['1', '9007199254740991'])('retains valid safe-integer byte size %s', (sizeInBytes) => {
+    const binding = { revisionDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64), engineDigest: 'c'.repeat(64) };
+    const seal = { ...sealStudioSidecar(graph(), binding), sizeInBytes };
+    expect(StudioSidecarSealSchema.safeParse(seal)).toMatchObject({ success: true });
+  });
+
   it('binds the immutable server seal to actual ordered bytes, graph, revision, manifest and engine', () => {
     const input = graph();
     const binding = { revisionDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64), engineDigest: 'c'.repeat(64) };

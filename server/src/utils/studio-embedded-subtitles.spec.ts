@@ -39,6 +39,7 @@ describe('durable MP4 embedded caption admission', () => {
 });
 
 import {
+  StudioEmbeddedSubtitleSealSchema,
   embeddedSubtitleSealOf,
   findEmbeddedSubtitleMismatch,
   parseEmbeddedSrt,
@@ -96,6 +97,27 @@ const measured = (content: string) => ({
 });
 
 describe('immutable MP4 text-track semantics', () => {
+  it.each(['not-a-number', '1.5', '1e3', '', '-1', '9007199254740992'])(
+    'refuses malformed embedded source size %s without throwing from safeParse',
+    (sizeInBytes) => {
+      const original = sealStudioEmbeddedSubtitles(captionGraph(), binding);
+      const seal = { ...original, source: { ...original.source, sizeInBytes } };
+      expect(StudioEmbeddedSubtitleSealSchema.safeParse(seal)).toMatchObject({ success: false });
+      expect(
+        parseStudioExportContract({ video: { minBitDepth: 8, transfer: null }, audio: null, embeddedSubtitles: seal }),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    ['1048576', true],
+    ['1048577', false],
+  ] as const)('retains the embedded source byte cap at %s', (sizeInBytes, success) => {
+    const original = sealStudioEmbeddedSubtitles(captionGraph(), binding);
+    const seal = { ...original, source: { ...original.source, sizeInBytes } };
+    expect(StudioEmbeddedSubtitleSealSchema.safeParse(seal).success).toBe(success);
+  });
+
   it('uses existing rational range projection without mutating titles, hidden captions or authored cues', () => {
     const graph = captionGraph(),
       before = structuredClone(graph);
