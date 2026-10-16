@@ -396,9 +396,10 @@ export class PushDeviceRepository {
       .orderBy('updatedAt')
       .orderBy('id')
       .execute();
+    const activitiesByDevice = Map.groupBy(activities, ({ deviceId }) => deviceId);
     return devices.map((device) => ({
       ...device,
-      activities: activities.filter(({ deviceId }) => deviceId === device.id),
+      activities: activitiesByDevice.get(device.id) ?? [],
     }));
   }
 }
