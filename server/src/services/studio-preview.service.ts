@@ -796,6 +796,7 @@ export class StudioPreviewService {
   private async removeFiles(folder: string): Promise<void> {
     await this.storage.unlinkDir(folder, { recursive: true, force: true }).catch((error) => {
       this.logger.warn(`Could not remove preview files at ${folder}: ${errorMessage(error)}`);
+      throw error;
     });
   }
 
