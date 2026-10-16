@@ -15,6 +15,7 @@ import {
   asset_face_audit,
   asset_metadata_audit,
   asset_ocr_delete_audit,
+  desktop_clip_producer_guard,
   f_concat_ws,
   f_unaccent,
   immich_uuid_v7,
@@ -81,6 +82,7 @@ import {
 } from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DesktopClipIndexTable, DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
@@ -219,6 +221,8 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    DesktopClipIndexTable,
+    DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
     DesktopDeviceTable,
     DesktopWorkerSessionTable,
@@ -394,6 +398,7 @@ export class ImmichDatabase {
   ];
 
   functions = [
+    desktop_clip_producer_guard,
     immich_uuid_v7,
     updated_at,
     f_concat_ws,
@@ -427,6 +432,8 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  desktop_clip_index: DesktopClipIndexTable;
+  desktop_clip_producer: DesktopClipProducerTable;
   desktop_device: DesktopDeviceTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
