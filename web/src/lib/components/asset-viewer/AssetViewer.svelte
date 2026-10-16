@@ -345,7 +345,9 @@
     }
     const target = asset;
     const isCurrent = captureView();
-    const loaded = target.stack ? await getStack({ id: target.stack.id }) : null;
+    // A member opened or previewed from the stack card carries no stack of its own (the stack's
+    // members are mapped without one), so it keeps the stack it belongs to.
+    const loaded = target.stack ? await getStack({ id: target.stack.id }) : stack;
     if (isCurrent()) {
       stack = loaded?.assets.some(({ id }) => id === target.id) ? loaded : null;
     }
@@ -1944,9 +1946,11 @@
     >
       {#if showStackStrip && stack}
         <div id="stack-slideshow" class="pointer-events-auto mb-3.5" in:dock={{ y: 8 }} out:dock={{ y: 8 }}>
+          <!-- The ring marks the open member, not the one pointed at: a hovered tile is previewed, and
+               must stay choosable. -->
           <ViewerStackStrip
             {stack}
-            {asset}
+            asset={cursor.current}
             onSelect={(stackedAsset) => {
               cursor = { ...cursor, current: stackedAsset };
               notifyAssetUpdate?.(stackedAsset);

@@ -404,6 +404,45 @@ describe('AssetViewer', () => {
     expect(screen.getByTestId('viewer-stack-strip')).toBeInTheDocument();
   });
 
+  it('keeps the stack card while it shows a member that has no stack of its own (VIEWER-P3)', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const [primary, member] = assetFactory.buildList(2, { ownerId: user.id });
+    primary.stack = { id: 'stack', primaryAssetId: primary.id, assetCount: 2 };
+    // the stack's members come back without a stack of their own, as the server maps them
+    const shown = { ...member, stack: undefined };
+    vi.mocked(getStack).mockResolvedValue({ id: 'stack', primaryAssetId: primary.id, assets: [primary, shown] });
+    const props = { cursor: { current: primary }, withStacked: true, showNavigation: false };
+    const view = renderWithTooltips(AssetViewer, props);
+    await screen.findByTestId('viewer-stack-strip');
+    await view.rerender({ componentProps: { ...props, cursor: { current: shown } } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('viewer-stack-strip')).toBeInTheDocument();
+    expect(getStack).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a stack member clicked after pointing at it (VIEWER-P3)', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const [primary, member] = assetFactory.buildList(2, { ownerId: user.id });
+    primary.stack = { id: 'stack', primaryAssetId: primary.id, assetCount: 2 };
+    const shown = { ...member, stack: undefined };
+    vi.mocked(getStack).mockResolvedValue({ id: 'stack', primaryAssetId: primary.id, assets: [primary, shown] });
+    renderWithTooltips(AssetViewer, { cursor: { current: primary }, withStacked: true, showNavigation: false });
+    const strip = await screen.findByTestId('viewer-stack-strip');
+    const tile = strip.querySelector<HTMLElement>(`[data-asset="${CSS.escape(member.id)}"]`)!;
+    // a mouse always points at a tile before it clicks; pointing previews the member
+    await fireEvent.mouseEnter(tile);
+    await fireEvent.click(tile);
+    await fireEvent.mouseLeave(tile);
+    await waitFor(() =>
+      expect(document.querySelector('#immich-asset-viewer')).toHaveAttribute('data-asset-id', member.id),
+    );
+    expect(screen.getByTestId('viewer-stack-strip').querySelectorAll('[aria-current="true"]')).toHaveLength(1);
+  });
+
   it.each(['before', 'after'])(
     'keeps a featured-photo refresh owned when navigation occurs %s the lookup',
     async (change) => {
