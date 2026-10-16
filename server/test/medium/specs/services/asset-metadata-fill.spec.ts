@@ -25,14 +25,13 @@ describe('Matched import metadata fills', () => {
   const setup = async (visibility = AssetVisibility.Timeline) => {
     const { sut, ctx } = newMediumService(AssetService, {
       database: db,
-      real: [AssetRepository, AccessRepository],
-      mock: [JobRepository, LoggingRepository, PartnerOriginRepository, WebsocketRepository],
+      real: [AssetRepository, AccessRepository, PartnerOriginRepository],
+      mock: [JobRepository, LoggingRepository, WebsocketRepository],
     });
     const { auth, user } = await ctx.newSyncAuthUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id, visibility });
     const assets = ctx.get(AssetRepository);
     const jobs = ctx.getMock(JobRepository);
-    ctx.getMock(PartnerOriginRepository).getIdsWithFollowers.mockResolvedValue([]);
     // Exercise real transactional job persistence; worker dispatch is a separate qualification gate.
     jobs.queueInTransaction.mockImplementation(async (tx, item) => {
       await new SqlQueueStore(tx).enqueue([
@@ -48,6 +47,40 @@ describe('Matched import metadata fills', () => {
     });
     return { sut, ctx, auth, user, asset, assets, jobs };
   };
+
+  it('waits for origin admission before entering metadata write locks', async () => {
+    const { sut, ctx, auth, user, asset, assets } = await setup();
+    const { user: sharer } = await ctx.newUser();
+    const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+    const origins = ctx.get(PartnerOriginRepository);
+    await origins.createAssetOrigin({
+      id: asset.id,
+      sourceId: source.id,
+      ownerId: user.id,
+      rootOwnerId: sharer.id,
+      partnerSharedById: sharer.id,
+    });
+    const entered = Promise.withResolvers<void>();
+    const held = Promise.withResolvers<void>();
+    const editing = db.transaction().execute(async (tx) => {
+      await tx.selectFrom('asset_origin').selectAll().where('assetId', '=', asset.id).forUpdate().execute();
+      entered.resolve();
+      await held.promise;
+    });
+    await entered.promise;
+    const metadata = vi.spyOn(assets, 'withMetadataUpdate');
+    const filling = sut.fillMissingMetadata(auth, asset.id, { description: 'Imported' });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(metadata).not.toHaveBeenCalled();
+    } finally {
+      held.resolve();
+      await Promise.allSettled([editing, filling]);
+    }
+    await expect(filling).resolves.toBe(true);
+    expect((await assets.getById(asset.id, { exifInfo: true }))?.exifInfo?.description).toBe('Imported');
+    expect((await origins.getOrigin('asset', asset.id))?.overriddenFields).toContain('description');
+  });
 
   it('fills an absent EXIF row and commits metadata locks with its sidecar job', async () => {
     const { sut, auth, asset, assets } = await setup();
