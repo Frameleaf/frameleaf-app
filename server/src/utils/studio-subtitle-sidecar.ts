@@ -31,11 +31,11 @@ export const StudioSidecarSealSchema = z
   .refine(
     (seal) =>
       seal.outPoint > seal.inPoint &&
-      BigInt(seal.sizeInBytes) <= BigInt(Number.MAX_SAFE_INTEGER) &&
+      Number.isSafeInteger(Number(seal.sizeInBytes)) &&
       seal.zeroCue === (seal.cueCount === 0) &&
       (seal.zeroCue
         ? seal.sizeInBytes === '0' && seal.expectedSrtSha256 === createHash('sha256').update('').digest('hex')
-        : BigInt(seal.sizeInBytes) > 0n),
+        : Number(seal.sizeInBytes) > 0),
   );
 export type StudioSidecarSeal = z.infer<typeof StudioSidecarSealSchema>;
 

@@ -1074,6 +1074,91 @@ describe(MediaOperationRepository.name, () => {
       },
     );
 
+    it.each(['operation', 'checkpoint'] as const)(
+      'refuses verified completion when the lease expires during the %s row-lock wait',
+      async (target) => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const claim = await sut.claimNext({
+          kinds: [MediaOperationKind.StudioExport],
+          workerId: 'worker-a',
+          leaseMs: LEASE_MS,
+        });
+        await sut.upsertCheckpoint(operation.id, claim!.claimToken, chunk(0) as never);
+        const before = await sut.getCheckpoints(operation.id);
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({ claimExpiresAt: sql<Date>`clock_timestamp() + interval '5 seconds'` })
+          .where('id', '=', operation.id)
+          .execute();
+        const locked = Promise.withResolvers<number>();
+        const release = Promise.withResolvers<void>();
+        const blocker = defaultDatabase.transaction().execute(async (tx) => {
+          if (target === 'operation') {
+            await tx
+              .selectFrom('media_operation')
+              .select('id')
+              .where('id', '=', operation.id)
+              .forUpdate()
+              .executeTakeFirstOrThrow();
+          } else {
+            await tx
+              .selectFrom('media_operation_checkpoint')
+              .select('id')
+              .where('operationId', '=', operation.id)
+              .where('sequence', '=', 0)
+              .forUpdate()
+              .executeTakeFirstOrThrow();
+          }
+          locked.resolve((await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx)).rows[0].pid);
+          await release.promise;
+        });
+        void blocker.catch(locked.reject);
+        let completing: Promise<boolean> | undefined;
+        try {
+          const blockerPid = await locked.promise;
+          completing = sut.completeCheckpoint(
+            operation.id,
+            claim!.claimToken,
+            {
+              sequence: 0,
+              chunkKey: 'chunk-0',
+              outputPath: '/server/staging/expired',
+              outputChecksum: Buffer.alloc(32),
+              sizeInBytes: 2048,
+            },
+            true,
+          );
+          void completing.catch(() => {});
+          await expect
+            .poll(
+              async () => {
+                const { rows } = await sql<{ waiting: boolean }>`SELECT EXISTS(
+              SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
+              AND ${blockerPid}=ANY(pg_blocking_pids(pid))) AS waiting`.execute(defaultDatabase);
+                return rows[0].waiting;
+              },
+              { timeout: 2000 },
+            )
+            .toBe(true);
+          const live = await defaultDatabase
+            .selectFrom('media_operation')
+            .select(sql<boolean>`"claimExpiresAt" > clock_timestamp()`.as('live'))
+            .where('id', '=', operation.id)
+            .executeTakeFirstOrThrow();
+          expect(live.live).toBe(true);
+          await sql`SELECT pg_sleep(greatest(0, extract(epoch FROM ("claimExpiresAt" - clock_timestamp()))) + 0.02)
+            FROM media_operation WHERE id=${operation.id}`.execute(defaultDatabase);
+        } finally {
+          release.resolve();
+          await Promise.allSettled([blocker, ...(completing ? [completing] : [])]);
+        }
+        await expect(completing).resolves.toBe(false);
+        expect(await sut.getCheckpoints(operation.id)).toEqual(before);
+      },
+    );
+
     it('allows one durable verified artifact winner and refuses overwriting complete bytes', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
