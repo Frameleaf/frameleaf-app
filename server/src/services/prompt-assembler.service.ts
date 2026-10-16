@@ -229,11 +229,13 @@ export class ImageDescriptionPromptAssembler {
     const styleHint = this.styleHint(config);
     const vocabulary = config.customVocabulary.length > 0 ? this.vocabularyHint(config.customVocabulary) : '';
 
-    let prompt = template
-      .replaceAll('{names}', () => names)
-      .replaceAll('{schema}', () => JSON_SCHEMA_BLOCK)
-      .replaceAll('{style_hint}', () => styleHint)
-      .replaceAll('{vocabulary}', () => vocabulary);
+    const replacements: Record<string, string> = {
+      '{names}': names,
+      '{schema}': JSON_SCHEMA_BLOCK,
+      '{style_hint}': styleHint,
+      '{vocabulary}': vocabulary,
+    };
+    let prompt = template.replaceAll(/{(?:names|schema|style_hint|vocabulary)}/g, (key) => replacements[key]);
 
     if (videoContext) {
       prompt = `${videoContextHint(videoContext)}\n\n${prompt}`;

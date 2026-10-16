@@ -522,12 +522,13 @@ describe(AssetDevelopService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([video.id]));
       await expect(
         sut.save(authStub.user1, video.id, { recipe: defaultDevelopRecipe(), render: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toThrow('Develop recipes apply to images; videos use the video editor');
 
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue({ ...asset, isOffline: true } as never);
       await expect(
         sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toThrow('The original file is offline and cannot be rendered');
 
       expect(developRepository.create).not.toHaveBeenCalled();
     });
@@ -1073,18 +1074,23 @@ describe(AssetDevelopService.name, () => {
       vi.stubEnv('FRAMELEAF_HDR_IMAGES', 'experimental');
       try {
         const fill = 'e'.repeat(64);
-        developRepository.getArtifacts.mockResolvedValue([
-          { id: fill, assetId: asset.id, ownerId: asset.ownerId, kind: 'fill', path: '/artifact.png' },
-        ]);
+        developRepository.getArtifacts.mockImplementation((_assetId: string, ids: string[]) =>
+          Promise.resolve(
+            ids.includes(fill)
+              ? [{ id: fill, assetId: asset.id, ownerId: asset.ownerId, kind: 'fill', path: '/artifact.png' }]
+              : [],
+          ),
+        );
         await expect(
           sut.preview(authStub.user1, asset.id, {
             recipe: {
-              version: 3,
+              version,
               cleanup: [{ id: 'fill', method: 'remove', region: { x: 0, y: 0, w: 1, h: 1 }, fill }],
             },
             size: 256,
           }),
-        ).rejects.toBeInstanceOf(BadRequestException);
+        ).rejects.toMatchObject({ response: { code: 'develop_artifact_changed' } });
+        expect(mocks.crypto.hashFile).toHaveBeenCalledWith('/artifact.png', 'sha256');
         expect(mocks.media.decodeDevelopArtifact).not.toHaveBeenCalled();
         expect(mocks.media.generateHdrRenditions).not.toHaveBeenCalled();
       } finally {

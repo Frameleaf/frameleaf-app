@@ -309,7 +309,8 @@ export class SmartAlbumService extends BaseService {
       .then((selection) => this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName }))
       .then((raw) => {
         const parsed = parseEmbedding(raw);
-        return parsed ? l2Normalize(parsed) : undefined;
+        if (!parsed || parsed.every((value) => value === 0)) throw new Error('Invalid smart-album query embedding');
+        return l2Normalize(parsed);
       })
       .catch((error) => {
         // Drop the failed promise so the next evaluation retries.

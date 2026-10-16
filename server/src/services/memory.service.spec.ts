@@ -913,6 +913,28 @@ describe(MemoryService.name, () => {
         mocks.memory.cleanup.mock.invocationCallOrder[0],
       );
     });
+
+    it('delegates highlight deletion without unlinking its saved library result', async () => {
+      const auth = factory.auth();
+      const memoryId = newUuid();
+      const savedPath = '/data/library/saved-highlight.mp4';
+      const archivePath = '/data/exports/archive.zip';
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memoryId]));
+      mocks.memory.delete.mockResolvedValue();
+      mocks.memory.searchExports.mockResolvedValue([
+        exportRun({ ownerId: auth.user.id, memoryId, format: MemoryExportFormat.Highlight, path: savedPath }),
+        exportRun({ ownerId: auth.user.id, memoryId, path: archivePath }),
+      ] as never);
+
+      await sut.remove(auth, memoryId);
+
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(savedPath);
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(archivePath);
+      expect(highlights.removeForMemory).toHaveBeenCalledExactlyOnceWith(auth.user.id, memoryId);
+      expect(highlights.removeForMemory.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.memory.delete.mock.invocationCallOrder[0],
+      );
+    });
   });
 
   describe('getExport', () => {

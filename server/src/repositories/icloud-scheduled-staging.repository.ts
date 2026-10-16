@@ -38,6 +38,7 @@ import {
   validationInputsDisposed,
   validationInputsScope,
 } from 'src/utils/icloud-private-copy.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 export type ScheduledStagingInput = {
@@ -586,7 +587,7 @@ export class ICloudScheduledStagingRepository {
         (claim) =>
           !(
             claim.live &&
-            (claim.id !== payload.itemClaimId || claim.holder !== `icloud-sync:audit:${payload.operationId}`)
+            (claim.id !== payload.itemClaimId || claim.holder !== scheduledAuditClaimHolder(payload.ownerId, payload))
           ),
       ) &&
       !!resource &&

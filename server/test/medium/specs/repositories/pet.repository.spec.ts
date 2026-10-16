@@ -25,6 +25,96 @@ beforeAll(async () => {
 });
 
 describe(PetRepository.name, () => {
+  it('merges current durable observations including Locked and trashed sources', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const source = await sut.create({ ownerId: user.id, name: 'Source' });
+    const target = await sut.create({ ownerId: user.id, name: 'Target' });
+    const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+    const { asset: trashed } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+    const fresh = await sut.upsertObservation({
+      petId: source.id,
+      assetId: locked.id,
+      state: PetObservationState.Confirmed,
+    });
+    await sut.upsertObservation({ petId: source.id, assetId: trashed.id, state: PetObservationState.Confirmed });
+    const rejected = await sut.upsertObservation({
+      petId: target.id,
+      assetId: trashed.id,
+      state: PetObservationState.Rejected,
+    });
+    await sut.mergeInto(user.id, { sourceId: source.id, targetId: target.id });
+    expect(await sut.getById(user.id, source.id)).toBeUndefined();
+    expect(await sut.getObservations(user.id, target.id, { withLocked: true })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: fresh.id,
+          petId: target.id,
+          assetId: locked.id,
+          state: PetObservationState.Confirmed,
+        }),
+        expect.objectContaining({
+          id: rejected.id,
+          petId: target.id,
+          assetId: trashed.id,
+          state: PetObservationState.Confirmed,
+        }),
+      ]),
+    );
+    expect(await sut.getObservations(user.id, target.id, { withLocked: true })).toHaveLength(2);
+  });
+
+  it('replans a merge after waiting for a changed source decision instead of applying an old promotion', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const source = await sut.create({ ownerId: user.id, name: 'Source' });
+    const target = await sut.create({ ownerId: user.id, name: 'Target' });
+    const observation = await sut.upsertObservation({
+      petId: source.id,
+      assetId: asset.id,
+      state: PetObservationState.Confirmed,
+    });
+    await sut.upsertObservation({ petId: target.id, assetId: asset.id, state: PetObservationState.Rejected });
+    const { promise: entered, resolve: signalEntered } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    let blockerPid = 0;
+    const writer = defaultDatabase.transaction().execute(async (tx) => {
+      blockerPid = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx)).rows[0].pid;
+      await tx
+        .updateTable('pet_observation')
+        .set({ state: PetObservationState.Rejected })
+        .where('id', '=', observation.id)
+        .execute();
+      signalEntered();
+      await held;
+    });
+    let merging: Promise<void> | undefined;
+    try {
+      await Promise.race([entered, writer]);
+      merging = sut.mergeInto(user.id, { sourceId: source.id, targetId: target.id });
+      await vi.waitFor(
+        async () => {
+          const { rows } = await sql<{ waiting: number }>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE datname=current_database() AND ${blockerPid}=ANY(pg_blocking_pids(pid))
+        `.execute(defaultDatabase);
+          expect(rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 5000 },
+      );
+      release();
+      await writer;
+      await merging;
+      expect(await sut.getObservations(user.id, target.id)).toEqual([
+        expect.objectContaining({ petId: target.id, assetId: asset.id, state: PetObservationState.Rejected }),
+      ]);
+    } finally {
+      release();
+      await Promise.allSettled([writer, ...(merging ? [merging] : [])]);
+    }
+  });
+
   it('filters suppressed people from detail counts and returned observations', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

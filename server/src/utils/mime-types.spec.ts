@@ -283,7 +283,7 @@ describe('mimeTypes', () => {
       expect(values).toEqual(values.map((mimeType) => mimeType.toLowerCase()));
     });
 
-    for (const [extension, v] of Object.entries(mimeTypes.video)) {
+    for (const [extension, v] of Object.entries(mimeTypes.raw)) {
       it(`should lookup ${extension}`, () => {
         expect(mimeTypes.lookup(`test.${extension}`)).toEqual(v[0]);
       });

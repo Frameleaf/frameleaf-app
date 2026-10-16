@@ -1581,6 +1581,49 @@ describe(ImageEnrichmentService.name, () => {
     expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: assetId } });
   });
 
+  it('removes previous generated tags when a description rerun returns no tags', async () => {
+    mocks.systemMetadata.get.mockResolvedValue({
+      machineLearning: { nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+    });
+    mocks.asset.getMetadataByKey.mockImplementation(() =>
+      Promise.resolve({
+        key: AssetMetadataKey.MlEnrichment,
+        updatedAt: new Date(),
+        value: {
+          description: {
+            status: 'success',
+            modelName: 'previous-model',
+            updatedAt: '2026-05-05T00:00:00.000Z',
+            appliedTagHash: 'previous-hash',
+            appliedTagValues: ['beach'],
+            result: { description: 'A beach.', tags: ['beach'] },
+          },
+        },
+      }),
+    );
+    mocks.machineLearning.describeImage.mockResolvedValue({
+      description: 'An empty room.',
+      people: [],
+      environment: 'indoors',
+      objects: [],
+      visible_text: [],
+      context: '',
+      tags: [],
+    });
+    mocks.tag.getByValue.mockResolvedValue({ id: 'beach-id', value: 'beach' } as never);
+    mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [{ value: 'manual' }] });
+
+    await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+    expect(mocks.tag.getByValue).toHaveBeenCalledExactlyOnceWith(ownerId, 'beach');
+    expect(mocks.tag.removeAssetIds).toHaveBeenCalledExactlyOnceWith('beach-id', [assetId]);
+    expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
+    expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+      exif: expect.objectContaining({ assetId, tags: ['manual'] }),
+      lockedPropertiesBehavior: 'append',
+    });
+  });
+
   describe('identity injection — face data wiring', () => {
     const enabledConfig = {
       machineLearning: {

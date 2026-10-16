@@ -711,7 +711,10 @@ export class MlDestinationService extends BaseService {
         // FL-42: a check older than the freshness window is not evidence; the destination is
         // checked again (admission always probes live) before it counts as available.
         const checkedAt = row.lastProbeAt ? new Date(row.lastProbeAt) : null;
-        const stale = !checkedAt || now.getTime() - checkedAt.getTime() > ML_CAPABILITY_FRESHNESS_MS;
+        const stale =
+          !checkedAt ||
+          checkedAt.getTime() > now.getTime() ||
+          now.getTime() - checkedAt.getTime() > ML_CAPABILITY_FRESHNESS_MS;
         const available =
           row.enabled &&
           consentGranted &&

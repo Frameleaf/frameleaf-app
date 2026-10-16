@@ -2473,6 +2473,8 @@ export enum DatabaseLock {
    * two workers never refresh the same token at once and a disconnect never races a refresh.
    */
   FrameleafMailConnection = 975,
+  /** Serialize backup run state changes across the schedule owner and job workers. */
+  BackupSequenceRun = 976,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two

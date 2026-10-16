@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder, AssetType } from 'src/enum.js';
+import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder, AssetStatus, AssetType } from 'src/enum.js';
 
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -529,6 +529,11 @@ export class PartnerOriginRepository {
         .selectFrom('asset')
         .selectAll()
         .where('id', '=', input.sourceAssetId)
+        .where('deletedAt', 'is', null)
+        .where('status', '=', AssetStatus.Active)
+        .where('libraryId', 'is', null)
+        .where('isExternal', '=', false)
+        .where('isOffline', '=', false)
         .forShare()
         .executeTakeFirst();
       if (!source) {

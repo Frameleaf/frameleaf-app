@@ -831,7 +831,7 @@ describe(DuplicateService.name, () => {
       const asset1 = AssetFactory.create();
       const asset2 = AssetFactory.create();
       mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
-      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-2']));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset2.id]));
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1', 'tag-2']));
       mocks.duplicateRepository.get.mockResolvedValue({
         duplicateId: 'group-1',

@@ -6,6 +6,7 @@ export default defineConfig({
     include: [
       'src/ui-fixture-contracts.spec.mjs',
       'src/backup-fixture.spec.ts',
+      'src/fixtures/owner-backup-origin.spec.ts',
       'src/ui/generators/timeline/images.spec.ts',
     ],
   },

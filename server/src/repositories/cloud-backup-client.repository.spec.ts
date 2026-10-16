@@ -140,6 +140,45 @@ describe('client-encrypted storage and independent recovery', () => {
   const keyFor = (bytes: Buffer, dump?: string) => clientBackupObjectKey(root, vaultId, 1, sha(bytes), dump);
   const manifestKey = `m/v1/${vaultId}/1/20261011T000001Z.json.gz`;
 
+  it.each(['InternalError', 'PrivateProviderFailure'])(
+    'refuses an HTTP-200 encrypted completion error (%s), retaining staged bytes for retry',
+    async (code) => {
+      const bytes = Buffer.alloc(CLOUD_BACKUP_PART_BYTES + 1, 7);
+      const key = keyFor(bytes);
+      const path = join(directory, 'source');
+      await writeFile(path, bytes);
+      vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
+        if (init?.method === 'POST' && new URL(input).searchParams.has('uploadId')) {
+          return Promise.resolve(
+            new Response(`<Error><Code>${code}</Code></Error>`, {
+              headers: { etag: 'must-not-accept' },
+            }),
+          );
+        }
+        return s3.fetch(input, init);
+      });
+      const failure = store.uploadFile(connection, key, path, legacy, sha(bytes));
+      await expect(failure).rejects.toMatchObject({ status: 200, code: code === 'InternalError' ? code : null });
+      if (code !== 'InternalError') await expect(failure).rejects.not.toThrow(code);
+      expect(s3.current.has(key)).toBe(false);
+      const staged = await readdir(connection.stagingDirectory!);
+      const state = JSON.parse(
+        await readFile(
+          join(
+            connection.stagingDirectory!,
+            staged.find((name) => name.endsWith('.json'))!,
+          ),
+          'utf8',
+        ),
+      );
+      expect(state.completed).toBeUndefined();
+
+      vi.stubGlobal('fetch', s3.fetch);
+      await store.uploadFile(connection, key, path, legacy, sha(bytes));
+      expect((await store.get(connection, key, legacy)).equals(bytes)).toBe(true);
+    },
+  );
+
   it('keeps plaintext, plaintext identities and client roots out of storage bodies/headers and restores authenticated previews/files', async () => {
     const bytes = Buffer.from('private-photo-and-thumbnail-sentinel');
     const key = keyFor(bytes);

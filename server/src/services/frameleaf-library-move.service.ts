@@ -28,12 +28,14 @@ export const LIBRARY_MOVE_RESTART_GRACE_MS = 30 * 60 * 1000;
 export class FrameleafLibraryMoveService extends BaseService {
   private chain: Promise<unknown> = Promise.resolve();
   private expiryTimer?: NodeJS.Timeout;
+  private stopped = false;
 
   @OnEvent({ name: 'AppBootstrap' })
   async onBootstrap() {
     if (this.worker !== FrameleafWorker.Api) {
       return;
     }
+    this.stopped = false;
     await this.serialized(async () => {
       const state = await this.read();
       if (!state) {
@@ -54,6 +56,7 @@ export class FrameleafLibraryMoveService extends BaseService {
 
   @OnEvent({ name: 'AppShutdown' })
   onShutdown() {
+    this.stopped = true;
     clearTimeout(this.expiryTimer);
   }
 
@@ -165,9 +168,22 @@ export class FrameleafLibraryMoveService extends BaseService {
 
   private apply(state: LibraryMovePauseState) {
     libraryMoveFence.raise();
-    clearTimeout(this.expiryTimer);
     const delay = Math.max(0, Date.parse(state.leaseExpiresAt) - Date.now()) + 1000;
-    this.expiryTimer = setTimeout(() => void this.expire().catch(() => {}), delay);
+    this.scheduleExpiry(delay);
+  }
+
+  private scheduleExpiry(delay: number) {
+    clearTimeout(this.expiryTimer);
+    if (this.stopped) return;
+    this.expiryTimer = setTimeout(
+      () =>
+        void this.expire().catch(() => {
+          if (this.stopped) return;
+          this.logger.warn('Library move pause could not expire; retrying in one minute');
+          this.scheduleExpiry(60_000);
+        }),
+      delay,
+    );
     this.expiryTimer.unref?.();
   }
 

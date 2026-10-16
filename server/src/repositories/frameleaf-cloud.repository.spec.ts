@@ -411,9 +411,9 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
     const resolution = await resolveCloudGateway(deps);
     expect(resolution.state).not.toBe(CloudConnectionState.Ready);
-    expect('detail' in resolution ? resolution.detail : '').toMatch(
-      /issuer http:\/\/id\.attacker\.example\/id is not on/,
-    );
+    const detail = 'detail' in resolution ? resolution.detail : '';
+    expect(detail).toContain('discovery issuer is not on');
+    expect(detail).not.toContain('id.attacker.example');
     // Nothing else was asked: no signed assertion and no token request left the server.
     expect(cloud.requests.map((request) => request.path)).toEqual(['/.well-known/frameleaf-services']);
   });

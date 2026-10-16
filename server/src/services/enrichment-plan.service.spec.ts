@@ -266,6 +266,29 @@ describe(EnrichmentPlanService.name, () => {
   });
 
   describe('run', () => {
+    it.each([false, true])('rechecks active authority after a failed pause (renewed: %s)', async (renewed) => {
+      const snapshot = snapshotOf({ assetIds: [newUuid()] });
+      momentRepository.getAssetKinds.mockResolvedValue(kindsOf([[snapshot.assetIds[0], AssetType.Image]]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.setBulkResult).mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+      vi.mocked(operations.settlePause).mockResolvedValueOnce(false);
+      vi.mocked(operations.heartbeat).mockResolvedValue(renewed);
+
+      await sut.run(operationOf(snapshot), 'token');
+
+      expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'token', expect.any(Number), {
+        requireActiveClaim: true,
+      });
+      if (renewed) {
+        expect(enrichment.describeAsset).toHaveBeenCalledOnce();
+        expect(operations.complete).toHaveBeenCalled();
+      } else {
+        expect(enrichment.describeAsset).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+        expect(operations.complete).not.toHaveBeenCalled();
+      }
+    });
+
     it('runs every stage of every asset on the pinned destinations and records each outcome', async () => {
       const [photo, video] = [newUuid(), newUuid()];
       const snapshot = snapshotOf({

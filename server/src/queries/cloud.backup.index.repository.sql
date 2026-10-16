@@ -90,6 +90,15 @@ for update
 commit
 
 -- CloudBackupIndexRepository.recordObjectVerification
+begin
+select
+  "id"
+from
+  "media_operation"
+where
+  "id" = $1
+  and "claimToken" = $2
+for share
 insert into
   "cloud_backup_object_verification" (
     "bucket",
@@ -110,16 +119,19 @@ where
   "id" = $5
   and "claimToken" = $6
   and "kind" = $7
-  and "status" not in ($8, $9, $10)
+  and "status" in ($8, $9, $10)
+  and "claimExpiresAt" > clock_timestamp()
+  and "cancelRequestedAt" is null
+  and "pauseRequestedAt" is null
   and snapshot ->> 'bucketRef' = $11
   and snapshot ->> 'task' = $12
   and COALESCE(snapshot ->> 'depth', 'sample') = $13
-for share
 on conflict ("bucket", "sha256", "operationId") do update
 set
   "method" = $14,
   "result" = $15,
   "checkedAt" = clock_timestamp()
+commit
 
 -- CloudBackupIndexRepository.getCompletedObjectVerifications
 select

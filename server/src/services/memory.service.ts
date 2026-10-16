@@ -1340,7 +1340,9 @@ export class MemoryService extends BaseService {
     // the export rows go with the memory by cascade; their private archives must go too
     const exports = await this.memoryRepository.searchExports(auth.user.id, { memoryId: id });
     for (const run of exports) {
-      await this.removeExportFiles(run);
+      if (run.format !== MemoryExportFormat.Highlight) {
+        await this.removeExportFiles(run);
+      }
     }
     // FL-194: a highlight's render stops, and its project and private result go with the memory
     if (exports.some((run) => run.format === MemoryExportFormat.Highlight)) {

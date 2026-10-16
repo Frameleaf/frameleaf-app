@@ -374,8 +374,11 @@ const asString = (value: unknown) => (typeof value === 'string' ? value : null);
 
 const asCount = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0);
 
+const isSnapshotCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
 const parseItem = (value: unknown): PhysicalDeduplicationPlanItem | null => {
-  if (!isRecord(value)) {
+  if (!isRecord(value) || !isSnapshotCount(value.sizeInBytes)) {
     return null;
   }
   const fields = [
@@ -395,7 +398,7 @@ const parseItem = (value: unknown): PhysicalDeduplicationPlanItem | null => {
     ownerId: value.ownerId as string,
     originalPath: value.originalPath as string,
     checksum: value.checksum as string,
-    sizeInBytes: asCount(value.sizeInBytes),
+    sizeInBytes: value.sizeInBytes,
     retainedAssetId: value.retainedAssetId as string,
     retainedPath: value.retainedPath as string,
     retainedChecksum: value.retainedChecksum as string,
@@ -403,7 +406,13 @@ const parseItem = (value: unknown): PhysicalDeduplicationPlanItem | null => {
 };
 
 const parseRetained = (value: unknown): PhysicalDeduplicationPlanRetained | null => {
-  if (!isRecord(value) || typeof value.assetId !== 'string' || typeof value.originalPath !== 'string') {
+  if (
+    !isRecord(value) ||
+    typeof value.assetId !== 'string' ||
+    typeof value.originalPath !== 'string' ||
+    !isSnapshotCount(value.sizeInBytes) ||
+    !isSnapshotCount(value.referencesBefore)
+  ) {
     return null;
   }
   if (typeof value.checksum !== 'string') {
@@ -413,8 +422,8 @@ const parseRetained = (value: unknown): PhysicalDeduplicationPlanRetained | null
     assetId: value.assetId,
     originalPath: value.originalPath,
     checksum: value.checksum,
-    sizeInBytes: asCount(value.sizeInBytes),
-    referencesBefore: asCount(value.referencesBefore),
+    sizeInBytes: value.sizeInBytes,
+    referencesBefore: value.referencesBefore,
   };
 };
 
@@ -426,7 +435,14 @@ export const parsePhysicalDeduplicationSnapshot = (value: unknown): PhysicalDedu
   const planId = asString(value.planId);
   const fingerprint = asString(value.fingerprint);
   const masterUserId = asString(value.masterUserId);
-  if (!planId || !fingerprint || !masterUserId || !Array.isArray(value.items) || !Array.isArray(value.retained)) {
+  if (
+    !planId ||
+    !fingerprint ||
+    !masterUserId ||
+    !Array.isArray(value.items) ||
+    !Array.isArray(value.retained) ||
+    !isSnapshotCount(value.estimatedBytes)
+  ) {
     throw new Error('Physical deduplication job snapshot is incomplete');
   }
 
@@ -449,7 +465,7 @@ export const parsePhysicalDeduplicationSnapshot = (value: unknown): PhysicalDedu
       : [],
     items: items as PhysicalDeduplicationPlanItem[],
     retained: retained as PhysicalDeduplicationPlanRetained[],
-    estimatedBytes: asCount(value.estimatedBytes),
+    estimatedBytes: value.estimatedBytes,
   };
 };
 

@@ -1075,7 +1075,12 @@ export class MediaOperationService {
       if (isPrivateICloudOperation(operation)) {
         continue;
       }
-      const candidates = [operation.assetId, operation.resultAssetId, ...bulkItems(operation).map(({ id }) => id)];
+      const candidates = [
+        operation.assetId,
+        operation.resultAssetId,
+        ...bulkItems(operation).map(({ id }) => id),
+        ...mapBulkRetryPending(operation),
+      ];
       for (const id of candidates) {
         // stored results are data, not a contract: only well-formed ids reach the uuid lookup
         if (id && UUID_PATTERN.test(id)) {

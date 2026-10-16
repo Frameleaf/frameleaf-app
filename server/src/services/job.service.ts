@@ -211,16 +211,6 @@ export class JobService extends BaseService {
       !(job.name === JobName.AssetGenerateVideoDuplicateFrames && response === JobStatus.Skipped);
     if (shouldRunFollowUp) {
       await this.onDone(job);
-    } else if (job.name === JobName.AssetVideoEditGeneration && response === JobStatus.Failed) {
-      // FL-39: a failed version render still settles. Only the fork's history view listens for
-      // this; official clients would treat AssetEditReadyV2 as a published edit and refetch.
-      const asset = await this.assetRepository.getById(job.data.id);
-      if (asset) {
-        this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
-          assetId: asset.id,
-          versionId: job.data.versionId ?? null,
-        });
-      }
     }
   }
 

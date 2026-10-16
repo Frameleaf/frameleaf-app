@@ -1,8 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -111,6 +112,63 @@ describe(ArchiveOperationRepository.name, () => {
 
     expect(foreignJob.get(selected)).toBe('missing');
     expect(foreignOwner.get(selected)).toBe('missing');
+    expect(await visibility(selected)).toBe(AssetVisibility.Timeline);
+  });
+
+  it.each([false, true])('checks current lock state with recorded elevation=%s before archiving', async (elevated) => {
+    const selected = await asset();
+    const id = await confirmSelected([selected]);
+    await context.get(AssetRepository).lock([selected], AssetLockReason.Marked, auth.user.id);
+    const answers = await repo.publish(auth.user.id, id, archiveJob, [selected], elevated);
+    expect(answers.get(selected)).toBe(elevated ? 'archived' : 'locked');
+    expect(await visibility(selected)).toBe(elevated ? AssetVisibility.Archive : AssetVisibility.Timeline);
+  });
+
+  it('reads a lock committed while archive admission waits for the asset row', async () => {
+    const selected = await asset();
+    const id = await confirmSelected([selected]);
+    const { promise: entered, resolve: signalEntered } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const writer = db.transaction().execute(async (tx) => {
+      await tx.selectFrom('asset').select('id').where('id', '=', selected).forUpdate().execute();
+      await tx.insertInto('asset_lock').values({ assetId: selected, reason: AssetLockReason.Marked }).execute();
+      signalEntered();
+      await held;
+    });
+    let publishing: ReturnType<ArchiveOperationRepository['publish']> | undefined;
+    try {
+      await entered;
+      publishing = repo.publish(auth.user.id, id, archiveJob, [selected]);
+      await vi.waitFor(
+        async () => {
+          const { rows } = await sql<{ waiting: number }>`
+          SELECT count(*)::int AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'
+            AND query LIKE 'select "asset"."id"%for update'
+        `.execute(db);
+          expect(rows[0].waiting).toBeGreaterThan(0);
+        },
+        { timeout: 5000 },
+      );
+      release();
+      await writer;
+      expect((await publishing).get(selected)).toBe('locked');
+      expect(await visibility(selected)).toBe(AssetVisibility.Timeline);
+    } finally {
+      release();
+      await Promise.allSettled([writer, ...(publishing ? [publishing] : [])]);
+    }
+  });
+
+  it('keeps a Locked archive available to an elevated undo after ordinary undo skips it', async () => {
+    const selected = await asset();
+    const id = await confirmSelected([selected]);
+    await context.get(AssetRepository).lock([selected], AssetLockReason.Marked, auth.user.id);
+    await repo.publish(auth.user.id, id, archiveJob, [selected], true);
+    await repo.startJob(auth.user.id, id, 'undo', () => Promise.resolve(undoJob));
+    expect((await repo.restore(auth.user.id, id, undoJob, [selected])).get(selected)).toBe('locked');
+    expect(await repo.get(auth.user.id, owner, id)).toMatchObject({ archived: 1, conflict: 0 });
+    expect((await repo.restore(auth.user.id, id, undoJob, [selected], true)).get(selected)).toBe('undone');
     expect(await visibility(selected)).toBe(AssetVisibility.Timeline);
   });
 

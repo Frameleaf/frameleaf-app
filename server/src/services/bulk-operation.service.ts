@@ -523,9 +523,16 @@ export class BulkOperationService {
       return false;
     }
 
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      this.logger.log(`Bulk operation ${id} paused by its owner`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        this.logger.log(`Bulk operation ${id} paused by its owner`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claimToken, BULK_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+        return false;
+      }
     }
 
     return true;
@@ -640,6 +647,30 @@ export class BulkOperationService {
       return this.applyDuplicateBatch(auth, snapshot, batch, operationId, claimToken);
     }
 
+    if (snapshot.action === MediaOperationBulkAction.Unstack) {
+      try {
+        const result = await this.stacks.unstackSelection(
+          auth,
+          snapshot.payload.stackIds ?? [],
+          batch,
+          snapshot.elevated === true,
+        );
+        const changed = new Set(result.unstackedAssetIds);
+        const locked = new Set(result.lockedAssetIds);
+        return batch.map((id) =>
+          changed.has(id)
+            ? ok(id)
+            : {
+                id,
+                status: MediaOperationItemStatus.Skipped,
+                reasonKey: locked.has(id) ? 'frameleaf_bulk_reason_locked' : 'frameleaf_bulk_reason_not_stacked',
+              },
+        );
+      } catch (error) {
+        return batch.map((id) => refused(id, error));
+      }
+    }
+
     const { action, payload } = snapshot;
     const outcomes: Outcome[] = [];
     let allowed = batch;
@@ -693,7 +724,14 @@ export class BulkOperationService {
     // FL-32: a transactional archive publishes, or undoes, through its operation's own item records
     if (payload.archiveOperationId && operationId && isArchiveAction(action)) {
       outcomes.push(
-        ...(await this.applyArchiveOperation(auth, payload.archiveOperationId, operationId, action, allowed)),
+        ...(await this.applyArchiveOperation(
+          auth,
+          payload.archiveOperationId,
+          operationId,
+          action,
+          allowed,
+          snapshot.elevated === true,
+        )),
       );
       return outcomes;
     }
@@ -786,16 +824,6 @@ export class BulkOperationService {
         break;
       }
 
-      case MediaOperationBulkAction.Unstack: {
-        try {
-          await this.stacks.deleteAll(auth, { ids: payload.stackIds ?? [] });
-          outcomes.push(...allowed.map((id) => ok(id)));
-        } catch (error) {
-          outcomes.push(...allowed.map((id) => refused(id, error)));
-        }
-        break;
-      }
-
       case MediaOperationBulkAction.RelinkLivePhoto: {
         // `allowed` is the frozen set of still ids; the payload carries each still's video partner.
         // Submit validated this pairing, so a still with no partner here means a corrupt snapshot.
@@ -853,11 +881,12 @@ export class BulkOperationService {
     jobId: string,
     action: MediaOperationBulkAction,
     batch: string[],
+    elevated: boolean,
   ): Promise<Outcome[]> {
     const answers =
       action === MediaOperationBulkAction.Unarchive
-        ? await this.archiveOperations.restore(auth.user.id, archiveOperationId, jobId, batch)
-        : await this.archiveOperations.publish(auth.user.id, archiveOperationId, jobId, batch);
+        ? await this.archiveOperations.restore(auth.user.id, archiveOperationId, jobId, batch, elevated)
+        : await this.archiveOperations.publish(auth.user.id, archiveOperationId, jobId, batch, elevated);
     const changed = batch.filter((id) => {
       const answer = answers.get(id);
       return answer === 'archived' || answer === 'undone';

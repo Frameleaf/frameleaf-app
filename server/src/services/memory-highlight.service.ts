@@ -172,7 +172,7 @@ export class MemoryHighlightService {
 
     if (!version) {
       // Still being set up by `create`, or its version is gone with its project.
-      if (run.status === MemoryExportStatus.Pending && !run.studioProjectId) {
+      if (run.status === MemoryExportStatus.Pending && !run.studioExportVersionId) {
         return run;
       }
       return this.finish(run, MemoryExportStatus.Failed, 'The render of this highlight is gone');

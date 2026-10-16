@@ -412,7 +412,7 @@ describe(DatabaseBackupService.name, () => {
     `(`should fail if postgres version $postgresVersion is not supported`, async ({ postgresVersion }) => {
       mocks.database.getPostgresVersion.mockResolvedValue(postgresVersion);
       const result = await sut.handleBackupDatabase();
-      expect(mocks.process.spawn).not.toHaveBeenCalled();
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
       expect(result).toBe(JobStatus.Failed);
     });
   });

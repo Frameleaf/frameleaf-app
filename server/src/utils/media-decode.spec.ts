@@ -75,6 +75,20 @@ describe('parseSourcePixelLayout', () => {
     expect(parseSourcePixelLayout(null)).toBeNull();
   });
 
+  it.each(['constructor', '__proto__'])(
+    'refuses inherited table member %s instead of qualifying an unknown pixel layout',
+    (pixelFormat) => {
+      expect(parseSourcePixelLayout(pixelFormat)).toBeNull();
+      const result = qualifySourceDecode(stream({ pixelFormat }), noToneMapping);
+      expect(result).toMatchObject({
+        support: DecodeSupport.Refused,
+        refusal: DecodeRefusal.UnknownPixelFormat,
+        layout: null,
+      });
+      expect(() => assertDecodeQualified(result)).toThrowError(MediaPolicyError);
+    },
+  );
+
   it('does not describe the float intermediate as an integer format', () => {
     expect(parseSourcePixelLayout('gbrpf32le')).toBeNull();
   });

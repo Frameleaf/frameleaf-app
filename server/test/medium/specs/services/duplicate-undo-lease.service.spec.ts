@@ -376,6 +376,72 @@ describe('recorded duplicate Undo lease', () => {
     expect((await f.decisions.getById(f.user.id, f.recorded.id))!.undoneAt).not.toBeNull();
   });
 
+  it.each([false, true])(
+    'restores an empty keeper location unless a newer edit replaced it: newer=%s',
+    async (newer) => {
+      const f = await fixture(true),
+        keeper = f.members[0];
+      await db
+        .insertInto('asset_exif')
+        .values({
+          assetId: keeper,
+          latitude: 51,
+          longitude: -115,
+          city: 'Merged city',
+          state: 'Merged state',
+          country: 'Merged country',
+        })
+        .onConflict((oc) =>
+          oc.column('assetId').doUpdateSet({
+            latitude: 51,
+            longitude: -115,
+            city: 'Merged city',
+            state: 'Merged state',
+            country: 'Merged country',
+          }),
+        )
+        .execute();
+      const after = (await f.decisions.getKeeperStates([keeper])).get(keeper)!;
+      await db
+        .updateTable('duplicate_decision')
+        .set({
+          state: {
+            before: { [keeper]: { ...after, latitude: null, longitude: null } },
+            after: { [keeper]: after },
+          },
+        })
+        .where('id', '=', f.recorded.id)
+        .execute();
+      if (newer)
+        await db
+          .updateTable('asset_exif')
+          .set({ latitude: 52, longitude: -114 })
+          .where('assetId', '=', keeper)
+          .execute();
+      expect(
+        (await f.duplicates.undoGroup(f.ownerAuth, f.undo.id, f.group, f.claim)).every((a) => a.status === 'ok'),
+      ).toBe(true);
+      const exif = await db
+        .selectFrom('asset_exif')
+        .select(['latitude', 'longitude', 'city', 'state', 'country', 'lockedProperties'])
+        .where('assetId', '=', keeper)
+        .executeTakeFirstOrThrow();
+      expect(exif).toMatchObject(
+        newer
+          ? {
+              latitude: 52,
+              longitude: -114,
+              city: 'Merged city',
+              state: 'Merged state',
+              country: 'Merged country',
+            }
+          : { latitude: null, longitude: null, city: null, state: null, country: null },
+      );
+      if (!newer) expect(exif.lockedProperties).toEqual(expect.arrayContaining(['latitude', 'longitude']));
+      expect((await f.decisions.getById(f.user.id, f.recorded.id))!.undoneAt).not.toBeNull();
+    },
+  );
+
   it('restores nonempty keeper metadata under recorded elevation without changing Locked visibility', async () => {
     const f = await fixture(true),
       keeper = f.members[0];

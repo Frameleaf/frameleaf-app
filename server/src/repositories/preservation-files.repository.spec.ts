@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  type FileHandle,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -173,6 +184,31 @@ describe(PreservationFileRepository.name, () => {
   });
 
   describe('lines', () => {
+    it('publishes complete index pages even when a single write would write only part of a buffer', async () => {
+      const probe = await open(join(root, 'probe'), 'w');
+      const prototype = Object.getPrototypeOf(probe);
+      const original = probe.write;
+      await probe.close();
+      const write = vi.spyOn(prototype, 'write').mockImplementation(function (this: FileHandle, chunk: Buffer) {
+        return Reflect.apply(original, this, [chunk.subarray(0, Math.max(1, Math.floor(chunk.length / 2)))]);
+      });
+      try {
+        const pages = [['{"name":"café"}'], ['{"name":"second"}']];
+        const expected = Buffer.from(
+          pages
+            .flat()
+            .map((line) => `${line}\n`)
+            .join(''),
+        );
+        const destination = join(root, 'package', 'assets.jsonl');
+        const result = await sut.writeLines(destination, Readable.from(pages));
+        expect(await readFile(destination)).toEqual(expected);
+        expect(result).toEqual({ sha256: digests(expected).sha256, bytes: expected.length, lines: 2 });
+      } finally {
+        write.mockRestore();
+      }
+    });
+
     it('writes an index atomically and reads it back line by line with its digest', async () => {
       const pages = [['{"a":1}', '{"b":2}'], [], ['{"c":3}']];
       const indexPages: AsyncIterable<string[]> = {

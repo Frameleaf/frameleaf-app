@@ -842,6 +842,18 @@ describe(MlDestinationService.name, () => {
       vi.useRealTimers();
     });
 
+    it('does not offer ML work based on a future-dated probe', async () => {
+      mocks.mlDestination.getAll.mockResolvedValue([
+        { ...mlDestinationStub.local, lastProbeAt: new Date(Date.now() + 1000) },
+      ]);
+
+      const result = await sut.getCapabilities();
+      const face = result.workloads.find((entry) => entry.workload === MlWorkload.Face)!;
+
+      expect(face.available).toBe(false);
+      expect(face.destinations[0]).toMatchObject({ stale: true, available: false });
+    });
+
     it('never counts a stale check as evidence and reports per-destination detail (FL-42)', async () => {
       const lanChecked = {
         ...mlDestinationStub.lan,

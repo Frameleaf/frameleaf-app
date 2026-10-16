@@ -21,6 +21,8 @@ import {
 export class AssetUploadDirectService {
   private peers = new Map<RTCPeerConnection, { ownerId: string; close: () => void }>();
   private releases = new Set<Promise<void>>();
+  private negotiations = new Set<Promise<{ version: 1; sdp: string }>>();
+  private stopping = false;
 
   constructor(
     private uploads: AssetUploadResourceService,
@@ -41,6 +43,23 @@ export class AssetUploadDirectService {
     input: unknown,
     headers: IncomingHttpHeaders,
     queryParams: Record<string, string> = {},
+  ) {
+    if (this.stopping) throw new ServiceUnavailableException('Direct upload unavailable');
+    const operation = this.negotiateOwned(auth, id, input, headers, queryParams);
+    this.negotiations.add(operation);
+    try {
+      return await operation;
+    } finally {
+      this.negotiations.delete(operation);
+    }
+  }
+
+  private async negotiateOwned(
+    auth: AuthDto,
+    id: string,
+    input: unknown,
+    headers: IncomingHttpHeaders,
+    queryParams: Record<string, string>,
   ) {
     const ownerId = auth.user.id;
     const offer = validateDirectOffer(input);
@@ -71,6 +90,7 @@ export class AssetUploadDirectService {
     const currentAuth = await authenticate();
     const resource = await this.uploads.head(currentAuth, id);
     const maxAppendSize = Math.min(resource.maxAppendSize, DIRECT_UPLOAD_LIMITS.appendBytes);
+    if (this.stopping) throw new ServiceUnavailableException('Direct upload unavailable');
     if (
       this.peers.size >= DIRECT_UPLOAD_LIMITS.peers ||
       this.peers
@@ -96,12 +116,17 @@ export class AssetUploadDirectService {
           this.releases.delete(operation);
         });
       this.releases.add(operation);
+      return operation;
     };
+    if (this.stopping) {
+      await release();
+      throw new ServiceUnavailableException('Direct upload unavailable');
+    }
     let peer: RTCPeerConnection;
     try {
       peer = this.createPeer();
     } catch {
-      release();
+      void release();
       throw new ServiceUnavailableException('Direct upload unavailable');
     }
     let channel: RTCDataChannel | undefined;
@@ -127,7 +152,7 @@ export class AssetUploadDirectService {
       for (const name of Object.keys(credentials)) delete credentials[name];
       for (const name of Object.keys(query)) delete query[name];
       this.peers.delete(peer);
-      release();
+      void release();
       void peer.close().catch(() => {});
     };
     this.peers.set(peer, { ownerId, close });
@@ -301,7 +326,9 @@ export class AssetUploadDirectService {
 
   @OnEvent({ name: 'AppShutdown' })
   async onShutdown() {
+    this.stopping = true;
     for (const session of this.peers.values()) session.close();
+    await Promise.allSettled(this.negotiations);
     await Promise.all(this.releases);
   }
 }

@@ -598,31 +598,35 @@ export const orderPreservationAlbums = (albums: readonly PreservationAlbum[]): P
   }
   const ordered: PreservationAlbum[] = [];
   const done = new Set<string>();
-  const visiting = new Set<string>();
-  const visit = (album: PreservationAlbum) => {
+  for (const album of albums) {
     if (done.has(album.id)) {
-      return;
+      continue;
     }
-    if (visiting.has(album.id)) {
-      throw new PreservationPackageError('package_albums_invalid', 'The album hierarchy contains a cycle');
-    }
-    visiting.add(album.id);
-    if (album.parentId) {
-      const parent = byId.get(album.parentId);
+    const branch: PreservationAlbum[] = [];
+    const visiting = new Set<string>();
+    let current = album;
+    while (!done.has(current.id)) {
+      if (visiting.has(current.id)) {
+        throw new PreservationPackageError('package_albums_invalid', 'The album hierarchy contains a cycle');
+      }
+      visiting.add(current.id);
+      branch.push(current);
+      if (!current.parentId) {
+        break;
+      }
+      const parent = byId.get(current.parentId);
       if (!parent) {
         throw new PreservationPackageError(
           'package_albums_invalid',
           'An album names a parent the package does not list',
         );
       }
-      visit(parent);
+      current = parent;
     }
-    visiting.delete(album.id);
-    done.add(album.id);
-    ordered.push(album);
-  };
-  for (const album of albums) {
-    visit(album);
+    for (const ancestor of branch.toReversed()) {
+      done.add(ancestor.id);
+      ordered.push(ancestor);
+    }
   }
   return ordered;
 };

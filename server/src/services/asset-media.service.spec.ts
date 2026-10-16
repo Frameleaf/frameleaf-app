@@ -885,7 +885,7 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('should download edited file by default when edits exist', async () => {
+    it('downloads the original by default even when edits exist', async () => {
       const editedAsset = AssetFactory.from()
         .edit()
         .files([AssetFileType.FullSize, AssetFileType.Preview, AssetFileType.Thumbnail])
@@ -893,16 +893,17 @@ describe(AssetMediaService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([editedAsset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: editedAsset.files[3].path });
+      mocks.asset.getForOriginal.mockResolvedValue(editedAsset);
 
       await expect(sut.downloadOriginal(AuthFactory.create(), editedAsset.id, {})).resolves.toEqual(
         new FileDownloadResponse({
-          path: editedAsset.files[3].path,
+          path: editedAsset.originalPath,
           fileName: editedAsset.originalFileName,
           contentType: 'image/jpeg',
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+      expect(mocks.asset.getForOriginal).toHaveBeenCalledWith(editedAsset.id, false);
     });
 
     it('should download edited file when edited=true', async () => {
@@ -923,6 +924,7 @@ describe(AssetMediaService.name, () => {
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+      expect(mocks.asset.getForOriginal).toHaveBeenCalledWith(editedAsset.id, true);
     });
 
     it('should not return the unedited version if requested using a shared link', async () => {
@@ -942,6 +944,7 @@ describe(AssetMediaService.name, () => {
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+      expect(mocks.asset.getForOriginal).toHaveBeenCalledWith(editedAsset.id, true);
     });
 
     it('should download original file when edited=false', async () => {

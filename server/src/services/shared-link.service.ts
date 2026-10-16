@@ -173,7 +173,7 @@ export class SharedLinkService extends BaseService {
         allowUpload: dto.allowUpload,
         allowDownload: showExif ? dto.allowDownload : false,
         showExif: dto.showMetadata,
-        slug: dto.slug || null,
+        slug: dto.slug === undefined ? undefined : dto.slug || null,
       });
       const sharedLink = nsfwOptions
         ? await this.findOrFail(auth.user.id, id, nsfwOptions)

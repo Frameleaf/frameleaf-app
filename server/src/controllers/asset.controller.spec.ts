@@ -308,13 +308,10 @@ describe(AssetController.name, () => {
 
   describe('PUT /assets/:id', () => {
     it('should require a valid id', async () => {
-      const { status, body } = await request(ctx.getHttpServer()).put(`/assets/123`);
+      const { status, body } = await request(ctx.getHttpServer()).put(`/assets/123`).send({ description: 'Photo' });
       expect(status).toBe(400);
-      expect(body).toEqual(
-        factory.responses.validationError([
-          { path: [], message: 'Invalid input: expected object, received undefined' },
-        ]),
-      );
+      expect(body).toEqual(factory.responses.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+      expect(service.update).not.toHaveBeenCalled();
     });
 
     it('should reject invalid gps coordinates', async () => {

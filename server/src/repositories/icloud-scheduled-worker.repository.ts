@@ -16,6 +16,7 @@ import { ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 /** Member settlement is monotonic and counters are derived from a successful pending CAS only. */
@@ -114,7 +115,7 @@ export class ICloudScheduledWorkerRepository {
         WHERE id=${authority.auditRequestId}::uuid AND result IN ('queued','running')
           AND EXISTS (SELECT 1 FROM public.icloud_claim WHERE id=${claimId}::uuid AND "ownerId"=${ownerId}::uuid
             AND "cplAssetRecordName"=upper(${guarded.source.sourceAssetId})
-            AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp()) RETURNING id`.execute(
+            AND holder=${scheduledAuditClaimHolder(ownerId, authority)} AND "expiresAt">clock_timestamp()) RETURNING id`.execute(
         db,
       );
       return changed.rows.length === 1;

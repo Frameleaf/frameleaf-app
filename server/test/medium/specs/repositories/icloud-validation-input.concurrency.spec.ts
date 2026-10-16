@@ -35,6 +35,7 @@ import {
   validationInputScope,
   validationInputsScope,
 } from 'src/utils/icloud-private-copy.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -223,8 +224,9 @@ describe('validation input SQL concurrency', () => {
     };
     await sql`UPDATE public.media_operation SET status='rendering',"claimToken"=${authority.operationClaimToken}::uuid,
       "claimExpiresAt"=clock_timestamp()+interval '1 hour' WHERE id=${operation.id}::uuid`.execute(db);
-    const [claim] = await identities.claim(user.id, [source.sourceAssetId], `icloud-sync:audit:${operation.id}`, 1800);
-    if (!claim || claim.holder !== `icloud-sync:audit:${operation.id}`) throw new Error('fixture_audit_claim_missing');
+    const holder = scheduledAuditClaimHolder(user.id, authority);
+    const [claim] = await identities.claim(user.id, [source.sourceAssetId], holder, 1800);
+    if (!claim || claim.holder !== holder) throw new Error('fixture_audit_claim_missing');
     const worker = new ICloudScheduledWorkerRepository(db, staging);
     expect(await worker.bindClaim(authority, user.id, claim.id)).toBe(true);
     const resource = await worker.allocate(authority, user.id);

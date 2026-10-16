@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapStack } from 'src/dtos/stack.dto.js';
@@ -89,6 +89,18 @@ export class StackService extends BaseService {
     });
     if (sequenced) await this.stackRepository.enqueueLocalEffects();
     else await this.eventRepository.emit('StackDeleteAll', { stackIds: dto.ids, userId: auth.user.id });
+  }
+
+  async unstackSelection(auth: AuthDto, stackIds: string[], assetIds: string[], elevated: boolean) {
+    if (!auth.system || auth.sharedLink) throw new ForbiddenException('Bulk unstack requires the owner worker');
+    let sequenced = false;
+    const result = await this.stackRepository.unstackSelection(auth, stackIds, assetIds, elevated, (value) => {
+      sequenced = value;
+    });
+    if (sequenced) await this.stackRepository.enqueueLocalEffects();
+    else if (result.deletedStackIds.length > 0)
+      await this.eventRepository.emit('StackDeleteAll', { stackIds: result.deletedStackIds, userId: auth.user.id });
+    return result;
   }
 
   async removeAsset(auth: AuthDto, dto: UUIDAssetIDParamDto): Promise<void> {

@@ -1,7 +1,7 @@
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
-it('adds current strict cover and publisher checks only for the sync projection', async () => {
+it('validates covers on every read and adds publisher checks only for sync', async () => {
   const { db, queries } = scriptedKysely(() => ({ rows: [] }));
   const repository = new AlbumUserRepository(db);
   await repository.getLinkedPeople('space-id', true);
@@ -12,8 +12,8 @@ it('adds current strict cover and publisher checks only for the sync projection'
   expect(queries[0].sql).toContain('nsfw_asset.is_nsfw = true');
   await repository.getLinkedPeople('space-id');
   expect(queries[1].sql).not.toContain('publisher');
-  expect(queries[1].sql).not.toContain('album_asset');
-  expect(queries[1].sql).toContain('case when "cover"."id" is null then "link"."coverAssetId" end');
+  expect(queries[1].sql).toContain('"album_asset"."albumId" = "link"."albumId"');
+  expect(queries[1].sql).toContain('"asset"."deletedAt" is null');
 });
 
 it('hides sync references whose target owner is deleted without changing the public repository default', async () => {

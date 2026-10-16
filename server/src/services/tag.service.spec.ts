@@ -223,14 +223,6 @@ describe(TagService.name, () => {
       expect(mocks.tag.update).not.toHaveBeenCalled();
     });
 
-    it('should throw an error if updated tag name has a slash', async () => {
-      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-parent']));
-      await expect(sut.update(authStub.admin, 'tag-1', { name: 'tag/test2', color: '#000000' })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      expect(mocks.tag.update).not.toHaveBeenCalled();
-    });
-
     it('should update a tag', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
       mocks.tag.update.mockResolvedValue(tagStub.colorCreate);

@@ -213,6 +213,21 @@ describe('ffmpeg time bases', () => {
     expect(parseRational(' 24000/1001 ')).toEqual({ num: 24_000, den: 1001 });
   });
 
+  it.each(['', ' ', '/', '1/', '/2', '1/2/3', '1//2', '0x10', '1e3', '1.0', '1/0x10'])(
+    'refuses malformed rational text %j at every string entry point',
+    (value) => {
+      expect(() => parseRational(value)).toThrowError(RationalError);
+      expect(tryParseRational(value)).toBeNull();
+      expect(coerceRational(value)).toBeNull();
+    },
+  );
+
+  it('preserves signed integer spelling and surrounding whitespace', () => {
+    expect(parseRational(' +25 ')).toEqual({ num: 25, den: 1 });
+    expect(parseRational('-3/-2')).toEqual({ num: 3, den: 2 });
+    expect(parseRational('0/5')).toEqual({ num: 0, den: 1 });
+  });
+
   it('reports ffprobe’s unknown rational rather than reading it as zero', () => {
     expect(() => parseRational('0/0')).toThrowError(RationalError);
     expect(tryParseRational('0/0')).toBeNull();

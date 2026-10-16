@@ -991,7 +991,9 @@ export class TakeoutWorkerService {
       return;
     }
     // Resumed again before the pause landed: hand the job back so the next claim carries on.
-    await this.operations.requeue(id, run.claimToken, { delayMs: 0, returnAttempt: true });
+    if (!(await this.operations.requeue(id, run.claimToken, { delayMs: 0, returnAttempt: true }))) {
+      await this.operations.acknowledgeCancel(id, run.claimToken, { released: false });
+    }
   }
 
   /**
@@ -1030,9 +1032,16 @@ export class TakeoutWorkerService {
       this.logger.log(`Google Photos import job ${id} cancelled by its owner`);
       throw new TakeoutStop('cancelled');
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, run.claimToken))) {
-      this.logger.log(`Google Photos import job ${id} paused by its owner`);
-      throw new TakeoutStop('paused');
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, run.claimToken)) {
+        this.logger.log(`Google Photos import job ${id} paused by its owner`);
+        throw new TakeoutStop('paused');
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, run.claimToken, TAKEOUT_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.operations.acknowledgeCancel(id, run.claimToken, { released: false });
+        throw new TakeoutStop('claim no longer active');
+      }
     }
   }
 

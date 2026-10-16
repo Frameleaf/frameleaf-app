@@ -393,6 +393,35 @@ describe(PartnerCopyService.name, () => {
       await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
     });
 
+    it.each(['trashed', 'inactive', 'offline', 'external'] as const)(
+      'refuses a source that becomes %s after copy preflight and before insertion',
+      async (state) => {
+        const { sut, ctx, origins } = setup();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const insert = origins.insertAssetCopy.bind(origins);
+        vi.spyOn(origins, 'insertAssetCopy').mockImplementationOnce(async (input) => {
+          const patch =
+            state === 'trashed'
+              ? { deletedAt: new Date() }
+              : state === 'inactive'
+                ? { status: AssetStatus.Trashed }
+                : state === 'offline'
+                  ? { isOffline: true }
+                  : { isExternal: true };
+          await db.updateTable('asset').set(patch).where('id', '=', source.id).execute();
+          return insert(input);
+        });
+
+        await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+        expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([]);
+        await expect(origins.getCopyId('asset', source.id, bob.id)).resolves.toBeUndefined();
+        await expect(ctx.get(AssetRepository).getById(source.id)).resolves.toBeDefined();
+      },
+    );
+
     it('copies once, however often it is asked', async () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();

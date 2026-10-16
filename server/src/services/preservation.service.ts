@@ -687,6 +687,16 @@ export class PreservationService {
       throw new ConflictException('The restoration is running; pause it to change your choices');
     }
 
+    if (dto.items?.length && !this.isUnlocked(auth)) {
+      const lockedIds = await this.repository.lockedRestoreItemIds(
+        found.id,
+        dto.items.map((item) => item.id),
+      );
+      if (lockedIds.length > 0) {
+        throw new ForbiddenException('Unlock the Locked view to decide about Locked items');
+      }
+    }
+
     const options = asRecord(found.options);
     if (dto.conflictDefault !== undefined || dto.restoreEditRecipes !== undefined) {
       await this.repository.updateRestore(found.id, {
@@ -699,15 +709,6 @@ export class PreservationService {
     }
 
     if (dto.items?.length) {
-      if (!this.isUnlocked(auth)) {
-        const lockedIds = await this.repository.lockedRestoreItemIds(
-          found.id,
-          dto.items.map((item) => item.id),
-        );
-        if (lockedIds.length > 0) {
-          throw new ForbiddenException('Unlock the Locked view to decide about Locked items');
-        }
-      }
       await this.repository.setDecisions(
         found.id,
         dto.items.map((item) => ({ id: item.id, decisions: sanitizeDecisions(item.decisions) })),

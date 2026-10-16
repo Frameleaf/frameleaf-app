@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
-import { mapUserAdmin } from 'src/dtos/user.dto.js';
+import { UserAdminDeleteDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserMetadataItem } from 'src/types.js';
@@ -387,10 +387,14 @@ describe(UserAdminService.name, () => {
         mocks.user.update.mockResolvedValue(userStub.user1);
 
         await expect(
-          sut.delete(authStub.admin, userStub.user1.id, {
-            force,
-            confirmEmail: userStub.user1.email.toUpperCase(),
-          }),
+          sut.delete(
+            authStub.admin,
+            userStub.user1.id,
+            UserAdminDeleteDto.schema.parse({
+              force,
+              confirmEmail: `  ${userStub.user1.email.toUpperCase()}  `,
+            }),
+          ),
         ).resolves.toEqual(mapUserAdmin(userStub.user1));
       },
     );

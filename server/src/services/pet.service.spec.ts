@@ -296,8 +296,8 @@ describe(PetService.name, () => {
 
       await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
 
-      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, otherPetId, { withLocked: true });
-      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, { withLocked: true });
+      expect(petRepository.mergeInto).toHaveBeenCalledWith(ownerId, { sourceId: otherPetId, targetId: petId });
+      expect(petRepository.getObservations).not.toHaveBeenCalled();
     });
 
     it('answers a pet suppressed while the session is locked exactly like a missing one', async () => {
@@ -694,25 +694,16 @@ describe(PetService.name, () => {
       expect(petRepository.mergeInto).not.toHaveBeenCalled();
     });
 
-    it('promotes a rejection when the merged-in pet was confirmed on the same asset', async () => {
+    it('delegates current observation planning to the merge transaction', async () => {
       (petRepository.getByIds as AnyMock).mockResolvedValue([pet({ id: otherPetId })]);
-      (petRepository.getObservations as AnyMock).mockImplementation((_owner, id) =>
-        Promise.resolve(
-          id === otherPetId
-            ? [observation({ id: 'source-1', petId: otherPetId, state: PetObservationState.Confirmed })]
-            : [observation({ id: 'target-1', petId, state: PetObservationState.Rejected })],
-        ),
-      );
 
       await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
 
       expect(petRepository.mergeInto).toHaveBeenCalledWith(ownerId, {
         sourceId: otherPetId,
         targetId: petId,
-        reassign: [],
-        discard: ['source-1'],
-        promote: ['target-1'],
       });
+      expect(petRepository.getObservations).not.toHaveBeenCalled();
     });
   });
 
