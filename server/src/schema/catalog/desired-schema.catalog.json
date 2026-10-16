@@ -1,5 +1,5 @@
 {
-  "databaseName": "desktop_worker_baseline",
+  "databaseName": "frameleaf",
   "schemaName": "public",
   "tables": [
     {
@@ -40001,6 +40001,276 @@
             "photoSessionId"
           ],
           "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_worker_challenge",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "requestId",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "credentialHash",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "modelKey",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileSha256",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "runtime",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "specJson",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "bindingSha256",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "desktop_worker_challenge",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "reportSha256",
+          "tableName": "desktop_worker_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "runtimeFingerprint",
+          "tableName": "desktop_worker_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "reportedAt",
+          "tableName": "desktop_worker_challenge",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "desktop_worker_challenge_deviceId_expiresAt_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_expiresAt_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\", \"expiresAt\")",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "deviceId",
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_challenge_sessionId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_sessionId_idx\" ON public.desktop_worker_challenge USING btree (\"sessionId\")",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_challenge_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_challenge_deviceId_idx\" ON public.desktop_worker_challenge USING btree (\"deviceId\")",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "desktop_worker_challenge_receipt_check",
+          "definition": "CHECK ((((\"reportSha256\" IS NULL) AND (\"runtimeFingerprint\" IS NULL) AND (\"reportedAt\" IS NULL)) OR ((\"reportSha256\" IS NOT NULL) AND (\"runtimeFingerprint\" IS NOT NULL) AND (\"reportedAt\" IS NOT NULL))))",
+          "tableName": "desktop_worker_challenge",
+          "expression": "((((\"reportSha256\" IS NULL) AND (\"runtimeFingerprint\" IS NULL) AND (\"reportedAt\" IS NULL)) OR ((\"reportSha256\" IS NOT NULL) AND (\"runtimeFingerprint\" IS NOT NULL) AND (\"reportedAt\" IS NOT NULL))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_worker_challenge_size_check",
+          "definition": "CHECK (((octet_length((\"specJson\")::text) >= 1) AND (octet_length((\"specJson\")::text) <= 1048576)))",
+          "tableName": "desktop_worker_challenge",
+          "expression": "(((octet_length((\"specJson\")::text) >= 1) AND (octet_length((\"specJson\")::text) <= 1048576)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_worker_challenge_credential_check",
+          "definition": "CHECK ((octet_length(\"credentialHash\") = 32))",
+          "tableName": "desktop_worker_challenge",
+          "expression": "((octet_length(\"credentialHash\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_worker_challenge_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "desktop_worker_challenge_sessionId_requestId_uq",
+          "definition": "UNIQUE (\"sessionId\", \"requestId\")",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "sessionId",
+            "requestId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_challenge_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_challenge_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "desktop_worker_session",
           "referenceColumnNames": [
             "id"
           ],
