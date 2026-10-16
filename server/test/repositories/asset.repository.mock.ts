@@ -6,6 +6,7 @@ import {
   AssetRepository,
 } from 'src/repositories/asset.repository.js';
 import { RepositoryInterface } from 'src/types.js';
+
 export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
   return {
     create: vitest.fn(),
@@ -87,6 +88,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getForOriginals: vitest.fn(),
     getForThumbnail: vitest.fn(),
     getCurrentDevelop: vitest.fn(),
+    getCurrentDevelops: vitest.fn().mockResolvedValue([]),
     getForVideo: vitest.fn(),
     getCurrentStudioHdrIntermediates: vitest.fn().mockResolvedValue(new Map()),
     getStudioHdrIntermediateStates: vitest.fn().mockResolvedValue([]),

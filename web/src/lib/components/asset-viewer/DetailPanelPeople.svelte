@@ -139,10 +139,10 @@
 <OnEvents {onPersonUpdate} {onPersonFacesChange} />
 
 {#if !authManager.isSharedLink}
-  <section class="px-4 pt-4 text-sm">
+  <section class="text-sm">
     {#if isOwner || visiblePeople.length > 0 || unassignedFaces.length > 0}
-      <div class="flex h-10 w-full items-center justify-between">
-        <Text size="small" color="muted">{$t('people')}</Text>
+      <div class="fl-info-heading-row">
+        <h3 class="fl-info-heading">{$t('people')}</h3>
         <div class="flex items-center gap-2">
           {#if isOwner}
             {#if hiddenCount > 0}

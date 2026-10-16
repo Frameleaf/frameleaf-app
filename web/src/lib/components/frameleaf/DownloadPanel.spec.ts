@@ -25,14 +25,14 @@ describe('DownloadPanel', () => {
   });
 
   it('shows a preparing download with progress, Cancel and the prototype title (D-1, D-4)', () => {
-    downloadManager.start({ name: 'Frameleaf-3-items.zip', assetIds: ['a', 'b', 'c'], total: 3 * 1024 * 1024 }, never);
+    downloadManager.start({ name: 'Frameleaf-3-items.zip', assetIds: ['a', 'b', 'c'], total: 3_000_000 }, never);
 
     render(DownloadPanel);
 
     expect(screen.getByRole('region', { name: 'Downloads' })).toBeInTheDocument();
     expect(screen.getByText('Preparing 1 download')).toBeInTheDocument();
     expect(screen.getByText('Frameleaf-3-items.zip')).toBeInTheDocument();
-    expect(screen.getByText(/^3 items · 3 MiB · 0%$/)).toBeInTheDocument();
+    expect(screen.getByText(/^3 items · 3 MB · 0%$/)).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: 'Frameleaf-3-items.zip progress' })).toHaveAttribute(
       'aria-valuenow',
       '0',
@@ -70,7 +70,7 @@ describe('DownloadPanel', () => {
 
     render(DownloadPanel);
     expect(screen.getByText('1 download ready')).toBeInTheDocument();
-    expect(screen.getByText(/^1 item · 2 KiB · Ready$/)).toBeInTheDocument();
+    expect(screen.getByText(/^1 item · 2 KB · Ready$/)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
 
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'photo.jpg');

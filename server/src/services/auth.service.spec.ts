@@ -1576,7 +1576,7 @@ describe(AuthService.name, () => {
         loginDetails,
       );
 
-      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_073_741_824 }));
+      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_000_000_000 }));
     });
 
     it('should infer name from given and family names', async () => {
@@ -1633,7 +1633,7 @@ describe(AuthService.name, () => {
         loginDetails,
       );
 
-      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_073_741_824 }));
+      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_000_000_000 }));
     });
 
     it('should ignore a negative quota', async () => {
@@ -1652,7 +1652,7 @@ describe(AuthService.name, () => {
         loginDetails,
       );
 
-      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_073_741_824 }));
+      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 1_000_000_000 }));
     });
 
     it('should set quota for 0 quota', async () => {
@@ -1691,7 +1691,8 @@ describe(AuthService.name, () => {
         loginDetails,
       );
 
-      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5_368_709_120 }));
+      // D5: the claim is decimal GB
+      expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5_000_000_000 }));
     });
 
     it('should sync the profile picture', async () => {

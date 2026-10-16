@@ -51,3 +51,74 @@ export const filmstripPlaceholder = ({
     fileSizeInByte,
   };
 };
+
+/*
+ * VIEWER-P4: the viewer filmstrip across the whole timeline (MediaViewer.jsx:1635-1666 shows the
+ * whole collection). The timeline holds its items month by month, so the strip is a window of items
+ * around the open one that runs on into the neighbouring months. A month that is not loaded yet ends
+ * the window on that side and is handed back to be loaded; once it arrives the window grows into it.
+ * Reading stays inside what the timeline may load anyway, so the strip can never show more than the
+ * timeline itself would.
+ */
+
+/** Items the filmstrip keeps on each side of the open one. */
+export const FILMSTRIP_REACH = 40;
+/** Neighbouring months read on each side at most, so a run of empty months never loads the whole library. */
+export const FILMSTRIP_MONTH_REACH = 12;
+
+export type FilmstripMonth = { isLoaded: boolean; getAssets(): TimelineAsset[] };
+
+export type FilmstripWindow<M extends FilmstripMonth> = {
+  /** The items around the open one, in the timeline's order. */
+  assets: TimelineAsset[];
+  /** Months the window reached but are not loaded yet: at most one on each side. */
+  toLoad: M[];
+};
+
+/**
+ * The window of items around `currentId`, which sits in `months[monthIndex]` (months in the
+ * timeline's display order).
+ */
+export const filmstripWindow = <M extends FilmstripMonth>(
+  months: readonly M[],
+  monthIndex: number,
+  currentId: string,
+  reach = FILMSTRIP_REACH,
+  monthReach = FILMSTRIP_MONTH_REACH,
+): FilmstripWindow<M> => {
+  const month = months[monthIndex];
+  const own = month?.isLoaded ? month.getAssets() : [];
+  const at = own.findIndex((asset) => asset.id === currentId);
+  if (at === -1) {
+    return { assets: [], toLoad: [] };
+  }
+
+  const toLoad: M[] = [];
+  let before = own.slice(0, at);
+  for (let index = monthIndex - 1, steps = 0; index >= 0 && before.length < reach && steps < monthReach; index--) {
+    const earlier = months[index];
+    if (!earlier.isLoaded) {
+      toLoad.push(earlier);
+      break;
+    }
+    before = [...earlier.getAssets(), ...before];
+    steps++;
+  }
+
+  let after = own.slice(at + 1);
+  for (
+    let index = monthIndex + 1, steps = 0;
+    index < months.length && after.length < reach && steps < monthReach;
+    index++
+  ) {
+    const later = months[index];
+    if (!later.isLoaded) {
+      toLoad.push(later);
+      break;
+    }
+    after = [...after, ...later.getAssets()];
+    steps++;
+  }
+
+  return { assets: [...before.slice(-reach), own[at], ...after.slice(0, reach)], toLoad };
+};

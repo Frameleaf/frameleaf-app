@@ -102,7 +102,7 @@ describe('MaintenanceBackupRow', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
 
-    expect(screen.getByText(/^Before restore backup from .+ · 1 KiB$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Before restore backup from .+ · 1 KB$/)).toBeInTheDocument();
     expect(screen.getByText('Original files on disk are not touched.')).toBeInTheDocument();
     expect(screen.getByText(/The restore runs in 4 steps/)).toBeInTheDocument();
 
@@ -156,7 +156,8 @@ describe('MaintenanceBackupRow', () => {
 
     // A backup from another version keeps its warning, now as the row's status pill.
     expect(screen.getByText('This backup was created with a different version of Frameleaf!')).toBeInTheDocument();
-    expect(screen.getByText('2 KiB')).toBeInTheDocument();
+    // Decimal units (D5): 2048 bytes is 2 KB.
+    expect(screen.getByText('2 KB')).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: /^Download backup from / }));
     expect(handleDownloadDatabaseBackup).toHaveBeenCalledWith('immich-db-backup-20260324T110000-v1.2.2-pg14.sql.gz');

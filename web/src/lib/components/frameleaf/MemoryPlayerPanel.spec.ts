@@ -20,6 +20,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
     user: { id: 'me' },
     params: {},
     preferences: { memories: { enabled: true, duration: 5 }, download: { archiveSize: 4 } },
+    // The viewer and its random walk act only for the session that opened them; this one never changes.
+    captureSession: () => () => true,
   },
 }));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({

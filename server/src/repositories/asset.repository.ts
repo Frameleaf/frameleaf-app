@@ -271,13 +271,25 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
    */
   lockedRuleMatches?: HiddenContentFilter;
 }
+/** LIB-P3: a timeline narrowed to one owner's Best Photos (see `isBestPhotoOf`). */
+export interface TimelineBestPhotos {
+  ownerId: string;
+  minScore: number;
+}
 export interface TimeBucketOptions extends AssetBuilderOptions {
   dateType?: TimeBucketDateType;
   orderBy?: AssetOrderBy;
   order?: AssetOrder;
+  /** DISCOVERY-P4: with `tagId`, false matches only that tag itself, not the tags inside it */
+  withChildTags?: boolean;
+  /** LIB-P3: only this owner's own Best Photos; set by the service for the caller only */
+  bestPhotos?: TimelineBestPhotos;
 }
-/** FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. */
-export type TimelineOrderedSort = 'filename' | 'rating';
+/**
+ * FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. LIB-P3: `quality` is the
+ * viewer's own Best Photos score, highest first; an asset without a score of theirs sorts last.
+ */
+export type TimelineOrderedSort = 'filename' | 'rating' | 'quality';
 export interface TimelineOrderedPage {
   sort: TimelineOrderedSort;
   cursor?: { key: string | number; date: string; id: string };
@@ -392,6 +404,24 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
   const ruleMatch = hiddenContentAssetIdExists(sql.ref('asset.id'), options.lockedRuleMatches);
   return sql<boolean>`(${visibility} or (${listed} and ${ruleMatch}))`;
 };
+/**
+ * LIB-P3: the owner's own Best Photos, scoped as `BestPhotosRepository.getBestPhotos` scopes them: their
+ * own images and videos with a score row of theirs at `minScore` or higher. The owner test stands on its
+ * own, so no widening of the owner scope (a person's shared-album media) can bring in someone else's.
+ */
+const isBestPhotoOf = (eb: ExpressionBuilder<DB, 'asset'>, { ownerId, minScore }: TimelineBestPhotos) =>
+  eb.and([
+    eb('asset.ownerId', '=', asUuid(ownerId)),
+    eb('asset.type', 'in', [AssetType.Image, AssetType.Video]),
+    eb.exists(
+      eb
+        .selectFrom('asset_best_photo_score')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
+        .where('asset_best_photo_score.ownerId', '=', asUuid(ownerId))
+        .where('asset_best_photo_score.score', '>=', minScore),
+    ),
+  ]);
 @Injectable()
 export class AssetRepository {
   private readonly smartAlbums: SmartAlbumRepository;
@@ -2274,7 +2304,8 @@ export class AssetRepository {
         .$if(options.isDuplicate !== undefined, (qb) =>
           qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
         )
-        .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
+        .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
+        .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
     );
   }
   private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
@@ -2415,10 +2446,13 @@ export class AssetRepository {
         },
   ) {
     const { timeBucket, page } = target;
-    const sortKey =
-      page?.sort === 'filename'
-        ? sql`asset."originalFileName" collate "und-x-icu"`
-        : sql`coalesce(asset_exif.rating, 0)`;
+    const sortKeys: Record<TimelineOrderedSort, RawBuilder<unknown>> = {
+      filename: sql`asset."originalFileName" collate "und-x-icu"`,
+      rating: sql`coalesce(asset_exif.rating, 0)`,
+      // LIB-P3: never null, so the keyset seek holds; scores are 0 to 1, so -1 puts the unscored last
+      quality: sql`coalesce(best_photo_score.score, -1)`,
+    };
+    const sortKey = sortKeys[page?.sort ?? 'rating'];
     const keyAscending = page?.sort === 'filename';
     const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
@@ -2448,6 +2482,14 @@ export class AssetRepository {
         qb
           .selectFrom('asset')
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+          // LIB-P3: the viewer's own score only (one row per asset), so the order never ranks by another's
+          .$if(page?.sort === 'quality', (qb) =>
+            qb.leftJoin('asset_best_photo_score as best_photo_score', (join) =>
+              join
+                .onRef('best_photo_score.assetId', '=', 'asset.id')
+                .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
+            ),
+          )
           .select((eb) => [
             'asset.duration',
             'asset.id',
@@ -2570,7 +2612,8 @@ export class AssetRepository {
             qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
           )
           .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
-          .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
+          .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!, options.withChildTags))
+          .$if(!!options.bestPhotos, (qb) => qb.where((eb) => isBestPhotoOf(eb, options.bestPhotos!)))
           .$if(!page, (qb) =>
             qb.orderBy(orderDate, order).orderBy(orderTimestamp, order).orderBy('asset.originalFileName', order),
           )
@@ -2929,6 +2972,28 @@ export class AssetRepository {
       LIMIT 1
     `.execute(this.db);
     return rows[0];
+  }
+  /** The current develop version of each of these assets that has one, for a download of them as shown. */
+  async getCurrentDevelops(ids: string[]) {
+    if (ids.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{
+      assetId: string;
+      ownerId: string;
+      status: AssetDevelopRevisionStatus;
+      previewPath: string | null;
+      masterPath: string | null;
+      hdrMasterPath?: string | null;
+      hdrPreviewPath?: string | null;
+      hdrRenditionChecksum?: Buffer | null;
+      renderedAt?: Date | null;
+    }>`
+      SELECT "assetId", "ownerId", status, "previewPath", "masterPath", "hdrMasterPath", "hdrPreviewPath", "hdrRenditionChecksum", "renderedAt"
+      FROM public.asset_develop_revision
+      WHERE "assetId" = ANY(${ids}::uuid[]) AND "isCurrent"
+    `.execute(this.db);
+    return rows;
   }
   /**
    * FL-97: what is known about the Studio HDR intermediates in `public.studio_hdr_intermediate` for these videos.

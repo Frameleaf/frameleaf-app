@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { access, constants, mkdir, open, rename, writeFile } from 'node:fs/promises';
@@ -33,6 +34,7 @@ import {
   PhotographyOrderCreateDto,
   PhotographyPaymentDto,
   PhotographyPresetSaveDto,
+  PhotographyPreviewSessionDto,
   PhotographyPublicationDto,
   PhotographyRecipientCreateDto,
   PhotographyRecipientUpdateDto,
@@ -209,7 +211,8 @@ export type PhotographyWorkflow = {
     brand: Publication['brand'];
     logoPath: string | null;
   } | null;
-  sessions: { hash: string; recipientId: string; expiresAt: string }[];
+  /** `preview` marks the studio's view-only client preview; its recipientId is always PREVIEW_RECIPIENT_ID. */
+  sessions: { hash: string; recipientId: string; expiresAt: string; preview?: boolean }[];
   approvals: {
     recipientId: string;
     captureId: string;
@@ -238,6 +241,10 @@ export type PhotographyWorkflow = {
 const iso = () => new Date().toISOString();
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 const expired = (at: string | null) => at !== null && Date.parse(at) <= Date.now();
+/** Never a real recipient: recipient IDs are UUIDs. */
+const PREVIEW_RECIPIENT_ID = 'preview';
+const PREVIEW_SESSION_MS = 3_600_000;
+const PREVIEW_SESSION_LIMIT = 20;
 
 @Injectable()
 export class PhotographyWorkflowService {
@@ -300,7 +307,8 @@ export class PhotographyWorkflowService {
         presentation: {
           template: 'proofing',
           coverCaptureId: null,
-          coverTreatment: 'quiet',
+          // the prototype's cover (PhotographyClient.jsx `coverStyle || "split"`); saved galleries keep theirs
+          coverTreatment: 'split',
           coverFocal: 50,
           font: 'editorial',
           palette: 'studio',
@@ -947,14 +955,71 @@ export class PhotographyWorkflowService {
       throw new ForbiddenException('Gallery access expired or revoked');
     return recipient;
   }
-  private async guest(id: string, token: string | undefined) {
+  /**
+   * A client preview session is refused (403) unless the caller opts in with `allowPreview`: only routes that
+   * read the gallery may, so nothing a recipient can change or download is reachable from a preview.
+   */
+  private async guest(id: string, token: string | undefined, allowPreview = false) {
     if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new ForbiddenException('Gallery session required');
     const row = await this.repository.get(id);
     if (!row) throw new NotFoundException('Gallery unavailable');
     await this.repository.live(row);
     const session = row.value.sessions.find((s) => s.hash === hash(token) && !expired(s.expiresAt));
     if (!session) throw new ForbiddenException('Gallery session expired');
-    return { row, recipient: this.requireRecipient(row, session.recipientId) };
+    if (session.preview) {
+      if (!allowPreview) throw new ForbiddenException('A client preview is view only');
+      return { row, recipient: this.previewRecipient(row), preview: true };
+    }
+    return { row, recipient: this.requireRecipient(row, session.recipientId), preview: false };
+  }
+  /** Sees every published photograph like an unrestricted client, and owns no choices, orders or downloads. */
+  private previewRecipient(row: WorkflowRow): Recipient {
+    return {
+      id: PREVIEW_RECIPIENT_ID,
+      name: row.value.config.title,
+      tokenHash: '',
+      passwordHash: null,
+      revoked: false,
+      expiresAt: null,
+      canProof: true,
+      canDownload: false,
+      captureIds: null,
+      choices: [],
+      notes: [],
+    };
+  }
+  async preview(auth: AuthDto, id: string, input: PhotographyPreviewSessionDto) {
+    PhotographyPreviewSessionDto.schema.parse(input);
+    const owner = await this.owner(auth, id);
+    const row = await this.repository.get(id);
+    if (!row) throw new ConflictException('Publish the gallery before previewing it');
+    if (row.ownerId !== owner.ownerId || row.albumId !== owner.albumId) throw new ForbiddenException();
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + PREVIEW_SESSION_MS).toISOString();
+    await this.repository.mutateSessions(id, owner.ownerId, owner.albumId, (stored) => {
+      const sessions = stored.filter((s) => !expired(s.expiresAt));
+      // keep the newest previews only, so repeated previews never use up the clients' session limit
+      const dropped = new Set(sessions.filter((s) => s.preview).slice(0, -(PREVIEW_SESSION_LIMIT - 1)));
+      const kept = sessions.filter((s) => !dropped.has(s));
+      if (kept.length >= 2000) throw new ConflictException('Gallery session limit reached');
+      return [...kept, { hash: hash(token), recipientId: PREVIEW_RECIPIENT_ID, expiresAt, preview: true }];
+    });
+    return { session: token, expiresAt };
+  }
+  private async publicBrand(row: WorkflowRow) {
+    const { logoAssetId: _logoId, ...brand } = row.value.published?.brand ?? {
+      logoAssetId: null,
+      // as the Branding page shows it: the owner's name until a studio name is saved, never the gallery title
+      name: (await this.repository.ownerName(row.ownerId)) ?? row.value.config.title,
+      tagline: '',
+      email: '',
+      phone: '',
+      color: '#577059',
+      background: '#f5f3ed',
+      textColor: '#263329',
+      font: 'editorial',
+    };
+    return brand;
   }
   async session(id: string, input: PhotographyGallerySessionDto) {
     const dto = PhotographyGallerySessionDto.schema.parse(input);
@@ -965,8 +1030,13 @@ export class PhotographyWorkflowService {
     if (!recipient) throw new ForbiddenException('Invalid invitation');
     this.requireRecipient(row, recipient.id);
     const { passwordHash, tokenHash } = recipient;
+    // only a valid, current invitation reaches this point, so its holder may see the studio brand
     if (passwordHash && !(await this.crypto.compareBcrypt(dto.password ?? '', passwordHash)))
-      throw new ForbiddenException('Invalid invitation or password');
+      throw new UnauthorizedException({
+        message: 'Gallery password required',
+        passwordRequired: true,
+        brand: { ...(await this.publicBrand(row)), logoUrl: null },
+      });
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(
       Math.min(
@@ -1041,8 +1111,9 @@ export class PhotographyWorkflowService {
           !output.proofWatermark || hidden(output.proofWatermark) ? null : output.approvalPreviewPath,
       }));
   }
-  private async guestView(row: WorkflowRow, recipient: Recipient) {
+  private async guestView(row: WorkflowRow, recipient: Recipient, preview = false) {
     await this.hydrateOutputFiles(row.value);
+    const shoot = (await this.workspace.get(row.ownerId))?.value.shoots.find((shoot) => shoot.id === row.id);
     const published = row.value.published;
     const ids = [
       ...new Set([
@@ -1125,17 +1196,6 @@ export class PhotographyWorkflowService {
     const visible = new Set(photos.map((p) => p.id));
     const brand = published?.brand;
     const hasLogo = brand?.logoAssetId && (await this.repository.logo(row.ownerId, brand.logoAssetId))[0];
-    const { logoAssetId: _logoId, ...publicBrand } = brand ?? {
-      logoAssetId: null,
-      name: row.value.config.title,
-      tagline: '',
-      email: '',
-      phone: '',
-      color: '#577059',
-      background: '#f5f3ed',
-      textColor: '#263329',
-      font: 'editorial',
-    };
     const presentation = structuredClone(published?.config.presentation ?? row.value.config.presentation);
     if (presentation.coverCaptureId && !visible.has(presentation.coverCaptureId)) presentation.coverCaptureId = null;
     if (presentation.blocks)
@@ -1156,15 +1216,21 @@ export class PhotographyWorkflowService {
       mode: published?.config.mode ?? row.value.config.mode,
       presentation,
       brand: {
-        ...publicBrand,
+        ...(await this.publicBrand(row)),
         logoUrl: hasLogo && published?.logoPath ? `/api/photography/galleries/${row.id}/logo` : null,
       },
       chapters: (published?.chapters ?? []).map((chapter) => ({
         ...chapter,
         coverCaptureId: chapter.coverCaptureId && visible.has(chapter.coverCaptureId) ? chapter.coverCaptureId : null,
       })),
+      date: shoot?.date ?? null,
+      preview,
       photos,
-      recipient: { id: recipient.id, name: recipient.name, canDownload: recipient.canDownload },
+      recipient: {
+        id: recipient.id,
+        name: preview ? shoot?.client || recipient.name : recipient.name,
+        canDownload: recipient.canDownload,
+      },
       choices: recipient.choices.filter((id) => visible.has(id)),
       notes: recipient.notes.filter((n) => visible.has(n.captureId)),
       receipts: row.value.receipts.filter((receipt) => receipt.recipientId === recipient.id),
@@ -1191,8 +1257,8 @@ export class PhotographyWorkflowService {
     };
   }
   async gallery(id: string, token: string | undefined) {
-    const { row, recipient } = await this.guest(id, token);
-    return this.guestView(row, recipient);
+    const { row, recipient, preview } = await this.guest(id, token, true);
+    return this.guestView(row, recipient, preview);
   }
   private async guestMutation(
     id: string,
@@ -1559,7 +1625,8 @@ export class PhotographyWorkflowService {
       );
       const studio = (await this.workspace.get(owner.ownerId))?.value.brand;
       const brand = {
-        name: studio?.name ?? value.config.title,
+        // STUDIO-P1: the owner's name until a studio name is saved, as the Branding page shows it
+        name: studio?.name ?? (auth.user.name || value.config.title),
         tagline: studio?.tagline ?? '',
         email: studio?.email ?? '',
         phone: studio?.phone ?? '',
@@ -2015,7 +2082,7 @@ export class PhotographyWorkflowService {
     captureId: string,
     outputId: string,
   ): Promise<FileDownloadResponse> {
-    const { row, recipient } = await this.guest(id, token);
+    const { row, recipient } = await this.guest(id, token, true);
     if (!this.proofPermission(recipient, captureId) || !(await this.eligible(row, [captureId])).has(captureId))
       throw new ForbiddenException();
     const output = row.value.orders
@@ -2057,7 +2124,7 @@ export class PhotographyWorkflowService {
     });
   }
   async file(id: string, token: string | undefined, captureId: string, kind: string): Promise<FileDownloadResponse> {
-    const { row, recipient } = await this.guest(id, token);
+    const { row, recipient } = await this.guest(id, token, kind !== 'download');
     const capture = row.value.captures.find((c) => c.id === captureId);
     if (!capture) throw new NotFoundException();
     let file: string;
@@ -2316,7 +2383,7 @@ export class PhotographyWorkflowService {
     return { received: true };
   }
   async galleryLogo(id: string, token: string | undefined) {
-    const { row } = await this.guest(id, token);
+    const { row } = await this.guest(id, token, true);
     const p = row.value.published;
     if (!p?.logoPath || !p.brand.logoAssetId || !(await this.repository.logo(row.ownerId, p.brand.logoAssetId))[0])
       throw new NotFoundException();

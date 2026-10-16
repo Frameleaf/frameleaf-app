@@ -447,13 +447,13 @@
 </script>
 
 {#if loadFailure === 'network' || loadFailure === 'unknown'}
-  <section class="px-4 pt-4" data-testid="frameleaf-document-text-error">
+  <section data-testid="frameleaf-document-text-error">
     <ViewerInlineEditError failure={loadFailure} onRetry={() => void load(asset.id)} />
   </section>
 {:else if shown && hasContent}
-  <section class="px-4 pt-4 text-sm" data-testid="frameleaf-document-text">
-    <div class="flex min-h-10 w-full flex-wrap items-center justify-between gap-2">
-      <Text color="muted">{$t('frameleaf_documents_text_in_photo')}</Text>
+  <section class="text-sm" data-testid="frameleaf-document-text">
+    <div class="fl-info-heading-row flex-wrap">
+      <h3 class="fl-info-heading">{$t('frameleaf_documents_text_in_photo')}</h3>
       <Button
         size="small"
         color="secondary"

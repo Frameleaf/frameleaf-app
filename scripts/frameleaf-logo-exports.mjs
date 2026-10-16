@@ -13,7 +13,9 @@
 // Visually qualify outputs against light/dark chrome before committing. The only non-kit source is
 // design/frameleaf/derivatives/frameleaf-logo-light.svg, the tracked dark-ink derivative of
 // frameleaf-logo-dark.svg ("Frame" lettering filled with the kit's #111D26 canvas colour) that
-// light surfaces (README, docs, email) need because the kit ships no light-background wordmark.
+// light surfaces (README, docs, email, the app's light theme) need because the kit ships no
+// light-background wordmark. Dark surfaces use the kit's frameleaf-logo-dark.svg unmodified
+// (owner, 2026-10-16: the actual light and dark versions, never on a plate).
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -151,6 +153,9 @@ for (const name of [
 ]) {
   copy(`${kit}/${name}`, `web/src/lib/assets/frameleaf/${name}`);
 }
+// Web: the light version the app's light surfaces use (Logo.svelte); dark surfaces use the kit's
+// frameleaf-logo-dark.svg copied above.
+copy(src.logoLight, "web/src/lib/assets/frameleaf/frameleaf-logo-on-light.svg");
 copy(src.symbol, "web/static/favicon.svg");
 // Email header, served by the Frameleaf server itself (server/src/emails/components/frameleaf-logo.tsx).
 await png(

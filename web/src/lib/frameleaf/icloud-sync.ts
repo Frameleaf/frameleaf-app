@@ -27,7 +27,8 @@ export const icloudWeeklyConsentIsCurrent = (
   captured.connectionId === current.connectionId &&
   captured.generation === current.generation;
 
-export const GIB = 1024 ** 3;
+/** D5: the staging budget is typed in decimal GB (1 GB = 1,000,000,000 bytes). */
+export const GB = 1000 ** 3;
 const MIN_STAGING_BYTES = 1024 ** 2;
 const MAX_STAGING_BYTES = Number.MAX_SAFE_INTEGER;
 
@@ -242,11 +243,11 @@ export type ICloudDraft = {
   includeHidden: boolean;
   intervalHours: string;
   concurrency: string;
-  stagingGiB: string;
+  stagingGb: string;
 };
 
-/** Bytes as GiB text that reads back to exactly the same bytes (a power-of-two division). */
-export const formatGiB = (bytes: number) => String(bytes / GIB);
+/** Bytes as GB text. An unchanged field is compared as this text, so the stored bytes are kept exactly. */
+export const formatGb = (bytes: number) => String(bytes / GB);
 
 export const icloudDraft = (connection: Pick<ICloudConnectionResponseDto, 'label' | 'config'>): ICloudDraft => ({
   label: connection.label,
@@ -257,7 +258,7 @@ export const icloudDraft = (connection: Pick<ICloudConnectionResponseDto, 'label
   includeHidden: connection.config.includeHidden,
   intervalHours: String(connection.config.intervalHours),
   concurrency: String(connection.config.concurrency),
-  stagingGiB: formatGiB(connection.config.stagingBytes),
+  stagingGb: formatGb(connection.config.stagingBytes),
 });
 
 /** A draft for no connection, so the page never has to carry an optional one. */
@@ -270,7 +271,7 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   includeHidden: false,
   intervalHours: '24',
   concurrency: '1',
-  stagingGiB: '20',
+  stagingGb: '20',
 });
 
 export const isLibrarySelected = (draft: ICloudDraft, id: string) => draft.librariesAll || draft.libraries.includes(id);
@@ -315,12 +316,12 @@ export const icloudDraftProblems = (draft: ICloudDraft): ICloudDraftProblem[] =>
   if (!integerIn(draft.concurrency, 1, 4)) {
     problems.push('concurrency');
   }
-  const gib = Number(draft.stagingGiB);
+  const gb = Number(draft.stagingGb);
   if (
-    draft.stagingGiB.trim() === '' ||
-    !Number.isFinite(gib) ||
-    gib * GIB < MIN_STAGING_BYTES ||
-    gib * GIB > MAX_STAGING_BYTES
+    draft.stagingGb.trim() === '' ||
+    !Number.isFinite(gb) ||
+    gb * GB < MIN_STAGING_BYTES ||
+    gb * GB > MAX_STAGING_BYTES
   ) {
     problems.push('staging');
   }
@@ -357,9 +358,9 @@ export const icloudDraftUpdate = (
         })
       : [...draft.albums];
   const stagingBytes =
-    draft.stagingGiB === formatGiB(connection.config.stagingBytes)
+    draft.stagingGb === formatGb(connection.config.stagingBytes)
       ? connection.config.stagingBytes
-      : Math.min(MAX_STAGING_BYTES, Math.max(MIN_STAGING_BYTES, Math.round(Number(draft.stagingGiB) * GIB)));
+      : Math.min(MAX_STAGING_BYTES, Math.max(MIN_STAGING_BYTES, Math.round(Number(draft.stagingGb) * GB)));
   return {
     label: draft.label.trim(),
     config: {

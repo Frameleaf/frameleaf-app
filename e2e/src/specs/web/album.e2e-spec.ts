@@ -632,10 +632,10 @@ test.describe('Album', () => {
     const album = await utils.createAlbum(admin.accessToken, { albumName: 'Shell album' });
 
     await page.goto(`/albums/${album.id}`);
-    // AL-17: the breadcrumb leads back; the header offers Likes & comments even before anyone else joins (AL-14).
+    // AL-17: the breadcrumb leads back; the header offers Comments even before anyone else joins (AL-14, SHARING-P7).
     const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(crumbs.getByRole('link', { name: 'Albums' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Likes & comments', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Comments', exact: true })).toBeVisible();
     await crumbs.getByRole('link', { name: 'Albums' }).click();
     await page.waitForURL(/\/albums(?:\?|$)/);
   });
@@ -659,9 +659,9 @@ test.describe('Album', () => {
 
     await toolbar.getByRole('button', { name: 'More actions' }).click();
     const menu = page.getByRole('menu', { name: 'More actions' });
-    for (const name of ['Shared links', 'Slideshow', 'Download']) {
-      await expect(menu.getByRole('menuitem', { name })).toBeVisible();
+    for (const name of ['Links', 'Slideshow', 'Download']) {
+      await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
     }
-    await expect(menu.getByRole('menuitemcheckbox', { name: 'Likes & comments' })).toBeVisible();
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Comments' })).toBeVisible();
   });
 });

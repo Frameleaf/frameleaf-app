@@ -6,6 +6,7 @@ import { goto } from '$app/navigation';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { FILTER_APPLY_EVENT } from '$lib/frameleaf/search-shortcuts';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { searchStore } from '$lib/stores/search.svelte';
 import { renderWithTooltips } from '$tests/helpers';
@@ -526,5 +527,32 @@ describe('SearchPalette', () => {
     await waitFor(() => expect(sdkMock.getAllPeople.mock.calls.length).toBeGreaterThan(calls));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Remove Jamie' })).toBeInTheDocument());
     expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
+  });
+
+  // ACCOUNT-P3: Search › "Include archived items" reaches every count the palette asks for.
+  it.each([
+    [true, { in: ['timeline', 'archive'] }],
+    [false, { eq: 'timeline' }],
+  ])('with Include archived items %s, counts over %j', async (includeArchived, visibility) => {
+    authManager.setUser({ id: 'user-1' } as never);
+    authManager.setPreferences({
+      search: { includeArchived },
+      privacy: { suppression: { personIds: [], tagIds: [], petIds: [] } },
+    } as never);
+    try {
+      setup();
+      await waitFor(() =>
+        expect(sdkMock.searchAssetStatistics).toHaveBeenLastCalledWith(
+          { statisticsSearchDto: expect.objectContaining({ filter: expect.objectContaining({ visibility }) }) },
+          expect.anything(),
+        ),
+      );
+      expect(sdkMock.searchFacets).toHaveBeenLastCalledWith(
+        { searchFacetsDto: expect.objectContaining({ filter: expect.objectContaining({ visibility }) }) },
+        expect.anything(),
+      );
+    } finally {
+      authManager.reset();
+    }
   });
 });

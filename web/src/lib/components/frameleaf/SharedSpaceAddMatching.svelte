@@ -1,5 +1,7 @@
 <script lang="ts">
   import BulkOperationStatus from '$lib/components/frameleaf/BulkOperationStatus.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
@@ -32,9 +34,14 @@
     albums?: AlbumResponseDto[];
     /** Injected in tests; production uses the session-bound controller. */
     controller?: BulkController;
+    /**
+     * SHARING-P5: the choice lives in a dialog the Photos tab's "Add matching…" button opens, so the
+     * space opens on its photos. Progress stays on the tab once it starts.
+     */
+    open?: boolean;
   }
 
-  let { space, albums = [], controller }: Props = $props();
+  let { space, albums = [], controller, open = $bindable(false) }: Props = $props();
 
   const bulk =
     controller ??
@@ -62,115 +69,97 @@
 
   const start = async () => {
     // The scope is taken here, once. The count shown is what the user agreed to.
-    await bulk.runMatching('add-to-album', spaceAddScope(source), {
+    const run = bulk.runMatching('add-to-album', spaceAddScope(source), {
       payload: { albumId: space.id },
       submittedTotal: total,
     });
+    // The dialog's job is done once the work is handed off; its progress shows on the Photos tab.
+    open = false;
+    await run;
     total = null;
   };
 
   const operations = $derived(librarySession.session.operations);
 </script>
 
-<section class="add-matching" aria-labelledby="frameleaf-space-add-matching">
-  <h2 id="frameleaf-space-add-matching">{$t('frameleaf_spaces_add_matching')}</h2>
-  <p class="hint">{$t('frameleaf_spaces_add_matching_hint')}</p>
+<Dialog title={$t('frameleaf_spaces_add_matching')} closeLabel={$t('close')} bind:open>
+  <div class="add-matching">
+    <p class="hint">{$t('frameleaf_spaces_add_matching_hint')}</p>
 
-  <div class="controls">
-    <label>
-      <span>{$t('frameleaf_spaces_add_matching_source')}</span>
-      <select bind:value={sourceId} onchange={() => (total = null)}>
-        <option value="">{$t('frameleaf_spaces_add_matching_source_library')}</option>
-        {#each sources as album (album.id)}
-          <option value={album.id}>{album.albumName}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="controls">
+      <label>
+        <span>{$t('frameleaf_spaces_add_matching_source')}</span>
+        <select bind:value={sourceId} onchange={() => (total = null)}>
+          <option value="">{$t('frameleaf_spaces_add_matching_source_library')}</option>
+          {#each sources as album (album.id)}
+            <option value={album.id}>{album.albumName}</option>
+          {/each}
+        </select>
+      </label>
 
-    <button type="button" disabled={counting} onclick={preview}>
-      {counting ? $t('frameleaf_spaces_add_matching_counting') : $t('frameleaf_spaces_add_matching_preview')}
-    </button>
+      <Button disabled={counting} onclick={preview}>
+        {counting ? $t('frameleaf_spaces_add_matching_counting') : $t('frameleaf_spaces_add_matching_preview')}
+      </Button>
+    </div>
 
-    <button type="button" class="primary" disabled={total === null || total === 0} onclick={start}>
-      <Icon icon={mdiPlaylistPlus} size="16" aria-hidden={true} />
-      {$t('frameleaf_spaces_add_matching_apply', { values: { count: total ?? 0 } })}
-    </button>
+    {#if total !== null}
+      <p class="count" aria-live="polite">
+        {total === 0
+          ? $t('frameleaf_spaces_add_matching_unavailable')
+          : $t('frameleaf_spaces_add_matching_count', { values: { count: total } })}
+      </p>
+    {/if}
   </div>
 
-  {#if total !== null}
-    <p class="count" aria-live="polite">
-      {total === 0
-        ? $t('frameleaf_spaces_add_matching_unavailable')
-        : $t('frameleaf_spaces_add_matching_count', { values: { count: total } })}
-    </p>
-  {/if}
+  {#snippet actions()}
+    <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
+    <Button variant="primary" disabled={total === null || total === 0} onclick={start}>
+      <Icon icon={mdiPlaylistPlus} size="18" aria-hidden={true} />
+      {$t('frameleaf_spaces_add_matching_apply', { values: { count: total ?? 0 } })}
+    </Button>
+  {/snippet}
+</Dialog>
 
-  <BulkOperationStatus
-    {operations}
-    onCancel={(requestId) => bulk.cancel(requestId)}
-    onRetry={(operation) => void bulk.retry(operation)}
-    onDismiss={(requestId) => bulk.dismiss(requestId)}
-  />
-</section>
+<BulkOperationStatus
+  {operations}
+  onCancel={(requestId) => bulk.cancel(requestId)}
+  onRetry={(operation) => void bulk.retry(operation)}
+  onDismiss={(requestId) => bulk.dismiss(requestId)}
+/>
 
 <style>
   .add-matching {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-  }
-  h2 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
+    gap: var(--fl-space-3);
   }
   .hint,
   .count {
     margin: 0;
     color: var(--fl-muted);
-    font-size: 0.75rem;
+    font-size: var(--fl-font-callout);
   }
   .controls {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
   }
   label {
     display: flex;
+    flex: 1 1 200px;
     flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.75rem;
+    gap: var(--fl-space-1);
+    font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
   select {
-    min-height: 32px;
-    padding: 0 0.5rem;
+    min-height: 44px;
+    padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     background: var(--fl-panel);
     color: var(--fl-text);
-    font-size: 0.8125rem;
-  }
-  button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0 0.875rem;
-    min-height: 32px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    font-size: 0.8125rem;
-    font-weight: 600;
-  }
-  button.primary {
-    border-color: var(--fl-accent);
-    background: var(--fl-accent);
-    color: var(--fl-accent-text);
-  }
-  button:disabled {
-    opacity: 0.6;
+    font-size: var(--fl-font-callout);
   }
 </style>

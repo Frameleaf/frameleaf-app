@@ -108,6 +108,12 @@ import {
   studioMediaSources,
 } from 'src/utils/studio-export-contract.js';
 import {
+  isStudioAudioFormat,
+  isStudioVideoFormat,
+  studioExportAudioProblem,
+  studioExportFormatSpec,
+} from 'src/utils/studio-export-formats.js';
+import {
   STUDIO_EXPORT_CONTENT_TYPES,
   STUDIO_EXPORT_LEASE_MS,
   STUDIO_EXPORT_PUBLISH_MAX_ATTEMPTS,
@@ -383,6 +389,13 @@ export class StudioExportService {
     } else if (dto.resolution === 'original') {
       throw new BadRequestException('Original document dimensions are available for still exports');
     }
+    if (isStudioAudioFormat(dto.format)) {
+      // FL-105: sound alone has no picture to colour and no captions to show.
+      if (dto.color !== 'preserve' || dto.mastering !== undefined || dto.smoothMotion)
+        throw new BadRequestException('Audio-only exports keep the source sound and have no picture settings');
+      if (dto.subtitleMode !== undefined && dto.subtitleMode !== 'off')
+        throw new BadRequestException('Audio-only exports have no captions');
+    }
     const smoothMotion = await this.requireSmoothMotion(dto.smoothMotion);
     await this.requireRenderableOutput(dto.destination, settings);
     const { timing, contract } = await this.declareOutput(
@@ -390,10 +403,25 @@ export class StudioExportService {
       authorized.manifest.entries,
       settings,
     );
+    const audioProblem = studioExportAudioProblem(dto.format, contract.audio);
+    if (audioProblem) {
+      throw new ConflictException({ code: 'studio_export_audio_unsupported', message: audioProblem });
+    }
+    if (contract.video.minBitDepth > (studioExportFormatSpec(dto.format)?.bitDepth ?? 8)) {
+      // The sources keep an HDR picture: only a worker that verified that precision can take it.
+      await this.requireRenderableOutput(dto.destination, { ...settings, minBitDepth: contract.video.minBitDepth });
+    }
+    const pairedCaptions = dto.subtitleMode === 'sidecar' || dto.subtitleMode === 'embedded';
+    if (
+      pairedCaptions &&
+      (!isStudioVideoFormat(dto.format) ||
+        studioExportFormatSpec(dto.format)?.bitDepth !== 8 ||
+        dto.color !== 'preserve' ||
+        contract.video.transfer !== null)
+    )
+      throw new BadRequestException('Captions as a file or a track need an SDR video format');
     let subtitleSeal;
     if (dto.subtitleMode === 'sidecar') {
-      if (dto.format !== 'mp4-h264' || dto.color !== 'preserve')
-        throw new BadRequestException('Sidecar requires local MP4/H.264 output');
       try {
         subtitleSeal = sealStudioSidecar(
           authorized.envelope.graph as Record<string, unknown>,
@@ -414,8 +442,6 @@ export class StudioExportService {
     }
     let embeddedSubtitleSeal;
     if (dto.subtitleMode === 'embedded') {
-      if (dto.format !== 'mp4-h264' || dto.color !== 'preserve')
-        throw new BadRequestException('Embedded captions require qualified local MP4/H.264 timed text output');
       try {
         embeddedSubtitleSeal = sealStudioEmbeddedSubtitles(
           authorized.envelope.graph as Record<string, unknown>,
@@ -425,12 +451,13 @@ export class StudioExportService {
             engineDigest: authorized.envelope.engineRevision,
           },
           dto.range,
+          dto.format,
         );
       } catch {
         throw new ConflictException({
           code: 'studio_export_embedded_unsupported',
           message:
-            'MP4 timed text requires nonempty plain captions without authored styling, rendering fields or overlapping cues on the root timeline',
+            'An embedded caption track requires nonempty plain captions without authored styling, rendering fields or overlapping cues on the root timeline',
         });
       }
       contract.embeddedSubtitles = embeddedSubtitleSeal;
@@ -471,6 +498,8 @@ export class StudioExportService {
           timing,
           contract,
           ...(subtitleSeal && { engineDigest: subtitleSeal.engineDigest }),
+          // Paired captions bind the render to the engine that sealed them (claim admission checks it).
+          ...(embeddedSubtitleSeal && { engineDigest: embeddedSubtitleSeal.source.engineDigest }),
           ...(options.retainInProject && { retain: 'project' }),
           // FL-162: Smooth motion is its own job on the published video, never part of this render.
           ...(smoothMotion && { smoothMotion }),
@@ -730,6 +759,12 @@ export class StudioExportService {
       !container
     ) {
       throw new ConflictException({ message: 'This export has no file to save', code: 'studio_export_not_saveable' });
+    }
+    if (container.assetType === AssetType.Audio) {
+      throw new ConflictException({
+        message: 'An audio-only export stays with its project; the library holds photos and videos',
+        code: 'studio_export_not_saveable',
+      });
     }
     if (sources.some((source) => source.ownerId !== auth.user.id)) {
       throw new ConflictException({
@@ -1328,8 +1363,11 @@ export class StudioExportService {
 
     // A render the owner asked to keep with its project (FL-194) stays out of the library until they
     // save it there; one made with shared media always does.
+    // FL-105: sound alone stays with its project too; the library does not hold audio-only files.
     const expectedScope =
-      retainInProject || resolution.manifest.entries.some((entry) => entry.sourceAccess === 'shared')
+      retainInProject ||
+      isStudioAudioFormat((version.settings as { format?: unknown }).format) ||
+      resolution.manifest.entries.some((entry) => entry.sourceAccess === 'shared')
         ? StudioExportScope.Project
         : StudioExportScope.Library;
 
@@ -1352,6 +1390,7 @@ export class StudioExportService {
           engineDigest: embedded.source.engineDigest,
         },
         { inPoint: embedded.source.inPoint, outPoint: embedded.source.outPoint },
+        String((version.settings as { format?: unknown }).format),
       );
       if (
         canonicalJson(derived) !== canonicalJson(embedded) ||
@@ -1624,7 +1663,7 @@ export class StudioExportService {
     if (mismatch) {
       throw new StudioExportRefusal('output-rejected', mismatch);
     }
-    if (range) {
+    if (range && !isStudioAudioFormat(settings.format)) {
       const video = probe.videoStreams[0];
       const packets = await this.media.probePackets(path, video.index).catch(() => null);
       const rangeMismatch = findStudioExportRangeMismatch(range, video, packets);

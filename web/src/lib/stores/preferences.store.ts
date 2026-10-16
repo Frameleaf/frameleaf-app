@@ -2,6 +2,7 @@ import { persisted } from 'svelte-persisted-store';
 import { browser } from '$app/env';
 import { defaultLang } from '$lib/constants';
 import { defaultAlbumDirectoryView, type AlbumDirectoryView } from '$lib/frameleaf/album-directory';
+import type { LibraryLayout } from '$lib/frameleaf/library-session';
 import { convertBCP47, getPreferredLocale } from '$lib/utils/i18n';
 
 // Locale to use for formatting dates, numbers, etc.
@@ -167,9 +168,17 @@ export const videoQuality = persisted<'auto' | number>('video-quality', 'auto', 
 
 export const alwaysLoadOriginalVideo = persisted<boolean>('always-load-original-video', false, {});
 
+// ACCOUNT-P3 "Use less movement" lives in reduce-motion.store.ts, which media-query-manager reads.
+
+// ACCOUNT-P3 "Open the library in": the layout a fresh visit to the library opens in. Null (never
+// chosen) keeps the layout used last, as before.
+export const libraryStartLayout = persisted<LibraryLayout | null>('frameleaf-library-start', null, {});
+
 export const albumTreeDropdown = persisted<boolean>('album-tree-open', false, {});
 
 // Primary sidebar width (px) when expanded, and whether it is collapsed to an icon-only rail.
-export const sidebarWidth = persisted<number>('sidebar-width', 256, {});
+// The prototype's `.sidebar` is 228px (styles.css:291); a width the person dragged to is kept.
+export const SIDEBAR_DEFAULT_WIDTH = 228;
+export const sidebarWidth = persisted<number>('sidebar-width', SIDEBAR_DEFAULT_WIDTH, {});
 
 export const sidebarCollapsed = persisted<boolean>('sidebar-collapsed', false, {});

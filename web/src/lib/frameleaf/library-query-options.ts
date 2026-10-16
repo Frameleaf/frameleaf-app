@@ -103,6 +103,85 @@ export const timelineQueryOptions = (
   return { options, unapplied };
 };
 
+/** Require one more id in an id-list condition, keeping every group it already has. */
+const requireId = (condition: IdsFilter | undefined, id: string): IdsFilter => {
+  if (!condition) {
+    return { any: [id] };
+  }
+  if ((condition.all ?? []).includes(id) || (condition.any?.length === 1 && condition.any[0] === id)) {
+    return condition;
+  }
+  return { ...condition, all: [...new Set([...(condition.all ?? []), id])] };
+};
+
+/** Timeline options that only order or draw the photos, never narrow which ones a page shows. */
+const PRESENTATION_OPTIONS = new Set([
+  'order',
+  'orderBy',
+  'orderedBy',
+  'dateType',
+  'withStacked',
+  'withCoordinates',
+  'deferInit',
+]);
+
+/**
+ * The search query that shows what a library page shows, narrowed by `query` as well (LIB-P1).
+ *
+ * The docked Filters panel narrows the page's own photos while the time buckets can apply the
+ * condition; beyond that the search results apply the whole query, so the page's own scope (an
+ * album, a person, a tag, Favorites, Archive) is carried into it and nothing it was narrowed by is
+ * lost. Null when the page is narrowed by something a search cannot carry (a partner's library, a
+ * map area, Locked, suppressed content, a shared link): the panel then keeps the condition off.
+ */
+export const searchQueryForTimeline = (query: DiscoveryQuery, base: TimelineManagerOptions): DiscoveryQuery | null => {
+  const result = structuredClone(query);
+  const filter = result.filter;
+  for (const [key, value] of Object.entries(base)) {
+    if (value === undefined || PRESENTATION_OPTIONS.has(key)) {
+      continue;
+    }
+    switch (key) {
+      case 'visibility': {
+        if (value === AssetVisibility.Archive) {
+          filter.visibility = { eq: AssetVisibility.Archive };
+        } else if (value !== AssetVisibility.Timeline) {
+          return null;
+        }
+        break;
+      }
+      case 'isFavorite': {
+        filter.isFavorite = { eq: value as boolean };
+        break;
+      }
+      case 'assetType': {
+        filter.type = { eq: value as AssetTypeEnum };
+        break;
+      }
+      case 'albumId': {
+        filter.albumIds = requireId(filter.albumIds, value as string);
+        break;
+      }
+      case 'personId': {
+        filter.personIds = requireId(filter.personIds, value as string);
+        break;
+      }
+      case 'petId': {
+        filter.petIds = requireId(filter.petIds, value as string);
+        break;
+      }
+      case 'tagId': {
+        filter.tagIds = requireId(filter.tagIds, value as string);
+        break;
+      }
+      default: {
+        return null;
+      }
+    }
+  }
+  return result;
+};
+
 /** The Photos page's own timeline options, which a "View in library" link lands on. */
 export const PHOTOS_TIMELINE_OPTIONS: TimelineManagerOptions = {
   visibility: AssetVisibility.Timeline,

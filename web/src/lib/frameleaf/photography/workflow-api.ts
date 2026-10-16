@@ -217,6 +217,11 @@ export type WorkflowSummary = {
   unpaidOrders: number;
   readyCount: number;
   pendingEdits?: number;
+  /** Unpaid order totals in minor units of `currency` (quoted and accepted orders). */
+  outstanding?: number;
+  currency?: string;
+  /** Invitations still open (not revoked or expired). */
+  invited?: number;
 };
 export type GuestPhoto = {
   id: string;
@@ -233,6 +238,10 @@ export type GuestPhoto = {
 export type GuestGallery = {
   revision: string;
   title: string;
+  /** The shoot's date (YYYY-MM-DD), for the cover. */
+  date?: string | null;
+  /** The photographer's own look at the gallery: every change is refused. */
+  preview?: boolean;
   mode: WorkflowConfig['mode'];
   checkoutAvailable: boolean;
   chapters: Chapter[];
@@ -314,7 +323,7 @@ async function ownerRequest<T>(path: string, method: string, body?: unknown): Pr
   return response.status === 204 ? (undefined as T) : response.json();
 }
 export async function galleryLogo(id: string, session: string): Promise<Blob> {
-  const response = await galleryFetch(id, session, '/logo');
+  const response = await galleryFetch(id, session, '/logo', 'GET', undefined, { accept: 'image/png' });
   const blob = await response.blob();
   if (blob.type !== 'image/png') {
     throw new PhotographyError('logo_unavailable');
@@ -337,6 +346,11 @@ export type GalleryRequestOptions = {
    * body of such a request to 64 KB in total, so use it for the small choices save only.
    */
   keepalive?: boolean;
+  /**
+   * What the response is. JSON unless a file is asked for: the SDK fetch refuses a non-JSON body
+   * to a JSON `Accept`, so photographs, the logo and ZIPs must ask for their own type.
+   */
+  accept?: string;
 };
 export async function galleryRequest<T>(
   id: string,
@@ -349,6 +363,42 @@ export async function galleryRequest<T>(
   const response = await galleryFetch(id, session, path, method, body, options);
   return response.status === 204 ? (undefined as T) : response.json();
 }
+export type GallerySession = { session: string; expiresAt: string };
+/** The invitation is good but its gallery asks for a password; the studio's look comes with it. */
+export type GalleryPasswordRequired = { passwordRequired: true; brand: PublicBrand | null };
+/**
+ * Opens an invitation. Without a password first: only a gallery that has one answers that it is
+ * required (401 with `passwordRequired`), and then the page asks for it.
+ */
+export async function openGallerySession(
+  id: string,
+  token: string,
+  password?: string,
+): Promise<GallerySession | GalleryPasswordRequired> {
+  const response = await (defaults.fetch ?? fetch)(
+    `${getBaseUrl()}/photography/galleries/${encodeURIComponent(id)}/session`,
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      credentials: 'omit',
+      cache: 'no-store',
+      body: JSON.stringify({ token, password: password || undefined }),
+    },
+  );
+  if (response.status === 401) {
+    const body = (await response.json().catch(() => null)) as {
+      passwordRequired?: boolean;
+      brand?: PublicBrand | null;
+    } | null;
+    if (body?.passwordRequired) {
+      return { passwordRequired: true, brand: body.brand ?? null };
+    }
+  }
+  checkResponse(response);
+  return response.json();
+}
+/** A short look at the published gallery as the client sees it, for the photographer. */
+export const galleryPreviewSession = (id: string) => workflowRequest<GallerySession>(id, '/preview', 'POST', {});
 export async function galleryMedia(
   id: string,
   captureId: string,
@@ -374,7 +424,7 @@ async function galleryFetch(
   options?: GalleryRequestOptions,
 ): Promise<Response> {
   // Gallery invitations must never inherit the owner's SDK Authorization header or browser cookies.
-  const headers = new Headers({ Accept: 'application/json' });
+  const headers = new Headers({ Accept: options?.accept ?? 'application/json' });
   if (session) {
     headers.set('X-Photography-Session', session);
   }
@@ -397,7 +447,9 @@ async function galleryFetch(
 }
 
 export async function galleryFile(id: string, session: string, path: string, zip: boolean): Promise<Blob> {
-  const response = await galleryFetch(id, session, path);
+  const response = await galleryFetch(id, session, path, 'GET', undefined, {
+    accept: zip ? 'application/zip, application/octet-stream' : 'image/jpeg',
+  });
   const blob = await response.blob();
   if (!(zip ? ['application/zip', 'application/octet-stream'].includes(blob.type) : blob.type === 'image/jpeg')) {
     throw new PhotographyError('not_ready');

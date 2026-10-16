@@ -52,7 +52,7 @@
     type VideoMomentSearchHitDto,
     type VideoMomentsResponseDto,
   } from '@frameleaf/sdk';
-  import { Button, Icon, LoadingSpinner, Text } from '@frameleaf/ui';
+  import { Button, Icon, LoadingSpinner } from '@frameleaf/ui';
   import { mdiClose, mdiImageCheckOutline, mdiPlus, mdiRefresh, mdiTextBoxPlusOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
@@ -284,9 +284,9 @@
 </script>
 
 {#if isVideo && (moments || loading)}
-  <section class="mt-4 px-4" data-testid="frameleaf-video-moments" aria-label={$t('frameleaf_moments_title')}>
-    <div class="flex h-10 w-full items-center justify-between text-sm">
-      <Text color="muted">{$t('frameleaf_moments_title')}</Text>
+  <section data-testid="frameleaf-video-moments" aria-label={$t('frameleaf_moments_title')}>
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_moments_title')}</h3>
       {#if loading}
         <LoadingSpinner />
       {/if}

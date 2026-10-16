@@ -18,12 +18,6 @@ vi.mock('$lib/utils/handle-error', async (original) => ({
   handleError: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$lib/frameleaf/running-jobs-session.svelte', () => ({
-  runningJobsSession: { rows: [], activeCount: 0, watch: () => () => {}, setPanelOpen: vi.fn() },
-}));
-vi.mock('$lib/components/frameleaf/RunningJobsSection.svelte', async () => ({
-  default: (await import('../../../../test-data/components/MockText.svelte')).default,
-}));
 
 const notification = (id: string, title: string): NotificationDto => ({
   id,
@@ -68,6 +62,26 @@ describe('NotificationPanel', () => {
     expect(screen.getByText('Album shared')).toBeInTheDocument();
     // Dismissing is not opening: it neither marks anything read nor navigates.
     expect(sdkMock.updateNotification).not.toHaveBeenCalled();
+  });
+
+  it('lists notifications only: no running work, and the prototype empty state when nothing is unread', () => {
+    notificationManager.notifications = [];
+    render(NotificationPanel);
+
+    expect(screen.getByText(en.frameleaf_notifications_empty)).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_notifications_empty_help)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_running_title)).toBeNull();
+  });
+
+  it('closes after opening a notification, as the prototype does', async () => {
+    sdkMock.updateNotification.mockResolvedValue(undefined as never);
+    const onNavigate = vi.fn();
+    render(NotificationPanel, { onNavigate });
+
+    await fireEvent.click(screen.getByText('Album shared'));
+
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledOnce());
+    expect(sdkMock.updateNotification).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
   });
 
   it('brings a notification back when the server refuses to dismiss it', async () => {

@@ -805,8 +805,169 @@ describe(StudioExportService.name, () => {
         delete (graph.timeline.items[0] as any).styleTemplate;
       }
       graph.timeline.items[0].text = '<b>Styled caption</b>';
-      await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow('MP4 timed text requires');
+      await expect(sut.create(auth(), PROJECT, request)).rejects.toThrow('An embedded caption track requires');
       expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    describe('FL-105 export matrix', () => {
+      /** What the bundled worker advertises after its admission encodes (studio/tools/bundled-worker-formats.mjs). */
+      const matrixSession = () =>
+        liveSession({
+          codecs: [
+            'webcodecs-avc',
+            'aac',
+            'libx265',
+            'libvpx-vp9',
+            'prores_ks',
+            'libmp3lame',
+            'pcm_s16le',
+            'libopus',
+            'mov_text',
+            'subrip',
+            'webvtt',
+          ],
+          formats: [
+            'mp4',
+            'mov',
+            'mkv',
+            'webm',
+            'mp3',
+            'wav',
+            'mp4-h264',
+            'mp4-hevc',
+            'mov-prores-422',
+            'mkv-h264',
+            'mkv-vp9',
+            'webm-vp9',
+            'audio-mp3',
+            'audio-wav',
+            'srt-sidecar-v2',
+            'embedded-text-v2',
+          ],
+        });
+      const captionGraph = () => ({
+        metadata: { fps: 24 },
+        timeline: {
+          tracks: [{ id: 'c', visible: true }],
+          items: [
+            {
+              id: 'c',
+              type: 'text',
+              textRole: 'caption',
+              captionSource: { type: 'subtitle-import' },
+              trackId: 'c',
+              from: 0,
+              durationInFrames: 48,
+              text: 'Caption',
+            },
+          ],
+          transitions: [],
+          keyframes: [],
+        },
+      });
+      const refusalOf = async (request: Record<string, unknown>) => {
+        const error = await sut.create(auth(), PROJECT, { ...dto, ...request } as never).catch((error_) => error_);
+        expect(error).toBeInstanceOf(ConflictException);
+        return (error as ConflictException).getResponse() as { code: string; reason?: string; message: string };
+      };
+
+      beforeEach(() => {
+        const session = matrixSession();
+        renderWorkers.listLiveSessions.mockResolvedValue([session]);
+        renderWorkers.getSessionCapabilities.mockResolvedValue(session.capabilities);
+        repository.createWithRender.mockResolvedValue({ operation: operation(), version: versionRow() });
+      });
+
+      it('queues an advertised combination and explains the others before any job exists', async () => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        for (const format of ['mov-prores-422', 'mkv-vp9', 'webm-vp9', 'mp4-hevc', 'mkv-h264']) {
+          await sut.create(auth(), PROJECT, { ...dto, format } as never);
+          expect(repository.createWithRender.mock.calls.at(-1)![0].settings).toMatchObject({ format });
+        }
+        const queued = repository.createWithRender.mock.calls.length;
+        // Not advertised by this worker: no writer for the combination.
+        expect(await refusalOf({ format: 'mkv-av1' })).toMatchObject({
+          code: 'studio_export_unsupported',
+          reason: 'codec-unavailable',
+        });
+        expect(await refusalOf({ format: 'mov-hevc' })).toMatchObject({ reason: 'codec-unavailable' });
+        // The 10-bit formats need a worker that verified 10-bit precision.
+        expect(await refusalOf({ format: 'prores-422-hq' })).toMatchObject({ reason: 'incompatible-color' });
+        expect(repository.createWithRender).toHaveBeenCalledTimes(queued);
+      });
+
+      it('refuses an HDR source kept as is unless a worker verified that precision', async () => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        repository.getSourceMediaFacts.mockResolvedValue([
+          { ...facts(CLIP), video: { timeBase: 30_000, pixelFormat: 'yuv420p10le', colorTransfer: 18 } },
+        ]);
+        expect(await refusalOf({ format: 'mkv-vp9' })).toMatchObject({ reason: 'incompatible-color' });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+      });
+
+      it('explains a sound-only export the project cannot fill before queueing it', async () => {
+        studio.authorizeRevision.mockResolvedValue(authorized());
+        repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: null })]);
+        expect(await refusalOf({ format: 'audio-wav' })).toMatchObject({
+          code: 'studio_export_audio_unsupported',
+          message: expect.stringContaining('no sound'),
+        });
+        repository.getSourceMediaFacts.mockResolvedValue([
+          facts(CLIP, { audio: { codecName: 'aac', channels: 6, channelLayout: '5.1', sampleRate: 48_000 } }),
+        ]);
+        expect(await refusalOf({ format: 'audio-mp3' })).toMatchObject({
+          message: expect.stringContaining('MP3 holds at most two channels'),
+        });
+        expect(repository.createWithRender).not.toHaveBeenCalled();
+        await sut.create(auth(), PROJECT, { ...dto, format: 'audio-mp3', audio: 'stereo' } as never);
+        await sut.create(auth(), PROJECT, { ...dto, format: 'audio-wav' } as never);
+        const [job] = repository.createWithRender.mock.calls.at(-1)!;
+        expect((job.snapshot as any).contract).toMatchObject({
+          video: { transfer: null },
+          audio: { channels: 6, sampleRate: 48_000 },
+        });
+        await expect(
+          sut.create(auth(), PROJECT, { ...dto, format: 'audio-wav', subtitleMode: 'burn' } as never),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          sut.create(auth(), PROJECT, { ...dto, format: 'audio-wav', color: 'hdr10' } as never),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('pairs captions with any SDR video format, bound to the sealing engine', async () => {
+        studio.authorizeRevision.mockResolvedValue(
+          authorized({
+            revision: { revision: 3, digest: 'a'.repeat(64) },
+            // A saved project names its engine by the pinned 40-hex commit.
+            envelope: { graph: captionGraph(), engineRevision: 'c'.repeat(40) },
+            manifest: { complete: true, refusedCount: 0, digest: 'b'.repeat(64), entries: [] },
+          }),
+        );
+        await sut.create(auth(), PROJECT, { ...dto, format: 'mkv-h264', subtitleMode: 'sidecar' } as never);
+        let [job] = repository.createWithRender.mock.calls.at(-1)!;
+        expect(job.settings).toMatchObject({ subtitleMode: 'sidecar', subtitleSeal: { codec: 'srt', cueCount: 1 } });
+        expect((job.snapshot as any).engineDigest).toBe('c'.repeat(40));
+
+        for (const [format, container, codec] of [
+          ['webm-vp9', 'webm', 'webvtt'],
+          ['mkv-vp9', 'mkv', 'subrip'],
+          ['mp4-hevc', 'mp4', 'mov_text'],
+        ]) {
+          await sut.create(auth(), PROJECT, { ...dto, format, subtitleMode: 'embedded' } as never);
+          [job] = repository.createWithRender.mock.calls.at(-1)!;
+          expect(job.settings).toMatchObject({ embeddedSubtitleSeal: { container, codec, source: { cueCount: 1 } } });
+          expect((job.snapshot as any).contract.embeddedSubtitles).toEqual((job.settings as any).embeddedSubtitleSeal);
+          expect((job.snapshot as any).engineDigest).toBe('c'.repeat(40));
+        }
+        const queued = repository.createWithRender.mock.calls.length;
+        await expect(
+          sut.create(auth(), PROJECT, { ...dto, format: 'webm-av1', subtitleMode: 'sidecar' } as never),
+        ).rejects.toThrow();
+        await expect(
+          sut.create(auth(), PROJECT, { ...dto, format: 'audio-wav', subtitleMode: 'embedded' } as never),
+        ).rejects.toThrow();
+        expect(repository.createWithRender).toHaveBeenCalledTimes(queued);
+      });
     });
 
     it('refuses a reviewer an export before resolving any source for them (FL-280)', async () => {

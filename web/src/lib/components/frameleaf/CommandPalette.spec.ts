@@ -63,9 +63,14 @@ describe('CommandPalette', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('says how to reach commands, not how many groups there are, while idle', () => {
+  it('shows the prototype footer: the keys, then the number of groups while idle and of matches while typing', async () => {
     render(CommandPalette, { index, onClose: vi.fn() });
-    expect(screen.getByText('Tip: type > in search to jump to pages and settings')).toBeInTheDocument();
+    expect(screen.getByText('Navigate')).toBeInTheDocument();
+    expect(screen.getByText('Run')).toBeInTheDocument();
+    expect(screen.getByText('6 groups')).toBeInTheDocument();
+
+    await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'peo' } });
+    expect(screen.getByText('1 match')).toBeInTheDocument();
   });
 
   it('crossfades instead of springing under Reduce Motion, checked in JavaScript', () => {

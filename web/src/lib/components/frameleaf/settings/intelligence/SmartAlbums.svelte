@@ -198,6 +198,9 @@
           help={strictness === 'custom'
             ? $t('frameleaf_intel_album_strict_custom_help', { values: { score: kindConfig.threshold } })
             : $t(`frameleaf_intel_album_strict_${strictness}_help` as Translations, { values: { name } })}
+          lead={strictness === 'custom'
+            ? $t('frameleaf_intel_custom')
+            : $t(`frameleaf_intel_album_strict_${strictness}` as Translations)}
         >
           <SegmentedControl
             label={$t('frameleaf_intel_album_strict')}

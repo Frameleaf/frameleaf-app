@@ -280,7 +280,7 @@ describe(UserService.name, () => {
         return rows.every((row) => row.isPendingSyncReset);
       };
 
-      await sut.updateMyPreferences(unlocked, { memories: { enabled: false }, ratings: { enabled: true } });
+      await sut.updateMyPreferences(unlocked, { memories: { enabled: false }, ratings: { enabled: false } });
       await expect(pending()).resolves.toBe(false);
 
       await sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [newUuid()] } } });

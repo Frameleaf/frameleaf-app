@@ -32,7 +32,7 @@ import { AdminAuditAction, AuthCookie, DatabaseLock, NotificationLevel, Notifica
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
@@ -402,7 +402,8 @@ export class FrameleafAuthService extends BaseService {
         name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
         email,
         isAdmin: role === 'admin',
-        quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
+        // D5: the invited quota is decimal GB
+        quotaSizeInBytes: quota === null ? null : quota * DecimalSize.GB,
       });
       if (firstAdministrator) {
         await this.recordAdminEvents([

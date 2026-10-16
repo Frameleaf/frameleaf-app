@@ -87,12 +87,15 @@ beforeEach(() => {
 
 describe('login mandatory-change routing', () => {
   it('keeps Frameleaf accessible in both sign-in themes', async () => {
+    // The lockup is an image named Frameleaf in both themes: the light version, or the brand kit's dark logo.
     render(Page, { data: data(false) } as never);
-    expect(screen.getByText('Frameleaf', { exact: true })).toBeVisible();
-    expect(screen.queryByRole('img', { name: 'Frameleaf' })).toBeNull();
+    const light = screen.getByRole('img', { name: 'Frameleaf' });
+    expect(light).toBeVisible();
+    expect(light.getAttribute('src')).toContain('frameleaf-logo-on-light');
     await fireEvent.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
-    expect(screen.getByRole('img', { name: 'Frameleaf' })).toBeVisible();
-    expect(screen.queryByText('Frameleaf', { exact: true })).toBeNull();
+    const dark = screen.getByRole('img', { name: 'Frameleaf' });
+    expect(dark).toBeVisible();
+    expect(dark.getAttribute('src')).toContain('frameleaf-logo-dark');
     await fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
   });
 

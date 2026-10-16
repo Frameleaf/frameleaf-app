@@ -31,6 +31,8 @@ describe('TimelineAssetViewer suppression', () => {
     const asset = assetFactory.build();
     const next = assetFactory.build();
     const timelineManager = {
+      months: [],
+      getTimelineMonthByAssetId: vi.fn(),
       getEarlierAsset: vi.fn().mockResolvedValue(hasNext ? next : undefined),
       getLaterAsset: vi.fn().mockResolvedValue(undefined),
       removeAssets: vi.fn(),
@@ -68,6 +70,8 @@ it.each(['none', 'unmount', 'session', 'viewer'])('undo delete respects %s owner
   const request = deferredPromise<typeof asset>();
   vi.mocked(getAssetInfo).mockReturnValue(request.promise);
   const manager = {
+    months: [],
+    getTimelineMonthByAssetId: vi.fn(),
     getEarlierAsset: vi.fn().mockResolvedValue(undefined),
     getLaterAsset: vi.fn().mockResolvedValue(undefined),
     removeAssets: vi.fn(),
@@ -120,6 +124,9 @@ it.each(['none', 'unmount', 'session', 'replacement', 'close'] as const)(
     const [asset, random, replacement] = assetFactory.buildList(3);
     const pending = deferredPromise<ReturnType<typeof toTimelineAsset>>();
     const manager = {
+      // VIEWER-P4: the filmstrip reads the open item's month (none here, so no strip).
+      months: [],
+      getTimelineMonthByAssetId: vi.fn(),
       getEarlierAsset: vi.fn().mockResolvedValue(undefined),
       getLaterAsset: vi.fn().mockResolvedValue(undefined),
       getRandomAsset: vi.fn().mockReturnValue(pending.promise),

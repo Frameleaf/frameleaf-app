@@ -53,6 +53,7 @@
   }: Props = $props();
 
   let over = $state(false);
+  let failedCover = $state<string | null>(null);
 
   const name = $derived(album.albumName || $t('unnamed_album'));
   // A shared space opens on its own page, whose panels include the photos; everything else on the album view.
@@ -131,8 +132,16 @@
   ondrop={handleDrop}
 >
   <a class="cover" {href} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
-    {#if cover}
-      <img src={cover} alt="" loading="lazy" draggable="false" data-fl-shared="album:{album.id}" />
+    <!-- A cover whose thumbnail is not made yet (or failed) shows the album icon, never a broken image. -->
+    {#if cover && failedCover !== cover}
+      <img
+        src={cover}
+        alt=""
+        loading="lazy"
+        draggable="false"
+        data-fl-shared="album:{album.id}"
+        onerror={() => (failedCover = cover)}
+      />
     {:else}
       <span class="cover-empty" aria-hidden="true">
         <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size={layout === 'grid' ? '30' : '20'} />

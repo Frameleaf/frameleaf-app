@@ -20,7 +20,7 @@ const MISE_FILES = [
 ];
 
 const LOCK_SOURCES = ["mise.lock", "pnpm-lock.yaml", "machine-learning/uv.lock"];
-const WORKFLOW_SOURCES = [".github/workflows/fork-integration.yml"];
+const WORKFLOW_SOURCES = [".github/workflows/frameleaf-quality.yml"];
 const CONTAINER_SOURCES = [
   "icloud-bridge/Dockerfile",
   "machine-learning/Dockerfile",

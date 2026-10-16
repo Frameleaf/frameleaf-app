@@ -1,5 +1,5 @@
 import { render } from '@testing-library/svelte';
-import { Info } from 'luxon';
+import { DateTime } from 'luxon';
 import { get } from 'svelte/store';
 import CalendarHeatmap from '$lib/components/CalendarHeatmap.svelte';
 import { locale } from '$lib/stores/preferences.store';
@@ -19,7 +19,6 @@ const dataFor = (counts: number[]) => ({
 });
 
 it('retains heatmap thresholds and shares each accessible label with its tooltip', () => {
-  const weekdays = vi.spyOn(Info, 'weekdays');
   const itemLabel = vi.fn(({ count }: { count: number }) => `count=${count}`);
   const view = render(CalendarHeatmap, { data: dataFor([0, 1, 2, 3, 4, 5, 6, 7, 8]), itemLabel, totalLabel: String });
   const cells = [...view.container.querySelectorAll<HTMLElement>('[aria-label]')];
@@ -40,7 +39,49 @@ it('retains heatmap thresholds and shares each accessible label with its tooltip
     expect(cell.title).toBe(cell.getAttribute('aria-label'));
   }
   expect(itemLabel).toHaveBeenCalledTimes(9);
-  expect(weekdays).toHaveBeenCalledTimes(1);
+});
+
+it('lays a year out in week columns of square cells with the month names underneath', () => {
+  // As getHeatmapRange asks for it: 52 weeks back to a Sunday.
+  const from = DateTime.fromISO('2025-10-12', { zone: 'utc' });
+  const series = Array.from({ length: 52 * 7 + 5 }, (_, index) => ({
+    date: from.plus({ days: index }).toISODate()!,
+    count: index % 3,
+  }));
+  const view = render(CalendarHeatmap, {
+    data: { from: series[0].date, to: series.at(-1)!.date, totalCount: 1, series },
+    itemLabel: ({ date }: { date: string }) => date,
+    totalLabel: String,
+  });
+  const root = view.container.querySelector<HTMLElement>('.heatmap')!;
+  // The grid has one column per week and fits its container: every column shares the width.
+  const weeks = Number(root.style.getPropertyValue('--weeks'));
+  expect(weeks).toBeGreaterThanOrEqual(53);
+  expect(weeks).toBeLessThanOrEqual(54);
+  for (const cell of root.querySelectorAll(':scope .heat > .cell')) {
+    expect(cell).toHaveClass('cell');
+  }
+  // Twelve month names, from the first full month to this one, each under the week it starts in.
+  const months = [...root.querySelectorAll<HTMLElement>(':scope .months span')];
+  expect(months.map((month) => month.textContent)).toEqual([
+    'Nov',
+    'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+  ]);
+  const columns = months.map((month) => Number(month.style.gridColumnStart));
+  expect(columns).toEqual([...columns].sort((a, b) => a - b));
+  expect(columns.at(-1)).toBeLessThanOrEqual(weeks);
+  // No sideways scroller: the component draws none.
+  expect(view.container.querySelector('.overflow-x-auto')).toBeNull();
 });
 
 it('updates colors when the data maximum changes and keeps zero activity neutral', async () => {

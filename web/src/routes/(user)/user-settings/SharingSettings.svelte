@@ -10,8 +10,12 @@
    * members, accept, decline, cancel) and starting face recognition again. That last action erases
    * every name, so it sits behind "Advanced", says so where it sits, and needs a tick before it runs.
    *
-   * Left out because the app cannot do it yet: the partner timeline switch (gone since FL-326),
-   * removing someone else from a recognition group, and "suggest matching people in shared Spaces".
+   * ACCOUNT-P2 added the prototype's "Suggest matching people in shared Spaces" (an account
+   * preference, with the Save bar) and, once a partner shares with you, the line saying their photos
+   * arrive as your own copies. There is no partner timeline switch: partner sharing v2 (FL-326)
+   * retired it, as what a partner shares is in your own library.
+   *
+   * Left out because the app cannot do it yet: removing someone else from a recognition group.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -28,9 +32,11 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { backfillProgress } from '$lib/frameleaf/partner-sharing';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -60,10 +66,12 @@
     type RecipientGroupResponseDto,
     type UserResponseDto,
   } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountGroupOutline,
     mdiAccountHeartOutline,
     mdiAccountMultipleOutline,
+    mdiAccountPlusOutline,
     mdiImageMultipleOutline,
     mdiLinkVariant,
   } from '@mdi/js';
@@ -99,6 +107,9 @@
 
   const me = $derived(authManager.user.id);
   const canLeave = $derived(members.length > 1);
+
+  // ACCOUNT-P2: the page's account switch, saved with the Save bar.
+  const sharingPreferences = createOwnPreferencesDraft(['people.suggestInSpaces']);
 
   const inviteChoices = $derived(
     accounts.filter(
@@ -528,6 +539,7 @@
         disabled={blocked || partnerChoices.length === 0}
         onclick={() => openDialog({ kind: 'partner-add', userId: partnerChoices[0]?.id ?? '' })}
       >
+        <Icon icon={mdiAccountPlusOutline} size="18" aria-hidden={true} />
         {$t('frameleaf_sharing_partner_add')}
       </Button>
     {/snippet}
@@ -595,6 +607,11 @@
     {:else}
       <p class="hint">{$t('frameleaf_sharing_partners_empty')}</p>
     {/if}
+    <!-- ACCOUNT-P2: once someone shares with you, where their photos go (partner sharing v2, FL-326:
+         your own copies, so there is no timeline switch). As the prototype's partner card. -->
+    {#if theirs.length > 0}
+      <p class="hint">{$t('frameleaf_sharing_partner_copies_note')}</p>
+    {/if}
   </Section>
 
   <Section title={$t('frameleaf_sharing_family_title')} description={$t('frameleaf_sharing_family_description')}>
@@ -603,6 +620,7 @@
         disabled={blocked || inviteChoices.length === 0}
         onclick={() => openDialog({ kind: 'invite', userId: inviteChoices[0]?.id ?? '' })}
       >
+        <Icon icon={mdiAccountPlusOutline} size="18" aria-hidden={true} />
         {$t('frameleaf_sharing_invite')}
       </Button>
     {/snippet}
@@ -658,6 +676,13 @@
         </Item>
       {/each}
     </ItemList>
+    <Row label={$t('frameleaf_sharing_suggest_spaces')} help={$t('frameleaf_sharing_suggest_spaces_help')}>
+      <Switch
+        label={$t('frameleaf_sharing_suggest_spaces')}
+        checked={sharingPreferences.draft['people.suggestInSpaces']}
+        onChange={(value) => sharingPreferences.set('people.suggestInSpaces', value)}
+      />
+    </Row>
     <Advanced>
       <Row
         label={$t('frameleaf_sharing_erase_label')}
@@ -735,6 +760,9 @@
     </Section>
   {/if}
 </KitPage>
+
+<!-- ACCOUNT-P2: the Save bar for the page's account switch; it sets the draft directly. -->
+<OwnPreferencesForm store={sharingPreferences} />
 
 {#if groups}
   <RecipientGroupsDialog

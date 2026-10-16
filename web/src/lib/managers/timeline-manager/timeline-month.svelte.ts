@@ -11,6 +11,7 @@ import { CancellableTask } from '$lib/utils/cancellable-task';
 import { handleError } from '$lib/utils/handle-error';
 import {
   formatGroupTitle,
+  formatTimelineMonthHeading,
   formatTimelineMonthTitle,
   fromTimelinePlainDate,
   fromTimelinePlainYearMonth,
@@ -46,7 +47,10 @@ export class TimelineMonth {
   loader: CancellableTask | undefined;
   isHeightActual: boolean = $state(false);
 
+  /** The short form ("Oct 2026"), for the scrubber. */
   readonly title: string;
+  /** The long form ("October 2026"), for the loading placeholder's heading. */
+  readonly heading: string;
   readonly yearMonth: TimelineYearMonth;
 
   /*
@@ -90,6 +94,7 @@ export class TimelineMonth {
 
     this.yearMonth = { year: yearMonth.year, month: yearMonth.month };
     this.title = title ?? formatTimelineMonthTitle(fromTimelinePlainYearMonth(yearMonth));
+    this.heading = title ?? formatTimelineMonthHeading(fromTimelinePlainYearMonth(yearMonth));
 
     this.loader = new CancellableTask(
       () => {

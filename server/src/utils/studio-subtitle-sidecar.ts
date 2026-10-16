@@ -5,6 +5,8 @@ import { canonicalJson } from 'src/utils/studio-project.js';
 import { projectCadenceOf } from 'src/utils/studio-timing.js';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
+/** The engine a project was saved with: its 40-hex pinned commit, or a 64-hex content digest. */
+const engineIdentity = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
 /** Private immutable semantic evidence, independent of a worker attempt or its reported hash. */
 export const StudioSidecarSealSchema = z
   .object({
@@ -23,7 +25,7 @@ export const StudioSidecarSealSchema = z
     revisionDigest: digest,
     graphDigest: digest,
     manifestDigest: digest,
-    engineDigest: digest,
+    engineDigest: engineIdentity,
   })
   .strict()
   .refine(

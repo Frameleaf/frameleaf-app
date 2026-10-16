@@ -208,18 +208,6 @@
 
   <form autocomplete="off" onsubmit={save}>
     <Section title={$t('frameleaf_prefs_profile_name_and_email')}>
-      {#snippet action()}
-        <Button
-          disabled={saving || !dirty}
-          onclick={() => {
-            name = user.name;
-            email = user.email;
-          }}
-        >
-          {$t('frameleaf_prefs_profile_undo')}
-        </Button>
-        <Button type="submit" variant="primary" disabled={saving || !dirty || !valid}>{$t('save')}</Button>
-      {/snippet}
       <Row label={$t('frameleaf_prefs_profile_name')} help={$t('frameleaf_prefs_profile_name_help')}>
         <Field
           label={$t('frameleaf_prefs_profile_name')}
@@ -241,6 +229,19 @@
           onChange={(value) => (email = value)}
         />
       </Row>
+      <!-- ACCOUNT-P9: Save and Undo sit at the foot of the card, under the fields they act on (prototype `bk2-actions`). -->
+      <div class="actions">
+        <Button type="submit" variant="primary" disabled={saving || !dirty || !valid}>{$t('save')}</Button>
+        <Button
+          disabled={saving || !dirty}
+          onclick={() => {
+            name = user.name;
+            email = user.email;
+          }}
+        >
+          {$t('frameleaf_prefs_profile_undo')}
+        </Button>
+      </div>
       <!-- Only a helper asks for these, so they stay closed at the bottom. -->
       <Advanced summary={$t('frameleaf_prefs_profile_support')}>
         <Row label={$t('frameleaf_prefs_profile_account_id')} help={$t('frameleaf_prefs_profile_account_id_help')}>
@@ -260,6 +261,14 @@
 <style>
   .file {
     display: none;
+  }
+  /* backup-v2.css `.bk2-actions`: a rule above, the buttons together, air before what follows. */
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-4) 0 var(--fl-space-6);
+    border-top: 1px solid var(--fl-border);
   }
   .error {
     margin: 0;

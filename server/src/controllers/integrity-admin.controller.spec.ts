@@ -106,6 +106,33 @@ describe(IntegrityAdminController.name, () => {
       );
     });
   });
+  describe('GET /admin/integrity/report (D2)', () => {
+    it('reads the page size from the query string', async () => {
+      service.getIntegrityReport.mockResolvedValue({ items: [] });
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .get('/admin/integrity/report')
+        .query({ type: IntegrityReport.MissingFile, limit: '50' });
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ items: [] });
+      expect(service.getIntegrityReport).toHaveBeenCalledWith(
+        expect.objectContaining({ type: IntegrityReport.MissingFile, limit: 50 }),
+      );
+    });
+
+    it('rejects a page size that is not a positive whole number', async () => {
+      for (const limit of ['abc', '0', '2.5']) {
+        const { status } = await request(ctx.getHttpServer())
+          .get('/admin/integrity/report')
+          .query({ type: IntegrityReport.MissingFile, limit });
+
+        expect(status, limit).toBe(400);
+      }
+      expect(service.getIntegrityReport).not.toHaveBeenCalled();
+    });
+  });
+
   describe('POST /admin/integrity/report/:type/clear (FL-366)', () => {
     it("empties one check's list for an administrator with maintenance", async () => {
       service.clearIntegrityReports.mockResolvedValue({ cleared: 3 });

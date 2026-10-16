@@ -71,8 +71,8 @@
 
 <div class="auth-card">
   <div class="auth-heading">
-    <h1>{$t('maintenance_restore_library')}</h1>
-    <p>{$t('maintenance_restore_library_description')}</p>
+    <h1>{$t('frameleaf_maintenance_restore_library')}</h1>
+    <p>{$t('frameleaf_maintenance_restore_library_description')}</p>
   </div>
   {#if detectedInstall}
     <ul class="checks">
@@ -100,7 +100,7 @@
                   <em>{$t('maintenance_restore_library_hint_regenerate_later')}</em>
                 {/if}
                 {#if folder === 'library'}
-                  <em>{$t('maintenance_restore_library_hint_storage_template_missing_files')}</em>
+                  <em>{$t('frameleaf_maintenance_restore_library_hint_folders')}</em>
                 {/if}
               {/if}
             </span>
@@ -115,12 +115,12 @@
       </button>
     {/if}
   {:else if !failed}
-    <p class="muted" role="status">{$t('maintenance_restore_library_loading')}</p>
+    <p class="muted" role="status">{$t('frameleaf_maintenance_restore_library_loading')}</p>
   {/if}
   {#if failed}
     <InlineError compact message={$t('errors.something_went_wrong')} onRetry={reload} retrying={loading} />
   {/if}
-  <p class="muted">{$t('maintenance_restore_library_confirm')}</p>
+  <p class="muted">{$t('frameleaf_maintenance_restore_library_confirm')}</p>
   <div class="maint-actions">
     <button type="button" class="button" onclick={end}>{$t('cancel')}</button>
     <button type="button" class="button primary" onclick={next}>

@@ -23,6 +23,7 @@ import {
   PhotographyCheckoutDto,
   PhotographyChoicesDto,
   PhotographyGalleryDto,
+  PhotographyGalleryPasswordRequiredDto,
   PhotographyGallerySessionDto,
   PhotographyGallerySessionResponseDto,
   PhotographyGuestApprovalDto,
@@ -32,6 +33,8 @@ import {
   PhotographyOrderCreateDto,
   PhotographyPaymentDto,
   PhotographyPresetSaveDto,
+  PhotographyPreviewSessionDto,
+  PhotographyPreviewSessionResponseDto,
   PhotographyPublicSiteDto,
   PhotographyPublicationDto,
   PhotographyRecipientCreateDto,
@@ -274,11 +277,33 @@ export class PhotographyWorkflowController {
   retry(@Auth() auth: AuthDto, @Param('id', uuid) id: string, @Body() dto: PhotographyWorkflowMutationDto) {
     return this.service.retry(auth, id, dto);
   }
+  @Post('workflows/:id/preview')
+  @ApiOperation({
+    operationId: 'photographyPreview',
+    description:
+      'Starts a one-hour client preview session for the gallery. Send it as X-Photography-Session to the gallery, photo, and logo reads under /photography/galleries/{id}; the gallery then reports preview: true. A preview shows every published photograph and cannot choose, submit, approve, order, check out, or download (403).',
+  })
+  @Authenticated()
+  @ApiResponse({ status: 201, type: PhotographyPreviewSessionResponseDto })
+  @ApiResponse({ status: 409, description: 'Nothing has been published for this gallery yet' })
+  preview(@Auth() auth: AuthDto, @Param('id', uuid) id: string, @Body() dto: PhotographyPreviewSessionDto) {
+    return this.service.preview(auth, id, dto);
+  }
   @Post('galleries/:id/session')
-  @ApiOperation({ operationId: 'photographySession' })
+  @ApiOperation({
+    operationId: 'photographySession',
+    description:
+      'Exchanges an invitation for a gallery session. A valid invitation with a missing or wrong password answers 401 with passwordRequired and the studio brand; an invalid, expired, or revoked invitation answers 403.',
+  })
   @RateLimited({ bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 })
   @Authenticated({ public: true })
   @ApiResponse({ status: 201, type: PhotographyGallerySessionResponseDto })
+  @ApiResponse({
+    status: 401,
+    type: PhotographyGalleryPasswordRequiredDto,
+    description: 'The invitation is valid, and its password is missing or wrong',
+  })
+  @ApiResponse({ status: 403, description: 'The invitation is invalid, expired, or revoked' })
   session(@Param('id', uuid) id: string, @Body() dto: PhotographyGallerySessionDto) {
     return this.service.session(id, dto);
   }

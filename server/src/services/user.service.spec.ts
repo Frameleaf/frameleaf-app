@@ -724,8 +724,8 @@ describe(UserService.name, () => {
       mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
 
       await expect(
-        sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: false }, ratings: { enabled: true } }),
-      ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true }, ratings: { enabled: true } });
+        sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: false }, ratings: { enabled: false } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true }, ratings: { enabled: false } });
       // the third argument is the preferences-lock transaction (FL-67); the unit mock passes undefined
       expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
         authStub.user1.user.id,
@@ -763,7 +763,7 @@ describe(UserService.name, () => {
       mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
 
       await expect(
-        sut.updateMyPreferences(authStub.user1, { expectedRevision: loaded, ratings: { enabled: true } }),
+        sut.updateMyPreferences(authStub.user1, { expectedRevision: loaded, ratings: { enabled: false } }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
     });
@@ -773,13 +773,13 @@ describe(UserService.name, () => {
       const { revision } = await sut.getMyPreferences(authStub.user1);
 
       await expect(
-        sut.updateMyPreferences(authStub.user1, { expectedRevision: revision, ratings: { enabled: true } }),
-      ).resolves.toMatchObject({ ratings: { enabled: true } });
+        sut.updateMyPreferences(authStub.user1, { expectedRevision: revision, ratings: { enabled: false } }),
+      ).resolves.toMatchObject({ ratings: { enabled: false } });
       expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
         authStub.user1.user.id,
         {
           key: UserMetadataKey.Preferences,
-          value: { ratings: { enabled: true }, cast: { gCastEnabled: true, adminDisabled: true } },
+          value: { ratings: { enabled: false }, cast: { gCastEnabled: true, adminDisabled: true } },
         },
         undefined,
       );
@@ -822,8 +822,8 @@ describe(UserService.name, () => {
       mocks.user.getMetadata.mockResolvedValue(storedRules);
 
       await expect(
-        sut.updateMyPreferences(authStub.user1, { ratings: { enabled: true }, privacy: { suppression: {} } }),
-      ).resolves.toMatchObject({ ratings: { enabled: true } });
+        sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false }, privacy: { suppression: {} } }),
+      ).resolves.toMatchObject({ ratings: { enabled: false } });
       expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
         authStub.user1.user.id,
         {
@@ -877,7 +877,7 @@ describe(UserService.name, () => {
     it('should keep Locked people and tags out of the response to a save from a session that is not unlocked', async () => {
       mocks.user.getMetadata.mockResolvedValue(storedRules);
 
-      const response = await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: true } });
+      const response = await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false } });
 
       expect(response.privacy.suppression.personIds).toEqual([]);
       expect(response.privacy.suppression.tagIds).toEqual([]);
@@ -953,8 +953,8 @@ describe(UserService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.user.addPreferenceHistory.mockRejectedValue(new Error('down'));
 
-      await expect(sut.updateMyPreferences(authStub.user1, { ratings: { enabled: true } })).resolves.toMatchObject({
-        ratings: { enabled: true },
+      await expect(sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false } })).resolves.toMatchObject({
+        ratings: { enabled: false },
       });
     });
 
@@ -1037,7 +1037,7 @@ describe(UserService.name, () => {
       mocks.session.getByUserId.mockResolvedValue([]);
       mocks.user.addPreferenceHistory.mockResolvedValue(false);
 
-      await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: true } });
+      await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: false } });
 
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Preference history not recorded'));
     });

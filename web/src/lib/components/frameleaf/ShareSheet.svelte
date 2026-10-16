@@ -337,6 +337,7 @@
   const download = () => {
     open = false;
     if (single?.originalFileName) {
+      // As it is shown (owner, 2026-10-16): the version on screen, which is the original when unedited
       downloadAssetFile({ id: single.id, filename: single.originalFileName, edited: true, size: single.size });
       return;
     }

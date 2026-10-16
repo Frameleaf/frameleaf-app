@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import { AssetLockReason, AssetVisibility, TimeBucketDateType } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -417,6 +418,131 @@ describe(TimelineService.name, () => {
         }),
       ).rejects.toThrow();
       expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Best Photos on the timeline (LIB-P3)', () => {
+    const owner = authStub.admin.user.id;
+    const bestPhotos = { ownerId: owner, minScore: BEST_PHOTOS_MIN_SCORE };
+
+    it("narrows the buckets to the caller's own Best Photos at the Best Photos threshold", async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(authStub.admin, { bestPhotos: true, visibility: AssetVisibility.Timeline });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        { visibility: AssetVisibility.Timeline, userIds: [owner], bestPhotos },
+        authStub.admin,
+      );
+      expect(BEST_PHOTOS_MIN_SCORE).toBe(0.9);
+    });
+
+    it('leaves the options untouched without it', async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(authStub.admin, { bestPhotos: false });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({ userIds: [owner] }, authStub.admin);
+    });
+
+    it('scopes an album or a person to the caller, so no other member or partner joins in', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      const personId = '00000000-0000-4000-8000-00000000000b';
+
+      await sut.getTimeBucket(authStub.admin, { timeBucket: 'bucket', albumId: 'album-id', bestPhotos: true });
+      await sut.getTimeBuckets(authStub.admin, { personId, bestPhotos: true });
+
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner, new Set(['album-id']));
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        { timeBucket: 'bucket', albumId: 'album-id', userIds: [owner], bestPhotos },
+        authStub.admin,
+      );
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        { personId, userIds: [owner], bestPhotos },
+        authStub.admin,
+      );
+    });
+
+    it("refuses another user's library, a shared link and the Locked view", async () => {
+      await expect(
+        sut.getTimeBuckets(authStub.admin, { bestPhotos: true, userId: authStub.user1.user.id }),
+      ).rejects.toThrow("You may not access another user's Best Photos");
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set(['album-id']));
+      await expect(
+        sut.getTimeBucket(authStub.adminSharedLink, { timeBucket: 'bucket', albumId: 'album-id', bestPhotos: true }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        sut.getTimeBuckets(authStub.adminWithElevatedPermission, {
+          bestPhotos: true,
+          visibility: AssetVisibility.Locked,
+        }),
+      ).rejects.toThrow('bestPhotos is not supported with visibility LOCKED');
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+    });
+
+    it('orders by quality and seeks on a fractional score cursor', async () => {
+      mocks.asset.getTimelineOrdered.mockResolvedValue({ assets: '{}' });
+      const cursor = [0.9375123456789, '2026-10-01T12:00:00.123456+00:00', '00000000-0000-4000-8000-000000000001'];
+
+      await sut.getTimelineOrdered(authStub.admin, {
+        sort: 'quality',
+        bestPhotos: true,
+        withStacked: true,
+        visibility: AssetVisibility.Timeline,
+        skip: 0,
+        take: 100,
+        after: JSON.stringify(cursor),
+      });
+
+      expect(mocks.asset.getTimelineOrdered).toHaveBeenCalledWith(
+        { visibility: AssetVisibility.Timeline, withStacked: true, userIds: [owner], bestPhotos },
+        authStub.admin,
+        {
+          sort: 'quality',
+          skip: 0,
+          take: 100,
+          cursor: { key: cursor[0], date: cursor[1], id: cursor[2] },
+          reverse: false,
+        },
+      );
+      // an unscored asset's -1 is a valid position; a rating or a file name is not a score
+      for (const key of [-1, 0, 1]) {
+        await sut.getTimelineOrdered(authStub.admin, {
+          sort: 'quality',
+          skip: 0,
+          take: 1,
+          after: JSON.stringify([key, cursor[1], cursor[2]]),
+        });
+      }
+      for (const key of [5, -2, 'a.jpg']) {
+        await expect(
+          sut.getTimelineOrdered(authStub.admin, {
+            sort: 'quality',
+            skip: 0,
+            take: 1,
+            after: JSON.stringify([key, cursor[1], cursor[2]]),
+          }),
+        ).rejects.toThrow('Invalid ordered timeline cursor');
+      }
+    });
+  });
+
+  describe('tag filters without the tags inside (DISCOVERY-P4)', () => {
+    it('passes withChildTags through to the bucket queries', async () => {
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-123']));
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
+
+      await sut.getTimeBucket(authStub.admin, { timeBucket: 'bucket', tagId: 'tag-123', withChildTags: false });
+
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        { timeBucket: 'bucket', tagId: 'tag-123', withChildTags: false, userIds: [authStub.admin.user.id] },
+        authStub.admin,
+      );
     });
   });
 

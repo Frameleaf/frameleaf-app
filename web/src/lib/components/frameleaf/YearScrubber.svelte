@@ -40,8 +40,9 @@
     /** The library is being scrolled; only read in `overlay`. */
     active?: boolean;
     /**
-     * Pixels at the top the track keeps out of, in `overlay`: what is still on screen of the page
-     * header, whose controls reach the edge the scrubber floats over.
+     * Pixels at the top the track keeps out of: what is still on screen of the page header, the
+     * toolbar band and the grouping row, which span the scrubber's column (LIB-P4) and whose
+     * controls reach the edge it sits at.
      */
     clear?: number;
   };
@@ -237,7 +238,7 @@
   class:is-idle={overlay && !active && !dragging}
   bind:clientWidth={measuredWidth}
   style:height={height ? `${height}px` : undefined}
-  style:--fl-scrub-clear={overlay ? `${clear}px` : undefined}
+  style:--fl-scrub-clear="{clear}px"
   data-testid="frameleaf-year-scrubber"
 >
   <div
@@ -286,13 +287,24 @@
 </div>
 
 <style>
+  /*
+   * The column at the end of the rows, inside the page gutter (LIB-P4: the timeline leaves it free
+   * of photos as `--fl-tl-scrubber-space`). The track starts below the stuck frosted toolbar, or
+   * below the page header, toolbar and grouping row while they are on screen, since they span this
+   * column (apple-style.css `.tl-scrubber` top). Only the track takes the pointer.
+   */
   .fl-scrubber {
-    position: relative;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--fl-library-gutter-end, 0px);
+    z-index: 4;
     width: 34px;
-    flex: 0 0 auto;
-    /* The track starts below the frosted results toolbar (apple-style.css `.tl-scrubber` top). */
-    padding: calc(var(--fl-sticky-offset, 0px) + 8px) 0 8px;
+    padding: calc(max(var(--fl-sticky-offset, 0px), var(--fl-scrub-clear, 0px)) + 8px) 0 8px;
+    pointer-events: none;
     touch-action: none;
+  }
+  .fl-scrub-track {
+    pointer-events: auto;
   }
   .fl-scrub-track {
     position: relative;
@@ -306,18 +318,9 @@
    * The year labels are left out (the bubble names the month while dragging).
    */
   .fl-scrubber.is-overlay {
-    position: absolute;
-    inset-block: 0;
-    inset-inline-end: 0;
-    z-index: 4;
-    /* The track starts below the stuck toolbar, or below the page header while that is on screen. */
-    padding-top: calc(max(var(--fl-sticky-offset, 0px), var(--fl-scrub-clear, 0px)) + 8px);
-    /* Only the track is touched: the strip itself floats over the toolbar's last control. */
-    pointer-events: none;
     transition: opacity var(--fl-duration-fade) var(--fl-ease);
   }
   .fl-scrubber.is-overlay .fl-scrub-track {
-    pointer-events: auto;
     border: 1px solid var(--fl-material-edge);
     border-radius: var(--fl-radius-pill);
     background: var(--fl-material);

@@ -89,3 +89,11 @@ it('clears private drafts immediately when library access changes', async () => 
   await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Studio name' })).not.toBeInTheDocument());
   expect(screen.queryByText('North Studio')).not.toBeInTheDocument();
 });
+it("previews the watermark on one of the photographer's own photos when there is one", async () => {
+  const { container } = render(PhotographyBranding, { onSaved: vi.fn(), photoId: 'cover-photo' });
+  await screen.findByRole('textbox', { name: 'Studio name' });
+  const guide = container.querySelector('.phw-watermark-guide');
+  expect(guide?.querySelector('img')?.getAttribute('src')).toContain('cover-photo');
+  // the grey stand-in's label goes once a real photo is behind the mark
+  expect(screen.queryByText('Placement guide')).not.toBeInTheDocument();
+});

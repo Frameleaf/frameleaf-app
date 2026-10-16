@@ -28,10 +28,12 @@
     mdiCertificateOutline,
     mdiCheckCircleOutline,
     mdiClose,
+    mdiCloudLockOutline,
     mdiContentCopy,
     mdiCreditCardOutline,
     mdiDeleteOutline,
     mdiFileDocumentOutline,
+    mdiHandshakeOutline,
     mdiHeartOutline,
     mdiInfinity,
     mdiKeyOutline,
@@ -216,6 +218,20 @@
           <span>
             <strong>{$t('frameleaf_license_benefit_badge_title')}</strong>
             {$t('frameleaf_license_benefit_badge_body')}
+          </span>
+        </li>
+        <li>
+          <Icon icon={mdiCloudLockOutline} size="18" />
+          <span>
+            <strong>{$t('frameleaf_license_benefit_backup_title')}</strong>
+            {$t('frameleaf_license_benefit_backup_body')}
+          </span>
+        </li>
+        <li>
+          <Icon icon={mdiHandshakeOutline} size="18" />
+          <span>
+            <strong>{$t('frameleaf_license_benefit_buddy_title')}</strong>
+            {$t('frameleaf_license_benefit_buddy_body')}
           </span>
         </li>
         <li>

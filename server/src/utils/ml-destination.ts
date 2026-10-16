@@ -473,8 +473,9 @@ export const insufficientMemoryDetail = (
   if (largest >= required) {
     return null;
   }
-  const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
-  return `${destination.name} has ${gib(largest)} GiB of GPU memory; ${workload} needs ${gib(required)} GiB`;
+  // D5: decimal GB in anything a person reads
+  const gb = (bytes: number) => (bytes / 1000 ** 3).toFixed(1);
+  return `${destination.name} has ${gb(largest)} GB of GPU memory; ${workload} needs ${gb(required)} GB`;
 };
 
 export type MlAdmissionInput = {

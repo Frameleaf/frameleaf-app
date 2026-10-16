@@ -447,3 +447,15 @@
     scroll-behavior: auto !important;
   }
 }
+/*
+ * ACCOUNT-P3: "Use less movement" in Look & playback sets this on <html> (reduce-motion.store.ts).
+ * `:where()` keeps the specificity of the media-query rule above.
+ */
+:where([data-reduce-motion]) .frameleaf *,
+:where([data-reduce-motion]) .frameleaf *::before,
+:where([data-reduce-motion]) .frameleaf *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

@@ -30,51 +30,53 @@ const selection = (id: string) => {
   return { asset, stack: { id: `${id}-stack`, primaryAssetId: id, assets: [asset, other] } };
 };
 
-for (const component of [KeepThisDeleteOthers, ViewerStackStrip]) {
-  describe(component === KeepThisDeleteOthers ? 'menu keep action' : 'strip keep action', () => {
-    const setup = async () => {
-      const pending = deferredPromise<boolean>();
-      vi.spyOn(modalManager, 'showDialog').mockReturnValue(
-        pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>,
-      );
-      const original = selection('original');
-      const callbacks = { onAction: vi.fn(), onSelect: vi.fn(), onPreview: vi.fn() };
-      const view = render(component, { ...original, ...callbacks });
-      await fireEvent.click(
-        view.getByRole(component === KeepThisDeleteOthers ? 'menuitem' : 'button', {
-          name: en.keep_this_delete_others,
-        }),
-      );
-      return { pending, original, callbacks, view };
-    };
+// VIEWER-P3: "Keep this, remove the rest" lives in the viewer's ⋯ menu only; the stack card offers no
+// stack decisions (ViewerStackStrip.spec checks that), so the ownership checks run on the menu action.
+it('offers no keep action on the stack card', () => {
+  const view = render(ViewerStackStrip, { ...selection('card'), onSelect: vi.fn(), onPreview: vi.fn() });
+  expect(view.queryByRole('button', { name: en.frameleaf_viewer_menu_keep_this })).not.toBeInTheDocument();
+  expect(view.queryByRole('button', { name: en.keep_this_delete_others })).not.toBeInTheDocument();
+});
 
-    it('keeps the target chosen before the confirmation opened', async () => {
-      const { pending, callbacks, view } = await setup();
-      await view.rerender({ ...selection('replacement'), ...callbacks });
-      pending.resolve(true);
-      await waitFor(() => expect(sdkMock.deleteStacks).toHaveBeenCalled());
-      expect(sdkMock.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['original-other'] } });
-      expect(sdkMock.deleteStacks).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['original-stack'] } });
-    });
+describe('menu keep action', () => {
+  const setup = async () => {
+    const pending = deferredPromise<boolean>();
+    vi.spyOn(modalManager, 'showDialog').mockReturnValue(
+      pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>,
+    );
+    const original = selection('original');
+    const callbacks = { onAction: vi.fn() };
+    const view = render(KeepThisDeleteOthers, { ...original, ...callbacks });
+    await fireEvent.click(view.getByRole('menuitem', { name: en.frameleaf_viewer_menu_keep_this }));
+    return { pending, original, callbacks, view };
+  };
 
-    it('does not start deletion for a confirmation from a previous session', async () => {
-      const { pending } = await setup();
-      authManager.reset();
-      pending.resolve(true);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(sdkMock.deleteAssets).not.toHaveBeenCalled();
-    });
-
-    it('stops the second mutation after a session change during deletion', async () => {
-      const { pending } = await setup();
-      const deletion = deferredPromise<void>();
-      sdkMock.deleteAssets.mockReturnValueOnce(deletion.promise as ReturnType<typeof sdkMock.deleteAssets>);
-      pending.resolve(true);
-      await waitFor(() => expect(sdkMock.deleteAssets).toHaveBeenCalled());
-      authManager.reset();
-      deletion.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(sdkMock.deleteStacks).not.toHaveBeenCalled();
-    });
+  it('keeps the target chosen before the confirmation opened', async () => {
+    const { pending, callbacks, view } = await setup();
+    await view.rerender({ ...selection('replacement'), ...callbacks });
+    pending.resolve(true);
+    await waitFor(() => expect(sdkMock.deleteStacks).toHaveBeenCalled());
+    expect(sdkMock.deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['original-other'] } });
+    expect(sdkMock.deleteStacks).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['original-stack'] } });
   });
-}
+
+  it('does not start deletion for a confirmation from a previous session', async () => {
+    const { pending } = await setup();
+    authManager.reset();
+    pending.resolve(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.deleteAssets).not.toHaveBeenCalled();
+  });
+
+  it('stops the second mutation after a session change during deletion', async () => {
+    const { pending } = await setup();
+    const deletion = deferredPromise<void>();
+    sdkMock.deleteAssets.mockReturnValueOnce(deletion.promise as ReturnType<typeof sdkMock.deleteAssets>);
+    pending.resolve(true);
+    await waitFor(() => expect(sdkMock.deleteAssets).toHaveBeenCalled());
+    authManager.reset();
+    deletion.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.deleteStacks).not.toHaveBeenCalled();
+  });
+});

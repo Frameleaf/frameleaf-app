@@ -4,9 +4,10 @@
    * `settings-v2/server/preferences.jsx`): the same device preferences as before in four headed
    * groups, with the theme and the date format each as one choice instead of a switch and a field.
    *
-   * Everything here but "Show albums" is kept on this device and applies as it is chosen, as it
-   * always has. "Show albums" is an account preference (it moved here from Features) and keeps the
-   * Save bar.
+   * Everything here but "Show albums" and "Show archived photos in search" is kept on this device and
+   * applies as it is chosen, as it always has. Those two are account preferences and keep the Save
+   * bar. ACCOUNT-P3 added "Use less movement", "Open the library in", "Show file names in Work view"
+   * and "Show archived photos in search", and moved "Dates and numbers" up to Appearance.
    */
   import { invalidateAll } from '$app/navigation';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -17,17 +18,27 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import { fallbackLocale, locales } from '$lib/constants';
+  import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
+  import {
+    DEFAULT_LIBRARY_LAYOUT,
+    LIBRARY_LAYOUTS,
+    libraryPreferenceKey,
+    type LibraryLayout,
+  } from '$lib/frameleaf/library-session';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
     autoPlayVideo,
     lang,
+    libraryStartLayout,
     locale,
     loopVideo,
     playVideoThumbnailOnHover,
     showDeleteModal,
   } from '$lib/stores/preferences.store';
+  import { reduceMotion } from '$lib/stores/reduce-motion.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { convertBCP47, getClosestAvailableLocale, langCodes, langs } from '$lib/utils/i18n';
   import { AssetOrder } from '@frameleaf/sdk';
@@ -63,10 +74,24 @@
   let sample: string = $derived(createDateFormatter(editedLocale).formatDateTime(time));
   const customLocale = $derived(findLocale(editedLocale).code || fallbackLocale.code);
 
-  const albums = createOwnPreferencesDraft(['albums.defaultAssetOrder']);
+  // The two account preferences on this page; "Show archived photos in search" is ACCOUNT-P3.
+  const albums = createOwnPreferencesDraft(['albums.defaultAssetOrder', 'search.includeArchived']);
+
+  /**
+   * ACCOUNT-P3: until "Open the library in" is chosen, the library opens in the layout used last on
+   * this device, so the choice shows that one.
+   */
+  const lastLayout = $derived.by((): LibraryLayout => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(libraryPreferenceKey(authManager.user.id)) ?? 'null');
+      return LIBRARY_LAYOUTS.includes(stored?.layout) ? stored.layout : DEFAULT_LIBRARY_LAYOUT;
+    } catch {
+      return DEFAULT_LIBRARY_LAYOUT;
+    }
+  });
 </script>
 
-<!-- The Save bar is for "Show albums" alone; the rest of the page is kept on this device as it is chosen. -->
+<!-- The Save bar is for the account preferences ("Show albums", "Show archived photos in search"); the rest of the page is kept on this device as it is chosen. -->
 <OwnPreferencesForm store={albums}>
   <KitPage>
     <Section
@@ -98,9 +123,6 @@
           onChange={onLanguage}
         />
       </Row>
-    </Section>
-
-    <Section title={$t('frameleaf_prefs_look_browsing')}>
       <Row
         label={$t('frameleaf_prefs_look_dates')}
         help={$t('frameleaf_prefs_look_dates_help', { values: { sample } })}
@@ -123,6 +145,28 @@
           />
         {/if}
       </Row>
+      <Row label={$t('frameleaf_prefs_look_motion')} help={$t('frameleaf_prefs_look_motion_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_motion')}
+          checked={$reduceMotion}
+          onChange={(value) => ($reduceMotion = value)}
+        />
+      </Row>
+    </Section>
+
+    <Section title={$t('frameleaf_prefs_look_browsing')}>
+      <Row label={$t('frameleaf_prefs_look_start')} help={$t('frameleaf_prefs_look_start_help')}>
+        <SegmentedControl
+          label={$t('frameleaf_prefs_look_start')}
+          options={[
+            { value: 'timeline', label: $t('frameleaf_library_layout_timeline') },
+            { value: 'browse', label: $t('frameleaf_library_layout_browse') },
+            { value: 'work', label: $t('frameleaf_library_layout_work') },
+          ]}
+          value={$libraryStartLayout ?? lastLayout}
+          onChange={(value) => ($libraryStartLayout = value as LibraryLayout)}
+        />
+      </Row>
       <Row label={$t('frameleaf_prefs_look_albums')} help={$t('frameleaf_prefs_look_albums_help')}>
         <SegmentedControl
           label={$t('frameleaf_prefs_look_albums')}
@@ -132,6 +176,20 @@
           ]}
           value={albums.draft['albums.defaultAssetOrder']}
           onChange={(value) => albums.set('albums.defaultAssetOrder', value as AssetOrder)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_file_names')} help={$t('frameleaf_prefs_look_file_names_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_file_names')}
+          checked={libraryGridPreferences.showFileNames}
+          onChange={(value) => (libraryGridPreferences.showFileNames = value)}
+        />
+      </Row>
+      <Row label={$t('frameleaf_prefs_look_archived')} help={$t('frameleaf_prefs_look_archived_help')}>
+        <Switch
+          label={$t('frameleaf_prefs_look_archived')}
+          checked={albums.draft['search.includeArchived']}
+          onChange={(value) => albums.set('search.includeArchived', value)}
         />
       </Row>
     </Section>

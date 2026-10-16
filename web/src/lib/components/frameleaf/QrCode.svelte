@@ -1,6 +1,8 @@
 <script lang="ts">
   import { encodeQr, qrPath } from '$lib/frameleaf/qr';
   import { copyToClipboard } from '$lib/utils';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiContentCopy, mdiDownloadOutline } from '@mdi/js';
 
   const QUIET = 4;
 
@@ -104,8 +106,12 @@
     </svg>
     {#if showActions}
       <figcaption class="qr-actions">
-        <button type="button" onclick={() => copyToClipboard(value)}>{copyLabel}</button>
-        <button type="button" onclick={downloadPng}>{downloadLabel}</button>
+        <button type="button" onclick={() => copyToClipboard(value)}>
+          <Icon icon={mdiContentCopy} size="18" aria-hidden={true} />{copyLabel}
+        </button>
+        <button type="button" onclick={downloadPng}>
+          <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{downloadLabel}
+        </button>
       </figcaption>
     {/if}
   </figure>
@@ -119,16 +125,25 @@
     gap: 0.75rem;
     margin: 0;
   }
+  /* sharing.css .qr-svg: the code's own quiet zone is the margin, on a card-radius white tile. */
   .qr-svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
     background: #ffffff;
-    border-radius: var(--fl-radius);
-    padding: 0.5rem;
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-1);
   }
   .qr-actions {
     display: flex;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--fl-space-2);
   }
   .qr-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     background: var(--fl-raised);
     color: var(--fl-text);
     border: 1px solid var(--fl-border);

@@ -194,7 +194,7 @@ describe('Merge older copies: opens on what was found (FL-366)', () => {
 
     const hero = screen.getByRole('region', { name: en.frameleaf_dupes_merge_status });
     expect(within(hero).getByRole('heading', { name: '1 extra copy can be merged' })).toBeInTheDocument();
-    expect(within(hero).getByText(/Merging gets back 2 KiB\. Everyone keeps every photo\./)).toBeInTheDocument();
+    expect(within(hero).getByText(/Merging gets back 2 KB\. Everyone keeps every photo\./)).toBeInTheDocument();
   });
 
   it('opens on looking for older copies before any search', () => {
@@ -274,16 +274,16 @@ describe('PhysicalDedupManager plan evidence (FL-73)', () => {
   it('adds dimensions to the detail line (UT-25)', () => {
     render(PhysicalDedupManager, { users, initial: preview({ plan: plan() }) });
 
-    expect(screen.getByText('Taylor · 2 KiB · 6000 × 4000')).toBeInTheDocument();
-    expect(screen.getByText('Moraine Lake.jpg · 2 KiB · 6000 × 4000')).toBeInTheDocument();
+    expect(screen.getByText('Taylor · 2 KB · 6000 × 4000')).toBeInTheDocument();
+    expect(screen.getByText('Moraine Lake.jpg · 2 KB · 6000 × 4000')).toBeInTheDocument();
   });
 
   it('keeps logical, shared-original and measured bytes apart', () => {
     render(PhysicalDedupManager, { users, initial: preview({ plan: plan() }) });
 
     const bytes = screen.getByLabelText(en.frameleaf_dedup_bytes_label);
-    expect(within(bytes).getByText(en.frameleaf_dedup_bytes_logical).nextElementSibling).toHaveTextContent('4 KiB');
-    expect(within(bytes).getByText(en.frameleaf_dedup_bytes_shared).nextElementSibling).toHaveTextContent('2 KiB');
+    expect(within(bytes).getByText(en.frameleaf_dedup_bytes_logical).nextElementSibling).toHaveTextContent('4.1 KB');
+    expect(within(bytes).getByText(en.frameleaf_dedup_bytes_shared).nextElementSibling).toHaveTextContent('2 KB');
     expect(within(bytes).getByText(en.frameleaf_dedup_bytes_measured).nextElementSibling).toHaveTextContent(
       en.frameleaf_dedup_bytes_not_applied,
     );
@@ -425,6 +425,6 @@ describe('PhysicalDedupManager verification (FL-73)', () => {
   it('reports the measured bytes of the applied plan', () => {
     render(PhysicalDedupManager, { users, initial: applied() });
 
-    expect(screen.getByText(en.frameleaf_dedup_bytes_measured).nextElementSibling).toHaveTextContent('2 KiB');
+    expect(screen.getByText(en.frameleaf_dedup_bytes_measured).nextElementSibling).toHaveTextContent('2 KB');
   });
 });

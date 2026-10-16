@@ -128,11 +128,23 @@ describe('help content', () => {
     const groups = libraryShortcutGroups(translate, { mac: false });
     expect(groups.general.length).toBeGreaterThan(0);
     expect(groups.actions.length).toBeGreaterThan(0);
-    const ratingRows = groups.actions.filter((row) => row.action === 't:rate_asset');
+    const ratingRows = groups.actions.filter((row) => row.action === 't:frameleaf_library_shortcut_rate');
     expect(ratingRows).toHaveLength(1);
     expect(ratingRows[0].key).toEqual(['1-5']);
     expect(ratingRows[0].info).toBe('t:zero_to_clear_rating');
     expect(groups.general.some((row) => row.key.join('') === '←→')).toBe(true);
+  });
+
+  it('uses the prototype wording and marks the arrow rows as alternatives, not chords', () => {
+    const groups = libraryShortcutGroups(translate, { mac: false });
+    const action = (id: string) => groups.actions.find((row) => row.id === id)?.action;
+    expect(action('tag')).toBe('t:frameleaf_library_shortcut_tag');
+    expect(action('tag-people')).toBe('t:frameleaf_library_shortcut_tag_people');
+    expect(action('delete')).toBe('t:frameleaf_library_shortcut_move_to_trash');
+    expect(action('stack')).toBe('t:frameleaf_library_shortcut_stack_selected');
+    expect(groups.general.find((row) => row.id === 'navigate-previous')?.alternatives).toBe(true);
+    expect(groups.general.find((row) => row.id === 'focus-up')?.alternatives).toBe(true);
+    expect(groups.actions.find((row) => row.id === 'archive')?.alternatives).toBeUndefined();
   });
 
   it('lists only the current surface when one is given', () => {

@@ -11,7 +11,8 @@ import {
 import { Permission } from 'src/enum.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
+import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -57,7 +58,7 @@ export class DownloadService extends BaseService {
       throw new BadRequestException('assetIds, albumId, or userId is required');
     }
 
-    const targetSize = dto.archiveSize || HumanReadableSize.GiB * 4;
+    const targetSize = dto.archiveSize || DecimalSize.GB * 4;
     const metadata = await this.userRepository.getMetadata(auth.user.id);
     const preferences = getPreferences(metadata);
     const motionIds = new Set<string>();
@@ -103,9 +104,10 @@ export class DownloadService extends BaseService {
     return { totalSize, archives };
   }
 
-  async downloadArchive(auth: AuthDto, dto: DownloadArchiveDto): Promise<ReadStreamResponse> {
-    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
+  async downloadArchive(auth: AuthDto, request: DownloadArchiveDto): Promise<ReadStreamResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: request.assetIds });
 
+    const dto = await this.withDownloadPreferences(auth, request);
     const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
     // FL-54: the archive holds each file's bytes, embedded location included, so apply the same policy
     // as a single original download before anything is streamed
@@ -117,21 +119,81 @@ export class DownloadService extends BaseService {
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
+    const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
+    const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
     const zip = this.storageRepository.createZipStream();
     const paths = new Map<string, number>();
 
     for (const assetId of dto.assetIds) {
-      const asset = assetMap.get(assetId);
-      if (!asset) {
+      const found = assetMap.get(assetId);
+      if (!found) {
         continue;
       }
 
-      zip.addFile(await this.resolveArchivePath(asset, dto), nextArchiveName(paths, archiveFileName(asset, dto)));
+      // As shown: the owner's current develop version takes the place of any other edited file.
+      const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
+      const name = nextArchiveName(paths, archiveFileName(asset, dto));
+      zip.addFile(await this.resolveArchivePath(asset, dto), name);
+
+      // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
+      const sidecar = sidecars.get(assetId);
+      if (sidecar) {
+        zip.addFile(sidecar, nextArchiveName(paths, `${name}.xmp`));
+      }
     }
 
     void zip.finalize();
 
     return { stream: zip.stream, disposition };
+  }
+
+  /**
+   * ACCOUNT-P5: whether an archive puts a details file beside each photo follows the account's
+   * `download.includeSidecar` preference when the request leaves it out. A shared-link visitor's
+   * download never follows the link owner's: it holds no details files unless the request asks.
+   * Which version of each item it holds is the request's `edited` (as shown), never a preference.
+   */
+  private async withDownloadPreferences(auth: AuthDto, dto: DownloadArchiveDto): Promise<DownloadArchiveDto> {
+    if (auth.sharedLink || dto.includeSidecar !== undefined) {
+      return dto;
+    }
+    const { download } = getPreferences((await this.userRepository.getMetadata(auth.user.id)) ?? []);
+    return { ...dto, includeSidecar: download.includeSidecar };
+  }
+
+  /**
+   * The rendered master of the current develop version of each asset the requester owns: what their
+   * viewer shows, so what an archive of them as shown holds. Nobody else sees an owner's working version.
+   */
+  private async getShownDevelopMasters(
+    auth: AuthDto,
+    assets: { id: string; ownerId: string }[],
+  ): Promise<Map<string, string>> {
+    const masters = new Map<string, string>();
+    const owned = auth.sharedLink ? [] : assets.filter(({ ownerId }) => ownerId === auth.user.id).map(({ id }) => id);
+    if (owned.length === 0) {
+      return masters;
+    }
+    for (const current of await this.assetRepository.getCurrentDevelops(owned)) {
+      if (current.ownerId === auth.user.id && current.masterPath && hasPublishedDevelopRendition(current)) {
+        masters.set(current.assetId, current.masterPath);
+      }
+    }
+    return masters;
+  }
+
+  /** The details file on disk for each asset that has one; a missing file is left out, not an error. */
+  private async getSidecarPaths(assetIds: string[]): Promise<Map<string, string>> {
+    const sidecars = new Map<string, string>();
+    if (assetIds.length === 0) {
+      return sidecars;
+    }
+    for (const { assetId, path } of await this.downloadRepository.getSidecars(assetIds)) {
+      if (!sidecars.has(assetId) && (await this.storageRepository.checkFileExists(path))) {
+        sidecars.set(assetId, path);
+      }
+    }
+    return sidecars;
   }
 
   private async resolveArchivePath(

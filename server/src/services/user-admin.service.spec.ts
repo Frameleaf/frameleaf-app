@@ -589,14 +589,14 @@ describe(UserAdminService.name, () => {
 
       const saved = await sut.updatePreferences(authStub.admin, userStub.user1.id, {
         privacy: { suppression: { personIds: [] } },
-        ratings: { enabled: true },
+        ratings: { enabled: false },
       });
       expect(saved.privacy.suppression.personIds).toEqual([]);
       expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
         userStub.user1.id,
         {
           key: UserMetadataKey.Preferences,
-          value: { ratings: { enabled: true }, privacy: { suppression: { personIds: [personId] } } },
+          value: { ratings: { enabled: false }, privacy: { suppression: { personIds: [personId] } } },
         },
         undefined,
       );
@@ -795,7 +795,7 @@ describe(UserAdminService.name, () => {
 
       await sut.updatePreferences(authStub.admin, userStub.user1.id, {
         download: { archiveSize: 1_234_567 },
-        ratings: { enabled: true },
+        ratings: { enabled: false },
       });
 
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([

@@ -27,6 +27,12 @@
      * library workspace and the Studio screen gives the whole width to its own work.
      */
     rail?: boolean;
+    /**
+     * A full-height workspace (Studio, Photography) fills the page body edge to edge: no inset,
+     * and the body is a flex column that does not scroll, so the child sets `flex: 1` and scrolls
+     * its own panes. The phone tab bar's space is still kept clear.
+     */
+    fill?: boolean;
     buttons?: Snippet;
     children?: Snippet;
   }
@@ -40,6 +46,7 @@
     actions = [],
     sidebar,
     rail = true,
+    fill = false,
     buttons,
     children,
   }: Props = $props();
@@ -61,8 +68,9 @@
 
   const MIN_SIDEBAR_WIDTH = 200;
   const MAX_SIDEBAR_WIDTH = 500;
-  // Collapsed rail width must fit a single icon (ps-5 padding + ~1.375em icon).
-  const COLLAPSED_WIDTH = '4.5rem';
+  // `.sidebar.rail-collapsed` (styles.css:1703): 60px. The icon-only rows centre their icon
+  // (LibraryRail `.fl-icon-only .fl-link`), so no start padding has to fit.
+  const COLLAPSED_WIDTH = '3.75rem';
   const clampWidth = (value: number) => Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, value));
   // Clamp the persisted value too: a stale/edited localStorage entry could be out of range.
   const effectiveWidth = $derived(clampWidth($sidebarWidth));
@@ -159,8 +167,11 @@
       content without a local wrapper, and no element already on these pages is restyled.
     -->
     <div
-      class="{scrollbarClass} fl-scope absolute {hasTitleClass} w-full overflow-y-auto p-2"
-      style:padding-bottom="max(0.5rem, var(--fl-tabbar-space, 0px))"
+      class="fl-scope absolute {hasTitleClass} w-full {fill
+        ? 'flex flex-col overflow-hidden'
+        : `${scrollbarClass} overflow-y-auto p-2`}"
+      style:padding-bottom={fill ? 'var(--fl-tabbar-space, 0px)' : 'max(0.5rem, var(--fl-tabbar-space, 0px))'}
+      data-fill={fill || undefined}
       use:useActions={use}
     >
       {@render children?.()}

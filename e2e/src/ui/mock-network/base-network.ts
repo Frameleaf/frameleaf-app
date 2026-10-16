@@ -55,6 +55,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         people: {
           enabled: true,
           sidebarWeb: false,
+          suggestInSpaces: false,
         },
         sharedLinks: {
           enabled: true,
@@ -75,6 +76,10 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         download: {
           archiveSize: 4_294_967_296,
           includeEmbeddedVideos: false,
+          includeSidecar: true,
+        },
+        search: {
+          includeArchived: false,
         },
         purchase: {
           showSupportBadge: true,

@@ -47,7 +47,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { getAlbumAssetActions } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
-  import { getAssetActions } from '$lib/services/asset.service';
+  import { getAssetActions, showsEdit } from '$lib/services/asset.service';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getSharedLink } from '$lib/utils';
   import { downloadAssetFile } from '$lib/utils/asset-utils';
@@ -160,7 +160,8 @@
     isTrashed: asset.isTrashed,
     isLocked,
     isArchived: asset.isArchived,
-    isEdited: asset.isEdited,
+    // An edited file or the owner's current develop version: Download is that, so the original is offered too.
+    isEdited: showsEdit(asset),
     isSharedLink: !!sharedLink,
     canDownload: authManager.authenticated,
     canSendCopy: canSendCopies() && sendCopyPermitted(),

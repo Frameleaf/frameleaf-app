@@ -16,7 +16,11 @@ import en from '../../../../../i18n/en.json';
 import ShareSheet from './ShareSheet.svelte';
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { authenticated: true, user: { id: 'me', name: 'Taylor' }, params: {} },
+  authManager: {
+    authenticated: true,
+    user: { id: 'me', name: 'Taylor' },
+    params: {},
+  },
 }));
 
 vi.mock('$lib/services/shared-link.service', () => ({
@@ -423,7 +427,10 @@ describe('ShareSheet', () => {
     it('downloads a single item as its file and several as an archive', async () => {
       const first = render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });
       await fireEvent.click(screen.getByRole('button', { name: en.download }));
-      expect(downloadAssetFile).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', filename: 'a1.jpg' }));
+      // As it is shown: the server answers `edited` with the version on screen, or the original
+      expect(downloadAssetFile).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'a1', filename: 'a1.jpg', edited: true }),
+      );
       first.unmount();
 
       render(ShareSheet, { open: true, assetIds: ['a1', 'a2'], assets: [photo('a1'), video('a2')] });

@@ -66,7 +66,7 @@
   import { mdiCheck, mdiClose } from '@mdi/js';
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { dock, motionFade, motionFly, motionSlide, prefersReducedMotion } from '$lib/frameleaf/motion';
+  import { dock, motionFade, motionFly, prefersReducedMotion } from '$lib/frameleaf/motion';
   import { pendingRender } from '$lib/components/frameleaf/editor/pending-render.svelte';
   import { DURATION, EXIT_DURATION, ICON_SIZE } from '$lib/frameleaf/tokens';
   import { languageManager } from '$lib/managers/language-manager.svelte';
@@ -162,13 +162,18 @@
     slideshowNavigation,
     slideshowState,
     slideshowRepeat,
-    slideshowAutoplay,
     slideshowTransition,
     slideshowDelay,
     settingsOpen: slideshowSettingsOpen,
   } = slideshowStore;
   // FL-36: which way the slideshow last moved, so a Slide transition arrives from that side.
   let slideshowDirection = $state<SlideshowDirection>('next');
+  /**
+   * VIEWER-P1: a slideshow is running, playing or paused. A derived value, so the stage motion only
+   * restarts when a slideshow starts or ends: Pause and Play must not restart (and freeze) the
+   * incoming item's fade, which used to leave a paused slideshow on a black canvas.
+   */
+  const slideshowActive = $derived($slideshowState !== SlideshowState.None);
 
   let previewStackedAsset: AssetResponseDto | undefined = $state();
   let stack: StackResponseDto | null = $state(null);
@@ -772,12 +777,18 @@
   };
 
   // FL-36 / V-18 (MediaViewer.jsx:254-263): the slideshow plays in the viewer. Full screen is an
-  // explicit choice from the slideshow controls, never forced.
+  // explicit choice from the footer, never forced. VIEWER-P1: Play always plays and Pause always
+  // pauses (MediaViewer.jsx:1706-1717); the old Autoplay preference no longer holds a new run paused.
   const handlePlaySlideshow = () => {
     slideshowStartAssetId = asset.id;
-    if (!$slideshowAutoplay) {
-      $slideshowState = SlideshowState.PauseSlideshow;
+  };
+
+  /** VIEWER-P1: the header's back arrow (and Escape) close the viewer, ending a slideshow on the way. */
+  const closeFromHeader = () => {
+    if ($slideshowState !== SlideshowState.None) {
+      handlePromiseError(handleStopSlideshow());
     }
+    onClose?.(stack?.primaryAssetId ?? asset.id);
   };
 
   const handleStopSlideshow = async () => {
@@ -786,7 +797,7 @@
     const isCurrent = () => viewerAlive && generation === slideshowGeneration && isCurrentSession();
     try {
       if (document.fullscreenElement) {
-        await document.exitFullscreen();
+        await exitFullscreenOurselves();
       }
     } catch (error) {
       if (isCurrent()) {
@@ -975,27 +986,45 @@
   );
 
   const { Tag, TagPeople } = $derived(getAssetActions($t, asset));
+  // VIEWER-P1: the card stays with a slideshow, as in the template (MediaViewer.jsx:1667-1703).
   const showDetailPanel = $derived(
-    asset.hasMetadata &&
-      $slideshowState === SlideshowState.None &&
-      assetViewerManager.isShowDetailPanel &&
-      !assetViewerManager.isShowEditor,
+    asset.hasMetadata && assetViewerManager.isShowDetailPanel && !assetViewerManager.isShowEditor,
   );
 
   /**
-   * FL-35: the filmstrip is a client preference, needs a real list of neighbours, and stays out of
-   * the way of the slideshow and the editor. It is the collection's strip and never changes meaning:
-   * a stacked photo shows its stack as a second row above it, so the filmstrip button always does
-   * what it says.
+   * VIEWER-P1 (MediaViewer.jsx:1071-1074): opening Information during a slideshow pauses it. A card
+   * that was already open when the slideshow started stays open and does not stop it.
    */
-  const showFilmstripStrip = $derived(
-    $showFilmstrip &&
-      filmstripAssets.length > 1 &&
-      $slideshowState === SlideshowState.None &&
-      !assetViewerManager.isShowEditor,
-  );
-  /** The strips' height, so the information card ends above them however many rows there are. */
+  let detailPanelWasOpen = untrack(() => assetViewerManager.isShowDetailPanel);
+  $effect(() => {
+    const open = assetViewerManager.isShowDetailPanel;
+    if (open && !detailPanelWasOpen && untrack(() => $slideshowState) === SlideshowState.PlaySlideshow) {
+      $slideshowState = SlideshowState.PauseSlideshow;
+    }
+    detailPanelWasOpen = open;
+  });
+
+  // The editor and the face tagger take over the screen: a slideshow under them ends.
+  $effect(() => {
+    if (
+      (assetViewerManager.isShowEditor || assetViewerManager.isFaceEditMode) &&
+      untrack(() => $slideshowState) !== SlideshowState.None
+    ) {
+      untrack(() => handlePromiseError(handleStopSlideshow()));
+    }
+  });
+
+  /**
+   * FL-35: the filmstrip is a client preference, needs a real list of neighbours, and stays out of
+   * the way of the editor. It is the collection's strip and never changes meaning: a stacked photo
+   * shows its stack as a small card above it, so the filmstrip button always does what it says.
+   * VIEWER-P1: like the rest of the chrome, it stays with a slideshow (MediaViewer.jsx:1635-1666).
+   */
+  const showFilmstripStrip = $derived($showFilmstrip && filmstripAssets.length > 1 && !assetViewerManager.isShowEditor);
+  /** The filmstrip's height, so the information card and the floating buttons end above it. */
   let stripsHeight = $state(0);
+  /** Everything above the footer, the stack card included, so a video's controls stay clear of it. */
+  let stripsAreaHeight = $state(0);
 
   /**
    * FL-35 hands-on viewer (apple-style.css:366-407, MediaViewer.jsx:197-199 and 524-578): a tap on the
@@ -1286,7 +1315,7 @@
     untrack(() => swipe.cancel());
   });
 
-  // FL-36: a slideshow hides the chrome while it plays; ending it brings the chrome back.
+  // FL-36: a tap may hide the chrome during a slideshow; ending it brings the chrome back.
   $effect(() => {
     if ($slideshowState === SlideshowState.None) {
       untrack(() => (chromeHidden = false));
@@ -1304,9 +1333,59 @@
   /** V-13: the footer's full-screen toggle (MediaViewer.jsx:1799-1806). */
   const toggleFullscreen = async () => {
     try {
-      await (document.fullscreenElement ? document.exitFullscreen() : assetViewerHtmlElement?.requestFullscreen());
+      await (document.fullscreenElement ? exitFullscreenOurselves() : assetViewerHtmlElement?.requestFullscreen());
     } catch (error) {
       handleError(error, $t('errors.unable_to_enter_fullscreen'));
+    }
+  };
+
+  /*
+   * Escape in full screen (owner, 2026-10-16): it leaves full screen and ends a slideshow, back to the
+   * viewer; the next Escape closes the viewer. Outside full screen Escape closes the viewer at once.
+   * Chromium leaves full screen by itself on Escape and keeps the key from the page, so that exit only
+   * shows as `fullscreenchange`. When the key does reach the page, still in full screen or just after
+   * the browser left it, it must not close the viewer as well.
+   */
+  const FULLSCREEN_ESCAPE_GRACE_MS = 500;
+  let fullscreenLeftAt = -Infinity;
+  /** The viewer itself is leaving full screen (the footer toggle, a slideshow ending), not Escape. */
+  let leavingFullscreenOurselves = false;
+
+  const exitFullscreenOurselves = async () => {
+    leavingFullscreenOurselves = true;
+    try {
+      await document.exitFullscreen();
+    } finally {
+      leavingFullscreenOurselves = false;
+    }
+  };
+
+  const onFullscreenChange = () => {
+    if (document.fullscreenElement) {
+      return;
+    }
+    fullscreenLeftAt = performance.now();
+    // The browser left full screen (Escape, or its own exit control): a slideshow ends with it.
+    if (!leavingFullscreenOurselves && $slideshowState !== SlideshowState.None) {
+      $stopSlideshowProgress = true;
+      $slideshowState = SlideshowState.None;
+    }
+  };
+
+  const leaveFullscreenOnEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) {
+      return;
+    }
+    const inFullscreen = !!document.fullscreenElement;
+    if (!inFullscreen && performance.now() - fullscreenLeftAt > FULLSCREEN_ESCAPE_GRACE_MS) {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (inFullscreen) {
+      // The page saw the key before the browser did: leave full screen as Escape would, which ends a
+      // slideshow through `onFullscreenChange`.
+      document.exitFullscreen().catch((error: unknown) => handleError(error, $t('errors.unable_to_exit_fullscreen')));
     }
   };
 
@@ -1452,12 +1531,11 @@
   const VIDEO_VIEWERS = new Set(['VideoViewer', 'StackVideoViewer', 'LiveVideoViewer']);
 
   // FL-36 / V-18: the footer stays while an inline slideshow plays, so Pause and the settings are
-  // reachable; the slideshow's idle hide and tap toggle hide it with the rest of the chrome.
+  // reachable; a tap on the photo hides it with the rest of the chrome.
   const showFooter = $derived(!assetViewerManager.isShowEditor);
 
-  const showStackStrip = $derived(
-    !!stack && withStacked && !assetViewerManager.isShowEditor && $slideshowState === SlideshowState.None,
-  );
+  // VIEWER-P1 / P3: the stack card stays with a slideshow, as in the template (MediaViewer.jsx:1619-1633).
+  const showStackStrip = $derived(!!stack && withStacked && !assetViewerManager.isShowEditor);
 
   $effect(() => {
     if (showDetailPanel || !infoHadFocus) {
@@ -1472,7 +1550,10 @@
 <OnEvents {onAssetUpdate} {onAssetsUndoArchive} {onAssetsDelete} />
 
 <svelte:window
-  onkeydowncapture={closeSettingsOnEscape}
+  onkeydowncapture={(event) => {
+    closeSettingsOnEscape(event);
+    leaveFullscreenOnEscape(event);
+  }}
   onkeydown={revealChrome}
   onpointerdowncapture={(event) => activePointers.add(event.pointerId)}
   onpointerupcapture={releasePointer}
@@ -1493,17 +1574,25 @@
 
 <svelte:document
   bind:fullscreenElement
+  onfullscreenchange={onFullscreenChange}
   use:shortcuts={[
     { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
     { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },
-    {
-      shortcut: { key: 'ArrowLeft' },
-      onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
-    },
-    {
-      shortcut: { key: 'ArrowRight' },
-      onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
-    },
+    // While a slideshow runs the arrows step it through SlideshowBar's own bindings (VIEWER-P1 has no
+    // capsule buttons any more), so the viewer leaves them alone: a match here would mark the key
+    // handled and the slideshow would never see it.
+    ...($slideshowState === SlideshowState.None
+      ? [
+          {
+            shortcut: { key: 'ArrowLeft' },
+            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
+          },
+          {
+            shortcut: { key: 'ArrowRight' },
+            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
+          },
+        ]
+      : []),
   ]}
 />
 
@@ -1515,7 +1604,8 @@
   class:dragging={!!dismissDrag}
   class:with-footer={showFilmstripStrip || showStackStrip}
   class:info-open={showDetailPanel}
-  style:--fl-viewer-strips-height="{stripsHeight}px"
+  style:--fl-viewer-strips-height="{showFilmstripStrip ? stripsHeight : 0}px"
+  style:--fl-viewer-strips-area-height="{stripsAreaHeight}px"
   style:background-color={dismissDrag ? `rgb(0 0 0 / ${1 - dismissDrag.progress})` : undefined}
   data-theme="dark"
   use:focusTrap
@@ -1529,7 +1619,8 @@
     see AssetViewerNavBar), not by raising the header above the footer. Only while one of its menus is
     open does the header rise, above the Information card (see the style block).
   -->
-  {#if $slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor}
+  <!-- VIEWER-P1: the header stays while a slideshow plays, as in the template (MediaViewer.jsx:1008-1298). -->
+  {#if !assetViewerManager.isShowEditor}
     <div class="relative z-2 col-span-4 col-start-1 row-span-1 row-start-1" data-viewer-chrome="header">
       <AssetViewerNavBar
         {asset}
@@ -1538,27 +1629,25 @@
         preAction={handlePreAction}
         onAction={handleAction}
         {onUndoDelete}
-        onClose={onClose ? () => onClose(stack?.primaryAssetId ?? asset.id) : undefined}
+        onClose={onClose ? closeFromHeader : undefined}
         {isPlayingOriginalVideo}
         {setPlayOriginalVideo}
         canNavigateCollection={!!(nextAsset || previousAsset)}
         canShowFilmstrip={filmstripAssets.length > 1}
+        {position}
       />
     </div>
   {/if}
 
   {#if $slideshowState !== SlideshowState.None}
-    <div class="absolute inset-s-0 top-0 flex w-full justify-start">
-      <SlideshowBar
-        {asset}
-        bind:chromeHidden
-        title={album?.albumName ?? person?.name}
-        assetType={previewStackedAsset?.type ?? asset.type}
-        onPrevious={() => navigateAsset('previous')}
-        onNext={() => navigateAsset('next')}
-        onClose={() => ($slideshowState = SlideshowState.StopSlideshow)}
-      />
-    </div>
+    <SlideshowBar
+      {asset}
+      bind:chromeHidden
+      title={album?.albumName ?? person?.name}
+      assetType={previewStackedAsset?.type ?? asset.type}
+      onPrevious={() => navigateAsset('previous')}
+      onNext={() => navigateAsset('next')}
+    />
   {/if}
 
   <!-- FL-36: the slideshow settings panel (MediaViewer.jsx:2086); any control may open it through slideshowStore.toggleSettings. -->
@@ -1566,7 +1655,8 @@
     <SlideshowSettingsPanel onClose={() => void slideshowStore.closeSettings()} />
   {/if}
 
-  {#if $slideshowState === SlideshowState.None && showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && previousAsset}
+  <!-- VIEWER-P1: the side arrows stay while a slideshow plays (MediaViewer.jsx:1564-1579). -->
+  {#if showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && previousAsset}
     <div class="col-span-1 col-start-1 row-span-full row-start-1 my-auto justify-self-start" data-viewer-chrome>
       <PreviousAssetAction onPreviousAsset={() => navigateAsset('previous')} />
     </div>
@@ -1586,7 +1676,7 @@
     onpointerdown={onCanvasPointerDown}
     {@attach slideshowStage(
       () => ({
-        active: $slideshowState !== SlideshowState.None,
+        active: slideshowActive,
         assetId: asset.id,
         transition: $slideshowTransition,
         intervalSeconds: $slideshowDelay,
@@ -1724,7 +1814,7 @@
     {/key}
   {/if}
 
-  {#if $slideshowState === SlideshowState.None && showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && nextAsset}
+  {#if showNavigation && !assetViewerManager.isShowEditor && !assetViewerManager.isFaceEditMode && nextAsset}
     <div
       class="fl-viewer-next col-span-1 col-start-4 row-span-full row-start-1 my-auto justify-self-end"
       data-viewer-chrome
@@ -1841,22 +1931,22 @@
   {/if}
 
   <!--
-    FL-35: the strips above the footer. The filmstrip (shown only when the caller supplied the
-    neighbours) is the collection; a stacked photo adds its stack, with keep-this and set-primary,
-    as a row above it.
+    FL-35: what sits above the footer. The filmstrip (shown only when the caller supplied the
+    neighbours) is the collection, a frosted strip across the window. VIEWER-P3: a stacked photo adds
+    its stack as a small card centred above it (MediaViewer.jsx:1619-1633); the stack's decisions are
+    in the More menu.
   -->
   {#if (showStackStrip && stack) || showFilmstripStrip}
     <div
-      class="fl-viewer-strip absolute inset-x-0 bottom-0 col-span-4 col-start-1"
+      class="fl-viewer-strips pointer-events-none absolute inset-x-0 col-span-4 col-start-1"
       data-viewer-chrome="footer"
-      bind:clientHeight={stripsHeight}
+      bind:clientHeight={stripsAreaHeight}
     >
       {#if showStackStrip && stack}
-        <div id="stack-slideshow" transition:motionSlide={{ duration: DURATION.slow }}>
+        <div id="stack-slideshow" class="pointer-events-auto mb-3.5" in:dock={{ y: 8 }} out:dock={{ y: 8 }}>
           <ViewerStackStrip
             {stack}
             {asset}
-            onAction={handleAction}
             onSelect={(stackedAsset) => {
               cursor = { ...cursor, current: stackedAsset };
               notifyAssetUpdate?.(stackedAsset);
@@ -1867,11 +1957,13 @@
         </div>
       {/if}
       {#if showFilmstripStrip}
-        <ViewerFilmstrip
-          assets={filmstripAssets}
-          currentAssetId={asset.id}
-          onSelect={(selected) => handlePromiseError(goToAsset(selected))}
-        />
+        <div class="fl-viewer-strip pointer-events-auto" bind:clientHeight={stripsHeight}>
+          <ViewerFilmstrip
+            assets={filmstripAssets}
+            currentAssetId={asset.id}
+            onSelect={(selected) => handlePromiseError(goToAsset(selected))}
+          />
+        </div>
       {/if}
     </div>
   {/if}
@@ -2037,7 +2129,7 @@
   }
 
   .with-footer .fl-viewer-video {
-    padding-bottom: calc(var(--fl-viewer-toolbar-offset) + var(--fl-viewer-strips-height, 0px));
+    padding-bottom: calc(var(--fl-viewer-toolbar-offset) + var(--fl-viewer-strips-area-height, 0px));
   }
 
   .dragging .fl-viewer-canvas {
@@ -2076,10 +2168,19 @@
     z-index: 6;
   }
 
-  /* The frosted strips above the footer: the stack strip and the filmstrip (apple-style.css:383-392). */
-  .fl-viewer-strip {
-    isolation: isolate;
+  /* What sits above the footer: the stack card, centred, then the filmstrip across the window. */
+  .fl-viewer-strips {
     bottom: var(--fl-viewer-toolbar-offset);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* The frosted filmstrip (apple-style.css:383-392). */
+  .fl-viewer-strip {
+    position: relative;
+    isolation: isolate;
+    align-self: stretch;
     border-top: 1px solid var(--fl-viewer-border);
   }
 
@@ -2144,10 +2245,11 @@
     border-bottom: 1px solid var(--fl-viewer-border);
   }
 
+  /* VIEWER-P7: the card's title at the template's size (.mv-info h2, media-viewer.css:846-851). */
   .fl-viewer-info-head h2 {
     margin: 0;
-    font: var(--fl-type-headline);
-    letter-spacing: var(--fl-tracking-headline);
+    font-size: 15px;
+    font-weight: 550;
   }
 
   .fl-viewer-info-close {

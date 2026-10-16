@@ -5,6 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LOGO_CLEAR_SPACE, LOGO_MIN_HEIGHT } from '$lib/frameleaf/tokens';
 import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 import en from '../../../../../i18n/en.json';
+import logoOnLightUrl from '../../assets/frameleaf/frameleaf-logo-on-light.svg?url';
 import logoWhiteUrl from '../../assets/frameleaf/frameleaf-logo-white.svg?url';
 import symbolWhiteUrl from '../../assets/frameleaf/frameleaf-symbol-white.svg?url';
 import symbolUrl from '../../assets/frameleaf/frameleaf-symbol.svg?url';
@@ -202,11 +203,11 @@ describe('Frameleaf brand primitives', () => {
       expect(lockup.container.querySelector('img')?.getAttribute('src')).toBe(logoWhiteUrl);
       lockup.unmount();
 
-      // There is no mono artwork for a light surface: the gradient symbol and the name as text.
+      // There is no mono artwork for a light surface: the light version, with dark-ink "Frame".
       const light = render(Logo, { variant: 'lockup', surface: 'light', mono: true });
       const images = [...light.container.querySelectorAll('img')].map((img) => img.getAttribute('src'));
-      expect(images).toEqual([symbolUrl]);
-      expect(light.getByText('Frameleaf')).toBeInTheDocument();
+      expect(images).toEqual([logoOnLightUrl]);
+      expect(light.getByRole('img', { name: 'Frameleaf' })).toBeInTheDocument();
     });
 
     it('fades in only when asked to arrive', () => {

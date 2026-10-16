@@ -66,6 +66,7 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiBackupRestore,
+    mdiCheck,
     mdiCheckCircleOutline,
     mdiClose,
     mdiDeleteOutline,
@@ -692,13 +693,17 @@
             />
           </button>
           {#if !row.isOffline}
-            <label>
+            <!-- The photo grid's selection circle (asset-tile.css `.at-select`), always shown here. -->
+            <label class="tm-pick">
               <input
                 type="checkbox"
                 aria-label={$t('frameleaf_trash_select_item', { values: { name: row.originalFileName } })}
                 checked={selected.includes(row.id)}
                 onchange={() => (selected = toggleSelection(selected, row.id))}
               />
+              <span aria-hidden="true">
+                {#if selected.includes(row.id)}<Icon icon={mdiCheck} size="0.875rem" aria-hidden={true} />{/if}
+              </span>
             </label>
           {/if}
           {#if row.type === AssetTypeEnum.Video}
@@ -1010,20 +1015,61 @@
     height: 100%;
     object-fit: cover;
   }
-  .tm-photo > label {
+  /* A white ring on a dim fill, filled with the accent and a check when chosen (asset-tile.css). */
+  .tm-pick {
     position: absolute;
-    top: 8px;
-    inset-inline-start: 8px;
+    top: 4px;
+    inset-inline-start: 4px;
     display: grid;
     place-items: center;
     width: 36px;
     height: 36px;
-    background: color-mix(in srgb, var(--fl-viewer-canvas) 73%, transparent);
-    border-radius: var(--fl-radius-control-compact);
     cursor: pointer;
   }
-  .tm-photo > label input {
+  .tm-pick input[type='checkbox'] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .tm-pick > span {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    color: var(--fl-accent-text);
+    background: rgb(0 0 0 / 0.28);
+    border: 2px solid rgb(255 255 255 / 0.92);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
+    pointer-events: none;
+  }
+  .tm-pick:hover > span {
+    transform: scale(1.08);
+  }
+  .tm-pick input:checked + span {
+    background: var(--fl-accent);
+    border-color: var(--fl-accent);
+  }
+  .tm-pick input:focus-visible + span {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  @media (hover: none) {
+    /* A finger-sized target on touch screens. */
+    .tm-pick {
+      top: 0;
+      inset-inline-start: 0;
+      width: 44px;
+      height: 44px;
+    }
+    .tm-pick > span {
+      width: 24px;
+      height: 24px;
+    }
   }
   .tm-photo > span {
     position: absolute;

@@ -8,6 +8,7 @@ import ActivityPanel from './ActivityPanel.svelte';
 
 const me = userAdminFactory.build({ id: 'me', name: 'Me' });
 const jamie = userAdminFactory.build({ id: 'jamie', name: 'Jamie' });
+const kim = userAdminFactory.build({ id: 'kim', name: 'Kim' });
 
 const state = vi.hoisted(() => ({ activities: [] as unknown[], deleteActivity: vi.fn() }));
 vi.mock('$lib/managers/activity-manager.svelte', () => ({
@@ -28,7 +29,7 @@ let signedIn = 'me';
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
     get user() {
-      return { id: signedIn };
+      return { id: signedIn, name: signedIn, email: `${signedIn}@example.com`, profileImagePath: '' };
     },
   },
 }));
@@ -98,11 +99,24 @@ describe('ActivityPanel', () => {
 
   it('offers a member no delete on someone else’s like or comment', async () => {
     signedIn = 'jamie';
-    state.activities = [like('l1', me, 'asset-1'), comment('c1', me, 'Hi')];
+    // Two likes on the item, so the list of who liked it can be opened; neither is Jamie's.
+    state.activities = [like('l1', me, 'asset-1'), like('l3', kim, 'asset-1'), comment('c1', me, 'Hi')];
     render(ActivityPanel, { album, assetId: 'asset-1', onClose: vi.fn() });
 
     await fireEvent.click(screen.getByRole('button', { expanded: false, name: /like/ }));
     expect(screen.queryByRole('button', { name: /Remove .* like/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Delete .*comment/ })).toBeNull();
+  });
+
+  it('names a single like, as the prototype does, with nothing to expand for a member (SHARING-P2)', () => {
+    signedIn = 'jamie';
+    state.activities = [like('l1', me, null)];
+    render(ActivityPanel, { album, onClose: vi.fn() });
+
+    expect(screen.getByText('Me likes this')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { expanded: false, name: /like/ })).toBeNull();
+    // The one-line comment box sits beside the send button.
+    expect(screen.getByRole('textbox', { name: 'Write a comment' })).toHaveAttribute('rows', '1');
+    expect(screen.getByRole('button', { name: 'Send comment' })).toBeDisabled();
   });
 });

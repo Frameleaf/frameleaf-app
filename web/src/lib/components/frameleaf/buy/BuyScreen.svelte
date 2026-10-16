@@ -30,6 +30,7 @@
   import {
     CLOUD_BACKUP_PRICING,
     cloudPlanPrice,
+    discountOffer,
     discountPercent,
     formatUsd,
     productKeyMessageKey,
@@ -136,6 +137,8 @@
   // the share Frameleaf Cloud published (license/products) for that licence
   const share = $derived(discount?.share ?? 0);
   const pct = $derived(discountPercent(share));
+  // D1: what each licence takes off plans, as Frameleaf Cloud published it (7% and 5% bundled)
+  const offer = $derived(discountOffer(products));
 
   const loadServerLicense = async () => {
     if (!isAdmin) {
@@ -369,7 +372,11 @@
     <section class="buy-section" aria-labelledby="buy-cloud">
       <div class="buy-section-head">
         <h2 id="buy-cloud">{$t('frameleaf_settings_area_cloud')}</h2>
-        <p>{$t('frameleaf_buy_cloud_description')}</p>
+        <p>
+          {$t('frameleaf_buy_cloud_description')}
+          <!-- D1: either licence comes before a plan or AI credit -->
+          {#if !discount}{$t('frameleaf_buy_licence_first')}{/if}
+        </p>
       </div>
       {#if currentPlan}
         <p class="auth-success" role="status">
@@ -508,14 +515,16 @@
               : $t('frameleaf_buy_supporter_individual_description')}
             features={supporter.id === 'supporter-server'
               ? [
-                  $t('frameleaf_buy_supporter_server_feature_accounts'),
                   $t('frameleaf_buy_supporter_server_feature_badge'),
-                  $t('frameleaf_buy_supporter_feature_lifetime'),
+                  $t('frameleaf_buy_supporter_server_feature_buddy'),
+                  $t('frameleaf_buy_supporter_server_feature_cloud_backup'),
+                  $t('frameleaf_buy_supporter_feature_discount', { values: { pct: offer.server } }),
                 ]
               : [
-                  $t('frameleaf_buy_supporter_individual_feature_account'),
                   $t('frameleaf_buy_supporter_individual_feature_badge'),
-                  $t('frameleaf_buy_supporter_feature_lifetime'),
+                  $t('frameleaf_buy_supporter_individual_feature_cloud_backup'),
+                  $t('frameleaf_buy_supporter_feature_discount', { values: { pct: offer.individual } }),
+                  $t('frameleaf_buy_supporter_individual_feature_account'),
                 ]}
             recommended={supporter.id === 'supporter-server'}
           >
@@ -535,6 +544,7 @@
           </BuyPlanCard>
         {/each}
       </div>
+      <p class="buy-note">{$t('frameleaf_buy_buddy_note')}</p>
     {/if}
 
     {#if !personal}

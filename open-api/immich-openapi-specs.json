@@ -15040,7 +15040,7 @@
             "name": "edited",
             "required": false,
             "in": "query",
-            "description": "Return edited asset if available",
+            "description": "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
             "schema": {
               "type": "boolean"
             }
@@ -30729,6 +30729,7 @@
     },
     "/photography/galleries/{id}/session": {
       "post": {
+        "description": "Exchanges an invitation for a gallery session. A valid invitation with a missing or wrong password answers 401 with passwordRequired and the studio brand; an invalid, expired, or revoked invitation answers 403.",
         "operationId": "photographySession",
         "parameters": [
           {
@@ -30760,6 +30761,19 @@
               }
             },
             "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyGalleryPasswordRequiredDto"
+                }
+              }
+            },
+            "description": "The invitation is valid, and its password is missing or wrong"
+          },
+          "403": {
+            "description": "The invitation is invalid, expired, or revoked"
           }
         },
         "tags": [
@@ -32232,6 +32246,61 @@
               }
             },
             "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/workflows/{id}/preview": {
+      "post": {
+        "description": "Starts a one-hour client preview session for the gallery. Send it as X-Photography-Session to the gallery, photo, and logo reads under /photography/galleries/{id}; the gallery then reports preview: true. A preview shows every published photograph and cannot choose, submit, approve, order, check out, or download (403).",
+        "operationId": "photographyPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyPreviewSessionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPreviewSessionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "Nothing has been published for this gallery yet"
           }
         },
         "security": [
@@ -48607,6 +48676,15 @@
             }
           },
           {
+            "name": "bestPhotos",
+            "required": false,
+            "in": "query",
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "dateType",
             "required": false,
             "in": "query",
@@ -48759,6 +48837,15 @@
             }
           },
           {
+            "name": "withChildTags",
+            "required": false,
+            "in": "query",
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "withCoordinates",
             "required": false,
             "in": "query",
@@ -48851,6 +48938,15 @@
             "schema": {
               "example": "11.075683,49.416711,11.117589,49.454875",
               "type": "string"
+            }
+          },
+          {
+            "name": "bestPhotos",
+            "required": false,
+            "in": "query",
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -48996,6 +49092,15 @@
             }
           },
           {
+            "name": "withChildTags",
+            "required": false,
+            "in": "query",
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "withCoordinates",
             "required": false,
             "in": "query",
@@ -49091,6 +49196,15 @@
             "schema": {
               "example": "11.075683,49.416711,11.117589,49.454875",
               "type": "string"
+            }
+          },
+          {
+            "name": "bestPhotos",
+            "required": false,
+            "in": "query",
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -49255,6 +49369,15 @@
             }
           },
           {
+            "name": "withChildTags",
+            "required": false,
+            "in": "query",
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "withCoordinates",
             "required": false,
             "in": "query",
@@ -49370,6 +49493,15 @@
             "schema": {
               "maxLength": 8192,
               "type": "string"
+            }
+          },
+          {
+            "name": "bestPhotos",
+            "required": false,
+            "in": "query",
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -49544,6 +49676,15 @@
             "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)",
             "schema": {
               "$ref": "#/components/schemas/AssetVisibility"
+            }
+          },
+          {
+            "name": "withChildTags",
+            "required": false,
+            "in": "query",
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -54314,7 +54455,7 @@
             "type": "string"
           },
           "invitedStorageQuota": {
-            "description": "Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.",
+            "description": "Storage quota in GB (1 GB = 1,000,000,000 bytes) for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.",
             "maximum": 1000000,
             "minimum": 0,
             "nullable": true,
@@ -55337,7 +55478,7 @@
             "type": "boolean"
           },
           "defaultStorageQuota": {
-            "description": "Default storage quota",
+            "description": "Default storage quota in GB (1 GB = 1,000,000,000 bytes) when the provider sends none",
             "maximum": 9007199254740991,
             "minimum": 0,
             "nullable": true,
@@ -55388,7 +55529,7 @@
             "type": "string"
           },
           "storageQuotaClaim": {
-            "description": "Storage quota claim",
+            "description": "Storage quota claim, a number of GB (1 GB = 1,000,000,000 bytes)",
             "type": "string"
           },
           "timeout": {
@@ -56615,6 +56756,16 @@
         "properties": {
           "role": {
             "$ref": "#/components/schemas/AlbumUserRole"
+          },
+          "supporter": {
+            "description": "Whether this person is a Frameleaf supporter: they hold an Individual licence, or this server holds a Server licence. Sent by GET /albums and GET /albums/{id}",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "user": {
             "$ref": "#/components/schemas/UserResponseDto"
@@ -60924,7 +61075,7 @@
       "AssetDownloadOriginalDto": {
         "properties": {
           "edited": {
-            "description": "Return edited asset if available",
+            "description": "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
             "type": "boolean"
           },
           "format": {
@@ -69872,7 +70023,7 @@
             "type": "string"
           },
           "invitedStorageQuota": {
-            "description": "Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited",
+            "description": "Storage quota in GB (1 GB = 1,000,000,000 bytes) for accounts created through a Frameleaf invitation from now on; null is unlimited",
             "maximum": 1000000,
             "minimum": 0,
             "nullable": true,
@@ -70063,7 +70214,7 @@
             "type": "string"
           },
           "signInInvitedStorageQuota": {
-            "description": "Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited",
+            "description": "Storage quota in GB (1 GB = 1,000,000,000 bytes) for accounts created through a Frameleaf invitation; null is unlimited",
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "nullable": true,
@@ -72212,7 +72363,11 @@
             "type": "array"
           },
           "edited": {
-            "description": "Download edited asset if available",
+            "description": "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
+            "type": "boolean"
+          },
+          "includeSidecar": {
+            "description": "Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no)",
             "type": "boolean"
           }
         },
@@ -72288,11 +72443,22 @@
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
             "type": "boolean"
+          },
+          "includeSidecar": {
+            "description": "Whether an archive download puts each photo's details file (XMP sidecar) beside it",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
           "archiveSize",
-          "includeEmbeddedVideos"
+          "includeEmbeddedVideos",
+          "includeSidecar"
         ],
         "type": "object"
       },
@@ -72329,6 +72495,16 @@
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
             "type": "boolean"
+          },
+          "includeSidecar": {
+            "description": "Whether an archive download puts each photo's details file (XMP sidecar) beside it",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "type": "object"
@@ -88402,11 +88578,22 @@
           "sidebarWeb": {
             "description": "Whether people appear in web sidebar",
             "type": "boolean"
+          },
+          "suggestInSpaces": {
+            "description": "Whether a shared Space suggests which of my named people appear in it",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
           "enabled",
-          "sidebarWeb"
+          "sidebarWeb",
+          "suggestInSpaces"
         ],
         "type": "object"
       },
@@ -88469,6 +88656,16 @@
           "sidebarWeb": {
             "description": "Whether people appear in web sidebar",
             "type": "boolean"
+          },
+          "suggestInSpaces": {
+            "description": "Whether a shared Space suggests which of my named people appear in it",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "type": "object"
@@ -91033,6 +91230,11 @@
             "maxItems": 10000,
             "type": "array"
           },
+          "date": {
+            "description": "The shoot's date (YYYY-MM-DD), or null when the shoot is not found",
+            "nullable": true,
+            "type": "string"
+          },
           "mode": {
             "enum": [
               "edited-delivery",
@@ -91752,6 +91954,10 @@
             ],
             "type": "object"
           },
+          "preview": {
+            "description": "True for the studio's view-only client preview session",
+            "type": "boolean"
+          },
           "pricing": {
             "properties": {
               "additionalPrice": {
@@ -91919,8 +92125,7 @@
                 "type": "boolean"
               },
               "id": {
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "description": "Recipient ID, or \"preview\" for a client preview session",
                 "type": "string"
               },
               "name": {
@@ -92055,11 +92260,13 @@
           "chapters",
           "checkoutAvailable",
           "choices",
+          "date",
           "mode",
           "notes",
           "orders",
           "photos",
           "presentation",
+          "preview",
           "pricing",
           "publication",
           "publishedGenerationId",
@@ -92068,6 +92275,68 @@
           "revision",
           "rounds",
           "title"
+        ],
+        "type": "object"
+      },
+      "PhotographyGalleryPasswordRequiredDto": {
+        "properties": {
+          "brand": {
+            "description": "Studio brand for the password screen; logoUrl is always null",
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "font": {
+                "type": "string"
+              },
+              "logoUrl": {
+                "nullable": true,
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "tagline": {
+                "type": "string"
+              },
+              "textColor": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "tagline",
+              "email",
+              "phone",
+              "color",
+              "background",
+              "textColor",
+              "font",
+              "logoUrl"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "passwordRequired": {
+            "description": "Always true: the invitation is valid and needs its password",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "brand",
+          "message",
+          "passwordRequired"
         ],
         "type": "object"
       },
@@ -97109,6 +97378,26 @@
           "expectedRevision",
           "id",
           "name"
+        ],
+        "type": "object"
+      },
+      "PhotographyPreviewSessionDto": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "PhotographyPreviewSessionResponseDto": {
+        "properties": {
+          "expiresAt": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "session"
         ],
         "type": "object"
       },
@@ -103219,14 +103508,29 @@
           "galleries": {
             "items": {
               "properties": {
+                "currency": {
+                  "type": "string"
+                },
                 "expiresAt": {
                   "format": "date-time",
                   "nullable": true,
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                   "type": "string"
                 },
+                "invited": {
+                  "description": "Recipients that are neither revoked nor expired",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "mode": {
                   "type": "string"
+                },
+                "outstanding": {
+                  "description": "Total of quoted and accepted (unpaid) orders, in minor units of currency",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
                 },
                 "pendingEdits": {
                   "maximum": 9007199254740991,
@@ -103282,6 +103586,9 @@
                 "published",
                 "submittedRounds",
                 "unpaidOrders",
+                "outstanding",
+                "currency",
+                "invited",
                 "readyCount",
                 "pendingEdits"
               ],
@@ -113499,6 +113806,27 @@
         ],
         "type": "object"
       },
+      "SearchPreferencesResponse": {
+        "properties": {
+          "includeArchived": {
+            "description": "Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "includeArchived"
+        ],
+        "type": "object"
+      },
+      "SearchPreferencesUpdate": {
+        "properties": {
+          "includeArchived": {
+            "description": "Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "SearchResponseDto": {
         "properties": {
           "albums": {
@@ -115160,6 +115488,16 @@
           },
           "role": {
             "$ref": "#/components/schemas/AlbumUserRole"
+          },
+          "supporter": {
+            "description": "Whether this person is a Frameleaf supporter: they hold an Individual licence, or this server holds a Server licence",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "user": {
             "$ref": "#/components/schemas/UserResponseDto"
@@ -117915,7 +118253,23 @@
           "prores-422-hq",
           "sdr-jpeg",
           "hdr-jpeg",
-          "hdr-heic"
+          "hdr-heic",
+          "mp4-hevc",
+          "mp4-av1",
+          "mov-h264",
+          "mov-hevc",
+          "mov-prores-422",
+          "mkv-h264",
+          "mkv-hevc",
+          "mkv-vp8",
+          "mkv-vp9",
+          "mkv-av1",
+          "webm-vp8",
+          "webm-vp9",
+          "webm-av1-sdr",
+          "audio-mp3",
+          "audio-aac",
+          "audio-wav"
         ],
         "type": "string"
       },
@@ -120401,11 +120755,10 @@
             "type": "boolean"
           },
           "embeddedOutputFormats": {
-            "description": "Output formats whose MP4 mov_text profile and encoder this same session verified",
+            "description": "Output formats whose embedded caption track (the container's text codec) and profile this same session verified",
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },
-            "maxItems": 1,
             "type": "array"
           },
           "gpuMemoryBytes": {
@@ -120433,7 +120786,6 @@
             "items": {
               "$ref": "#/components/schemas/StudioExportFormat"
             },
-            "maxItems": 1,
             "type": "array"
           }
         },
@@ -125858,6 +126210,10 @@
             "example": "11.075683,49.416711,11.117589,49.454875",
             "type": "string"
           },
+          "bestPhotos": {
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "type": "boolean"
+          },
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
@@ -125934,6 +126290,10 @@
           "visibility": {
             "$ref": "#/components/schemas/AssetVisibility",
             "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withChildTags": {
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "type": "boolean"
           },
           "withCoordinates": {
             "description": "Include location data in the response",
@@ -126224,6 +126584,10 @@
             "example": "11.075683,49.416711,11.117589,49.454875",
             "type": "string"
           },
+          "bestPhotos": {
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "type": "boolean"
+          },
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
@@ -126295,6 +126659,10 @@
           "visibility": {
             "$ref": "#/components/schemas/AssetVisibility",
             "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
+          },
+          "withChildTags": {
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "type": "boolean"
           },
           "withCoordinates": {
             "description": "Include location data in the response",
@@ -126396,6 +126764,10 @@
             "example": "11.075683,49.416711,11.117589,49.454875",
             "type": "string"
           },
+          "bestPhotos": {
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "type": "boolean"
+          },
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
             "description": "Date source for timeline bucket grouping. Defaults to taken date."
@@ -126477,6 +126849,10 @@
             "$ref": "#/components/schemas/AssetVisibility",
             "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
           },
+          "withChildTags": {
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "type": "boolean"
+          },
           "withCoordinates": {
             "description": "Include location data in the response",
             "type": "boolean"
@@ -126514,6 +126890,10 @@
             "description": "Read the page before this ordered cursor; overrides skip",
             "maxLength": 8192,
             "type": "string"
+          },
+          "bestPhotos": {
+            "description": "Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED",
+            "type": "boolean"
           },
           "dateType": {
             "$ref": "#/components/schemas/TimeBucketDateType",
@@ -126604,6 +126984,10 @@
             "$ref": "#/components/schemas/AssetVisibility",
             "description": "Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)"
           },
+          "withChildTags": {
+            "description": "With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.",
+            "type": "boolean"
+          },
           "withCoordinates": {
             "description": "Include location data in the response",
             "type": "boolean"
@@ -126619,10 +127003,11 @@
         "type": "object"
       },
       "TimelineOrderedSort": {
-        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture",
+        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true",
         "enum": [
           "filename",
-          "rating"
+          "rating",
+          "quality"
         ],
         "type": "string"
       },
@@ -128389,6 +128774,9 @@
               }
             ]
           },
+          "search": {
+            "$ref": "#/components/schemas/SearchPreferencesResponse"
+          },
           "sharedLinks": {
             "$ref": "#/components/schemas/SharedLinksResponse"
           },
@@ -128410,6 +128798,7 @@
           "ratings",
           "recentlyAdded",
           "revision",
+          "search",
           "sharedLinks",
           "tags"
         ],
@@ -128502,6 +128891,9 @@
                 "state": "Added"
               }
             ]
+          },
+          "search": {
+            "$ref": "#/components/schemas/SearchPreferencesUpdate"
           },
           "sharedLinks": {
             "$ref": "#/components/schemas/SharedLinksUpdate"

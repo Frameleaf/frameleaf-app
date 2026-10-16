@@ -42,7 +42,7 @@
 </script>
 
 {#if canRead && (failed || (evidence && (evidence.recorded || evidence.alternatives.length > 0 || evidence.suggestion)))}
-  <section class="px-4 pt-4 text-sm" data-testid="camera-identification">
+  <section class="text-sm" data-testid="camera-identification">
     {#if failed}
       <p role="status">{$t('frameleaf_camera_evidence_failed')}</p>
       <button type="button" class="mt-1 underline hover:text-primary" onclick={() => attempt++}>{$t('retry')}</button>

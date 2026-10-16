@@ -13,6 +13,7 @@ import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import { uploadAssetsStore } from '$lib/stores/upload';
+import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -676,7 +677,7 @@ describe('LibraryView', () => {
     });
 
     it('gives a brand-new library a way forward and holds back the chrome that needs photos', async () => {
-      await setupLibrary();
+      await setupLibrary({ options: { visibility: AssetVisibility.Timeline, withStacked: true } });
       const empty = await screen.findByTestId('frameleaf-library-empty');
       expect(within(empty).getByRole('status')).toBeInTheDocument();
       expect(empty).toHaveTextContent('frameleaf_library_first_run_title');
@@ -691,13 +692,21 @@ describe('LibraryView', () => {
     it('says uploads are on their way instead of offering Upload again while their previews are made', async () => {
       uploadAssetsStore.track('success');
       try {
-        await setupLibrary();
+        await setupLibrary({ options: { visibility: AssetVisibility.Timeline } });
         const empty = await screen.findByTestId('frameleaf-library-empty');
         expect(empty).toHaveTextContent('frameleaf_library_first_run_preparing_title');
         expect(screen.queryByRole('button', { name: 'frameleaf_library_first_run_upload' })).not.toBeInTheDocument();
       } finally {
         uploadAssetsStore.reset();
       }
+    });
+
+    // LIB-P3: an empty Best Photos (or Locked, or a map area) is not a brand-new library.
+    it('keeps the chrome and offers no upload on an empty library page that is not the Photos timeline', async () => {
+      await setupLibrary({ options: { visibility: AssetVisibility.Timeline, bestPhotos: true }, ranked: true });
+      const empty = await screen.findByTestId('frameleaf-library-empty');
+      expect(empty).not.toHaveTextContent('frameleaf_library_first_run_title');
+      expect(screen.getByTestId('frameleaf-results-toolbar')).toBeInTheDocument();
     });
 
     it('keeps the plain empty state, with no upload offer, on any other empty view (T-10)', async () => {
@@ -769,11 +778,66 @@ describe('LibraryView', () => {
       await setupLibrary();
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_list_view' }));
       expect(librarySession.state.view).toBe('list');
-      librarySession.setLayout('timeline');
-      await tick();
-      expect(screen.queryByRole('button', { name: 'frameleaf_library_list_view' })).not.toBeInTheDocument();
       librarySession.setLayout('browse');
       librarySession.patchView({ view: 'grid' });
+    });
+
+    // LIB-P1: Filter docks the Filters panel beside the photos instead of opening the search palette.
+    it('opens the docked Filters panel from the toolbar and closes it again', async () => {
+      const palette = vi.fn();
+      addEventListener('frameleaf:open-filters', palette);
+      // As FilterPanel.spec: jsdom has neither, and the panel's pickers and deep link read them.
+      Element.prototype.scrollIntoView ??= () => {};
+      vi.stubGlobal('visualViewport', null);
+      try {
+        // The panel's pickers need the app's tooltip provider, which the root layout supplies.
+        renderWithTooltips(LibraryView, {
+          options: {},
+          destination: { kind: 'library' },
+          syncUrl: false,
+          title: 'Library',
+        });
+        const filter = await screen.findByRole('button', { name: 'filter' });
+        await fireEvent.click(filter);
+        const panel = await screen.findByTestId('library-filter-panel');
+        expect(within(panel).getByRole('heading', { name: 'frameleaf_search_filters' })).toBeInTheDocument();
+        expect(filter).toHaveAttribute('aria-expanded', 'true');
+        expect(palette).not.toHaveBeenCalled();
+        await fireEvent.keyDown(panel, { key: 'Escape' });
+        await waitFor(() => expect(screen.queryByTestId('library-filter-panel')).not.toBeInTheDocument());
+      } finally {
+        removeEventListener('frameleaf:open-filters', palette);
+        vi.unstubAllGlobals();
+      }
+    });
+
+    // LIB-P7: Grid and List in every layout. The Timeline reads as the grid; List shows Browse's rows.
+    it('keeps Grid and List in the Timeline, where List opens the list in Browse', async () => {
+      await setupLibrary();
+      librarySession.setLayout('timeline');
+      await tick();
+      expect(screen.getByRole('button', { name: 'frameleaf_library_grid_view' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_library_list_view' }));
+      expect(librarySession.layout).toBe('browse');
+      expect(librarySession.state.view).toBe('list');
+      librarySession.patchView({ view: 'grid' });
+    });
+
+    // LIB-P3: Best Photos opens Browse on its quality ranking and keeps "Best first" for itself.
+    it('orders a ranked page by quality outside the Timeline', async () => {
+      await setupLibrary({ options: { visibility: AssetVisibility.Timeline, bestPhotos: true }, ranked: true });
+      librarySession.setLayout('browse');
+      await waitFor(() =>
+        expect(sdkMock.getTimeBuckets).toHaveBeenLastCalledWith(
+          expect.objectContaining({ bestPhotos: true, orderedBy: 'quality' }),
+        ),
+      );
+      const sort = screen.getByRole('combobox', { name: 'frameleaf_library_sort' });
+      expect(sort).toHaveValue('quality');
+      expect(librarySession.state.sort).toBe('captured-desc');
     });
 
     it('draws no Sort where the page fixes its own order', async () => {

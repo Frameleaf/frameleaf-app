@@ -1,4 +1,5 @@
 import {
+  AssetDevelopFileKind,
   AssetMediaSize,
   AssetVisibility,
   bulkTagAssets,
@@ -12,6 +13,7 @@ import {
   untagAssets,
   updateAsset,
   updateAssets,
+  viewAssetDevelopFile,
   type AssetResponseDto,
   type DownloadArchiveInfo,
   type DownloadInfoDto,
@@ -158,10 +160,15 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
     return mine;
   };
 
+  // Each item downloads as it is shown (owner, 2026-10-16): `edited` asks the server for the version
+  // on screen (the owner's current version or edit, else the original). The server fills in the
+  // account's details-file choice (ACCOUNT-P5) because the request leaves it out.
+  const edited = true;
+
   const fetchArchive =
     (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
     (context) => {
-      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName));
+      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited));
       // A part that could never be held is ready at once; it does not wait for the parts before it.
       if (archive.size > bufferLimit()) {
         return Promise.resolve(stream);
@@ -172,7 +179,7 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
           size: archive.size,
           request: (fetch) =>
             requestArchive(
-              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited: true } },
+              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited } },
               { signal: context.signal, fetch },
             ),
           stream,
@@ -241,10 +248,13 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
 };
 
 /**
- * Downloads one file (an original, its edited version or a Live Photo's motion part) through the
+ * Downloads one file (an original, the version on screen or a Live Photo's motion part) through the
  * download panel, with Cancel and Retry (FL-45 D-3). A file up to `bufferLimit()` (or of unknown
  * size) is fetched with progress; a larger one is ready at once and Save streams it through the
  * browser. Returns the panel row's key.
+ *
+ * `edited` asks for the item as it is shown (the server's choice of the current version); a
+ * `revisionId` names the develop version exactly, for the viewer that is showing it.
  */
 export const downloadAssetFile = ({
   id,
@@ -252,22 +262,25 @@ export const downloadAssetFile = ({
   edited,
   size,
   format,
+  revisionId,
 }: {
   id: string;
   filename: string;
   edited: boolean;
   size?: number;
   format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic';
+  /** The owner's develop version on screen: its rendered master is downloaded. */
+  revisionId?: string;
 }) =>
   downloadManager.start(
     { name: filename, assetIds: [id], count: 1, total: format ? 0 : (size ?? 0), group: downloadGroup() },
     withDownloadErrors((context) =>
       holdOrStream(context, {
         // An edited file is not the size recorded for the original, so its headers decide.
-        size: edited || format || !size ? undefined : size,
+        size: edited || format || revisionId || !size ? undefined : size,
         fetcher: async (input, init) => {
           const response = await fetch(input, init);
-          if ((edited || format) && response.ok) {
+          if ((edited || format || revisionId) && response.ok) {
             const extension = (
               {
                 'image/jpeg': 'jpeg',
@@ -285,12 +298,23 @@ export const downloadAssetFile = ({
           return response;
         },
         request: (fetch) =>
-          requestAsset(
-            { ...authManager.params, id, edited, ...(format && { format }) },
-            { signal: context.signal, fetch },
-          ),
+          revisionId
+            ? viewAssetDevelopFile(
+                { id, revisionId, kind: AssetDevelopFileKind.Master },
+                { signal: context.signal, fetch },
+              )
+            : requestAsset(
+                { ...authManager.params, id, edited, ...(format && { format }) },
+                { signal: context.signal, fetch },
+              ),
         stream: new StreamedDownload((name) =>
-          downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, format }), name),
+          downloadUrl(
+            revisionId
+              ? // develop-api's `developFileUrl`, without its editor imports
+                `${getBaseUrl()}/assets/${encodeURIComponent(id)}/develop/revisions/${encodeURIComponent(revisionId)}/file?kind=${AssetDevelopFileKind.Master}`
+              : getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, format }),
+            name,
+          ),
         ),
       }),
     ),

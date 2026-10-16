@@ -17,6 +17,12 @@
    * part of the draft: the server points email at the account and this page then follows the saved
    * settings. Gmail keeps its app password route beside it; Microsoft is sign-in only, and is only
    * offered when Frameleaf Cloud offers it (or to say why it cannot be used yet).
+   *
+   * ADMIN-P3: who the emails come from. "How it looks in an inbox" shows the sender as an inbox
+   * will (the saved sender, or the signed-in account's own address when the saved one names
+   * another), and Advanced holds the sender's name; the address is the account's. The old template
+   * editor is now "The emails themselves": each email's wording in plain words, in a dialog with a
+   * preview (`EmailWordingDialog`), over the same `templates.email.*` settings.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
@@ -32,6 +38,16 @@
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import Tiles from '$lib/components/frameleaf/settings/kit/Tiles.svelte';
+  import EmailWordingDialog from '$lib/components/frameleaf/settings/notifications/EmailWordingDialog.svelte';
+  import {
+    senderOf,
+    senderParts,
+    shownSender,
+    toTemplate,
+    toWords,
+    WORDINGS,
+    type Wording,
+  } from '$lib/components/frameleaf/settings/notifications/email-wording';
   import {
     MAIL_PROVIDERS,
     MICROSOFT_TILE,
@@ -55,8 +71,7 @@
   } from '@frameleaf/sdk';
   import { mdiEmailAlertOutline, mdiEmailCheckOutline, mdiEmailOffOutline } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { t } from 'svelte-i18n';
-  import TemplateSettings from './TemplateSettings.svelte';
+  import { t, type Translations } from 'svelte-i18n';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const settingsDraft = requireSystemConfigDraft();
@@ -117,6 +132,32 @@
   /** The rows of a way of sending that is set up: a mail server's form, or a signed-in account. */
   const settled = $derived(!!provider && (!oneClick || signedIn));
 
+  /** The address emails go out from: the signed-in account's, or the sender's, or the account name. */
+  const senderAddress = $derived(
+    oneClick ? (connection?.email ?? '') : senderParts(smtp.from).address || smtp.transport.username,
+  );
+  /** Who the emails come from, as an inbox shows them. */
+  const inbox = $derived.by(() => {
+    const shown = shownSender(smtp.from, oneClick ? connection?.email : undefined);
+    return { name: shown.name, address: shown.address || senderAddress };
+  });
+  const setSenderName = (value: string) => {
+    settingsDraft.draft.notifications.smtp.from = senderOf(value, senderAddress);
+  };
+  const setSenderAddress = (value: string) => {
+    settingsDraft.draft.notifications.smtp.from = senderOf(senderParts(smtp.from).name, value);
+  };
+
+  /** The email whose wording is being changed, in its dialog. */
+  let editing = $state<Wording>();
+  const tr = (key: Translations) => $t(key);
+  const useWording = (wording: Wording, words: string) => {
+    settingsDraft.draft.templates.email[wording.key] = words.trim() ? toTemplate(words, wording, tr) : '';
+    said = $t(words.trim() ? 'frameleaf_notify_wording_said_yours' : 'frameleaf_notify_wording_said_standard', {
+      values: { name: $t(wording.name) },
+    });
+  };
+
   const tiles = $derived.by(() => {
     const presets = MAIL_PROVIDERS.map((item) => ({ id: item.id, name: item.name, hint: $t(item.hint) }));
     const microsoft =
@@ -166,10 +207,14 @@
     smtp.transport.port = saved.transport.port;
     smtp.transport.secure = saved.transport.secure;
   };
-  /** With a provider, the email address is the account name and, until a sender is typed, the sender. */
+  /**
+   * With a provider, the email address is the account name and the sender's address: a sender that
+   * is empty or uses the account's old address follows it, keeping its name.
+   */
   const setAddress = (value: string) => {
-    if (!smtp.from.trim() || smtp.from === smtp.transport.username) {
-      smtp.from = value;
+    const parts = senderParts(smtp.from);
+    if (!parts.address || parts.address === smtp.transport.username) {
+      smtp.from = senderOf(parts.name, value);
     }
     smtp.transport.username = value;
   };
@@ -397,13 +442,18 @@
             onChange={(value) => (settingsDraft.draft.notifications.smtp.transport.secure = value)}
           />
         </Row>
-        <Row label={$t('frameleaf_notify_delivery_sender')} help={$t('frameleaf_notify_delivery_sender_help')}>
+        <Row
+          label={$t('frameleaf_notify_delivery_sender_address')}
+          help={$t('frameleaf_notify_delivery_sender_address_help')}
+        >
           <Field
             wide
-            label={$t('frameleaf_notify_delivery_sender')}
-            value={smtp.from}
+            type="email"
+            label={$t('frameleaf_notify_delivery_sender_address')}
+            value={senderParts(smtp.from).address}
+            placeholder="photos@example.com"
             {disabled}
-            onChange={(value) => (settingsDraft.draft.notifications.smtp.from = value)}
+            onChange={setSenderAddress}
           />
         </Row>
       {/if}
@@ -418,18 +468,29 @@
     {/if}
 
     {#if settled}
+      <Row label={$t('frameleaf_notify_inbox')} help={$t('frameleaf_notify_inbox_help')}>
+        <span class="inbox" aria-live="polite">
+          {#if inbox.name || inbox.address}
+            <strong>{inbox.name || inbox.address}</strong>
+            {#if inbox.name && inbox.address}<span class="value">{inbox.address}</span>{/if}
+          {:else}
+            <span class="value">{$t('frameleaf_notify_inbox_none')}</span>
+          {/if}
+        </span>
+      </Row>
       <Advanced>
-        {#if preset}
-          <Row label={$t('frameleaf_notify_delivery_sender')} help={$t('frameleaf_notify_delivery_sender_help')}>
-            <Field
-              wide
-              label={$t('frameleaf_notify_delivery_sender')}
-              value={smtp.from}
-              {disabled}
-              onChange={(value) => (settingsDraft.draft.notifications.smtp.from = value)}
-            />
-          </Row>
-        {/if}
+        <Row
+          label={$t('frameleaf_notify_delivery_sender_name')}
+          help={$t('frameleaf_notify_delivery_sender_name_help')}
+        >
+          <Field
+            wide
+            label={$t('frameleaf_notify_delivery_sender_name')}
+            value={senderParts(smtp.from).name}
+            {disabled}
+            onChange={setSenderName}
+          />
+        </Row>
         <Row label={$t('frameleaf_notify_delivery_reply')} help={$t('frameleaf_notify_delivery_reply_help')}>
           <Field
             wide
@@ -518,8 +579,33 @@
   {/if}
 
   <Section title={$t('frameleaf_notify_wording_title')} description={$t('frameleaf_notify_wording_description')}>
-    <div class="wording"><TemplateSettings /></div>
+    <Advanced summary={$t('frameleaf_notify_wording_change')}>
+      {#each WORDINGS as wording (wording.key)}
+        {@const ownWording = settingsDraft.draft.templates.email[wording.key]}
+        <Row label={$t(wording.name)} help={$t(wording.when)}>
+          <span class="value">
+            {ownWording ? $t('frameleaf_notify_wording_yours') : $t('frameleaf_notify_wording_standard')}
+          </span>
+          <Button
+            {disabled}
+            label={$t('frameleaf_notify_wording_edit_label', { values: { name: $t(wording.name) } })}
+            onclick={() => (editing = wording)}
+          >
+            {$t('frameleaf_notify_wording_edit')}
+          </Button>
+        </Row>
+      {/each}
+    </Advanced>
   </Section>
+
+  {#if editing}
+    <EmailWordingDialog
+      wording={editing}
+      words={toWords(settingsDraft.draft.templates.email[editing.key], editing, tr)}
+      onUse={(words) => editing && useWording(editing, words)}
+      onClose={() => (editing = undefined)}
+    />
+  {/if}
 
   <SettingActions keys={['notifications', 'templates']} {disabled} />
 </KitPage>
@@ -546,8 +632,21 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-callout);
   }
-  .result,
-  .wording {
+  /* The sender as an inbox lists it: the name, then the address (notifications.jsx `srv-wrap`). */
+  .inbox {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: var(--fl-space-1) var(--fl-space-2);
+    min-width: 0;
+    font-size: var(--fl-font-callout);
+    overflow-wrap: anywhere;
+  }
+  .inbox strong {
+    font-weight: 600;
+  }
+  .result {
     padding-bottom: var(--fl-space-5);
   }
 </style>

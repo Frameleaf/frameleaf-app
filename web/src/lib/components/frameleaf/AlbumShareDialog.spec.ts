@@ -56,6 +56,21 @@ describe('AlbumShareDialog', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('tags the members the server says are supporters (supporter option b)', () => {
+    const album = albumFactory.build({
+      id: 'album-1',
+      albumUsers: [
+        { user: me, role: AlbumUserRole.Owner, supporter: false },
+        { user: jamie, role: AlbumUserRole.Editor, supporter: true },
+      ],
+    });
+    render(AlbumShareDialog, { album, open: true, onChanged: vi.fn(), onLeave: vi.fn() });
+
+    const rows = within(screen.getByRole('region', { name: 'Who has access' })).getAllByRole('listitem');
+    expect(within(rows.find((row) => row.textContent?.includes('Jamie'))!).getByText('Supporter')).toBeInTheDocument();
+    expect(within(rows.find((row) => row.textContent?.includes('You'))!).queryByText('Supporter')).toBeNull();
+  });
+
   it('invites several people at once with one role', async () => {
     const sam = userAdminFactory.build({ id: 'sam', name: 'Sam' });
     sdkMock.searchUsers.mockResolvedValue([jamie, sam]);

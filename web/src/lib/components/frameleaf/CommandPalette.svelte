@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    commandGroups,
     groupCommands,
     loadRecentCommands,
     navigationCommands,
@@ -250,13 +251,15 @@
     {/each}
   </div>
 
+  <!-- CommandPalette.jsx `cp-foot`: the keys, then the match count, or the number of groups while idle. -->
   <div class="foot">
     <span aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> {$t('frameleaf_search_navigate')}</span>
     <span aria-hidden="true"><kbd>↩</kbd> {$t('frameleaf_search_run')}</span>
+    <span aria-hidden="true"><kbd>Esc</kbd> {$t('close')}</span>
     <span aria-live="polite">
       {searching
         ? $t('frameleaf_search_match_count', { values: { count: flat.length } })
-        : $t('frameleaf_search_command_hint')}
+        : $t('frameleaf_search_group_count', { values: { count: commandGroups.length } })}
     </span>
   </div>
 </dialog>

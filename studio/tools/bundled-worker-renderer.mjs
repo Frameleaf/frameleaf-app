@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { listedNames, probeExportMatrix, probeMedia } from './bundled-worker-formats.mjs';
 import { BundledRefusal, avDrift } from './bundled-worker-recipe.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -16,12 +17,7 @@ const defaultEngine = fileURLToPath(new URL('../engine/', import.meta.url));
 
 /** ffprobe's stream list for a file. */
 export async function probeStreams(file, ffprobe = 'ffprobe') {
-  const { stdout } = await execFileAsync(
-    ffprobe,
-    ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height,channels,sample_rate,duration', '-of', 'json', file],
-    { timeout: 60_000, maxBuffer: 4 * 1024 * 1024 },
-  );
-  return JSON.parse(stdout).streams ?? [];
+  return (await probeMedia(file, ffprobe)).streams;
 }
 
 /**
@@ -179,11 +175,14 @@ export async function createEngineRenderer({
         `Conformance: ${proven ? 'H.264/AAC MP4 written' : `no verified output (engine ${summary.effectiveSettings?.codec ?? 'none'}, streams ${streams.map((stream) => stream.codec_name).join('+') || 'none'})`}; ` +
           `renderer ${softwareRenderer ? 'software (CPU)' : `GPU ${session.adapter?.vendor ?? ''} ${session.adapter?.architecture ?? ''}`.trim()}`,
       );
+      // FL-105: every other format is written from this same render, read back, and only then offered.
+      const matrix = proven ? await probeExportMatrix({ master: summary.outputPath, ffmpeg, ffprobe, log }) : null;
       return {
         reportedAt: new Date(),
         softwareRenderer,
-        codecs: proven ? ['webcodecs-avc', 'aac'] : [],
-        formats: proven ? ['mp4'] : [],
+        codecs: matrix?.codecs ?? [],
+        formats: matrix?.formats ?? [],
+        writers: matrix?.writers ?? {},
       };
     } finally {
       await session.close();
@@ -192,16 +191,24 @@ export async function createEngineRenderer({
   };
 
   let softwareRenderer = true;
+  let writers = {};
+  const encoders = [...listedNames((await execFileAsync(ffmpeg, ['-hide_banner', '-encoders'], { timeout: 60_000 })).stdout)];
   return {
     get softwareRenderer() {
       return softwareRenderer;
     },
+    /** Format id -> encoder, for the formats the last admission check wrote and read back. */
+    get writers() {
+      return writers;
+    },
+    encoders,
     async conformance() {
       const result = await conformance();
       softwareRenderer = result.softwareRenderer;
+      writers = result.writers;
       return result;
     },
-    probe: (file) => probeStreams(file, ffprobe),
+    probe: (file) => probeMedia(file, ffprobe),
     async render({ project, files, settings, bounds, outputPath, signal, onProgress }) {
       const session = await open(files, signal);
       try {

@@ -8,7 +8,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
-  import { bytesToGiB, msToMinutes } from '$lib/frameleaf/render-workers';
+  import { bytesToGB, msToMinutes } from '$lib/frameleaf/render-workers';
   import { locale } from '$lib/stores/preferences.store';
   import type { RenderWorkerLimitDto, RenderWorkerLimitsResponseDto, UserAdminResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
@@ -42,10 +42,10 @@
   };
 
   const output = (value: string | null) => {
-    const gib = bytesToGiB(value);
-    return gib === null
+    const gb = bytesToGB(value);
+    return gb === null
       ? $t('frameleaf_render_workers_ceiling_none')
-      : $t('frameleaf_render_workers_ceiling_output', { values: { gib } });
+      : $t('frameleaf_render_workers_ceiling_output', { values: { gb } });
   };
 
   const concurrency = (limit: RenderWorkerLimitDto) =>

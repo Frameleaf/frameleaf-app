@@ -21,11 +21,12 @@ it.each(['release', 'close'])('ends an active resize on %s', async (change) => {
   if (change === 'close') {
     view.unmount();
   } else {
-    await fireEvent.pointerUp(window, { pointerId: 1 });
+    // Pointer events bubble from the document to the window, where the drag listens.
+    await fireEvent.pointerUp(document, { pointerId: 1 });
   }
   expect(sidebarStore.isResizing).toBe(false);
   const width = get(sidebarWidth);
-  await fireEvent.pointerMove(window, { pointerId: 1, clientX: 450 });
+  await fireEvent.pointerMove(document, { pointerId: 1, clientX: 450 });
   expect(get(sidebarWidth)).toBe(width);
 });
 
@@ -36,6 +37,6 @@ it('replaces a prior drag and clears its listeners when the layout closes', asyn
   await fireEvent.pointerDown(separator, { pointerId: 2 });
   view.unmount();
   expect(sidebarStore.isResizing).toBe(false);
-  await fireEvent.pointerMove(window, { clientX: 450 });
+  await fireEvent.pointerMove(document, { clientX: 450 });
   expect(get(sidebarWidth)).toBe(300);
 });

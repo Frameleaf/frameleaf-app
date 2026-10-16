@@ -193,8 +193,19 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
       render(LicenseSection);
 
       expect((await screen.findByText('7% off Frameleaf Cloud')).parentElement).toHaveTextContent(
-        '7% off Frameleaf Cloud plans with a server licence, or 5% with an individual licence, for as long as the server stays licensed.',
+        '7% off Frameleaf Cloud plans with a Server licence, or 5% with an Individual licence, for as long as the server stays licensed.',
       );
+    });
+
+    it('D1: lists Cloud Backup and Buddy Backup among the benefits, and that a plan needs a licence', async () => {
+      sdkMock.getLicenseStatus.mockResolvedValue(license());
+      render(LicenseSection);
+
+      expect((await screen.findByText('Cloud Backup')).parentElement).toHaveTextContent(
+        'for every account (Server licence) or your own (Individual licence), with a Frameleaf Cloud plan.',
+      );
+      expect(screen.getByText('Buddy Backup').parentElement).toHaveTextContent('with a Server licence on both');
+      expect(screen.getByText(/You need one before a Frameleaf Cloud plan or AI credit/)).toBeInTheDocument();
     });
 
     it('activates a key for one person as the administrator’s own supporter key, as the prototype allows', async () => {
@@ -328,7 +339,11 @@ describe('Frameleaf Cloud licence and plan pages (FL-156, FL-157, FL-171, FL-172
 
       await fireEvent.click(screen.getByRole('button', { name: /Remove licence key/ }));
       const dialog = await screen.findByRole('dialog');
-      expect(within(dialog).getByText(/supporter badge and the licensed-server discount stop/)).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(
+          /supporter badge, Buddy Backup, Cloud Backup for every account and the plan discount stop/,
+        ),
+      ).toBeInTheDocument();
       await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove key' }));
       await waitFor(() => expect(sdkMock.removeLicenseKey).toHaveBeenCalled());
     });

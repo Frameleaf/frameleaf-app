@@ -1,5 +1,6 @@
 <script lang="ts">
   import Brand from '$lib/components/frameleaf/Brand.svelte';
+  import Logo from '$lib/components/frameleaf/Logo.svelte';
   import '$lib/frameleaf/tokens.css';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
@@ -29,7 +30,9 @@
 <div class="frameleaf public-viewer" data-theme={appTheme}>
   <header class="pv-header">
     <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-      <Brand />
+      <!-- SHARING-P6: on phones the mark alone, as in the app's top bar, so the actions fit beside it. -->
+      <span class="pv-brand-full"><Brand /></span>
+      <span class="pv-brand-mark"><Logo variant="symbol" size="tiny" clearSpace /></span>
     </a>
     {@render header?.()}
   </header>
@@ -57,9 +60,11 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem 1.25rem;
-    padding: 0.75rem 1rem;
-    background: color-mix(in srgb, var(--fl-canvas), transparent 12%);
+    gap: var(--fl-space-3) var(--fl-space-5);
+    /* sharing.css .pv-header: a 60px panel-coloured bar over the canvas, 16px phone gutter, 24px wide. */
+    min-height: 60px;
+    padding: var(--fl-space-2) var(--fl-space-4);
+    background: color-mix(in srgb, var(--fl-panel), transparent 6%);
     border-bottom: 1px solid var(--fl-border);
   }
   .pv-brand {
@@ -67,12 +72,18 @@
     flex-shrink: 0;
     width: 8.5rem;
   }
+  .pv-brand-full {
+    display: contents;
+  }
+  .pv-brand-mark {
+    display: none;
+  }
   .pv-main {
     position: relative;
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 0 0.5rem;
+    padding: 0 var(--fl-space-4);
   }
   .pv-main.pv-hero {
     display: flex;
@@ -84,20 +95,41 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    padding: 0.5rem 1rem;
+    padding: var(--fl-space-2) var(--fl-space-4);
     border-top: 1px solid var(--fl-border);
+    color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  /* sharing.css .pv-exit: a quiet way out, muted until hovered. */
   .pv-exit {
-    color: var(--fl-accent);
-    font-weight: 560;
+    padding-block: var(--fl-space-1);
+    color: var(--fl-muted);
   }
   .pv-exit:hover {
-    text-decoration: underline;
+    color: var(--fl-text);
+  }
+  /* SHARING-P6: on phones the brand and the share's actions share the first row. */
+  @media (max-width: 700px) {
+    .pv-header {
+      column-gap: var(--fl-space-3);
+    }
+    .pv-brand {
+      width: auto;
+    }
+    .pv-brand-full {
+      display: none;
+    }
+    .pv-brand-mark {
+      display: inline-flex;
+    }
   }
   @media (min-width: 768px) {
+    .pv-header,
+    .pv-footer {
+      padding-inline: var(--fl-space-6);
+    }
     .pv-main:not(.pv-hero) {
-      padding: 0 1.5rem;
+      padding: 0 var(--fl-space-6);
     }
   }
 </style>

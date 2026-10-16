@@ -57,6 +57,7 @@
     isAreaAvailable,
     isPlainArea,
     isScreenArea,
+    PAGE_DESCRIPTIONS,
     resolveSettingsArea,
     resolveSettingsSection,
     searchSettingsSections,
@@ -359,12 +360,40 @@
     'integrity',
     'enrichment-care',
     'repair',
+    // ACCOUNT-P6: the Google Photos import page draws its own kit cards (status, steps, imports).
+    'takeout',
   ];
+  /** Pages opened from another page of their area, and that page (`settings-v2/care/duplicates.jsx`). */
+  const PARENT_PAGES: Readonly<Record<string, string>> = { deduplication: 'duplicates' };
+  /** File checks, whose pages open one check's list in place (`?report=<type>`). */
+  const SECTION_REPORTS = new Set(['integrity-checks', 'integrity']);
   // A page named like its area does not repeat the name as a breadcrumb (CommandCenter.jsx:721-731):
   // the overline names the area's group instead. Backup is one screen under one heading, whichever
   // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
   const titled = $derived(area === 'backups' || area === 'sharing' ? undefined : selected);
   const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
+  /** ADMIN-P6: the prototype's description under the page heading, where the page has one. */
+  const pageDescription = $derived(
+    titled && Object.hasOwn(PAGE_DESCRIPTIONS, titled.key) ? PAGE_DESCRIPTIONS[titled.key] : undefined,
+  );
+  // Pages opened from a landing page (FL-364) or a plain-words landing page (FL-361) go back with
+  // "‹ Area" under the heading and name only the area in the overline, as `settings-v2/kit.jsx` Page does.
+  const backToArea = $derived(hasLandingPage(area) || (isPlainArea(area) && breadcrumb));
+  /**
+   * Where that "‹" goes (ADMIN-P9): back to the page it was opened from, as the prototype's `back`
+   * does. A page opened from another page of its area goes back there (Merge older copies is opened
+   * from Duplicates), one check's list (`?report=`) goes back to File checks, and every other page
+   * goes back to its area's landing page. The overline names the same page as the link.
+   */
+  const backTarget = $derived.by(() => {
+    if (selected && SECTION_REPORTS.has(selected.key) && page.url.searchParams.has('report')) {
+      return { href: commandCenterUrl(area, selected.key), label: selected.title, overline: areaCopy[area].title };
+    }
+    const parent = selected ? areaSections.find((section) => section.key === PARENT_PAGES[selected.key]) : undefined;
+    return parent
+      ? { href: commandCenterUrl(area, parent.key), label: parent.title, overline: parent.title }
+      : { href: commandCenterUrl(area), label: areaCopy[area].title, overline: areaCopy[area].title };
+  });
   // As in the template, the Users manager carries its own heading.
   // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
   const ownHeading = $derived(
@@ -885,9 +914,9 @@
               {#if !ownHeading}
                 <header class="cc-page-heading">
                   <SettingsOverline>
-                    {#if titled && breadcrumb && hasLandingPage(area)}
+                    {#if titled && breadcrumb && backToArea}
                       <!-- The way back is the link under the heading, as in the prototype. -->
-                      {areaCopy[area].title}
+                      {backTarget.overline}
                     {:else if titled && breadcrumb}
                       <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
                       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
@@ -897,7 +926,9 @@
                     {/if}
                   </SettingsOverline>
                   <h1>{titled?.title ?? areaCopy[area].title}</h1>
-                  <p>{titled?.subtitle ?? areaCopy[area].description}</p>
+                  <p>
+                    {titled ? (pageDescription ? $t(pageDescription) : titled.subtitle) : areaCopy[area].description}
+                  </p>
                 </header>
               {/if}
               {#if tourNotice}
@@ -929,18 +960,14 @@
                     }
                     void loadPreferenceHistory();
                   }}
-                  onConfigure={() => navigate(settingsDraft ? 'processing' : 'preferences')}
-                  configureLabel={settingsDraft
-                    ? $t('frameleaf_settings_history_empty_action')
-                    : $t('frameleaf_settings_history_empty_preferences_action')}
                 />
               {:else if hasLandingPage(area) && !selected}
                 <KitPage><ComputersLanding /></KitPage>
               {:else if selected}
                 <div class="cc-settings-content">
-                  {#if hasLandingPage(area) && !ownHeading}
+                  {#if backToArea && !ownHeading}
                     <div class="cc-back-to-area">
-                      <BackLink href={commandCenterUrl(area)} label={areaCopy[area].title} />
+                      <BackLink href={backTarget.href} label={backTarget.label} />
                     </div>
                   {/if}
                   <section

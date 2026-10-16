@@ -22,6 +22,13 @@ type LayoutOptions = {
    * { height: var(--tl-h) }` with `.at-caption` 6px below it).
    */
   captionHeight: number;
+  /**
+   * Frameleaf: every day group starts a row of its own across the full width, as the prototype's
+   * `.tl-group` sections do, instead of sharing a row with the day before it when both fit. A day
+   * with one or two photos then still has the whole width for its heading. Off by default; the
+   * Frameleaf Timeline turns it on.
+   */
+  dayRows: boolean;
 };
 export abstract class VirtualScrollManager {
   topSectionHeight = $state(0);
@@ -43,6 +50,7 @@ export abstract class VirtualScrollManager {
   #fillRowWidth = $state(false);
   #cells = $state<CellGridOptions | null>(null);
   #captionHeight = $state(0);
+  #dayRows = $state(false);
   #scrolling = $state(false);
   #suspendTransitions = $state(false);
   #resetScrolling = debounce(() => (this.#scrolling = false), 1000);
@@ -151,6 +159,19 @@ export abstract class VirtualScrollManager {
     return this.#cells;
   }
 
+  #setDayRows(value: boolean) {
+    if (this.#dayRows === value) {
+      return false;
+    }
+    this.#dayRows = value;
+    return true;
+  }
+
+  /** Each day group starts its own full-width row (the Frameleaf Timeline). */
+  get dayRows() {
+    return this.#dayRows;
+  }
+
   set scrolling(value: boolean) {
     this.#scrolling = value;
     if (value) {
@@ -210,6 +231,7 @@ export abstract class VirtualScrollManager {
     fillRowWidth = false,
     cells = null,
     captionHeight = 0,
+    dayRows = false,
   }: Partial<LayoutOptions> = {}) {
     // Note: every setter must run. `||=` short-circuits, so the first option that reported a change
     // used to stop the rest from being applied at all — switching to the mobile layout set the
@@ -221,6 +243,7 @@ export abstract class VirtualScrollManager {
       this.#setFillRowWidth(fillRowWidth),
       this.#setCells(cells),
       this.#setCaptionHeight(captionHeight),
+      this.#setDayRows(dayRows),
     ];
     if (changes.includes(true)) {
       this.refreshLayout();

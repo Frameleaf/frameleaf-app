@@ -966,6 +966,69 @@ describe(AssetMediaService.name, () => {
         }),
       );
     });
+
+    describe('as shown (owner, 2026-10-16)', () => {
+      const developed = (ownerId: string, status = AssetDevelopRevisionStatus.Rendered) => ({
+        id: 'revision',
+        ownerId,
+        status,
+        masterPath: '/develop/master.webp',
+        previewPath: '/develop/preview.webp',
+      });
+
+      it('gives the owner their current develop version, the picture their viewer shows, uncached', async () => {
+        const asset = AssetFactory.create({ ownerId: authStub.admin.user.id, originalFileName: 'IMG_1.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
+        mocks.asset.getCurrentDevelop.mockResolvedValue(developed(asset.ownerId));
+
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toEqual(
+          new FileDownloadResponse({
+            path: '/develop/master.webp',
+            fileName: 'IMG_1.webp',
+            contentType: 'image/webp',
+            cacheControl: CacheControl.PrivateWithoutCache,
+          }),
+        );
+        expect(mocks.asset.getCurrentDevelop).toHaveBeenCalledWith(asset.id);
+      });
+
+      it('gives the original when the original is asked for, or while the current version is not rendered', async () => {
+        const asset = AssetFactory.create({ ownerId: authStub.admin.user.id });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(asset);
+        mocks.asset.getCurrentDevelop.mockResolvedValue({
+          ...developed(asset.ownerId, AssetDevelopRevisionStatus.Rendering),
+          masterPath: null,
+        });
+
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: false })).resolves.toMatchObject({
+          path: asset.originalPath,
+        });
+        expect(mocks.asset.getCurrentDevelop).not.toHaveBeenCalled();
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toMatchObject({
+          path: asset.originalPath,
+          cacheControl: CacheControl.PrivateWithCache,
+        });
+      });
+
+      it("never gives anyone else the owner's working version", async () => {
+        const fullsizeEdited = AssetFileFactory.create({ type: AssetFileType.FullSize, isEdited: true });
+        const asset = AssetFactory.from({ ownerId: authStub.user1.user.id }).file(fullsizeEdited).build();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: fullsizeEdited.path });
+        mocks.asset.getCurrentDevelop.mockResolvedValue(developed(asset.ownerId));
+
+        await expect(sut.downloadOriginal(authStub.admin, asset.id, { edited: true })).resolves.toMatchObject({
+          path: fullsizeEdited.path,
+        });
+        await expect(
+          sut.downloadOriginal(AuthFactory.from().sharedLink().build(), asset.id, { edited: true }),
+        ).resolves.toMatchObject({ path: fullsizeEdited.path });
+        expect(mocks.asset.getCurrentDevelop).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('explicit original still exports', () => {

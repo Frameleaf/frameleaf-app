@@ -84,6 +84,13 @@
       >{loading ? $t('frameleaf_auth_saving') : $t('frameleaf_auth_save_and_sign_in')}</button
     >
     <p class="auth-note">{$t('frameleaf_auth_change_password_signs_out')}</p>
-    <a href={Route.logout()} class="auth-link">{$t('frameleaf_auth_sign_out_instead')}</a>
+    <a href={Route.logout()} class="auth-link sign-out-instead">{$t('frameleaf_auth_sign_out_instead')}</a>
   </form>
 </AuthShell>
+
+<style>
+  /* AuthScreens.jsx ChangePassword: "Sign out instead" sits centred under the button. */
+  .sign-out-instead {
+    justify-self: center;
+  }
+</style>

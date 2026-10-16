@@ -7,8 +7,10 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TimelineService } from 'src/services/timeline.service.js';
+import { upsertTags } from 'src/utils/tag.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -631,6 +633,152 @@ describe(TimelineService.name, () => {
       await expect(
         sut.getTimelineOrdered(linkAuth, { albumId: album.id, sort: 'filename', skip: 0, take: 10 }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('Best Photos on the timeline (LIB-P3)', () => {
+    const newItem = async (
+      ctx: ReturnType<typeof setup>['ctx'],
+      ownerId: string,
+      day: number,
+      extra: { type?: AssetType; visibility?: AssetVisibility } = {},
+    ) => {
+      const date = new Date(`1970-02-${String(day).padStart(2, '0')}`);
+      const { asset } = await ctx.newAsset({ ownerId, fileCreatedAt: date, localDateTime: date, ...extra });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      return asset;
+    };
+    const score = (ctx: ReturnType<typeof setup>['ctx'], assetId: string, ownerId: string, value: number) =>
+      ctx.database
+        .insertInto('asset_best_photo_score')
+        .values({ assetId, ownerId, score: value, scoreVersion: 1, computedAt: new Date() })
+        .execute();
+
+    it("keeps only the caller's own Best Photos in the buckets, a bucket, the ordered page and the highlights", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const best = await newItem(ctx, user.id, 3);
+      const video = await newItem(ctx, user.id, 5, { type: AssetType.Video });
+      const belowThreshold = await newItem(ctx, user.id, 6);
+      await newItem(ctx, user.id, 7); // unscored
+      const archived = await newItem(ctx, user.id, 8, { visibility: AssetVisibility.Archive });
+      const locked = await newItem(ctx, user.id, 9, { visibility: AssetVisibility.Locked });
+      const scoredForSomeoneElse = await newItem(ctx, user.id, 10);
+      const othersBest = await newItem(ctx, other.id, 4);
+      await score(ctx, best.id, user.id, 0.95);
+      await score(ctx, video.id, user.id, 0.92);
+      await score(ctx, belowThreshold.id, user.id, 0.89);
+      await score(ctx, archived.id, user.id, 0.97);
+      await score(ctx, locked.id, user.id, 0.99);
+      await score(ctx, scoredForSomeoneElse.id, other.id, 0.99);
+      await score(ctx, othersBest.id, other.id, 0.99);
+      // the caller is a member of the other user's album, which holds both users' Best Photos
+      const { album } = await ctx.newAlbum({ ownerId: other.id }, [othersBest.id, best.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
+
+      const options = TimeBucketDto.schema.parse({ bestPhotos: 'true', visibility: AssetVisibility.Timeline });
+      await expect(sut.getTimeBuckets(auth, options)).resolves.toEqual([{ timeBucket: '1970-02-01', count: 2 }]);
+      expect(JSON.parse(await sut.getTimeBucket(auth, { ...options, timeBucket: '1970-02-01' })).id).toEqual([
+        video.id,
+        best.id,
+      ]);
+      const ordered = JSON.parse(
+        await sut.getTimelineOrdered(auth, { ...options, sort: 'quality', skip: 0, take: 10 }),
+      );
+      expect(ordered.id).toEqual([best.id, video.id]);
+      await expect(sut.getTimelineHighlights(auth, { ...options, grouping: 'month' })).resolves.toEqual([
+        expect.objectContaining({ timeBucket: '1970-02-01', count: 2, keyAssetId: best.id }),
+      ]);
+      // without it, the same request shows the whole timeline
+      await expect(sut.getTimeBuckets(auth, { visibility: AssetVisibility.Timeline })).resolves.toEqual([
+        { timeBucket: '1970-02-01', count: 5 },
+      ]);
+
+      // an album the caller is a member of: their own Best Photos only, never the other member's
+      await expect(sut.getTimeBuckets(auth, { albumId: album.id })).resolves.toEqual([
+        { timeBucket: '1970-02-01', count: 2 },
+      ]);
+      await expect(sut.getTimeBuckets(auth, { albumId: album.id, bestPhotos: true })).resolves.toEqual([
+        { timeBucket: '1970-02-01', count: 1 },
+      ]);
+      expect(
+        JSON.parse(await sut.getTimeBucket(auth, { albumId: album.id, bestPhotos: true, timeBucket: '1970-02-01' })).id,
+      ).toEqual([best.id]);
+      await expect(sut.getTimeBuckets(auth, { userId: other.id, bestPhotos: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('orders by quality with the unscored last, and seeks both ways across ties without losing precision', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      // a full-precision double: the cursor must carry it exactly, or the seek skips or repeats the ties
+      const precise = 0.9123456789012345;
+      const scores = [precise, precise, precise, 0.95, 0.5, null, null];
+      const days = [5, 5, 4, 1, 9, 3, 3];
+      const ids: string[] = [];
+      for (const [index, value] of scores.entries()) {
+        const asset = await newItem(ctx, user.id, days[index]);
+        if (value !== null) {
+          await score(ctx, asset.id, user.id, value);
+        }
+        ids.push(asset.id);
+      }
+      // a score row of someone else's never ranks the caller's asset
+      const othersScore = await newItem(ctx, user.id, 2);
+      await score(ctx, othersScore.id, other.id, 0.99);
+      ids.push(othersScore.id);
+
+      const options = { sort: 'quality' as const, visibility: AssetVisibility.Timeline, skip: 0, take: 2 };
+      const all = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, take: 100 }));
+      const tied = ids.slice(0, 2).toSorted();
+      expect(all.id).toEqual([ids[3], ...tied, ids[2], ids[4], ...ids.slice(5, 7).toSorted(), othersScore.id]);
+
+      const pages = [JSON.parse(await sut.getTimelineOrdered(auth, options))];
+      while (pages.at(-1).id.length > 0) {
+        pages.push(JSON.parse(await sut.getTimelineOrdered(auth, { ...options, after: pages.at(-1).endCursor })));
+      }
+      expect(pages.flatMap((page) => page.id)).toEqual(all.id);
+      const middle = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, skip: 2 }));
+      expect(middle.id).toEqual(all.id.slice(2, 4));
+      const previous = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, before: middle.startCursor }));
+      expect(previous.id).toEqual(all.id.slice(0, 2));
+
+      const best = JSON.parse(await sut.getTimelineOrdered(auth, { ...options, bestPhotos: true, take: 100 }));
+      expect(best.id).toEqual([ids[3], ...tied, ids[2]]);
+    });
+  });
+
+  describe('tag filters without the tags inside (DISCOVERY-P4)', () => {
+    it('matches only the tag itself with withChildTags false, and the tags inside it by default', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const [trips, japan] = await upsertTags(ctx.get(TagRepository), {
+        userId: user.id,
+        tags: ['Trips', 'Trips/Japan'],
+      });
+      const date = new Date('1970-02-12');
+      const { asset: tagged } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: date, localDateTime: date });
+      const { asset: inside } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: date, localDateTime: date });
+      await ctx.newExif({ assetId: tagged.id, make: 'Canon' });
+      await ctx.newExif({ assetId: inside.id, make: 'Canon' });
+      await ctx.newTagAsset({ tagIds: [trips.id], assetIds: [tagged.id] });
+      await ctx.newTagAsset({ tagIds: [japan.id], assetIds: [inside.id] });
+
+      await expect(sut.getTimeBuckets(auth, { tagId: trips.id })).resolves.toEqual([
+        { timeBucket: '1970-02-01', count: 2 },
+      ]);
+      const own = TimeBucketDto.schema.parse({ tagId: trips.id, withChildTags: 'false' });
+      await expect(sut.getTimeBuckets(auth, own)).resolves.toEqual([{ timeBucket: '1970-02-01', count: 1 }]);
+      expect(JSON.parse(await sut.getTimeBucket(auth, { ...own, timeBucket: '1970-02-01' })).id).toEqual([tagged.id]);
+      await expect(sut.getTimeBuckets(auth, { tagId: japan.id, withChildTags: false })).resolves.toEqual([
+        { timeBucket: '1970-02-01', count: 1 },
+      ]);
     });
   });
 });

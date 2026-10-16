@@ -56,7 +56,7 @@ const tree = buildFolderTree([
   {
     path: '/photos/2026',
     count: 2,
-    size: 3 * 1024 * 1024,
+    size: 3_000_000,
     coverAssetIds: ['own-1', 'own-2'],
     startDate: day('2026-09-01'),
     endDate: day('2026-09-03'),
@@ -102,7 +102,7 @@ const files = [
     id: 'b',
     originalFileName: 'IMG_10.jpg',
     localDateTime: '2026-09-01T10:00:00.000Z',
-    exifInfo: { fileSizeInByte: 2 * 1024 * 1024 },
+    exifInfo: { fileSizeInByte: 2_000_000 },
   }),
   file({
     id: 'a',
@@ -161,7 +161,7 @@ describe('FolderBrowser', () => {
     it('is titled Folders, says what the page is, and draws no path', () => {
       renderBrowser('/', { assets: [] });
       expect(screen.getByRole('heading', { level: 1, name: 'Folders' })).toBeInTheDocument();
-      expect(screen.getByText('Browse originals the way they are stored on disk.')).toBeInTheDocument();
+      expect(screen.getByText('Your originals, the way they are stored on disk.')).toBeInTheDocument();
       expect(screen.queryByRole('navigation', { name: 'Folder path' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Copy path' })).toBeNull();
     });

@@ -1,7 +1,9 @@
 #!/bin/sh
 # FL-408: what the bundled Studio render worker needs at run time, on every machine-learning base.
 #
-# - ffmpeg/ffprobe: check the encoded export and cut copied audio at the end of the picture.
+# - ffmpeg/ffprobe: check the encoded export, cut copied audio at the end of the picture, and write
+#   every export format other than MP4/H.264 (FL-105: HEVC, VP8, VP9, AV1, ProRes, MOV/MKV/WebM,
+#   MP3/AAC/WAV and caption tracks). The worker offers only the formats this ffmpeg really writes.
 # - A Chromium-family browser with H.264/AAC (Studio's engine encodes through WebCodecs):
 #   Debian bases (CPU, OpenVINO, ArmNN, RKNN) use Debian's chromium; the Ubuntu-based CUDA and ROCm
 #   bases (amd64 only) use Google Chrome, whose builds carry the same codecs.

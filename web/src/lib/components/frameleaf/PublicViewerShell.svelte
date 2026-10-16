@@ -100,21 +100,23 @@
         {meta}
       </span>
     </div>
+    <!-- SHARING-P6: on phones the secondary actions show only their icons (the words stay for screen
+         readers), so they fit beside the brand and the header takes two rows. -->
     <div class="pv-actions">
       {#if sharedLink.allowUpload}
         <Button onclick={onUpload}>
           <Icon icon={mdiUpload} size="18" aria-hidden={true} />
-          {$t('add_photos')}
+          <span class="pv-label">{$t('add_photos')}</span>
         </Button>
       {/if}
       <Button pressed={selecting} onclick={() => onSelectingChange(!selecting)}>
         <Icon icon={selecting ? mdiSelectOff : mdiCheckboxMultipleMarkedOutline} size="18" aria-hidden={true} />
-        {selecting ? $t('frameleaf_public_done') : $t('frameleaf_public_select')}
+        <span class="pv-label">{selecting ? $t('frameleaf_public_done') : $t('frameleaf_public_select')}</span>
       </Button>
       {#if selecting && onSendCopy && sendCopyPermitted(sharedLink) && canSendCopies()}
         <Button disabled={selectedCount === 0} onclick={onSendCopy}>
           <Icon icon={mdiExportVariant} size="18" aria-hidden={true} />
-          {$t('frameleaf_send_copy')}
+          <span class="pv-label">{$t('frameleaf_send_copy')}</span>
         </Button>
       {/if}
       {#if sharedLink.allowDownload}
@@ -190,6 +192,28 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--fl-space-3) var(--fl-space-2);
+  }
+  /* sharing.css phone header: brand and actions share the first row, the title runs full width under them. */
+  @media (max-width: 700px) {
+    .pv-title {
+      flex-basis: 100%;
+      order: 3;
+      min-width: 0;
+    }
+    .pv-actions {
+      flex-wrap: nowrap;
+      margin-inline-start: auto;
+      gap: var(--fl-space-2);
+    }
+    /* Visually hidden, still the button's name. */
+    .pv-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   .pv-selectbar {
     display: flex;

@@ -26,7 +26,7 @@ const excluded = new Set([
   "docker.yml",
   "local-multi-runner-build.yml",
   "deploy-production.yml",
-  "fork-integration.yml",
+  "frameleaf-quality.yml",
   "nsfw-unraid-docker.yml",
 ]);
 
@@ -300,6 +300,36 @@ const assertPrimaryWebLint = (job) => {
   );
 };
 
+test("upstream roundtrip certification stays retired; Frameleaf quality gates stay (FL-418)", () => {
+  for (const file of [
+    ".github/workflows/fork-integration.yml",
+    ".github/workflows/fork-roundtrip.yml",
+    "e2e/docker-compose.fork-roundtrip.yml",
+    "scripts/test-fork-roundtrip.sh",
+  ]) {
+    assert.equal(existsSync(path.join(root, file)), false, file);
+  }
+  const quality = workflow("frameleaf-quality.yml");
+  for (const job of [
+    "integration",
+    "machine-learning",
+    "machine-learning-containers",
+    "native-raw",
+  ]) {
+    assert.ok(quality.jobs[job], `Frameleaf quality keeps ${job}`);
+  }
+  assert.equal(
+    workflow("docker.yml").jobs.integration.uses,
+    "./.github/workflows/frameleaf-quality.yml",
+  );
+  assert.equal(
+    readdirSync(path.join(root, "e2e/src/specs/server")).some((name) =>
+      /^fork-schema-(certification|roundtrip)/.test(name),
+    ),
+    false,
+  );
+});
+
 test("all nine protected checks execute on Frameleaf default and implementation PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
@@ -526,7 +556,7 @@ test("delivery has no official-container compatibility lanes", () => {
     false,
   );
   assert.equal(
-    workflow("fork-integration.yml").jobs["cli-fork-to-official"],
+    workflow("frameleaf-quality.yml").jobs["cli-fork-to-official"],
     undefined,
   );
   assert.equal(workflow("docker.yml").jobs.certification, undefined);
@@ -619,7 +649,7 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
 });
 
 test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer dependencies", () => {
-  const steps = workflow("fork-integration.yml").jobs.integration.steps;
+  const steps = workflow("frameleaf-quality.yml").jobs.integration.steps;
   const python = steps.find(
     (step) => step.name === "Set up the pinned NAS renderer Python",
   );
@@ -861,7 +891,7 @@ test("API generation refuses artifacts recreated outside Git tracking", () => {
   for (const [file, job, generation] of [
     ["test.yml", "generated-api-up-to-date", "Run API generation"],
     [
-      "fork-integration.yml",
+      "frameleaf-quality.yml",
       "integration",
       "Verify OpenAPI and TypeScript client freshness",
     ],
@@ -916,7 +946,7 @@ test("retired mobile workflows and jobs remain absent", () => {
     assert.equal(existsSync(path.join(root, ".github/workflows", file)), false);
   }
   assert.equal(workflow("test.yml").jobs["mobile-unit-tests"], undefined);
-  assert.equal(workflow("fork-integration.yml").jobs["mobile"], undefined);
+  assert.equal(workflow("frameleaf-quality.yml").jobs["mobile"], undefined);
   const apiGeneration = workflow("test.yml").jobs[
     "generated-api-up-to-date"
   ].steps.find((step) => step.name === "Run API generation").run;
@@ -1849,8 +1879,8 @@ test("media fixture source is immutable and the owned archive cannot publish", (
     ["test.yml", "server-medium-scale-tests"],
     ["test.yml", "e2e-tests-server-cli"],
     ["test.yml", "e2e-tests-web"],
-    ["fork-integration.yml", "integration"],
-    ["fork-integration.yml", "native-raw"],
+    ["frameleaf-quality.yml", "integration"],
+    ["frameleaf-quality.yml", "native-raw"],
   ]) {
     const steps = workflow(file).jobs[id].steps;
     const retrieve = steps.findIndex(
@@ -1875,7 +1905,7 @@ test("media fixture source is immutable and the owned archive cannot publish", (
 });
 
 for (const [file, name] of [
-  ["fork-integration.yml", "Generate OpenAPI and TypeScript client"],
+  ["frameleaf-quality.yml", "Generate OpenAPI and TypeScript client"],
   ["development-validation.yml", "Generate TypeScript API client"],
 ]) {
   test(`canonical TypeScript SDK workflow caller uses adapter: ${file}`, () => {

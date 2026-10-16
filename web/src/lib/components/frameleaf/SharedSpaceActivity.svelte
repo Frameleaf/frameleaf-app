@@ -193,7 +193,8 @@
 <section class="feed" aria-labelledby="frameleaf-space-activity" aria-busy={loading}>
   <header>
     <div>
-      <h2 id="frameleaf-space-activity">{$t('frameleaf_spaces_activity_title')}</h2>
+      <!-- Owner, 2026-10-16: the panel is "Comments", as its tab says; Activity is the app's own workspace. -->
+      <h2 id="frameleaf-space-activity">{$t('frameleaf_spaces_panel_comments')}</h2>
       <p class="hint">{$t('frameleaf_spaces_activity_hint')}</p>
     </div>
     <div class="head-actions">

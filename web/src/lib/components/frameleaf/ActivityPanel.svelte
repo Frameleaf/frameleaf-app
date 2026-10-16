@@ -80,11 +80,21 @@
   let likersOpen = $state(false);
   const liked = $derived(!!activityManager.isLiked);
 
-  const likeLabel = $derived(
-    likeCount === 0
-      ? $t('frameleaf_album_activity_no_likes')
-      : $t('frameleaf_album_activity_like_count', { values: { count: likeCount } }),
-  );
+  /** ActivityPanel.jsx `likeLabel`: one like names who ("Jamie likes this"), more are counted. */
+  const likeLabel = $derived.by(() => {
+    if (likeCount === 0) {
+      return $t('frameleaf_album_activity_no_likes');
+    }
+    if (likeCount === 1 && likers.length === 1) {
+      const [only] = likers;
+      return only.user.id === currentUserId
+        ? $t('frameleaf_album_activity_you_like')
+        : $t('frameleaf_album_activity_one_like', { values: { name: only.user.name } });
+    }
+    return $t('frameleaf_album_activity_like_count', { values: { count: likeCount } });
+  });
+  /** Who liked it is worth opening when there are several, or when the owner may remove a like. */
+  const canOpenLikers = $derived(likers.length > 1 || (likers.length === 1 && isAlbumOwner));
 
   const relative = $derived(new Intl.RelativeTimeFormat($locale, { numeric: 'auto' }));
   const UNITS: Intl.RelativeTimeFormatUnit[] = ['year', 'month', 'day', 'hour', 'minute'];
@@ -181,7 +191,7 @@
       <Icon icon={liked ? mdiHeart : mdiHeartOutline} size="18" />
       <span>{liked ? $t('frameleaf_album_activity_liked_label') : $t('frameleaf_album_activity_like')}</span>
     </button>
-    {#if likers.length > 0}
+    {#if canOpenLikers}
       <button
         type="button"
         class="count likers-toggle"
@@ -288,6 +298,7 @@
         void send();
       }}
     >
+      <span class="avatar" aria-hidden="true"><UserAvatar user={authManager.user} size="sm" noTitle /></span>
       <textarea
         bind:this={composer}
         bind:value={draft}
@@ -318,13 +329,14 @@
 </aside>
 
 <style>
+  /* collections.css `.activity-panel` (SHARING-P2): a 320px sheet in bands, head, likes, list, comment box. */
   .activity {
     display: flex;
     flex-direction: column;
-    gap: var(--fl-space-3);
-    inline-size: min(22rem, 100vw);
+    inline-size: 320px;
+    max-inline-size: 100vw;
     block-size: 100%;
-    padding: var(--fl-space-4);
+    min-block-size: 0;
     color: var(--fl-text);
     background: var(--fl-panel);
     border-inline-start: 1px solid var(--fl-border);
@@ -333,11 +345,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-2) var(--fl-space-3) var(--fl-space-2) var(--fl-space-4);
+    border-block-end: 1px solid var(--fl-border);
   }
   h2 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fl-font-size);
+    font-weight: 600;
   }
   header button {
     display: inline-flex;
@@ -356,23 +371,26 @@
   .likes {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-2) var(--fl-space-4);
+    border-block-end: 1px solid var(--fl-border);
   }
   .like {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0 0.75rem;
+    padding: 0 var(--fl-space-3) 0 9px;
     min-height: 44px;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
+    border-radius: var(--fl-radius-pill);
     font: inherit;
+    font-size: var(--fl-font-callout);
   }
   .like.on {
-    color: var(--fl-accent);
-    border-color: var(--fl-accent);
+    color: var(--fl-danger);
+    border-color: var(--fl-danger);
   }
   .like:disabled {
     color: var(--fl-muted);
@@ -380,7 +398,7 @@
   }
   .count {
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-small);
   }
   .likers-toggle {
     display: inline-flex;
@@ -396,7 +414,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    margin: 0;
+    margin: var(--fl-space-2) var(--fl-space-4) 0;
     padding: 0.375rem;
     list-style: none;
     max-height: 10rem;
@@ -418,13 +436,12 @@
   .off {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--fl-space-3);
     margin: 0;
-    padding: 0.625rem;
+    padding: 18px var(--fl-space-4);
     color: var(--fl-muted);
-    background: var(--fl-raised);
-    border-radius: var(--fl-radius-control);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
   }
   .list {
     flex: 1;
@@ -432,18 +449,20 @@
     overflow-y: auto;
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: var(--fl-space-3) var(--fl-space-4);
     display: flex;
     flex-direction: column;
     gap: var(--fl-space-3);
   }
   .empty {
+    padding: var(--fl-space-6) 0;
+    text-align: center;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-callout);
   }
   .item {
     display: flex;
-    gap: 0.5rem;
+    gap: 10px;
     align-items: flex-start;
   }
   .avatar {
@@ -453,33 +472,62 @@
   .bubble {
     flex: 1;
     min-inline-size: 0;
-    padding: var(--fl-space-2) var(--fl-space-3);
+    padding: var(--fl-space-2) 10px;
     background: var(--fl-raised);
-    border-radius: var(--fl-radius-control);
+    border-radius: var(--fl-radius-card);
   }
   .item.own .bubble {
-    background: var(--fl-accent-soft);
+    background: color-mix(in srgb, var(--fl-teal), transparent 84%);
   }
   .meta {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
+    gap: var(--fl-space-2);
+    font-size: var(--fl-font-micro);
     color: var(--fl-muted);
   }
   .meta strong {
     color: var(--fl-text);
+    font-size: var(--fl-font-small);
   }
+  /* `.ap-delete`: a 24px glyph button whose 44px target (48px on touch) is an invisible box around it. */
   .delete {
+    position: relative;
     margin-inline-start: auto;
-    display: inline-flex;
+    display: grid;
+    place-items: center;
+    inline-size: 24px;
+    block-size: 24px;
+    min-height: 0;
+    min-width: 0;
+    padding: 0;
     color: var(--fl-muted);
     background: transparent;
     border: 0;
+    border-radius: var(--fl-radius-xs);
+  }
+  .delete::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+  .delete:hover {
+    color: var(--fl-danger);
+    background: var(--fl-panel);
+  }
+  @media (pointer: coarse) {
+    .delete {
+      min-height: 0;
+      min-width: 0;
+    }
+    .delete::after {
+      inset: -12px;
+    }
   }
   .bubble p {
-    margin: 0.25rem 0 0;
-    font-size: 0.875rem;
+    margin: var(--fl-space-1) 0 0;
+    font-size: var(--fl-font-callout);
+    line-height: 1.45;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
   }
@@ -499,17 +547,28 @@
     block-size: 100%;
     object-fit: cover;
   }
+  /* `.ap-composer`: one line that grows with the text, up to five lines, with the send button beside it. */
   .composer {
     display: flex;
     align-items: flex-end;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
+    padding: 10px var(--fl-space-3) var(--fl-space-3);
+    border-block-start: 1px solid var(--fl-border);
+  }
+  .composer .avatar {
+    align-self: center;
   }
   .composer textarea {
     flex: 1;
     min-inline-size: 0;
-    resize: vertical;
-    padding: var(--fl-space-2) var(--fl-space-3);
+    min-block-size: 44px;
+    max-block-size: 120px;
+    field-sizing: content;
+    resize: none;
+    padding: 11px var(--fl-space-3);
     font: inherit;
+    font-size: var(--fl-font-callout);
+    line-height: 1.4;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
@@ -533,8 +592,12 @@
   }
   .note {
     margin: 0;
-    min-block-size: 1rem;
+    padding: 0 var(--fl-space-4) var(--fl-space-2);
     color: var(--fl-muted);
-    font-size: 0.75rem;
+    font-size: var(--fl-font-small);
+  }
+  /* Kept in the page for the announcement, without a band of its own while there is nothing to say. */
+  .note:empty {
+    padding: 0;
   }
 </style>

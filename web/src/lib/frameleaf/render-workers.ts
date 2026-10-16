@@ -39,7 +39,10 @@ export const RENDER_WORKER_MIN_CONFORMANCE_AGE_MS = 60_000;
 
 const MS_PER_MINUTE = 60_000;
 const MS_PER_HOUR = 60 * MS_PER_MINUTE;
+/** GPU memory is counted the way cards are sold: a "24 GB" card has 24 × 1024³ bytes. */
 const BYTES_PER_GIB = 1024 ** 3;
+/** File sizes are decimal everywhere in Frameleaf (D5): a GB is 1,000,000,000 bytes. */
+const BYTES_PER_GB = 1000 ** 3;
 
 /* ------------------------------------------------------------------ */
 /* Worker rows                                                          */
@@ -310,6 +313,14 @@ export const bytesToGiB = (bytes: string | number | null | undefined): number | 
 
 export const gibToBytes = (gib: number): string => String(Math.round(gib * BYTES_PER_GIB));
 
+/** An output size in decimal GB, one decimal (D5). */
+export const bytesToGB = (bytes: string | number | null | undefined): number | null => {
+  const value = asNumber(bytes);
+  return value === null ? null : roundTo(value / BYTES_PER_GB, 1);
+};
+
+export const gbToBytes = (gb: number): string => String(Math.round(gb * BYTES_PER_GB));
+
 /* ------------------------------------------------------------------ */
 /* Limit forms                                                          */
 /* ------------------------------------------------------------------ */
@@ -323,7 +334,7 @@ export type RenderLimitValues = Pick<
 export type RenderLimitForm = {
   concurrency: string;
   wallClockMinutes: string;
-  outputGiB: string;
+  outputGB: string;
 };
 
 export type RenderLimitField = keyof RenderLimitForm;
@@ -331,7 +342,7 @@ export type RenderLimitField = keyof RenderLimitForm;
 export const limitFormFrom = (limit: RenderLimitValues | null | undefined): RenderLimitForm => ({
   concurrency: limit ? String(limit.maxConcurrentOperations) : '',
   wallClockMinutes: limit ? String(msToMinutes(limit.maxWallClockMs) ?? '') : '',
-  outputGiB: limit ? String(bytesToGiB(limit.maxOutputBytes) ?? '') : '',
+  outputGB: limit ? String(bytesToGB(limit.maxOutputBytes) ?? '') : '',
 });
 
 export type ParsedLimitForm = { ok: true; value: RenderLimitValues } | { ok: false; field: RenderLimitField };
@@ -369,9 +380,9 @@ export const parseLimitForm = (form: RenderLimitForm, options: { minConcurrency:
     return { ok: false, field: 'wallClockMinutes' };
   }
 
-  const output = parseOptionalPositive(form.outputGiB);
+  const output = parseOptionalPositive(form.outputGB);
   if (!output.ok) {
-    return { ok: false, field: 'outputGiB' };
+    return { ok: false, field: 'outputGB' };
   }
 
   return {
@@ -379,7 +390,7 @@ export const parseLimitForm = (form: RenderLimitForm, options: { minConcurrency:
     value: {
       maxConcurrentOperations: concurrency,
       maxWallClockMs: wallClock.value === null ? null : minutesToMs(wallClock.value),
-      maxOutputBytes: output.value === null ? null : gibToBytes(output.value),
+      maxOutputBytes: output.value === null ? null : gbToBytes(output.value),
     },
   };
 };
@@ -409,7 +420,7 @@ export const DEFAULT_WORKER_FORM: Readonly<RenderWorkerForm> = {
   gpuMemoryGiB: '',
   concurrency: '1',
   wallClockMinutes: '',
-  outputGiB: '',
+  outputGB: '',
 };
 
 export const workerFormFrom = (worker: RenderWorkerDto | null | undefined): RenderWorkerForm => {

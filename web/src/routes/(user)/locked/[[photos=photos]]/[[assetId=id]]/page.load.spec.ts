@@ -39,31 +39,34 @@ describe('Locked page load (FL-34)', () => {
   const formatMessage: MessageFormatter = (key) => (typeof key === 'string' ? key : key.id);
 
   const loadPage = (search = '') =>
-    load({ url: new URL(`http://localhost/locked${search}`) } as Parameters<typeof load>[0]);
+    load({ url: new URL(`http://localhost/locked${search}`), depends: vi.fn() } as unknown as Parameters<
+      typeof load
+    >[0]);
 
   beforeEach(() => {
+    vi.mocked(redirect).mockClear();
     vi.mocked(authenticate).mockResolvedValue(undefined);
     vi.mocked(getAuthStatus).mockResolvedValue(authStatus());
     vi.mocked(getFormatter).mockResolvedValue(formatMessage);
   });
 
-  it('asks for the PIN first and comes back to the same filter', async () => {
+  it('opens inside the app while locked, and asks for the PIN there (LIB-P2)', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue(authStatus({ isElevated: false }));
 
-    await expect(loadPage('?reason=detected')).rejects.toMatchObject({
-      status: 307,
-      location: '/auth/pin-prompt?continue=%2Flocked%3Freason%3Ddetected',
+    await expect(loadPage('?reason=detected')).resolves.toEqual({
+      unlocked: false,
+      meta: { title: 'frameleaf_locked' },
     });
-    expect(redirect).toHaveBeenCalledWith(307, '/auth/pin-prompt?continue=%2Flocked%3Freason%3Ddetected');
+    expect(redirect).not.toHaveBeenCalled();
   });
 
-  it('asks for a PIN to be set up when the account has none', async () => {
+  it('stays locked for an account without a PIN, whose dialog offers PIN settings', async () => {
     vi.mocked(getAuthStatus).mockResolvedValue(authStatus({ pinCode: false }));
 
-    await expect(loadPage()).rejects.toMatchObject({ status: 307 });
+    await expect(loadPage()).resolves.toMatchObject({ unlocked: false });
   });
 
   it('names the view Locked, never the old Locked folder', async () => {
-    await expect(loadPage()).resolves.toEqual({ meta: { title: 'frameleaf_locked' } });
+    await expect(loadPage()).resolves.toEqual({ unlocked: true, meta: { title: 'frameleaf_locked' } });
   });
 });

@@ -35,9 +35,9 @@ describe('StarRating component', () => {
       expect(radioButton.className).toBe('sr-only');
     }
 
-    // Check the label attributes
-    for (const label of labels) {
-      expect(label.className).toBe('cursor-pointer');
+    // Check the label attributes: the set stars carry `filled` (the viewer's warm star colour).
+    for (const [index, label] of labels.entries()) {
+      expect(label.className).toBe(index < 2 ? 'cursor-pointer filled' : 'cursor-pointer');
       expect(label.tabIndex).toBe(-1);
     }
   });
@@ -68,8 +68,8 @@ describe('StarRating component', () => {
     }
 
     // Check the label attributes
-    for (const label of labels) {
-      expect(label.className).toBe('');
+    for (const [index, label] of labels.entries()) {
+      expect(label.className).toBe(index < 2 ? 'filled' : '');
     }
   });
 });

@@ -10,6 +10,7 @@ import {
   type PetObservationResponseDto,
   type PetResponseDto,
 } from '@frameleaf/sdk';
+import type { MessageFormatter } from 'svelte-i18n';
 import { describe, expect, it } from 'vitest';
 import {
   confidencePercent,
@@ -28,6 +29,7 @@ import {
   petAgeInYears,
   petPhotosFilter,
   petSpeciesOptions,
+  petsSummary,
   reviewEmptyState,
   sortPets,
   speciesLabelKey,
@@ -96,6 +98,31 @@ describe('pet names', () => {
     const pets = [pet({ id: 'b', name: 'B' }), pet({ id: 'a', name: 'A' })];
     sortPets(pets);
     expect(pets.map(({ id }) => id)).toEqual(['b', 'a']);
+  });
+});
+
+// DISCOVERY-P8: the People summary line, for pets.
+describe('petsSummary', () => {
+  const $t = ((key: string, options?: { values?: Record<string, unknown> }) =>
+    `${key}(${Object.values(options?.values ?? {}).join(',')})`) as unknown as MessageFormatter;
+  const pets = [
+    pet({ id: 'a', assetCount: 3 }),
+    pet({ id: 'b', assetCount: 11 }),
+    pet({ id: 'c', isHidden: true, assetCount: 5 }),
+  ];
+
+  it('counts the shown pets and their photos, and says how many are hidden', () => {
+    expect(petsSummary(pets, false, $t)).toBe(
+      'frameleaf_pets_count(2) · frameleaf_people_photos_count(14) · frameleaf_pets_hidden_count(1)',
+    );
+  });
+
+  it('counts hidden pets in while they are shown', () => {
+    expect(petsSummary(pets, true, $t)).toBe('frameleaf_pets_count(3) · frameleaf_people_photos_count(19)');
+  });
+
+  it('says only the count when there are no pets', () => {
+    expect(petsSummary([], false, $t)).toBe('frameleaf_pets_count(0)');
   });
 });
 

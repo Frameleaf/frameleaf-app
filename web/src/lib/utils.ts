@@ -325,7 +325,11 @@ export const downloadUrl = (url: string, filename: string) => {
   }
 };
 
-export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string) => {
+/**
+ * Streams an archive through a form POST. `edited: true` asks for each item as it is shown; left
+ * out, the server sends the originals.
+ */
+export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string, edited?: boolean) => {
   const form = document.createElement('form');
   form.method = 'post';
   form.action = url;
@@ -341,7 +345,9 @@ export const downloadUrlPost = (url: string, assetIds: string[], archiveName: st
 
   mkInput('assetIds', assetIds.join(','));
   mkInput('archiveName', archiveName);
-  mkInput('edited', 'true');
+  if (edited !== undefined) {
+    mkInput('edited', String(edited));
+  }
 
   document.body.append(form);
   form.submit();

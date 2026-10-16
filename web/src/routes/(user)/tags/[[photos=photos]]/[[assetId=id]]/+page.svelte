@@ -80,11 +80,12 @@
 <OnEvents {onAssetsTag} onAssetsDelete={refresh} onAssetsArchive={refresh} onAssetsUnarchive={refresh} />
 
 {#if node && TagLibrary}
-  <!-- The same shell as an album or a person: the header scrolls away with the photos under it. -->
+  <!--
+    The same shell as Photos: the header scrolls away with the photos under it. LibraryView is the
+    page area's own child, so it carries the page gutter and the header spans the page (DISCOVERY-P4).
+  -->
   <UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.tags() }]]}>
-    <div class="relative h-full overflow-hidden md:px-4">
-      <TagLibrary {node} {tree} {tagOptions} bind:timelineManager onMutated={refresh} />
-    </div>
+    <TagLibrary {node} {tree} {tagOptions} bind:timelineManager onMutated={refresh} />
   </UserPageLayout>
 {:else}
   <!-- Back from a tag finds the index where it was left, as the Albums page does. -->

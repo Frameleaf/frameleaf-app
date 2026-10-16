@@ -190,7 +190,7 @@ const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studi
 const frameleafCloudDefaults = {
   // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
   // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
-  // FL-235: the storage quota (GiB) of an account created by a Frameleaf invitation's first sign-in;
+  // FL-235: the storage quota (decimal GB, D5) of an account created by a Frameleaf invitation's first sign-in;
   // null is unlimited, so backup works out of the box (owner decision, 2026-10-01).
   signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, invitedStorageQuota: null as number | null },
   // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
@@ -553,7 +553,7 @@ const AdminConfigFrameleafCloudSchema = z
           .nullable()
           .optional()
           .describe(
-            'Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.',
+            'Storage quota in GB (1 GB = 1,000,000,000 bytes) for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.',
           ),
       })
       .default(frameleafCloudDefaults.signIn)
@@ -1015,7 +1015,11 @@ const AdminConfigSchemaWithVisibility = z
         tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethodSchema,
         timeout: z.int().min(1).describe('Timeout'),
         allowInsecureRequests: configBool.describe('Allow insecure requests'),
-        defaultStorageQuota: z.int().min(0).nullable().describe('Default storage quota'),
+        defaultStorageQuota: z
+          .int()
+          .min(0)
+          .nullable()
+          .describe('Default storage quota in GB (1 GB = 1,000,000,000 bytes) when the provider sends none'),
         enabled: configBool.describe('Enabled').meta({ visibility: Public }),
         issuerUrl: emptyOrUrl('Issuer URL must be an empty string or a valid URL').describe('Issuer URL'),
         accountManagementUrl: emptyOrUrl('Account management URL must be an empty string or a valid URL')
@@ -1030,7 +1034,7 @@ const AdminConfigSchemaWithVisibility = z
         signingAlgorithm: z.string().describe('Signing algorithm'),
         profileSigningAlgorithm: z.string().describe('Profile signing algorithm'),
         storageLabelClaim: z.string().describe('Storage label claim'),
-        storageQuotaClaim: z.string().describe('Storage quota claim'),
+        storageQuotaClaim: z.string().describe('Storage quota claim, a number of GB (1 GB = 1,000,000,000 bytes)'),
         roleClaim: z.string().describe('Role claim'),
         mobileOverrideEnabled: configBool.describe('Mobile override enabled'),
         mobileRedirectUri: z.string().describe('Mobile redirect URI (set to empty string to disable)'),

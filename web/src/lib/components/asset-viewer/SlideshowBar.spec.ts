@@ -8,7 +8,6 @@ import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores
 import { renderWithTooltips } from '$tests/helpers';
 import { progressBarCalls, progressBarFixture } from '@test-data/components/progress-bar-calls';
 import { assetFactory } from '@test-data/factories/asset-factory';
-import { stubFocusVisible } from '@test-data/focus-visible';
 import SlideshowBar from './SlideshowBar.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -61,17 +60,15 @@ describe('SlideshowBar (FL-36)', () => {
     const asset = assetFactory.build({ type: AssetTypeEnum.Image, originalFileName: 'IMG_0001.jpg' });
     const onNext = vi.fn();
     const onPrevious = vi.fn();
-    const onClose = vi.fn();
     const result = renderWithTooltips(SlideshowBar, {
       assetType: AssetTypeEnum.Image,
       asset,
       title: 'Lisbon',
       onNext,
       onPrevious,
-      onClose,
       ...props,
     });
-    return { ...result, asset, onNext, onPrevious, onClose };
+    return { ...result, asset, onNext, onPrevious };
   };
 
   /** The viewer footer's cog (V-13), which opens the settings through the shared store. */
@@ -237,13 +234,20 @@ describe('SlideshowBar (FL-36)', () => {
     expect(get(slideshowStore.settingsOpen)).toBe(false);
   });
 
-  // The viewer footer (V-13) owns Play/Pause and the cog; the capsule keeps end, previous and next.
-  it('keeps only end, previous and next in the capsule', () => {
-    renderBar();
-    const labels = [...screen.getByTestId('slideshow-controls').querySelectorAll('button')].map((button) =>
-      button.getAttribute('aria-label'),
-    );
-    expect(labels).toEqual(['exit_slideshow', 'previous', 'next']);
+  // VIEWER-P1: the viewer keeps its header, arrows and footer, so no floating capsule is drawn.
+  it('draws no controls of its own, only the progress line', () => {
+    const { container } = renderBar();
+    expect(screen.queryByTestId('slideshow-controls')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+    expect(screen.getByTestId('slideshow-progress')).toBeInTheDocument();
+  });
+
+  it('moves with the arrow keys', async () => {
+    const { onNext, onPrevious } = renderBar();
+    await fireEvent.keyDown(document, { key: 'ArrowRight' });
+    await fireEvent.keyDown(document, { key: 'ArrowLeft' });
+    expect(onNext).toHaveBeenCalledOnce();
+    expect(onPrevious).toHaveBeenCalledOnce();
   });
 
   it('plays and pauses with S, and follows play and pause set from the footer', async () => {
@@ -258,24 +262,23 @@ describe('SlideshowBar (FL-36)', () => {
     await waitFor(() => expect(progressBarCalls).toEqual(['pause']));
   });
 
-  // MediaViewer.jsx:733-747: Escape closes the settings first, then ends the slideshow.
-  it('closes the settings on the first Escape and ends the slideshow on the next', async () => {
-    const { onClose } = renderBar();
+  // MediaViewer.jsx:733-747: Escape closes the settings first; after that it is the header's Close viewer.
+  it('closes the settings on Escape and leaves the next Escape to the viewer', async () => {
+    renderBar();
     openSettingsFromFooter();
     expect(get(slideshowStore.settingsOpen)).toBe(true);
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(get(slideshowStore.settingsOpen)).toBe(false));
-    expect(onClose).not.toHaveBeenCalled();
 
     await fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
   });
 
   it('does not end the slideshow when full screen is left', async () => {
-    const { onClose } = renderBar();
+    renderBar();
     document.dispatchEvent(new Event('fullscreenchange'));
-    expect(onClose).not.toHaveBeenCalled();
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
   });
 
   // MediaViewer.jsx:422-460: the open settings hold the advance without changing play or pause.
@@ -302,11 +305,10 @@ describe('SlideshowBar (FL-36)', () => {
     expect(progressBarCalls).not.toContain('play');
   });
 
-  describe('idle auto-hide', () => {
+  // VIEWER-P1: the chrome stays up (MediaViewer.jsx has no idle hide); a tap toggles it.
+  describe('chrome', () => {
     let canvas: HTMLElement;
-    let focusVisible: ReturnType<typeof stubFocusVisible>;
     beforeEach(() => {
-      focusVisible = stubFocusVisible();
       if (!('PointerEvent' in globalThis)) {
         // jsdom has no PointerEvent; a MouseEvent carries the coordinates a tap needs
         vi.stubGlobal(
@@ -326,119 +328,56 @@ describe('SlideshowBar (FL-36)', () => {
       document.body.append(canvas);
     });
     afterEach(() => {
-      focusVisible.restore();
       canvas.remove();
       vi.useRealTimers();
     });
 
-    const controls = () => screen.getByTestId('slideshow-controls');
+    // The progress line follows the shared chrome state: under the header, or at the top when hidden.
+    const progress = () => screen.getByTestId('slideshow-progress');
+    const tapCanvas = async () => {
+      await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10 });
+      await fireEvent.pointerUp(canvas, { clientX: 11, clientY: 10 });
+    };
 
-    it('hides the controls and the pointer after 2.5 s, and movement shows them', async () => {
+    it('never hides the chrome by itself', async () => {
       renderBar();
-      expect(controls()).not.toHaveClass('chrome-hidden');
-
-      await vi.advanceTimersByTimeAsync(2500);
-      expect(controls()).toHaveClass('chrome-hidden');
-      expect(document.body.style.cursor).toBe('none');
-
-      await fireEvent.pointerMove(document, { pointerType: 'mouse' });
-      expect(controls()).not.toHaveClass('chrome-hidden');
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(progress()).not.toHaveClass('chrome-hidden');
       expect(document.body.style.cursor).toBe('');
     });
 
-    it('still hides after a control is clicked', async () => {
+    // MediaViewer.jsx:559-583: a tap on the photo toggles the chrome.
+    it('toggles the chrome with a tap on the photo', async () => {
       renderBar();
-      const next = screen.getByLabelText('next');
-      await fireEvent.pointerDown(next, { pointerType: 'mouse' });
-      next.focus();
-      await fireEvent.click(next);
-      await fireEvent.pointerLeave(controls());
-
-      await vi.advanceTimersByTimeAsync(2500);
-      expect(next).toHaveFocus();
-      expect(controls()).toHaveClass('chrome-hidden');
-      expect(document.body.style.cursor).toBe('none');
-    });
-
-    it('keeps a tap on a touch screen from being undone by its compatibility mouse move', async () => {
-      renderBar();
-      await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerType: 'touch' });
-      await fireEvent.pointerUp(canvas, { clientX: 10, clientY: 10, pointerType: 'touch' });
-      await fireEvent.mouseMove(document);
-      await fireEvent.pointerMove(document, { pointerType: 'touch' });
-      expect(controls()).toHaveClass('chrome-hidden');
-    });
-
-    it('shows the controls when keyboard focus moves into them and keeps them while focused', async () => {
-      renderBar();
-      await vi.advanceTimersByTimeAsync(2500);
-      expect(controls()).toHaveClass('chrome-hidden');
-
-      const exit = screen.getByLabelText('exit_slideshow');
-      focusVisible.visible.add(exit);
-      exit.focus();
-      await Promise.resolve();
-      expect(controls()).not.toHaveClass('chrome-hidden');
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(controls()).not.toHaveClass('chrome-hidden');
-    });
-
-    // MediaViewer.jsx:740-744: Escape hands focus back to the cog, which is keyboard (visible) focus.
-    it('keeps the chrome up when Escape returns focus to the cog', async () => {
-      const { container } = renderBar();
-      const footer = document.createElement('footer');
-      footer.dataset.viewerChrome = 'footer';
-      const cog = document.createElement('button');
-      footer.append(cog);
-      container.append(footer);
-      focusVisible.visible.add(cog);
-      cog.focus();
-      slideshowStore.toggleSettings(cog);
-      await vi.advanceTimersByTimeAsync(0);
-
-      await fireEvent.keyDown(document, { key: 'Escape' });
-      await vi.advanceTimersByTimeAsync(0);
-      expect(get(slideshowStore.settingsOpen)).toBe(false);
-      expect(cog).toHaveFocus();
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(controls()).not.toHaveClass('chrome-hidden');
-      footer.remove();
-    });
-
-    it('keeps the controls while the settings are open', async () => {
-      renderBar();
-      openSettingsFromFooter().blur();
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(controls()).not.toHaveClass('chrome-hidden');
-    });
-
-    // MediaViewer.jsx:559-572: a tap on the photo toggles the controls.
-    it('toggles the controls with a tap on the photo', async () => {
-      renderBar();
-      const tapCanvas = async () => {
-        await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10 });
-        await fireEvent.pointerUp(canvas, { clientX: 11, clientY: 10 });
-      };
 
       await tapCanvas();
-      expect(controls()).toHaveClass('chrome-hidden');
+      expect(progress()).toHaveClass('chrome-hidden');
       await tapCanvas();
-      expect(controls()).not.toHaveClass('chrome-hidden');
+      expect(progress()).not.toHaveClass('chrome-hidden');
 
       // a drag is not a tap
       await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10 });
       await fireEvent.pointerUp(canvas, { clientX: 60, clientY: 10 });
-      expect(controls()).not.toHaveClass('chrome-hidden');
+      expect(progress()).not.toHaveClass('chrome-hidden');
     });
 
-    it('reveals hidden controls with a swipe down', async () => {
+    it('reveals hidden chrome with a swipe down', async () => {
       renderBar();
-      await vi.advanceTimersByTimeAsync(2500);
-      expect(controls()).toHaveClass('chrome-hidden');
+      await tapCanvas();
+      expect(progress()).toHaveClass('chrome-hidden');
 
       await fireEvent.pointerDown(canvas, { clientX: 100, clientY: 100 });
       await fireEvent.pointerUp(canvas, { clientX: 105, clientY: 220 });
-      expect(controls()).not.toHaveClass('chrome-hidden');
+      expect(progress()).not.toHaveClass('chrome-hidden');
+    });
+
+    it('brings the chrome back when the settings open', async () => {
+      renderBar();
+      await tapCanvas();
+      expect(progress()).toHaveClass('chrome-hidden');
+      openSettingsFromFooter();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(progress()).not.toHaveClass('chrome-hidden');
     });
   });
 });

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type Size = 'full' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'xxxl';
+  export type Size = 'full' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl' | 'xxxl';
 </script>
 
 <script lang="ts">
@@ -43,6 +43,8 @@
 
   const sizeClasses: Record<Size, string> = {
     full: 'w-full h-full',
+    // The prototype's 18px face in avatar stacks (AlbumCard.jsx AvatarStack size 18).
+    xs: 'w-4.5 h-4.5',
     sm: 'w-7 h-7',
     md: 'w-10 h-10',
     lg: 'w-12 h-12',
@@ -96,7 +98,9 @@
   {/if}
   {#if showFallback}
     <span
-      class="{colorClass} flex size-full items-center justify-center font-medium uppercase select-none"
+      class="{colorClass} flex size-full items-center justify-center font-medium uppercase select-none {size === 'xs'
+        ? 'text-[0.625rem]'
+        : ''}"
       class:text-xs={size === 'sm'}
       class:text-lg={size === 'lg'}
       class:text-xl={size === 'xl'}

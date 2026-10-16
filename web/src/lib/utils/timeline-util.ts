@@ -90,6 +90,18 @@ export function formatTimelineMonthTitle(_date: DateTime): string {
   );
 }
 
+/**
+ * A month as the library's headings write it, "October 2026": the loading placeholder's title, so
+ * it reads in the same long form as the loaded day headings ("Saturday, October 10, 2026").
+ */
+export function formatTimelineMonthHeading(_date: DateTime): string {
+  if (!_date.isValid) {
+    return _date.toString();
+  }
+  const date = _date as DateTime<true>;
+  return date.toLocaleString({ month: 'long', year: 'numeric' }, { locale: get(locale) });
+}
+
 export function formatGroupTitle(_date: DateTime): string {
   if (!_date.isValid) {
     return _date.toString();

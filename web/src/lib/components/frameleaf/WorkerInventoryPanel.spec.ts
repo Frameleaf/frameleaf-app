@@ -145,7 +145,7 @@ describe('WorkerInventoryPanel (FL-72)', () => {
 
     const video = screen.getByRole('article', { name: 'Workshop GPU' });
     expect(within(video).getByText('Model ready')).toBeInTheDocument();
-    expect(within(video).getByText(/16 GiB/)).toBeInTheDocument();
+    expect(within(video).getByText(/16 GB/)).toBeInTheDocument();
     expect(within(video).getByText(/waiting for library analysis/)).toBeInTheDocument();
   });
 

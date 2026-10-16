@@ -1,4 +1,5 @@
 import {
+  AssetVisibility,
   SearchAskMode,
   getPerson,
   getPet,
@@ -14,6 +15,7 @@ import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
 import { discoveryUrl, emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { resetFilterEntityNameCache } from '$lib/frameleaf/filter-entity-names';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { Route } from '$lib/route';
 import { handleError } from '$lib/utils/handle-error';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -55,6 +57,10 @@ vi.mock('$lib/components/frameleaf/ResultsView.svelte', async () => ({
 vi.mock('$lib/components/frameleaf/ResultsAssetViewer.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/VideoMomentResults.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/SearchEntry.svelte', () => ({ default: () => {} }));
+vi.mock(
+  '$lib/components/layouts/UserPageLayout.svelte',
+  async () => await import('@test-data/mocks/UserPageLayoutActions.mock.svelte'),
+);
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 const result = (ids: string[], nextCursor: string | null = null) =>
   ({
@@ -244,6 +250,68 @@ it('is never blank without Ask: it offers the search palette', () => {
   expect(screen.getByRole('button', { name: 'Search' })).toBeInTheDocument();
 });
 
+// ACCOUNT-P3: Search › "Include archived items" on the results page, as in the search palette.
+describe('Include archived items', () => {
+  const signIn = (includeArchived: boolean) => {
+    authManager.setUser({ id: 'user-1' } as never);
+    authManager.setPreferences({
+      search: { includeArchived },
+      privacy: { suppression: { personIds: [], tagIds: [], petIds: [] } },
+    } as never);
+  };
+  const lastRequest = () => vi.mocked(searchAssets).mock.calls.at(-1)![0].metadataSearchDto;
+  afterEach(() => authManager.reset());
+
+  it.each([
+    [true, { in: ['timeline', 'archive'] }],
+    [false, { eq: 'timeline' }],
+  ])('with it %s, a search from the palette asks for %j', async (includeArchived, visibility) => {
+    signIn(includeArchived);
+    const query = emptyDiscoveryQuery();
+    query.text = 'IMG';
+    state.url = new URL(discoveryUrl(query), 'http://localhost');
+    render(SearchPage);
+
+    await waitFor(() => expect(searchAssets).toHaveBeenCalled());
+    expect(lastRequest().filter?.visibility).toEqual(visibility);
+  });
+
+  it('keeps a visibility the search names itself, such as In archive', async () => {
+    signIn(true);
+    const query = emptyDiscoveryQuery();
+    query.filter = { visibility: { eq: AssetVisibility.Archive } };
+    state.url = new URL(discoveryUrl(query), 'http://localhost');
+    render(SearchPage);
+
+    await waitFor(() => expect(searchAssets).toHaveBeenCalled());
+    expect(lastRequest().filter?.visibility).toEqual({ eq: 'archive' });
+  });
+
+  // A flat request cannot say "timeline or archive", and no visibility could match hidden live-photo halves.
+  it.each([true, false])(
+    'with it %s, a flat link (a Places card) still asks for the timeline',
+    async (includeArchived) => {
+      signIn(includeArchived);
+      setQuery({ city: 'Banff' });
+      render(SearchPage);
+
+      await waitFor(() => expect(searchAssets).toHaveBeenCalled());
+      expect(lastRequest().visibility).toBe('timeline');
+    },
+  );
+});
+
+it('shows results in the app frame with a title, not a bar of its own with a back arrow (DISCOVERY-P5)', async () => {
+  addMessages('dev', en);
+  setQuery({ city: 'Banff' });
+  vi.mocked(searchAssets).mockResolvedValue(result(['a']));
+  render(SearchPage);
+
+  expect(await screen.findByRole('heading', { level: 1, name: en.frameleaf_search_results })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: en.back })).toBeNull();
+  expect(document.querySelector('.search-bar')).toBeNull();
+});
+
 // FL-31: the Ask panel on the empty search page.
 describe('Ask about your photos', () => {
   beforeAll(() => {
@@ -314,8 +382,9 @@ describe('Ask about your photos', () => {
   });
 });
 
+// DISCOVERY-P5: the results scroll in the app frame's page area, so that is what is scrolled back.
 it.each(['live', 'unmount', 'overlap'])('restores search scroll only for the current %s navigation', async (mode) => {
-  const scroll = vi.spyOn(globalThis, 'scrollTo').mockImplementation(() => {});
+  const scroll = vi.spyOn(HTMLElement.prototype, 'scrollTo').mockImplementation(() => {});
   try {
     const view = render(SearchPage);
     const restore = navigation.afterNavigate.mock.calls.at(-1)![0];

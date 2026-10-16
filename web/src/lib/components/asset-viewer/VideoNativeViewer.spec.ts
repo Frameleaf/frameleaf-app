@@ -395,7 +395,7 @@ describe('VideoNativeViewer component', () => {
         }
         await manifestHandler();
         params.mockReturnValue({ key: 'replacement-key', slug: 'replacement-slug' });
-        window.dispatchEvent(new Event('pagehide'));
+        dispatchEvent(new Event('pagehide'));
         expect(fetchMock).toHaveBeenCalledOnce();
         const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://test');
         expect(url.searchParams.get('key')).toBe('original-key');
@@ -422,7 +422,7 @@ describe('VideoNativeViewer component', () => {
       await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
       const api = hlsMocks.instances[0];
       await api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1]();
-      window.dispatchEvent(new Event('pagehide'));
+      dispatchEvent(new Event('pagehide'));
       await waitFor(() =>
         expect(warning).toHaveBeenCalledWith('Failed to release HLS session', {
           assetId: props.assetId,
@@ -591,7 +591,7 @@ describe('VideoNativeViewer component', () => {
 
       await waitFor(() => expect(viewerVideo()).toBeTruthy());
       expect(session.metadata).toBeNull();
-      expect(handlers.values().filter(Boolean).toArray()).toHaveLength(0);
+      expect([...handlers.values()].filter(Boolean)).toHaveLength(0);
     });
 
     it('pauses and resumes the video with the slideshow', async () => {

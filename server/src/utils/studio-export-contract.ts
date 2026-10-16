@@ -41,6 +41,7 @@ import {
   type StudioEmbeddedSubtitleSeal,
   StudioEmbeddedSubtitleSealSchema,
 } from 'src/utils/studio-embedded-subtitles.js';
+import { STUDIO_EXPORT_FORMAT_SPECS, isStudioAudioFormat } from 'src/utils/studio-export-formats.js';
 import { type StudioSidecarSeal, StudioSidecarSealSchema } from 'src/utils/studio-subtitle-sidecar.js';
 import {
   type StudioSourceTiming,
@@ -365,13 +366,17 @@ export const declareStudioTiming = (
 /* Contract                                                             */
 /* ------------------------------------------------------------------ */
 
-const TEN_BIT_FORMATS = new Set(['mp4-hevc-main10', 'webm-av1', 'prores-422-hq']);
-const FORMAT_CODECS: Readonly<Record<string, string>> = {
-  'mp4-hevc-main10': 'hevc',
-  'mp4-h264': 'h264',
-  'webm-av1': 'av1',
-  'prores-422-hq': 'prores',
-};
+const TEN_BIT_FORMATS = new Set(
+  Object.entries(STUDIO_EXPORT_FORMAT_SPECS)
+    .filter(([, spec]) => spec.kind === 'video' && spec.bitDepth === 10)
+    .map(([format]) => format),
+);
+/** The ffprobe codec of the main stream each video or audio-only format promises. */
+const FORMAT_CODECS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(STUDIO_EXPORT_FORMAT_SPECS)
+    .filter(([, spec]) => spec.kind !== 'still')
+    .map(([format, spec]) => [format, spec.codec]),
+);
 const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
   [ColorTransfer.Smpte2084]: 'smpte2084',
   [ColorTransfer.AribStdB67]: 'arib-std-b67',
@@ -423,12 +428,14 @@ export const buildStudioExportContract = (
     return { image: image.data, video: { minBitDepth: 8, transfer: null }, audio: null, ...(range && { range }) };
   }
   const hdrRequested = settings.color === 'hdr10' || settings.color === 'dolby-vision';
+  // FL-105: sound alone carries no picture, so its sources' transfer promises nothing.
+  const audioOnly = isStudioAudioFormat(settings.format);
   const videoTransfers = new Set(
     sources.filter((facts) => facts.video).map((facts) => HDR_TRANSFERS[facts.video!.colorTransfer] ?? null),
   );
   const preservedTransfer =
     settings.color === 'preserve' && videoTransfers.size === 1 ? ([...videoTransfers][0] ?? null) : null;
-  const transfer = hdrRequested ? 'smpte2084' : preservedTransfer;
+  const transfer = audioOnly ? null : hdrRequested ? 'smpte2084' : preservedTransfer;
   const minBitDepth = TEN_BIT_FORMATS.has(settings.format) || transfer ? 10 : 8;
   const mastering = StudioExportMasteringSchema.safeParse(settings.mastering);
   if (transfer === 'smpte2084' && !mastering.success) {
@@ -561,6 +568,9 @@ export const findStudioExportOutputMismatch = (
   probe: { videoStreams: VideoStreamInfo[]; audioStreams: AudioStreamInfo[]; mastering?: Record<string, unknown>[] },
   format: string,
 ): string | null => {
+  if (isStudioAudioFormat(format)) {
+    return findStudioAudioExportMismatch(contract, probe, FORMAT_CODECS[format]);
+  }
   const [video] = probe.videoStreams;
   if (!video) {
     return 'The result has no video stream';
@@ -630,6 +640,40 @@ export const findStudioExportOutputMismatch = (
   }
   const drift = findAvAlignmentMismatch(video, audio);
   return drift ? `The result's audio and video are misaligned: ${drift}` : null;
+};
+
+/** FL-105: an audio-only export is one stream of the promised codec carrying the promised sound. */
+const findStudioAudioExportMismatch = (
+  contract: StudioExportContract,
+  probe: { videoStreams: VideoStreamInfo[]; audioStreams: AudioStreamInfo[] },
+  codec: string,
+): string | null => {
+  if (probe.videoStreams.length > 0) {
+    return 'The audio-only result also contains a picture';
+  }
+  if (probe.audioStreams.length !== 1) {
+    return `The result has ${probe.audioStreams.length} audio streams instead of one`;
+  }
+  const [audio] = probe.audioStreams;
+  if (audio.codecName !== codec) {
+    return `The result's audio codec is ${audio.codecName ?? 'unknown'}, instead of the ${codec} this export promises`;
+  }
+  if (!contract.audio) {
+    return 'An audio-only export needs sound to export';
+  }
+  const mismatch = findAudioLayoutMismatch(
+    {
+      policy: contract.audio.policy === 'stereo' ? AudioChannelPolicy.DownmixStereo : AudioChannelPolicy.Preserve,
+      channels: contract.audio.channels,
+      channelLayout: contract.audio.channelLayout,
+      sampleRate: contract.audio.sampleRate,
+    },
+    audio,
+  );
+  if (mismatch) {
+    return `The result's audio does not match the export: ${mismatch}`;
+  }
+  return typeof audio.duration === 'number' && audio.duration > 0 ? null : 'The result has no measurable sound';
 };
 
 /** Exact equality of two `num/den` spellings, so a worker's unreduced `2/60000` still matches `1/30000`. */

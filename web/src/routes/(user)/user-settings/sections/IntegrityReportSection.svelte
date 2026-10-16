@@ -40,7 +40,7 @@
     type IntegrityReportResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiArrowLeft, mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
+  import { mdiDeleteOutline, mdiDownload, mdiFileDocumentOutline, mdiRefresh } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -48,11 +48,10 @@
     type: IntegrityReport;
     /** How often the queue is polled for a finished check; tests shorten it. */
     pollMs?: number;
-    /** Where "back" goes: the page the list was opened from (File checks, FL-366). */
-    backHref?: string;
   };
 
-  let { type, pollMs = 2000, backHref = Route.systemMaintenance({ section: 'integrity' }) }: Props = $props();
+  // The way back to File checks is the page's own "‹ File checks" under its heading (ADMIN-P9).
+  let { type, pollMs = 2000 }: Props = $props();
 
   const refreshJobs: Record<IntegrityReport, ManualJobName> = {
     [IntegrityReport.UntrackedFile]: ManualJobName.IntegrityUntrackedFilesRefresh,
@@ -183,10 +182,6 @@
 <OnEvents {onIntegrityReportDeleted} {onIntegrityReportDeleteStatus} />
 
 <section class="report" aria-labelledby="fl-integrity-report-title">
-  <a class="back" href={backHref}>
-    <Icon icon={mdiArrowLeft} size="16" aria-hidden={true} />
-    {$t('frameleaf_care_fc_title')}
-  </a>
   <div class="report-head">
     <div>
       <h2 id="fl-integrity-report-title">
@@ -316,18 +311,6 @@
     border-radius: var(--fl-radius-card);
     padding: 20px;
     min-width: 0;
-  }
-  .back {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 12px;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    text-decoration: none;
-  }
-  .back:hover {
-    color: var(--fl-text);
   }
   .report-head {
     display: flex;

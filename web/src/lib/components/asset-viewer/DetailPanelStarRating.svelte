@@ -95,9 +95,9 @@
 </script>
 
 {#if isOwner && !asset.isTrashed && !authManager.isSharedLink && authManager.authenticated && authManager.preferences.ratings.enabled}
-  <section class="px-4 pt-4" data-testid="frameleaf-info-rating">
-    <div class="flex h-8 w-full items-center text-sm">
-      <Text color="muted">{$t('frameleaf_info_rating')}</Text>
+  <section data-testid="frameleaf-info-rating">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_rating')}</h3>
     </div>
     <div class="flex items-center gap-2">
       {#if rating === -1}
@@ -129,6 +129,48 @@
 {/if}
 
 <style>
+  /*
+   * .mv-stars (media-viewer.css:204-228): 34px stars, muted until set, set stars in the warm
+   * star colour; a star grows a little under the pointer.
+   */
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star-container']) {
+    gap: var(--fl-space-half);
+  }
+
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star']) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-viewer-muted);
+    transition:
+      transform var(--fl-motion-fast) var(--fl-ease),
+      color var(--fl-motion-fast) var(--fl-ease);
+  }
+
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star'].filled) {
+    color: var(--fl-warning);
+  }
+
+  [data-testid='frameleaf-info-rating'] :global([data-testid='star']:hover) {
+    transform: scale(1.12);
+  }
+
+  @media (pointer: coarse) {
+    [data-testid='frameleaf-info-rating'] :global([data-testid='star']) {
+      width: 40px;
+      height: 40px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-testid='frameleaf-info-rating'] :global([data-testid='star']:hover) {
+      transform: none;
+    }
+  }
+
   /* .mv-stars-clear (media-viewer.css:229-240). */
   .fl-stars-clear {
     margin-inline-start: 6px;

@@ -4,6 +4,8 @@ import { locale } from '$lib/stores/preferences.store';
 import { parseUtcDate } from '$lib/utils/date-time';
 import {
   formatGroupTitle,
+  formatTimelineMonthHeading,
+  formatTimelineMonthTitle,
   getTimes,
   plainDateTimeCompare,
   toTimelineAsset,
@@ -94,6 +96,15 @@ describe('formatGroupTitle', () => {
     expect(formatGroupTitle(date)).toBe('Invalid DateTime');
     locale.set('es');
     expect(formatGroupTitle(date)).toBe('Invalid DateTime');
+  });
+});
+
+describe('formatTimelineMonthHeading', () => {
+  it('writes the month in full for the loading heading, and keeps the short form for the scrubber', () => {
+    locale.set('en');
+    const october = DateTime.fromObject({ year: 2026, month: 10, day: 1 });
+    expect(formatTimelineMonthHeading(october)).toBe('October 2026');
+    expect(formatTimelineMonthTitle(october)).toBe('Oct 2026');
   });
 });
 

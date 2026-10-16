@@ -568,91 +568,89 @@
 <!--
   The album page sits in the Frameleaf shell (top bar and library rail) like every other library
   screen; the legacy ControlAppBar is gone (AL-17). The breadcrumb in the header, Escape and the
-  command palette's Go back lead out of it.
+  command palette's Go back lead out of it. An album's LibraryView is the page area's own child, as on
+  Photos, a person and a tag, so it carries the page gutter inside its scroller and the frosted
+  toolbar band spans the page (LIB-P4). The comments sheet is fixed over the right edge (SHARING-P2).
 -->
-<UserPageLayout scrollbar={false}>
-  <div class="flex h-full overflow-hidden" use:scrollMemoryClearer={{ routeStartsWith: Route.albums() }}>
-    <div class="relative w-full shrink">
-      <div class="relative h-full overflow-hidden md:px-4">
-        {#if isCollection}
-          <Theme theme={appTheme}>
-            <div class="h-full overflow-y-auto">
-              <!-- On phones the header keeps the 16px gutter the library view gives an album's header. -->
-              <section class="pt-2 max-md:px-2">{@render header()}</section>
-              <ResultsView
-                assets={collectionTimelineAssets}
-                {bulkContext}
-                downloadFileName={albumDownloadFileName}
-                {tagOptions}
-                onEndReached={loadMoreCollectionAssets}
-                onRemoved={handleMutated}
-                onSelectAll={selectEverythingInCollection}
-                onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-              />
-            </div>
-          </Theme>
-        {:else}
-          <LibraryView
-            enableRouting
-            selectAll={isSpace ? 'matching' : 'loaded'}
-            bind:timelineManager
-            {options}
-            destination={{ kind: 'album', id: albumId }}
-            headerHasSlideshow
+<UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.albums() }]]}>
+  {#if isCollection}
+    <div class="relative h-full overflow-hidden md:px-4">
+      <Theme theme={appTheme}>
+        <div class="h-full overflow-y-auto">
+          <!-- On phones the header keeps the 16px gutter the library view gives an album's header. -->
+          <section class="pt-2 max-md:px-2">{@render header()}</section>
+          <ResultsView
+            assets={collectionTimelineAssets}
             {bulkContext}
             downloadFileName={albumDownloadFileName}
             {tagOptions}
-            onMutated={handleMutated}
-            sidePanelOpen={activityOpen}
+            onEndReached={loadMoreCollectionAssets}
+            onRemoved={handleMutated}
+            onSelectAll={selectEverythingInCollection}
             onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-          >
-            <Theme theme={appTheme}>
-              <section class="pt-2">{@render header()}</section>
-            </Theme>
-
-            {#snippet viewer()}
-              <Portal target="body">
-                {#if assetViewerManager.isViewing}
-                  <TimelineAssetViewer
-                    bind:invisible={viewerInvisible}
-                    {timelineManager}
-                    {album}
-                    {isShared}
-                    withStacked
-                    activityPanel={isSpace ? spaceAssetComments : undefined}
-                  />
-                {/if}
-              </Portal>
-            {/snippet}
-          </LibraryView>
-        {/if}
-      </div>
-    </div>
-
-    {#if activityOpen && authManager.authenticated && !assetViewerManager.isViewing}
-      <Theme theme={appTheme}>
-        <div class="fl-album-activity">
-          {#if isSpace}
-            <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
-            <div class="fl-album-activity-space h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
-              <SpaceMediaComments
-                spaceId={album.id}
-                canComment={album.isActivityEnabled}
-                likes={{
-                  count: activityManager.likeCount,
-                  liked: !!activityManager.isLiked,
-                  onToggle: toggleSpaceLike,
-                }}
-                onClose={() => (activityOpen = false)}
-              />
-            </div>
-          {:else}
-            <ActivityPanel {album} onClose={() => (activityOpen = false)} />
-          {/if}
+          />
         </div>
       </Theme>
-    {/if}
-  </div>
+    </div>
+  {:else}
+    <LibraryView
+      enableRouting
+      selectAll={isSpace ? 'matching' : 'loaded'}
+      bind:timelineManager
+      {options}
+      destination={{ kind: 'album', id: albumId }}
+      headerHasSlideshow
+      {bulkContext}
+      downloadFileName={albumDownloadFileName}
+      {tagOptions}
+      onMutated={handleMutated}
+      sidePanelOpen={activityOpen}
+      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+    >
+      <Theme theme={appTheme}>
+        <section class="pt-2">{@render header()}</section>
+      </Theme>
+
+      {#snippet viewer()}
+        <Portal target="body">
+          {#if assetViewerManager.isViewing}
+            <TimelineAssetViewer
+              bind:invisible={viewerInvisible}
+              {timelineManager}
+              {album}
+              {isShared}
+              withStacked
+              activityPanel={isSpace ? spaceAssetComments : undefined}
+            />
+          {/if}
+        </Portal>
+      {/snippet}
+    </LibraryView>
+  {/if}
+
+  {#if activityOpen && authManager.authenticated && !assetViewerManager.isViewing}
+    <Theme theme={appTheme}>
+      <div class="fl-album-activity">
+        {#if isSpace}
+          <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
+          <div class="fl-album-activity-space h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
+            <SpaceMediaComments
+              spaceId={album.id}
+              canComment={album.isActivityEnabled}
+              likes={{
+                count: activityManager.likeCount,
+                liked: !!activityManager.isLiked,
+                onToggle: toggleSpaceLike,
+              }}
+              onClose={() => (activityOpen = false)}
+            />
+          </div>
+        {:else}
+          <ActivityPanel {album} onClose={() => (activityOpen = false)} />
+        {/if}
+      </div>
+    </Theme>
+  {/if}
 </UserPageLayout>
 
 {#if isCollection}
@@ -680,24 +678,17 @@
 
 <style>
   /*
-   * The prototype's .activity-panel (collections.css:1503, 1708-1716, 1823-1832): beside the album on
-   * a wide window, over it below 1000px, and a sheet from the bottom on phones, where a panel beside
-   * the album left the album a strip a few pixels wide.
+   * The prototype's .activity-panel (collections.css:1503, 1708-1716, 1823-1832). SHARING-P2: a
+   * full-height side sheet over the right edge at every width above a phone, so opening it never
+   * squeezes the grid or wraps the header's buttons; a sheet from the bottom on phones.
    */
   .fl-album-activity {
-    block-size: 100%;
+    position: fixed;
+    inset-block: var(--fl-topbar-height) 0;
+    inset-inline-end: 0;
+    z-index: 40;
     background: var(--fl-panel);
-  }
-
-  @media (max-width: 1000px) {
-    .fl-album-activity {
-      position: fixed;
-      inset-block: var(--fl-topbar-height) 0;
-      inset-inline-end: 0;
-      z-index: 40;
-      block-size: auto;
-      box-shadow: var(--fl-shadow-2);
-    }
+    box-shadow: var(--fl-shadow-2);
   }
 
   @media (max-width: 700px) {

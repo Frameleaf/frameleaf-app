@@ -29,6 +29,7 @@
     getMyCalendarHeatmap,
     type AlbumStatisticsResponseDto,
     type AssetStatsResponseDto,
+    type CalendarHeatmapResponseDto,
   } from '@frameleaf/sdk';
   import { mdiAlertOutline, mdiImageMultipleOutline } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -60,6 +61,20 @@
     }
   };
   onMount(load);
+
+  // The two year grids, loaded once so their totals can sit under each title (ACCOUNT-P7).
+  // A grid that cannot be read is left out rather than loading forever, as the old await block did.
+  let added = $state<CalendarHeatmapResponseDto | null | undefined>(undefined);
+  let taken = $state<CalendarHeatmapResponseDto | null | undefined>(undefined);
+  onMount(() => {
+    const range = getHeatmapRange();
+    getMyCalendarHeatmap({ ...range, $type: CalendarHeatmapType.Upload })
+      .then((data) => (added = data))
+      .catch(() => (added = null));
+    getMyCalendarHeatmap({ ...range, $type: CalendarHeatmapType.Taken })
+      .then((data) => (taken = data))
+      .catch(() => (taken = null));
+  });
 
   const count = (value: number) => value.toLocaleString($locale);
   const size = (bytes: number) => getByteUnitString(bytes, $locale);
@@ -102,7 +117,11 @@
           <Button onclick={() => goto(commandCenterUrl('trash'))}>{$t('frameleaf_prefs_numbers_open_trash')}</Button>
         {/if}
       {/snippet}
-      {#if fraction !== undefined}
+    </Hero>
+
+    <!-- ACCOUNT-P7: "Room on this server" is its own group when a limit is set, as in the prototype. -->
+    {#if fraction !== undefined}
+      <Section title={$t('frameleaf_prefs_numbers_room')}>
         <div class="meter">
           <Meter
             label={$t('frameleaf_prefs_numbers_meter')}
@@ -111,8 +130,8 @@
             {fraction}
           />
         </div>
-      {/if}
-    </Hero>
+      </Section>
+    {/if}
 
     {#if usage}
       <Section
@@ -135,43 +154,48 @@
     {/if}
   {/if}
 
-  <Section title={$t('frameleaf_prefs_numbers_added')}>
+  <!-- ACCOUNT-P7: the year's total and how to read the grid sit under the title, as in the prototype. -->
+  <Section
+    title={$t('frameleaf_prefs_numbers_added')}
+    description={added ? $t('frameleaf_prefs_numbers_added_total', { values: { count: added.totalCount } }) : undefined}
+  >
     <div class="grid">
-      {#await getMyCalendarHeatmap({ ...getHeatmapRange(), $type: CalendarHeatmapType.Upload })}
-        <Skeleton height={80} class="rounded-lg" />
-      {:then data}
+      {#if added}
         <CalendarHeatmap
-          {data}
+          data={added}
           itemLabel={(item) => $t('upload_day_count', { values: item })}
-          totalLabel={(total) => $t('frameleaf_prefs_numbers_added_total', { values: { count: total } })}
+          totalLabel={() => ''}
         />
-      {/await}
+      {:else if added === undefined}
+        <Skeleton height={80} class="rounded-lg" />
+      {/if}
     </div>
   </Section>
 
-  <Section title={$t('frameleaf_prefs_numbers_taken')}>
+  <Section
+    title={$t('frameleaf_prefs_numbers_taken')}
+    description={taken ? $t('frameleaf_prefs_numbers_taken_total', { values: { count: taken.totalCount } }) : undefined}
+  >
     <div class="grid">
-      {#await getMyCalendarHeatmap({ ...getHeatmapRange(), $type: CalendarHeatmapType.Taken })}
-        <Skeleton height={80} class="rounded-lg" />
-      {:then data}
+      {#if taken}
         <CalendarHeatmap
-          {data}
+          data={taken}
           itemLabel={(item) => $t('asset_day_count', { values: item })}
-          totalLabel={(total) => $t('frameleaf_prefs_numbers_taken_total', { values: { count: total } })}
+          totalLabel={() => ''}
         />
-      {/await}
+      {:else if taken === undefined}
+        <Skeleton height={80} class="rounded-lg" />
+      {/if}
     </div>
   </Section>
 </KitPage>
 
 <style>
   .meter {
-    padding: var(--fl-space-4) var(--fl-space-6);
-    border-top: 1px solid var(--fl-border);
+    padding-bottom: var(--fl-space-5);
   }
-  /* A year of days is wider than a phone: the grid scrolls sideways inside its group. */
+  /* ACCOUNT-P7: CalendarHeatmap fits the card itself (square cells, month names), so no override. */
   .grid {
     padding-bottom: var(--fl-space-5);
-    overflow-x: auto;
   }
 </style>

@@ -3,6 +3,7 @@ import { toastManager } from '@frameleaf/ui';
 import { mdiTune } from '@mdi/js';
 import { get } from 'svelte/store';
 import { vitest } from 'vitest';
+import { resetPlaybackRevisions, setDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
@@ -197,6 +198,7 @@ describe('AssetService', () => {
 
     it.each(['jpg', 'heic'])('allows editing the %s still of a Live Photo', (extension) => {
       setOwnerUser();
+      // Fixed path and state: a random factory path ending in .gif or .svg, or a trashed asset, is correctly not editable.
       const asset = assetFactory.build({
         type: AssetTypeEnum.Image,
         livePhotoVideoId: 'motion',
@@ -204,6 +206,8 @@ describe('AssetService', () => {
         originalPath: `/upload/photo.${extension}`,
         originalFileName: `photo.${extension}`,
         originalMimeType: extension === 'jpg' ? 'image/jpeg' : 'image/heic',
+        isTrashed: false,
+        exifInfo: undefined,
       });
       expect(getAssetActions(() => '', asset).Edit.$if?.()).toBe(true);
     });
@@ -267,6 +271,64 @@ describe('AssetService', () => {
         isSharedLink.mockRestore();
         downloadUrl.mockRestore();
       }
+    });
+
+    describe('the version on screen (owner, 2026-10-16)', () => {
+      // The formatter returns the key itself, so a title is checked by its key.
+      const keyOnly = String as never;
+      const showVersion = () => {
+        authManager.reset();
+        const owner = userAdminFactory.build();
+        authManager.setUser(owner);
+        authManager.setPreferences(preferencesFactory.build());
+        const asset = assetFactory.build({ ownerId: owner.id, livePhotoVideoId: 'motion', isEdited: false });
+        setDevelopPlaybackRevision(asset.id, 'revision-2');
+        return asset;
+      };
+      afterEach(() => {
+        resetPlaybackRevisions();
+        authManager.reset();
+      });
+
+      it("downloads the owner's develop version on screen by name, without the original's motion", async () => {
+        const asset = showVersion();
+
+        await handleDownloadAsset(asset, { edited: true });
+
+        expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+        expect(downloadAssetFile).toHaveBeenCalledWith(
+          expect.objectContaining({ id: asset.id, edited: true, revisionId: 'revision-2' }),
+        );
+        expect(getAssetInfo).not.toHaveBeenCalled();
+        // The original stays one choice away, and the still is named as the edit it is.
+        const actions = getAssetActions(keyOnly, asset);
+        expect(actions.DownloadOriginal.$if?.()).toBe(true);
+        expect(actions.Download.title).toBe('frameleaf_download_edited_still');
+      });
+
+      it('downloads the original, with its motion, when the original is asked for', async () => {
+        vitest.mocked(getAssetInfo).mockResolvedValue(assetFactory.build({ originalPath: '/library/motion.mov' }));
+        const asset = showVersion();
+
+        await handleDownloadAsset(asset, { edited: false });
+
+        expect(downloadAssetFile).toHaveBeenCalledTimes(2);
+        expect(downloadAssetFile).toHaveBeenNthCalledWith(
+          1,
+          expect.not.objectContaining({ revisionId: expect.anything() }),
+        );
+      });
+
+      it('offers no "Download original" for an item shown as its original', () => {
+        authManager.reset();
+        const owner = userAdminFactory.build();
+        authManager.setUser(owner);
+        authManager.setPreferences(preferencesFactory.build());
+        const asset = assetFactory.build({ ownerId: owner.id, isEdited: false });
+        setDevelopPlaybackRevision(asset.id, null);
+
+        expect(getAssetActions(keyOnly, asset).DownloadOriginal.$if?.()).toBe(false);
+      });
     });
 
     it('adds the motion part as its own row with a -motion name', async () => {

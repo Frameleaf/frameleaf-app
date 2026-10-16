@@ -55,6 +55,8 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import type { StudioRenderEvidence } from '$lib/frameleaf/studio/host-contract';
   import {
+    STUDIO_AUDIO_FORMATS,
+    STUDIO_STILL_FORMATS,
     evaluateStudioRender,
     studioRenderChoices,
     studioRenderRefusalKey,
@@ -87,6 +89,27 @@
     { value: StudioExportFormat.WebmAv1, label: 'frameleaf_studio_export_format_av1' },
     { value: StudioExportFormat.Prores422Hq, label: 'frameleaf_studio_export_format_prores' },
   ];
+  // FL-105: every other container and codec the render workers can write, by container.
+  const moreVideoFormats: { value: StudioExportFormat; label: Translations }[] = [
+    { value: StudioExportFormat.Mp4Hevc, label: 'frameleaf_studio_export_format_mp4_hevc' },
+    { value: StudioExportFormat.Mp4Av1, label: 'frameleaf_studio_export_format_mp4_av1' },
+    { value: StudioExportFormat.MovH264, label: 'frameleaf_studio_export_format_mov_h264' },
+    { value: StudioExportFormat.MovHevc, label: 'frameleaf_studio_export_format_mov_hevc' },
+    { value: StudioExportFormat.MovProres422, label: 'frameleaf_studio_export_format_mov_prores_422' },
+    { value: StudioExportFormat.WebmVp9, label: 'frameleaf_studio_export_format_webm_vp9' },
+    { value: StudioExportFormat.WebmVp8, label: 'frameleaf_studio_export_format_webm_vp8' },
+    { value: StudioExportFormat.WebmAv1Sdr, label: 'frameleaf_studio_export_format_webm_av1_sdr' },
+    { value: StudioExportFormat.MkvH264, label: 'frameleaf_studio_export_format_mkv_h264' },
+    { value: StudioExportFormat.MkvHevc, label: 'frameleaf_studio_export_format_mkv_hevc' },
+    { value: StudioExportFormat.MkvVp9, label: 'frameleaf_studio_export_format_mkv_vp9' },
+    { value: StudioExportFormat.MkvVp8, label: 'frameleaf_studio_export_format_mkv_vp8' },
+    { value: StudioExportFormat.MkvAv1, label: 'frameleaf_studio_export_format_mkv_av1' },
+  ];
+  const audioFormats: { value: StudioExportFormat; label: Translations }[] = [
+    { value: StudioExportFormat.AudioAac, label: 'frameleaf_studio_export_format_audio_aac' },
+    { value: StudioExportFormat.AudioMp3, label: 'frameleaf_studio_export_format_audio_mp3' },
+    { value: StudioExportFormat.AudioWav, label: 'frameleaf_studio_export_format_audio_wav' },
+  ];
   const stillFormats: { value: StudioExportFormat; label: Translations }[] = [
     { value: StudioExportFormat.SdrJpeg, label: 'frameleaf_studio_export_format_sdr_jpeg' },
     { value: StudioExportFormat.HdrJpeg, label: 'frameleaf_studio_export_format_hdr_jpeg' },
@@ -94,6 +117,8 @@
   ];
   const formatGroups: { label: Translations; items: typeof videoFormats }[] = [
     { label: 'frameleaf_studio_export_video_group', items: videoFormats },
+    { label: 'frameleaf_studio_export_more_video_group', items: moreVideoFormats },
+    { label: 'frameleaf_studio_export_audio_group', items: audioFormats },
     { label: 'frameleaf_studio_export_stills_group', items: stillFormats },
   ];
   /** Three places to start from; every choice below can still be changed afterwards. */
@@ -153,14 +178,19 @@
   ];
 
   let format = $state(StudioExportFormat.Mp4HevcMain10);
-  const photo = $derived(
-    [StudioExportFormat.SdrJpeg, StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(format),
-  );
+  const photo = $derived(STUDIO_STILL_FORMATS.includes(format));
+  /** FL-105: the project's sound alone; it has no picture settings and no captions. */
+  const audioOnly = $derived(STUDIO_AUDIO_FORMATS.includes(format));
   $effect(() => {
     if (photo) {
       color = StudioExportColor.Preserve;
       resolution = StudioExportResolution.Original;
       quality = StudioExportQuality.High;
+      declarePqMastering = false;
+      smoothFactor = null;
+    } else if (audioOnly) {
+      color = StudioExportColor.Preserve;
+      resolution = StudioExportResolution.$720P;
       declarePqMastering = false;
       smoothFactor = null;
     } else if (resolution === StudioExportResolution.Original) {
@@ -271,7 +301,8 @@
       format,
       color,
       resolution,
-      ...(!photo && { subtitleMode, quality }),
+      ...(!photo && { quality }),
+      ...(!photo && !audioOnly && { subtitleMode }),
     }),
   );
   const sidecarAvailable = $derived(
@@ -326,6 +357,11 @@
   );
   const unsupported = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) =>
     list.find((entry) => entry.value === value)?.verdict.supported === false;
+  /** Why a choice is unavailable, shown on the disabled option so it is explained before any job. */
+  const refusalTitle = (list: { value: string; verdict: StudioRenderVerdict }[], value: string) => {
+    const verdict = list.find((entry) => entry.value === value)?.verdict;
+    return verdict && !verdict.supported ? $t(studioRenderRefusalKey(verdict.refusal)) : undefined;
+  };
 
   const presetSupported = (preset: (typeof presets)[number]) =>
     evaluateStudioRender(renderEvidence, destination, {
@@ -360,10 +396,14 @@
   const summary = $derived(
     $t('frameleaf_studio_export_summary', {
       values: {
-        format: $t([...videoFormats, ...stillFormats].find((item) => item.value === format)?.label ?? 'unknown'),
-        resolution: $t(
-          [...stillResolutions, ...videoResolutions].find((item) => item.value === resolution)?.label ?? 'unknown',
+        format: $t(
+          formatGroups.flatMap((group) => group.items).find((item) => item.value === format)?.label ?? 'unknown',
         ),
+        resolution: audioOnly
+          ? $t('frameleaf_studio_export_audio_group')
+          : $t(
+              [...stillResolutions, ...videoResolutions].find((item) => item.value === resolution)?.label ?? 'unknown',
+            ),
         destination: $t(destinations.find((item) => item.value === destination)?.label ?? 'unknown'),
       },
     }),
@@ -377,7 +417,7 @@
         resolution,
         quality,
         ...(mastering && { mastering }),
-        ...(!photo && { subtitleMode }),
+        ...(!photo && !audioOnly && { subtitleMode }),
         ...(selectedRange && { range: selectedRange }),
         destination,
         ...(smoothFactor !== null &&
@@ -419,6 +459,7 @@
               {#each group.items as item (item.value)}
                 <option
                   value={item.value}
+                  title={refusalTitle(availableChoices.formats, item.value)}
                   disabled={unsupported(availableChoices.formats, item.value) ||
                     ((!hdrEnabled || outputIntent !== 'hdr') &&
                       [StudioExportFormat.HdrJpeg, StudioExportFormat.HdrHeic].includes(item.value))}
@@ -431,7 +472,7 @@
       </label>
       <label class="field" for="{fieldId}-resolution">
         <span>{$t('frameleaf_studio_export_resolution')}</span>
-        <select id="{fieldId}-resolution" bind:value={resolution} disabled={photo}>
+        <select id="{fieldId}-resolution" bind:value={resolution} disabled={photo || audioOnly}>
           {#each resolutions as item (item.value)}
             <option value={item.value} disabled={unsupported(choices.resolutions, item.value)}>{$t(item.label)}</option>
           {/each}
@@ -445,7 +486,7 @@
           {/each}
         </select>
       </label>
-      {#if !photo}
+      {#if !photo && !audioOnly}
         <label class="field" for="{fieldId}-subtitles">
           <span>{$t('frameleaf_studio_export_subtitles')}</span>
           <select id="{fieldId}-subtitles" bind:value={subtitleMode}>
@@ -469,7 +510,7 @@
         <div class="grid">
           <label class="field" for="{fieldId}-color">
             <span>{$t('frameleaf_studio_export_color')}</span>
-            <select id="{fieldId}-color" bind:value={color} disabled={photo}>
+            <select id="{fieldId}-color" bind:value={color} disabled={photo || audioOnly}>
               {#each colors as item (item.value)}
                 <option value={item.value} disabled={unsupported(availableChoices.colors, item.value)}
                   >{$t(item.label)}</option
@@ -509,13 +550,13 @@
           <p class="note warning" role="status">{$t('frameleaf_studio_export_range_invalid')}</p>
         {/if}
 
-        {#if !photo && color === StudioExportColor.Preserve}
+        {#if !photo && !audioOnly && color === StudioExportColor.Preserve}
           <label class="note">
             <input type="checkbox" bind:checked={declarePqMastering} />
             {$t('frameleaf_studio_export_mastering_preserve')}
           </label>
         {/if}
-        {#if !photo && needsMastering}
+        {#if !photo && !audioOnly && needsMastering}
           <fieldset class="smooth">
             <legend>{$t('frameleaf_studio_export_mastering_title')}</legend>
             <p class="note">{$t('frameleaf_studio_export_mastering_hint')}</p>
@@ -569,7 +610,7 @@
     <p class="note">{$t('frameleaf_studio_export_on_network')}</p>
 
     <!-- FL-162: Smooth motion is its own job on the exported video; the export itself renders at home. -->
-    {#if !photo}
+    {#if !photo && !audioOnly}
       <fieldset class="smooth" data-testid="studio-export-smooth-motion">
         <legend>{$t('frameleaf_studio_export_smooth_motion')}</legend>
         <div
@@ -661,7 +702,7 @@
   .field select,
   .field input {
     min-height: 34px;
-    padding: 0 0.5rem;
+    padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     background: var(--fl-panel);
@@ -690,12 +731,32 @@
     align-items: center;
     padding-inline: var(--fl-space-2);
     margin-inline-start: calc(var(--fl-space-2) * -1);
+    gap: var(--fl-space-2);
     border-radius: var(--fl-radius-control);
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  /* `display: inline-flex` drops the native disclosure marker; a chevron keeps "Advanced" reading as something that opens. */
+  .advanced summary::after {
+    content: '';
+    width: 0.4rem;
+    height: 0.4rem;
+    border-inline-end: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-0.1rem) rotate(45deg);
+  }
+  @media (hover: hover) {
+    .advanced summary:hover {
+      color: var(--fl-text);
+      background: var(--fl-raised);
+    }
   }
   .advanced[open] summary {
     color: var(--fl-text);
+  }
+  .advanced[open] summary::after {
+    transform: translateY(0.1rem) rotate(-135deg);
   }
   .advanced-body {
     display: grid;

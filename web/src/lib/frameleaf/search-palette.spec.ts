@@ -1,4 +1,4 @@
-import { AssetTypeEnum, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
+import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, isDiscoveryFilter, type DiscoveryQuery } from '$lib/components/discovery/query';
 import { emptyFilterPanelOptions } from '$lib/frameleaf/search-options';
@@ -32,6 +32,7 @@ import {
   toSavedSearch,
   upsertSavedSearch,
   withAllText,
+  withArchivePreference,
   withoutPaletteScope,
   withoutTokensForFields,
   withPaletteScope,
@@ -383,6 +384,26 @@ describe('compiling the palette', () => {
     expect(body.filter?.originalFileName).toEqual({ like: 'IMG' });
     expect(body.filter?.visibility).toEqual({ eq: 'timeline' });
     expect(paletteStatisticsBody(body)).toEqual({ filter: body.filter, imageEnrichment: 'nsfw-review' });
+  });
+});
+
+// ACCOUNT-P3: Search › "Include archived items".
+describe('withArchivePreference', () => {
+  const both = { in: ['timeline', 'archive'] };
+
+  it('widens a search that names no visibility to the timeline and the archive, and only when asked', () => {
+    const query: DiscoveryQuery = { ...emptyDiscoveryQuery(), text: 'IMG' };
+    expect(paletteSearchBody(query, true).filter?.visibility).toEqual(both);
+    expect(paletteSearchBody(query, false).filter?.visibility).toEqual({ eq: 'timeline' });
+    // the default the library's Filter panel and every other caller gets
+    expect(paletteSearchBody(query).filter?.visibility).toEqual({ eq: 'timeline' });
+  });
+
+  it('leaves a search that already names a visibility, at the top or in a branch, as it is', () => {
+    const archived = { filter: { visibility: { eq: AssetVisibility.Archive } } };
+    expect(withArchivePreference(archived, true)).toBe(archived);
+    const branch = { filter: { or: [{ visibility: { eq: AssetVisibility.Archive } }, { isFavorite: { eq: true } }] } };
+    expect(withArchivePreference(branch, true)).toBe(branch);
   });
 });
 
