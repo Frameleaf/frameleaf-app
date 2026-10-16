@@ -19,6 +19,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
@@ -639,6 +640,49 @@ describe('Mark Safe on a stack', () => {
 
 // FL-34: an owner unlock and the reviews it implies commit together, in one transaction
 describe('unlocking assets', () => {
+  it.each(['unlock', 'safe'] as const)(
+    'rolls back the %s, group reviews and overrides when recording fails',
+    async (action) => {
+      const { sut, ctx, auth, user, asset, mark } = await setup();
+      const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newStack({ ownerId: user.id }, [asset.id, sibling.id]);
+      const { user: sharer } = await ctx.newUser();
+      const origins = ctx.get(PartnerOriginRepository);
+      const ids = [asset.id, sibling.id];
+      for (const id of ids) {
+        const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+        await origins.createAssetOrigin({
+          id,
+          sourceId: source.id,
+          ownerId: user.id,
+          rootOwnerId: sharer.id,
+          partnerSharedById: sharer.id,
+        });
+      }
+      await mark(AssetImageEnrichmentAction.MarkNsfw);
+      const before = await Promise.all(ids.map((id) => readPrivacy(id)));
+      const original = origins.markOverridden.bind(origins);
+      const recording = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw new Error('override failed');
+      });
+      ctx.getMock(EventRepository).emit.mockClear();
+      try {
+        const edit =
+          action === 'unlock' ? sut.unlockAssets(auth, { ids: [asset.id] }) : mark(AssetImageEnrichmentAction.MarkSafe);
+        await expect(edit).rejects.toThrow('override failed');
+      } finally {
+        recording.mockRestore();
+      }
+      expect(await Promise.all(ids.map((id) => readPrivacy(id)))).toEqual(before);
+      expect(
+        await database.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute(),
+      ).toHaveLength(2);
+      for (const id of ids) expect((await origins.getOrigin('asset', id))?.overriddenFields).toEqual([]);
+      expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+    },
+  );
+
   it('keeps every asset locked when an owner-unlock review cannot be saved', async () => {
     const { sut, ctx, auth, user, asset, mark, lockRow } = await setup();
     await mark(AssetImageEnrichmentAction.MarkNsfw);

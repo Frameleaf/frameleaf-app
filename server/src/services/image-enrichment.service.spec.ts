@@ -58,6 +58,7 @@ describe(ImageEnrichmentService.name, () => {
       Promise.resolve(ids.map((id) => ({ id, ownerId, isLocked: false }))),
     );
     mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
   it('should store NSFW results and apply visible NSFW tags when only NSFW detection is enabled', async () => {
@@ -810,6 +811,49 @@ describe(ImageEnrichmentService.name, () => {
   });
 
   describe('the sensitive mark is the lock (FL-34)', () => {
+    it.each(['unlock', 'safe'] as const)('admits the %s origin edit before metadata locking', async (action) => {
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      const auth = authStub.adminWithElevatedPermission;
+      const edit =
+        action === 'unlock'
+          ? sut.unlockAssets(auth, { ids: [assetId] })
+          : sut.updateAssetEnrichment(auth, assetId, { action: AssetImageEnrichmentAction.MarkSafe });
+      await expect(edit).rejects.toThrow('origin busy');
+      expect(mocks.database.withAssetMetadataLocks).not.toHaveBeenCalled();
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it.each(['unlock', 'safe'] as const)(
+      'records the %s override in the metadata transaction before commit',
+      async (action) => {
+        const transaction = { isTransaction: true } as never;
+        const auth = authStub.adminWithElevatedPermission;
+        mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
+        mocks.database.withAssetMetadataLocks.mockImplementation((_ids, write) => write(transaction));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+            'asset',
+            [assetId],
+            ['visibility'],
+            auth.user.id,
+            transaction,
+          );
+          committed = true;
+          return result;
+        });
+        mocks.event.emit.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        if (action === 'unlock') await sut.unlockAssets(auth, { ids: [assetId] });
+        else await sut.updateAssetEnrichment(auth, assetId, { action: AssetImageEnrichmentAction.MarkSafe });
+        expect(committed).toBe(true);
+      },
+    );
+
     const detectedMetadata = {
       key: AssetMetadataKey.MlEnrichment,
       updatedAt: new Date(),

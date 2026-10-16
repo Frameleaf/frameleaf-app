@@ -487,12 +487,21 @@ export class ImageEnrichmentService extends BaseService {
     for (const ids of chunk(dto.ids, UNLOCK_CHUNK_SIZE)) {
       // every metadata writer takes its assets' metadata locks, in id order, before any group's rows
       const groupIds = await this.assetRepository.findLockGroupIds(ids);
-      const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
-        const unlocked = [...new Set((await this.assetRepository.unlock(ids, trx)).map(({ assetId }) => assetId))];
-        requireUnchangedGroup(unlocked, groupIds);
-        const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
-        return { unlocked, reviewed };
-      });
+      const { unlocked, reviewed } = await this.partnerOriginRepository.withOriginEdit('asset', groupIds, [], () =>
+        this.databaseRepository.withAssetMetadataLocks(groupIds, async (trx) => {
+          const unlocked = [...new Set((await this.assetRepository.unlock(ids, trx)).map(({ assetId }) => assetId))];
+          requireUnchangedGroup(unlocked, groupIds);
+          const reviewed = await this.recordOwnerUnlock(auth, unlocked, trx);
+          await this.partnerOriginRepository.markOverridden(
+            'asset',
+            unlocked,
+            [AssetOriginField.Visibility],
+            auth.user.id,
+            trx,
+          );
+          return { unlocked, reviewed };
+        }),
+      );
       await this.clearSafeReviewTags(reviewed);
       await this.notifyAssetsUpdated(unlocked, auth.user.id);
       await this.recordPartnerUnlock(auth, unlocked);
@@ -546,31 +555,40 @@ export class ImageEnrichmentService extends BaseService {
   private async markGroupSafe(auth: AuthDto, id: string): Promise<void> {
     const groupIds = await this.assetRepository.findLockGroupIds([id]);
     const lockIds = [...new Set([id, ...groupIds])];
-    const { unlocked, reviewed } = await this.databaseRepository.withAssetMetadataLocks(lockIds, async (trx) => {
-      const members = await this.assetRepository.lockGroupMembers([id], trx);
-      const memberIds = members.map((member) => member.id);
-      requireUnchangedGroup(memberIds, lockIds);
-      if (members.some((member) => isLockedRow(member))) {
-        requireElevatedPermission(auth);
-      }
-      // Legacy compatibility kept apart (FL-34): Mark Safe answers a sensitive verdict, so it releases
-      // marked and detected locks only; an item kept in the upstream Locked folder stays Locked until
-      // its owner unlocks it.
-      const unlocked = (
-        await this.assetRepository.unlock([id], trx, [AssetLockReason.Marked, AssetLockReason.Detected])
-      ).map(({ assetId }) => assetId);
-      // the unlock works the group out again: it may release only what the elevation check saw
-      requireUnchangedGroup(unlocked, memberIds);
-      const ownerId = members.find((member) => member.id === id)?.ownerId;
-      const reviewIds = new Set([id, ...unlocked]);
-      const reviewed = await this.reviewSafe(
-        auth,
-        members.filter((member) => reviewIds.has(member.id) && member.ownerId === ownerId),
-        trx,
-        true,
-      );
-      return { unlocked, reviewed };
-    });
+    const { unlocked, reviewed } = await this.partnerOriginRepository.withOriginEdit('asset', lockIds, [], () =>
+      this.databaseRepository.withAssetMetadataLocks(lockIds, async (trx) => {
+        const members = await this.assetRepository.lockGroupMembers([id], trx);
+        const memberIds = members.map((member) => member.id);
+        requireUnchangedGroup(memberIds, lockIds);
+        if (members.some((member) => isLockedRow(member))) {
+          requireElevatedPermission(auth);
+        }
+        // Legacy compatibility kept apart (FL-34): Mark Safe answers a sensitive verdict, so it releases
+        // marked and detected locks only; an item kept in the upstream Locked folder stays Locked until
+        // its owner unlocks it.
+        const unlocked = (
+          await this.assetRepository.unlock([id], trx, [AssetLockReason.Marked, AssetLockReason.Detected])
+        ).map(({ assetId }) => assetId);
+        // the unlock works the group out again: it may release only what the elevation check saw
+        requireUnchangedGroup(unlocked, memberIds);
+        const ownerId = members.find((member) => member.id === id)?.ownerId;
+        const reviewIds = new Set([id, ...unlocked]);
+        const reviewed = await this.reviewSafe(
+          auth,
+          members.filter((member) => reviewIds.has(member.id) && member.ownerId === ownerId),
+          trx,
+          true,
+        );
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          unlocked,
+          [AssetOriginField.Visibility],
+          auth.user.id,
+          trx,
+        );
+        return { unlocked, reviewed };
+      }),
+    );
     await this.clearSafeReviewTags(reviewed);
     await this.notifyAssetsUpdated(unlocked, auth.user.id);
     await this.recordPartnerUnlock(auth, unlocked);
