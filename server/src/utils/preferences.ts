@@ -153,8 +153,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       // D5: 4 GB is 4,000,000,000 bytes. An account that stored another size keeps it exactly.
       archiveSize: DecimalSize.GB * 4,
       includeEmbeddedVideos: false,
-      // ACCOUNT-P5, prototype `preferences.jsx` Downloads: "The original", with a details file beside each photo
-      edited: false,
+      // ACCOUNT-P5, prototype `preferences.jsx` Downloads: a details file beside each photo. There is no
+      // original-or-edited choice: a download is the version on screen (owner, 2026-10-16).
       includeSidecar: true,
     },
     // ACCOUNT-P3, prototype `preferences.jsx` Look: the search screens leave archived photos out unless asked

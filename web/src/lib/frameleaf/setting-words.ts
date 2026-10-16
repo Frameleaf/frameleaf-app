@@ -140,10 +140,6 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   },
   'download.includeEmbeddedVideos': { label: 'frameleaf_prefs_downloads_motion_label' },
   // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
-  'download.edited': {
-    label: 'frameleaf_prefs_downloads_version',
-    values: { false: 'frameleaf_prefs_downloads_version_original', true: 'frameleaf_prefs_downloads_version_edited' },
-  },
   'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },

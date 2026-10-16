@@ -12,7 +12,6 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   download: {
     archiveSize: 0,
     includeEmbeddedVideos: false,
-    edited: false,
     includeSidecar: true,
   },
   emailNotifications: {

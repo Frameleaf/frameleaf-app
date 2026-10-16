@@ -358,7 +358,9 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
-    const filePath = editedPath ?? originalPath!;
+    // Downloaded as shown (owner, 2026-10-16): the owner's viewer shows their current develop version.
+    const developedPath = dto.edited && !dto.format ? await this.getShownDevelopMaster(auth, id, ownerId) : undefined;
+    const filePath = developedPath ?? editedPath ?? originalPath!;
     if (dto.format) {
       const source = await this.assetRepository.getById(id);
       if (!source || source.type !== AssetType.Image || source.originalPath !== filePath)
@@ -424,8 +426,26 @@ export class AssetMediaService extends BaseService {
       path: filePath,
       fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(filePath),
       contentType: mimeTypes.lookup(filePath),
-      cacheControl: CacheControl.PrivateWithCache,
+      // The current version can change under the same URL; a cached copy could be the one before.
+      cacheControl: developedPath ? CacheControl.PrivateWithoutCache : CacheControl.PrivateWithCache,
     });
+  }
+
+  /**
+   * The rendered master of the owner's current develop version: the picture their viewer shows
+   * (`viewThumbnail` serves it for an edited preview or full-size request), so a download of the asset
+   * as it is shown is that file. Nobody else sees the working version; they are given the edited file
+   * or the original as before.
+   */
+  private async getShownDevelopMaster(auth: AuthDto, id: string, ownerId: string): Promise<string | undefined> {
+    if (auth.sharedLink || auth.user.id !== ownerId) {
+      return;
+    }
+    const current = await this.assetRepository.getCurrentDevelop(id);
+    if (!current || current.ownerId !== ownerId || !current.masterPath || !hasPublishedDevelopRendition(current)) {
+      return;
+    }
+    return current.masterPath;
   }
 
   /**

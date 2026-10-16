@@ -15040,7 +15040,7 @@
             "name": "edited",
             "required": false,
             "in": "query",
-            "description": "Return edited asset if available",
+            "description": "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
             "schema": {
               "type": "boolean"
             }
@@ -61075,7 +61075,7 @@
       "AssetDownloadOriginalDto": {
         "properties": {
           "edited": {
-            "description": "Return edited asset if available",
+            "description": "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
             "type": "boolean"
           },
           "format": {
@@ -72363,7 +72363,7 @@
             "type": "array"
           },
           "edited": {
-            "description": "Download edited asset if available. Left out, the account's download.edited preference decides (shared links: the original)",
+            "description": "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
             "type": "boolean"
           },
           "includeSidecar": {
@@ -72440,16 +72440,6 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
-          "edited": {
-            "description": "Whether downloads hold the edited version when there is one (false: the original)",
-            "type": "boolean",
-            "x-immich-history": [
-              {
-                "version": "v3",
-                "state": "Added"
-              }
-            ]
-          },
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
             "type": "boolean"
@@ -72467,7 +72457,6 @@
         },
         "required": [
           "archiveSize",
-          "edited",
           "includeEmbeddedVideos",
           "includeSidecar"
         ],
@@ -72502,16 +72491,6 @@
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
-          },
-          "edited": {
-            "description": "Whether downloads hold the edited version when there is one (false: the original)",
-            "type": "boolean",
-            "x-immich-history": [
-              {
-                "version": "v3",
-                "state": "Added"
-              }
-            ]
           },
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",

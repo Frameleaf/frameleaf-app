@@ -27,7 +27,6 @@ vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDra
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences: {}, user: {} } }));
 
 const values = (archiveSize: number) => ({
-  'download.edited': false,
   'download.includeEmbeddedVideos': false,
   'download.includeSidecar': true,
   'download.archiveSize': archiveSize,
@@ -44,18 +43,16 @@ describe('DownloadSettings (ACCOUNT-P5)', () => {
     downloads.baseline = values(4 * GB);
   });
 
-  it('puts "What a download contains" first, with the original or the edited version and a details file', async () => {
+  it('puts "What a download contains" first, with a details file and no original-or-edited choice', async () => {
     render(DownloadSettings);
 
     expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
       'What a download contains',
       'Big downloads',
     ]);
-    const version = screen.getByRole('group', { name: 'Download' });
-    expect(within(version).getByRole('button', { name: 'The original', pressed: true })).toBeInTheDocument();
-    expect(screen.getByText('The file exactly as it was added.')).toBeInTheDocument();
-    await fireEvent.click(within(version).getByRole('button', { name: 'My edited version' }));
-    expect(downloads.set).toHaveBeenCalledWith('download.edited', true);
+    // Each photo downloads as it is shown (owner, 2026-10-16), so there is nothing to choose.
+    expect(screen.queryByRole('group', { name: 'Download' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'My edited version' })).toBeNull();
 
     const details = screen.getByRole('switch', { name: 'Add a details file' });
     expect(details).toBeChecked();

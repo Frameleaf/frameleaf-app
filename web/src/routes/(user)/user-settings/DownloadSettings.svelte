@@ -1,8 +1,9 @@
 <script lang="ts">
   /**
    * Your preferences › Downloads (FL-368, after the approved prototype; the preferences are FL-77's).
-   * ACCOUNT-P5: "What a download contains" comes first, with the original or the edited version and
-   * a details file beside each photo; the server applies both to archives (shared links aside).
+   * ACCOUNT-P5: "What a download contains" comes first, with a details file beside each photo; the
+   * server applies it to archives (shared links aside). There is no original-or-edited choice: each
+   * photo downloads as it is shown, the version being viewed (owner, 2026-10-16).
    *
    * The size a big download is split at is a choice of three or "Custom" (a whole number of GB),
    * said back as what a download would look like. It is stored as an exact byte count and an
@@ -29,7 +30,6 @@
   import { t } from 'svelte-i18n';
 
   const keys: AccountPreferenceKey[] = [
-    'download.edited',
     'download.includeEmbeddedVideos',
     'download.includeSidecar',
     'download.archiveSize',
@@ -89,22 +89,6 @@
 <OwnPreferencesForm {store}>
   <KitPage>
     <Section title={$t('frameleaf_prefs_downloads_contains')}>
-      <Row
-        label={$t('frameleaf_prefs_downloads_version')}
-        help={draft['download.edited']
-          ? $t('frameleaf_prefs_downloads_version_edited_help')
-          : $t('frameleaf_prefs_downloads_version_original_help')}
-      >
-        <SegmentedControl
-          label={$t('frameleaf_prefs_downloads_version')}
-          options={[
-            { value: 'original', label: $t('frameleaf_prefs_downloads_version_original') },
-            { value: 'edited', label: $t('frameleaf_prefs_downloads_version_edited') },
-          ]}
-          value={draft['download.edited'] ? 'edited' : 'original'}
-          onChange={(value) => store.set('download.edited', value === 'edited')}
-        />
-      </Row>
       <Row label={$t('frameleaf_prefs_downloads_motion')} help={$t('frameleaf_prefs_downloads_motion_help')}>
         <Switch
           label={$t('frameleaf_prefs_downloads_motion_label')}

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
 import { DownloadService } from 'src/services/download.service.js';
@@ -268,7 +269,7 @@ describe(DownloadService.name, () => {
         return { archive, asset };
       };
 
-      it("puts each photo's details file beside it and holds the original, by default", async () => {
+      it("puts each photo's details file beside it and holds the original when `edited` is left out", async () => {
         const { archive, asset } = setup({});
 
         await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
@@ -280,14 +281,15 @@ describe(DownloadService.name, () => {
         ]);
       });
 
-      it('follows "My edited version" and no details file', async () => {
+      it('follows "no details file"; a stored original-or-edited choice no longer decides anything', async () => {
+        // An account that saved the retired `download.edited` before it was removed (owner, 2026-10-16).
         const { archive, asset } = setup({ download: { edited: true, includeSidecar: false } });
 
         await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
 
-        expect(mocks.asset.getForOriginals).toHaveBeenCalledWith([asset.id], true);
+        expect(mocks.asset.getForOriginals).toHaveBeenCalledWith([asset.id], false);
         expect(mocks.downloadRepository.getSidecars).not.toHaveBeenCalled();
-        expect(archive.addFile.mock.calls).toEqual([['/edited.jpeg', 'IMG_1.jpeg']]);
+        expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
       });
 
       it('lets the request decide over the preferences, and skips a details file missing on disk', async () => {
@@ -302,12 +304,71 @@ describe(DownloadService.name, () => {
       });
 
       it("never applies the link owner's preferences to a shared-link download", async () => {
-        const { archive, asset } = setup({ download: { edited: true, includeSidecar: true } });
+        const { archive, asset } = setup({ download: { includeSidecar: true } });
         mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
 
         await sut.downloadArchive(authStub.adminSharedLink, { assetIds: [asset.id] });
 
         expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+        expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+      });
+    });
+
+    describe('as shown (owner, 2026-10-16)', () => {
+      const developed = (assetId: string, ownerId: string, status = AssetDevelopRevisionStatus.Rendered) => ({
+        assetId,
+        ownerId,
+        status,
+        previewPath: '/develop/preview.jpeg',
+        masterPath: '/develop/master.webp',
+      });
+      const setup = (ownerId: string) => {
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        const asset = AssetFactory.create({ ownerId, originalFileName: 'IMG_1.HEIC', originalPath: '/original.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([{ ...asset, editedPath: '/edited.jpeg' }]);
+        mocks.storage.createZipStream.mockReturnValue(archive);
+        mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+        return { archive, asset };
+      };
+
+      it("holds the owner's current develop version, the picture their viewer shows", async () => {
+        const { archive, asset } = setup(authStub.admin.user.id);
+        mocks.asset.getCurrentDevelops.mockResolvedValue([developed(asset.id, authStub.admin.user.id)]);
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: true, includeSidecar: false });
+
+        expect(mocks.asset.getCurrentDevelops).toHaveBeenCalledWith([asset.id]);
+        expect(archive.addFile.mock.calls).toEqual([['/develop/master.webp', 'IMG_1.webp']]);
+      });
+
+      it('keeps the edited file while the current version has not been rendered', async () => {
+        const { archive, asset } = setup(authStub.admin.user.id);
+        mocks.asset.getCurrentDevelops.mockResolvedValue([
+          { ...developed(asset.id, authStub.admin.user.id, AssetDevelopRevisionStatus.Rendering), masterPath: null },
+        ]);
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: true, includeSidecar: false });
+
+        expect(archive.addFile.mock.calls).toEqual([['/edited.jpeg', 'IMG_1.jpeg']]);
+      });
+
+      it("never gives anyone else the owner's working version", async () => {
+        const { archive, asset } = setup(authStub.user1.user.id);
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: true, includeSidecar: false });
+
+        expect(mocks.asset.getCurrentDevelops).not.toHaveBeenCalled();
+        expect(archive.addFile.mock.calls).toEqual([['/edited.jpeg', 'IMG_1.jpeg']]);
+      });
+
+      it('holds the originals when the request asks for them', async () => {
+        const { archive, asset } = setup(authStub.admin.user.id);
+        mocks.asset.getCurrentDevelops.mockResolvedValue([developed(asset.id, authStub.admin.user.id)]);
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: false, includeSidecar: false });
+
+        expect(mocks.asset.getCurrentDevelops).not.toHaveBeenCalled();
         expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
       });
     });

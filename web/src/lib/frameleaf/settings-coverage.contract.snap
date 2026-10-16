@@ -1057,9 +1057,6 @@
     "minimum": 1,
     "maximum": 9007199254740991
   },
-  "preferences.download.edited": {
-    "type": "boolean"
-  },
   "preferences.download.includeEmbeddedVideos": {
     "type": "boolean"
   },

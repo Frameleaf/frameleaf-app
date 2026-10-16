@@ -50,6 +50,7 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import ShareSheetModal from '$lib/components/frameleaf/ShareSheetModal.svelte';
 import { ProjectionType } from '$lib/constants';
+import { currentDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { canSendCopies, isSendable, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
@@ -76,6 +77,13 @@ import { getFormatter } from '$lib/utils/i18n';
  * downloads (FL-56 acceptance: the public viewer keeps its slideshow).
  */
 export const canPlaySlideshow = (asset: Pick<AssetResponseDto, 'visibility'>): boolean => actsAsRegular(asset);
+
+/**
+ * Whether the viewer shows an edit of the item rather than its original: an edited file, or the
+ * owner's current develop version (`playback-revision.svelte.ts`).
+ */
+export const showsEdit = (asset: Pick<AssetResponseDto, 'id' | 'ownerId' | 'isEdited'>): boolean =>
+  asset.isEdited || currentDevelopPlaybackRevision(asset) !== null;
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -109,8 +117,9 @@ export const getAssetActions = (
       }),
   };
 
+  // Download is the version on screen (owner, 2026-10-16); Download original stays offered beside an edit.
   const Download: ActionItem = {
-    title: $t(asset.livePhotoVideoId && asset.isEdited ? 'frameleaf_download_edited_still' : 'download'),
+    title: $t(asset.livePhotoVideoId && showsEdit(asset) ? 'frameleaf_download_edited_still' : 'download'),
     icon: mdiDownload,
     shortcuts: { key: 'd', shift: true },
     $if: () => !!authUser,
@@ -120,7 +129,7 @@ export const getAssetActions = (
   const DownloadOriginal: ActionItem = {
     title: $t('download_original'),
     icon: mdiDownloadBox,
-    $if: () => !!authUser && asset.isEdited,
+    $if: () => !!authUser && showsEdit(asset),
     onAction: () => handleDownloadAsset(asset, { edited: false }),
   };
 
@@ -423,11 +432,15 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
     sharedLink === authManager.isSharedLink &&
     params.key === authManager.params.key &&
     params.slug === authManager.params.slug;
-  const assets: { filename: string; id: string; size?: number }[] = [
+  // `edited` is the version on screen (owner, 2026-10-16). When that is the owner's develop version,
+  // it is named exactly, so the file saved is the one the viewer shows even if another becomes current.
+  const revisionId = (edited && currentDevelopPlaybackRevision(asset)) || undefined;
+  const assets: { filename: string; id: string; size?: number; revisionId?: string }[] = [
     {
       filename: asset.originalFileName,
       id: asset.id,
       size: asset.exifInfo?.fileSizeInByte ?? undefined,
+      revisionId,
     },
   ];
 
@@ -435,7 +448,8 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
     return asset.originalPath.split(/[\\/]/).slice(0, -1).includes('encoded-video');
   };
 
-  if (asset.livePhotoVideoId && (!edited || !asset.isEdited)) {
+  // An edited still downloads on its own: the motion part belongs to the original.
+  if (asset.livePhotoVideoId && !(edited && (asset.isEdited || revisionId))) {
     const motionAsset = await getAssetInfo({ ...params, id: asset.livePhotoVideoId });
     if (!isCurrent()) {
       return;
@@ -475,8 +489,8 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
 
   // FL-45 D-3: each file is its own row in the download panel, with progress, Cancel and Retry,
   // and is saved from there (UploadPanel.jsx `DownloadPanel`).
-  for (const { filename, id, size } of assets) {
-    downloadAssetFile({ id, filename, edited, size });
+  for (const { filename, id, size, revisionId } of assets) {
+    downloadAssetFile({ id, filename, edited, size, ...(revisionId && { revisionId }) });
   }
 };
 

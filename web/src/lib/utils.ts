@@ -326,8 +326,8 @@ export const downloadUrl = (url: string, filename: string) => {
 };
 
 /**
- * Streams an archive through a form POST. `edited` left out lets the server decide from the
- * account's Downloads preferences (ACCOUNT-P5).
+ * Streams an archive through a form POST. `edited: true` asks for each item as it is shown; left
+ * out, the server sends the originals.
  */
 export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string, edited?: boolean) => {
   const form = document.createElement('form');

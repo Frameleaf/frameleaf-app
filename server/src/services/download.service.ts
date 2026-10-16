@@ -12,6 +12,7 @@ import { Permission } from 'src/enum.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
+import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -119,15 +120,18 @@ export class DownloadService extends BaseService {
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
     const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
+    const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
     const zip = this.storageRepository.createZipStream();
     const paths = new Map<string, number>();
 
     for (const assetId of dto.assetIds) {
-      const asset = assetMap.get(assetId);
-      if (!asset) {
+      const found = assetMap.get(assetId);
+      if (!found) {
         continue;
       }
 
+      // As shown: the owner's current develop version takes the place of any other edited file.
+      const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
       const name = nextArchiveName(paths, archiveFileName(asset, dto));
       zip.addFile(await this.resolveArchivePath(asset, dto), name);
 
@@ -144,20 +148,38 @@ export class DownloadService extends BaseService {
   }
 
   /**
-   * ACCOUNT-P5: what an archive holds when the request leaves it out follows the account's Downloads
-   * preferences (`download.edited`, `download.includeSidecar`). A shared-link visitor's download never
-   * follows the link owner's: it holds the originals without details files unless the request asks.
+   * ACCOUNT-P5: whether an archive puts a details file beside each photo follows the account's
+   * `download.includeSidecar` preference when the request leaves it out. A shared-link visitor's
+   * download never follows the link owner's: it holds no details files unless the request asks.
+   * Which version of each item it holds is the request's `edited` (as shown), never a preference.
    */
   private async withDownloadPreferences(auth: AuthDto, dto: DownloadArchiveDto): Promise<DownloadArchiveDto> {
-    if (auth.sharedLink || (dto.edited !== undefined && dto.includeSidecar !== undefined)) {
+    if (auth.sharedLink || dto.includeSidecar !== undefined) {
       return dto;
     }
     const { download } = getPreferences((await this.userRepository.getMetadata(auth.user.id)) ?? []);
-    return {
-      ...dto,
-      edited: dto.edited ?? download.edited,
-      includeSidecar: dto.includeSidecar ?? download.includeSidecar,
-    };
+    return { ...dto, includeSidecar: download.includeSidecar };
+  }
+
+  /**
+   * The rendered master of the current develop version of each asset the requester owns: what their
+   * viewer shows, so what an archive of them as shown holds. Nobody else sees an owner's working version.
+   */
+  private async getShownDevelopMasters(
+    auth: AuthDto,
+    assets: { id: string; ownerId: string }[],
+  ): Promise<Map<string, string>> {
+    const masters = new Map<string, string>();
+    const owned = auth.sharedLink ? [] : assets.filter(({ ownerId }) => ownerId === auth.user.id).map(({ id }) => id);
+    if (owned.length === 0) {
+      return masters;
+    }
+    for (const current of await this.assetRepository.getCurrentDevelops(owned)) {
+      if (current.ownerId === auth.user.id && current.masterPath && hasPublishedDevelopRendition(current)) {
+        masters.set(current.assetId, current.masterPath);
+      }
+    }
+    return masters;
   }
 
   /** The details file on disk for each asset that has one; a missing file is left out, not an error. */

@@ -337,9 +337,8 @@
   const download = () => {
     open = false;
     if (single?.originalFileName) {
-      // ACCOUNT-P5: the original or the edited version, as chosen under Your preferences › Downloads
-      const edited = authManager.authenticated ? authManager.preferences.download.edited : true;
-      downloadAssetFile({ id: single.id, filename: single.originalFileName, edited, size: single.size });
+      // As it is shown (owner, 2026-10-16): the version on screen, which is the original when unedited
+      downloadAssetFile({ id: single.id, filename: single.originalFileName, edited: true, size: single.size });
       return;
     }
     void downloadArchive('frameleaf', { assetIds }).catch(ignoreCancelledDownload);

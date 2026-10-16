@@ -277,7 +277,12 @@ const AssetCopySchema = z
 
 const AssetDownloadOriginalSchema = z
   .object({
-    edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
+    edited: stringToBool
+      .default(false)
+      .optional()
+      .describe(
+        "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
+      ),
     format: z
       .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'])
       .optional()

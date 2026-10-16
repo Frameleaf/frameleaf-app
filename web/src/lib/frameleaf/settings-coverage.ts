@@ -1446,12 +1446,6 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'download.archiveSize',
   },
   {
-    pattern: 'download.edited',
-    kind: 'control',
-    file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
-    evidence: 'download.edited',
-  },
-  {
     pattern: 'download.includeEmbeddedVideos',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',

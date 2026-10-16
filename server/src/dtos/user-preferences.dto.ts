@@ -91,11 +91,6 @@ const DownloadUpdateSchema = z
   .object({
     archiveSize: z.int().min(1).optional().describe('Maximum archive size in bytes'),
     includeEmbeddedVideos: z.boolean().optional().describe('Whether to include embedded videos in downloads'),
-    edited: z
-      .boolean()
-      .optional()
-      .describe('Whether downloads hold the edited version when there is one (false: the original)')
-      .meta(new HistoryBuilder().added('v3').getExtensions()),
     includeSidecar: z
       .boolean()
       .optional()
@@ -289,10 +284,6 @@ const DownloadResponseSchema = z
   .object({
     archiveSize: z.int().describe('Maximum archive size in bytes'),
     includeEmbeddedVideos: z.boolean().describe('Whether to include embedded videos in downloads'),
-    edited: z
-      .boolean()
-      .describe('Whether downloads hold the edited version when there is one (false: the original)')
-      .meta(new HistoryBuilder().added('v3').getExtensions()),
     includeSidecar: z
       .boolean()
       .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")

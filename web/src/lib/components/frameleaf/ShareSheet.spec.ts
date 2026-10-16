@@ -20,7 +20,6 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
     authenticated: true,
     user: { id: 'me', name: 'Taylor' },
     params: {},
-    preferences: { download: { edited: false } },
   },
 }));
 
@@ -428,9 +427,9 @@ describe('ShareSheet', () => {
     it('downloads a single item as its file and several as an archive', async () => {
       const first = render(ShareSheet, { open: true, assetIds: ['a1'], assets: [photo('a1')] });
       await fireEvent.click(screen.getByRole('button', { name: en.download }));
-      // ACCOUNT-P5: the original, as the account's Downloads choice says
+      // As it is shown: the server answers `edited` with the version on screen, or the original
       expect(downloadAssetFile).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'a1', filename: 'a1.jpg', edited: false }),
+        expect.objectContaining({ id: 'a1', filename: 'a1.jpg', edited: true }),
       );
       first.unmount();
 

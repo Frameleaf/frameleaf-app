@@ -1568,8 +1568,6 @@ export type UserPreferences = {
   download: {
     archiveSize: number;
     includeEmbeddedVideos: boolean;
-    /** ACCOUNT-P5: download my edited version (true) or the original (false) by default */
-    edited: boolean;
     /** ACCOUNT-P5: put each photo's details file (XMP sidecar) beside it in a download */
     includeSidecar: boolean;
   };

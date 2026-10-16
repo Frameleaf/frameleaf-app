@@ -48,8 +48,6 @@ export type AccountPreferencesDraft = {
   /** Exact bytes; `null` while the field is empty or does not resolve to a byte count. */
   'download.archiveSize': number | null;
   'download.includeEmbeddedVideos': boolean;
-  /** ACCOUNT-P5: downloads hold the edited version when there is one. */
-  'download.edited': boolean;
   /** ACCOUNT-P5: archives put each photo's details file (XMP) beside it. */
   'download.includeSidecar': boolean;
   /** ACCOUNT-P3: searches that name no visibility include archived photos. */
@@ -155,7 +153,6 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'emailNotifications.albumUpdate': true,
   'download.archiveSize': 4 * GB,
   'download.includeEmbeddedVideos': false,
-  'download.edited': false,
   'download.includeSidecar': true,
   'search.includeArchived': false,
   'people.suggestInSpaces': false,
@@ -186,7 +183,6 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'emailNotifications.albumUpdate': preferences.emailNotifications.albumUpdate,
   'download.archiveSize': preferences.download.archiveSize,
   'download.includeEmbeddedVideos': preferences.download.includeEmbeddedVideos,
-  'download.edited': preferences.download.edited,
   'download.includeSidecar': preferences.download.includeSidecar,
   'search.includeArchived': preferences.search.includeArchived,
   'people.suggestInSpaces': preferences.people.suggestInSpaces,

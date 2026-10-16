@@ -76,7 +76,6 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
         download: {
           archiveSize: 4_294_967_296,
           includeEmbeddedVideos: false,
-          edited: false,
           includeSidecar: true,
         },
         search: {

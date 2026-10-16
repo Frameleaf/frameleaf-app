@@ -2973,6 +2973,28 @@ export class AssetRepository {
     `.execute(this.db);
     return rows[0];
   }
+  /** The current develop version of each of these assets that has one, for a download of them as shown. */
+  async getCurrentDevelops(ids: string[]) {
+    if (ids.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{
+      assetId: string;
+      ownerId: string;
+      status: AssetDevelopRevisionStatus;
+      previewPath: string | null;
+      masterPath: string | null;
+      hdrMasterPath?: string | null;
+      hdrPreviewPath?: string | null;
+      hdrRenditionChecksum?: Buffer | null;
+      renderedAt?: Date | null;
+    }>`
+      SELECT "assetId", "ownerId", status, "previewPath", "masterPath", "hdrMasterPath", "hdrPreviewPath", "hdrRenditionChecksum", "renderedAt"
+      FROM public.asset_develop_revision
+      WHERE "assetId" = ANY(${ids}::uuid[]) AND "isCurrent"
+    `.execute(this.db);
+    return rows;
+  }
   /**
    * FL-97: what is known about the Studio HDR intermediates in `public.studio_hdr_intermediate` for these videos.
    * `current` means the row was made from the original as it is now (`sourceFingerprint`) for its

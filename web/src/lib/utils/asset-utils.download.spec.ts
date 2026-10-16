@@ -1,8 +1,10 @@
 import {
+  AssetDevelopFileKind,
   AssetMediaSize,
   downloadArchive as requestArchive,
   downloadAsset as requestAsset,
   getDownloadInfo,
+  viewAssetDevelopFile,
 } from '@frameleaf/sdk';
 import { downloadManager, EmptyDownloadError, bufferLimit } from '$lib/managers/download-manager.svelte';
 import * as utils from '$lib/utils';
@@ -27,6 +29,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   getDownloadInfo: vi.fn(),
   downloadArchive: vi.fn(),
   downloadAsset: vi.fn(),
+  viewAssetDevelopFile: vi.fn(),
 }));
 
 vi.mock('./handle-error', () => ({ handleError: vi.fn() }));
@@ -66,9 +69,9 @@ describe('downloadArchive', () => {
     const [, row] = rows()[0];
     expect(row).toMatchObject({ status: 'ready', count: 1, total: 20, buffered: true });
     expect(row.name).toMatch(/^trip-\d{8}_\d{6}\.zip$/);
-    // ACCOUNT-P5: `edited` is left out, so the server follows the account's Downloads choice
+    // Each item as it is shown: `edited` asks for the version on screen (the original when unedited)
     expect(requestArchive).toHaveBeenCalledWith(
-      { downloadArchiveDto: { assetIds: ['asset-0'], archiveName: row.archiveName, edited: undefined } },
+      { downloadArchiveDto: { assetIds: ['asset-0'], archiveName: row.archiveName, edited: true } },
       expect.objectContaining({ signal: expect.any(AbortSignal), fetch: expect.any(Function) }),
     );
   });
@@ -84,12 +87,12 @@ describe('downloadArchive', () => {
     expect(downloadManager.hasUnsavedFiles).toBe(false);
 
     downloadManager.save(key, vi.fn());
-    // ACCOUNT-P5: no `edited`, so the server follows the account's Downloads choice
+    // the streamed archive asks for each item as it is shown, too
     expect(downloadUrlPost).toHaveBeenCalledWith(
       expect.stringMatching(/\/download\/archive$/),
       ['asset-0'],
       row.archiveName,
-      undefined,
+      true,
     );
     expect(rows()).toHaveLength(0);
   });
@@ -195,7 +198,7 @@ describe('downloadArchive', () => {
       expect.objectContaining({ key: 'share-key', slug: 'share-slug' }),
       expect.anything(),
     );
-    // a shared link keeps asking for the edited copies, as before ACCOUNT-P5
+    // a shared link asks for each item as it is shown as well
     expect(requestArchive).toHaveBeenCalledWith(
       expect.objectContaining({
         key: 'share-key',
@@ -342,6 +345,38 @@ describe('downloadAssetFile, files of unknown size (review B1)', () => {
       downloadManager.save(key, vi.fn());
       if (Number(length) > bufferLimit()) {
         expect(downloadUrl).toHaveBeenCalledWith(expect.any(String), 'IMG_1.jpeg');
+      }
+    },
+  );
+
+  it.each(['3', String(bufferLimit() + 1)])(
+    'downloads the develop version on screen from its own file, named from its MIME type: %s',
+    async (length) => {
+      vi.mocked(viewAssetDevelopFile).mockImplementation(async (_args, options) => {
+        const response = await options!.fetch!('/assets/asset-1/develop/revisions/revision-2/file?kind=master');
+        try {
+          return await response.blob();
+        } catch {
+          return undefined as unknown as Blob;
+        }
+      });
+      serve({ 'content-length': length, 'content-type': 'image/webp' });
+
+      const key = downloadAssetFile({ id: 'asset-1', filename: 'IMG_1.HEIC', edited: true, revisionId: 'revision-2' });
+      await flush();
+
+      expect(viewAssetDevelopFile).toHaveBeenCalledWith(
+        { id: 'asset-1', revisionId: 'revision-2', kind: AssetDevelopFileKind.Master },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(requestAsset).not.toHaveBeenCalled();
+      expect(downloadManager.assets.get(key)).toMatchObject({ name: 'IMG_1.webp', status: 'ready' });
+      downloadManager.save(key, vi.fn());
+      if (Number(length) > bufferLimit()) {
+        expect(downloadUrl).toHaveBeenCalledWith(
+          expect.stringMatching(/\/assets\/asset-1\/develop\/revisions\/revision-2\/file\?kind=master$/),
+          'IMG_1.webp',
+        );
       }
     },
   );

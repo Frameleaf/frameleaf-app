@@ -47,7 +47,7 @@ const DownloadArchiveSchema = z
     edited: formBoolean
       .optional()
       .describe(
-        "Download edited asset if available. Left out, the account's download.edited preference decides (shared links: the original)",
+        "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
       ),
     includeSidecar: formBoolean
       .optional()

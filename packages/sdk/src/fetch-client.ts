@@ -3004,8 +3004,6 @@ export type CastResponse = {
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
-    /** Whether downloads hold the edited version when there is one (false: the original) */
-    edited: boolean;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
@@ -3138,8 +3136,6 @@ export type CastUpdate = {
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
     archiveSize?: number;
-    /** Whether downloads hold the edited version when there is one (false: the original) */
-    edited?: boolean;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos?: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
@@ -6289,7 +6285,7 @@ export type DownloadArchiveDto = {
     archiveName?: string;
     /** Asset IDs */
     assetIds: string[];
-    /** Download edited asset if available. Left out, the account's download.edited preference decides (shared links: the original) */
+    /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
     /** Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no) */
     includeSidecar?: boolean;
@@ -15543,7 +15539,7 @@ export type AssetDevelopRevisionParamDto = {
     revisionId: string;
 };
 export type AssetDownloadOriginalDto = {
-    /** Return edited asset if available */
+    /** Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original */
     edited?: boolean;
     /** Explicit still export from an unedited photo; omission returns the untouched original or selected edit */
     format?: Format2;
