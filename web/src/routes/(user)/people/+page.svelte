@@ -43,8 +43,9 @@
 
   /**
    * The Frameleaf People library (FL-37), ported from `PeopleLibrary` in
-   * design/frameleaf/template/src/People.jsx:651-979: summary line, "Find a person", the
-   * Name / Photo count / Recently seen sort, a Hidden (N) switch, "Choose who appears", per-card
+   * design/frameleaf/template/src/People.jsx:651-979: the one-row header (title and summary line,
+   * then "Find a person", the Name / Photo count / Recently seen sort, the Show hidden switch and
+   * "Show and hide people"), per-card
    * counts, the merge-suggestion banner (FL-57), inline rename, and the Frameleaf merge and
    * date-of-birth dialogs. Sorting and searching run over the whole list, so every page of
    * people is read up front rather than on scroll.
@@ -81,15 +82,13 @@
   };
 
   const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
-  // The switch is only offered while somebody is hidden, so it cannot stay on with nothing to show.
-  const showingHidden = $derived(showHidden && hiddenCount > 0);
-  const visible = $derived(people.filter((person) => showingHidden || !person.isHidden));
+  const visible = $derived(people.filter((person) => showHidden || !person.isHidden));
   const cards = $derived(sortPeopleForGrid(filterPeopleByName(visible, search), sort));
   const summary = $derived(
     [
       $t('frameleaf_people_count', { values: { count: visible.length } }),
       librarySize === undefined ? '' : $t('frameleaf_people_library_size', { values: { count: librarySize } }),
-      hiddenCount > 0 && !showingHidden ? $t('frameleaf_people_hidden_count', { values: { count: hiddenCount } }) : '',
+      hiddenCount > 0 && !showHidden ? $t('frameleaf_people_hidden_count', { values: { count: hiddenCount } }) : '',
     ]
       .filter(Boolean)
       .join(' · '),
@@ -380,37 +379,40 @@
 
 <OnEvents {onPersonUpdate} />
 
-<UserPageLayout
-  title={$t('people')}
-  description={summary}
-  use={[[scrollMemory, { routeStartsWith: Route.people(), beforeScroll: () => allLoaded }]]}
->
+<UserPageLayout use={[[scrollMemory, { routeStartsWith: Route.people(), beforeScroll: () => allLoaded }]]}>
   <section class="pl-page" aria-label={$t('frameleaf_people_library_label')}>
-    <!-- In the page, as on Pets: the layout's title bar is one fixed row and cannot hold four controls on a phone. -->
-    <div class="pl-toolbar">
-      <input
-        type="search"
-        aria-label={$t('frameleaf_people_find_a_person')}
-        placeholder={$t('frameleaf_people_find_a_person')}
-        bind:value={search}
-      />
-      <select aria-label={$t('frameleaf_people_sort')} bind:value={sort}>
-        <option value="name">{$t('name')}</option>
-        <option value="count">{$t('frameleaf_people_sort_count')}</option>
-        <option value="recent">{$t('frameleaf_people_sort_recent')}</option>
-      </select>
-      {#if hiddenCount > 0}
-        <!-- A view switch, named for what it reveals; it is not offered when nobody is hidden. -->
-        <FrameleafButton pressed={showingHidden} onclick={() => (showHidden = !showingHidden)}>
-          <Icon icon={showingHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_hidden_toggle', { values: { count: hiddenCount } })}
+    <!--
+      The prototype's one-row header (People.jsx:766-806, styles.css `.people-header`): the large title
+      with the summary under it, the controls on the right of the same row, a hairline below.
+    -->
+    <header class="pl-header">
+      <div class="pl-heading">
+        <h1 class="fl-type-display">{$t('people')}</h1>
+        {#if summary}<p class="pl-summary">{summary}</p>{/if}
+      </div>
+      <div class="pl-toolbar">
+        <input
+          type="search"
+          aria-label={$t('frameleaf_people_find_a_person')}
+          placeholder={$t('frameleaf_people_find_a_person')}
+          bind:value={search}
+        />
+        <select aria-label={$t('frameleaf_people_sort')} bind:value={sort}>
+          <option value="name">{$t('name')}</option>
+          <option value="count">{$t('frameleaf_people_sort_count')}</option>
+          <option value="recent">{$t('frameleaf_people_sort_recent')}</option>
+        </select>
+        <!-- Always offered, as in the prototype (People.jsx:791-798): a view switch named for what it does next. -->
+        <FrameleafButton pressed={showHidden} onclick={() => (showHidden = !showHidden)}>
+          <Icon icon={showHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {showHidden ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
         </FrameleafButton>
-      {/if}
-      <FrameleafButton onclick={() => goto('/people/manage')}>
-        <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-        {$t('frameleaf_people_show_and_hide')}
-      </FrameleafButton>
-    </div>
+        <FrameleafButton onclick={() => goto('/people/manage')}>
+          <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_people_show_and_hide')}
+        </FrameleafButton>
+      </div>
+    </header>
     {#if mergeSuggestions.length > 0}
       <MergeSuggestionBanner
         suggestion={mergeSuggestions[0]}
@@ -485,13 +487,35 @@
 {/if}
 
 <style>
-  /* template/src/people.css `.pl-page`, `.pl-toolbar`, `.pl-status`. */
+  /* template/src/people.css `.pl-page`, `.pl-toolbar`, `.pl-status`; styles.css `.people-header`. */
+  .pl-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3) var(--fl-space-5);
+    /* With the layout's own 8px, the prototype's 32px above the title. */
+    padding: var(--fl-space-6) 0;
+    /* With the page's 12px gap, 24px from the hairline to what follows. */
+    margin-bottom: var(--fl-space-3);
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .pl-heading {
+    min-width: 0;
+  }
+  .pl-heading h1 {
+    margin: 0;
+    color: var(--fl-text);
+  }
+  .pl-summary {
+    margin: var(--fl-space-2) 0 0;
+    color: var(--fl-muted);
+  }
   .pl-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--fl-space-3) var(--fl-space-2);
-    padding-top: var(--fl-space-2);
   }
   .pl-toolbar input,
   .pl-toolbar select {
@@ -513,8 +537,6 @@
   }
   .pl-toolbar select {
     padding: 0 var(--fl-space-3);
-    /* Pushes the buttons to the far side on a wide page. */
-    margin-inline-end: auto;
   }
   .pl-toolbar input:focus-visible,
   .pl-toolbar select:focus-visible {
@@ -544,6 +566,17 @@
     }
   }
   @media (max-width: 700px) {
+    /* people.css:1011-1016: the controls take the row under the title, the search field its own line. */
+    .pl-header {
+      padding: var(--fl-space-2) 0 var(--fl-space-4);
+      margin-bottom: var(--fl-space-1);
+    }
+    .pl-heading h1 {
+      font-size: var(--fl-font-title);
+    }
+    .pl-toolbar {
+      width: 100%;
+    }
     .pl-toolbar input {
       flex: 1 1 100%;
       max-width: none;

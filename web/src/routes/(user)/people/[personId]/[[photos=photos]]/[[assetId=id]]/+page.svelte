@@ -115,48 +115,50 @@
   onAssetsUnarchive={updateAssetCount}
 />
 
-<!-- The same shell as Photos and an album: top bar, rail, and the hero straight under the bar. -->
+<!--
+  The same shell as Photos: top bar, rail, and the hero straight under the bar. LibraryView is the
+  page area's own child, as on Photos, so it carries the page gutter inside its scroller and the hero
+  can span the whole width (DISCOVERY-P6).
+-->
 <UserPageLayout scrollbar={false} use={[[scrollMemoryClearer, { routeStartsWith: Route.people() }]]}>
-  <div class="relative h-full overflow-hidden md:px-4">
-    {#key `${person.id}:${refresh}`}
-      <LibraryView
-        enableRouting
-        selectAll="loaded"
-        bind:timelineManager
-        {options}
-        destination={{ kind: 'person', id: person.id }}
-        downloadFileName={namedArchiveName(person.name, $t('frameleaf_archive_name_person'))}
-        onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-        onShortcut={(shortcut) => {
-          // Escape with nothing open and nothing selected leaves the person, as it did before.
-          if (shortcut.id === 'close') {
-            void handleEscape();
-          }
+  {#key `${person.id}:${refresh}`}
+    <LibraryView
+      enableRouting
+      selectAll="loaded"
+      bind:timelineManager
+      {options}
+      destination={{ kind: 'person', id: person.id }}
+      downloadFileName={namedArchiveName(person.name, $t('frameleaf_archive_name_person'))}
+      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+      onShortcut={(shortcut) => {
+        // Escape with nothing open and nothing selected leaves the person, as it did before.
+        if (shortcut.id === 'close') {
+          void handleEscape();
+        }
+      }}
+    >
+      <PersonHero
+        {person}
+        {statistics}
+        onBack={() => goto(previousRoute)}
+        onPersonChange={(updated) => (person = updated)}
+        onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}
+        onFacesChanged={async () => {
+          // Photos whose only face of this person moved away leave the timeline: re-read both.
+          await updateAssetCount();
+          refresh++;
         }}
-      >
-        <PersonHero
-          {person}
-          {statistics}
-          onBack={() => goto(previousRoute)}
-          onPersonChange={(updated) => (person = updated)}
-          onMergedAway={(target) => goto(Route.viewPerson(target), { replaceState: true })}
-          onFacesChanged={async () => {
-            // Photos whose only face of this person moved away leave the timeline: re-read both.
-            await updateAssetCount();
-            refresh++;
-          }}
-          onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
-          onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
-        />
+        onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
+        onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
+      />
 
-        {#snippet viewer()}
-          <Portal target="body">
-            {#if assetViewerManager.isViewing}
-              <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {person} />
-            {/if}
-          </Portal>
-        {/snippet}
-      </LibraryView>
-    {/key}
-  </div>
+      {#snippet viewer()}
+        <Portal target="body">
+          {#if assetViewerManager.isViewing}
+            <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {person} />
+          {/if}
+        </Portal>
+      {/snippet}
+    </LibraryView>
+  {/key}
 </UserPageLayout>

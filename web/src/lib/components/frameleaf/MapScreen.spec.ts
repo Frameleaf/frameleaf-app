@@ -135,6 +135,37 @@ describe('MapScreen (FL-193)', () => {
     await waitFor(() => expect(screen.getByText('1 item in view')).toBeInTheDocument());
   });
 
+  it('fits everything clear of the bottom tool bar on a phone (DISCOVERY-P2)', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('640px'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    sdkMock.getMapMarkers.mockResolvedValue([
+      { id: 'a0000000-0000-4000-8000-000000000001', lat: 10, lon: 50, city: 'Here', state: null, country: null },
+    ]);
+    const fitBounds = vi.fn();
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => -10, getEast: () => 10, contains: () => true }),
+      getZoom: () => 3,
+      fitBounds,
+      setStyle: vi.fn(),
+    });
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    await waitFor(() => expect(screen.getByText('1 item in view')).toBeInTheDocument());
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_map_show_all }));
+    expect(fitBounds).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ padding: { top: 64, bottom: 156, left: 32, right: 32 } }),
+    );
+    vi.unstubAllGlobals();
+  });
+
   it('draws the In view list a page at a time for a large library (FL-139)', async () => {
     let reachEnd: ((entries: { isIntersecting: boolean }[]) => void) | undefined;
     vi.stubGlobal(

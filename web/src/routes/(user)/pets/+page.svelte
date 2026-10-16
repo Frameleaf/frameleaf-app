@@ -11,7 +11,8 @@
    * Every mutation goes through the real `@frameleaf/sdk` pet services. Nothing on this page
    * is a fixture, and the empty review state says which of the two empty cases applies.
    *
-   * The controls are the People page's: search, sort, a Hidden (N) switch, the merge dialog with
+   * The header and controls are the People page's: title and summary, search, sort, the Show hidden
+   * switch, the merge dialog with
    * both photos, and the Frameleaf confirmation for delete. Suggestions sit above the grid while
    * there is something to review. Hide and favorite say what happened in a toast with Undo.
    */
@@ -32,6 +33,7 @@
     isRecognitionRunActive,
     isSourceConflict,
     petSpeciesOptions,
+    petsSummary,
     sortPets,
     speciesLabelKey,
   } from '$lib/frameleaf/pets';
@@ -102,10 +104,11 @@
   let mergeOpen = $state(false);
   let mergeFrom = $state<PetResponseDto | null>(null);
 
-  const hiddenCount = $derived(pets.filter((pet) => pet.isHidden).length);
-  // The switch is only offered while a pet is hidden, so it cannot stay on with nothing to show.
-  const showingHidden = $derived(showHidden && hiddenCount > 0);
-  const named = $derived(sortPets(filterPetsByName(pets, search)).filter((pet) => showingHidden || !pet.isHidden));
+  const named = $derived(sortPets(filterPetsByName(pets, search)).filter((pet) => showHidden || !pet.isHidden));
+  // DISCOVERY-P8: the People summary line, for pets: how many, their confirmed photos, and how many are hidden.
+  const summary = $derived(petsSummary(pets, showHidden, $t));
+  // DISCOVERY-P7: with recognition off and nothing proposed, the Recognition notice says it all; no empty Suggestions card.
+  const showReview = $derived(recognitionAvailable || candidates.length > 0);
   // "Photo count" keeps the name order between pets with the same number of photos.
   const visible = $derived(sort === 'count' ? [...named].sort((a, b) => b.assetCount - a.assetCount) : named);
   const nameOf = (pet: { name: string }) => pet.name || $t('frameleaf_pets_unnamed');
@@ -377,30 +380,34 @@
 
 <UserPageLayout scrollbar={true}>
   <section class="pets">
-    <!-- The page's own large title, as on Tags and Places, rather than the layout's ruled bar. -->
-    <h1 class="fl-type-display">{data.meta.title}</h1>
-    <div class="toolbar">
-      <input
-        type="search"
-        bind:value={search}
-        placeholder={$t('frameleaf_pets_search_placeholder')}
-        aria-label={$t('frameleaf_pets_search_placeholder')}
-      />
-      <select aria-label={$t('frameleaf_pets_sort')} bind:value={sort}>
-        <option value="name">{$t('name')}</option>
-        <option value="count">{$t('frameleaf_people_sort_count')}</option>
-      </select>
-      {#if hiddenCount > 0}
-        <FrameleafButton pressed={showingHidden} onclick={() => (showHidden = !showingHidden)}>
-          <Icon icon={showingHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_hidden_toggle', { values: { count: hiddenCount } })}
+    <!-- People's one-row header (DISCOVERY-P1): title and summary, the controls on the same row, a hairline below. -->
+    <header class="pets-header">
+      <div class="pets-heading">
+        <h1 class="fl-type-display">{data.meta.title}</h1>
+        <p class="pets-summary">{summary}</p>
+      </div>
+      <div class="toolbar">
+        <input
+          type="search"
+          bind:value={search}
+          placeholder={$t('frameleaf_pets_search_placeholder')}
+          aria-label={$t('frameleaf_pets_search_placeholder')}
+        />
+        <select aria-label={$t('frameleaf_pets_sort')} bind:value={sort}>
+          <option value="name">{$t('name')}</option>
+          <option value="count">{$t('frameleaf_people_sort_count')}</option>
+        </select>
+        <!-- Always offered, as on People (DISCOVERY-P3). -->
+        <FrameleafButton pressed={showHidden} onclick={() => (showHidden = !showHidden)}>
+          <Icon icon={showHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {showHidden ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
         </FrameleafButton>
-      {/if}
-      <FrameleafButton variant="primary" onclick={() => (createOpen = true)}>
-        <Icon icon={mdiPlus} size={ICON_SIZE.md} aria-hidden="true" />
-        {$t('frameleaf_pets_create')}
-      </FrameleafButton>
-    </div>
+        <FrameleafButton variant="primary" onclick={() => (createOpen = true)}>
+          <Icon icon={mdiPlus} size={ICON_SIZE.md} aria-hidden="true" />
+          {$t('frameleaf_pets_create')}
+        </FrameleafButton>
+      </div>
+    </header>
 
     <!-- Suggestions come first while there is something to review, as on People. -->
     {#if candidates.length > 0}
@@ -410,7 +417,15 @@
     {#if visible.length === 0}
       <p class="empty" role="status">
         <Icon icon={mdiPawOutline} size={ICON_SIZE.hero} aria-hidden="true" />
-        <span>{pets.length === 0 ? $t('frameleaf_pets_empty') : $t('frameleaf_pets_no_matches')}</span>
+        <span>
+          {#if pets.length === 0}
+            {$t('frameleaf_pets_empty')}
+          {:else if search.trim()}
+            {$t('frameleaf_pets_no_matches')}
+          {:else}
+            {$t('frameleaf_pets_all_hidden')}
+          {/if}
+        </span>
       </p>
     {:else}
       <ul class="grid">
@@ -449,7 +464,7 @@
       onCancel={() => void handleCancelRecognition()}
     />
 
-    {#if candidates.length === 0}
+    {#if candidates.length === 0 && showReview}
       {@render review()}
     {/if}
   </section>
@@ -534,22 +549,48 @@
     gap: 1rem;
     padding: 1rem;
   }
+  /* As People's `.pl-header` (styles.css `.people-header`): one row, a hairline below. */
+  .pets-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3) var(--fl-space-5);
+    /* With the page's 24px, the prototype's 32px above the title. */
+    padding: var(--fl-space-2) 0 var(--fl-space-6);
+    /* With the page's 16px gap, 24px from the hairline to what follows. */
+    margin-bottom: var(--fl-space-2);
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .pets-heading {
+    min-width: 0;
+  }
   h1 {
     margin: 0;
-    padding-block-start: var(--fl-space-2);
     color: var(--fl-text);
+  }
+  .pets-summary {
+    margin: var(--fl-space-2) 0 0;
+    color: var(--fl-muted);
   }
   @media (max-width: 700px) {
     /* With the page's own 8px, the 16px phone gutter. */
     .pets {
       padding-inline: var(--fl-space-2);
     }
+    .pets-header {
+      padding: 0 0 var(--fl-space-4);
+      margin-bottom: 0;
+    }
     /* The size Tags and Places step down to on phones. */
     h1 {
       font-size: var(--fl-font-title);
     }
+    .toolbar {
+      width: 100%;
+    }
   }
-  /* As People's `.pl-toolbar`: a capped search field, the sort beside it, the buttons at the far side. */
+  /* As People's `.pl-toolbar`: a capped search field, the sort and the buttons beside it. */
   .toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -578,7 +619,6 @@
     }
   }
   .toolbar select {
-    margin-inline-end: auto;
     font: var(--fl-type-body);
     min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
