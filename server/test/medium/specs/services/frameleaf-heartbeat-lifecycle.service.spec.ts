@@ -110,6 +110,9 @@ const setup = async () => {
     context.getMock(UserRepository).getAdmins.mockResolvedValue([]);
     context.getMock(FrameleafAccountRepository).deleteAllSessions.mockResolvedValue([]);
     context.getMock(FrameleafCloudRepository).requestJson.mockResolvedValue({} as never);
+    // no cached discovery document, and unlink drops the cached Cloud tokens
+    context.getMock(FrameleafCloudRepository).peekDiscovery.mockReturnValue(null);
+    context.getMock(FrameleafCloudRepository).forget.mockReturnValue();
   }
   vi.spyOn(sut, 'getStatus').mockResolvedValue({} as never);
   vi.spyOn(sut, 'updateConfigExclusively').mockResolvedValue({
