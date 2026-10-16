@@ -4,6 +4,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
+import { defaults } from 'src/dtos/config.dto.js';
 import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
@@ -1743,6 +1744,48 @@ describe(AssetService.name, () => {
       );
 
       expect(mocks.asset.upsertBulkMetadata).not.toHaveBeenCalled();
+    });
+  });
+
+  describe.each(['upsertMetadata', 'upsertBulkMetadata'] as const)('%s metadata review validation', (method) => {
+    it.each([
+      [{}, AssetLockReason.Detected],
+      [{ isNsfw: 'false' }, AssetLockReason.Detected],
+      [{ isNsfw: null }, AssetLockReason.Detected],
+      [{ isNsfw: false }, null],
+      [{ isNsfw: true }, AssetLockReason.Marked],
+    ] as const)('uses review %j with lock reason %s', async (review, reason) => {
+      const asset = AssetFactory.create();
+      const item = {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true }, review } },
+      };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.upsertMetadata.mockResolvedValue([]);
+      mocks.asset.upsertBulkMetadata.mockResolvedValue([]);
+      vi.spyOn(sut, 'getConfig').mockResolvedValue({
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      });
+
+      if (method === 'upsertMetadata') {
+        await sut.upsertMetadata(authStub.admin, asset.id, { items: [item] });
+      } else {
+        await sut.upsertBulkMetadata(authStub.admin, { items: [{ assetId: asset.id, ...item }] });
+      }
+
+      if (reason === null) {
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.asset.lock).toHaveBeenCalledWith(
+          [asset.id],
+          reason,
+          reason === AssetLockReason.Marked ? authStub.admin.user.id : null,
+        );
+      }
     });
   });
 

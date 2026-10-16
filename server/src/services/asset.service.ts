@@ -485,7 +485,7 @@ export class AssetService extends BaseService {
       const review = (value as { nsfwDetection?: { review?: { isNsfw?: unknown } } }).nsfwDetection?.review;
       if (review?.isNsfw === true) {
         marked.push(assetId);
-      } else if (!review) {
+      } else {
         detected.push(assetId);
       }
     }
