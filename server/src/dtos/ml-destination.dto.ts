@@ -294,6 +294,8 @@ const MlWorkloadCapabilitySchema = z
   })
   .meta({ id: 'MlWorkloadCapabilityDto' });
 
+const unique = (list: readonly string[]) => new Set(list).size === list.length;
+
 const StudioRenderCandidateSchema = z
   .object({
     gpuMemoryBytes: z.number().meta({ format: 'double' }).nullable(),
@@ -302,12 +304,14 @@ const StudioRenderCandidateSchema = z
       .describe('Output formats whose exact writer and container this session verified'),
     embeddedOutputFormats: z
       .array(StudioExportSettingsDto.schema.shape.format)
-      .max(1)
+      .refine(unique, 'Each format is listed once')
       .optional()
-      .describe('Output formats whose MP4 mov_text profile and encoder this same session verified'),
+      .describe(
+        "Output formats whose embedded caption track (the container's text codec) and profile this same session verified",
+      ),
     sidecarOutputFormats: z
       .array(StudioExportSettingsDto.schema.shape.format)
-      .max(1)
+      .refine(unique, 'Each format is listed once')
       .optional()
       .describe('Output formats whose versioned paired SRT profile this same session verified'),
     maxBitDepth: z.int(),

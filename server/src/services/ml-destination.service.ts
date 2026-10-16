@@ -782,37 +782,28 @@ export class MlDestinationService extends BaseService {
               session.scopes.includes(MediaOperationKind.StudioExport),
           )
           .map(({ worker, session, capabilities, gpuMemoryBytes }) => {
+            // Paired captions need the session to be bound to the engine it was enrolled with.
+            const bound = !!worker.engineDigest && worker.engineDigest === session.engineDigest;
+            const paired = (subtitleMode: 'sidecar' | 'embedded') =>
+              bound
+                ? STUDIO_EXPORT_FORMATS.filter((format) => {
+                    const output = (resolution: string) =>
+                      requiredOutput({ format, subtitleMode, color: 'preserve', resolution, quality: 'high' });
+                    // Any resolution (v2 profile), or the legacy 720p MP4/H.264 profile.
+                    return [output('1080p'), output('720p')].some(
+                      (required) => !!required && provesOutput(capabilities ?? null, required),
+                    );
+                  })
+                : [];
+            const sidecar = paired('sidecar');
+            const embedded = paired('embedded');
             return {
               gpuMemoryBytes,
               outputFormats: STUDIO_EXPORT_FORMATS.filter((format) =>
                 provesOutput(capabilities ?? null, requiredOutput({ format })!),
               ),
-              ...(worker.engineDigest &&
-                worker.engineDigest === session.engineDigest &&
-                provesOutput(
-                  capabilities ?? null,
-                  requiredOutput({
-                    format: 'mp4-h264',
-                    subtitleMode: 'sidecar',
-                    color: 'preserve',
-                    resolution: '720p',
-                    quality: 'high',
-                    audio: 'preserve',
-                  })!,
-                ) && { sidecarOutputFormats: ['mp4-h264' as const] }),
-              ...(worker.engineDigest &&
-                worker.engineDigest === session.engineDigest &&
-                provesOutput(
-                  capabilities ?? null,
-                  requiredOutput({
-                    format: 'mp4-h264',
-                    subtitleMode: 'embedded',
-                    color: 'preserve',
-                    resolution: '720p',
-                    quality: 'high',
-                    audio: 'preserve',
-                  })!,
-                ) && { embeddedOutputFormats: ['mp4-h264' as const] }),
+              ...(sidecar.length > 0 && { sidecarOutputFormats: sidecar }),
+              ...(embedded.length > 0 && { embeddedOutputFormats: embedded }),
               ...(session.colorPrecision ?? SDR_ONLY),
             };
           }),

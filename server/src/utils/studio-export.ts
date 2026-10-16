@@ -2,6 +2,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { StudioExportContract } from 'src/utils/studio-export-contract.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetType, StorageFolder } from 'src/enum.js';
+import { STUDIO_EXPORT_FORMAT_SPECS, type StudioExportFormatId } from 'src/utils/studio-export-formats.js';
 
 /**
  * Studio export paths and settings (FL-106, `STU-404`), kept free of the database.
@@ -54,6 +55,11 @@ export const STUDIO_EXPORT_CONTENT_TYPES: Readonly<Record<string, { extension: s
   'video/mp4': { extension: '.mp4', assetType: AssetType.Video },
   'video/webm': { extension: '.webm', assetType: AssetType.Video },
   'video/quicktime': { extension: '.mov', assetType: AssetType.Video },
+  'video/x-matroska': { extension: '.mkv', assetType: AssetType.Video },
+  // FL-105: audio-only exports stay with their project; the library does not hold sound alone.
+  'audio/mpeg': { extension: '.mp3', assetType: AssetType.Audio },
+  'audio/mp4': { extension: '.m4a', assetType: AssetType.Audio },
+  'audio/wav': { extension: '.wav', assetType: AssetType.Audio },
 };
 
 export const isStudioExportContentType = (value: string): boolean => Object.hasOwn(STUDIO_EXPORT_CONTENT_TYPES, value);
@@ -62,15 +68,10 @@ export const isStudioPhotoFormat = (format: unknown): format is 'sdr-jpeg' | 'hd
   typeof format === 'string' && ['sdr-jpeg', 'hdr-jpeg', 'hdr-heic'].includes(format);
 
 /** Export formats, colour handling and resolutions offered by the Studio export dialog. */
-export const STUDIO_EXPORT_FORMATS = [
-  'mp4-hevc-main10',
-  'mp4-h264',
-  'webm-av1',
-  'prores-422-hq',
-  'sdr-jpeg',
-  'hdr-jpeg',
-  'hdr-heic',
-] as const;
+export const STUDIO_EXPORT_FORMATS = Object.keys(STUDIO_EXPORT_FORMAT_SPECS) as [
+  StudioExportFormatId,
+  ...StudioExportFormatId[],
+];
 export const STUDIO_EXPORT_COLORS = ['preserve', 'hdr10', 'dolby-vision'] as const;
 export const STUDIO_EXPORT_RESOLUTIONS = ['720p', '1080p', '1440p', '2160p', 'original'] as const;
 export const STUDIO_EXPORT_QUALITIES = ['low', 'medium', 'high', 'ultra'] as const;

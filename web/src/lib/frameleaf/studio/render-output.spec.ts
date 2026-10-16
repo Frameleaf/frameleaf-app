@@ -49,7 +49,7 @@ const settings: StudioRenderSettings = {
 };
 
 describe('Studio render output (FL-42)', () => {
-  it('requires the paired profile on the SAME qualified writer and the exact bounded tuple', () => {
+  it('requires the paired profile on the SAME qualified writer, for an SDR video format', () => {
     const paired = {
       format: StudioExportFormat.Mp4H264,
       color: StudioExportColor.Preserve,
@@ -61,12 +61,14 @@ describe('Studio render output (FL-42)', () => {
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, paired).supported).toBe(false);
     row.candidates![0].sidecarOutputFormats = [StudioExportFormat.Mp4H264];
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, paired).supported).toBe(true);
-    for (const change of [
-      { quality: 'medium' },
-      { resolution: StudioExportResolution.$1080P },
-      { format: StudioExportFormat.Mp4HevcMain10 },
-      { color: StudioExportColor.Hdr10 },
-    ]) {
+    // FL-105: a paired profile covers every resolution and quality; the server still checks the tuple.
+    for (const change of [{ quality: 'medium' }, { resolution: StudioExportResolution.$1080P }]) {
+      expect(
+        evaluateStudioRender([row], MediaOperationDestination.Lan, { ...paired, ...change } as StudioRenderSettings)
+          .supported,
+      ).toBe(true);
+    }
+    for (const change of [{ format: StudioExportFormat.Mp4HevcMain10 }, { color: StudioExportColor.Hdr10 }]) {
       expect(
         evaluateStudioRender([row], MediaOperationDestination.Lan, { ...paired, ...change } as StudioRenderSettings)
           .supported,
@@ -88,12 +90,7 @@ describe('Studio render output (FL-42)', () => {
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(false);
     row.candidates![0].embeddedOutputFormats = [StudioExportFormat.Mp4H264];
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(true);
-    for (const patch of [
-      { quality: 'low' },
-      { resolution: StudioExportResolution.$1080P },
-      { format: StudioExportFormat.WebmAv1 },
-      { color: StudioExportColor.Hdr10 },
-    ]) {
+    for (const patch of [{ format: StudioExportFormat.WebmAv1 }, { color: StudioExportColor.Hdr10 }]) {
       expect(
         evaluateStudioRender([row], MediaOperationDestination.Lan, { ...embedded, ...patch } as StudioRenderSettings)
           .supported,
@@ -102,6 +99,58 @@ describe('Studio render output (FL-42)', () => {
     row.candidates![0].outputFormats = [];
     expect(evaluateStudioRender([row], MediaOperationDestination.Lan, embedded).supported).toBe(false);
   });
+  it('offers the FL-105 matrix formats a worker verified, with captions and sound alone', () => {
+    const row = evidence({ maxBitDepth: 8, hdr10: false });
+    const [candidate] = row.candidates!;
+    candidate.outputFormats = [
+      StudioExportFormat.Mp4H264,
+      StudioExportFormat.MkvVp9,
+      StudioExportFormat.MovProres422,
+      StudioExportFormat.AudioWav,
+      StudioExportFormat.Prores422Hq,
+    ];
+    candidate.sidecarOutputFormats = [StudioExportFormat.MkvVp9];
+    candidate.embeddedOutputFormats = [StudioExportFormat.MkvVp9];
+    const at = (patch: Partial<StudioRenderSettings>) =>
+      evaluateStudioRender([row], MediaOperationDestination.Lan, {
+        format: StudioExportFormat.MkvVp9,
+        color: StudioExportColor.Preserve,
+        resolution: StudioExportResolution.$1080P,
+        ...patch,
+      } as StudioRenderSettings);
+    expect(at({})).toEqual({ supported: true });
+    expect(at({ format: StudioExportFormat.MovProres422 })).toEqual({ supported: true });
+    expect(at({ format: StudioExportFormat.MkvAv1 })).toEqual({ supported: false, refusal: 'codec-unavailable' });
+    // ProRes 422 HQ promises a 10-bit picture this 8-bit worker did not verify.
+    expect(at({ format: StudioExportFormat.Prores422Hq })).toEqual({ supported: false, refusal: 'incompatible-color' });
+    expect(at({ subtitleMode: 'sidecar' } as never)).toEqual({ supported: true });
+    expect(at({ subtitleMode: 'embedded' } as never)).toEqual({ supported: true });
+    expect(at({ format: StudioExportFormat.MovProres422, subtitleMode: 'sidecar' } as never)).toEqual({
+      supported: false,
+      refusal: 'codec-unavailable',
+    });
+    expect(at({ format: StudioExportFormat.AudioWav })).toEqual({ supported: true });
+    expect(at({ format: StudioExportFormat.AudioWav, subtitleMode: 'off' } as never)).toEqual({ supported: true });
+    expect(at({ format: StudioExportFormat.AudioWav, subtitleMode: 'burn' } as never)).toEqual({
+      supported: false,
+      refusal: 'codec-unavailable',
+    });
+    // Sound alone is judged at the smallest picture size, whatever resolution is chosen.
+    row.candidates![0].gpuMemoryBytes = 2 * GIB;
+    const choices = studioRenderChoices([row], MediaOperationDestination.Lan, {
+      format: StudioExportFormat.MkvVp9,
+      color: StudioExportColor.Preserve,
+      resolution: StudioExportResolution.$2160P,
+    });
+    expect(choices.formats.find((choice) => choice.value === StudioExportFormat.AudioWav)?.verdict).toEqual({
+      supported: true,
+    });
+    expect(choices.formats.find((choice) => choice.value === StudioExportFormat.MkvVp9)?.verdict).toEqual({
+      supported: false,
+      refusal: 'insufficient-memory',
+    });
+  });
+
   it('accepts a combination a qualified session verified', () => {
     expect(evaluateStudioRender([evidence()], MediaOperationDestination.Lan, settings)).toEqual({ supported: true });
   });
