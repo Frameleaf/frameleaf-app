@@ -1,4 +1,4 @@
-name: Fork integration
+name: Frameleaf quality
 
 on:
   pull_request:

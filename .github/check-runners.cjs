@@ -183,11 +183,11 @@ assert.equal(docker.jobs["machine-learning-publish"].with.mode, "publish");
 assert.equal(docker.jobs["machine-learning-hardware"].with.mode, "push");
 assert.equal(
   docker.jobs.integration.uses,
-  "./.github/workflows/fork-integration.yml",
+  "./.github/workflows/frameleaf-quality.yml",
 );
-assert(Object.hasOwn(workflows["fork-integration.yml"].on, "workflow_call"));
+assert(Object.hasOwn(workflows["frameleaf-quality.yml"].on, "workflow_call"));
 assert(
-  !workflows["fork-integration.yml"].on.push,
+  !workflows["frameleaf-quality.yml"].on.push,
   "Mainline integration is invoked by Docker only",
 );
 const cpu = docker.jobs["machine-learning"].with;

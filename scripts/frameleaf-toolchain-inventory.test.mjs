@@ -55,7 +55,7 @@ test("parses pinned workflow and container runtime sources", () => {
   assert.deepEqual(
     parseWorkflowPins(
       `jobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@${actionSha}\n      - run: docker run ghcr.io/jdx/mise:2026.1@sha256:${imageSha}\n`,
-      ".github/workflows/fork-integration.yml",
+      ".github/workflows/frameleaf-quality.yml",
     ),
     [
       {
@@ -63,21 +63,21 @@ test("parses pinned workflow and container runtime sources", () => {
         declared: actionSha,
         kind: "commit",
         name: "actions/checkout",
-        source: ".github/workflows/fork-integration.yml",
+        source: ".github/workflows/frameleaf-quality.yml",
       },
       {
         category: "workflow-runner",
         declared: "ubuntu-24.04",
         kind: "image-label",
         name: "github-hosted-runner",
-        source: ".github/workflows/fork-integration.yml",
+        source: ".github/workflows/frameleaf-quality.yml",
       },
       {
         category: "container-image",
         declared: `ghcr.io/jdx/mise:2026.1@sha256:${imageSha}`,
         kind: "tag-and-digest",
         name: "ghcr.io/jdx/mise",
-        source: ".github/workflows/fork-integration.yml",
+        source: ".github/workflows/frameleaf-quality.yml",
       },
     ],
   );
@@ -150,7 +150,7 @@ test("builds deterministic evidence and distinguishes resolved, missing, and non
     }
     const imageSha = "b".repeat(64);
     writeFileSync(
-      path.join(repository, ".github/workflows/fork-integration.yml"),
+      path.join(repository, ".github/workflows/frameleaf-quality.yml"),
       `jobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@${"a".repeat(40)}\n`,
     );
     for (const file of [

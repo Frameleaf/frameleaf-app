@@ -19,7 +19,7 @@ test('Manager relies on the independent PR integration gate without running it a
     readFileSync(new URL('../../.github/workflows/manager.yml', import.meta.url), 'utf8'),
   ) as Workflow;
   const integration = load(
-    readFileSync(new URL('../../.github/workflows/fork-integration.yml', import.meta.url), 'utf8'),
+    readFileSync(new URL('../../.github/workflows/frameleaf-quality.yml', import.meta.url), 'utf8'),
   ) as Workflow;
   const tests = load(readFileSync(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8')) as Workflow;
 
@@ -50,7 +50,7 @@ test('Manager relies on the independent PR integration gate without running it a
   assert.match(mediumRun, /(?:^|\n)\s*docker run\b[^\n]*\\\n(?:[^\n]*\\\n)*\s*"\$MEDIUM_IMAGE"\s*$/);
   assert.ok(manager.jobs.manager, 'Keep the Manager architecture checks');
   assert.equal(
-    Object.values(manager.jobs).some((job) => job.uses === './.github/workflows/fork-integration.yml'),
+    Object.values(manager.jobs).some((job) => job.uses === './.github/workflows/frameleaf-quality.yml'),
     false,
     'The independent PR workflow already runs this suite',
   );

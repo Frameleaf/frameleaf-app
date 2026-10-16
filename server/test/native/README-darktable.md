@@ -105,14 +105,14 @@ and original checksum. To require positive or refused lens calibration, append t
 path `/usr/src/app/server/dist/utils/darktable-renderer.js` and `calibrated` or `missing` for a fixture
 with that independently established expectation. Missing metadata or a wrong oracle fails; nothing skips.
 
-The existing `Fork integration` manual dispatch now accepts `raw_engine=darktable` and builds
+The existing `Frameleaf quality` manual dispatch now accepts `raw_engine=darktable` and builds
 `native-raw-qualification` fresh on native `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64).
 The stage reuses `base-server-prod` and the compiled/pruned `server` stage; it does not build Studio,
 web, CLI or plugin WASM. Both source patches, Lensfun data, native profiles/resources and ELF hashes
 are the production artifacts, with a native package gate and compiled-adapter import gate.
 
 ```sh
-gh workflow run fork-integration.yml --ref <candidate-ref> -f raw_engine=darktable
+gh workflow run frameleaf-quality.yml --ref <candidate-ref> -f raw_engine=darktable
 # Reproduce on each native host, substituting linux/arm64 on arm64:
 docker build --pull --no-cache --platform linux/amd64 --target native-raw-qualification -f server/Dockerfile -t frameleaf-native-raw:qualification .
 docker run --rm --network none --entrypoint node \

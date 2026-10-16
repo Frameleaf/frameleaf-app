@@ -52,7 +52,7 @@ it reads them. It exists for two things those files do not cover:
 
 Each gate has a `status` of `cleared` (names the owner who cleared it) or `blocked-on-owner` (names
 no owner - only the owner, not an agent, can clear it). Run `node
-scripts/frameleaf-distribution-gates.mjs` to verify the register; it is part of the fork-integration
+scripts/frameleaf-distribution-gates.mjs` to verify the register; it is part of the Frameleaf quality
 workflow's "Validate delivery workflow contracts" step.
 
 ## What still needs the owner
