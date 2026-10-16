@@ -19259,6 +19259,64 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/desktop/worker/models": {
+      "post": {
+        "operationId": "readDesktopModelInventory",
+        "parameters": [
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopModelInventoryDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read selected model availability for this signed desktop worker",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/desktop/worker/qualifications/{id}": {
       "get": {
         "operationId": "readDesktopAcceptedQualification",
@@ -71970,12 +72028,103 @@
         ],
         "type": "string"
       },
+      "DesktopLibraryWorkload": {
+        "enum": [
+          "clip",
+          "ocr",
+          "face",
+          "enrichment"
+        ],
+        "type": "string"
+      },
       "DesktopMode": {
         "enum": [
           "local-server",
           "client-worker"
         ],
         "type": "string"
+      },
+      "DesktopModelAvailability": {
+        "enum": [
+          "eligible",
+          "disabled",
+          "pinned",
+          "legacy",
+          "unavailable",
+          "unsupported"
+        ],
+        "type": "string"
+      },
+      "DesktopModelInventoryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "protocolVersion": {
+            "maximum": 1,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "provider": {
+            "enum": [
+              "CPUExecutionProvider",
+              "CUDAExecutionProvider",
+              "CoreMLExecutionProvider",
+              "OpenVINOExecutionProvider",
+              "MIGraphXExecutionProvider"
+            ],
+            "type": "string"
+          },
+          "runtimeSourceRevision": {
+            "pattern": "^[a-f0-9]{40}$",
+            "type": "string"
+          },
+          "workloads": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "modelKeys": {
+                  "items": {
+                    "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "modelNames": {
+                  "items": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "state": {
+                  "$ref": "#/components/schemas/DesktopModelAvailability"
+                },
+                "workload": {
+                  "$ref": "#/components/schemas/DesktopLibraryWorkload"
+                }
+              },
+              "required": [
+                "workload",
+                "state",
+                "modelNames",
+                "modelKeys"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "provider",
+          "runtimeSourceRevision",
+          "workloads"
+        ],
+        "type": "object"
       },
       "DesktopPlatform": {
         "enum": [

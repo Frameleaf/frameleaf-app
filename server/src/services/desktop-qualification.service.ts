@@ -1,8 +1,15 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import z from 'zod';
+import { DesktopModelInventoryDto, DesktopModelInventoryRequestSchema } from 'src/dtos/desktop-model-inventory.dto.js';
 import {
   DesktopAcceptedQualificationDto,
   DesktopQualificationChallengeDto,
@@ -12,9 +19,12 @@ import {
 import { DesktopWorkerAckDto } from 'src/dtos/desktop-worker-job.dto.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
+import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
@@ -25,6 +35,7 @@ import {
   createDesktopModelChallenge,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
+import { selectDesktopModelInventory } from 'src/utils/desktop-model-inventory.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
 import { desktopRuntimeMinimumEpoch, verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
@@ -57,7 +68,50 @@ export class DesktopQualificationService {
     private systemMetadataRepository: SystemMetadataRepository,
     private nasProducer: DesktopNasProducerService,
     private activation: DesktopAssistanceActivationService,
+    private workers: DesktopWorkerRepository,
+    private destinations: MlDestinationRepository,
+    private policies: DesktopAssistancePolicyService,
   ) {}
+
+  async inventory(
+    authorization: string | undefined,
+    proof: string | undefined,
+    payload: string,
+  ): Promise<DesktopModelInventoryDto> {
+    const grant = await this.auth.authenticate(authorization, proof, 'models', payload);
+    const request = parse(DesktopModelInventoryRequestSchema, payload);
+    const ownerId = await this.workers.owner(grant);
+    if (!ownerId) throw new UnauthorizedException('desktop_worker_credential_invalid');
+    if (!(await this.policies.read(ownerId))) throw new ForbiddenException('desktop_pool_policy_required');
+    const config = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: false },
+    );
+    const routes = await this.destinations.getRouteStates();
+    const destinations = [];
+    for (const destination of await this.destinations.getAll()) {
+      if (routes.every((route) => !(route.origin === 'default' && route.destinationId === destination.id))) continue;
+      try {
+        await this.destinations.assertRecoveryAuthority(destination);
+        destinations.push(destination);
+      } catch (error) {
+        if (!(error instanceof ConflictException) || error.message !== 'replacement_ml_authority_unavailable')
+          throw error;
+      }
+    }
+    return {
+      protocolVersion: 1,
+      ...request,
+      workloads: selectDesktopModelInventory({
+        config: config.machineLearning,
+        catalogue: this.catalogue,
+        spaces: this.spaces,
+        routes,
+        destinations,
+        ...request,
+      }),
+    };
+  }
 
   async issue(
     authorization: string | undefined,

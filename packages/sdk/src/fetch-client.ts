@@ -5983,6 +5983,17 @@ export type DesktopWorkerHeartbeatDto = {
     accepted: boolean;
     expiresAt: string | null;
 };
+export type DesktopModelInventoryDto = {
+    protocolVersion: number;
+    provider: Provider;
+    runtimeSourceRevision: string;
+    workloads: {
+        modelKeys: string[];
+        modelNames: string[];
+        state: DesktopModelAvailability;
+        workload: DesktopLibraryWorkload;
+    }[];
+};
 export type DesktopAcceptedQualificationDto = {
     authorizationEpoch: number;
     bindingSha256: string;
@@ -21238,6 +21249,25 @@ export function heartbeatDesktopTask({ xFrameleafDesktopProof, desktopWorkerPayl
     })));
 }
 /**
+ * Read selected model availability for this signed desktop worker
+ */
+export function readDesktopModelInventory({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopModelInventoryDto;
+    }>("/desktop/worker/models", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
  * Read accepted runtime evidence without granting processing scope
  */
 export function readDesktopAcceptedQualification({ id, xFrameleafDesktopProof }: {
@@ -31170,6 +31200,27 @@ export enum DesktopWorkerScope {
 export enum DesktopInputKind {
     Text = "text",
     Image = "image"
+}
+export enum Provider {
+    CpuExecutionProvider = "CPUExecutionProvider",
+    CudaExecutionProvider = "CUDAExecutionProvider",
+    CoreMlExecutionProvider = "CoreMLExecutionProvider",
+    OpenVinoExecutionProvider = "OpenVINOExecutionProvider",
+    MiGraphXExecutionProvider = "MIGraphXExecutionProvider"
+}
+export enum DesktopModelAvailability {
+    Eligible = "eligible",
+    Disabled = "disabled",
+    Pinned = "pinned",
+    Legacy = "legacy",
+    Unavailable = "unavailable",
+    Unsupported = "unsupported"
+}
+export enum DesktopLibraryWorkload {
+    Clip = "clip",
+    Ocr = "ocr",
+    Face = "face",
+    Enrichment = "enrichment"
 }
 export enum DevelopPresetMaskKind {
     Radial = "radial",

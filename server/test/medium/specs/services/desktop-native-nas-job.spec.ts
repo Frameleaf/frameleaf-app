@@ -182,12 +182,13 @@ it.skipIf(!desktop || !pack || !cache)(
         url: nasUrl,
         authToken: mlToken,
         enabled: true,
-        workloads: [face ? MlWorkload.Face : ocr ? MlWorkload.Ocr : MlWorkload.Clip],
+        workloads: ocr ? [MlWorkload.Ocr, MlWorkload.Face] : [face ? MlWorkload.Face : MlWorkload.Clip],
         budgetLimitUsd: null,
         maxRuntimeMinutes: null,
         maxUploadBytes: null,
       });
       await routes.setDefaultRoute(face ? MlWorkload.Face : ocr ? MlWorkload.Ocr : MlWorkload.Clip, destination.id);
+      if (ocr) await routes.setDefaultRoute(MlWorkload.Face, destination.id);
       const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
       ml.setup(config.machineLearning);
       const broker = new DesktopMlRepository(db);
@@ -214,6 +215,9 @@ it.skipIf(!desktop || !pack || !cache)(
         metadata,
         producer,
         activation,
+        workers,
+        routes,
+        policies,
       );
       http = await controllerSetup(DesktopWorkerController, [
         { provide: ConfigRepository, useValue: configRepo },

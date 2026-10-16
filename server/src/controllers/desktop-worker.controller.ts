@@ -15,6 +15,7 @@ import {
 import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { DesktopModelInventoryDto } from 'src/dtos/desktop-model-inventory.dto.js';
 import {
   DesktopAcceptedQualificationDto,
   DesktopQualificationChallengeDto,
@@ -47,6 +48,21 @@ export class DesktopWorkerController {
     private service: DesktopWorkerService,
     private qualification: DesktopQualificationService,
   ) {}
+
+  @Post('worker/models')
+  @UseGuards(DesktopWorkerLanGuard)
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read selected model availability for this signed desktop worker', history: history() })
+  async readDesktopModelInventory(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopModelInventoryDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.inventory(authorization, proof, dto.payload);
+  }
 
   @Post('worker/challenges')
   @UseGuards(DesktopWorkerLanGuard)

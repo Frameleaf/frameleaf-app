@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import request from 'supertest';
+import { defaults } from 'src/config.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
+import { MlWorkload } from 'src/enum.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
@@ -16,6 +18,7 @@ import { getConfig } from 'src/utils/config.js';
 import { createDesktopModelChallenge, parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
 import { canonicalJson } from 'src/utils/object.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { type ControllerContext, controllerSetup } from 'test/utils.js';
 
 const authority = vi.hoisted(() => ({ policy: '', spaces: undefined as string | undefined }));
@@ -147,7 +150,9 @@ const acceptedRow = () => ({
   runtimeFingerprint: report().runtimeFingerprint,
   reportSha256: createHash('sha256').update(canonicalJson(report())).digest('hex'),
 });
-const repository = { session: vi.fn(), consume: vi.fn() };
+const repository = { session: vi.fn(), consume: vi.fn(), owner: vi.fn() };
+const inventoryRoutes = { getRouteStates: vi.fn(), getAll: vi.fn(), assertRecoveryAuthority: vi.fn() };
+const inventoryPolicies = { read: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
@@ -184,6 +189,9 @@ beforeAll(async () => {
         metadata as never,
         nasProducer as never,
         activation as never,
+        repository as never,
+        inventoryRoutes as never,
+        inventoryPolicies as never,
       ),
     },
   ]);
@@ -203,12 +211,38 @@ beforeEach(() => {
     authorizationEpoch: 2,
   });
   repository.consume.mockResolvedValue(grant);
+  repository.owner.mockResolvedValue(id);
+  inventoryPolicies.read.mockResolvedValue({ revisionId: id });
+  inventoryRoutes.getRouteStates.mockResolvedValue([
+    { workload: MlWorkload.Clip, origin: 'default', destinationId: mlDestinationStub.local.id, revisionId: id },
+  ]);
+  inventoryRoutes.getAll.mockResolvedValue([mlDestinationStub.local]);
+  inventoryRoutes.assertRecoveryAuthority.mockResolvedValue(undefined);
   challenges.issue.mockResolvedValue(row());
   challenges.read.mockResolvedValue(row());
   challenges.record.mockResolvedValue(true);
   vi.mocked(getConfig).mockResolvedValue({
     machineLearning: { enabled: true, clip: { enabled: true, modelName: profile.modelName } },
   } as never);
+});
+it('serves only a signed worker model inventory and rejects operation substitution, replay and revoked credentials', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  const raw = JSON.stringify({ provider: profile.spec.provider, runtimeSourceRevision: profile.runtimeSourceRevision });
+  const response = await post('/desktop/worker/models', 'models', raw);
+  expect(response.status).toBe(200);
+  expect(response.headers['cache-control']).toBe('no-store');
+  expect(response.body.workloads).toHaveLength(4);
+  expect(response.body.workloads[0]).toMatchObject({ workload: 'clip', state: 'eligible' });
+  expect(JSON.stringify(response.body)).not.toMatch(/authToken|destinationId|credentialHash|https?:/);
+  expect((await post('/desktop/worker/models', 'challenge', raw)).status).toBe(401);
+  expect(
+    (await request(app).post('/desktop/worker/models').auth('photo-token', { type: 'bearer' }).send({ payload: raw }))
+      .status,
+  ).toBe(401);
+  repository.consume.mockResolvedValue(undefined);
+  expect((await post('/desktop/worker/models', 'models', raw)).status).toBe(401);
+  repository.session.mockResolvedValue(undefined);
+  expect((await post('/desktop/worker/models', 'models', raw)).status).toBe(401);
 });
 it('issues a signed factory-bound challenge through arrival middleware without exposing internal grant fields', async () => {
   const response = await post('/desktop/worker/challenges', 'challenge', payload());
@@ -394,6 +428,9 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
       {} as never,
       nasProducer as never,
       activation as never,
+      repository as never,
+      {} as never,
+      {} as never,
     );
     await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
     expect(challenges.issue).not.toHaveBeenCalled();
