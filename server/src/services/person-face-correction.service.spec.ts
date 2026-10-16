@@ -261,19 +261,19 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
         const { auth, face } = setup();
         mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([face.assetId]);
         await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden });
-        // the faces field is marked with the write (inside the origin edit) and again when the edit
-        // is propagated; every mark names only this asset's faces
-        const marks = mocks.partnerOrigin.markOverridden.mock.calls;
-        expect(marks.length).toBeGreaterThan(0);
-        expect(marks).toEqual(marks.map(() => ['asset', [face.assetId], ['faces'], auth.user.id]));
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
+          'asset',
+          [face.assetId],
+          ['faces'],
+          auth.user.id,
+        );
         expect(mocks.job.queueAll).toHaveBeenCalledWith([
           { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: face.assetId, fields: ['faces'] } },
         ]);
-        const marked = marks.length;
         await expect(sut.correctFace(auth, face.id, { expectedRevision: 'stale', hidden })).rejects.toBeInstanceOf(
           ConflictException,
         );
-        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledTimes(marked);
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledTimes(1);
       },
     );
 
