@@ -6,6 +6,7 @@ import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
+
 describe(LivePhotoService.name, () => {
   let sut: LivePhotoService;
   let mocks: ServiceMocks;

@@ -19,6 +19,7 @@ import { type MediaOperation, MediaOperationRepository } from 'src/repositories/
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
+
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();

@@ -13,6 +13,7 @@ import {
   restrictPreferencesUpdate,
   withoutStoredLockedRuleIds,
 } from 'src/utils/preferences.js';
+
 const stored = (value: Record<string, unknown>) =>
   [{ key: UserMetadataKey.Preferences, value }] as unknown as UserMetadataItem[];
 

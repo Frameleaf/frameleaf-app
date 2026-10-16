@@ -5,6 +5,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
+
 describe('Live Photo asset-edit transaction', () => {
   let db: Kysely<DB>;
   let sut: AssetRepository;

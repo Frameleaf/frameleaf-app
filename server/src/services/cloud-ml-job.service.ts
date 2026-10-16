@@ -167,6 +167,7 @@ import {
   restorationOutputPaths,
   resultExpiryAfterAbandon,
 } from 'src/utils/restoration.js';
+
 type CloudMlSettings = SystemConfig['frameleafCloud']['cloudMl'];
 
 type Source = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;

@@ -68,7 +68,7 @@ describe(LanDiscoveryService.name, () => {
       mocks.user.getAdmin.mockImplementationOnce(async () => {
         entered.resolve();
         await resume.promise;
-        return undefined;
+        return;
       });
       const starting = sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: true } } } as never);
       try {
