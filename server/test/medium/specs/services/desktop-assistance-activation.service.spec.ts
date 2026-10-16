@@ -10,6 +10,8 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -259,4 +261,46 @@ it('reports NAS verification unavailability as a setup conflict without a grant'
   await expect(refused).rejects.toBeInstanceOf(ConflictException);
   expect(await f.index.getActive()).toBeUndefined();
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
+});
+
+it('activates OCR without CLIP inference or index admission and rejects a changed OCR request', async () => {
+  const f = await setup();
+  const ocr = JSON.parse(readFileSync('test/fixtures/desktop-ocr-profile.json', 'utf8'));
+  const qualification = await seedDesktopQualification(db, f.grant, {
+    modelKey: ocr.modelKey,
+    config: ocr.spec.entries,
+    inputKind: 'image',
+  });
+  await f.routes.setDefaultRoute(MlWorkload.Ocr, f.destination.id);
+  await db
+    .updateTable('ml_destination')
+    .set({ workloads: [MlWorkload.Clip, MlWorkload.Ocr] })
+    .where('id', '=', f.destination.id)
+    .execute();
+  const config = new ConfigRepository();
+  const ml = new MachineLearningRepository(LoggingRepository.create(), f.routes, config, f.metadata);
+  ml.setup({ ...defaults.machineLearning, urls: [f.destination.url!] });
+  await f.metadata.withConfigTransaction((metadata) =>
+    metadata.set(SystemMetadataKey.SystemConfig, { machineLearning: { urls: [f.destination.url!] } }),
+  );
+  const service = new DesktopAssistanceActivationService(
+    f.workers,
+    f.index,
+    f.nas as never,
+    f.policies,
+    f.metadata,
+    f.routes,
+    ml,
+  );
+  await service.activateOcr(f.grant, qualification, ocr);
+  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([ocr.modelKey]);
+  expect(await f.index.getActive()).toBeUndefined();
+  expect(f.nas.verify).not.toHaveBeenCalled();
+  await f.metadata.withConfigTransaction((metadata) =>
+    metadata.set(SystemMetadataKey.SystemConfig, {
+      machineLearning: { urls: [f.destination.url!], ocr: { minDetectionScore: 0.6 } },
+    }),
+  );
+  await expect(service.activateOcr(f.grant, qualification, ocr)).rejects.toThrow('desktop_pool_config_changed');
+  await expect(service.activateOcr(f.grant, qualification, ocr)).rejects.toBeInstanceOf(ConflictException);
 });

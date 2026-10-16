@@ -42,6 +42,8 @@ const florenceModelName = 'microsoft/Florence-2-base-ft';
 const boundProfile = parseDesktopModelCatalogue(
   JSON.parse(readFileSync(new URL('../../resources/desktop/model-catalogue.json', import.meta.url), 'utf8')),
 ).profiles[0];
+const boundDimensions = boundProfile.embeddingDimensions;
+if (boundDimensions === undefined) throw new Error('clip_fixture_required');
 
 const localUrl = 'http://frameleaf-machine-learning:3003';
 // The LAN restoration worker's port (FL-72 fixtures keep restoration on its own worker).
@@ -130,7 +132,7 @@ describe(MachineLearningRepository.name, () => {
     it.each([MlWorkload.Clip, MlWorkload.PetRecognition])(
       'binds NAS %s transport and returned vector to the exact producing profile',
       async (workload) => {
-        const embedding = JSON.stringify(Array.from({ length: boundProfile.embeddingDimensions }, () => 0.1));
+        const embedding = JSON.stringify(Array.from({ length: boundDimensions }, () => 0.1));
         const fetch = vi.fn().mockResolvedValue(
           jsonResponse({
             protocolVersion: 1,
@@ -178,10 +180,7 @@ describe(MachineLearningRepository.name, () => {
             result: {
               ...(failure === 'unexpected-image-metadata' && { imageWidth: 2 }),
               clip: JSON.stringify(
-                Array.from(
-                  { length: failure === 'wrong-dimensions' ? 2 : boundProfile.embeddingDimensions },
-                  () => 0.1,
-                ),
+                Array.from({ length: failure === 'wrong-dimensions' ? 2 : boundDimensions }, () => 0.1),
               ),
             },
           }),

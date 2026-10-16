@@ -63,7 +63,8 @@ it.skipIf(!process.env.FRAMELEAF_TEST_BOUND_ML_URL)(
     const catalogue = parseDesktopModelCatalogue(
       JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8')),
     );
-    const profile = catalogue.profiles.find((p) => p.spec.fixtureKind === 'image')!;
+    const profile = catalogue.profiles.find((p) => p.workload === 'clip' && p.spec.fixtureKind === 'image')!;
+    if (profile.embeddingDimensions === undefined) throw new Error('clip_fixture_required');
     expect(createHash('sha256').update(readFileSync(process.env.FRAMELEAF_TEST_BOUND_ML_FIXTURE!)).digest('hex')).toBe(
       profile.spec.fixtureSha256,
     );

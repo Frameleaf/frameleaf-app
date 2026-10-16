@@ -1,11 +1,15 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
+import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
+import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { type DesktopWorkerGrant, DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
+import { resolveEndpoint } from 'src/utils/ml-destination.js';
 
 type Qualification = NonNullable<Awaited<ReturnType<DesktopWorkerChallengeRepository['readAccepted']>>>;
 
@@ -18,7 +22,58 @@ export class DesktopAssistanceActivationService {
     private policies: DesktopAssistancePolicyService,
     private metadata: SystemMetadataRepository,
     private destinations: MlDestinationRepository,
+    private machineLearning?: MachineLearningRepository,
   ) {}
+
+  async activateOcr(
+    grant: DesktopWorkerGrant,
+    qualification: Qualification,
+    profile: DesktopModelProfile,
+  ): Promise<void> {
+    if (profile.workload !== 'ocr' || profile.modelKey !== qualification.modelKey || !this.machineLearning)
+      throw new ConflictException('desktop_pool_model_unavailable');
+    const ownerId = await this.workers.owner(grant);
+    if (!ownerId) throw new UnauthorizedException('desktop_worker_activation_invalid');
+    const account = await this.policies.read(ownerId);
+    if (!account) throw new ConflictException('desktop_pool_policy_required');
+    await this.metadata
+      .withConfigTransaction(async (_metadata, tx) => {
+        await this.policies.assertCurrent(ownerId, account.revisionId, tx);
+        const routes = new MlDestinationRepository(tx);
+        const route = (await routes.getRouteStates()).find((item) => item.workload === MlWorkload.Ocr);
+        if (route?.origin !== 'default' || !route.revisionId || !route.destinationId)
+          throw new ConflictException('desktop_pool_route_changed');
+        const destination = await routes.getById(route.destinationId);
+        const endpoint = destination && resolveEndpoint(destination);
+        if (!destination || !endpoint || ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind))
+          throw new ConflictException('desktop_pool_destination_changed');
+        const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
+        await routes.assertRecoveryAuthority(destination);
+        await routes.assertDefaultRoute(selection, route.revisionId, tx, MlWorkload.Ocr);
+        await this.machineLearning!.assertDesktopOcrConfig(selection, profile.spec.entries, tx);
+        if (
+          !(await this.workers.grantQualifiedModel(
+            { grant, ownerId, qualification, modelKeys: [profile.modelKey] },
+            tx,
+          ))
+        )
+          throw new UnauthorizedException('desktop_worker_activation_invalid');
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ConflictException || error instanceof UnauthorizedException) throw error;
+        if (
+          error instanceof Error &&
+          [
+            'desktop_pool_config_changed',
+            'desktop_pool_route_changed',
+            'desktop_pool_destination_changed',
+            'desktop_pool_policy_changed',
+          ].includes(error.message)
+        )
+          throw new ConflictException(error.message, { cause: error });
+        throw error;
+      });
+  }
 
   async activate(grant: DesktopWorkerGrant, qualification: Qualification, spaceKey: string): Promise<void> {
     const ownerId = await this.workers.owner(grant);

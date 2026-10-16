@@ -71707,7 +71707,7 @@
             "type": "string"
           },
           "modelKey": {
-            "pattern": "^clip:[a-f0-9]{64}$",
+            "pattern": "^(clip|ocr):[a-f0-9]{64}$",
             "type": "string"
           },
           "qualifiedAt": {
@@ -72012,7 +72012,7 @@
             "type": "string"
           },
           "modelKey": {
-            "pattern": "^clip:[a-f0-9]{64}$",
+            "pattern": "^(clip|ocr):[a-f0-9]{64}$",
             "type": "string"
           },
           "reportSha256": {

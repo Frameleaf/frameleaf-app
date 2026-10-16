@@ -164,3 +164,21 @@ it('registers the pool selector at bootstrap and refuses queued work after shutd
   });
   expect(await ml.selectBackgroundPool(selection, 'asset')).toBe(selection);
 });
+
+it('selects the exact OCR workload without requiring a CLIP index or NAS inference', async () => {
+  selection.workload = MlWorkload.Ocr;
+  routes.getRouteStates.mockResolvedValue([
+    { workload: MlWorkload.Ocr, destinationId: 'nas', origin: 'default', revisionId: 'route' },
+  ]);
+  await queueExecution.run(context, async () => {
+    const chosen = await service.selectBackgroundPool(selection, {
+      jobId: 'asset',
+      modelName: defaults.machineLearning.ocr.modelName,
+      ocr: defaults.machineLearning.ocr,
+      assertConfig,
+    });
+    expect(chosen.desktopOcr).toBeTypeOf('function');
+    expect(index.selectProfile).not.toHaveBeenCalled();
+    expect(assertSource).toHaveBeenCalledOnce();
+  });
+});

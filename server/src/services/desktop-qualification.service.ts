@@ -24,6 +24,7 @@ import {
   createDesktopModelChallenge,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
+import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
 import { desktopRuntimeMinimumEpoch, verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -71,13 +72,15 @@ export class DesktopQualificationService {
     } catch {
       throw new BadRequestException('desktop_runtime_attestation_invalid');
     }
-    try {
-      const space = findDesktopClipSpace(this.spaces, profile.modelKey)!;
-      const producer = await this.nasProducer.verify(space.spaceKey);
-      await producer.assertCurrent();
-    } catch (error) {
-      if (error instanceof ConflictException) throw error;
-      throw new ConflictException('desktop_nas_producer_unavailable', { cause: error });
+    if (profile.workload === 'clip') {
+      try {
+        const space = findDesktopClipSpace(this.spaces, profile.modelKey)!;
+        const producer = await this.nasProducer.verify(space.spaceKey);
+        await producer.assertCurrent();
+      } catch (error) {
+        if (error instanceof ConflictException) throw error;
+        throw new ConflictException('desktop_nas_producer_unavailable', { cause: error });
+      }
     }
     let row;
     try {
@@ -142,7 +145,13 @@ export class DesktopQualificationService {
     const qualification = await this.challenges.readAccepted(grant, id);
     if (!qualification) throw new UnauthorizedException('desktop_qualification_invalid');
     this.assertAccepted(qualification, profile);
-    await this.activation.activate(grant, qualification, findDesktopClipSpace(this.spaces, profile.modelKey)!.spaceKey);
+    if (profile.workload === 'ocr') await this.activation.activateOcr(grant, qualification, profile);
+    else
+      await this.activation.activate(
+        grant,
+        qualification,
+        findDesktopClipSpace(this.spaces, profile.modelKey)!.spaceKey,
+      );
     return { accepted: true };
   }
 
@@ -198,10 +207,13 @@ export class DesktopQualificationService {
     );
     if (
       !config.machineLearning.enabled ||
-      !config.machineLearning.clip.enabled ||
       !profile ||
-      !findDesktopClipSpace(this.spaces, profile.modelKey) ||
-      config.machineLearning.clip.modelName !== profile.modelName ||
+      (profile.workload === 'clip'
+        ? !config.machineLearning.clip.enabled ||
+          !findDesktopClipSpace(this.spaces, profile.modelKey) ||
+          config.machineLearning.clip.modelName !== profile.modelName
+        : !config.machineLearning.ocr.enabled ||
+          canonicalJson(ocrEntries(config.machineLearning.ocr)) !== canonicalJson(profile.spec.entries)) ||
       Buffer.from(profile.fixtureBase64, 'base64').length > 2 * 1024 * 1024
     )
       throw new ConflictException('desktop_model_profile_unavailable');

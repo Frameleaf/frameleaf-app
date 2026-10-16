@@ -887,242 +887,268 @@ it('revalidates disclosure authority inside the authenticated lease before retur
   expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ ownerId: request.ownerId }), expect.anything());
 });
 
-it('reconstructs durable disclosure on a fresh service and refuses revoked source, policy, route, config and job authority', async () => {
-  const profiles: DesktopModelProfile[] = JSON.parse(
-    readFileSync('resources/desktop/model-catalogue.json', 'utf8'),
-  ).profiles;
-  const profile = profiles.find((p) => p.spec.fixtureKind === 'image')!;
-  const space = JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')).spaces[0];
-  for (const table of [
-    'smart_search',
-    'smart_search_description',
-    'asset_video_duplicate_frame',
-    'video_moment_frame_embedding',
-  ])
-    await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
-  const index = new DesktopClipIndexRepository(db);
-  const binding = await index.admit(space.spaceKey);
-  const { sut: broker, grants, request } = await setup(true, profile);
-  const { sut: base, ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-  const { asset } = await ctx.newAsset({ ownerId: request.ownerId });
-  const metadata = new SystemMetadataRepository(db);
-  const configRepo = new ConfigRepository();
-  const originalConfig = await base.readConfigForUpdate({
-    configRepo,
-    metadataRepo: metadata,
-    logger: LoggingRepository.create(),
-  });
-  const config = structuredClone(defaults);
-  config.machineLearning.clip.modelName = profile.modelName;
-  config.machineLearning.urls = ['https://disclosure-fixture.invalid'];
-  const writeConfig = (enabled: boolean) =>
-    metadata.withConfigTransaction((metadataRepo) =>
-      base.updateConfig(
-        { ...config, machineLearning: { ...config.machineLearning, enabled } },
-        { configRepo, metadataRepo, logger: LoggingRepository.create() },
-      ),
-    );
-  const policies = new DesktopAssistancePolicyService(metadata);
-  await policies.enable(request.ownerId);
-  const savedPolicy = await policies.snapshot();
-  const routes = new MlDestinationRepository(db);
-  const destination = await routes.create({
-    kind: MlDestinationKind.Local,
-    name: 'synthetic disclosure NAS',
-    url: config.machineLearning.urls[0],
-    authToken: null,
-    enabled: true,
-    workloads: [MlWorkload.Clip],
-    budgetLimitUsd: null,
-    maxRuntimeMinutes: null,
-    maxUploadBytes: null,
-  });
-  await routes.setDefaultRoute(MlWorkload.Clip, destination.id);
-  const store = new SqlQueueStore(db);
-  const workerId = randomUUID();
-  const queue = 'disclosure-' + randomUUID();
-  await store.initialize([queue], workerId);
-  await store.enqueue([
-    {
-      queue,
-      name: JobName.SmartSearch,
-      data: { id: asset.id },
-      safeToRetry: true,
-      sensitive: false,
-      deadlineMs: 120_000,
-    },
-  ]);
-  const [claim] = await store.claim(queue, workerId);
-  const controller = new AbortController();
-  const execution: QueueExecution = {
-    claim,
-    signal: controller.signal,
-    progress: vi.fn(),
-    progressUnits: 0,
-    adoptions: [],
-    followups: [],
-    buffering: false,
-  };
-  const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
-  const root = await mkdtemp(join(tmpdir(), 'frameleaf-disclosure-'));
-  const path = join(root, 'synthetic.png');
-  let taskId: string | undefined;
-  let dispatched: Promise<unknown> | undefined;
-  try {
-    await writeConfig(true);
-    const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
-    ml.setup(config.machineLearning);
-    const service = new DesktopMlService(broker, index, policies, routes, ml);
-    service.onBootstrap();
-    const ready = Promise.withResolvers<Awaited<ReturnType<typeof broker.create>>>();
-    const create = broker.create.bind(broker);
-    vi.spyOn(broker, 'create').mockImplementation(async (input) => {
-      const row = await create(input);
-      ready.resolve(row);
-      return row;
+it.each([MlWorkload.Clip, MlWorkload.Ocr])(
+  'reconstructs durable %s disclosure and refuses revoked source, policy, route, config and job authority',
+  async (workload) => {
+    const profiles: DesktopModelProfile[] = JSON.parse(
+      readFileSync('resources/desktop/model-catalogue.json', 'utf8'),
+    ).profiles;
+    const profile = profiles.find((p) => p.workload === workload && p.spec.fixtureKind === 'image')!;
+    const space = JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')).spaces[0];
+    for (const table of [
+      'smart_search',
+      'smart_search_description',
+      'asset_video_duplicate_frame',
+      'video_moment_frame_embedding',
+    ])
+      await sql`ALTER TABLE ${sql.table(table)} ALTER COLUMN embedding TYPE vector(768)`.execute(db);
+    const index = new DesktopClipIndexRepository(db);
+    const priorIndex = await index.getActive();
+    const binding = workload === MlWorkload.Clip ? await index.admit(space.spaceKey) : undefined;
+    const { sut: broker, grants, request } = await setup(true, profile);
+    const { sut: base, ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { asset } = await ctx.newAsset({ ownerId: request.ownerId });
+    const metadata = new SystemMetadataRepository(db);
+    const configRepo = new ConfigRepository();
+    const originalConfig = await base.readConfigForUpdate({
+      configRepo,
+      metadataRepo: metadata,
+      logger: LoggingRepository.create(),
     });
-    await writeFile(path, request.input);
-    dispatched = queueExecution.run(execution, async () => {
-      await jobs.guardAssetSource(asset.id);
-      const selected = await ml.selectBackgroundPool(
-        {
-          destinationId: destination.id,
-          kind: destination.kind,
-          workload: MlWorkload.Clip,
-          endpoint: { url: destination.url!, assertAuthority: () => Promise.resolve() },
-          record: vi.fn(),
-        },
-        asset.id,
+    const config = structuredClone(defaults);
+    if (workload === MlWorkload.Clip) config.machineLearning.clip.modelName = profile.modelName;
+    config.machineLearning.urls = ['https://disclosure-fixture.invalid'];
+    const writeConfig = (enabled: boolean) =>
+      metadata.withConfigTransaction((metadataRepo) =>
+        base.updateConfig(
+          { ...config, machineLearning: { ...config.machineLearning, enabled } },
+          { configRepo, metadataRepo, logger: LoggingRepository.create() },
+        ),
       );
-      return ml.encodeImage(selected, path, config.machineLearning.clip);
+    const policies = new DesktopAssistancePolicyService(metadata);
+    await policies.enable(request.ownerId);
+    const savedPolicy = await policies.snapshot();
+    const routes = new MlDestinationRepository(db);
+    const destination = await routes.create({
+      kind: MlDestinationKind.Local,
+      name: 'synthetic disclosure NAS',
+      url: config.machineLearning.urls[0],
+      authToken: null,
+      enabled: true,
+      workloads: [workload],
+      budgetLimitUsd: null,
+      maxRuntimeMinutes: null,
+      maxUploadBytes: null,
     });
-    // Observe rejection immediately so teardown cancellation cannot become an unhandled promise.
-    void dispatched.catch(() => {});
-    const task = await ready.promise;
-    taskId = task.id;
-    expect(task.disclosure).not.toBeNull();
-    expect(JSON.stringify(task.disclosure)).not.toContain('authToken');
-    const attempt = (await new DesktopMlRepository(db).claim(grants[0], [request.modelKey]))!;
-    const input = () => {
-      const freshMetadata = new SystemMetadataRepository(db);
-      const freshRoutes = new MlDestinationRepository(db);
-      const freshIndex = new DesktopClipIndexRepository(db);
-      const freshMl = new MachineLearningRepository(
-        LoggingRepository.create(),
-        freshRoutes,
-        configRepo,
-        freshMetadata,
-        freshIndex,
-      );
-      freshMl.setup(config.machineLearning);
-      return new DesktopMlService(
-        new DesktopMlRepository(db),
-        freshIndex,
-        new DesktopAssistancePolicyService(freshMetadata),
-        freshRoutes,
-        freshMl,
-      ).input(grants[0], attempt.attempt.id);
+    await routes.setDefaultRoute(workload, destination.id);
+    const store = new SqlQueueStore(db);
+    const workerId = randomUUID();
+    const queue = 'disclosure-' + randomUUID();
+    await store.initialize([queue], workerId);
+    await store.enqueue([
+      {
+        queue,
+        name: workload === MlWorkload.Clip ? JobName.SmartSearch : JobName.Ocr,
+        data: { id: asset.id },
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 120_000,
+      },
+    ]);
+    const [claim] = await store.claim(queue, workerId);
+    const controller = new AbortController();
+    const execution: QueueExecution = {
+      claim,
+      signal: controller.signal,
+      progress: vi.fn(),
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
     };
-    expect(await input()).toEqual(request.input);
-    const changed = async (mutate: () => Promise<unknown>, restore: () => Promise<unknown>, error: string) => {
-      await mutate();
-      try {
-        await expect(input()).rejects.toThrow(error);
-      } finally {
-        await restore();
-      }
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+    const root = await mkdtemp(join(tmpdir(), 'frameleaf-disclosure-'));
+    const path = join(root, 'synthetic.png');
+    let taskId: string | undefined;
+    let dispatched: Promise<unknown> | undefined;
+    try {
+      await writeConfig(true);
+      const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
+      ml.setup(config.machineLearning);
+      const service = new DesktopMlService(broker, index, policies, routes, ml);
+      service.onBootstrap();
+      const ready = Promise.withResolvers<Awaited<ReturnType<typeof broker.create>>>();
+      const create = broker.create.bind(broker);
+      vi.spyOn(broker, 'create').mockImplementation(async (input) => {
+        const row = await create(input);
+        ready.resolve(row);
+        return row;
+      });
+      await writeFile(path, request.input);
+      dispatched = queueExecution.run(execution, async () => {
+        await jobs.guardAssetSource(asset.id);
+        const selected = await ml.selectBackgroundPool(
+          {
+            destinationId: destination.id,
+            kind: destination.kind,
+            workload,
+            endpoint: { url: destination.url!, assertAuthority: () => Promise.resolve() },
+            record: vi.fn(),
+          },
+          asset.id,
+        );
+        return workload === MlWorkload.Clip
+          ? ml.encodeImage(selected, path, config.machineLearning.clip)
+          : ml.ocr(selected, path, config.machineLearning.ocr);
+      });
+      // Observe rejection immediately so teardown cancellation cannot become an unhandled promise.
+      void dispatched.catch(() => {});
+      const task = await ready.promise;
+      taskId = task.id;
+      expect(task.disclosure).not.toBeNull();
+      expect(JSON.stringify(task.disclosure)).not.toContain('authToken');
+      const attempt = (await new DesktopMlRepository(db).claim(grants[0], [request.modelKey]))!;
+      const input = () => {
+        const freshMetadata = new SystemMetadataRepository(db);
+        const freshRoutes = new MlDestinationRepository(db);
+        const freshIndex = new DesktopClipIndexRepository(db);
+        const freshMl = new MachineLearningRepository(
+          LoggingRepository.create(),
+          freshRoutes,
+          configRepo,
+          freshMetadata,
+          freshIndex,
+        );
+        freshMl.setup(config.machineLearning);
+        return new DesktopMlService(
+          new DesktopMlRepository(db),
+          freshIndex,
+          new DesktopAssistancePolicyService(freshMetadata),
+          freshRoutes,
+          freshMl,
+        ).input(grants[0], attempt.attempt.id);
+      };
       expect(await input()).toEqual(request.input);
-    };
-    await changed(
-      () => db.updateTable('asset').set({ originalPath: '/synthetic/replaced' }).where('id', '=', asset.id).execute(),
-      () => db.updateTable('asset').set({ originalPath: asset.originalPath }).where('id', '=', asset.id).execute(),
-      'Asset inputs changed',
-    );
-    await changed(
-      () => db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', asset.id).execute(),
-      () => db.updateTable('asset').set({ visibility: asset.visibility }).where('id', '=', asset.id).execute(),
-      'Asset inputs changed',
-    );
-    await changed(
-      () =>
-        metadata.withConfigTransaction((m) =>
-          m.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
-        ),
-      () => metadata.withConfigTransaction((m) => m.set(SystemMetadataKey.FrameleafDesktopAssistance, savedPolicy)),
-      'desktop_pool_policy_changed',
-    );
-    await changed(
-      () => routes.update(destination.id, { enabled: false }),
-      () => routes.update(destination.id, { enabled: true }),
-      'desktop_pool_destination_changed',
-    );
-    await changed(
-      () => routes.update(destination.id, { authToken: 'synthetic-changed-token' }),
-      () => routes.update(destination.id, { authToken: null }),
-      'desktop_pool_destination_changed',
-    );
-    await changed(
-      () => writeConfig(false),
-      () => writeConfig(true),
-      'desktop_pool_config_changed',
-    );
-    await changed(
-      () =>
-        db.updateTable('desktop_clip_index').set({ revisionId: randomUUID() }).where('scope', '=', 'clip').execute(),
-      () =>
-        db
-          .updateTable('desktop_clip_index')
-          .set({ revisionId: binding.revisionId })
-          .where('scope', '=', 'clip')
-          .execute(),
-      'desktop_clip_index_changed',
-    );
-    await changed(
-      () => sql`update job set token=gen_random_uuid() where id=${claim.id}::uuid`.execute(db),
-      () => sql`update job set token=${claim.token}::uuid where id=${claim.id}::uuid`.execute(db),
-      'desktop_pool_queue_changed',
-    );
-    await changed(
-      () =>
-        sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '1 second' where id=${claim.id}::uuid`.execute(
-          db,
-        ),
-      () =>
-        sql`update job set "leaseExpiresAt"=clock_timestamp()+interval '60 seconds' where id=${claim.id}::uuid`.execute(
-          db,
-        ),
-      'desktop_pool_queue_changed',
-    );
-    await changed(
-      () => sql`update job set "cancelRequestedAt"=clock_timestamp() where id=${claim.id}::uuid`.execute(db),
-      () => sql`update job set "cancelRequestedAt"=null where id=${claim.id}::uuid`.execute(db),
-      'desktop_pool_queue_changed',
-    );
-    await changed(
-      () => brokerDb.updateTable('desktop_ml_task').set({ disclosure: null }).where('id', '=', task.id).execute(),
-      () =>
-        brokerDb
-          .updateTable('desktop_ml_task')
-          .set({ disclosure: task.disclosure })
-          .where('id', '=', task.id)
-          .execute(),
-      'desktop_input_authority_invalid',
-    );
-    await routes.clearRoute(MlWorkload.Clip);
-    await expect(input()).rejects.toThrow('desktop_pool_route_changed');
-  } finally {
-    controller.abort();
-    await dispatched?.catch(() => {});
-    if (taskId) {
-      await broker.cancel(taskId);
-      await broker.discard(taskId);
+      const changed = async (mutate: () => Promise<unknown>, restore: () => Promise<unknown>, error: string) => {
+        await mutate();
+        try {
+          await expect(input()).rejects.toThrow(error);
+        } finally {
+          await restore();
+        }
+        expect(await input()).toEqual(request.input);
+      };
+      await changed(
+        () => db.updateTable('asset').set({ originalPath: '/synthetic/replaced' }).where('id', '=', asset.id).execute(),
+        () => db.updateTable('asset').set({ originalPath: asset.originalPath }).where('id', '=', asset.id).execute(),
+        'Asset inputs changed',
+      );
+      await changed(
+        () => db.updateTable('asset').set({ visibility: AssetVisibility.Hidden }).where('id', '=', asset.id).execute(),
+        () => db.updateTable('asset').set({ visibility: asset.visibility }).where('id', '=', asset.id).execute(),
+        'Asset inputs changed',
+      );
+      await changed(
+        () =>
+          metadata.withConfigTransaction((m) =>
+            m.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
+          ),
+        () => metadata.withConfigTransaction((m) => m.set(SystemMetadataKey.FrameleafDesktopAssistance, savedPolicy)),
+        'desktop_pool_policy_changed',
+      );
+      await changed(
+        () => routes.update(destination.id, { enabled: false }),
+        () => routes.update(destination.id, { enabled: true }),
+        'desktop_pool_destination_changed',
+      );
+      await changed(
+        () => routes.update(destination.id, { authToken: 'synthetic-changed-token' }),
+        () => routes.update(destination.id, { authToken: null }),
+        'desktop_pool_destination_changed',
+      );
+      await changed(
+        () => writeConfig(false),
+        () => writeConfig(true),
+        'desktop_pool_config_changed',
+      );
+      if (binding) {
+        await changed(
+          () =>
+            db
+              .updateTable('desktop_clip_index')
+              .set({ revisionId: randomUUID() })
+              .where('scope', '=', 'clip')
+              .execute(),
+          () =>
+            db
+              .updateTable('desktop_clip_index')
+              .set({ revisionId: binding.revisionId })
+              .where('scope', '=', 'clip')
+              .execute(),
+          'desktop_clip_index_changed',
+        );
+      } else {
+        expect(await index.getActive()).toEqual(priorIndex);
+        const originalScore = config.machineLearning.ocr.minDetectionScore;
+        await changed(
+          () => {
+            config.machineLearning.ocr.minDetectionScore = 0.6;
+            return writeConfig(true);
+          },
+          () => {
+            config.machineLearning.ocr.minDetectionScore = originalScore;
+            return writeConfig(true);
+          },
+          'desktop_pool_config_changed',
+        );
+      }
+      await changed(
+        () => sql`update job set token=gen_random_uuid() where id=${claim.id}::uuid`.execute(db),
+        () => sql`update job set token=${claim.token}::uuid where id=${claim.id}::uuid`.execute(db),
+        'desktop_pool_queue_changed',
+      );
+      await changed(
+        () =>
+          sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '1 second' where id=${claim.id}::uuid`.execute(
+            db,
+          ),
+        () =>
+          sql`update job set "leaseExpiresAt"=clock_timestamp()+interval '60 seconds' where id=${claim.id}::uuid`.execute(
+            db,
+          ),
+        'desktop_pool_queue_changed',
+      );
+      await changed(
+        () => sql`update job set "cancelRequestedAt"=clock_timestamp() where id=${claim.id}::uuid`.execute(db),
+        () => sql`update job set "cancelRequestedAt"=null where id=${claim.id}::uuid`.execute(db),
+        'desktop_pool_queue_changed',
+      );
+      await changed(
+        () => brokerDb.updateTable('desktop_ml_task').set({ disclosure: null }).where('id', '=', task.id).execute(),
+        () =>
+          brokerDb
+            .updateTable('desktop_ml_task')
+            .set({ disclosure: task.disclosure })
+            .where('id', '=', task.id)
+            .execute(),
+        'desktop_input_authority_invalid',
+      );
+      await routes.clearRoute(workload);
+      await expect(input()).rejects.toThrow('desktop_pool_route_changed');
+    } finally {
+      controller.abort();
+      await dispatched?.catch(() => {});
+      if (taskId) {
+        await broker.cancel(taskId);
+        await broker.discard(taskId);
+      }
+      await rm(root, { recursive: true, force: true });
+      await metadata.withConfigTransaction((metadataRepo) =>
+        base.updateConfig(originalConfig, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
+      );
     }
-    await rm(root, { recursive: true, force: true });
-    await metadata.withConfigTransaction((metadataRepo) =>
-      base.updateConfig(originalConfig, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
-    );
-  }
-});
+  },
+);
 
 it('migrates old broker tasks to unproven disclosure and reverses without deleting their rows', async () => {
   const schema = 'disclosure_' + randomUUID().replaceAll('-', '');

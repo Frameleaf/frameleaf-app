@@ -22,6 +22,8 @@ export const clipEmbeddingForStorage = (
 
 /** Decode before scheduling publication; both NAS HTTP and desktop results use this contract. */
 export const parseBoundClipResult = (value: unknown, profile: DesktopModelProfile) => {
+  if (profile.workload !== 'clip' || profile.embeddingDimensions === undefined)
+    throw new Error('producer_result_invalid');
   const result = z
     .strictObject({
       clip: z.string().max(4 * 1024 * 1024),

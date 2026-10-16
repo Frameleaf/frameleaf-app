@@ -13,6 +13,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
+import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -210,4 +211,47 @@ it('adds unobserved presence to existing rows and reverses only the new column',
   } finally {
     await db.schema.dropSchema(scope).cascade().execute();
   }
+});
+
+it('adds a second qualified workload without dropping another live grant, then prunes expired grants', async () => {
+  const { sut, user, input } = await setup();
+  const session = (await sut.issue({ ...input, modelKeys: [] }))!;
+  const grant = {
+    sessionId: session.id,
+    deviceId: input.deviceId,
+    authorizationEpoch: input.authorizationEpoch,
+    credentialHash: input.tokenHash,
+  };
+  const clip = await seedDesktopQualification(db, grant, {
+    modelKey: 'clip:' + 'c'.repeat(64),
+    config: { clip: {} },
+    inputKind: 'text',
+  });
+  const ocr = await seedDesktopQualification(db, grant, {
+    modelKey: 'ocr:' + 'a'.repeat(64),
+    config: { ocr: {} },
+    inputKind: 'image',
+  });
+  const activate = (qualification: typeof clip) =>
+    db
+      .transaction()
+      .execute((tx) =>
+        sut.grantQualifiedModel({ grant, ownerId: user.id, qualification, modelKeys: [qualification.modelKey] }, tx),
+      );
+  expect(await activate(clip)).toBe(true);
+  expect(await activate(ocr)).toBe(true);
+  expect((await sut.session(session.id, input.tokenHash))!.modelKeys).toEqual([clip.modelKey, ocr.modelKey].sort());
+  expect(await activate(clip)).toBe(true);
+  expect((await sut.session(session.id, input.tokenHash))!.modelKeys).toEqual([clip.modelKey, ocr.modelKey].sort());
+  await sql`UPDATE desktop_worker_qualification SET "createdAt"=clock_timestamp()-interval '2 minutes',
+    "expiresAt"=clock_timestamp()-interval '1 minute' WHERE id=${clip.id}::uuid`.execute(db);
+  expect(await activate(ocr)).toBe(true);
+  expect((await sut.session(session.id, input.tokenHash))!.modelKeys).toEqual([ocr.modelKey]);
+  expect(
+    await db
+      .transaction()
+      .execute((tx) =>
+        sut.grantQualifiedModel({ grant, ownerId: user.id, qualification: ocr, modelKeys: [clip.modelKey] }, tx),
+      ),
+  ).toBe(false);
 });

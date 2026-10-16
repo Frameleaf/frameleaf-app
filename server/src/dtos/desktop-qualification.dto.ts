@@ -4,7 +4,7 @@ import z from 'zod';
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const DesktopQualificationRequestSchema = z.strictObject({
   requestId: z.uuidv4().refine((value) => value === value.toLowerCase()),
-  modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+  modelKey: z.string().regex(/^(clip|ocr):[a-f0-9]{64}$/),
   provider: z.enum([
     'CPUExecutionProvider',
     'CUDAExecutionProvider',
@@ -27,7 +27,7 @@ export const DesktopQualificationReportSchema = z.strictObject({ report: z.recor
 export class DesktopQualificationChallengeDto extends createZodDto(
   z.strictObject({
     id: z.uuidv4(),
-    modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+    modelKey: z.string().regex(/^(clip|ocr):[a-f0-9]{64}$/),
     specJson: z
       .string()
       .min(1)
@@ -46,7 +46,7 @@ export class DesktopAcceptedQualificationDto extends createZodDto(
     deviceId: z.uuidv4(),
     sessionId: z.uuidv4(),
     authorizationEpoch: z.number().int().positive(),
-    modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+    modelKey: z.string().regex(/^(clip|ocr):[a-f0-9]{64}$/),
     configSha256: digest,
     inputKind: z.enum(['text', 'image']).meta({ id: 'DesktopInputKind' }),
     bindingSha256: digest,

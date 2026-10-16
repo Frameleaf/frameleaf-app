@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import z from 'zod';
 import { CLIP_MODEL_INFO } from 'src/constants.js';
 import { canonicalJson } from 'src/utils/object.js';
+import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -26,15 +27,15 @@ const relative = z
   );
 const model = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/),
-  task: z.literal('clip'),
-  type: z.enum(['textual', 'visual']),
+  task: z.enum(['clip', 'ocr']),
+  type: z.enum(['textual', 'visual', 'detection', 'recognition']),
   artifacts: z
     .record(relative, digest)
     .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 4096),
 });
 const spec = z.strictObject({
   protocolVersion: z.literal(1),
-  modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+  modelKey: z.string().regex(/^(clip|ocr):[a-f0-9]{64}$/),
   provider: z.enum([
     'CPUExecutionProvider',
     'CUDAExecutionProvider',
@@ -42,7 +43,7 @@ const spec = z.strictObject({
     'OpenVINOExecutionProvider',
     'MIGraphXExecutionProvider',
   ]),
-  models: z.array(model).length(1),
+  models: z.array(model).min(1).max(2),
   entries: z.record(z.string(), z.json()),
   preprocessingSha256: digest,
   fixtureFile: relative.refine(
@@ -56,12 +57,12 @@ const spec = z.strictObject({
 });
 const profile = z
   .strictObject({
-    modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+    modelKey: z.string().regex(/^(clip|ocr):[a-f0-9]{64}$/),
     modelName: model.shape.name,
-    workload: z.literal('clip'),
+    workload: z.enum(['clip', 'ocr']),
     runtimeSourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
     modelSnapshotRevision: z.string().regex(/^[a-f0-9]{40}$/),
-    embeddingDimensions: z.number().int().min(1).max(65_536),
+    embeddingDimensions: z.number().int().min(1).max(65_536).optional(),
     spec,
     fixtureBase64: z.string().min(1).max(22_369_624),
     artifactBytes: z.record(
@@ -84,29 +85,67 @@ const profile = z
     };
     if (
       value.modelKey !== value.spec.modelKey ||
-      value.modelKey !== `clip:${sha(canonicalJson(identity))}` ||
+      value.modelKey !== `${value.workload}:${sha(canonicalJson(identity))}` ||
       value.modelName !== selected.name ||
-      CLIP_MODEL_INFO[value.modelName]?.dimSize !== value.embeddingDimensions
+      value.spec.models.some((item) => item.name !== value.modelName || item.task !== value.workload) ||
+      (value.workload === 'clip' &&
+        (value.spec.models.length !== 1 ||
+          value.embeddingDimensions === undefined ||
+          CLIP_MODEL_INFO[value.modelName]?.dimSize !== value.embeddingDimensions)) ||
+      (value.workload === 'ocr' && value.embeddingDimensions !== undefined)
     )
       invalid();
-    const type = value.spec.fixtureKind === 'text' ? 'textual' : 'visual';
-    const entry = value.spec.entries.clip;
-    if (
-      selected.type !== type ||
-      !entry ||
-      typeof entry !== 'object' ||
-      Array.isArray(entry) ||
-      Object.keys(entry).join(',') !== type
-    )
-      invalid();
-    else {
-      const actual = entry[type];
+    if (value.workload === 'clip') {
+      const type = value.spec.fixtureKind === 'text' ? 'textual' : 'visual';
+      const entry = value.spec.entries.clip;
       if (
-        !actual ||
-        typeof actual !== 'object' ||
-        Array.isArray(actual) ||
-        actual.modelName !== value.modelName ||
-        Object.keys(value.spec.entries).join(',') !== 'clip'
+        selected.type !== type ||
+        !entry ||
+        typeof entry !== 'object' ||
+        Array.isArray(entry) ||
+        Object.keys(entry).join(',') !== type
+      )
+        invalid();
+      else {
+        const actual = entry[type];
+        if (
+          !actual ||
+          typeof actual !== 'object' ||
+          Array.isArray(actual) ||
+          actual.modelName !== value.modelName ||
+          Object.keys(value.spec.entries).join(',') !== 'clip'
+        )
+          invalid();
+      }
+    } else {
+      const entries = z
+        .strictObject({
+          ocr: z.strictObject({
+            detection: z.strictObject({
+              modelName: z.literal(value.modelName),
+              options: z.strictObject({
+                minScore: z.number().min(0.1).max(1),
+                maxResolution: z.number().int().positive(),
+              }),
+            }),
+            recognition: z.strictObject({
+              modelName: z.literal(value.modelName),
+              options: z.strictObject({
+                minScore: z.number().min(0.1).max(1),
+              }),
+            }),
+          }),
+        })
+        .safeParse(value.spec.entries);
+      if (
+        !entries.success ||
+        value.spec.fixtureKind !== 'image' ||
+        value.spec.models.length !== 2 ||
+        value.spec.models
+          .map((item) => item.type)
+          .sort()
+          .join(',') !== 'detection,recognition' ||
+        value.spec.models.some((item) => canonicalJson(item.artifacts) !== canonicalJson(selected.artifacts))
       )
         invalid();
     }
@@ -133,25 +172,37 @@ const profile = z
       invalid();
     if (value.spec.fixtureKind === 'text' && !Buffer.from(fixture.toString('utf8'), 'utf8').equals(fixture)) invalid();
     try {
-      const clip = value.spec.expectedOutput.clip;
-      const vector: unknown = typeof clip === 'string' ? JSON.parse(clip) : null;
-      if (
-        !Array.isArray(vector) ||
-        vector.length !== value.embeddingDimensions ||
-        vector.some((v: unknown) => typeof v !== 'number' || !Number.isFinite(v))
-      )
-        invalid();
-      const keys = Object.keys(value.spec.expectedOutput).sort().join(',');
-      if (value.spec.fixtureKind === 'text') {
-        if (keys !== 'clip') invalid();
-      } else if (
-        keys !== 'clip,imageHeight,imageWidth' ||
-        fixture.length < 24 ||
-        !fixture.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
-        fixture.readUInt32BE(16) !== value.spec.expectedOutput.imageWidth ||
-        fixture.readUInt32BE(20) !== value.spec.expectedOutput.imageHeight
-      )
-        invalid();
+      if (value.workload === 'ocr') {
+        const result = parseBoundOcrResult(value.spec.expectedOutput);
+        if (
+          result.ocr.text.length === 0 ||
+          fixture.length < 24 ||
+          !fixture.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+          fixture.readUInt32BE(16) !== result.imageWidth ||
+          fixture.readUInt32BE(20) !== result.imageHeight
+        )
+          invalid();
+      } else {
+        const clip = value.spec.expectedOutput.clip;
+        const vector: unknown = typeof clip === 'string' ? JSON.parse(clip) : null;
+        if (
+          !Array.isArray(vector) ||
+          vector.length !== value.embeddingDimensions ||
+          vector.some((v: unknown) => typeof v !== 'number' || !Number.isFinite(v))
+        )
+          invalid();
+        const keys = Object.keys(value.spec.expectedOutput).sort().join(',');
+        if (value.spec.fixtureKind === 'text') {
+          if (keys !== 'clip') invalid();
+        } else if (
+          keys !== 'clip,imageHeight,imageWidth' ||
+          fixture.length < 24 ||
+          !fixture.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+          fixture.readUInt32BE(16) !== value.spec.expectedOutput.imageWidth ||
+          fixture.readUInt32BE(20) !== value.spec.expectedOutput.imageHeight
+        )
+          invalid();
+      }
     } catch {
       invalid();
     }

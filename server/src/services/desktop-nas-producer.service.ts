@@ -86,6 +86,8 @@ export class DesktopNasProducerService {
     const root = await mkdtemp(join(tmpdir(), 'frameleaf-nas-producer-'));
     try {
       for (const profile of profiles) {
+        if (profile.workload !== 'clip' || profile.embeddingDimensions === undefined)
+          throw new ConflictException('desktop_clip_profile_unavailable');
         await assertCurrent();
         const bytes = Buffer.from(profile.fixtureBase64, 'base64');
         const path = join(root, 'fixture.png');

@@ -844,7 +844,7 @@ export const selectMlDestination = async (
   };
   if (
     selectBackgroundPool &&
-    request.workload === MlWorkload.Clip &&
+    [MlWorkload.Clip, MlWorkload.Ocr].includes(request.workload) &&
     [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind)
   ) {
     // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it.
@@ -856,7 +856,7 @@ export const selectMlDestination = async (
       cloudModelId: null,
       record,
     });
-    if (pool.desktopClip) {
+    if (pool.desktopClip || pool.desktopOcr) {
       await assertAuthority();
       return pool;
     }

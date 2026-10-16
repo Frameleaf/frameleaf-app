@@ -44,6 +44,9 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
+import { ocrEntries } from 'src/utils/desktop-ocr.js';
+import { canonicalJson } from 'src/utils/object.js';
+import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
 import {
   RestorationInference,
@@ -268,12 +271,14 @@ export type MlUsage = {
 export type DesktopPoolOptions = {
   jobId?: string | null;
   modelName: string;
+  ocr?: MachineLearningConfig['ocr'];
   assertConfig: (tx?: Transaction<DB>) => Promise<void>;
 };
 export type DesktopPoolSelector = (selection: MlSelection, options: DesktopPoolOptions) => Promise<MlSelection>;
 
 export type MlSelection = {
   /** Internal admitted background pool; never reconstructed from an API response. */
+  desktopOcr?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
   desktopClip?: (payload: ModelPayload, profile: DesktopModelProfile) => Promise<unknown>;
   destinationId: string;
   kind: MlDestinationKind;
@@ -955,7 +960,7 @@ export class MachineLearningRepository implements RestorationInference {
     config: MachineLearningRequest,
     bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T },
   ): Promise<T> {
-    if (selection.desktopClip) throw new Error('desktop_bound_profile_required');
+    if (selection.desktopClip || selection.desktopOcr) throw new Error('desktop_bound_profile_required');
     if (selection.endpoint.cloud) {
       throw new CloudJobsUnavailableError(selection.workload);
     }
@@ -1046,13 +1051,18 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
-    if (!queueExecution.getStore() || selection.workload !== MlWorkload.Clip) return selection;
+    if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr].includes(selection.workload)) return selection;
     if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
-    const modelName = this.config.clip.modelName;
+    const ocr = selection.workload === MlWorkload.Ocr ? structuredClone(this.config.ocr) : undefined;
+    const modelName = ocr?.modelName ?? this.config.clip.modelName;
     return this.desktopPoolSelector(selection, {
       jobId,
       modelName,
-      assertConfig: (tx?: Transaction<DB>) => this.assertDesktopPoolConfig(selection, modelName, tx),
+      ...(ocr && { ocr }),
+      assertConfig: (tx?: Transaction<DB>) =>
+        ocr
+          ? this.assertDesktopOcrConfig(selection, ocrEntries(ocr), tx, ocr)
+          : this.assertDesktopPoolConfig(selection, modelName, tx),
     });
   }
 
@@ -1075,6 +1085,32 @@ export class MachineLearningRepository implements RestorationInference {
       !current.enabled ||
       !current.clip.enabled ||
       current.clip.modelName !== modelName ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
+  }
+
+  async assertDesktopOcrConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    entries: unknown,
+    tx?: Transaction<DB>,
+    expected?: MachineLearningConfig['ocr'],
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.ocr.enabled ||
+      canonicalJson(ocrEntries(current.ocr)) !== canonicalJson(entries) ||
+      (expected && canonicalJson(current.ocr) !== canonicalJson(expected)) ||
       (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
     )
       throw new Error('desktop_pool_config_changed');
@@ -1176,12 +1212,23 @@ export class MachineLearningRepository implements RestorationInference {
     imagePath: string,
     { modelName, minDetectionScore, minRecognitionScore, maxResolution }: OcrOptions,
   ) {
-    const request = {
-      [ModelTask.OCR]: {
-        [ModelType.DETECTION]: { modelName, options: { minScore: minDetectionScore, maxResolution } },
-        [ModelType.RECOGNITION]: { modelName, options: { minScore: minRecognitionScore } },
-      },
-    };
+    const request = ocrEntries({ modelName, minDetectionScore, minRecognitionScore, maxResolution });
+    if (selection.desktopOcr) {
+      const started = Date.now();
+      const size = await this.measure({ imagePath });
+      if (!size || size > 16 * 1024 * 1024) throw new Error('desktop_input_size_invalid');
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopOcr({ imagePath }, request);
+        const response = parseBoundOcrResult(result);
+        received = Buffer.byteLength(JSON.stringify(result));
+        outcome = 'success';
+        return response.ocr;
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    }
     const response = await this.predict<OcrResponse>(selection, { imagePath }, request);
     return response[ModelTask.OCR];
   }

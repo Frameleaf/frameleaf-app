@@ -33,6 +33,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
@@ -42,6 +43,7 @@ import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.ser
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
+import { OcrService } from 'src/services/ocr.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
@@ -51,6 +53,7 @@ import { controllerSetup, getKyselyDB } from 'test/utils.js';
 const desktop = process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT;
 const pack = process.env.FRAMELEAF_FACTORY_TEST_PACK;
 const cache = process.env.FRAMELEAF_FACTORY_MODEL_CACHE;
+const ocr = process.env.FRAMELEAF_FACTORY_TEST_WORKLOAD === 'ocr';
 const port = async () => {
   const socket = createTcpServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
@@ -83,8 +86,10 @@ it.skipIf(!desktop || !pack || !cache)(
       const runtime = JSON.parse(await readFile(join(pack!, 'manifest.json'), 'utf8'));
       const catalogue = JSON.parse(readFileSync('resources/desktop/model-catalogue.json', 'utf8'));
       const profile = catalogue.profiles.find(
-        (p: { runtimeSourceRevision: string; spec: { fixtureKind: string } }) =>
-          p.runtimeSourceRevision === runtime.sourceRevision && p.spec.fixtureKind === 'image',
+        (p: { workload: string; runtimeSourceRevision: string; spec: { fixtureKind: string } }) =>
+          p.runtimeSourceRevision === runtime.sourceRevision &&
+          p.spec.fixtureKind === 'image' &&
+          p.workload === (ocr ? 'ocr' : 'clip'),
       );
       expect(profile).toBeDefined();
       const image = Buffer.from(profile.fixtureBase64, 'base64');
@@ -93,46 +98,48 @@ it.skipIf(!desktop || !pack || !cache)(
       const mlPort = await port();
       const mlToken = randomBytes(32).toString('hex');
       const nasUrl = `http://127.0.0.1:${mlPort}`;
-      python = spawn(
-        join(pack!, 'payload', runtime.python),
-        [
-          '-I',
-          '-B',
-          '-c',
-          `from immich_ml.native_ort import configure; configure('CPUExecutionProvider'); import uvicorn; uvicorn.run('immich_ml.main:app',host='127.0.0.1',port=${mlPort},workers=1,access_log=False)`,
-        ],
-        {
-          cwd: root,
-          stdio: ['ignore', 'ignore', 'pipe'],
-          env: {
-            PATH: process.env.PATH,
-            FRAMELEAF_ML_AUTH_TOKEN: mlToken,
-            HF_HUB_OFFLINE: '1',
-            TRANSFORMERS_OFFLINE: '1',
-            MACHINE_LEARNING_MODEL_DOWNLOADS: 'false',
-            MACHINE_LEARNING_CACHE_FOLDER: cache!,
-            MACHINE_LEARNING_MODEL_INTRA_OP_THREADS: '4',
-            MACHINE_LEARNING_MODEL_INTER_OP_THREADS: '1',
-            MACHINE_LEARNING_REQUEST_THREADS: '1',
-            OMP_NUM_THREADS: '1',
-            OPENBLAS_NUM_THREADS: '1',
-            HF_HOME: join(root, 'hf'),
-            TORCH_HOME: join(root, 'torch'),
-            TMPDIR: root,
+      if (!ocr) {
+        python = spawn(
+          join(pack!, 'payload', runtime.python),
+          [
+            '-I',
+            '-B',
+            '-c',
+            `from immich_ml.native_ort import configure; configure('CPUExecutionProvider'); import uvicorn; uvicorn.run('immich_ml.main:app',host='127.0.0.1',port=${mlPort},workers=1,access_log=False)`,
+          ],
+          {
+            cwd: root,
+            stdio: ['ignore', 'ignore', 'pipe'],
+            env: {
+              PATH: process.env.PATH,
+              FRAMELEAF_ML_AUTH_TOKEN: mlToken,
+              HF_HUB_OFFLINE: '1',
+              TRANSFORMERS_OFFLINE: '1',
+              MACHINE_LEARNING_MODEL_DOWNLOADS: 'false',
+              MACHINE_LEARNING_CACHE_FOLDER: cache!,
+              MACHINE_LEARNING_MODEL_INTRA_OP_THREADS: '4',
+              MACHINE_LEARNING_MODEL_INTER_OP_THREADS: '1',
+              MACHINE_LEARNING_REQUEST_THREADS: '1',
+              OMP_NUM_THREADS: '1',
+              OPENBLAS_NUM_THREADS: '1',
+              HF_HOME: join(root, 'hf'),
+              TORCH_HOME: join(root, 'torch'),
+              TMPDIR: root,
+            },
           },
-        },
-      );
-      let pythonErrors = '';
-      python.stderr?.on('data', (bytes) => {
-        pythonErrors = (pythonErrors + String(bytes)).slice(-4096);
-      });
-      await vi.waitFor(
-        async () => {
-          expect(python!.exitCode, pythonErrors).toBeNull();
-          expect((await fetch(`${nasUrl}/ping`)).ok).toBe(true);
-        },
-        { timeout: 30_000, interval: 200 },
-      );
+        );
+        let pythonErrors = '';
+        python.stderr?.on('data', (bytes) => {
+          pythonErrors = (pythonErrors + String(bytes)).slice(-4096);
+        });
+        await vi.waitFor(
+          async () => {
+            expect(python!.exitCode, pythonErrors).toBeNull();
+            expect((await fetch(`${nasUrl}/ping`)).ok).toBe(true);
+          },
+          { timeout: 30_000, interval: 200 },
+        );
+      }
 
       db = await getKyselyDB();
       for (const table of [
@@ -168,12 +175,12 @@ it.skipIf(!desktop || !pack || !cache)(
         url: nasUrl,
         authToken: mlToken,
         enabled: true,
-        workloads: [MlWorkload.Clip],
+        workloads: [ocr ? MlWorkload.Ocr : MlWorkload.Clip],
         budgetLimitUsd: null,
         maxRuntimeMinutes: null,
         maxUploadBytes: null,
       });
-      await routes.setDefaultRoute(MlWorkload.Clip, destination.id);
+      await routes.setDefaultRoute(ocr ? MlWorkload.Ocr : MlWorkload.Clip, destination.id);
       const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
       ml.setup(config.machineLearning);
       const broker = new DesktopMlRepository(db);
@@ -184,7 +191,15 @@ it.skipIf(!desktop || !pack || !cache)(
       const workers = new DesktopWorkerRepository(db);
       const producer = new DesktopNasProducerService(ml, routes, index, configRepo, metadata);
       const auth = new DesktopWorkerAuthService(workers, metadata);
-      const activation = new DesktopAssistanceActivationService(workers, index, producer, policies, metadata, routes);
+      const activation = new DesktopAssistanceActivationService(
+        workers,
+        index,
+        producer,
+        policies,
+        metadata,
+        routes,
+        ml,
+      );
       const qualification = new DesktopQualificationService(
         auth,
         new DesktopWorkerChallengeRepository(db),
@@ -320,10 +335,24 @@ it.skipIf(!desktop || !pack || !cache)(
           workRoot: join(root, 'desktop'),
         }) + '\n',
       );
-      expect(await message('NATIVE_QUALIFIED')).toEqual({ roles: 3 });
-      expect((await workers.session(session.id, session.tokenHash))!.modelKeys).toHaveLength(3);
+      expect(await message('NATIVE_QUALIFIED')).toEqual({ roles: ocr ? 1 : 3 });
+      expect((await workers.session(session.id, session.tokenHash))!.modelKeys).toHaveLength(ocr ? 1 : 3);
 
       const jobs = new JobRepository({} as never, configRepo, {} as never, LoggingRepository.create(), db);
+      const ocrFixture = ocr
+        ? newMediumService(OcrService, {
+            database: db,
+            real: [AssetRepository, AssetJobRepository, ConfigRepository, OcrRepository, SystemMetadataRepository],
+            mock: [LoggingRepository],
+          })
+        : undefined;
+      const handler = ocrFixture?.sut ?? sut;
+      if (ocrFixture)
+        Object.assign(ocrFixture.sut, {
+          mlDestinationRepository: routes,
+          machineLearningRepository: ml,
+          jobRepository: jobs,
+        });
       Object.assign(sut, { machineLearningRepository: ml, jobRepository: jobs });
       // Register this fixture's real follow-up without starting unrelated background executors.
       const followup = new Reflector().get(MetadataKey.JobConfig, SmartInfoService.prototype.handlePostprocessClip);
@@ -333,9 +362,11 @@ it.skipIf(!desktop || !pack || !cache)(
         queueName: followup.queue,
         handler: sut.handlePostprocessClip.bind(sut),
       };
+      const queue = ocr ? QueueName.Ocr : QueueName.SmartSearch;
+      const jobName = ocr ? JobName.Ocr : JobName.SmartSearch;
       const store = new SqlQueueStore(db);
       const workerId = randomUUID();
-      await store.initialize([QueueName.SmartSearch], workerId);
+      await store.initialize([queue], workerId);
       const search = ctx.get(SearchRepository);
       {
         const { asset } = await ctx.newAsset({
@@ -347,16 +378,16 @@ it.skipIf(!desktop || !pack || !cache)(
         await ctx.newAssetFile({ assetId: asset.id!, path, type: AssetFileType.Preview });
         await store.enqueue([
           {
-            queue: QueueName.SmartSearch,
-            name: JobName.SmartSearch,
+            queue,
+            name: jobName,
             data: { id: asset.id },
             safeToRetry: true,
             sensitive: false,
             deadlineMs: 120_000,
           },
         ]);
-        const [claim] = await store.claim(QueueName.SmartSearch, workerId, 1);
-        expect(claim.name).toBe(JobName.SmartSearch);
+        const [claim] = await store.claim(queue, workerId, 1);
+        expect(claim.name).toBe(jobName);
         const context: QueueExecution = {
           claim,
           signal: abort.signal,
@@ -374,7 +405,9 @@ it.skipIf(!desktop || !pack || !cache)(
               abort.abort();
             });
         }, 10_000);
-        const prepared = queueExecution.run(context, () => sut.handleEncodeClip({ id: asset.id! }));
+        const prepared = queueExecution.run(context, () =>
+          ocr ? (handler as OcrService).handleOcr({ id: asset.id! }) : sut.handleEncodeClip({ id: asset.id! }),
+        );
         native.stdin!.write('{"command":"execute"}\n');
         expect(await message('NATIVE_EXECUTED')).toEqual({ iteration: 1 });
         expect(await prepared).toBe(JobStatus.Success);
@@ -401,9 +434,15 @@ it.skipIf(!desktop || !pack || !cache)(
           .execute();
         expect(await publish()).toBe(true);
         for (const after of context.afterCommit ?? []) await after();
-        const row = await search.getEmbedding(asset.id!);
-        expect(row?.producerModelKey).toBe(profile.modelKey);
-        expect(JSON.parse(row!.embedding)).toHaveLength(768);
+        if (ocr) {
+          const rows = await db.selectFrom('asset_ocr').select('text').where('assetId', '=', asset.id!).execute();
+          expect(rows.map((row) => row.text)).toEqual(profile.spec.expectedOutput.ocr.text);
+          expect(python).toBeUndefined();
+        } else {
+          const row = await search.getEmbedding(asset.id!);
+          expect(row?.producerModelKey).toBe(profile.modelKey);
+          expect(JSON.parse(row!.embedding)).toHaveLength(768);
+        }
         expect(
           (await db.selectFrom('job').select('state').where('id', '=', claim.id).executeTakeFirstOrThrow()).state,
         ).toBe('completed');

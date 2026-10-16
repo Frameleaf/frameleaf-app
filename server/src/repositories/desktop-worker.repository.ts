@@ -126,10 +126,11 @@ export class DesktopWorkerRepository {
       .where('sessionId', '=', grant.sessionId)
       .where('authorizationEpoch', '=', grant.authorizationEpoch)
       .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
-      .where('modelKey', 'in', allowed)
+      .where('modelKey', 'in', [...worker.modelKeys, current.modelKey])
       .execute();
     const retained = worker.modelKeys.filter((key) => live.some((row) => row.modelKey === key));
     const keys = [...new Set([...retained, current.modelKey])].sort();
+    if (keys.length > 64) return false;
     await db
       .updateTable('desktop_worker_session')
       .set({ modelKeys: sql<string[]>`${keys}::jsonb` })

@@ -443,11 +443,12 @@ export class MlDestinationRepository {
     selection: Pick<MlSelection, 'destinationId' | 'kind' | 'endpoint'>,
     revisionId: string,
     tx?: Transaction<DB>,
+    workload: MlWorkload = MlWorkload.Clip,
   ) {
     const { destinationId } = selection;
-    if (tx) await this.lockRoute(tx, MlWorkload.Clip);
+    if (tx) await this.lockRoute(tx, workload);
     const repository = tx ? new MlDestinationRepository(tx) : this;
-    const route = (await repository.getRouteStates()).find((route) => route.workload === MlWorkload.Clip);
+    const route = (await repository.getRouteStates()).find((route) => route.workload === workload);
     if (route?.origin !== 'default' || route.destinationId !== destinationId || route.revisionId !== revisionId)
       throw new Error('desktop_pool_route_changed');
     const destination = await (tx ?? this.db)
@@ -460,7 +461,7 @@ export class MlDestinationRepository {
       !destination ||
       !destination.enabled ||
       destination.kind !== selection.kind ||
-      !destination.workloads.includes(MlWorkload.Clip) ||
+      !destination.workloads.includes(workload) ||
       destination.url !== selection.endpoint.url ||
       (destination.authToken ?? null) !== (selection.endpoint.authToken ?? null)
     )
