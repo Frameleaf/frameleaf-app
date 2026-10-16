@@ -1126,6 +1126,45 @@ describe(CloudMlJobService.name, () => {
         uploads: { v1: { done: false, parts: [{ partNumber: 1, etag: '"e1"' }] } },
       });
 
+    it.each([false, true])('verifies readmission consent despite a spent budget (stale: %s)', async (stale) => {
+      mocks.mlDestination.getById.mockResolvedValue({
+        ...cloud,
+        budgetLimitUsd: 0,
+        consentVersion: stale ? 'old-consent' : cloud.consentVersion,
+      });
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      if (stale) {
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          OPERATION_ID,
+          'claim',
+          expect.objectContaining({ errorCode: 'cloud_ml_consent_version_outdated' }),
+          { retry: false },
+        );
+      } else {
+        expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+        expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['getById', 'recordProbe'] as const)('sends nothing when readmission state fails at %s', async (stage) => {
+      mocks.mlDestination[stage].mockRejectedValue(new Error('admission database unavailable'));
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).toHaveBeenCalled();
+      expect(written()).toMatchObject({ waiting: { code: 'cloud_ml_consent_unconfirmed' } });
+    });
+
     it.each([
       ['its own hold took the rest of the AI Wallet', { balanceUsd: 5, heldUsd: 5 }],
       ["today's AI Wallet limit was reached after it was created", { dailyCapUsd: 20, spentTodayUsd: 20 }],

@@ -429,6 +429,51 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
+  it.each([false, true])(
+    'checks consent during created-job readmission despite a spent budget (stale: %s)',
+    async (stale) => {
+      const destination = {
+        ...mlDestinationStub.frameleafCloudConsented,
+        budgetLimitUsd: 0,
+        consentVersion: stale ? 'old-consent' : mlDestinationStub.frameleafCloudConsented.consentVersion,
+      };
+      const d = deps({ destination, probe: mlProbeStub.frameleafCloud });
+      const selection = selectMlDestination(d, {
+        workload: MlWorkload.Enrichment,
+        destinationId: destination.id,
+        createdCloudJob: true,
+      });
+
+      if (stale) {
+        await expect(selection).rejects.toMatchObject({ refusal: MlAdmissionRefusal.ConsentVersionOutdated });
+      } else {
+        await expect(selection).resolves.toMatchObject({ destinationId: destination.id });
+      }
+      expect(d.machineLearningRepository.probe).toHaveBeenCalledWith(expect.anything(), { maxAgeMs: 0 });
+      expect(d.mlDestinationRepository.getSpend).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps spending limits for new admissions alongside created-job readmission', async () => {
+    const destination = { ...mlDestinationStub.frameleafCloudConsented, budgetLimitUsd: 0 };
+    const d = deps({ destination, probe: mlProbeStub.frameleafCloud });
+
+    await expect(
+      selectMlDestination(d, { workload: MlWorkload.Enrichment, destinationId: destination.id }),
+    ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.BudgetExceeded });
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('keeps local spending limits when a caller requests created-job readmission', async () => {
+    const destination = { ...mlDestinationStub.local, budgetLimitUsd: 0 };
+    const d = deps({ destination });
+
+    await expect(
+      selectMlDestination(d, { workload: MlWorkload.Face, destinationId: destination.id, createdCloudJob: true }),
+    ).rejects.toMatchObject({ refusal: MlAdmissionRefusal.BudgetExceeded });
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
   it.each([0, 1000])('does not persist a local observation already recorded or superseded (%i ms)', async (age) => {
     const d = deps({
       destination: {

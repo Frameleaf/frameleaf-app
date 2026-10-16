@@ -961,7 +961,7 @@ export class CloudMlBatchService extends BaseService {
    */
   private async readmitBatch(run: BatchRun, gateway: CloudMlGateway, jobId: string) {
     try {
-      await this.admitBatch(run);
+      await this.admitBatch(run, true);
     } catch (error) {
       const refusal = admissionRefusalOf(error);
       const stops =
@@ -974,8 +974,8 @@ export class CloudMlBatchService extends BaseService {
       if (batchRefusalOf(error)?.transient) {
         throw error;
       }
-      if (consentUnconfirmedOf(error)) {
-        // the cloud refused its status check before the consent version could be compared: send nothing now
+      if (!refusal || consentUnconfirmedOf(error)) {
+        // An incomplete admission check cannot authorize another upload.
         throw new BatchRefusal(
           'cloud_description_consent_unconfirmed',
           `The consent in force could not be confirmed (${errorMessage(error)}); no photo was sent, it is tried again`,
@@ -986,8 +986,8 @@ export class CloudMlBatchService extends BaseService {
     }
   }
 
-  private async admitBatch(run: BatchRun): Promise<MlSelection> {
-    const selection = await this.admit(run.snapshot.destinationId, run.operation.id);
+  private async admitBatch(run: BatchRun, createdCloudJob = false): Promise<MlSelection> {
+    const selection = await this.admit(run.snapshot.destinationId, run.operation.id, createdCloudJob);
     if (selection.kind !== MlDestinationKind.FrameleafCloud) {
       throw new BatchRefusal(
         'cloud_description_not_cloud',
@@ -1899,14 +1899,20 @@ export class CloudMlBatchService extends BaseService {
   }
 
   /** Admission with the kill switch: processing on and descriptions allowed, then consent and the rest. */
-  private admit(destinationId: string, jobId: string | null): Promise<MlSelection> {
+  private admit(destinationId: string, jobId: string | null, createdCloudJob = false): Promise<MlSelection> {
     return selectMlDestination(
       {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
         cloudMlSettings: () => this.cloudMlSettings(),
       },
-      { workload: MlWorkload.Enrichment, destinationId, jobId, jobName: JobName.CloudMlDescriptionBatch },
+      {
+        workload: MlWorkload.Enrichment,
+        destinationId,
+        jobId,
+        jobName: JobName.CloudMlDescriptionBatch,
+        createdCloudJob,
+      },
     );
   }
 

@@ -1314,6 +1314,48 @@ describe(CloudMlBatchService.name, () => {
       });
     });
 
+    it.each([false, true])('verifies readmission consent despite a spent budget (stale: %s)', async (stale) => {
+      mocks.mlDestination.getById.mockResolvedValue({
+        ...cloud,
+        budgetLimitUsd: 0,
+        consentVersion: stale ? 'old-consent' : cloud.consentVersion,
+      });
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      if (stale) {
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          BATCH_ID,
+          'claim-1',
+          expect.objectContaining({ errorCode: 'cloud_description_consent_version_outdated' }),
+          { retry: false },
+        );
+      } else {
+        expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), admitted.jobId);
+        expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['getById', 'recordProbe'] as const)('sends nothing when readmission state fails at %s', async (stage) => {
+      mocks.mlDestination[stage].mockRejectedValue(new Error('admission database unavailable'));
+
+      await sut.step(submitted({ status: 'admitted', started: false, etag: null }), 'claim-1', now);
+
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        BATCH_ID,
+        'claim-1',
+        expect.objectContaining({ errorCode: 'cloud_description_consent_unconfirmed' }),
+        { retry: true },
+      );
+    });
+
     it('sends no photo when the cloud refused its own status check before consent could be compared (FL-201 review P2)', async () => {
       mocks.mlDestination.getById.mockResolvedValue({ ...cloud, consentVersion: '2026-09-01.1' });
       mocks.machineLearning.probe.mockResolvedValue({

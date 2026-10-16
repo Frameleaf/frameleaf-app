@@ -2884,7 +2884,7 @@ export class CloudMlJobService {
    */
   private async readmit(run: JobRun, client: FrameleafCloudJobClient) {
     try {
-      await this.admit(run.snapshot, null, run.operation.id);
+      await this.admit(run.snapshot, null, run.operation.id, true);
     } catch (error) {
       const refusal = admissionRefusalOf(error);
       if (refusal && STOPS_CREATED_CLOUD_JOB.has(refusal)) {
@@ -2901,8 +2901,8 @@ export class CloudMlJobService {
       if (failureOf(error)?.retry) {
         throw error;
       }
-      if (consentUnconfirmedOf(error)) {
-        // the cloud refused its status check before the consent version could be compared: send nothing now
+      if (!refusal || consentUnconfirmedOf(error)) {
+        // An incomplete admission check cannot authorize another upload.
         throw new CloudMlJobFailure(
           'cloud_ml_consent_unconfirmed',
           `The consent in force could not be confirmed (${errorMessage(error)}); nothing was sent, it is tried again`,
@@ -2917,6 +2917,7 @@ export class CloudMlJobService {
     target: Pick<CloudMlJobSnapshot, 'destinationId' | 'appWorkload'>,
     holdUsd: number | null,
     jobId: string | null,
+    createdCloudJob = false,
   ) {
     await selectMlDestination(
       {
@@ -2930,6 +2931,7 @@ export class CloudMlJobService {
         jobId,
         jobName: MediaOperationKind.CloudMlJob,
         holdUsd,
+        createdCloudJob,
       },
     );
   }

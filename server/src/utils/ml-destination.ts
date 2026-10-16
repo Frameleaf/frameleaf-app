@@ -141,6 +141,8 @@ export type MlSelectionRequest = {
   /** The durable job this request belongs to, recorded with the accounting row. */
   jobId?: string | null;
   jobName?: string | null;
+  /** Created cloud jobs already hold funds; their uploads still require current consent. */
+  createdCloudJob?: boolean;
   /** FL-159: the AI Wallet hold a time-priced Frameleaf Cloud job needs, when it is known. */
   holdUsd?: number | null;
   /**
@@ -494,6 +496,7 @@ export type MlAdmissionInput = {
    * rather than refused; a live admission always checks again first.
    */
   fromStoredCheck?: boolean;
+  createdCloudJob?: boolean;
 };
 
 export type MlAdmissionVerdict =
@@ -645,6 +648,7 @@ export const evaluateAdmission = ({
   holdUsd,
   studioFeature,
   fromStoredCheck,
+  createdCloudJob,
 }: MlAdmissionInput): MlAdmissionVerdict => {
   if (!destination) {
     return refuse(MlAdmissionRefusal.DestinationMissing, 'the destination does not exist');
@@ -687,7 +691,7 @@ export const evaluateAdmission = ({
       `${destination.name}: disclosure pending for ${workload}; nothing is sent until its approved disclosure is available`,
     );
   }
-  if (destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
+  if (!(isCloud && createdCloudJob) && destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
     return refuse(
       MlAdmissionRefusal.BudgetExceeded,
       `${destination.name} has spent ${spentUsd.toFixed(2)} USD of its ${destination.budgetLimitUsd.toFixed(2)} USD limit`,
@@ -796,8 +800,9 @@ export const selectMlDestination = async (
 
   const resolved = resolveEndpoint(destination);
   const endpoint = resolved ? { ...resolved, assertAuthority } : null;
+  const createdCloudJob = destination.kind === MlDestinationKind.FrameleafCloud && request.createdCloudJob === true;
   const spentUsd =
-    destination.budgetLimitUsd === null
+    destination.budgetLimitUsd === null || createdCloudJob
       ? 0
       : await mlDestinationRepository.getSpend(destination.id, budgetWindowStart());
 
@@ -811,6 +816,7 @@ export const selectMlDestination = async (
     spentUsd,
     holdUsd: request.holdUsd,
     studioFeature: request.studioFeature,
+    createdCloudJob,
   });
   if (!preflight.admitted && preflight.refusal !== MlAdmissionRefusal.DestinationUnhealthy) {
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
@@ -859,6 +865,7 @@ export const selectMlDestination = async (
     modelId,
     holdUsd: request.holdUsd,
     studioFeature: request.studioFeature,
+    createdCloudJob,
   });
   if (!verdict.admitted) {
     throw new MlDestinationRefusedError(
