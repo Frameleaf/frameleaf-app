@@ -3,7 +3,7 @@ import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { link, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -81,6 +81,10 @@ import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...original, link: vi.fn(original.link) };
+});
 vi.mock('src/utils/cloud-backup-key-channel.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/cloud-backup-key-channel.js')>()),
   loadBackupWorkerIdentity: vi.fn(),
@@ -3539,6 +3543,7 @@ describe(CloudBackupService.name, () => {
       });
 
     beforeEach(() => {
+      vi.mocked(link).mockResolvedValue(undefined);
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
@@ -3549,6 +3554,8 @@ describe(CloudBackupService.name, () => {
         Promise.resolve({ size: sha256 === SHA_SIDECAR ? 5 : 100, sha256 }),
       );
     });
+
+    afterEach(() => vi.mocked(link).mockReset());
 
     it('queues a restore under the bucket lock, named without the item, only from a kept backup', async () => {
       await expect(
@@ -3590,11 +3597,11 @@ describe(CloudBackupService.name, () => {
         expect.objectContaining({ bucket: s3.bucket }),
         `o/${SHA_A}`,
         key,
-        // downloaded beside the target, published by a rename only once its size and hash match
+        // Downloaded beside the target, then published exclusively after its size and hash match.
         expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/\.cloud-restore-[\da-f-]+\.tmp$/),
         SHA_A,
       );
-      expect(mocks.storage.rename).toHaveBeenCalledWith(
+      expect(link).toHaveBeenCalledWith(
         vi.mocked(store.download).mock.calls[0][3],
         expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
       );
