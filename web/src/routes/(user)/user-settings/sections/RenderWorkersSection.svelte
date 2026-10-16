@@ -63,11 +63,17 @@
     return () => clearInterval(timer);
   });
 
+  // The 30 s poll reports an outage once, not on every failed check, and again only after a recovery.
+  let workersFailing = false;
   const refreshWorkers = async () => {
     try {
       workers = await listRenderWorkers();
+      workersFailing = false;
     } catch (error) {
-      handleError(error, $t('frameleaf_render_workers_unable_to_load'));
+      if (!workersFailing) {
+        workersFailing = true;
+        handleError(error, $t('frameleaf_render_workers_unable_to_load'));
+      }
     }
   };
 
