@@ -555,6 +555,52 @@ describe(AssetService.name, () => {
   });
 
   describe('update', () => {
+    it.each([undefined, null])('admits origin edits before writing with motion id %s', async (livePhotoVideoId) => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      await expect(sut.update(authStub.admin, asset.id, { description: 'Mine', livePhotoVideoId })).rejects.toThrow(
+        'origin busy',
+      );
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.withLivePhotoUpdate).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('records overrides before origin commit and dispatches sidecars afterward', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      let admitted = false;
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+        admitted = true;
+        const result = await write();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          [asset.id],
+          ['description'],
+          authStub.admin.user.id,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.asset.upsertExif.mockImplementation(() => {
+        expect(admitted).toBe(true);
+        expect(committed).toBe(false);
+        return Promise.resolve(undefined as never);
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.update(authStub.admin, asset.id, { description: 'Mine' });
+      expect(committed).toBe(true);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarWrite, data: { id: asset.id } });
+    });
+
     beforeEach(() => {
       mocks.asset.withLivePhotoUpdate.mockImplementation((_id, _motion, write) =>
         write(mocks.asset as never, mocks.access as never),

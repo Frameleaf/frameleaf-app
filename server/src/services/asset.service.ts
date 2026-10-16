@@ -48,7 +48,6 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
@@ -215,35 +214,50 @@ export class AssetService extends BaseService {
 
     const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
       dto;
-    let asset: Awaited<ReturnType<AssetRepository['update']>>;
-    if (rest.livePhotoVideoId !== undefined) {
-      asset = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
-    } else {
-      const sidecarIds = await this.updateExif({
-        id,
-        description,
-        dateTimeOriginal,
-        latitude,
-        longitude,
-        rating,
-        city,
-        state,
-        country,
-      });
-      for (const id of sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
-      const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
-      asset = await this.assetRepository.update({
-        id,
-        ...getAssetDateTimeUpdates(dateTimeOriginal),
-        ...rest,
-        ...(storedVisibility && { visibility: storedVisibility }),
-      });
+    const result = await this.partnerOriginRepository.withOriginEdit('asset', [id], [], async () => {
+      let result: Awaited<ReturnType<AssetService['updateLivePhoto']>>;
+      if (rest.livePhotoVideoId !== undefined) {
+        result = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
+      } else {
+        const sidecarIds = await this.updateExif({
+          id,
+          description,
+          dateTimeOriginal,
+          latitude,
+          longitude,
+          rating,
+          city,
+          state,
+          country,
+        });
+        const locked =
+          visibility === AssetVisibility.Locked
+            ? await this.assetRepository.lock([id], AssetLockReason.Marked, auth.user.id)
+            : [];
+        const asset = await this.assetRepository.update({
+          id,
+          ...getAssetDateTimeUpdates(dateTimeOriginal),
+          ...rest,
+          ...(visibility && visibility !== AssetVisibility.Locked && { visibility }),
+        });
+        if (!asset) throw new BadRequestException('Asset not found');
+        result = { asset, sidecarIds, locked, hiddenId: undefined, shownId: undefined };
+      }
+      await this.partnerOriginRepository.markOverridden('asset', [id], getAssetEditFields(dto), auth.user.id);
+      return result;
+    });
+    const { asset } = result;
+    for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+    if (result.locked.length > 0) {
+      await this.afterAssetsLocked(result.locked);
+      await this.notifyAssetsUpdated(
+        result.locked.filter((assetId) => assetId !== id),
+        auth.user.id,
+      );
     }
-
-    if (!asset) {
-      throw new BadRequestException('Asset not found');
-    }
-
+    if (result.hiddenId)
+      await this.eventRepository.emit('AssetHide', { assetId: result.hiddenId, userId: auth.user.id });
+    if (result.shownId) await this.eventRepository.emit('AssetShow', { assetId: result.shownId, userId: auth.user.id });
     // FL-326: an edited field of a partner copy is the owner's from now on; copies of this item follow it
     await recordAssetEdit(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
@@ -394,18 +408,7 @@ export class AssetService extends BaseService {
       const locked = locking ? await assets.lock([id, ...motionIds], AssetLockReason.Marked, auth.user.id) : [];
       return { asset, sidecarIds, hiddenId, shownId, locked };
     });
-    for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
-    if (result.locked.length > 0) {
-      await this.afterAssetsLocked(result.locked);
-      await this.notifyAssetsUpdated(
-        result.locked.filter((assetId) => assetId !== id),
-        auth.user.id,
-      );
-    }
-    if (result.hiddenId)
-      await this.eventRepository.emit('AssetHide', { assetId: result.hiddenId, userId: auth.user.id });
-    if (result.shownId) await this.eventRepository.emit('AssetShow', { assetId: result.shownId, userId: auth.user.id });
-    return result.asset;
+    return result;
   }
 
   async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto): Promise<void> {

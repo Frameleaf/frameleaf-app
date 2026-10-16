@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -81,6 +81,33 @@ describe('Matched import metadata fills', () => {
     expect((await assets.getById(asset.id, { exifInfo: true }))?.exifInfo?.description).toBe('Imported');
     expect((await origins.getOrigin('asset', asset.id))?.overriddenFields).toContain('description');
   });
+
+  it.each([false, true])(
+    'rolls back an ordinary edit and its Live Photo change %s when override recording fails',
+    async (livePhoto) => {
+      const { sut, ctx, auth, asset, assets, jobs } = await setup();
+      const motion = livePhoto
+        ? (await ctx.newAsset({ ownerId: auth.user.id, type: AssetType.Video, visibility: AssetVisibility.Hidden }))
+            .asset
+        : undefined;
+      if (motion) await assets.update({ id: asset.id, livePhotoVideoId: motion.id });
+      vi.spyOn(ctx.get(PartnerOriginRepository), 'markOverridden').mockRejectedValueOnce(new Error('marker failed'));
+      await expect(
+        sut.update(auth, asset.id, {
+          description: 'Mine',
+          isFavorite: true,
+          ...(livePhoto && { livePhotoVideoId: null }),
+        }),
+      ).rejects.toThrow('marker failed');
+      expect(await assets.getById(asset.id, { exifInfo: true })).toMatchObject({
+        isFavorite: false,
+        exifInfo: null,
+        livePhotoVideoId: motion?.id ?? null,
+      });
+      if (motion) expect((await assets.getById(motion.id))?.visibility).toBe(AssetVisibility.Hidden);
+      expect(jobs.queue).not.toHaveBeenCalled();
+    },
+  );
 
   it('fills an absent EXIF row and commits metadata locks with its sidecar job', async () => {
     const { sut, auth, asset, assets } = await setup();
