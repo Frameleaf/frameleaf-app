@@ -1012,22 +1012,27 @@ export class CloudMlJobService {
         kept.push(...theirs.slice(-room));
       }
       const records = [...confirmed, ...kept, ...(add ? [add] : [])];
-      for (const entry of waiting) {
-        if (!kept.includes(entry)) {
-          removed.push(entry.workDir);
-        }
-      }
-      // a prepared copy stays while an estimate or an unfinished job (queued, paused, uploading) needs it
+      // An unfinished job owns its files even if writing its estimate link failed after creation.
       const jobs = await this.mediaOperationRepository.listUnfinishedCloudMlJobSnapshots();
+      const jobWorkDirs = jobs.flatMap((snapshot) => {
+        const workDir = (snapshot as { workDir?: unknown } | null)?.workDir;
+        return typeof workDir === 'string' ? [workDir] : [];
+      });
       const jobInputs = jobs.flatMap((snapshot) => {
         const inputs = (snapshot as { inputs?: unknown } | null)?.inputs;
         return Array.isArray(inputs) ? inputs.map((input) => String((input as { path?: unknown })?.path ?? '')) : [];
       });
-      const inUse = new Set(
-        [...records.flatMap((entry) => entry.inputs.map((input) => input.path)), ...jobInputs].map((file) =>
+      const inUse = new Set([
+        ...jobWorkDirs,
+        ...[...records.flatMap((entry) => entry.inputs.map((input) => input.path)), ...jobInputs].map((file) =>
           path.dirname(file),
         ),
-      );
+      ]);
+      for (const entry of waiting) {
+        if (!kept.includes(entry) && !inUse.has(entry.workDir)) {
+          removed.push(entry.workDir);
+        }
+      }
       const prepared = (store.prepared ?? []).filter((entry) => {
         const keep =
           inUse.has(entry.dir) || this.preparing.has(entry.dir) || now.getTime() - Date.parse(entry.at) < DAY_MS;

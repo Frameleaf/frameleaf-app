@@ -2330,6 +2330,47 @@ describe(CloudMlJobService.name, () => {
     });
   });
 
+  describe('estimate pruning', () => {
+    it.each(['work directory', 'input directory'])(
+      "retains an unfinished job's %s after its estimate link fails",
+      async (reference) => {
+        const estimate = await sut.estimate(owner, preview(), now);
+        const [record] = estimates();
+        mocks.systemMetadata.set.mockRejectedValueOnce(new Error('estimate link failed'));
+
+        await expect(
+          sut.create(
+            owner,
+            { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+            now,
+          ),
+        ).rejects.toThrow('estimate link failed');
+        expect(created).toBeDefined();
+        expect(estimates()[0].operationId).toBeNull();
+        mocks.mediaOperation.listUnfinishedCloudMlJobSnapshots.mockResolvedValue([
+          reference === 'work directory'
+            ? { ...created!.snapshot, inputs: [{ path: '/shared/prepared/input.mp4' }] }
+            : { ...created!.snapshot, workDir: '/another/job/work' },
+        ]);
+
+        await sut.pruneEstimates(new Date(record.expiresAt));
+
+        expect(estimates()).toEqual([]);
+        expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(record.workDir, expect.anything());
+      },
+    );
+
+    it("removes an expired unconfirmed estimate's unused work directory", async () => {
+      await sut.estimate(owner, preview(), now);
+      const [record] = estimates();
+
+      await sut.pruneEstimates(new Date(record.expiresAt));
+
+      expect(estimates()).toEqual([]);
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(record.workDir, { recursive: true, force: true });
+    });
+  });
+
   describe('jobs no worker holds', () => {
     beforeEach(async () => {
       await estimateAndConfirm();
