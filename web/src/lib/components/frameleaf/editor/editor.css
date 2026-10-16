@@ -197,6 +197,41 @@
   height: 34px;
   min-width: 36px;
 }
+/*
+ * VIEWER-P5 (Editor.jsx:2059-2152): a wide photo editor's bar is the template's one row. The title
+ * takes the room; history, compare and the labelled actions follow it, split by thin separators.
+ */
+.ed-top.grouped.inline-actions {
+  display: flex;
+  gap: var(--fl-space-1);
+}
+.ed-top.inline-actions .ed-top-start {
+  flex: 1;
+}
+.ed-top.inline-actions .ed-top-center {
+  gap: 0;
+}
+.ed-top.inline-actions .ed-cluster {
+  gap: var(--fl-space-1);
+  padding: 0;
+  border: 0;
+}
+.ed-top.inline-actions .ed-cluster .ed-tool {
+  height: 38px;
+  min-width: 38px;
+}
+.ed-top.inline-actions .ed-cluster + .ed-cluster::before,
+.ed-top.inline-actions .ed-top-end::before {
+  content: '';
+  flex-shrink: 0;
+  width: 1px;
+  height: 24px;
+  margin: 0 6px;
+  background: var(--fl-viewer-border);
+}
+.ed-top.inline-actions .ed-top-end {
+  flex-shrink: 0;
+}
 .ed-title strong {
   display: flex;
   align-items: center;
@@ -2060,6 +2095,14 @@
 .ed-toggle p {
   grid-column: 1;
   margin: 0;
+}
+/* VIEWER-P6: the Enhance & upscale card stacks its parts in one column (editor.css .ed-toggle.ed-cloud). */
+.ed-toggle.ed-cloud {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--fl-space-2);
+}
+.ed-toggle.ed-cloud .rs-actions {
+  margin-top: var(--fl-space-1);
 }
 .ed-switch {
   position: relative;

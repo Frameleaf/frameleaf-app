@@ -166,6 +166,7 @@
     mdiVectorEllipse,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import {
     clearEditorContinuity,
     continuityBase,
@@ -1085,21 +1086,63 @@
       onSelect: () => (tool = 'versions'),
     },
   ]);
+  /**
+   * VIEWER-P5 (Editor.jsx:2112-2149, `.ed-wide`): on a wide window the top bar carries Copy, Paste,
+   * Revert, Versions and Open in Studio as labelled tools; below 1101px they fold into More.
+   */
+  const wideTopBar = new MediaQuery('min-width: 1101px');
+  /** With unsaved edits, Studio asks what to open: these two choices (inline or in More). */
+  const studioItems = $derived.by((): EditorMenuItem[] =>
+    dirty
+      ? [
+          {
+            id: 'studio-save',
+            label: $t('frameleaf_editor_studio_save_first'),
+            icon: mdiOpenInApp,
+            disabled: saving || !!developError || !!studioAfter,
+            onSelect: () => void saveVersion(true),
+          },
+          {
+            id: 'studio',
+            label: $t('frameleaf_editor_studio_without_edits'),
+            icon: mdiImageOutline,
+            title: $t('frameleaf_editor_studio_without_edits_title'),
+            onSelect: openStudio,
+          },
+        ]
+      : [
+          {
+            id: 'studio',
+            label: $t('frameleaf_editor_open_in_studio'),
+            icon: mdiOpenInApp,
+            disabled: !!studioAfter,
+            onSelect: openStudio,
+          },
+        ],
+  );
   /*
    * More holds everything that is not history, compare, versions or Save: the settings clipboard,
-   * Reset all edits, RAW development, how HDR is shown on this screen, and the way to Studio. Each
-   * lives in one place at every width.
+   * Reset all edits, RAW development, how HDR is shown on this screen, and the way to Studio. On a
+   * wide window the clipboard, Revert and Studio sit in the bar instead (VIEWER-P5), so each still
+   * lives in one place.
    */
-  const moreItems = $derived.by((): EditorMenuItem[] => [
-    { id: 'copy', label: $t('frameleaf_editor_copy_settings'), icon: mdiContentCopy, onSelect: copySettings },
-    {
-      id: 'paste',
-      label: $t('frameleaf_editor_paste_settings'),
-      icon: mdiContentDuplicate,
-      disabled: !settingsClipboard,
-      onSelect: pasteSettings,
-    },
-    { id: 'revert', label: $t('frameleaf_editor_reset_all'), icon: mdiRestore, onSelect: revertDraft },
+  const moreItems = $derived.by((): EditorMenuItem[] =>
+    moreEntries().map((item, index) => (index === 0 && item.separated ? { ...item, separated: false } : item)),
+  );
+  const moreEntries = (): EditorMenuItem[] => [
+    ...(wideTopBar.current
+      ? []
+      : [
+          { id: 'copy', label: $t('frameleaf_editor_copy_settings'), icon: mdiContentCopy, onSelect: copySettings },
+          {
+            id: 'paste',
+            label: $t('frameleaf_editor_paste_settings'),
+            icon: mdiContentDuplicate,
+            disabled: !settingsClipboard,
+            onSelect: pasteSettings,
+          },
+          { id: 'revert', label: $t('frameleaf_editor_reset_all'), icon: mdiRestore, onSelect: revertDraft },
+        ]),
     // The Versions popover leaves the phone's single row; its list is one step away here.
     ...(mediaQueryManager.maxMd
       ? [
@@ -1143,35 +1186,10 @@
         ]
       : []),
     // With unsaved edits the person chooses what Studio opens on, since Studio does not show a draft.
-    ...(dirty
-      ? [
-          {
-            id: 'studio-save',
-            label: $t('frameleaf_editor_studio_save_first'),
-            icon: mdiOpenInApp,
-            separated: true,
-            disabled: saving || !!developError || !!studioAfter,
-            onSelect: () => void saveVersion(true),
-          },
-          {
-            id: 'studio',
-            label: $t('frameleaf_editor_studio_without_edits'),
-            icon: mdiImageOutline,
-            title: $t('frameleaf_editor_studio_without_edits_title'),
-            onSelect: openStudio,
-          },
-        ]
-      : [
-          {
-            id: 'studio',
-            label: $t('frameleaf_editor_open_in_studio'),
-            icon: mdiOpenInApp,
-            separated: true,
-            disabled: !!studioAfter,
-            onSelect: openStudio,
-          },
-        ]),
-  ]);
+    ...(wideTopBar.current
+      ? []
+      : studioItems.map((item, index) => (index === 0 ? { ...item, separated: true } : item))),
+  ];
   const statusLabel = (revision: AssetDevelopRevisionResponseDto) => {
     switch (revision.status) {
       case AssetDevelopRevisionStatus.Rendered: {
@@ -1219,7 +1237,7 @@
         the middle, versions, More and Save on the right. A phone keeps one row: Cancel, Undo, Redo,
         Compare, More, Save.
       -->
-      <header class="ed-top grouped">
+      <header class="ed-top grouped" class:inline-actions={wideTopBar.current}>
         <div class="ed-top-start">
           <button
             type="button"
@@ -1333,6 +1351,40 @@
               </button>
             </span>
           {/if}
+          {#if wideTopBar.current}
+            <!-- VIEWER-P5 (Editor.jsx:2112-2127): the settings clipboard and Revert, labelled, on a wide window. -->
+            <button
+              type="button"
+              class="ed-tool labelled"
+              aria-label={$t('frameleaf_editor_copy_settings')}
+              title={$t('frameleaf_editor_copy_settings')}
+              onclick={copySettings}
+            >
+              <Icon icon={mdiContentCopy} size={ICON_SIZE.xl} />
+              <span>{$t('frameleaf_editor_copy')}</span>
+            </button>
+            <button
+              type="button"
+              class="ed-tool labelled"
+              aria-label={$t('frameleaf_editor_paste_settings')}
+              title={$t('frameleaf_editor_paste_settings')}
+              disabled={!settingsClipboard}
+              onclick={pasteSettings}
+            >
+              <Icon icon={mdiContentDuplicate} size={ICON_SIZE.xl} />
+              <span>{$t('frameleaf_editor_paste')}</span>
+            </button>
+            <button
+              type="button"
+              class="ed-tool labelled"
+              aria-label={$t('frameleaf_editor_reset_all')}
+              title={$t('frameleaf_editor_reset_all')}
+              onclick={revertDraft}
+            >
+              <Icon icon={mdiRestore} size={ICON_SIZE.xl} />
+              <span>{$t('frameleaf_editor_revert')}</span>
+            </button>
+          {/if}
           <span class="ed-desk ed-contents">
             <EditorMenu
               label={$t('frameleaf_editor_tool_versions')}
@@ -1348,7 +1400,25 @@
               {/if}
             </EditorMenu>
           </span>
-          <EditorMenu label={$t('frameleaf_editor_more_actions')} icon={mdiDotsVertical} items={moreItems} />
+          {#if moreItems.length > 0}
+            <EditorMenu label={$t('frameleaf_editor_more_actions')} icon={mdiDotsVertical} items={moreItems} />
+          {/if}
+          {#if wideTopBar.current}
+            <!-- Editor.jsx:2147-2149: Open in Studio; with unsaved edits it asks what Studio opens on. -->
+            {#if dirty}
+              <EditorMenu
+                label={$t('frameleaf_editor_open_in_studio')}
+                text={$t('frameleaf_editor_open_in_studio')}
+                icon={mdiOpenInApp}
+                items={studioItems}
+              />
+            {:else}
+              <button type="button" class="ed-tool labelled" disabled={!!studioAfter} onclick={openStudio}>
+                <Icon icon={mdiOpenInApp} size={ICON_SIZE.xl} />
+                <span>{$t('frameleaf_editor_open_in_studio')}</span>
+              </button>
+            {/if}
+          {/if}
           <button
             type="button"
             class="ed-tool primary labelled"
@@ -1643,6 +1713,7 @@
           {:else if tool === 'enhance'}
             <RestorationPanel
               title={$t('frameleaf_editor_tool_enhance')}
+              enhance
               {asset}
               crop={recipe.crop}
               onCompare={(compare) => (restorationCompare = compare)}

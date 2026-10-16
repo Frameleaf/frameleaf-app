@@ -1023,8 +1023,11 @@ describe('AssetViewer', () => {
 
     slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
 
-    expect(await findByTestId('slideshow-controls')).toBeInTheDocument();
+    expect(await findByTestId('slideshow-progress')).toBeInTheDocument();
     expect(requestFullscreen).not.toHaveBeenCalled();
+    // VIEWER-P1: the header stays, with the name and its actions; no floating capsule
+    expect(await findByTestId('viewer-title')).toBeInTheDocument();
+    expect(await findByTestId('asset-viewer-navbar-actions')).toBeInTheDocument();
     // the footer stays while the slideshow plays, with Pause, the settings and full screen
     expect(await findByTestId('viewer-footer')).toBeInTheDocument();
     expect(getByLabelText('frameleaf_viewer_pause_slideshow')).toBeInTheDocument();
@@ -1038,7 +1041,7 @@ describe('AssetViewer', () => {
     await waitFor(() => expect(get(slideshowStore.settingsOpen)).toBe(false));
   });
 
-  // FL-36 + V-13: during a slideshow a tap on the photo toggles the one chrome state (header, footer, capsule).
+  // FL-36 + V-13: during a slideshow a tap on the photo toggles the one chrome state (header, footer, arrows).
   it('toggles the shared chrome with a tap during a slideshow and restores it when the slideshow ends', async () => {
     // the focus trap's initial focus is not keyboard focus here, so it does not hold the chrome
     const focusVisible = stubFocusVisible();
@@ -1055,7 +1058,7 @@ describe('AssetViewer', () => {
     const canvas = viewer.querySelector<HTMLElement>(':scope [data-viewer-content]')!;
 
     slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
-    await findByTestId('slideshow-controls');
+    await findByTestId('slideshow-progress');
     await fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 });
     await fireEvent.pointerUp(canvas, { clientX: 10, clientY: 10, pointerId: 1 });
     await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
@@ -1064,30 +1067,24 @@ describe('AssetViewer', () => {
     await waitFor(() => expect(viewer).not.toHaveClass('chrome-hidden'));
   });
 
-  // A key press reveals the chrome (revealChrome); the slideshow's idle hide must start again.
-  it('hides the chrome again after a key press reveals it during a slideshow', async () => {
-    const focusVisible = stubFocusVisible();
-    onTestFinished(() => focusVisible.restore());
+  // VIEWER-P1 (MediaViewer.jsx:1071-1074): opening Information pauses a playing slideshow and shows the card.
+  it('pauses a playing slideshow when Information opens', async () => {
     const user = userAdminFactory.build();
-    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, hasMetadata: true });
     authManager.setUser(user);
     authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
-    // photos stay up longer than the test, so the slideshow never runs out of items and ends
     slideshowStore.slideshowDelay.set(60);
-    vi.useFakeTimers();
+    assetViewerManager.closeDetailPanel();
     try {
       const { container } = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
-      const viewer = container.querySelector<HTMLElement>(':scope #immich-asset-viewer')!;
       slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
-      await vi.advanceTimersByTimeAsync(2500);
-      expect(viewer).toHaveClass('chrome-hidden');
+      await waitFor(() => expect(container.querySelector('[data-testid="slideshow-progress"]')).not.toBeNull());
 
-      await fireEvent.keyDown(document.body, { key: 'Shift' });
-      expect(viewer).not.toHaveClass('chrome-hidden');
-      await vi.advanceTimersByTimeAsync(10_000);
-      expect(viewer).toHaveClass('chrome-hidden');
+      assetViewerManager.toggleDetailPanel();
+      await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow));
+      await waitFor(() => expect(container.querySelector('#detail-panel')).not.toBeNull());
     } finally {
-      vi.useRealTimers();
+      assetViewerManager.closeDetailPanel();
       slideshowStore.slideshowDelay.set(5);
     }
   });
@@ -1113,8 +1110,8 @@ describe('AssetViewer', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  // Resuming from pause is not a new run: Autoplay off must not bounce a resumed slideshow back to paused.
-  it('keeps a resumed slideshow playing when Autoplay is off', async () => {
+  // VIEWER-P1: Play always plays, even for someone who once turned the old Autoplay preference off.
+  it('plays at once when Play is pressed, whatever the old Autoplay preference says', async () => {
     const user = userAdminFactory.build();
     const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
     authManager.setUser(user);
@@ -1123,10 +1120,57 @@ describe('AssetViewer', () => {
     renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
 
     slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
-    await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PauseSlideshow));
+    await Promise.resolve();
+    expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
     slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
     await Promise.resolve();
     expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
     slideshowStore.slideshowAutoplay.set(true);
+  });
+
+  // VIEWER-P1: Pause holds the item where it is; it never restarts (and freezes) the item's fade-in.
+  it('pauses a slideshow without restarting the item on stage', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    slideshowStore.slideshowDelay.set(60);
+    try {
+      const { container } = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+      const stage = container.querySelector<HTMLElement>(':scope [data-viewer-content] .fl-viewer-stage')!;
+      const animate = vi.fn(Element.prototype.animate);
+      stage.animate = animate;
+
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await waitFor(() => expect(animate).toHaveBeenCalled());
+      const started = animate.mock.calls.length;
+      slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+      await Promise.resolve();
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await Promise.resolve();
+      expect(animate).toHaveBeenCalledTimes(started);
+    } finally {
+      slideshowStore.slideshowDelay.set(5);
+    }
+  });
+
+  // VIEWER-P1: the header's back arrow closes the viewer from a slideshow, and ends the slideshow.
+  it('ends the slideshow when the viewer is closed from the header', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const onClose = vi.fn();
+    const { getByLabelText } = renderWithTooltips(AssetViewer, {
+      cursor: { current: asset },
+      showNavigation: false,
+      onClose,
+    });
+    slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+
+    await fireEvent.click(getByLabelText('frameleaf_viewer_close_label'));
+    expect(onClose).toHaveBeenCalledWith(asset.id);
+    await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None));
   });
 });

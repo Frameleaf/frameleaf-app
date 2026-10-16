@@ -30,6 +30,8 @@ describe('TimelineAssetViewer suppression', () => {
     const asset = assetFactory.build();
     const next = assetFactory.build();
     const timelineManager = {
+      months: [],
+      getTimelineMonthByAssetId: vi.fn(),
       getEarlierAsset: vi.fn().mockResolvedValue(hasNext ? next : undefined),
       getLaterAsset: vi.fn().mockResolvedValue(undefined),
       removeAssets: vi.fn(),
@@ -67,6 +69,8 @@ it.each(['none', 'unmount', 'session', 'viewer'])('undo delete respects %s owner
   const request = deferredPromise<typeof asset>();
   vi.mocked(getAssetInfo).mockReturnValue(request.promise);
   const manager = {
+    months: [],
+    getTimelineMonthByAssetId: vi.fn(),
     getEarlierAsset: vi.fn().mockResolvedValue(undefined),
     getLaterAsset: vi.fn().mockResolvedValue(undefined),
     removeAssets: vi.fn(),

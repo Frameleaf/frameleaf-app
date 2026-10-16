@@ -112,7 +112,11 @@
 
 <OnEvents onAlbumAddAssets={() => (albums = refreshAlbums())} />
 
-<section class="relative p-2">
+<!--
+  VIEWER-P7 (.mv-info-scroll, .mv-info section, .mv-info h3; media-viewer.css:967-990): every part of
+  the card is a band with a divider under it and a small uppercase label (`fl-info-heading`) on top.
+-->
+<div class="fl-info">
   <!-- V-6: a missing original is explained by the viewer's offline banner (ViewerOfflineBanner), not again here. -->
 
   <DetailPanelDescription
@@ -136,9 +140,9 @@
   <DetailPanelPets {asset} {isOwner} />
 
   <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
-  <div class="p-4">
-    <div class="flex h-10 w-full items-center justify-between text-sm">
-      <Text size="small" color="muted">{$t('frameleaf_info_captured')}</Text>
+  <section>
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_captured')}</h3>
     </div>
 
     {#if !asset.exifInfo}
@@ -148,7 +152,7 @@
     <DetailPanelDate {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
 
     <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-  </div>
+  </section>
 
   <!--
       FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
@@ -164,116 +168,161 @@
   {#if authManager.authenticated}
     <DetailPanelClassification {asset} {isOwner} />
   {/if}
-</section>
 
-{#if latlng && featureFlagsManager.value.map}
-  <div class="h-90">
-    {#await import('$lib/components/shared-components/map/Map.svelte')}
-      {#await delay(timeToLoadTheMap) then}
-        <!-- show the loading spinner only if loading the map takes too much time -->
-        <div class="flex size-full items-center justify-center">
-          <LoadingSpinner />
-        </div>
-      {/await}
-    {:then { default: Map }}
-      <Map
-        mapMarkers={[
-          {
-            lat: latlng.lat,
-            lon: latlng.lng,
-            id: asset.id,
-            city: asset.exifInfo?.city ?? null,
-            state: asset.exifInfo?.state ?? null,
-            country: asset.exifInfo?.country ?? null,
-          },
-        ]}
-        center={latlng}
-        zoom={12.5}
-        simplified
-        useLocationPin
-        showSimpleControls
-        onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
-      >
-        {#snippet popup({ marker })}
-          {@const { lat, lon } = marker}
-          <div class="flex flex-col items-center gap-1">
-            <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
-            <Link
-              href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
-              class="text-primary"
-            >
-              {$t('open_in_openstreetmap')}
-            </Link>
+  {#if latlng && featureFlagsManager.value.map}
+    <div class="fl-info-map h-90">
+      {#await import('$lib/components/shared-components/map/Map.svelte')}
+        {#await delay(timeToLoadTheMap) then}
+          <!-- show the loading spinner only if loading the map takes too much time -->
+          <div class="flex size-full items-center justify-center">
+            <LoadingSpinner />
           </div>
-        {/snippet}
-      </Map>
-    {/await}
-  </div>
-{/if}
-
-{#await albums then albums}
-  {#if albums.length > 0}
-    <section class="p-6 dark:text-immich-dark-fg">
-      <div class="pb-4">
-        <Text size="small" color="muted">{$t('appears_in')}</Text>
-      </div>
-      {#each albums as album (album.id)}
-        <a href={Route.viewAlbum(album)}>
-          <div class="flex items-center gap-4 pt-2 hover:cursor-pointer">
-            <div>
-              <img
-                alt={album.albumName}
-                class="size-12.5 rounded-sm object-cover"
-                src={album.albumThumbnailAssetId &&
-                  getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
-                draggable="false"
-              />
+        {/await}
+      {:then { default: Map }}
+        <Map
+          mapMarkers={[
+            {
+              lat: latlng.lat,
+              lon: latlng.lng,
+              id: asset.id,
+              city: asset.exifInfo?.city ?? null,
+              state: asset.exifInfo?.state ?? null,
+              country: asset.exifInfo?.country ?? null,
+            },
+          ]}
+          center={latlng}
+          zoom={12.5}
+          simplified
+          useLocationPin
+          showSimpleControls
+          onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
+        >
+          {#snippet popup({ marker })}
+            {@const { lat, lon } = marker}
+            <div class="flex flex-col items-center gap-1">
+              <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
+              <Link
+                href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
+                class="text-primary"
+              >
+                {$t('open_in_openstreetmap')}
+              </Link>
             </div>
+          {/snippet}
+        </Map>
+      {/await}
+    </div>
+  {/if}
 
-            <div class="my-auto">
-              <p class="dark:text-immich-dark-primary">{album.albumName}</p>
-              <div class="flex flex-col gap-0 text-sm">
-                <div>
-                  <AlbumListItemDetails {album} />
+  {#await albums then albums}
+    {#if albums.length > 0}
+      <section class="dark:text-immich-dark-fg">
+        <div class="fl-info-heading-row">
+          <h3 class="fl-info-heading">{$t('appears_in')}</h3>
+        </div>
+        {#each albums as album (album.id)}
+          <a href={Route.viewAlbum(album)}>
+            <div class="flex items-center gap-4 pt-2 hover:cursor-pointer">
+              <div>
+                <img
+                  alt={album.albumName}
+                  class="size-12.5 rounded-sm object-cover"
+                  src={album.albumThumbnailAssetId &&
+                    getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Preview })}
+                  draggable="false"
+                />
+              </div>
+
+              <div class="my-auto">
+                <p class="dark:text-immich-dark-primary">{album.albumName}</p>
+                <div class="flex flex-col gap-0 text-sm">
+                  <div>
+                    <AlbumListItemDetails {album} />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </a>
-      {/each}
-    </section>
+          </a>
+        {/each}
+      </section>
+    {/if}
+  {/await}
+
+  <!-- V-27: who owns or shared someone else's item, under the albums (MediaViewer.jsx:2514-2519). -->
+  {#if owner}
+    <p class="fl-owner" data-testid="detail-panel-owner">
+      <Icon icon={mdiAccountOutline} size="16" aria-hidden />
+      {owner.kind === 'shared'
+        ? $t('frameleaf_info_shared_by', { values: { name: owner.name } })
+        : $t('frameleaf_info_owned_by', { values: { name: owner.name } })}
+    </p>
   {/if}
-{/await}
 
-<!-- V-27: who owns or shared someone else's item, under the albums (MediaViewer.jsx:2514-2519). -->
-{#if owner}
-  <p class="fl-owner" data-testid="detail-panel-owner">
-    <Icon icon={mdiAccountOutline} size="16" aria-hidden />
-    {owner.kind === 'shared'
-      ? $t('frameleaf_info_shared_by', { values: { name: owner.name } })
-      : $t('frameleaf_info_owned_by', { values: { name: owner.name } })}
-  </p>
-{/if}
+  {#if originName}
+    <p class="fl-owner" data-testid="detail-panel-origin">
+      <Icon icon={mdiAccountArrowLeftOutline} size="16" aria-hidden />
+      {$t('frameleaf_partner_origin', { values: { name: originName } })}
+    </p>
+  {/if}
 
-{#if originName}
-  <p class="fl-owner" data-testid="detail-panel-origin">
-    <Icon icon={mdiAccountArrowLeftOutline} size="16" aria-hidden />
-    {$t('frameleaf_partner_origin', { values: { name: originName } })}
-  </p>
-{/if}
-
-<!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
-<DocumentTextSection {asset} />
-
-<div class="pb-12"></div>
+  <!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
+  <DocumentTextSection {asset} />
+</div>
 
 <style>
+  /* .mv-info-scroll (media-viewer.css:967-972): the details sit 24px in from the card's edges. */
+  .fl-info {
+    padding: var(--fl-space-1) var(--fl-space-6) var(--fl-space-12);
+  }
+
+  /* .mv-info section (media-viewer.css:973-978): one band per part, a divider under each. */
+  .fl-info > :global(section:not(.fl-enrichment)) {
+    margin: 0;
+    padding: var(--fl-space-4) 0;
+    border-bottom: 1px solid var(--fl-viewer-border);
+  }
+
+  /* The enrichment card keeps its own frame, with the bands' rhythm around it. */
+  .fl-info > :global(.fl-enrichment) {
+    margin: var(--fl-space-4) 0;
+  }
+
+  .fl-info-map {
+    margin-block: var(--fl-space-4);
+    overflow: hidden;
+    border-radius: var(--fl-radius-card);
+  }
+
+  /* .mv-section-heading (media-viewer.css:991-1001): the label, and any action, on one line. */
+  .fl-info :global(.fl-info-heading-row) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2);
+    min-height: 24px;
+    margin-bottom: var(--fl-space-2);
+  }
+
+  /* .mv-info h3 (media-viewer.css:979-990): a small uppercase muted label. */
+  .fl-info :global(.fl-info-heading) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--fl-viewer-muted);
+    font-size: var(--fl-font-micro);
+    font-weight: 550;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    text-transform: uppercase;
+  }
+
   /* .mv-owner (media-viewer.css:1690-1699). */
   .fl-owner {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 24px;
+    margin: 0;
     padding: 16px 0;
     border-bottom: 1px solid var(--fl-viewer-border, rgb(255 255 255 / 8%));
     color: var(--fl-viewer-muted);

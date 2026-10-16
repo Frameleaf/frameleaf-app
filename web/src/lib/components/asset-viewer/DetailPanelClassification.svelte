@@ -12,7 +12,7 @@
     type AssetResponseDto,
     type ClassificationContributionDto,
   } from '@frameleaf/sdk';
-  import { Icon, Text } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import { mdiAutoFix } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -65,9 +65,9 @@
 </script>
 
 {#if contributions.length > 0}
-  <section class="mt-4 px-4" data-testid="detail-panel-classification">
-    <div class="flex h-10 w-full items-center text-sm">
-      <Text color="muted">{$t('frameleaf_rules_contributions')}</Text>
+  <section data-testid="detail-panel-classification">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_rules_contributions')}</h3>
     </div>
     <ul class="flex flex-col gap-2 text-sm">
       {#each contributions as item (item.ruleId)}

@@ -23,7 +23,7 @@
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
-  import { Icon, Text, Textarea, toastManager } from '@frameleaf/ui';
+  import { Icon, Textarea, toastManager } from '@frameleaf/ui';
   import { mdiPencilOutline, mdiShimmer } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fromAction } from 'svelte/attachments';
@@ -91,9 +91,9 @@
 </script>
 
 {#if isOwner}
-  <section class="mt-2 px-4" data-testid="frameleaf-info-description">
-    <div class="flex h-8 w-full items-center justify-between text-sm">
-      <Text color="muted">{$t('frameleaf_info_description')}</Text>
+  <section data-testid="frameleaf-info-description">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_description')}</h3>
       {#if source === 'generated'}
         <span class="fl-provenance fl-provenance-ai" title={aiDetail} data-testid="frameleaf-description-provenance">
           <Icon icon={mdiShimmer} size="12" aria-hidden />
@@ -142,7 +142,10 @@
     {/if}
   </section>
 {:else}
-  <section class="mt-2 px-4">
+  <section>
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('frameleaf_info_description')}</h3>
+    </div>
     <p class="w-full text-base wrap-break-word whitespace-pre-line text-black dark:text-white">
       {description || $t('frameleaf_viewer_no_description')}
     </p>

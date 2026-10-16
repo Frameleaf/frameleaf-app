@@ -4,6 +4,7 @@
   import RatingAction from '$lib/components/asset-viewer/actions/RatingAction.svelte';
   import ViewerMoreMenu from '$lib/components/frameleaf/ViewerMoreMenu.svelte';
   import ViewerTitle from '$lib/components/frameleaf/ViewerTitle.svelte';
+  import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import LoadingDots from '$lib/components/LoadingDots.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -38,6 +39,8 @@
     canNavigateCollection?: boolean;
     /** FL-35: the caller supplied a real list of neighbours for the filmstrip. */
     canShowFilmstrip?: boolean;
+    /** VIEWER-P8: where the item sits in the collection, shown beside the name ("3 of 19"). */
+    position?: ViewerPosition | null;
   }
 
   let {
@@ -52,6 +55,7 @@
     setPlayOriginalVideo,
     canNavigateCollection = false,
     canShowFilmstrip = false,
+    position = null,
   }: Props = $props();
 
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
@@ -152,8 +156,8 @@
       {/if}
     </div>
 
-    <!-- FL-35: file name with the short EXIF line underneath. -->
-    <ViewerTitle {asset} />
+    <!-- FL-35: file name with the short EXIF line underneath; VIEWER-P8: "n of N" beside the name. -->
+    <ViewerTitle {asset} {position} />
   </div>
 
   <div class="fl-viewer-toolbar">

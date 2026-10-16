@@ -78,18 +78,25 @@ describe('SlideshowSettingsPanel (FL-36)', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  // Source behaviour retained: production has always had the Autoplay preference.
-  it('keeps the Autoplay preference reachable', async () => {
-    slideshowStore.slideshowAutoplay.set(false);
+  // VIEWER-P2 (MediaViewer.jsx:2175-2191): Repeat and the progress bar are checkboxes; no Autoplay switch.
+  it('offers Repeat and the progress bar as checkboxes, without an Autoplay switch', async () => {
+    slideshowStore.slideshowRepeat.set(false);
+    slideshowStore.showProgressBar.set(true);
     render(SlideshowSettingsPanel, { onClose: vi.fn() });
 
-    const autoplay = screen.getByRole('switch', { name: 'Autoplay slideshow' });
-    expect(autoplay).toHaveAttribute('aria-checked', 'false');
-    await fireEvent.click(autoplay);
-    expect(get(slideshowStore.slideshowAutoplay)).toBe(true);
+    const repeat = screen.getByRole('checkbox', { name: 'Repeat collection' });
+    const progress = screen.getByRole('checkbox', { name: 'Show progress bar' });
+    expect(repeat).not.toBeChecked();
+    expect(progress).toBeChecked();
+    await fireEvent.click(repeat);
+    await fireEvent.click(progress);
+    expect(get(slideshowStore.slideshowRepeat)).toBe(true);
+    expect(get(slideshowStore.showProgressBar)).toBe(false);
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByText('Autoplay slideshow')).not.toBeInTheDocument();
   });
 
-  // MediaViewer.jsx:499-502
+  // MediaViewer.jsx:510-513
   it('puts focus on Photo duration when it opens', () => {
     render(SlideshowSettingsPanel, { onClose: vi.fn() });
     expect(screen.getByLabelText('Photo duration')).toHaveFocus();

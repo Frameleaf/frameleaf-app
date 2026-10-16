@@ -178,3 +178,66 @@ describe('RestorationPanel Smooth motion (FL-162, FL-159)', () => {
     expect(sdkMock.requestAssetRestoration).not.toHaveBeenCalled();
   });
 });
+
+// VIEWER-P6 (Editor.jsx:1872-1924): the photo editor's Enhance tab is one card, one slider, one button.
+describe('RestorationPanel Enhance & upscale (VIEWER-P6)', () => {
+  const photo = assetFactory.build({ type: AssetTypeEnum.Image, id: 'photo-1' });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [] });
+    sdkMock.getAssetRestorationOptions.mockResolvedValue({
+      assetId: photo.id,
+      sourceType: AssetRestorationSourceType.Image,
+      sourceWidth: 1800,
+      sourceHeight: 1200,
+      durationSeconds: null,
+      mode: AssetRestorationMode.Faithful,
+      workload: 'restoration-faithful',
+      upscale: 4,
+      outputWidth: 3840,
+      outputHeight: 2560,
+      previewSeconds: null,
+      adapterInstalled: true,
+      route: AssetRestorationRoute.Local,
+      destinations: [
+        {
+          id: 'server',
+          kind: MlDestinationKind.Local,
+          name: 'This server',
+          health: 'healthy',
+          available: true,
+          leavesNetwork: false,
+          consentRequired: false,
+          consentGranted: true,
+          refusal: null,
+          refusalDetail: null,
+          estimate: { sampleCount: 0, windowDays: 30, previewSeconds: null, fullSeconds: null },
+          gpu: null,
+        },
+      ],
+    } as never);
+  });
+
+  it('asks for a model on one slider instead of a destination, and previews on this server at 4×', async () => {
+    sdkMock.requestAssetRestoration.mockResolvedValue(item({ id: 'enhance-1', sourceType: 'image' as never }));
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+
+    expect(await screen.findByRole('group', { name: 'frameleaf_enhance_model' })).toBeInTheDocument();
+    expect(screen.getByTestId('restoration-enhance')).toHaveTextContent('frameleaf_enhance_title');
+    expect(screen.queryByText('frameleaf_restoration_process_on')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'frameleaf_restoration_mode' })).not.toBeInTheDocument();
+
+    const run = await screen.findByRole('button', { name: /frameleaf_enhance_run_here/ });
+    await waitFor(() => expect(run).toBeEnabled());
+    await fireEvent.click(run);
+    expect(sdkMock.requestAssetRestoration).toHaveBeenCalledWith({
+      id: photo.id,
+      assetRestorationRequestDto: expect.objectContaining({
+        mode: AssetRestorationMode.Faithful,
+        upscale: 4,
+        destinationId: 'server',
+      }),
+    });
+  });
+});

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { positionInTimeline } from '$lib/frameleaf/viewer-position';
+  import { FILMSTRIP_REACH, filmstripWindow } from '$lib/frameleaf/viewer-filmstrip';
+  import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import type { AssetCursor } from '$lib/components/asset-viewer/AssetViewer.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -102,16 +104,29 @@
   });
 
   /**
-   * FL-35: the filmstrip shows the loaded month around the open asset. It reads only what
-   * the timeline manager already holds — it never loads a bucket of its own — so an empty
-   * or not-yet-loaded month simply means no filmstrip.
+   * FL-35 / VIEWER-P4: the filmstrip runs through the timeline around the open asset, across month
+   * edges (`filmstripWindow`). The months it reaches are loaded through the timeline manager, the same
+   * way stepping to the next item loads them. While the strip is hidden it only needs one neighbour on
+   * each side, so its button knows there is something to show.
    */
-  const filmstripAssets = $derived.by<TimelineAsset[]>(() => {
+  const filmstrip = $derived.by(() => {
     const current = assetCursor.current;
-    if (!current) {
-      return [];
+    const month = current ? timelineManager.getTimelineMonthByAssetId(current.id) : undefined;
+    if (!current || !month) {
+      return { assets: [] as TimelineAsset[], toLoad: [] };
     }
-    return timelineManager.getTimelineMonthByAssetId(current.id)?.getAssets() ?? [];
+    return filmstripWindow(
+      timelineManager.months,
+      timelineManager.months.indexOf(month),
+      current.id,
+      $showFilmstrip ? FILMSTRIP_REACH : 1,
+    );
+  });
+  const filmstripAssets = $derived(filmstrip.assets);
+  $effect(() => {
+    for (const month of filmstrip.toLoad) {
+      handlePromiseError(timelineManager.loadTimelineMonth(month.yearMonth, { cancelable: false }));
+    }
   });
 
   // V-12: "n of N" through the whole timeline, from the month counts it already holds.

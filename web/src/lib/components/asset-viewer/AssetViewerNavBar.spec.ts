@@ -60,6 +60,24 @@ describe('AssetViewerNavBar component', () => {
     expect(getByLabelText('frameleaf_viewer_close_label')).toBeInTheDocument();
   });
 
+  // VIEWER-P8 (MediaViewer.jsx:1019-1031): "n of N" sits beside the name in the header.
+  it('shows the position beside the name, and nothing when there is none', () => {
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const asset = assetFactory.build({ isTrashed: false, originalFileName: 'lake.jpg' });
+    const placed = renderWithTooltips(AssetViewerNavBar, {
+      asset,
+      ...additionalProps,
+      position: { index: 2, total: 19 },
+    });
+    expect(placed.getByTestId('viewer-title')).toHaveTextContent('lake.jpg');
+    expect(placed.getByTestId('viewer-title-position')).toHaveTextContent('frameleaf_viewer_position');
+    placed.unmount();
+
+    const unplaced = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps, position: null });
+    expect(unplaced.getByTestId('viewer-title')).toHaveTextContent('lake.jpg');
+    expect(unplaced.queryByTestId('viewer-title-position')).not.toBeInTheDocument();
+  });
+
   describe('if the current user owns the asset', () => {
     it('shows delete button', () => {
       const ownerId = 'id-of-the-user';

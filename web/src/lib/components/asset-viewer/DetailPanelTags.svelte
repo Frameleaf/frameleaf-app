@@ -182,8 +182,10 @@
 <OnEvents {onAssetsTag} />
 
 {#if tags.length > 0 || canEdit}
-  <section class="fl-info-tags px-4 pt-4" data-testid="detail-panel-tags">
-    <h3>{$t('tags')}</h3>
+  <section class="fl-info-tags" data-testid="detail-panel-tags">
+    <div class="fl-info-heading-row">
+      <h3 class="fl-info-heading">{$t('tags')}</h3>
+    </div>
     <div class="fl-chips">
       {#each tags as tag (tag.id)}
         <span class="fl-tag">
@@ -270,16 +272,7 @@
 {/if}
 
 <style>
-  /* .mv-info h3 (media-viewer.css:979-989). */
-  h3 {
-    margin: 0 0 10px;
-    color: var(--fl-viewer-muted);
-    font-size: var(--fl-font-micro, 11px);
-    font-weight: 550;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
+  /* The label is the card's shared .fl-info-heading (DetailPanel, media-viewer.css:979-989). */
   .fl-chips {
     display: flex;
     flex-wrap: wrap;

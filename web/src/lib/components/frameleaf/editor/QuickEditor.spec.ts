@@ -606,6 +606,35 @@ describe('QuickEditor', () => {
     expect(screen.queryByRole('button', { name: 'frameleaf_editor_open_in_studio' })).not.toBeInTheDocument();
   });
 
+  // VIEWER-P5 (Editor.jsx:2112-2149): a wide window shows the labelled actions in the bar, not in More.
+  it('puts Copy, Paste, Revert and Open in Studio in the bar on a wide window', async () => {
+    const media = (query: string) => ({
+      matches: query.includes('1101px'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+    vi.mocked(matchMedia).mockImplementation(media as never);
+    try {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await ready();
+      expect(screen.getByRole('button', { name: 'frameleaf_editor_copy_settings' })).toHaveTextContent(
+        'frameleaf_editor_copy',
+      );
+      expect(screen.getByRole('button', { name: 'frameleaf_editor_paste_settings' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'frameleaf_editor_reset_all' })).toHaveTextContent(
+        'frameleaf_editor_revert',
+      );
+      expect(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' })).toBeInTheDocument();
+      // nothing is left for More on a plain photo, so the button goes too
+      expect(screen.queryByRole('button', { name: 'frameleaf_editor_more_actions' })).not.toBeInTheDocument();
+    } finally {
+      vi.mocked(matchMedia).mockImplementation(((query: string) => ({ ...media(query), matches: false })) as never);
+    }
+  });
+
   it('offers Undo for edits discarded by Cancel, and reopens on the same draft', async () => {
     const onClose = vi.fn();
     const onReopen = vi.fn();
