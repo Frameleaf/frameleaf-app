@@ -110,16 +110,20 @@
     onChanged?.();
   };
 
+  /** Resolves whether the action itself succeeded, so a caller never reports a refused change as made. */
   const run = async (key: string, action: () => Promise<unknown>, failure: string) => {
     busy = key;
+    let done = false;
     try {
       await action();
+      done = true;
       await refresh();
     } catch (error) {
       handleError(error, failure);
     } finally {
       busy = null;
     }
+    return done;
   };
 
   /* ---------------- consent ---------------- */
@@ -153,11 +157,14 @@
   };
 
   const revokeConsent = async (destination: MlDestinationResponseDto) => {
-    await run(
+    const revoked = await run(
       `consent-${destination.id}`,
       () => revokeMlDestinationConsent({ id: destination.id }),
       $t('admin.frameleaf_ml_destinations_error_consent'),
     );
+    if (!revoked) {
+      return;
+    }
     statusMessage = $t('admin.frameleaf_ml_destinations_consent_revoked', { values: { name: destination.name } });
   };
 
@@ -307,7 +314,7 @@
     const isCloud = current.kind === MlDestinationKind.FrameleafCloud;
     const sharesLibraryHardware = canShareHardware(current) && current.sharesLibraryHardware;
 
-    await run(
+    const saved = await run(
       current.id ? `edit-${current.id}` : 'create',
       () =>
         current.id
@@ -335,7 +342,10 @@
             }),
       $t('admin.frameleaf_ml_destinations_error_save'),
     );
-    draftOpen = false;
+    // A refused save keeps the form and what was typed, so it can be corrected.
+    if (saved) {
+      draftOpen = false;
+    }
   };
 
   /* ---------------- routes ---------------- */
