@@ -199,7 +199,7 @@ const checkFiles = (value: unknown): Record<string, StudioBundleFileDigest> | st
   if (!isPlainObject(value)) {
     return 'files must be an object';
   }
-  const files: Record<string, StudioBundleFileDigest> = {};
+  const files = Object.create(null) as Record<string, StudioBundleFileDigest>;
   for (const [name, entry] of Object.entries(value)) {
     const problem = zipEntryNameProblem(name);
     if (problem) {
@@ -1108,7 +1108,7 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
       return node;
     }
 
-    const out: Record<string, unknown> = {};
+    const out = Object.create(null) as Record<string, unknown>;
     for (const [key, value] of Object.entries(node)) {
       if (root && key === 'studioVectorDependencies') {
         out[key] = {
