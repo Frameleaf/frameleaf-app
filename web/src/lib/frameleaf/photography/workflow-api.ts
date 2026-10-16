@@ -314,7 +314,7 @@ async function ownerRequest<T>(path: string, method: string, body?: unknown): Pr
   return response.status === 204 ? (undefined as T) : response.json();
 }
 export async function galleryLogo(id: string, session: string): Promise<Blob> {
-  const response = await galleryFetch(id, session, '/logo');
+  const response = await galleryFetch(id, session, '/logo', 'GET', undefined, { accept: 'image/png' });
   const blob = await response.blob();
   if (blob.type !== 'image/png') {
     throw new PhotographyError('logo_unavailable');
@@ -337,6 +337,11 @@ export type GalleryRequestOptions = {
    * body of such a request to 64 KB in total, so use it for the small choices save only.
    */
   keepalive?: boolean;
+  /**
+   * What the response is. JSON unless a file is asked for: the SDK fetch refuses a non-JSON body
+   * to a JSON `Accept`, so photographs, the logo and ZIPs must ask for their own type.
+   */
+  accept?: string;
 };
 export async function galleryRequest<T>(
   id: string,
@@ -374,7 +379,7 @@ async function galleryFetch(
   options?: GalleryRequestOptions,
 ): Promise<Response> {
   // Gallery invitations must never inherit the owner's SDK Authorization header or browser cookies.
-  const headers = new Headers({ Accept: 'application/json' });
+  const headers = new Headers({ Accept: options?.accept ?? 'application/json' });
   if (session) {
     headers.set('X-Photography-Session', session);
   }
@@ -397,7 +402,9 @@ async function galleryFetch(
 }
 
 export async function galleryFile(id: string, session: string, path: string, zip: boolean): Promise<Blob> {
-  const response = await galleryFetch(id, session, path);
+  const response = await galleryFetch(id, session, path, 'GET', undefined, {
+    accept: zip ? 'application/zip, application/octet-stream' : 'image/jpeg',
+  });
   const blob = await response.blob();
   if (!(zip ? ['application/zip', 'application/octet-stream'].includes(blob.type) : blob.type === 'image/jpeg')) {
     throw new PhotographyError('not_ready');
