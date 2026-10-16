@@ -51,6 +51,7 @@ describe(PersonService.name, () => {
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
+    mocks.person.withMergeWrite.mockImplementation(async (write) => write());
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
   });
 
@@ -452,10 +453,15 @@ describe(PersonService.name, () => {
       const auth = AuthFactory.create();
       mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
       mocks.person.getFaceById.mockResolvedValue({ ...face, person: null });
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([face.assetId]);
 
       await sut.deleteFace(auth, face.id, { force: false });
 
       expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', [face.assetId], ['faces'], auth.user.id);
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledOnce();
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: face.assetId, fields: ['faces'] } },
+      ]);
     });
   });
 
@@ -1277,6 +1283,68 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);
       expect(mocks.person.reanchorMergeVerdicts).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe('merge mapping authority', () => {
+    const setupMerge = () => {
+      const auth = AuthFactory.create();
+      const survivor = PersonFactory.create({ ownerId: auth.user.id, name: 'Alice' });
+      const removed = PersonFactory.create({ ownerId: auth.user.id, name: 'Alicia' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([survivor.personGroupId, removed.personGroupId]));
+      mocks.person.getForMergePerson.mockResolvedValue([survivor, removed]);
+      mocks.person.delete.mockResolvedValue([removed]);
+      return { auth, survivor, removed };
+    };
+
+    it('preserves the mapping when identity-refresh admission fails', async () => {
+      const { auth, survivor, removed } = setupMerge();
+      mocks.job.queue.mockRejectedValueOnce(new Error('queue failed'));
+      await expect(sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] })).resolves.toEqual([
+        { id: removed.personGroupId, success: true },
+      ]);
+      expect(mocks.person.repointPartnerPersonLinks).toHaveBeenCalledWith(
+        auth.user.id,
+        removed.personGroupId,
+        survivor.personGroupId,
+      );
+      expect(mocks.person.repointPartnerPersonLinks.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queue.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('refuses the merge before deletion and jobs when mapping persistence fails', async () => {
+      const { auth, survivor, removed } = setupMerge();
+      mocks.person.repointPartnerPersonLinks.mockRejectedValueOnce(new Error('mapping failed'));
+      const result = await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+      expect(result).toEqual([{ id: removed.personGroupId, success: false, error: BulkIdErrorReason.UNKNOWN }]);
+      expect(mocks.person.delete).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('finishes the database merge before thumbnail removal or identity jobs', async () => {
+      const { auth, survivor, removed } = setupMerge();
+      let committed = false;
+      mocks.person.withMergeWrite.mockImplementation(async (write) => {
+        const result = await write();
+        expect(mocks.person.reassignFaces).toHaveBeenCalled();
+        expect(mocks.person.repointPartnerPersonLinks).toHaveBeenCalled();
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        committed = true;
+        return result;
+      });
+      mocks.storage.unlink.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+      expect(committed).toBe(true);
     });
   });
 

@@ -32,6 +32,8 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { JobOf } from 'src/types.js';
 import { useRealJobPublication } from 'test/fixtures/job-publication.js';
@@ -780,6 +782,75 @@ describe(PersonService.name, () => {
   });
 
   describe('mergePeople', () => {
+    it.each(['mapping failure', 'queue failure'] as const)(
+      'preserves face-to-partner mapping authority on %s',
+      async (failure) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const auth = factory.auth({ user });
+        const { person: survivor } = await ctx.newPerson({ ownerId: user.id, name: 'Alice' });
+        const { person: removed } = await ctx.newPerson({ ownerId: user.id, name: 'Alicia' });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const { assetFace: face } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: removed.personGroupId });
+        const { user: sharer } = await ctx.newUser();
+        const { person: sourcePerson } = await ctx.newPerson({ ownerId: sharer.id, name: 'Alice' });
+        const people = ctx.get(PersonRepository);
+        await people.savePartnerPersonLink({
+          ownerId: user.id,
+          sourcePersonGroupId: sourcePerson.personGroupId,
+          personGroupId: removed.personGroupId,
+          kind: 'created',
+          partnerSharedById: sharer.id,
+          correctionId: null,
+        });
+        ctx.getMock(StorageRepository).unlink.mockResolvedValue();
+        const jobs = ctx.getMock(JobRepository);
+        const original = people.repointPartnerPersonLinks.bind(people);
+        const mapping =
+          failure === 'mapping failure'
+            ? vi.spyOn(people, 'repointPartnerPersonLinks').mockImplementationOnce(async (...args) => {
+                await original(...args);
+                throw new Error('mapping failed');
+              })
+            : undefined;
+        if (failure === 'queue failure') jobs.queue.mockRejectedValueOnce(new Error('queue failed'));
+        let results;
+        try {
+          results = await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+        } finally {
+          mapping?.mockRestore();
+        }
+        if (failure === 'mapping failure') {
+          expect(results).toEqual([{ id: removed.personGroupId, success: false, error: 'unknown' }]);
+          expect((await people.getFaceById(face.id, { viewingUserId: user.id })).personGroupId).toBe(
+            removed.personGroupId,
+          );
+          expect((await people.getPartnerPersonLink(user.id, sourcePerson.personGroupId))?.personGroupId).toBe(
+            removed.personGroupId,
+          );
+          expect(ctx.getMock(StorageRepository).unlink).not.toHaveBeenCalled();
+          expect(jobs.queue).not.toHaveBeenCalled();
+        } else {
+          expect(results).toEqual([{ id: removed.personGroupId, success: true }]);
+          expect((await people.getPartnerPersonLink(user.id, sourcePerson.personGroupId))?.personGroupId).toBe(
+            survivor.personGroupId,
+          );
+          const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+          const { asset: copy } = await ctx.newAsset({ ownerId: user.id });
+          await ctx.newAssetFace({ assetId: source.id, personGroupId: sourcePerson.personGroupId });
+          await BaseService.create(PartnerPeopleService, sut).copyFaces({
+            sourceAssetId: source.id,
+            targetAssetId: copy.id,
+            targetOwnerId: user.id,
+            partnerSharedById: sharer.id,
+          });
+          expect(await people.getFaces(copy.id, { viewingUserId: user.id })).toEqual([
+            expect.objectContaining({ personGroupId: survivor.personGroupId }),
+          ]);
+        }
+      },
+    );
+
     it('merges differently named own people in request order and keeps the first name', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

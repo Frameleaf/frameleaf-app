@@ -7,7 +7,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
-import { publicationDatabase } from 'src/queue/transaction.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -228,6 +228,11 @@ export class PersonRepository {
   ) {
     this.db = publicationDatabase(this.db);
   }
+  /** Face moves and partner mappings commit together; callers keep cleanup and jobs outside. */
+  async withMergeWrite<T>(write: () => Promise<T>): Promise<T> {
+    return this.db.transaction().execute((tx) => publicationTransaction.run(tx, write));
+  }
+
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })
   async reassignFaces({
     oldPersonGroupId,
