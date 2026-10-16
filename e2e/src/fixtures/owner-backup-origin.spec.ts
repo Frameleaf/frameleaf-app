@@ -17,6 +17,7 @@ vi.mock('node:fs', async (original) => {
 
 const request = () => {
   const key = Buffer.alloc(32, 7);
+  // a plain stream stands in for the request: the handler reads only these fields and the body
   return Object.assign(Readable.from([]), {
     method: 'GET',
     url: '/bucket/object',
@@ -26,7 +27,7 @@ const request = () => {
       'x-amz-server-side-encryption-customer-key': key.toString('base64'),
       'x-amz-server-side-encryption-customer-key-md5': createHash('md5').update(key).digest('base64'),
     },
-  }) as IncomingMessage;
+  }) as unknown as IncomingMessage;
 };
 
 describe('OwnerBackupOrigin stream lifecycle', () => {

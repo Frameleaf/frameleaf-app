@@ -24,6 +24,8 @@ describe('PersonService face history (FL-57)', () => {
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
+    // face writes run inside the partner-origin edit admission; let it pass through
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
@@ -367,12 +369,11 @@ describe('PersonService face history (FL-57)', () => {
         { id: current.id, expectedRevision: current.updateId },
         { personGroupId: entry.fromPersonId },
       );
-      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
-        'asset',
-        [entry.assetId],
-        ['faces'],
-        auth.user.id,
-      );
+      // the faces field is marked with the undo (inside the origin edit) and again when the edit is
+      // propagated; every mark names only this asset's faces
+      const marks = mocks.partnerOrigin.markOverridden.mock.calls;
+      expect(marks.length).toBeGreaterThan(0);
+      expect(marks).toEqual(marks.map(() => ['asset', [entry.assetId], ['faces'], auth.user.id]));
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: entry.assetId, fields: ['faces'] } },
       ]);
