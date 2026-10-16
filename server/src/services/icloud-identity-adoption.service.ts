@@ -38,6 +38,8 @@ const sameFile = (a: MediaIntegrityIdentity, b: MediaIntegrityIdentity) =>
 /** One producer and owned-file lifetime; no remote provider or public API authority. */
 @Injectable()
 export class ICloudIdentityAdoptionService {
+  private stopped = false;
+  private readonly producers = new Set<Promise<void>>();
   private readonly cleanups = new Set<Promise<void>>();
   constructor(
     private repository: ICloudIdentityAdoptionRepository,
@@ -46,13 +48,18 @@ export class ICloudIdentityAdoptionService {
 
   @OnEvent({ name: 'AppShutdown' })
   async onShutdown() {
+    this.stopped = true;
+    await Promise.allSettled(this.producers);
     await Promise.allSettled(this.cleanups);
   }
 
   async adopt(authority: IdentityAdoptionAuthority): Promise<IdentityAdoptionResult> {
+    if (this.stopped) return 'retry';
     if (!identityAdoptionEnabled()) {
       return 'miss';
     }
+    const producer = Promise.withResolvers<void>();
+    this.producers.add(producer.promise);
     let source: FileHandle | undefined;
     let directory: string | undefined;
     let validation: MediaIntegrityValidation | undefined;
@@ -107,6 +114,7 @@ export class ICloudIdentityAdoptionService {
           const current = async () => {
             const [opened, path] = await Promise.all([handle.stat(), lstat(candidate.originalPath)]);
             return (
+              !this.stopped &&
               identityAdoptionEnabled() &&
               opened.isFile() &&
               path.isFile() &&
@@ -125,6 +133,7 @@ export class ICloudIdentityAdoptionService {
             deep: true,
           });
           const decoded = await validation.result;
+          if (this.stopped) return;
           if (decoded.status === 'unsupported') {
             return 'miss';
           }
@@ -150,6 +159,8 @@ export class ICloudIdentityAdoptionService {
           .catch(() => {})
           .finally(() => this.cleanups.delete(pending));
         this.cleanups.add(pending);
+        this.producers.delete(producer.promise);
+        producer.resolve();
       }
     }
   }
