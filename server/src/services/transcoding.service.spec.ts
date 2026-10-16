@@ -528,23 +528,22 @@ describe(TranscodingService.name, () => {
   });
 
   describe('FFmpeg full command', () => {
-    const baseCommand = [
-      '-nostdin',
-      '-nostats',
-      '-i',
-      'eiffel-tower.mp4',
+    const baseCommand = ['-nostdin', '-nostats', '-i', 'eiffel-tower.mp4'];
+    const streamOptions = [
       '-map',
       '0:0',
       '-map_metadata',
       '-1',
       '-map',
       '0:1',
+      '-ac',
+      '2',
       '-g',
       '50',
       '-keyint_min',
       '50',
-      '-ac',
-      '2',
+    ];
+    const hlsOptions = [
       '-copyts',
       '-r',
       '50130000/2012606',
@@ -564,8 +563,6 @@ describe(TranscodingService.name, () => {
       'movflags=+frag_discont',
       '-hls_flags',
       'temp_file',
-      '-start_number',
-      '0',
     ];
 
     it.each([
@@ -577,16 +574,20 @@ describe(TranscodingService.name, () => {
           'libsvtav1',
           '-c:a',
           'aac',
+          ...streamOptions,
           '-preset',
           '12',
           '-crf',
           '35',
           '-svtav1-params',
           'hierarchical-levels=3:lookahead=0:enable-tf=0:mbr=4000k',
+          ...hlsOptions,
           '-hls_segment_filename',
           '/data/encoded-video/user-1/se/ss/session-1/6/seg_%d.m4s',
+          '-start_number',
+          '0',
           '/data/encoded-video/user-1/se/ss/session-1/6/playlist.m3u8',
-        ].sort(),
+        ],
       },
       {
         variantIndex: 4,
@@ -596,6 +597,7 @@ describe(TranscodingService.name, () => {
           'libx265',
           '-c:a',
           'aac',
+          ...streamOptions,
           '-tag:v',
           'hvc1',
           '-preset',
@@ -608,12 +610,15 @@ describe(TranscodingService.name, () => {
           '5000k',
           '-x265-params',
           'no-scenecut=1:no-open-gop=1',
-          '-vf',
-          'scale=720:-2',
+          ...hlsOptions,
           '-hls_segment_filename',
           '/data/encoded-video/user-1/se/ss/session-1/4/seg_%d.m4s',
+          '-start_number',
+          '0',
+          '-vf',
+          'scale=720:-2',
           '/data/encoded-video/user-1/se/ss/session-1/4/playlist.m3u8',
-        ].sort(),
+        ],
       },
       {
         variantIndex: 2,
@@ -623,6 +628,7 @@ describe(TranscodingService.name, () => {
           'libx264',
           '-c:a',
           'aac',
+          ...streamOptions,
           '-preset',
           'ultrafast',
           '-crf',
@@ -633,20 +639,23 @@ describe(TranscodingService.name, () => {
           '5000k',
           '-sc_threshold:v',
           '0',
-          '-vf',
-          'scale=480:-2',
+          ...hlsOptions,
           '-hls_segment_filename',
           '/data/encoded-video/user-1/se/ss/session-1/2/seg_%d.m4s',
+          '-start_number',
+          '0',
+          '-vf',
+          'scale=480:-2',
           '/data/encoded-video/user-1/se/ss/session-1/2/playlist.m3u8',
-        ].sort(),
+        ],
       },
-    ])('builds the expected FFmpeg command for $codec (variant $variantIndex)', async ({ variantIndex, expected }) => {
+    ])('builds the expected ordered FFmpeg command for variant $variantIndex', async ({ variantIndex, expected }) => {
       mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
 
       await sut.onSessionRequest({ sessionId, assetId, ownerId });
       await sut.onSegmentRequest({ sessionId, assetId, variantIndex, segmentIndex: 0 });
 
-      expect(mocks.process.spawn.mock.calls[0][1].toSorted()).toEqual(expected);
+      expect(mocks.process.spawn.mock.calls[0][1]).toEqual(expected);
     });
   });
 
