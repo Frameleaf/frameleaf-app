@@ -6,17 +6,23 @@ import { DB } from 'src/schema/index.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
 
 export type DesktopWorkerTables = { desktop_worker_session: DesktopWorkerSessionTable };
-export type DesktopWorkerGrant = { deviceId: string; authorizationEpoch: number; sessionId: string };
+export type DesktopWorkerGrant = {
+  deviceId: string;
+  authorizationEpoch: number;
+  sessionId: string;
+  credentialHash: Buffer;
+};
 type WorkerDatabase = DB & DesktopWorkerTables;
 export type DesktopWorkerSession = Selectable<DesktopWorkerSessionTable>;
 const expires = sql<Date>`clock_timestamp() + interval '1 hour'`;
 const models = z.array(z.string().min(1).max(256)).max(64);
 
-/** Lock in owner/device/session order; a photo-session cascade waits for the worker row. */
-export async function lockDesktopWorker(
+async function lockWorkerAuthority(
   db: QueryExecutorProvider,
-  grant: DesktopWorkerGrant,
+  grant: Omit<DesktopWorkerGrant, 'credentialHash'>,
+  credentialHash: Buffer | null,
 ): Promise<{ modelKeys: string[]; expiresAt: Date } | undefined> {
+  const credential = credentialHash === null ? sql`true` : sql`w."tokenHash"=${credentialHash}`;
   const { rows: owners } = await sql<{ id: string }>`SELECT u.id FROM "user" u JOIN desktop_device d ON d."userId"=u.id
     WHERE d.id=${grant.deviceId} AND u."isAdmin" AND u."deletedAt" IS NULL FOR SHARE OF u`.execute(db);
   if (owners.length !== 1) return;
@@ -30,11 +36,25 @@ export async function lockDesktopWorker(
     expiresAt: Date;
   }>`SELECT w."modelKeys", w."expiresAt" FROM desktop_worker_session w
     JOIN session p ON p.id=w."photoSessionId" WHERE w.id=${grant.sessionId} AND w."deviceId"=${grant.deviceId}
-    AND w."authorizationEpoch"=${grant.authorizationEpoch} AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
+    AND ${credential} AND w."authorizationEpoch"=${grant.authorizationEpoch} AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
     AND p."userId"=${owners[0].id} AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp()) FOR SHARE OF w`.execute(
     db,
   );
   return rows[0];
+}
+
+/** Lock owner/device/session and require the exact credential used to authenticate this request. */
+export async function lockDesktopWorker(db: QueryExecutorProvider, grant: DesktopWorkerGrant) {
+  if (!Buffer.isBuffer(grant.credentialHash) || grant.credentialHash.length !== 32) return;
+  return lockWorkerAuthority(db, grant, grant.credentialHash);
+}
+
+/** NAS-only publication checks current authority after a result was staged, independent of token renewal. */
+export function lockDesktopWorkerForAdoption(
+  db: QueryExecutorProvider,
+  grant: Omit<DesktopWorkerGrant, 'credentialHash'>,
+) {
+  return lockWorkerAuthority(db, grant, null);
 }
 
 @Injectable()
@@ -139,7 +159,12 @@ export class DesktopWorkerRepository {
     if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > 2_147_483_647) return;
     const session = await this.session(id, tokenHash);
     if (!session) return;
-    const grant = { sessionId: session.id, deviceId: session.deviceId, authorizationEpoch: session.authorizationEpoch };
+    const grant = {
+      sessionId: session.id,
+      deviceId: session.deviceId,
+      authorizationEpoch: session.authorizationEpoch,
+      credentialHash: Buffer.from(session.tokenHash),
+    };
     return this.db.transaction().execute(async (db) => {
       if (!(await lockDesktopWorker(db, grant))) return;
       const updated = await db

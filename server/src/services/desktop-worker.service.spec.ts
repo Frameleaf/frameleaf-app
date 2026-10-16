@@ -1,6 +1,6 @@
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 
-const grant = { deviceId: 'device', sessionId: 'session', authorizationEpoch: 2 };
+const grant = { deviceId: 'device', sessionId: 'session', authorizationEpoch: 2, credentialHash: Buffer.alloc(32, 7) };
 const auth = { authenticate: vi.fn(), renew: vi.fn() };
 const broker = { claim: vi.fn(), input: vi.fn(), heartbeatLease: vi.fn(), complete: vi.fn(), fail: vi.fn() };
 const sessions = { revoke: vi.fn() };

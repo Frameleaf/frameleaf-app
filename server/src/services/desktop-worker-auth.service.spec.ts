@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { desktopSessionMessage, desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
@@ -43,7 +43,12 @@ beforeEach(() => {
     }),
   );
   repository.session.mockResolvedValue({ id: sessionId, publicKey, authorizationEpoch: 7 });
-  repository.consume.mockResolvedValue({ sessionId, deviceId, authorizationEpoch: 7 });
+  repository.consume.mockResolvedValue({
+    sessionId,
+    deviceId,
+    authorizationEpoch: 7,
+    credentialHash: createHash('sha256').update(token).digest(),
+  });
   service = new DesktopWorkerAuthService(repository as never, metadata as never);
 });
 it('requires an administrator photo session and possession of the installation key for initial issuance', async () => {

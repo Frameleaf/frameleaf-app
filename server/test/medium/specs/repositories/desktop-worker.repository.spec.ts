@@ -148,3 +148,20 @@ it('uses the real signed credential through issuance, replay fencing and parent 
   await db.deleteFrom('session').where('id', '=', input.photoSessionId).execute();
   await expect(auth.authenticate('Bearer ' + credential.workerToken, proof(2), 'claim', '{}')).rejects.toThrow();
 });
+
+it('fences an already-authenticated grant after stable-ID reissue or token rotation', async () => {
+  const { sut, second, input } = await setup();
+  const session = (await sut.issue(input))!;
+  const stale = (await sut.consume(session.id, input.tokenHash, 1))!;
+  const replacementHash = Buffer.alloc(32, 11);
+  const replacement = (await second.issue({ ...input, tokenHash: replacementHash }))!;
+  expect(replacement.id).toBe(session.id);
+  expect(await sut.revoke(stale)).toBe(false);
+  const current = (await sut.consume(session.id, replacementHash, 1))!;
+  const nextHash = Buffer.alloc(32, 12);
+  expect(await second.rotate(current, replacementHash, nextHash)).toBeDefined();
+  expect(await sut.revoke(current)).toBe(false);
+  expect(await sut.rotate(current, replacementHash, Buffer.alloc(32, 13))).toBeUndefined();
+  const renewed = (await sut.consume(session.id, nextHash, 1))!;
+  expect(await sut.revoke(renewed)).toBe(true);
+});

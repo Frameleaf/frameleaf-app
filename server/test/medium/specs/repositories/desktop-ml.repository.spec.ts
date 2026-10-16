@@ -54,6 +54,7 @@ const setup = async () => {
     deviceId: row!.id,
     authorizationEpoch: row!.authorizationEpoch,
     sessionId: sessions[index]!.id,
+    credentialHash: sessions[index]!.tokenHash,
   }));
   const request = {
     ownerId: user.id,
@@ -321,4 +322,54 @@ it('returns the exact renewed lease expiry for the outbound heartbeat response',
   expect(new Date(expiresAt!)).toEqual(new Date(stored.expiresAt));
   await new DesktopWorkerRepository(db).revoke(grants[0]);
   expect(await sut.heartbeatLease(grants[0], claim.attempt.id)).toBeUndefined();
+});
+
+it('fences stale authenticated broker operations across renewal while a fresh credential resumes its lease', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const session = await brokerDb
+    .selectFrom('desktop_worker_session')
+    .selectAll()
+    .where('id', '=', grants[0].sessionId)
+    .executeTakeFirstOrThrow();
+  const sessions = new DesktopWorkerRepository(db);
+  const nextHash = Buffer.alloc(32, 29);
+  expect(await sessions.rotate(grants[0], session.tokenHash, nextHash)).toBeDefined();
+  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
+  expect(await sut.fail(grants[0], claim.attempt.id)).toBe(false);
+  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  const current = (await sessions.consume(session.id, nextHash, 1))!;
+  for (const credentialHash of [Buffer.alloc(0), Buffer.alloc(31), Buffer.alloc(32, 99), undefined]) {
+    const malformed = { ...current, credentialHash } as typeof current;
+    expect(await sut.input(malformed, claim.attempt.id)).toBeUndefined();
+    expect(await sut.claim(malformed, [request.modelKey])).toBeUndefined();
+  }
+  expect(await sut.input(current, claim.attempt.id)).toEqual(request.input);
+  expect(await sut.heartbeat(current, claim.attempt.id)).toBe(true);
+  expect(await sut.complete(current, claim.attempt.id, { clip: [1, 2] })).toBe(true);
+});
+
+it('preserves NAS adoption of a staged result through token renewal and still rechecks revoked model scope', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(true);
+  const session = await brokerDb
+    .selectFrom('desktop_worker_session')
+    .selectAll()
+    .where('id', '=', grants[0].sessionId)
+    .executeTakeFirstOrThrow();
+  expect(
+    await new DesktopWorkerRepository(db).rotate(grants[0], session.tokenHash, Buffer.alloc(32, 30)),
+  ).toBeDefined();
+  await expect(sut.assertAdoption(task.id, task)).resolves.toBeUndefined();
+  await brokerDb
+    .updateTable('desktop_worker_session')
+    .set({ modelKeys: sql<string[]>`'[]'::jsonb` })
+    .where('id', '=', grants[0].sessionId)
+    .execute();
+  await expect(sut.assertAdoption(task.id, task)).rejects.toThrow('desktop_result_authority_lost');
 });

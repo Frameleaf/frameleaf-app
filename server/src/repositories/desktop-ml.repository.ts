@@ -7,6 +7,7 @@ import {
   type DesktopWorkerGrant,
   type DesktopWorkerTables,
   lockDesktopWorker,
+  lockDesktopWorkerForAdoption,
 } from 'src/repositories/desktop-worker.repository.js';
 import { DB } from 'src/schema/index.js';
 
@@ -307,7 +308,7 @@ export class DesktopMlRepository {
         .where('attempt.outcome', '=', 'completed')
         .executeTakeFirst();
       if (!attempt?.workerSessionId) throw new Error('desktop_result_authority_lost');
-      const worker = await this.device(db, { ...attempt, sessionId: attempt.workerSessionId });
+      const worker = await lockDesktopWorkerForAdoption(db, { ...attempt, sessionId: attempt.workerSessionId });
       if (!worker || !worker.modelKeys.includes(expected.modelKey)) throw new Error('desktop_result_authority_lost');
       const task = await db
         .selectFrom('desktop_ml_task')
