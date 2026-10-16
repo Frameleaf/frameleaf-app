@@ -1,5 +1,5 @@
-import { DatabaseLock } from 'src/enum.js';
 import * as fs from 'node:fs/promises';
+import { DatabaseLock } from 'src/enum.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
@@ -25,7 +25,7 @@ it.each(['delete', 'move-acknowledgement', 'registration'])(
       if (sql.includes('INSERT INTO public.move_history')) {
         intent = { id: String(parameters[0]), oldPath: String(parameters[2]), newPath: String(parameters[3]) };
       }
-      if (sql.includes('SELECT id, \"oldPath\", \"newPath\"')) return { rows: intent ? [intent] : [] };
+      if (sql.includes('SELECT id, "oldPath", "newPath"')) return { rows: intent ? [intent] : [] };
       if (sql.includes('FROM public.move_history') && sql.includes('FOR UPDATE'))
         return { rows: intent ? [{ id: intent.id }] : [] };
       if (sql.includes('DELETE FROM public.move_history')) intent = undefined;
@@ -40,25 +40,33 @@ it.each(['delete', 'move-acknowledgement', 'registration'])(
       }
       if (failureAt === 'delete' && sql.includes('DELETE FROM public.physical_file_trash')) throw failure;
     });
-    const move = vi.fn(async (from: string, to: string) => {
-      if (!files.delete(from)) throw new Error('source missing');
-      files.add(to);
-      if (failureAt === 'move-acknowledgement' && from === entry.path) throw failure;
-    });
+    const move = vi.fn((from: string, to: string) =>
+      Promise.try(() => {
+        if (!files.delete(from)) throw new Error('source missing');
+        files.add(to);
+        if (failureAt === 'move-acknowledgement' && from === entry.path) throw failure;
+      }),
+    );
 
-    const inspection = vi.mocked(fs.lstat).mockImplementation(async (path) => {
-      if (!files.has(String(path))) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
-      return {} as never;
+    const inspection = vi.mocked(fs.lstat).mockImplementation((path) =>
+      Promise.try(() => {
+        if (!files.has(String(path))) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        return {} as never;
+      }),
+    );
+    onTestFinished(() => {
+      inspection.mockReset();
     });
-    onTestFinished(() => inspection.mockReset());
 
     await expect(
-      new PhysicalFileTrashRepository(db).untrash(entry.id, target, move, async () => {
-        expect(
-          queries.some(({ sql }) => sql.includes('DELETE FROM public.physical_file_trash') || sql === 'commit'),
-        ).toBe(false);
-        if (failureAt === 'registration') throw failure;
-      }),
+      new PhysicalFileTrashRepository(db).untrash(entry.id, target, move, () =>
+        Promise.try(() => {
+          expect(
+            queries.some(({ sql }) => sql.includes('DELETE FROM public.physical_file_trash') || sql === 'commit'),
+          ).toBe(false);
+          if (failureAt === 'registration') throw failure;
+        }),
+      ),
     ).rejects.toBe(failure);
 
     expect(queries.some(({ sql }) => sql === 'rollback')).toBe(true);

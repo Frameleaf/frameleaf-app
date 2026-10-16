@@ -283,7 +283,7 @@ it.each(['owner', 'generation', 'cloud', 'instance'] as const)(
     const env = h.mocks.config.getEnv();
     h.mocks.config.getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url: cloudUrl } });
     h.mocks.frameleafCloud.requestJson.mockResolvedValueOnce({
-      ...cloudContractFixture('remote/remote-usage.json'),
+      ...cloudContractFixture<Record<string, unknown>>('remote/remote-usage.json'),
       bytes: 2,
     } as never);
     await expect(h.sut.getUsage(authStub.admin, now + 1000)).resolves.toMatchObject({ bytes: 2 });
@@ -296,7 +296,7 @@ it('does not extend a usage cache entry when the clock moves backwards', async (
     now = Date.now();
   await h.sut.getUsage(authStub.admin, now);
   h.mocks.frameleafCloud.requestJson.mockResolvedValueOnce({
-    ...cloudContractFixture('remote/remote-usage.json'),
+    ...cloudContractFixture<Record<string, unknown>>('remote/remote-usage.json'),
     bytes: 2,
   } as never);
   await expect(h.sut.getUsage(authStub.admin, now - 1)).resolves.toMatchObject({ bytes: 2 });

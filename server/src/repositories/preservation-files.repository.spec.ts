@@ -186,7 +186,9 @@ describe(PreservationFileRepository.name, () => {
   describe('lines', () => {
     it('publishes complete index pages even when a single write would write only part of a buffer', async () => {
       const probe = await open(join(root, 'probe'), 'w');
-      const prototype = Object.getPrototypeOf(probe);
+      // Only the Buffer overload of FileHandle.write is replaced: the line writer always passes Buffers.
+      const prototype: { write(this: FileHandle, chunk: Buffer): Promise<{ bytesWritten: number; buffer: Buffer }> } =
+        Object.getPrototypeOf(probe);
       const original = probe.write;
       await probe.close();
       const write = vi.spyOn(prototype, 'write').mockImplementation(function (this: FileHandle, chunk: Buffer) {

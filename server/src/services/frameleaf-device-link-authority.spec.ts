@@ -24,6 +24,7 @@ const pending = (code = 'device-1'): FrameleafCloudLink => ({
     deviceCode: code,
     userCode: 'ABCD-EFGH',
     verificationUri: 'https://id.frameleaf.cloud/device',
+    verificationUriComplete: 'https://id.frameleaf.cloud/device?user_code=ABCD-EFGH',
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
     intervalSeconds: 5,
     nextPollAt: new Date(0).toISOString(),
@@ -404,7 +405,10 @@ it.each(['poll', 'continue', 'headless', 'setup'] as const)(
         code: 'region-mismatch',
         message: 'Different region',
         retryable: false,
+        refusal: null,
+        detail: null,
         data: { accountRegion: 'eu', requestedRegion: 'na' },
+        requestId: null,
       });
     });
     const operation =

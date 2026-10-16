@@ -38,7 +38,7 @@ it.each([false, true])(
       .insertInto('asset_lock')
       .values({ assetId: blocked.members[1], reason: AssetLockReason.Marked, lockedBy: user.id })
       .execute();
-    const auth = { ...factory.auth({ user: { id: user.id } }), system: true };
+    const auth = { ...factory.auth({ user: { id: user.id } }), system: true as const };
     const targets = [open.id, blocked.id, unselected.id, foreign.id];
     const selected = [open.members[0], blocked.members[0], moved.members[0]];
     const result = await repository.unstackSelection(auth, targets, selected, elevated);

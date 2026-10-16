@@ -21,7 +21,7 @@ describe('admin restore publication on a real filesystem', () => {
     const target = join(folder, 'photo.jpg');
     const bytes = Buffer.from('backup');
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const logger = new LoggingRepository();
+    const logger = LoggingRepository.create();
     const storage = new StorageRepository(logger);
     const file = {
       fileKey: 'asset:000',

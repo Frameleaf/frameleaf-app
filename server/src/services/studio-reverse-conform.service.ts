@@ -607,7 +607,7 @@ export class StudioReverseConformService {
       throw new BadRequestException('Local source reversal accepts files up to 256 MiB');
     }
     await this.checkBytes(entry);
-    const info = await this.media.probe(entry.path!, { signal });
+    const info = await this.media.probe(entry.path!, { countFrames: false, signal });
     if (
       !info.videoStreams[0] ||
       !Number.isFinite(info.format.duration) ||

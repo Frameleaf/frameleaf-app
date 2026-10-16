@@ -31,6 +31,7 @@ const pending = (): FrameleafCloudLink => ({
     deviceCode: 'device-1',
     userCode: 'ABCD-EFGH',
     verificationUri: 'https://id.cloud.test/device',
+    verificationUriComplete: 'https://id.cloud.test/device?user_code=ABCD-EFGH',
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
     intervalSeconds: 5,
     nextPollAt: new Date(0).toISOString(),

@@ -13,7 +13,7 @@ it('requires the internal owner worker before unstack selection', async () => {
 
 it.each([false, true])('publishes only committed stack deletions with sequencing=%s', async (sequenced) => {
   const { sut, mocks } = newTestService(StackService);
-  const auth = { ...authStub.user1, system: true };
+  const auth = { ...authStub.user1, system: true as const };
   mocks.stack.enqueueLocalEffects.mockResolvedValue(0);
   const result = { deletedStackIds: ['deleted'], unstackedAssetIds: ['asset'], lockedAssetIds: ['blocked'] };
   mocks.stack.unstackSelection.mockImplementation((_auth, _stacks, _assets, _elevated, capture) => {

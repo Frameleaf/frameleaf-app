@@ -509,8 +509,9 @@ export class FrameleafLicenseService extends BaseService {
       const current = await readCloudLink(this.gatewayDeps());
       if (
         !current.linked ||
+        !current.link ||
         current.cloudUrl !== cloudUrl ||
-        current.link?.instanceId !== link.instanceId ||
+        current.link.instanceId !== link.instanceId ||
         current.link.accountId !== link.accountId ||
         current.link.linkedAt !== link.linkedAt
       ) {

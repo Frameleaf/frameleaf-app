@@ -776,7 +776,9 @@ export class StudioExportService {
     const project = version.projectId ? await this.projects.getById(version.projectId) : undefined;
     const keptPath = version.outputPath;
     const finalPath = studioExportLibraryPath(version.ownerId, version.id, container.extension);
-    if (!isManagedStudioExportPath(version)) throw new NotFoundException('Studio export not found');
+    if (!isManagedStudioExportPath({ ...version, outputPath: keptPath })) {
+      throw new NotFoundException('Studio export not found');
+    }
     this.storage.mkdirSync(dirname(finalPath));
     const roots = [
       StorageCore.getFolderLocation(StorageFolder.Exports, version.ownerId),

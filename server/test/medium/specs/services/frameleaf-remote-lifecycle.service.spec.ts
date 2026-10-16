@@ -106,9 +106,10 @@ it('invalidates relay usage after another PostgreSQL lifecycle owner commits a n
       .withLock(DatabaseLock.FrameleafHeartbeat, () =>
         h.metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...h.link, linkedAt: 'new-generation' }),
       );
-    h.ctx
-      .getMock(FrameleafCloudRepository)
-      .requestJson.mockResolvedValueOnce({ ...cloudContractFixture('remote/remote-usage.json'), bytes: 2 } as never);
+    h.ctx.getMock(FrameleafCloudRepository).requestJson.mockResolvedValueOnce({
+      ...cloudContractFixture<Record<string, unknown>>('remote/remote-usage.json'),
+      bytes: 2,
+    } as never);
     await expect(h.sut.getUsage(authStub.admin, now + 1000)).resolves.toMatchObject({ bytes: 2 });
     expect(h.ctx.getMock(FrameleafCloudRepository).requestJson).toHaveBeenCalledTimes(2);
   } finally {

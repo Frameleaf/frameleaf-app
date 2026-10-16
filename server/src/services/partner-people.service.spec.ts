@@ -7,6 +7,7 @@ import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForAsset } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -112,7 +113,9 @@ describe(PartnerPeopleService.name, () => {
         const copy = BaseService.create(PartnerCopyService, sut);
         const source = AssetFactory.create({ id: SOURCE_ASSET, ownerId: A, livePhotoVideoId: null });
         const target = AssetFactory.create({ id: TARGET_ASSET, ownerId: B });
-        mocks.asset.getById.mockImplementation((id) => Promise.resolve(id === SOURCE_ASSET ? source : target));
+        mocks.asset.getById.mockImplementation((id) =>
+          Promise.resolve(getForAsset(id === SOURCE_ASSET ? source : target)),
+        );
         const snapshot = {
           id: TARGET_ASSET,
           sourceId: SOURCE_ASSET,
@@ -128,7 +131,9 @@ describe(PartnerPeopleService.name, () => {
         mocks.partnerOrigin.libraryHasChecksum.mockResolvedValue(true);
         mocks.partnerOrigin.getCopyId.mockResolvedValue(TARGET_ASSET);
         mocks.partnerOrigin.getFollowingAlbumCopiesHolding.mockResolvedValue([]);
-        mocks.asset.getLockReasons.mockResolvedValue([{ assetId: SOURCE_ASSET, reason: AssetLockReason.Marked }]);
+        mocks.asset.getLockReasons.mockResolvedValue([
+          { assetId: SOURCE_ASSET, reason: AssetLockReason.Marked, lockedAt: new Date() },
+        ]);
         mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
         mocks.user.getMetadata.mockResolvedValue([]);
         let held = false;

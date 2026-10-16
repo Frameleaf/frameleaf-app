@@ -1,4 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { DatabaseRepository } from 'src/repositories/database.repository.js';
+import type { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import type { UserRepository } from 'src/repositories/user.repository.js';
 import type { FrameleafCloudLink, FrameleafLicense, FrameleafLicenseStore } from 'src/types.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
@@ -80,9 +83,11 @@ const setup = () => {
   mocks.frameleafCloud.requestJson.mockResolvedValue({ certificates: ['new-plan', 'supporter'] } as never);
   const { sut: cloud, mocks: cloudMocks } = newTestService(FrameleafCloudService, {
     config: mocks.config,
-    database: mocks.database,
-    systemMetadata: mocks.systemMetadata,
-    user: mocks.user,
+    // Both services share the licence service's mocks; a mock lacks the repositories' private
+    // members, so it needs the same cast newTestService applies to its own mocks.
+    database: mocks.database as unknown as DatabaseRepository,
+    systemMetadata: mocks.systemMetadata as unknown as SystemMetadataRepository,
+    user: mocks.user as unknown as UserRepository,
   });
   cloudMocks.frameleafAccount.deleteAllSessions.mockResolvedValue([]);
   const cloudInternals = cloud as unknown as {
