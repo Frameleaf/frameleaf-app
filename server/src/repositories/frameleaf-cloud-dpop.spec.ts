@@ -353,6 +353,37 @@ describe('Frameleaf Cloud DPoP-bound instance tokens (FL-178)', () => {
   });
 
   describe('the fake cloud is as strict as FC-66', () => {
+    it.each([
+      ['null header', null, undefined],
+      ['null claims', undefined, null],
+      [
+        'invalid public key',
+        { typ: 'dpop+jwt', alg: 'EdDSA', jwk: { kty: 'OKP', crv: 'Ed25519', x: 'bad' } },
+        undefined,
+      ],
+      ['array header', [], undefined],
+    ])('refuses %s without leaving the request unanswered', async (_name, header, claims) => {
+      for (const path of ['/id/token', '/api/v1/instances']) {
+        const proof = signer.sign(
+          (header === undefined ? { typ: 'dpop+jwt', alg: 'EdDSA', jwk: signer.publicJwk } : header) as never,
+          (claims === undefined
+            ? { jti: path, htm: 'POST', htu: `${cloud.url}${path}`, iat: Math.floor(Date.now() / 1000) }
+            : claims) as never,
+        );
+        const response = await fetch(`${cloud.url}${path}`, {
+          method: 'POST',
+          headers: { DPoP: proof, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'grant_type=client_credentials',
+          signal: AbortSignal.timeout(1000),
+        });
+        expect(response.status).toBe(path === '/id/token' ? 400 : 401);
+        expect(await response.json()).toMatchObject(
+          path === '/id/token' ? { error: 'invalid_dpop_proof' } : { code: 'invalid_dpop_proof' },
+        );
+      }
+      await expect(mint()).resolves.toMatchObject({ signer });
+    });
+
     it('refuses a token request or a registration without a proof', async () => {
       cloud.on('POST /api/v1/instances', () => ({ status: 200, body: {} }));
       // sent raw: FrameleafCloudRepository never sends an unproofed call (FC-50, see below)
