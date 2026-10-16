@@ -107,11 +107,12 @@ it.each(['close', 'session', 'new cluster', 'single asset', 'markers', 'source']
         map.source = { getClusterLeaves: vi.fn() };
         break;
       }
-      default:
+      default: {
         await view.rerender({
           onSelect,
           mapMarkers: [{ id: 'replacement', lat: 1, lon: 2, city: null, state: null, country: null }],
         });
+      }
     }
     await tick();
     pending.resolve([leaf('old')]);

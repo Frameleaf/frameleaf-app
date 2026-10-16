@@ -47,8 +47,9 @@ it.each(['none', 'unmount', 'session', 'replacement'] as const)(
           assetViewerManager.setAsset(replacement);
           break;
         }
-        default:
+        default: {
           assetViewerManager.setAsset(target);
+        }
       }
       pending.resolve(true);
       await expect(done).resolves.toEqual(retire === 'none' ? target : undefined);
