@@ -3,6 +3,7 @@ import {
   galleryLogo,
   galleryMedia,
   galleryRequest,
+  openGallerySession,
   watermarkPreview,
   workflowRequest,
 } from './workflow-api';
@@ -45,6 +46,20 @@ it('fetches protected pixels through the scoped route and refuses expired access
     code: 'access_ended',
     status: 403,
   });
+});
+
+it('opens an invitation without a password and reports only a password refusal as one', async () => {
+  const brand = { name: 'North Studio' };
+  transport.fetch.mockResolvedValueOnce(Response.json({ passwordRequired: true, brand }, { status: 401 }));
+  expect(await openGallerySession('shoot', 'token')).toEqual({ passwordRequired: true, brand });
+  const [url, options] = transport.fetch.mock.calls[0];
+  expect(url).toBe('/custom-api/photography/galleries/shoot/session');
+  expect(JSON.parse(options.body)).toEqual({ token: 'token' });
+  expect(options.credentials).toBe('omit');
+  // a bad or ended invitation is still an ended invitation, never a password question
+  transport.fetch.mockResolvedValueOnce(Response.json({ message: 'Invalid invitation' }, { status: 403 }));
+  await expect(openGallerySession('shoot', 'token', 'guess')).rejects.toMatchObject({ code: 'access_ended' });
+  expect(JSON.parse(transport.fetch.mock.calls[1][1].body)).toEqual({ token: 'token', password: 'guess' });
 });
 
 it('lets a save started as the page closes outlive it, and only when asked', async () => {

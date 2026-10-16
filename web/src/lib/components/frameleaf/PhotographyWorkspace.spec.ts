@@ -13,10 +13,13 @@ vi.mock('$lib/frameleaf/photography/api', async (original) => ({
   loadPhotos: vi.fn(),
   ratePhoto: vi.fn(),
   saveWorkspace: vi.fn(),
+  // a section's own data stays loading: these tests look at the workspace around it
+  loadBrand: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   ...(await original<typeof import('$lib/frameleaf/photography/workflow-api')>()),
   loadWorkflowSummaries: vi.fn(),
+  workflowRequest: vi.fn(() => new Promise(() => {})),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { authenticated: true, user: { id: 'owner', name: 'North Studio' } },
@@ -43,9 +46,11 @@ const photo = (id: string, rating: number | null = null): Photo => ({
   currentRevisionId: null,
 });
 
+/** The shoot's card in the list (its name follows the stage chip on the cover). */
+const card = () => screen.findByRole('button', { name: /^Imported Harbour portraits/ });
 const open = async () => {
   render(PhotographyWorkspace);
-  await fireEvent.click(await screen.findByRole('button', { name: /Harbour portraits/ }));
+  await fireEvent.click(await card());
   return screen.findByRole('button', { name: 'Show one.CR3' });
 };
 
@@ -62,21 +67,54 @@ describe('PhotographyWorkspace', () => {
     sdkMock.getAssetDevelop.mockResolvedValue({ revisions: [] } as never);
   });
 
-  it('calls it a shoot everywhere, with one name per shoot section once a shoot is open', async () => {
+  it('calls it a shoot everywhere, with its sections as tabs under the open shoot', async () => {
     render(PhotographyWorkspace);
     expect(await screen.findByRole('button', { name: 'New shoot' })).toBeInTheDocument();
     expect(screen.queryByText(/project/i)).toBeNull();
     const rail = screen.getByRole('navigation', { name: 'Photography workspace' });
-    // a shoot's sections are not offered until a shoot is open
-    expect(within(rail).queryByRole('button', { name: 'Orders & delivery' })).toBeNull();
-    const card = await screen.findByRole('button', { name: /Harbour portraits/ });
-    expect(screen.queryByText(/project/i)).toBeNull();
-    await fireEvent.click(card);
-    for (const name of ['Photographs', 'Intake & assembly', 'Client workflow', 'Orders & delivery', 'Presentation']) {
-      expect(await within(rail).findByRole('button', { name })).toBeInTheDocument();
+    // the rail holds the studio-wide places only; a shoot's sections never join it
+    for (const name of ['Shoots', 'Galleries', 'Studio website', 'Watermarks', 'Branding']) {
+      expect(within(rail).getByRole('button', { name })).toBeInTheDocument();
     }
-    expect(within(rail).getByRole('button', { name: 'Publishing' })).toBeInTheDocument();
+    await fireEvent.click(await card());
+    const tabs = await screen.findByRole('navigation', { name: 'Shoot sections' });
+    for (const name of ['Photographs', 'Intake & assembly', 'Client workflow', 'Orders & delivery', 'Presentation']) {
+      expect(within(tabs).getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(within(tabs).getByRole('button', { name: 'Photographs' })).toHaveAttribute('aria-current', 'page');
+    expect(within(rail).queryByRole('button', { name: 'Orders & delivery' })).toBeNull();
     expect(screen.queryByText(/project/i)).toBeNull();
+  });
+
+  it('shows what each shoot needs next and opens the shoot at that section', async () => {
+    vi.mocked(loadWorkflowSummaries).mockResolvedValue({
+      galleries: [
+        {
+          shootId: 'shoot',
+          revision: 'r',
+          title: 'Harbour portraits',
+          mode: 'select-before-editing',
+          selectionDeadline: null,
+          expiresAt: null,
+          published: true,
+          submittedRounds: 0,
+          unpaidOrders: 1,
+          readyCount: 0,
+          pendingEdits: 0,
+          outstanding: 2500,
+          currency: 'CAD',
+          invited: 1,
+        },
+      ],
+    });
+    render(PhotographyWorkspace);
+    // the prototype's tiles: awaiting selections and the outstanding amount in the gallery's currency
+    expect(await screen.findByText('Outstanding · CAD')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting selections').nextElementSibling).toHaveTextContent('1');
+    const step = await screen.findByRole('button', { name: 'Harbour portraits Waiting for payment' });
+    await fireEvent.click(step);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Orders & delivery' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Current shoot' })).toHaveValue('shoot');
   });
 
   it('rates at once after clicking a photo and pressing a number, without locking the grid', async () => {

@@ -13,10 +13,14 @@
     type Branding,
     type LogoPage,
   } from '$lib/frameleaf/photography/api';
+  import { AssetMediaSize } from '@frameleaf/sdk';
+  import PhotographyThumb from '$lib/components/frameleaf/PhotographyThumb.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { getAssetMediaUrl } from '$lib/utils';
 
-  let { onSaved }: { onSaved: () => void } = $props();
+  /** `photoId`: one of the photographer's own photos, for the watermark preview. */
+  let { onSaved, photoId = null }: { onSaved: () => void; photoId?: string | null } = $props();
   let stored = $state<Branding | null>(null);
   let draft = $state<Brand | null>(null);
   let loading = $state(true);
@@ -217,8 +221,15 @@
           {$t('frameleaf_photography_your_watermark_body')}
         </p>
       </div>
-      <div class="phw-watermark-guide" aria-label={$t('frameleaf_photography_placement_guide_label')}>
-        <span class="phw-guide-label">{$t('frameleaf_photography_placement_guide')}</span><span
+      <div
+        class="phw-watermark-guide"
+        class:has-photo={!!photoId}
+        aria-label={$t('frameleaf_photography_placement_guide_label')}
+      >
+        {#if photoId}<PhotographyThumb
+            src={getAssetMediaUrl({ id: photoId, size: AssetMediaSize.Preview })}
+            loading="eager"
+          />{:else}<span class="phw-guide-label">{$t('frameleaf_photography_placement_guide')}</span>{/if}<span
           class="phw-guide-mark"
           data-position={draft.watermarkPosition}
           style:color={draft.watermarkColor}

@@ -3,9 +3,10 @@
    * The photography workspace: a photographer's shoots, each linked to an album they own, with
    * culling, client workflow, presentation and publishing.
    *
-   * One noun, "shoot", everywhere. The rail has a studio group (Shoots, Branding, Watermarks, Studio
-   * website) and, once a shoot is open, a group for that shoot titled with its name; the shoot stays
-   * open while moving between its sections and each section has one name (PhotographyStatus).
+   * One noun, "shoot", everywhere. The rail holds the studio-wide places (Shoots, Galleries, Studio
+   * website, Watermarks, Branding). An open shoot's own sections are tabs under its strip
+   * (PhotographyShootTabs); a section's header names the section and carries a shoot picker, so the
+   * shoot stays open while moving between them and each section has one name (PhotographyStatus).
    *
    * Culling never stops: a rating shows at once and saves behind it, one tile at a time. A rating
    * that could not be saved puts that tile back and offers a retry on the tile. Click a photograph to
@@ -22,32 +23,37 @@
     type AssetDevelopResponseDto,
   } from '@frameleaf/sdk';
   import {
-    mdiAccountHeartOutline,
     mdiArrowLeft,
     mdiCameraIris,
     mdiCameraOutline,
+    mdiCheckAll,
     mdiChevronRight,
+    mdiClipboardCheckOutline,
+    mdiClockOutline,
     mdiCloseCircleOutline,
+    mdiEmailOutline,
+    mdiHeartOutline,
+    mdiImageEditOutline,
     mdiImageMultipleOutline,
     mdiMagnify,
     mdiPaletteOutline,
     mdiPlus,
     mdiRestore,
-    mdiSendOutline,
     mdiShieldCheckOutline,
     mdiStar,
     mdiStarOutline,
-    mdiStarCheckOutline,
     mdiTrayArrowDown,
-    mdiViewDashboardOutline,
     mdiWatermark,
     mdiWeb,
   } from '@mdi/js';
+  import type { Translations } from 'svelte-i18n';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
   import PhotographyWorkflow from '$lib/components/frameleaf/PhotographyWorkflow.svelte';
   import PhotographyWatermarks from '$lib/components/frameleaf/PhotographyWatermarks.svelte';
   import PhotographyWebsite from '$lib/components/frameleaf/PhotographyWebsite.svelte';
   import PhotographyNativeSync from '$lib/components/frameleaf/PhotographyNativeSync.svelte';
+  import PhotographyShootTabs, { type ShootTab } from '$lib/components/frameleaf/PhotographyShootTabs.svelte';
+  import PhotographyThumb from '$lib/components/frameleaf/PhotographyThumb.svelte';
   import PhotographyStatus, {
     photographyErrorKey,
     shootSectionKeys,
@@ -78,20 +84,25 @@
   import { locale } from '$lib/stores/preferences.store';
   import '$lib/frameleaf/photography/workspace.css';
 
-  type ShootSection = 'intake' | 'workflow' | 'orders' | 'presentation' | 'publishing';
-  type Section = 'shoots' | 'branding' | 'watermarks' | 'website' | ShootSection;
+  /** A shoot's tabs after Photographs; Photographs itself is the open shoot under `shoots`. */
+  type ShootSection = Exclude<ShootTab, 'photos'>;
+  type Section = 'shoots' | 'galleries' | 'branding' | 'watermarks' | 'website' | ShootSection;
   type PhotoFilter = 'all' | 'selected' | 'edited';
   type ShootFilter = 'all' | 'active' | 'Proofing' | 'Delivered';
+  type NextAction = { label: string; icon: string; section: Section; rank: number };
 
-  /** The shoot's own sections, in working order, each with its own icon. */
-  const shootSections: readonly { id: ShootSection; icon: string }[] = [
-    { id: 'intake', icon: mdiTrayArrowDown },
-    { id: 'workflow', icon: mdiAccountHeartOutline },
-    { id: 'orders', icon: mdiStarCheckOutline },
-    { id: 'presentation', icon: mdiViewDashboardOutline },
-    { id: 'publishing', icon: mdiSendOutline },
-  ];
-  const isShootSection = (value: Section): value is ShootSection => shootSections.some(({ id }) => id === value);
+  const shootSectionIds: ReadonlySet<Section> = new Set<ShootSection>(['intake', 'workflow', 'orders', 'presentation']);
+  const isShootSection = (value: Section): value is ShootSection => shootSectionIds.has(value);
+  /** Sections that work on one shoot at a time, chosen with the picker in the header. */
+  const picksShoot = (value: Section) => isShootSection(value) || value === 'galleries';
+  /** The prototype's subtitle for each section that works on one shoot. */
+  const sectionLeads: Record<ShootSection | 'galleries', Translations> = {
+    intake: 'frameleaf_photography_intake_lead',
+    workflow: 'frameleaf_photography_workflow_lead',
+    orders: 'frameleaf_photography_orders_lead',
+    presentation: 'frameleaf_photography_presentation_lead',
+    galleries: 'frameleaf_photography_galleries_lead',
+  };
   const emptyDraft = (albumId = '') => ({
     name: '',
     client: '',
@@ -205,7 +216,11 @@
         ? $t('frameleaf_photography_watermarks')
         : section === 'website'
           ? $t('frameleaf_photography_studio_website')
-          : (active?.name ?? $t('frameleaf_photography_shoots')),
+          : section === 'galleries'
+            ? $t('frameleaf_photography_galleries')
+            : isShootSection(section)
+              ? $t(shootSectionKeys[section])
+              : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
     section === 'branding'
@@ -214,10 +229,116 @@
         ? $t('frameleaf_photography_watermarks_lead')
         : section === 'website'
           ? $t('frameleaf_photography_website_lead')
-          : active && (section === 'shoots' || isShootSection(section))
-            ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
-            : $t('frameleaf_photography_shoots_lead'),
+          : picksShoot(section)
+            ? $t(sectionLeads[section as ShootSection | 'galleries'])
+            : active
+              ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
+              : $t('frameleaf_photography_shoots_lead'),
   );
+  const summaryFor = (id: string) => workflowSummaries.find((row) => row.shootId === id);
+  /** Client galleries that have been published: the rail's count beside Galleries. */
+  const galleryCount = $derived(
+    workflowSummaries.filter((row) => row.published && workspace.shoots.some(({ id }) => id === row.shootId)).length,
+  );
+  /** A photo of the photographer's own for the branding preview: the open shoot's cover, else any. */
+  const samplePhotoId = $derived(
+    (active?.unavailable ? null : active?.coverAssetId) ??
+      workspace.shoots.find((shoot) => shoot.coverAssetId && !shoot.unavailable)?.coverAssetId ??
+      null,
+  );
+
+  /**
+   * What the shoot needs next, from its client gallery's progress: the line on its card and the
+   * "next steps" row. A lower rank needs the photographer sooner.
+   */
+  function nextAction(shoot: Shoot): NextAction {
+    const summary = summaryFor(shoot.id);
+    if (shoot.stage === 'Delivered') {
+      return { label: $t('frameleaf_photography_next_delivered'), icon: mdiCheckAll, section: 'galleries', rank: 9 };
+    }
+    if (summary?.pendingEdits) {
+      return {
+        label: $t('frameleaf_photography_next_edit', { values: { count: summary.pendingEdits } }),
+        icon: mdiImageEditOutline,
+        section: 'orders',
+        rank: 0,
+      };
+    }
+    if (summary?.unpaidOrders) {
+      return {
+        label: $t('frameleaf_photography_next_payment'),
+        icon: mdiClipboardCheckOutline,
+        section: 'orders',
+        rank: 2,
+      };
+    }
+    if (summary?.readyCount) {
+      return { label: $t('frameleaf_photography_next_ready'), icon: mdiCheckAll, section: 'galleries', rank: 1 };
+    }
+    if (summary?.submittedRounds) {
+      return { label: $t('frameleaf_photography_next_review'), icon: mdiHeartOutline, section: 'orders', rank: 0 };
+    }
+    if (summary?.published && summary.invited === 0) {
+      return { label: $t('frameleaf_photography_next_invite'), icon: mdiEmailOutline, section: 'galleries', rank: 1 };
+    }
+    if (summary?.published) {
+      const due = summary.selectionDeadline
+        ? ` · ${$t('frameleaf_photography_selections_due', { values: { date: new Date(summary.selectionDeadline).toLocaleDateString($locale) } })}`
+        : '';
+      return {
+        label: `${$t('frameleaf_photography_next_waiting')}${due}`,
+        icon: mdiClockOutline,
+        section: 'workflow',
+        rank: 3,
+      };
+    }
+    return shoot.assetCount
+      ? {
+          label: $t('frameleaf_photography_next_assemble'),
+          icon: mdiImageMultipleOutline,
+          section: 'intake',
+          rank: 4,
+        }
+      : { label: $t('frameleaf_photography_next_import'), icon: mdiTrayArrowDown, section: 'intake', rank: 5 };
+  }
+  /** Up to three active shoots, the ones that need the photographer first. */
+  const nextSteps = $derived(
+    workspace.shoots
+      .filter((shoot) => shoot.stage !== 'Delivered' && !shoot.unavailable)
+      .map((shoot) => ({ shoot, action: nextAction(shoot) }))
+      .sort((a, b) => a.action.rank - b.action.rank || b.shoot.date.localeCompare(a.shoot.date))
+      .slice(0, 3),
+  );
+  const activeShoots = $derived(workspace.shoots.filter((shoot) => shoot.stage !== 'Delivered').length);
+  /** Galleries a client has been invited to and has not sent selections from yet. */
+  const awaitingSelections = $derived(
+    workflowSummaries.filter((row) => row.published && row.submittedRounds === 0 && row.invited !== 0).length,
+  );
+  const editingQueue = $derived(workflowSummaries.reduce((total, row) => total + (row.pendingEdits ?? 0), 0));
+  /** Unpaid order totals by currency, or null while the server does not report amounts. */
+  const outstanding = $derived.by(() => {
+    if (workflowSummaries.length === 0 || workflowSummaries.some((row) => row.outstanding === undefined)) {
+      return null;
+    }
+    const totals = new Map<string, number>();
+    for (const row of workflowSummaries) {
+      const currency = row.currency ?? 'USD';
+      totals.set(currency, (totals.get(currency) ?? 0) + (row.outstanding ?? 0));
+    }
+    return [...totals];
+  });
+  /** `narrow`: the label already names the currency, so "$0.00" rather than "CA$0.00", as in the prototype. */
+  const money = (amount: number, currency: string, narrow = false) => {
+    try {
+      return new Intl.NumberFormat($locale, {
+        style: 'currency',
+        currency,
+        currencyDisplay: narrow ? 'narrowSymbol' : 'symbol',
+      }).format(amount / 100);
+    } catch {
+      return `${amount / 100} ${currency}`;
+    }
+  };
 
   function resetRatings() {
     ratingGeneration++;
@@ -365,6 +486,31 @@
     activeId = null;
     detailGeneration++;
     resetRatings();
+  }
+
+  /** A tab under the shoot strip: Photographs is the open shoot itself, the rest are sections. */
+  function openTab(tab: ShootTab) {
+    section = tab === 'photos' ? 'shoots' : tab;
+  }
+
+  /** Opens a shoot straight into one of its sections (a next step, a card's action). */
+  async function openShootAt(id: string, target: Section) {
+    section = target;
+    await openShoot(id);
+  }
+
+  /** Galleries works on one shoot: the open one, else the first with a published gallery. */
+  function openGalleries() {
+    section = 'galleries';
+    if (active) {
+      return;
+    }
+    const id =
+      workflowSummaries.find((row) => row.published && workspace.shoots.some((shoot) => shoot.id === row.shootId))
+        ?.shootId ?? workspace.shoots[0]?.id;
+    if (id) {
+      void openShoot(id);
+    }
   }
 
   function startShoot() {
@@ -595,7 +741,16 @@
           }
         }}><Icon icon={mdiCameraOutline} size="1.2rem" aria-hidden={true} />{$t('frameleaf_photography_shoots')}</button
       >
-      {#each [['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['watermarks', $t('frameleaf_photography_watermarks'), mdiWatermark], ['website', $t('frameleaf_photography_studio_website'), mdiWeb]] as const as [id, label, icon] (id)}
+      <button
+        type="button"
+        aria-current={section === 'galleries' ? 'page' : undefined}
+        disabled={busy}
+        onclick={openGalleries}
+        ><Icon icon={mdiImageMultipleOutline} size="1.2rem" aria-hidden={true} /><span
+          >{$t('frameleaf_photography_galleries')}</span
+        >{#if galleryCount}<small class="phw-nav-count">{galleryCount}</small>{/if}</button
+      >
+      {#each [['website', $t('frameleaf_photography_studio_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiWatermark], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -603,26 +758,6 @@
           onclick={() => (section = id)}><Icon {icon} size="1.2rem" aria-hidden={true} />{label}</button
         >
       {/each}
-      {#if active}
-        <!-- The open shoot's own sections: they appear with the shoot and keep it open. -->
-        <p class="phw-nav-heading" title={active.name}>{active.name}</p>
-        <button
-          type="button"
-          aria-current={section === 'shoots' ? 'page' : undefined}
-          disabled={busy}
-          onclick={() => (section = 'shoots')}
-          ><Icon icon={mdiImageMultipleOutline} size="1.2rem" aria-hidden={true} />{$t(shootSectionKeys.photos)}</button
-        >
-        {#each shootSections as entry (entry.id)}
-          <button
-            type="button"
-            aria-current={section === entry.id ? 'page' : undefined}
-            disabled={busy}
-            onclick={() => (section = entry.id)}
-            ><Icon icon={entry.icon} size="1.2rem" aria-hidden={true} />{$t(shootSectionKeys[entry.id])}</button
-          >
-        {/each}
-      {/if}
     </nav>
     <div class="phw-rail-bottom">
       <Icon icon={mdiShieldCheckOutline} size="1.3rem" aria-hidden={true} />
@@ -649,11 +784,19 @@
             savedLabel={message}
           />
         </span>
-        {#if section === 'shoots' && !active}<Button
-            variant="primary"
-            disabled={loading || busy || !!error}
-            onclick={startShoot}
-            ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_new_shoot')}</Button
+        {#if section === 'shoots'}<span class="phw-new-shoot-action" class:in-shoot={!!active}
+            ><Button variant="primary" disabled={loading || busy || !!error} onclick={startShoot}
+              ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_new_shoot')}</Button
+            ></span
+          >{:else if picksShoot(section) && workspace.shoots.length > 0}<select
+            class="phw-shoot-picker"
+            aria-label={$t('frameleaf_photography_current_shoot')}
+            value={activeId ?? ''}
+            disabled={busy}
+            onchange={(event) => openShoot(event.currentTarget.value)}
+            >{#if !active}<option value="" disabled>{$t('frameleaf_photography_choose_shoot')}</option
+              >{/if}{#each workspace.shoots as shoot (shoot.id)}<option value={shoot.id}>{shoot.name}</option
+              >{/each}</select
           >{/if}
       </div>
     </header>
@@ -666,15 +809,21 @@
       />{/if}
     <main class="phw-scroll" aria-busy={loading} bind:this={scroller}>
       {#if section === 'branding'}<PhotographyBranding
+          photoId={samplePhotoId}
           onSaved={() => {
             void reload();
           }}
         />
       {:else if section === 'watermarks'}<PhotographyWatermarks />
       {:else if section === 'website'}<PhotographyWebsite shoots={workspace.shoots} />
-      {:else if isShootSection(section)}
-        {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow shoot={active} panel={section} />{/key}
-        {:else}<div class="phw-empty">
+      {:else if picksShoot(section)}
+        {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
+              shoot={active}
+              panel={section === 'galleries' ? 'publishing' : (section as ShootSection)}
+              onSection={openTab}
+              onGalleries={() => (section = 'galleries')}
+            />{/key}
+        {:else if !loading}<div class="phw-empty">
             <h2>{$t('frameleaf_photography_choose_shoot')}</h2>
             <p>{$t('frameleaf_photography_choose_shoot_body')}</p>
             <Button onclick={closeShoot}>{$t('frameleaf_photography_shoots')}</Button>
@@ -696,6 +845,7 @@
               >{/each}
           </div>
         </div>
+        <PhotographyShootTabs current="photos" onSection={openTab} />
         {#if active.unavailable}<div class="phw-empty">
             <h2>{$t('frameleaf_photography_album_unavailable')}</h2>
             <p>
@@ -781,7 +931,7 @@
                         aria-label={$t('frameleaf_photography_inspect_photo', { values: { name: photo.fileName } })}
                         aria-current={inspecting?.id === photo.id ? 'true' : undefined}
                         onclick={() => choose(photo)}
-                        ><img src={cover(photo.id)} alt={photo.fileName} loading="lazy" /></button
+                        ><PhotographyThumb src={cover(photo.id)} alt={photo.fileName} /></button
                       ><input
                         class="phw-photo-select"
                         type="checkbox"
@@ -878,9 +1028,10 @@
             </section>
             <aside class="phw-inspector">
               <div class="phw-inspector-cover">
-                {#if inspecting || active.coverAssetId}<img
+                {#if inspecting || active.coverAssetId}<PhotographyThumb
                     src={cover(inspecting?.id ?? active.coverAssetId!)}
                     alt={inspecting?.fileName ?? active.name}
+                    loading="eager"
                   />{/if}
               </div>
               <div class="phw-inspector-body">
@@ -951,62 +1102,60 @@
           </div>{/if}
       {:else if !error}
         {#if workspace.shoots.length > 0}
-          <div class="phd-metrics">
+          <div class="phx-metrics">
             <div>
-              <strong>{workspace.shoots.filter((shoot) => shoot.stage !== 'Delivered').length}</strong><span
-                >{$t('frameleaf_photography_metric_active')}</span
+              <small>{$t('frameleaf_photography_metric_active')}</small><strong>{activeShoots}</strong>
+            </div>
+            <div>
+              <small>{$t('frameleaf_photography_metric_awaiting')}</small><strong
+                >{summaryFailed ? '—' : awaitingSelections}</strong
               >
             </div>
             <div>
-              <strong>{workspace.shoots.filter((shoot) => shoot.stage === 'Proofing').length}</strong><span
-                >{$t('frameleaf_photography_metric_proofing')}</span
+              <small>{$t('frameleaf_photography_metric_editing_queue')}</small><strong
+                >{summaryFailed ? '—' : editingQueue}</strong
               >
             </div>
-            <div>
-              <strong>{workspace.shoots.filter((shoot) => shoot.stage === 'Edited').length}</strong><span
-                >{$t('frameleaf_photography_metric_edited')}</span
-              >
-            </div>
-            <div>
-              <strong>{workspace.shoots.filter((shoot) => shoot.stage === 'Delivered').length}</strong><span
-                >{$t('frameleaf_photography_stage_delivered')}</span
-              >
-            </div>
+            {#if outstanding}<div>
+                <small
+                  >{outstanding.length === 1
+                    ? $t('frameleaf_photography_metric_outstanding_currency', {
+                        values: { currency: outstanding[0][0] },
+                      })
+                    : $t('frameleaf_photography_metric_outstanding')}</small
+                ><strong
+                  >{outstanding
+                    .map(([currency, amount]) => money(amount, currency, outstanding.length === 1))
+                    .join(' · ')}</strong
+                >
+              </div>{:else}<div>
+                <small>{$t('frameleaf_photography_metric_unpaid')}</small><strong
+                  >{summaryFailed ? '—' : workflowSummaries.reduce((total, row) => total + row.unpaidOrders, 0)}</strong
+                >
+              </div>{/if}
           </div>
           {#if summaryFailed}<InlineError
               compact
               message={$t('frameleaf_photography_summary_failed')}
               onRetry={reload}
               retrying={loading}
-            />{:else if workflowSummaries.length}
-            <div class="phd-metrics">
+            />{/if}
+          {#if nextSteps.length}<div class="phx-action-list">
               <div>
-                <strong>{workflowSummaries.reduce((total, row) => total + row.submittedRounds, 0)}</strong><span
-                  >{$t('frameleaf_photography_metric_rounds')}</span
-                >
+                <span class="phx-eyebrow">{$t('frameleaf_photography_next_steps_eyebrow')}</span>
+                <h2>{$t('frameleaf_photography_next_steps_title')}</h2>
               </div>
               <div>
-                <strong>{workflowSummaries.reduce((total, row) => total + row.unpaidOrders, 0)}</strong><span
-                  >{$t('frameleaf_photography_metric_unpaid')}</span
-                >
+                {#each nextSteps as { shoot, action } (shoot.id)}<button
+                    type="button"
+                    disabled={busy}
+                    onclick={() => openShootAt(shoot.id, action.section)}
+                    ><Icon icon={action.icon} size="1.2rem" aria-hidden={true} /><span
+                      ><strong>{shoot.name}</strong><small>{action.label}</small></span
+                    ><Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} /></button
+                  >{/each}
               </div>
-              <div>
-                <strong>{workflowSummaries.reduce((total, row) => total + (row.pendingEdits ?? 0), 0)}</strong><span
-                  >{$t('frameleaf_photography_metric_pending_edits')}</span
-                >
-              </div>
-              <div>
-                <strong>{workflowSummaries.reduce((total, row) => total + row.readyCount, 0)}</strong><span
-                  >{$t('frameleaf_photography_metric_ready')}</span
-                >
-              </div>
-              <div>
-                <strong>{workflowSummaries.filter((row) => row.published).length}</strong><span
-                  >{$t('frameleaf_photography_metric_published')}</span
-                >
-              </div>
-            </div>
-          {/if}
+            </div>{/if}
           <div class="phw-tabs phd-project-filters" role="group" aria-label={$t('frameleaf_photography_shoot_status')}>
             {#each shootFilters as filter (filter)}<button
                 type="button"
@@ -1029,11 +1178,12 @@
           </div>
         {/if}
         <div class="phw-shoot-grid">
-          {#each listing as shoot (shoot.id)}{@const summary = workflowSummaries.find(
-              (row) => row.shootId === shoot.id,
-            )}<button type="button" class="phw-shoot-card" onclick={() => openShoot(shoot.id)}
+          {#each listing as shoot (shoot.id)}{@const action = shoot.unavailable ? null : nextAction(shoot)}<button
+              type="button"
+              class="phw-shoot-card"
+              onclick={() => openShoot(shoot.id)}
               ><div class="phw-shoot-image">
-                {#if shoot.coverAssetId}<img src={cover(shoot.coverAssetId)} alt="" loading="lazy" />{:else}<Icon
+                {#if shoot.coverAssetId}<PhotographyThumb src={cover(shoot.coverAssetId)} />{:else}<Icon
                     icon={mdiCameraOutline}
                     size="3rem"
                     aria-hidden={true}
@@ -1043,17 +1193,8 @@
               </div>
               <div class="phw-shoot-text">
                 <strong>{shoot.name}</strong><span>{shoot.client}</span>
-                {#if summary}<small class="phw-small"
-                    >{$t('frameleaf_photography_shoot_summary', {
-                      values: {
-                        rounds: summary.submittedRounds,
-                        orders: summary.unpaidOrders,
-                        edits: summary.pendingEdits ?? 0,
-                      },
-                    })}{#if summary.selectionDeadline}
-                      · {$t('frameleaf_photography_selections_due', {
-                        values: { date: new Date(summary.selectionDeadline).toLocaleDateString($locale) },
-                      })}{/if}</small
+                {#if action}<small class="phx-card-action"
+                    ><Icon icon={action.icon} size="0.875rem" aria-hidden={true} />{action.label}</small
                   >{/if}
                 <footer>
                   <time datetime={shoot.date}>{dateLabel(shoot.date)}</time><span

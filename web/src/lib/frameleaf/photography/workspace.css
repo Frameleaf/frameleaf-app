@@ -241,8 +241,10 @@
   gap: 16px;
   margin: 20px 0;
 }
-.phd-portfolio-choices img {
+.phd-portfolio-choices img,
+.phd-portfolio-choices label > .ph-thumb-missing {
   width: 100%;
+  height: auto;
   aspect-ratio: 4/5;
   object-fit: cover;
 }
@@ -279,12 +281,9 @@
 }
 .phw {
   display: flex;
+  /* The page body is a full-height flex column (UserPageLayout `fill`): the workspace fills it
+     edge to edge, as in the prototype, and scrolls its own panes. */
   flex: 1;
-  /* Fill the page body edge to edge, as in the prototype: the shared layout insets page content
-     by 0.5rem and does not stretch it, which left the rail short and floating. */
-  width: calc(100% + 1rem);
-  height: calc(100% + 1rem);
-  margin: -0.5rem;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1073,6 +1072,20 @@
   margin-bottom: 28px;
   overflow: hidden;
 }
+/* The preview on one of the photographer's own photos, as in the prototype (STUDIO-P8). */
+.phw-watermark-guide.has-photo {
+  height: auto;
+  aspect-ratio: 16 / 9;
+  max-height: 520px;
+}
+.phw-watermark-guide > img,
+.phw-watermark-guide > .ph-thumb-missing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .phw-guide-label {
   position: absolute;
   top: 14px;
@@ -1205,19 +1218,7 @@
   }
 }
 
-/* Culling and the shoot rail (design review findings 99 and 100). */
-/* The open shoot's group in the rail, titled with the shoot's name. */
-.phw-nav-heading {
-  margin: var(--fl-space-4) 0 var(--fl-space-1);
-  padding: 0 10px;
-  overflow: hidden;
-  color: var(--fl-muted);
-  font: var(--fl-type-micro);
-  letter-spacing: var(--fl-tracking-micro);
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
+/* Culling (design review findings 99 and 100). */
 /* A rating lands: the stars settle on the spring, a rejected photograph fades back. */
 .phw-open-photo img {
   transition: opacity var(--fl-motion) var(--fl-ease);
@@ -1256,8 +1257,333 @@
   border-radius: var(--fl-radius-control);
   color: var(--fl-text);
 }
+
+/* PhotographyWorkflow.jsx: the shoot list's overview, the shoot strip and its tabs (STUDIO-P2, P4). */
+.phw-nav-count {
+  margin-inline-start: auto;
+  font-size: var(--fl-font-micro);
+  color: var(--fl-muted);
+}
+.phw-shoot-picker {
+  max-width: 260px;
+  min-height: var(--fl-control-height-compact);
+}
+.phx-eyebrow {
+  display: block;
+  margin-bottom: var(--fl-space-3);
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+}
+.phx-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: var(--fl-space-6);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+}
+.phx-metrics > div {
+  min-width: 0;
+  padding: 19px 22px;
+  border-inline-end: 1px solid var(--fl-border);
+}
+.phx-metrics > div:last-child {
+  border: 0;
+}
+.phx-metrics small {
+  display: block;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.phx-metrics strong {
+  display: block;
+  margin-top: var(--fl-space-2);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.phx-action-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.1fr);
+  align-items: center;
+  gap: var(--fl-space-6);
+  margin-bottom: var(--fl-space-6);
+}
+.phx-action-list h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.35px;
+}
+.phx-action-list > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.phx-action-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: var(--fl-space-3);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-panel);
+  text-align: start;
+}
+.phx-action-list button:hover {
+  border-color: color-mix(in srgb, var(--fl-text) 35%, var(--fl-border));
+}
+.phx-action-list button > :first-child {
+  flex-shrink: 0;
+  color: var(--fl-accent);
+}
+.phx-action-list button > :last-child {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  color: var(--fl-muted);
+}
+.phx-action-list button > span {
+  min-width: 0;
+}
+.phx-action-list strong,
+.phx-action-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.phx-action-list strong {
+  font-size: var(--fl-font-small);
+  font-weight: 550;
+}
+.phx-action-list small {
+  margin-top: 4px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+}
+.phx-card-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--fl-space-3);
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+}
+.phx-card-action > :first-child {
+  flex-shrink: 0;
+  color: var(--fl-accent);
+}
+.phx-project-context {
+  display: flex;
+  align-items: center;
+  gap: var(--fl-space-3);
+  margin-bottom: 20px;
+}
+.phx-project-cover {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--fl-raised);
+  color: var(--fl-muted);
+}
+.phx-project-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.phx-project-text {
+  flex: 1;
+  min-width: 0;
+}
+.phx-project-text strong,
+.phx-project-text small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.phx-project-text strong {
+  font-weight: 600;
+}
+.phx-project-text small {
+  margin-top: 5px;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+/* In a section the cards follow at the column's own 20px gap: the strip and tabs add only the rest. */
+.phx-shoot-head > :last-child {
+  margin-bottom: var(--fl-space-1);
+}
+.phx-project-nav {
+  display: flex;
+  gap: 22px;
+  margin-bottom: var(--fl-space-6);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--fl-border);
+  scrollbar-width: none;
+}
+.phx-project-nav button {
+  padding: 10px 0 13px;
+  border-bottom: 2px solid transparent;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  white-space: nowrap;
+}
+.phx-project-nav button:hover {
+  color: var(--fl-text);
+}
+.phx-project-nav button[aria-current='page'] {
+  color: var(--fl-text);
+  border-bottom-color: var(--fl-accent);
+}
+/* Client workflow: the three ways of working, then the package and protection side by side (STUDIO-P3). */
+.phx-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+.phx-mode-grid > button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--fl-space-3);
+  min-height: 170px;
+  padding: 20px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-canvas);
+  text-align: start;
+}
+.phx-mode-grid > button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fl-text) 35%, var(--fl-border));
+}
+.phx-mode-grid > button[aria-pressed='true'] {
+  border-color: var(--fl-accent);
+  background: color-mix(in srgb, var(--fl-accent) 6%, var(--fl-canvas));
+}
+.phx-mode-grid > button > :first-child {
+  color: var(--fl-text);
+}
+.phx-mode-grid strong {
+  font-size: var(--fl-font-size);
+  font-weight: 550;
+}
+.phx-mode-grid span {
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+  line-height: 1.55;
+}
+.phd .phx-mode-grid small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+  color: var(--fl-accent);
+  font-size: var(--fl-font-micro);
+}
+.phx-two-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.phx-protection-part {
+  margin-top: var(--fl-space-6);
+  padding-top: var(--fl-space-4);
+  border-top: 1px solid var(--fl-border);
+}
+.phx-protection-part h4 {
+  margin: 0;
+}
+.phx-protection-part p {
+  margin: var(--fl-space-2) 0 var(--fl-space-3);
+}
+.phx-protection details > summary,
+.phd details > summary {
+  cursor: pointer;
+  color: var(--fl-muted);
+  font-size: var(--fl-font-small);
+}
+.phx-protection details > summary:hover {
+  color: var(--fl-text);
+}
+/* The column is narrower than the page: the watermark editor stacks its fields over its preview. */
+.phx-protection .phd-watermark-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 1100px) {
+  .phx-action-list {
+    grid-template-columns: 1fr;
+    gap: var(--fl-space-2);
+  }
+  .phx-two-column {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .phx-mode-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .phx-mode-grid > button {
+    min-height: 0;
+  }
+}
+@media (max-width: 760px) {
+  .phx-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .phx-metrics > div {
+    padding: 14px;
+  }
+  .phx-metrics > div:nth-child(2) {
+    border-inline-end: 0;
+  }
+  .phx-metrics > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .phx-action-list > div:last-child {
+    grid-template-columns: 1fr;
+  }
+  .phx-project-nav {
+    gap: 18px;
+  }
+}
 @media (max-width: 600px) {
-  .phw-nav-heading {
+  .phx-metrics,
+  .phx-action-list,
+  .phx-project-nav {
+    margin-bottom: var(--fl-space-4);
+  }
+  .phw-header-actions {
+    min-width: 0;
+  }
+  .phw-shoot-picker {
+    max-width: 150px;
+  }
+  /* With a shoot open the phone header keeps its width for the shoot's name. */
+  .phw-new-shoot-action.in-shoot {
     display: none;
+  }
+  /* On the phone's icon tiles the count is a small badge in the tile's corner. */
+  .phw-rail nav button {
+    position: relative;
+  }
+  .phw-nav-count {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    margin: 0;
+    font-size: 10px;
+  }
+  /* The counts wrap under the shoot's name rather than vanish behind the Client preview button. */
+  .phx-project-text small {
+    white-space: normal;
   }
 }

@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
 import { loadBrand } from '$lib/frameleaf/photography/api';
 import {
+  galleryPreviewSession,
   workflowRequest,
   studioPresetsRequest,
   defaultPresentation,
@@ -21,6 +22,7 @@ vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   ...(await original<typeof import('$lib/frameleaf/photography/workflow-api')>()),
   workflowRequest: vi.fn(),
   studioPresetsRequest: vi.fn(),
+  galleryPreviewSession: vi.fn(),
   watermarkPreview: vi.fn().mockResolvedValue(new Blob(['protected'], { type: 'image/jpeg' })),
 }));
 vi.mock('$lib/utils/file-uploader', () => ({ openFileUploadDialog: vi.fn() }));
@@ -201,4 +203,39 @@ it('saves reordered explicit story photos and requires an explicit reset to the 
       }),
     ),
   );
+});
+it('starts the client workflow with the three ways of working and saves the one chosen', async () => {
+  render(PhotographyWorkflow, { shoot, panel: 'workflow' });
+  const journeys = await screen.findByRole('group', { name: 'Choose the client journey' });
+  const sell = within(journeys).getByRole('button', { name: /Sell by the photograph/ });
+  expect(sell).toHaveAttribute('aria-pressed', 'true');
+  await fireEvent.click(within(journeys).getByRole('button', { name: /Edited delivery/ }));
+  expect(within(journeys).getByRole('button', { name: /Edited delivery/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(sell).toHaveAttribute('aria-pressed', 'false');
+  await fireEvent.click(screen.getByRole('button', { name: 'Save client workflow' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenCalledWith(
+      'shoot',
+      '/config',
+      'PUT',
+      expect.objectContaining({ config: expect.objectContaining({ mode: 'edited-delivery' }) }),
+    ),
+  );
+});
+it('opens the published gallery as the client sees it from Client preview', async () => {
+  const published: Workflow = {
+    ...structuredClone(workflow),
+    publication: { id: 'live', status: 'ready', completed: 1, total: 1, error: null },
+  };
+  vi.mocked(workflowRequest).mockResolvedValue(published);
+  vi.mocked(galleryPreviewSession).mockResolvedValue({ session: 'look', expiresAt: '2026-10-16T12:00:00.000Z' });
+  const tab = { opener: {}, closed: false, location: { href: '' }, close: vi.fn() };
+  const open = vi.spyOn(globalThis, 'open').mockReturnValue(tab as unknown as Window);
+  render(PhotographyWorkflow, { shoot, panel: 'orders', onSection: vi.fn() });
+  await screen.findByText(/1 eligible proof/);
+  await fireEvent.click(screen.getByRole('button', { name: 'Client preview' }));
+  await waitFor(() => expect(tab.location.href).toContain('/photography/gallery/shoot#preview=look'));
+  expect(galleryPreviewSession).toHaveBeenCalledWith('shoot');
+  expect(tab.opener).toBeNull();
+  open.mockRestore();
 });

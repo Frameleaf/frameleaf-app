@@ -4,6 +4,7 @@
   import { AssetMediaSize } from '@frameleaf/sdk';
   import Button from './Button.svelte';
   import { photographyErrorKey } from './PhotographyStatus.svelte';
+  import PhotographyThumb from './PhotographyThumb.svelte';
   import {
     siteRequest,
     workflowRequest,
@@ -215,10 +216,9 @@
         ></label
       >{#if workflow}<div class="phd-portfolio-choices">
           {#each options as capture (capture.id)}<label
-              >{#if capture.assetId}<img
+              >{#if capture.assetId}<PhotographyThumb
                   src={getAssetMediaUrl({ id: capture.assetId, size: AssetMediaSize.Thumbnail })}
                   alt={$t('frameleaf_photography_photo_number', { values: { number: capture.number } })}
-                  loading="lazy"
                 />{/if}<span
                 ><input
                   type="checkbox"
