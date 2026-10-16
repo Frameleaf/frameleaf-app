@@ -166,7 +166,7 @@ test.describe('User Administration', () => {
       await page.goto(`${usersManager}&user=${user.userId}`);
       await page.getByRole('button', { name: 'Edit account', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Edit account' });
-      await dialog.getByLabel('Storage limit (GiB)').fill('10');
+      await dialog.getByLabel('Storage limit (GB)').fill('10');
       await dialog.getByLabel('Storage label', { exact: true }).fill('quota-user');
       await expect(
         dialog.getByText(
