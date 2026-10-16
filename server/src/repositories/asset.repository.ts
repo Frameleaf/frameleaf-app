@@ -14,6 +14,7 @@ import {
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
@@ -47,6 +48,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { getLivePhotoMotion } from 'src/utils/asset.util.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
@@ -85,6 +87,7 @@ import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/uti
 import {
   effectiveVisibility,
   isLocked,
+  isLockedRow,
   isNotLocked,
   isOnTimelineWhateverLock,
   isTimelineVisible,
@@ -1589,6 +1592,27 @@ export class AssetRepository {
       return updated;
     });
   }
+  async createLivePhotoUpload(asset: Insertable<AssetTable>, lock?: Parameters<AssetRepository['create']>[1]) {
+    const motionId = asset.livePhotoVideoId;
+    if (!motionId || asset.type !== AssetType.Image)
+      throw new BadRequestException('A live photo must be an image paired with a video');
+    const id = asset.id ?? randomUUID();
+    return this.withLivePhotoGroup([id, motionId], async (assets) => {
+      const motion = await getLivePhotoMotion(assets, asset.ownerId, motionId);
+      if (motion.deletedAt || (isLockedRow(motion) && !lock))
+        throw new BadRequestException('Live photo video not found');
+      if (lock) {
+        const group = await assets.getByIds(await assets.findLockGroupIds([motionId]));
+        if (group.some((asset) => asset.ownerId !== motion.ownerId)) throw new BadRequestException('Asset not found');
+      }
+      const created = await assets.create({ ...asset, id });
+      const hiddenId = motion.visibility === AssetVisibility.Timeline ? motion.id : undefined;
+      if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
+      const lockedIds = lock ? await assets.lock([id], lock.reason, lock.lockedBy) : [];
+      return { asset: created, hiddenId, lockedIds };
+    });
+  }
+
   async withLivePhotoUpdate<T>(
     id: string,
     motionId: string | null,
@@ -1597,6 +1621,19 @@ export class AssetRepository {
     const initial = await this.getById(id);
     if (!initial) throw new BadRequestException('Asset not found');
     const roots = [id, initial.livePhotoVideoId, motionId].filter((id): id is string => !!id);
+    return this.withLivePhotoGroup(roots, async (assets, access) => {
+      const current = await assets.getById(id);
+      if (!current || current.livePhotoVideoId !== initial.livePhotoVideoId) {
+        throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+      }
+      return write(assets, access);
+    });
+  }
+
+  private async withLivePhotoGroup<T>(
+    roots: string[],
+    write: (assets: AssetRepository, access: AccessRepository) => Promise<T>,
+  ): Promise<T> {
     const lockedSet = new Set([...roots, ...(await this.findLockGroupIds(roots))].map((id) => id.toLowerCase()));
     const lockedIds = [...lockedSet].sort();
     try {
@@ -1614,13 +1651,8 @@ export class AssetRepository {
           .noWait()
           .execute();
         const assets = new AssetRepository(tx);
-        const current = await assets.getById(id);
         const group = await assets.findLockGroupIds(roots);
-        if (
-          !current ||
-          current.livePhotoVideoId !== initial.livePhotoVideoId ||
-          group.some((id) => !lockedSet.has(id.toLowerCase()))
-        ) {
+        if (group.some((id) => !lockedSet.has(id.toLowerCase()))) {
           throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
         }
         return write(assets, new AccessRepository(tx));

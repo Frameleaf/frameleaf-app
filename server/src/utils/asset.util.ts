@@ -7,8 +7,7 @@ import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { EventRepository } from 'src/repositories/event.repository.js';
+import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import { FrameleafFile, IBulkAsset, UploadFile, UploadRequest } from 'src/types.js';
 import { checkAccess } from 'src/utils/access.js';
 
@@ -188,8 +187,6 @@ export const removeAssets = async (
   return results;
 };
 
-export type AssetHookRepositories = { asset: AssetRepository; event: EventRepository };
-
 export const getLivePhotoMotion = async (
   assetRepository: AssetRepository,
   userId: string,
@@ -206,18 +203,6 @@ export const getLivePhotoMotion = async (
     throw new BadRequestException('Live photo video does not belong to the user');
   }
   return motionAsset;
-};
-
-export const onBeforeLink = async (
-  { asset: assetRepository, event: eventRepository }: AssetHookRepositories,
-  { userId, livePhotoVideoId }: { userId: string; livePhotoVideoId: string },
-) => {
-  const motionAsset = await getLivePhotoMotion(assetRepository, userId, livePhotoVideoId);
-
-  if (motionAsset.visibility === AssetVisibility.Timeline) {
-    await assetRepository.update({ id: livePhotoVideoId, visibility: AssetVisibility.Hidden });
-    await eventRepository.emit('AssetHide', { assetId: motionAsset.id, userId });
-  }
 };
 
 export type LivePhotoLinkRepositories = {

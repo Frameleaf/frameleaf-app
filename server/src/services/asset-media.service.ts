@@ -45,7 +45,7 @@ import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
-import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
+import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
@@ -159,13 +159,6 @@ export class AssetMediaService extends BaseService {
     });
 
     this.requireQuota(auth, file.size);
-
-    if (dto.livePhotoVideoId) {
-      await onBeforeLink(
-        { asset: this.assetRepository, event: this.eventRepository },
-        { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
-      );
-    }
 
     return {
       asset: {
@@ -288,7 +281,15 @@ export class AssetMediaService extends BaseService {
     let asset: Asset | undefined;
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
-      asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      if (prepared.asset.livePhotoVideoId) {
+        const published = await this.assetRepository.createLivePhotoUpload(prepared.asset, prepared.lock);
+        asset = published.asset;
+        if (published.lockedIds.length > 0) await this.afterAssetsLocked(published.lockedIds);
+        if (published.hiddenId)
+          await this.eventRepository.emit('AssetHide', { assetId: published.hiddenId, userId: auth.user.id });
+      } else {
+        asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      }
       await this.finishUploadAsset(auth, dto, file, asset, sidecarFile);
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };

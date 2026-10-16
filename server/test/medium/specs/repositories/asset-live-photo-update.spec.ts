@@ -8,7 +8,7 @@ import type { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
-import { newMediumService } from 'test/medium.factory.js';
+import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
 
 describe('atomic Live Photo asset edits', () => {
@@ -125,6 +125,69 @@ describe('atomic Live Photo asset edits', () => {
       }
     },
   );
+
+  it.each(['insert', 'hide'])('rolls back ordinary Live Photo upload after an actual %s write fails', async (stage) => {
+    const f = await fixture();
+    const upload = mediumFactory.assetInsert({
+      ownerId: f.user.id,
+      type: AssetType.Image,
+      livePhotoVideoId: f.video.id,
+    });
+    try {
+      const before = await snapshot(f);
+      const create = AssetRepository.prototype.create;
+      const update = AssetRepository.prototype.update;
+      const inserted = vi.spyOn(AssetRepository.prototype, 'create').mockImplementation(async function (
+        this: AssetRepository,
+        ...args
+      ) {
+        const result = await create.apply(this, args);
+        if (stage === 'insert') throw new Error('injected upload failure');
+        return result;
+      });
+      const hidden = vi.spyOn(AssetRepository.prototype, 'update').mockImplementation(async function (
+        this: AssetRepository,
+        input,
+      ) {
+        const result = await update.call(this, input);
+        if (stage === 'hide') throw new Error('injected upload failure');
+        return result;
+      });
+      try {
+        await expect(f.repo.createLivePhotoUpload(upload)).rejects.toThrow('injected upload failure');
+      } finally {
+        inserted.mockRestore();
+        hidden.mockRestore();
+      }
+      expect(await snapshot(f)).toEqual(before);
+      const result = await f.repo.createLivePhotoUpload(upload);
+      expect(result.asset.livePhotoVideoId).toBe(f.video.id);
+      expect(result.hiddenId).toBe(f.video.id);
+      expect((await f.repo.getById(f.video.id))!.visibility).toBe(AssetVisibility.Hidden);
+    } finally {
+      await dispose(f);
+    }
+  });
+
+  it('creates an explicitly Locked ordinary upload and locks its motion in the same transaction without a session', async () => {
+    const f = await fixture();
+    try {
+      const upload = mediumFactory.assetInsert({
+        ownerId: f.user.id,
+        type: AssetType.Image,
+        livePhotoVideoId: f.video.id,
+      });
+      const result = await f.repo.createLivePhotoUpload(upload, {
+        reason: AssetLockReason.Marked,
+        lockedBy: f.user.id,
+      });
+      expect(result.lockedIds.sort()).toEqual([result.asset.id, f.video.id].sort());
+      expect((await f.repo.getById(result.asset.id))!.isLocked).toBe(true);
+      expect((await f.repo.getById(f.video.id))!.isLocked).toBe(true);
+    } finally {
+      await dispose(f);
+    }
+  });
 
   it('refuses ordinary-session access when the photo becomes Locked while its edit waits on a separate connection', async () => {
     const f = await fixture();

@@ -314,6 +314,95 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('Live Photo upload commit', () => {
+    const auth = authStub.user1;
+    let committed: boolean;
+    beforeEach(() => {
+      committed = false;
+      mocks.asset.getById.mockResolvedValue(
+        getForAsset(AssetFactory.from({ type: AssetType.Video }).owner(auth.user).build()),
+      );
+      mocks.asset.create.mockResolvedValue(assetEntity);
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn(async () => {
+          committed = true;
+          return { asset: assetEntity, hiddenId: 'motion', lockedIds: [] };
+        }),
+      });
+    });
+
+    it('prepares the still without hiding or announcing the motion before publication', async () => {
+      await sut.prepareUploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('does not hide or announce the motion when asset publication fails', async () => {
+      mocks.asset.create.mockRejectedValue(new Error('publication failed'));
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn().mockRejectedValue(new Error('publication failed')),
+      });
+      await expect(
+        sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill),
+      ).rejects.toThrow();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetHide', expect.anything());
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [fileStub.livePhotoStill.originalPath, undefined] },
+      });
+    });
+
+    it('emits the motion hide only after the repository commits the still and motion', async () => {
+      mocks.event.emit.mockImplementation(async (name) => {
+        if (name === 'AssetHide') expect(committed).toBe(true);
+      });
+      await sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: 'motion' }),
+        undefined,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', { assetId: 'motion', userId: auth.user.id });
+    });
+
+    it('preserves checksum-duplicate responses without hiding the requested motion', async () => {
+      const error = Object.assign(new Error('duplicate'), { constraint_name: 'UQ_assets_owner_checksum' });
+      mocks.asset.create.mockRejectedValue(error);
+      Object.assign(mocks.asset, { createLivePhotoUpload: vitest.fn().mockRejectedValue(error) });
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('existing');
+      await expect(
+        sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill),
+      ).resolves.toEqual({ id: 'existing', status: AssetMediaStatus.DUPLICATE });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetHide', expect.anything());
+    });
+
+    it('passes the explicit Locked decision through without requiring a PIN and follows up after commit', async () => {
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn(async () => {
+          committed = true;
+          return { asset: assetEntity, hiddenId: 'motion', lockedIds: ['id_1', 'motion'] };
+        }),
+      });
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      mocks.event.emit.mockImplementation(async () => {
+        expect(committed).toBe(true);
+      });
+      await sut.uploadAsset(
+        auth,
+        { ...createDto, livePhotoVideoId: 'motion', visibility: AssetVisibility.Locked },
+        fileStub.livePhotoStill,
+      );
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline }),
+        { reason: AssetLockReason.Marked, lockedBy: auth.user.id },
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetLocked', { assetIds: ['id_1', 'motion'] });
+    });
+  });
+
   describe('uploadAsset', () => {
     it('should throw an error if the quota is exceeded', async () => {
       const file = {
@@ -614,8 +703,7 @@ describe(AssetMediaService.name, () => {
         .owner(authStub.user1.user)
         .build();
       const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.asset.createLivePhotoUpload.mockResolvedValueOnce({ asset, hiddenId: undefined, lockedIds: [] });
 
       await expect(
         sut.uploadAsset(authStub.user1, { ...createDto, livePhotoVideoId: motionAsset.id }, fileStub.livePhotoStill),
@@ -624,15 +712,17 @@ describe(AssetMediaService.name, () => {
         id: asset.id,
       });
 
-      expect(mocks.asset.getById).toHaveBeenCalledWith(motionAsset.id);
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: motionAsset.id }),
+        undefined,
+      );
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should hide the linked motion asset', async () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video }).owner(authStub.user1.user).build();
       const asset = AssetFactory.create();
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.asset.createLivePhotoUpload.mockResolvedValueOnce({ asset, hiddenId: motionAsset.id, lockedIds: [] });
 
       await expect(
         sut.uploadAsset(authStub.user1, { ...createDto, livePhotoVideoId: motionAsset.id }, fileStub.livePhotoStill),
@@ -641,10 +731,13 @@ describe(AssetMediaService.name, () => {
         id: asset.id,
       });
 
-      expect(mocks.asset.getById).toHaveBeenCalledWith(motionAsset.id);
-      expect(mocks.asset.update).toHaveBeenCalledWith({
-        id: motionAsset.id,
-        visibility: AssetVisibility.Hidden,
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: motionAsset.id }),
+        undefined,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', {
+        assetId: motionAsset.id,
+        userId: authStub.user1.user.id,
       });
     });
 
