@@ -380,16 +380,16 @@
         {/if}
       </div>
 
-      <IconButton
-        shape="round"
-        color="secondary"
-        variant="ghost"
-        size="medium"
-        icon={appTheme === 'dark' ? mdiWhiteBalanceSunny : mdiMoonWaningCrescent}
+      <!-- The prototype's theme Button (App.jsx): a bordered `.button`, 36px square in the bar. -->
+      <button
+        type="button"
+        class="fl-topbar-button"
         onclick={() => themeManager.toggle()}
         title={themeLabel}
         aria-label={themeLabel}
-      />
+      >
+        <Icon icon={appTheme === 'dark' ? mdiWhiteBalanceSunny : mdiMoonWaningCrescent} size="20" aria-hidden="true" />
+      </button>
 
       <AccountMenu
         {isElevated}
@@ -691,10 +691,48 @@
   .fl-locked-open:hover {
     background: var(--fl-raised);
   }
-  @media (max-width: 700px) {
-    .fl-locked-state {
-      display: none;
+  /* styles.css "Topbar: Locked becomes an icon-only control; the account menu carries the
+     labelled version." The state stays in the button's name. */
+  .fl-locked-state {
+    display: none;
+  }
+  .fl-locked-toggle {
+    min-width: 34px;
+    padding: 0 8px;
+  }
+  /* styles.css `.topbar > .button`: bordered, on the raised surface. The drawn box is the
+     prototype's 34px; the button itself keeps the 44px target floor (tokens.css), as the Locked
+     control beside it does. */
+  .fl-topbar-button {
+    position: relative;
+    isolation: isolate;
+    display: inline-grid;
+    flex-shrink: 0;
+    place-items: center;
+    min-width: 36px;
+    padding: 0 var(--fl-space-2);
+    color: var(--fl-text);
+  }
+  .fl-topbar-button::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: calc(50% - 17px) 0;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-raised);
+    transition: background var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-topbar-button:hover::before {
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
+  }
+  @media (max-width: 47.99rem) {
+    .fl-topbar-button {
+      min-width: 44px;
+      min-height: 44px;
     }
+  }
+  @media (max-width: 700px) {
     /*
      * The phone row has no room for the second half of the control: with it the brand mark was
      * squeezed to a few pixels while Locked content was revealed. Locked stays one tap away in the

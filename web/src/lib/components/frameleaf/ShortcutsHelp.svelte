@@ -86,10 +86,16 @@
   .fl-shortcuts-help {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 8px 28px;
+    /* Spacing minimums: 24px between sections (16px on phones), 8px from a heading to its list. */
+    gap: var(--fl-space-6) 28px;
+  }
+  @media (max-width: 700px) {
+    .fl-shortcuts-help {
+      row-gap: var(--fl-space-4);
+    }
   }
   h3 {
-    margin: 0 0 6px;
+    margin: 0 0 var(--fl-space-2);
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
     font-weight: 600;
@@ -149,7 +155,7 @@
   }
   .fl-shortcuts-note {
     grid-column: 1 / -1;
-    margin: 8px 0 0;
+    margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }

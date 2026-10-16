@@ -1844,6 +1844,10 @@
     display: flex;
     gap: 6px;
     align-items: baseline;
+    /* The label and its count share a baseline, and the line sits in the middle of the 44/48px
+       target (tokens.css) rather than at its top. */
+    flex-wrap: wrap;
+    align-content: center;
     padding: 4px 12px;
     border: 0;
     border-radius: calc(var(--fl-radius-control-compact) - 2px);

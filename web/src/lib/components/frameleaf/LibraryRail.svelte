@@ -532,8 +532,17 @@
   .fl-heading-toggle:hover {
     color: var(--fl-text);
   }
+  /* styles.css `.rail-heading-toggle svg`: the chevron shows on hover or focus, and stays while
+     its section is folded away. */
   .fl-heading-toggle :global(.fl-heading-chevron) {
-    transition: rotate var(--fl-duration-pop) var(--fl-spring);
+    opacity: 0;
+    transition:
+      opacity var(--fl-motion-fast) var(--fl-ease),
+      rotate var(--fl-duration-pop) var(--fl-spring);
+  }
+  .fl-heading-toggle:is(:hover, :focus-visible) :global(.fl-heading-chevron),
+  .fl-heading-toggle[aria-expanded='false'] :global(.fl-heading-chevron) {
+    opacity: 1;
   }
   .fl-heading-toggle[aria-expanded='false'] :global(.fl-heading-chevron) {
     rotate: -90deg;
@@ -610,7 +619,8 @@
     width: 100%;
     padding: 7px 22px;
     border: 0;
-    border-radius: var(--fl-radius-sm);
+    /* `.sidebar button { border-radius: 0 }`: flat, full-width rows. */
+    border-radius: 0;
     background: transparent;
     color: var(--fl-text);
     text-align: start;

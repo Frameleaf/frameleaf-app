@@ -191,7 +191,8 @@
     onclick={toggle}
   >
     {#key authManager.user}
-      <UserAvatar user={authManager.user} size="md" noTitle />
+      <!-- 28px, as the prototype's `.profile img` (styles.css). -->
+      <UserAvatar user={authManager.user} size="sm" noTitle />
     {/key}
     <span class="fl-account-name">{authManager.user.name}</span>
     <Icon icon={mdiChevronDown} size="1em" aria-hidden={true} />
