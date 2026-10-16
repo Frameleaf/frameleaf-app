@@ -1146,6 +1146,63 @@ describe(PreservationWorkerService.name, () => {
     });
 
     describe('verify', () => {
+      it.each(['cancelled', 'claim-lost', 'resumed'])(
+        'rechecks authority after a failed pause before reading a package: %s',
+        async (state) => {
+          const built = buildPackage(0);
+          useSource(built.entries);
+          const found = packageOf({ origin: 'upload' });
+          repository.getPackageById.mockResolvedValue(found);
+          operations.setBulkResult.mockResolvedValueOnce({
+            status: MediaOperationStatus.Rendering,
+            cancelRequestedAt: null,
+            pauseRequestedAt: new Date(),
+          });
+          operations.settlePause = vi.fn().mockResolvedValue(false);
+          operations.heartbeat.mockResolvedValue(state === 'resumed');
+          operations.acknowledgeCancel.mockResolvedValue(state === 'cancelled');
+          const operation = operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id });
+          const claimToken = newUuid();
+
+          await sut.run({ operation, claimToken });
+
+          expect(operations.heartbeat).toHaveBeenCalledWith(operation.id, claimToken, PRESERVATION_LEASE_MS, {
+            requireActiveClaim: true,
+          });
+          if (state === 'resumed') {
+            expect(source.readDocument).toHaveBeenCalled();
+            expect(operations.complete).toHaveBeenCalled();
+          } else {
+            expect(source.readDocument).not.toHaveBeenCalled();
+            expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, claimToken, { released: false });
+            expect(operations.complete).not.toHaveBeenCalled();
+          }
+          expect(source.close).toHaveBeenCalledOnce();
+        },
+      );
+
+      it('stops before reading a package when entering the rendering state is refused', async () => {
+        const built = buildPackage(0);
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload' });
+        repository.getPackageById.mockResolvedValue(found);
+        operations.setBulkResult.mockResolvedValueOnce({
+          status: MediaOperationStatus.Preparing,
+          cancelRequestedAt: null,
+          pauseRequestedAt: null,
+        });
+        operations.reportProgress.mockResolvedValue(false);
+        const operation = operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id });
+        const claimToken = newUuid();
+
+        await sut.run({ operation, claimToken });
+
+        expect(source.readDocument).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, claimToken, { released: false });
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(source.close).toHaveBeenCalledOnce();
+      });
+
       it('calls a package whose manifest was rewritten after this server wrote it unreadable', async () => {
         const built = buildPackage(1);
         useSource(built.entries);
