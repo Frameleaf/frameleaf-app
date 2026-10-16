@@ -370,11 +370,12 @@ describe('PersonService face history (FL-57)', () => {
         { id: current.id, expectedRevision: current.updateId },
         { personGroupId: entry.fromPersonId },
       );
-      // the faces field is marked with the undo (inside the origin edit) and again when the edit is
-      // propagated; every mark names only this asset's faces
-      const marks = mocks.partnerOrigin.markOverridden.mock.calls;
-      expect(marks.length).toBeGreaterThan(0);
-      expect(marks).toEqual(marks.map(() => ['asset', [entry.assetId], ['faces'], auth.user.id]));
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
+        'asset',
+        [entry.assetId],
+        ['faces'],
+        auth.user.id,
+      );
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: entry.assetId, fields: ['faces'] } },
       ]);
