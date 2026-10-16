@@ -98,3 +98,40 @@ test('a first navigation replaced by Chromium error page retries once', async ()
   );
   assert.deepEqual(visited, ['https://fixture.test', 'https://fixture.test']);
 });
+
+test('same-target Chromium interruption retries without accepting a different target', async () => {
+  const same = new Error(
+    'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "https://fixture.test/"',
+  );
+  for (const failures of [1, 2, 3]) {
+    let calls = 0;
+    const result = navigate(
+      {
+        goto: async () => {
+          if (++calls <= failures) throw same;
+        },
+      },
+      'https://fixture.test',
+    );
+    if (failures === 3) await assert.rejects(result, (error) => error === same);
+    else await result;
+    assert.equal(calls, Math.min(failures + 1, 3));
+  }
+  let calls = 0;
+  const foreign = new Error(
+    'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "https://other.test/"',
+  );
+  await assert.rejects(
+    navigate(
+      {
+        goto: async () => {
+          calls++;
+          throw foreign;
+        },
+      },
+      'https://fixture.test',
+    ),
+    (error) => error === foreign,
+  );
+  assert.equal(calls, 1);
+});
