@@ -184,18 +184,20 @@ export class FrameleafAuthService extends BaseService {
       throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
     }
     const { profile, sid, idToken } = await this.exchange(config, dto, headers);
-    return this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
-      if (authority !== (await this.signInAuthority(config))) {
-        throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
-      }
-      const checkRevocation = async () => {
-        if (await this.frameleafAccountRepository.isSignInRevoked({ sub: profile.sub, sid: sid ?? null, issuedAt })) {
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        if (authority !== (await this.signInAuthority(config))) {
           throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
         }
-      };
-      await checkRevocation();
-      return this.signIn(profile, loginDetails, { sid, bearerToken: idToken }, undefined, checkRevocation);
-    });
+        const checkRevocation = async () => {
+          if (await this.frameleafAccountRepository.isSignInRevoked({ sub: profile.sub, sid: sid ?? null, issuedAt })) {
+            throw new UnauthorizedException(NOT_AVAILABLE_MESSAGE);
+          }
+        };
+        await checkRevocation();
+        return this.signIn(profile, loginDetails, { sid, bearerToken: idToken }, undefined, checkRevocation);
+      }),
+    );
   }
 
   /**
@@ -268,48 +270,50 @@ export class FrameleafAuthService extends BaseService {
         throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Expired);
       }
     };
-    return this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
-      if (authority !== (await this.signInAuthority(config))) {
-        throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
-      }
-      checkExpiry();
-      const redeemed = await this.frameleafAccountRepository.redeemExchangeToken({
-        jti,
-        sub,
-        sid,
-        // a revocation within the clock tolerance of the mint counts as after it
-        issuedAt: new Date((iat - tolerance) * 1000),
-        // after this the token is refused as expired anyway
-        expiresAt,
-      });
-      if (redeemed === 'revoked') {
-        throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
-      }
-      if (redeemed === 'replayed') {
-        this.logger.warn(`Refused a Frameleaf exchange token that was already used`);
-        throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Replayed);
-      }
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        if (authority !== (await this.signInAuthority(config))) {
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+        }
+        checkExpiry();
+        const redeemed = await this.frameleafAccountRepository.redeemExchangeToken({
+          jti,
+          sub,
+          sid,
+          // a revocation within the clock tolerance of the mint counts as after it
+          issuedAt: new Date((iat - tolerance) * 1000),
+          // after this the token is refused as expired anyway
+          expiresAt,
+        });
+        if (redeemed === 'revoked') {
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+        }
+        if (redeemed === 'replayed') {
+          this.logger.warn(`Refused a Frameleaf exchange token that was already used`);
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Replayed);
+        }
 
-      return this.signIn(
-        claims as OAuthProfile,
-        loginDetails,
-        { sid: sid ?? undefined },
-        (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
-        async () => {
-          checkExpiry();
-          // A back-channel logout records the revocation before it looks for tagged sessions, so a
-          // logout that raced this sign-in either finds this session or is seen here.
-          const revoked = await this.frameleafAccountRepository.isSignInRevoked({
-            sub,
-            sid,
-            issuedAt: new Date((iat - tolerance) * 1000),
-          });
-          if (revoked) {
-            throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
-          }
-        },
-      );
-    });
+        return this.signIn(
+          claims as OAuthProfile,
+          loginDetails,
+          { sid: sid ?? undefined },
+          (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+          async () => {
+            checkExpiry();
+            // A back-channel logout records the revocation before it looks for tagged sessions, so a
+            // logout that raced this sign-in either finds this session or is seen here.
+            const revoked = await this.frameleafAccountRepository.isSignInRevoked({
+              sub,
+              sid,
+              issuedAt: new Date((iat - tolerance) * 1000),
+            });
+            if (revoked) {
+              throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+            }
+          },
+        );
+      }),
+    );
   }
 
   /**
@@ -393,34 +397,25 @@ export class FrameleafAuthService extends BaseService {
       const ownerAccountId = linked ? cloudLink?.accountId : undefined;
       const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
       const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
-      const create = () =>
-        this.createUser({
-          name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
-          email,
-          isAdmin: role === 'admin',
-          quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
-        });
-      // FL-292: while nobody administers the server (set up from the Frameleaf app), only the account
-      // that owns it may become its first administrator, one claim at a time with the other setup paths
-      user = firstAdministrator
-        ? await this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, async () => {
-            if (await this.userRepository.getAdmin()) {
-              return create();
-            }
-            const created = await create();
-            await this.recordAdminEvents([
-              {
-                userId: created.id,
-                actorId: created.id,
-                action: AdminAuditAction.AccountCreated,
-                subject: created.name,
-                detail: 'server-claimed:app-frameleaf',
-              },
-            ]);
-            this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
-            return created;
-          })
-        : await create();
+      // The caller holds the setup claim lock before the Cloud authority lock, as setup does.
+      user = await this.createUser({
+        name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
+        email,
+        isAdmin: role === 'admin',
+        quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
+      });
+      if (firstAdministrator) {
+        await this.recordAdminEvents([
+          {
+            userId: user.id,
+            actorId: user.id,
+            action: AdminAuditAction.AccountCreated,
+            subject: user.name,
+            detail: 'server-claimed:app-frameleaf',
+          },
+        ]);
+        this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
+      }
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
         sub: profile.sub,

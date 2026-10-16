@@ -139,11 +139,37 @@ describe.each(['callback', 'exchange'] as const)('%s authority admission', (flow
     },
   );
 
+  it.each(['existing', 'first-admin'] as const)(
+    'takes the server claim fence before Cloud authority for %s sign-in',
+    async (mode) => {
+      const h = setup(flow);
+      if (mode === 'first-admin') {
+        h.profile.frameleaf_role = 'admin';
+        h.replace({ accountId: h.profile.sub });
+        h.mocks.user.getAdmin.mockResolvedValue(undefined);
+        h.mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
+        h.mocks.user.getByEmail.mockResolvedValue(undefined);
+        h.mocks.clusterGroup.create.mockResolvedValue({ id: 'group' } as never);
+        h.mocks.user.create.mockResolvedValue({ ...h.user, isAdmin: true } as never);
+      }
+      h.mocks.database.withLock.mockImplementation((lock, callback) => {
+        const held = h.held.getStore() ?? [];
+        expect(held).not.toContain(lock);
+        if (lock === DatabaseLock.FrameleafLinkAuthority) expect(held).toContain(DatabaseLock.FrameleafServerClaim);
+        return h.held.run([...held, lock], callback) as never;
+      });
+      await expect(h.submit()).resolves.toMatchObject({ userId: h.user.id });
+      expect(h.mocks.session.create).toHaveBeenCalledOnce();
+      if (mode === 'first-admin') expect(h.mocks.user.create).toHaveBeenCalledOnce();
+    },
+  );
+
   it('rereads authority after waiting for the Cloud link lock', async () => {
     const h = setup(flow);
     const entered = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
     h.mocks.database.withLock.mockImplementation(async (lock, callback) => {
+      if (lock === DatabaseLock.FrameleafServerClaim) return callback();
       expect(lock).toBe(DatabaseLock.FrameleafLinkAuthority);
       entered.resolve();
       await resume.promise;

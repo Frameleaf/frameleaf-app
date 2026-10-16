@@ -101,6 +101,55 @@ it.each(['callback', 'exchange'] as const)(
   },
 );
 
+it.each(['callback', 'exchange'] as const)(
+  '%s leaves Cloud authority available while setup holds the claim lock',
+  async (flow) => {
+    const h = await setup(flow);
+    const entered = Promise.withResolvers<void>(),
+      resume = Promise.withResolvers<void>();
+    const holder = db.connection().execute(async (connection) => {
+      await sql`select pg_advisory_lock(${DatabaseLock.FrameleafServerClaim}::bigint)`.execute(connection);
+      try {
+        entered.resolve();
+        await resume.promise;
+      } finally {
+        await sql`select pg_advisory_unlock(${DatabaseLock.FrameleafServerClaim}::bigint)`.execute(connection);
+      }
+    });
+    await entered.promise;
+    const requested = Promise.withResolvers<void>();
+    const database = h.ctx.get(DatabaseRepository),
+      withLock = database.withLock.bind(database);
+    vi.spyOn(database, 'withLock').mockImplementation((lock, callback) => {
+      if (lock === DatabaseLock.FrameleafServerClaim) requested.resolve();
+      return withLock(lock, callback);
+    });
+    const operation = h.submit();
+    try {
+      await Promise.race([
+        requested.promise,
+        operation.then(() => {
+          throw new Error('Sign-in bypassed the setup claim fence');
+        }),
+      ]);
+      const acquired = await db.transaction().execute(async (tx) => {
+        const { rows } = await sql<{
+          acquired: boolean;
+        }>`select pg_try_advisory_xact_lock(${DatabaseLock.FrameleafLinkAuthority}::bigint) as acquired`.execute(tx);
+        return rows[0].acquired;
+      });
+      expect(acquired).toBe(true);
+      resume.resolve();
+      await holder;
+      await expect(operation).resolves.toMatchObject({ userId: h.user.id });
+    } finally {
+      resume.resolve();
+      await Promise.allSettled([holder, operation]);
+      await h.restore();
+    }
+  },
+);
+
 const setup = async (flow: 'callback' | 'exchange') => {
   const { sut, ctx } = newMediumService(FrameleafAuthService, {
     database: db,
