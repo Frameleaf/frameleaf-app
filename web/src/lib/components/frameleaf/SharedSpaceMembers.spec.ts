@@ -99,6 +99,19 @@ describe('SharedSpaceMembers', () => {
     expect(screen.getByText(en.frameleaf_spaces_member_pending)).toBeInTheDocument();
   });
 
+  it('tags the members the server says are supporters, pending invitees included (supporter option b)', () => {
+    render(SharedSpaceMembers, {
+      space,
+      members: members.map((member) => ({ ...member, supporter: member.user.id !== ada.id })),
+      onChanged: vi.fn(),
+    });
+
+    const row = (name: string) => screen.getByText(name).closest('li')!;
+    expect(row('Ada')).not.toHaveTextContent('Supporter');
+    expect(row('Bo')).toHaveTextContent('Supporter');
+    expect(row('Cy')).toHaveTextContent('Supporter');
+  });
+
   it('gives the owner the invite control and a role menu for everyone but themselves', () => {
     render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
 

@@ -580,7 +580,7 @@
 
       <!-- Always offered, as in the design (CollectionHeader.jsx:1290-1297), shared or not. -->
       {#if onToggleActivity}
-        <!-- Named for the panel it opens ("Likes & comments"); "Activity" is the app's own workspace. -->
+        <!-- SHARING-P7: "Comments" on album and space headers alike; "Activity" is the app's own workspace. -->
         <button
           type="button"
           class="action"
@@ -973,6 +973,33 @@
     border-color: var(--fl-border);
     color: var(--fl-text);
   }
+  /*
+   * SHARING-P3: the title, description and summary rows sit at the prototype's 4px rhythm
+   * (collections.css .ch-text). Each control there keeps its 44px target (48px on touch) as an
+   * invisible box centred on it, so the rows no longer grow to the target's height.
+   */
+  .text :global(.trigger),
+  .members {
+    position: relative;
+    min-height: 0;
+  }
+  .text :global(.trigger)::after,
+  .members::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block: min(0px, calc((100% - 44px) / 2));
+  }
+  @media (pointer: coarse) {
+    .text :global(.trigger),
+    .members {
+      min-height: 0;
+    }
+    .text :global(.trigger)::after,
+    .members::after {
+      inset-block: min(0px, calc((100% - 48px) / 2));
+    }
+  }
   .actions {
     display: flex;
     align-items: center;
@@ -1124,6 +1151,12 @@
     font-weight: 700;
     letter-spacing: -0.02em;
     transform-origin: left bottom;
+  }
+  /* D9: the phone title is the prototype's 19px (collections.css:1803). */
+  @media (max-width: 700px) {
+    .main .title-row :global(h1) {
+      font-size: 19px;
+    }
   }
   @supports (animation-timeline: scroll()) {
     .main .title-row :global(h1) {

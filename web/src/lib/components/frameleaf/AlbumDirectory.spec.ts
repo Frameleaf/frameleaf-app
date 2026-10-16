@@ -189,7 +189,7 @@ describe('AlbumDirectory', () => {
     );
   });
 
-  it('keeps shared spaces top level, opening on their own page, with a way to Sharing and its invitations', () => {
+  it('keeps shared spaces top level, opening on their own page, with a link to waiting invitations', () => {
     renderWithTooltips(AlbumDirectory, { tree, spaceInvitations: 2, onRefresh: vi.fn() });
 
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
@@ -201,7 +201,9 @@ describe('AlbumDirectory', () => {
     ).toBeNull();
 
     expect(screen.getByRole('link', { name: '2 invitations waiting' })).toHaveAttribute('href', '/sharing');
-    expect(screen.getByRole('link', { name: 'Open Sharing' })).toHaveAttribute('href', '/sharing');
+    // SHARING-P9: the prototype's plain heading, without the extra hint and Open Sharing link.
+    expect(screen.queryByRole('link', { name: 'Open Sharing' })).toBeNull();
+    expect(shelf).not.toHaveTextContent('A shared space is a top-level library');
   });
 
   it('offers to make the first shared space when there are albums but no spaces', () => {
@@ -209,6 +211,8 @@ describe('AlbumDirectory', () => {
 
     const shelf = screen.getByRole('region', { name: 'Shared spaces' });
     expect(shelf).toHaveTextContent('No shared spaces yet');
+    // With nothing to show, one line says what a shared space is.
+    expect(shelf).toHaveTextContent('A shared space is a top-level library');
     expect(screen.getByRole('button', { name: 'New shared space' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /invitations? waiting/ })).toBeNull();
   });

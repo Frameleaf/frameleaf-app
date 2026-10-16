@@ -6,6 +6,7 @@
   import PersonPhoto from '$lib/components/frameleaf/PersonPhoto.svelte';
   import RecipientGroupsDialog from '$lib/components/frameleaf/RecipientGroupsDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import SupporterTag from '$lib/components/frameleaf/SupporterTag.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     alreadyInvolvedIds,
@@ -253,7 +254,10 @@
       <li class:pending={member.pending}>
         <PersonPhoto user={member.user} />
         <span class="name">
-          <strong>{member.user.name}</strong>
+          <span class="name-row">
+            <strong>{member.user.name}</strong>
+            {#if member.supporter}<SupporterTag />{/if}
+          </span>
           <small>{member.user.email}</small>
         </span>
 
@@ -497,6 +501,13 @@
   .name strong {
     font-size: 0.8125rem;
     font-weight: 600;
+  }
+  .name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--fl-space-1) var(--fl-space-2);
+    min-width: 0;
   }
   .name small {
     color: var(--fl-muted);

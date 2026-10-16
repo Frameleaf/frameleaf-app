@@ -852,21 +852,22 @@
           {$t('frameleaf_albums_spaces')}
           <small>{$t('frameleaf_albums_space_count', { values: { count: arrangement.spaces.length } })}</small>
         </h2>
-        <div class="spaces-links">
-          {#if spaceInvitations > 0}
+        <!-- SHARING-P9: the prototype's plain "Shared spaces · N" heading; only waiting invitations add a link. -->
+        {#if spaceInvitations > 0}
+          <div class="spaces-links">
             <a class="invitations" href={Route.sharing()}>
               {$t('frameleaf_albums_spaces_invitations', { values: { count: spaceInvitations } })}
             </a>
-          {/if}
-          <a href={Route.sharing()}>{$t('frameleaf_albums_spaces_open_sharing')}</a>
-        </div>
+          </div>
+        {/if}
       </div>
-      <p class="spaces-hint">{$t('frameleaf_spaces_intro')}</p>
       {#if arrangement.spaces.length > 0}
         {@render albums(arrangement.spaces, '')}
       {:else}
         <div class="shelf-empty spaces-empty">
           <p>{$t('frameleaf_spaces_empty_title')}</p>
+          <!-- With no space yet, one line on what a space is. -->
+          <p class="spaces-hint">{$t('frameleaf_spaces_intro')}</p>
           <button type="button" class="primary" onclick={() => openCreate(AlbumKind.Space)}>
             {$t('frameleaf_spaces_new')}
           </button>
@@ -1236,6 +1237,10 @@
   }
   .spaces-empty p {
     margin: 0;
+  }
+  .spaces-empty .spaces-hint {
+    flex-basis: 100%;
+    text-align: center;
   }
   .spaces-empty .primary {
     min-height: 36px;

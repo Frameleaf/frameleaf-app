@@ -200,11 +200,75 @@ describe('SharedSpaceDetail header (FL-83 AL-42)', () => {
     expect(sdkMock.getAllSharedLinks).not.toHaveBeenCalled();
   });
 
-  it('opens the Activity panel from a button that says how many entries are new', async () => {
+  it('opens the Activity panel from a Comments button that says how many entries are new (SHARING-P7)', async () => {
     renderSpace(spaceAs(AlbumUserRole.Owner), { activity: activity(3) });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Activity, 3 entries' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Comments, 3 new' }));
     expect(panel()).toBe('activity');
+  });
+
+  it('says how many are invited, not Private, while an invitation is waiting', async () => {
+    const alone = { ...spaceAs(AlbumUserRole.Owner), albumUsers: [{ user: me, role: AlbumUserRole.Owner }] };
+    renderSpace(alone, {
+      members: [
+        { user: me, role: AlbumUserRole.Owner, pending: false },
+        { user: jamie, role: AlbumUserRole.Editor, pending: true, invitedAt: '2026-10-16T06:17:22.833Z' },
+      ],
+    });
+
+    expect(screen.getByText('1 invited')).toBeInTheDocument();
+    expect(screen.queryByText('Private · share it')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: '1 invitation waiting. Open Members.' }));
+    expect(panel()).toBe('members');
+  });
+
+  it('opens Add everything matching from a button on the Photos tab only (SHARING-P5)', async () => {
+    renderSpace(spaceAs(AlbumUserRole.Owner));
+
+    expect(screen.getByRole('button', { name: 'Add matching…' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Members' }));
+    expect(screen.queryByRole('button', { name: 'Add matching…' })).toBeNull();
+  });
+
+  describe('on a phone (SHARING-P4)', () => {
+    const phoneWidth = (query: string) => ({
+      matches: query.includes('max-width: 700px'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+
+    beforeEach(() => {
+      vi.mocked(matchMedia).mockImplementation(phoneWidth as never);
+    });
+
+    afterEach(() => {
+      vi.mocked(matchMedia).mockImplementation(((query: string) => ({
+        ...phoneWidth(query),
+        matches: false,
+      })) as never);
+    });
+
+    it('keeps Add photos and Share in the row and moves the rest into "…"', async () => {
+      renderSpace(spaceAs(AlbumUserRole.Owner), { activity: activity(2) });
+
+      const toolbar = within(screen.getByRole('toolbar'));
+      expect(toolbar.getByRole('button', { name: 'Add photos' })).toBeInTheDocument();
+      expect(toolbar.getByRole('button', { name: 'Share' })).toBeInTheDocument();
+      for (const name of [/^(Create link|Links)/, 'Map', 'Slideshow', 'Download', /^Comments/]) {
+        expect(toolbar.queryByRole('button', { name })).toBeNull();
+      }
+
+      await fireEvent.click(toolbar.getByRole('button', { name: 'More actions' }));
+      const menu = within(await screen.findByRole('menu'));
+      for (const name of ['Links', 'Map', 'Slideshow', 'Download']) {
+        expect(menu.getByRole('menuitem', { name })).toBeInTheDocument();
+      }
+      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Comments (2)' }));
+      expect(panel()).toBe('activity');
+    });
   });
 
   it('starts the slideshow in the space’s own viewer', async () => {

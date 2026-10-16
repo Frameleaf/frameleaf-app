@@ -1,5 +1,6 @@
 <script lang="ts">
   import Brand from '$lib/components/frameleaf/Brand.svelte';
+  import Logo from '$lib/components/frameleaf/Logo.svelte';
   import '$lib/frameleaf/tokens.css';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { Snippet } from 'svelte';
@@ -29,7 +30,9 @@
 <div class="frameleaf public-viewer" data-theme={appTheme}>
   <header class="pv-header">
     <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-      <Brand />
+      <!-- SHARING-P6: on phones the mark alone, as in the app's top bar, so the actions fit beside it. -->
+      <span class="pv-brand-full"><Brand /></span>
+      <span class="pv-brand-mark"><Logo variant="symbol" size="tiny" clearSpace /></span>
     </a>
     {@render header?.()}
   </header>
@@ -69,6 +72,12 @@
     flex-shrink: 0;
     width: 8.5rem;
   }
+  .pv-brand-full {
+    display: contents;
+  }
+  .pv-brand-mark {
+    display: none;
+  }
   .pv-main {
     position: relative;
     flex: 1;
@@ -98,6 +107,21 @@
   }
   .pv-exit:hover {
     color: var(--fl-text);
+  }
+  /* SHARING-P6: on phones the brand and the share's actions share the first row. */
+  @media (max-width: 700px) {
+    .pv-header {
+      column-gap: var(--fl-space-3);
+    }
+    .pv-brand {
+      width: auto;
+    }
+    .pv-brand-full {
+      display: none;
+    }
+    .pv-brand-mark {
+      display: inline-flex;
+    }
   }
   @media (min-width: 768px) {
     .pv-header,

@@ -6,6 +6,7 @@
   import SharedLinkCopyButton from '$lib/components/frameleaf/SharedLinkCopyButton.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import SupporterTag from '$lib/components/frameleaf/SupporterTag.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
@@ -357,7 +358,10 @@
           <li>
             <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
             <span class="who">
-              <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
+              <span class="who-name">
+                <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
+                {#if member.supporter}<SupporterTag />{/if}
+              </span>
               <small>{member.user.email}</small>
             </span>
             {#if member.role === AlbumUserRole.Owner || !isOwner}
@@ -520,6 +524,13 @@
   .who strong {
     font-size: 0.875rem;
     color: var(--fl-text);
+  }
+  .who-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--fl-space-1) var(--fl-space-2);
+    min-width: 0;
   }
   .who small {
     color: var(--fl-muted);

@@ -64,6 +64,7 @@
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
+    mdiAccountClockOutline,
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
     mdiChevronRight,
@@ -78,11 +79,13 @@
     mdiMapOutline,
     mdiPencilOutline,
     mdiPlayCircleOutline,
+    mdiPlaylistPlus,
     mdiPlus,
     mdiUpload,
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { MediaQuery } from 'svelte/reactivity';
 
   /**
    * One shared space (FL-55).
@@ -134,7 +137,13 @@
   const contributor = $derived(canContribute(space, currentUserId));
   const ownerUser = $derived(spaceOwner(space));
   const others = $derived(othersOf(space, currentUserId));
+  /** Invitations nobody has answered yet: the space is not private while one is waiting. */
+  const pendingCount = $derived(members.filter((member) => member.pending).length);
   const name = $derived(space.albumName || $t('unnamed_album'));
+  /** SHARING-P4, as on the album header: on phones the secondary actions move into "…". */
+  const phone = new MediaQuery('max-width: 700px');
+  const compact = $derived(phone.current);
+  let addMatchingOpen = $state(false);
 
   /* ------------------------------------------------------------------ */
   /* Panels                                                              */
@@ -478,6 +487,17 @@
               <AlbumAvatarStack users={others} />
               <span>{$t('frameleaf_album_shared_with_count', { values: { count: others.length } })}</span>
             </button>
+          {:else if pendingCount > 0}
+            <!-- Nobody has joined yet, but the space is shared: an invitation is waiting. -->
+            <button
+              type="button"
+              class="members"
+              aria-label={$t('frameleaf_spaces_invited_manage', { values: { count: pendingCount } })}
+              onclick={() => choosePanel('members')}
+            >
+              <span aria-hidden="true"><Icon icon={mdiAccountClockOutline} size="16" /></span>
+              <span>{$t('frameleaf_spaces_invited_count', { values: { count: pendingCount } })}</span>
+            </button>
           {:else if owner}
             <button type="button" class="members" onclick={() => choosePanel('members')}>
               <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="16" /></span>
@@ -513,52 +533,61 @@
         <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
       </button>
 
-      {#if owner}
+      <!-- On phones these move into the "…" menu, as on the album header (SHARING-P4). -->
+      {#if !compact}
+        {#if owner}
+          <button
+            type="button"
+            class="action"
+            aria-label={linkCount > 0
+              ? $t('frameleaf_spaces_links_count', { values: { count: linkCount } })
+              : $t('frameleaf_albums_create_link')}
+            onclick={openLinks}
+          >
+            <Icon icon={mdiLinkVariant} size="18" />
+            <span>{$t('frameleaf_spaces_links')}</span>
+            {#if linkCount > 0}
+              <span class="count" aria-hidden="true">{linkCount}</span>
+            {/if}
+          </button>
+        {/if}
+
+        <!-- The space's own map and conversation are its Places and Activity panels. -->
+        <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => choosePanel('places')}>
+          <Icon icon={mdiMapOutline} size="18" />
+          <span>{$t('map')}</span>
+        </button>
+
+        <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => void startSlideshow()}>
+          <Icon icon={mdiPlayCircleOutline} size="18" />
+          <span>{$t('slideshow')}</span>
+        </button>
+
         <button
           type="button"
           class="action"
-          aria-label={linkCount > 0
-            ? $t('frameleaf_spaces_links_count', { values: { count: linkCount } })
-            : $t('frameleaf_albums_create_link')}
-          onclick={openLinks}
+          disabled={space.assetCount === 0}
+          onclick={() => handleDownloadAlbum(space)}
         >
-          <Icon icon={mdiLinkVariant} size="18" />
-          <span>{$t('frameleaf_spaces_links')}</span>
-          {#if linkCount > 0}
-            <span class="count" aria-hidden="true">{linkCount}</span>
+          <Icon icon={mdiDownloadOutline} size="18" />
+          <span>{$t('download')}</span>
+        </button>
+
+        <!-- SHARING-P7: "Comments", as on the album header. -->
+        <button
+          type="button"
+          class="action"
+          aria-pressed={panel === 'activity'}
+          aria-label={$t('frameleaf_spaces_activity_button', { values: { count: activityCount } })}
+          onclick={() => choosePanel('activity')}
+        >
+          <Icon icon={mdiCommentTextOutline} size="18" />
+          <span>{$t('frameleaf_album_comments_title')}</span>
+          {#if activityCount > 0}
+            <span class="count" aria-hidden="true">{activityCount}</span>
           {/if}
         </button>
       {/if}
-
-      <!-- The space's own map and conversation are its Places and Activity panels. -->
-      <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => choosePanel('places')}>
-        <Icon icon={mdiMapOutline} size="18" />
-        <span>{$t('map')}</span>
-      </button>
-
-      <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => void startSlideshow()}>
-        <Icon icon={mdiPlayCircleOutline} size="18" />
-        <span>{$t('slideshow')}</span>
-      </button>
-
-      <button type="button" class="action" disabled={space.assetCount === 0} onclick={() => handleDownloadAlbum(space)}>
-        <Icon icon={mdiDownloadOutline} size="18" />
-        <span>{$t('download')}</span>
-      </button>
-
-      <button
-        type="button"
-        class="action"
-        aria-pressed={panel === 'activity'}
-        aria-label={$t('frameleaf_spaces_activity_button', { values: { count: activityCount } })}
-        onclick={() => choosePanel('activity')}
-      >
-        <Icon icon={mdiCommentTextOutline} size="18" />
-        <span>{$t('activity')}</span>
-        {#if activityCount > 0}
-          <span class="count" aria-hidden="true">{activityCount}</span>
-        {/if}
-      </button>
 
       <span class="spacer"></span>
 
@@ -566,6 +595,33 @@
         {#snippet trigger()}
           <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
         {/snippet}
+        {#if compact}
+          {#if owner}
+            <MenuItem onSelect={openLinks}>
+              <Icon icon={mdiLinkVariant} size="18" />
+              {$t('frameleaf_spaces_links')}
+            </MenuItem>
+          {/if}
+          <MenuItem disabled={space.assetCount === 0} onSelect={() => choosePanel('places')}>
+            <Icon icon={mdiMapOutline} size="18" />
+            {$t('map')}
+          </MenuItem>
+          <MenuItem disabled={space.assetCount === 0} onSelect={() => void startSlideshow()}>
+            <Icon icon={mdiPlayCircleOutline} size="18" />
+            {$t('slideshow')}
+          </MenuItem>
+          <MenuItem disabled={space.assetCount === 0} onSelect={() => handleDownloadAlbum(space)}>
+            <Icon icon={mdiDownloadOutline} size="18" />
+            {$t('download')}
+          </MenuItem>
+          <MenuItem checked={panel === 'activity'} onSelect={() => choosePanel('activity')}>
+            <Icon icon={mdiCommentTextOutline} size="18" />
+            {activityCount > 0
+              ? $t('frameleaf_album_activity_menu', { values: { count: activityCount } })
+              : $t('frameleaf_album_comments_title')}
+          </MenuItem>
+          <div class="menu-separator" role="separator"></div>
+        {/if}
         <MenuItem onSelect={() => goto(Route.viewAlbum({ id: space.id }))}>
           <Icon icon={mdiFolderOpenOutline} size="18" />
           {$t('frameleaf_spaces_open_photos')}
@@ -598,13 +654,22 @@
 
   <Status message={status} {busy} />
 
-  <div class="panels">
-    <SegmentedControl
-      label={$t('frameleaf_spaces_panels')}
-      options={panelOptions}
-      value={panel}
-      onChange={choosePanel}
-    />
+  <div class="panels-row">
+    <div class="panels">
+      <SegmentedControl
+        label={$t('frameleaf_spaces_panels')}
+        options={panelOptions}
+        value={panel}
+        onChange={choosePanel}
+      />
+    </div>
+    {#if contributor && panel === 'timeline'}
+      <!-- SHARING-P5: "Add everything matching" waits behind a button, so the tab opens on its photos. -->
+      <button type="button" class="action" aria-haspopup="dialog" onclick={() => (addMatchingOpen = true)}>
+        <Icon icon={mdiPlaylistPlus} size="18" />
+        <span>{$t('frameleaf_spaces_add_matching_open')}</span>
+      </button>
+    {/if}
   </div>
 
   <!-- Moving to another space starts every panel afresh, so nothing loaded for one space shows in the next. -->
@@ -619,7 +684,7 @@
           onMarked={(next) => (newInfo = next)}
         />
         {#if contributor}
-          <SharedSpaceAddMatching {space} {albums} />
+          <SharedSpaceAddMatching {space} {albums} bind:open={addMatchingOpen} />
         {/if}
         <SharedSpaceTimeline
           {space}
@@ -866,6 +931,32 @@
     border-color: var(--fl-border);
     color: var(--fl-text);
   }
+  /*
+   * SHARING-P3, as on the album header: the text rows keep the prototype's 4px rhythm, and each
+   * control keeps its 44px target (48px on touch) as an invisible box centred on it.
+   */
+  .text :global(.trigger),
+  .members {
+    position: relative;
+    min-height: 0;
+  }
+  .text :global(.trigger)::after,
+  .members::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block: min(0px, calc((100% - 44px) / 2));
+  }
+  @media (pointer: coarse) {
+    .text :global(.trigger),
+    .members {
+      min-height: 0;
+    }
+    .text :global(.trigger)::after,
+    .members::after {
+      inset-block: min(0px, calc((100% - 48px) / 2));
+    }
+  }
   .actions {
     display: flex;
     align-items: center;
@@ -953,6 +1044,14 @@
       opacity: 0.2;
     }
   }
+  /* The panel switch, and on Photos the "Add matching…" button at the row's end. */
+  .panels-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3) var(--fl-space-2);
+    justify-content: space-between;
+  }
   /* Six panels do not fit a phone's width; the row scrolls sideways instead of the page. */
   .panels {
     max-width: 100%;
@@ -981,6 +1080,10 @@
   @media (max-width: 700px) {
     .icon-wrap {
       display: none;
+    }
+    /* D9: the phone title is the prototype's 19px (collections.css:1803). */
+    .title-row :global(h1) {
+      font-size: 19px;
     }
   }
 </style>

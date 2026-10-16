@@ -85,7 +85,7 @@ describe('AlbumHeader', () => {
     expect(add.getByRole('menuitem', { name: /Upload from computer/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Links' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit title' })).toBeInTheDocument();
 
     const more = await openMore();
@@ -101,7 +101,7 @@ describe('AlbumHeader', () => {
     expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Members' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Links' })).toBeNull();
-    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
 
     const more = await openMore();
     expect(more.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument();
@@ -117,7 +117,7 @@ describe('AlbumHeader', () => {
     expect(screen.queryByRole('button', { name: 'Links' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit title' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Members' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
     expect(screen.getByText(/View only/)).toBeInTheDocument();
 
     const more = await openMore();
@@ -154,7 +154,7 @@ describe('AlbumHeader', () => {
 
   it('keeps activity reachable when comments are turned off, so likes and history stay visible', () => {
     renderHeader(albumAs(AlbumUserRole.Viewer, { isActivityEnabled: false }));
-    expect(screen.getByRole('button', { name: /^Likes & comments/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
   });
 
   it('shows no separator above Leave when a viewer has nothing else in the menu', async () => {
@@ -192,15 +192,13 @@ describe('AlbumHeader', () => {
       const toolbar = screen.getByRole('toolbar');
       expect(within(toolbar).getByRole('button', { name: 'Add photos' })).toBeInTheDocument();
       expect(within(toolbar).getByRole('button', { name: 'Share' })).toBeInTheDocument();
-      for (const name of ['Links', 'Slideshow', 'Download', /^Likes & comments/]) {
+      for (const name of ['Links', 'Slideshow', 'Download', /^Comments/]) {
         expect(within(toolbar).queryByRole('button', { name })).toBeNull();
       }
 
       const menu = await openMore();
-      for (const name of ['Links', 'Slideshow', 'Download', 'Likes & comments']) {
-        expect(
-          menu.getByRole(name === 'Likes & comments' ? 'menuitemcheckbox' : 'menuitem', { name }),
-        ).toBeInTheDocument();
+      for (const name of ['Links', 'Slideshow', 'Download', 'Comments']) {
+        expect(menu.getByRole(name === 'Comments' ? 'menuitemcheckbox' : 'menuitem', { name })).toBeInTheDocument();
       }
       expect(menu.getByRole('menuitem', { name: 'Delete album' })).toBeInTheDocument();
     });
@@ -256,7 +254,7 @@ describe('AlbumHeader', () => {
       });
 
       const menu = await openMore();
-      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Likes & comments (3)' }));
+      await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Comments (3)' }));
       expect(onToggleActivity).toHaveBeenCalledOnce();
     });
   });
