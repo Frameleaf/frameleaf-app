@@ -488,12 +488,14 @@ export class FrameleafRemoteAccessService extends BaseService {
         }
 
         settled = true;
+        clearTimeout(deadline);
         socket.destroy();
         resolve(result);
       };
-      socket.setTimeout(PROBE_TIMEOUT_MS, () => {
+      const deadline = setTimeout(() => {
         done({ ok: false, detail: 'The HTTPS listener did not answer in time.' });
-      });
+      }, PROBE_TIMEOUT_MS);
+      deadline.unref();
       socket.once('error', (error) => {
         done({ ok: false, detail: `The HTTPS listener refused the connection: ${error.message}` });
       });
@@ -517,9 +519,9 @@ export class FrameleafRemoteAccessService extends BaseService {
           );
         }
       });
-      socket.once('end', () =>
-        done({ ok: false, detail: 'The HTTPS listener closed the connection without an answer.' }),
-      );
+      const closed = () => done({ ok: false, detail: 'The HTTPS listener closed the connection without an answer.' });
+      socket.once('end', closed);
+      socket.once('close', closed);
     });
   }
 
