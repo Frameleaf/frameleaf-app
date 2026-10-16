@@ -158,7 +158,8 @@ describe('photography OpenAPI contract', () => {
           recipient: { properties: { id: { type: 'string' } } },
         },
       });
-      expect((schemas.PhotographyGalleryDto as any).properties.recipient.properties.id.format).toBeUndefined();
+      // the client preview recipient stays a UUID (321117aada)
+      expect((schemas.PhotographyGalleryDto as any).properties.recipient.properties.id.format).toBe('uuid');
       expect((schemas.PhotographyWorkflowListDto as any).properties.galleries.items).toMatchObject({
         required: expect.arrayContaining(['outstanding', 'currency', 'invited']),
         properties: {
