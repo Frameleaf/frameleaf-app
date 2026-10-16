@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
+import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import {
   DesktopWorkerChallengeRepository,
   type DesktopWorkerChallengeTables,
@@ -243,4 +244,91 @@ it('sign-in replacement deletes prior challenge evidence and cannot reuse its re
   const fresh = (await sut.issue(current, requestId, profile, runtime))!;
   expect(fresh.id).not.toBe(row.id);
   expect(fresh.reportSha256).toBeNull();
+});
+
+it('accepted runtime evidence has an absolute lifetime across retries and renewal, and replacement cannot revive it', async () => {
+  const { sut, workers, grant, photo, user } = await setup();
+  const proofDb =
+    db.withTables<import('src/schema/tables/desktop-worker-qualification.table.js').DesktopQualificationTables>();
+  const first = (await sut.issue(grant, randomUUID(), profile, runtime))!;
+  const validated = receipt(first);
+  expect(await sut.record(grant, first.id, validated)).toBe(true);
+  const accepted = await proofDb
+    .selectFrom('desktop_worker_qualification')
+    .selectAll()
+    .where('id', '=', first.id)
+    .executeTakeFirstOrThrow();
+  expect(accepted).toMatchObject({
+    sessionId: grant.sessionId,
+    deviceId: grant.deviceId,
+    modelKey: profile.modelKey,
+    profileSha256: validated.profileSha256,
+    runtime,
+    runtimeFingerprint: validated.runtimeFingerprint,
+    reportSha256: validated.reportSha256,
+    inputKind: 'text',
+  });
+  expect(new Date(accepted.expiresAt).getTime() - new Date(accepted.createdAt).getTime()).toBe(3_600_000);
+  // The fixture supplies explicit NAS model scope; recording runtime evidence does not grant it.
+  await challengeDb
+    .updateTable('desktop_worker_session')
+    .set({ modelKeys: sql`${[profile.modelKey]}::jsonb` })
+    .where('id', '=', grant.sessionId)
+    .execute();
+  const broker = new DesktopMlRepository(db);
+  const task = await broker.create({
+    ownerId: user.id,
+    modelKey: profile.modelKey,
+    authorityKey: 'qualification-fixture',
+    config: profile.spec.entries,
+    input: Buffer.from(profile.fixtureBase64, 'base64'),
+    inputKind: 'text',
+    deadlineAt: new Date(Date.now() + 120_000),
+  });
+  const attempt = (await broker.claim(grant, [profile.modelKey]))!;
+  expect(attempt.attempt.qualificationId).toBe(first.id);
+  expect(await broker.complete(grant, attempt.attempt.id, { clip: [1, 2] })).toBe(true);
+  await expect(broker.assertAdoption(task.id, task)).resolves.toBeUndefined();
+
+  expect(await sut.record(grant, first.id, validated)).toBe(true);
+  expect(
+    await proofDb
+      .selectFrom('desktop_worker_qualification')
+      .selectAll()
+      .where('id', '=', first.id)
+      .executeTakeFirstOrThrow(),
+  ).toEqual(accepted);
+  const nextHash = Buffer.alloc(32, 32);
+  expect(await workers.rotate(grant, grant.credentialHash, nextHash)).toBeDefined();
+  const current = (await workers.consume(grant.sessionId, nextHash, 1))!;
+  await expect(broker.assertAdoption(task.id, task)).resolves.toBeUndefined();
+  const second = (await sut.issue(current, randomUUID(), profile, runtime))!;
+  expect(
+    await proofDb
+      .selectFrom('desktop_worker_qualification')
+      .selectAll()
+      .where('id', '=', first.id)
+      .executeTakeFirstOrThrow(),
+  ).toEqual(accepted);
+  expect(await sut.record(current, second.id, receipt(second))).toBe(true);
+  await expect(broker.assertAdoption(task.id, task)).rejects.toThrow('desktop_result_authority_lost');
+  expect(
+    await proofDb.selectFrom('desktop_worker_qualification').select('id').where('id', '=', first.id).executeTakeFirst(),
+  ).toBeUndefined();
+  expect(await sut.record(grant, first.id, validated)).toBe(false);
+  const replacement = await workers.issue({
+    deviceId: grant.deviceId,
+    authorizationEpoch: grant.authorizationEpoch,
+    photoSessionId: photo.id!,
+    tokenHash: Buffer.alloc(32, 33),
+    modelKeys: [],
+  });
+  expect(replacement).toBeDefined();
+  expect(
+    await proofDb
+      .selectFrom('desktop_worker_qualification')
+      .select('id')
+      .where('deviceId', '=', grant.deviceId)
+      .execute(),
+  ).toHaveLength(0);
 });

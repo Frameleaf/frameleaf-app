@@ -7,6 +7,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -19,7 +20,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.destroy();
 });
-const setup = async () => {
+const setup = async (withQualification = true) => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser({ isAdmin: true });
   const { session: photoSession } = await ctx.newSession({ userId: user.id });
@@ -65,6 +66,7 @@ const setup = async () => {
     inputKind: 'text' as const,
     deadlineAt: new Date(Date.now() + 120_000),
   };
+  if (withQualification) await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
   return { sut: new DesktopMlRepository(db), second: new DesktopMlRepository(db), devices, grants, request };
 };
 
@@ -396,7 +398,9 @@ it('a new photo association cannot resume or publish an old attempt when the sam
       tokenHash: createHash('sha256').update(randomUUID()).digest(),
       modelKeys: [request.modelKey],
     }))!;
-    replacements.push((await sessions.consume(session.id, session.tokenHash, 1))!);
+    const current = (await sessions.consume(session.id, session.tokenHash, 1))!;
+    await seedDesktopQualification(db, current, request);
+    replacements.push(current);
   }
   expect(await sut.input(replacements[0], active.attempt.id)).toBeUndefined();
   expect(await sut.heartbeat(replacements[0], active.attempt.id)).toBe(false);
@@ -405,4 +409,61 @@ it('a new photo association cannot resume or publish an old attempt when the sam
   expect(await sut.claim(replacements[0], [request.modelKey])).toBeUndefined();
   await expect(sut.assertAdoption(staged.id, staged)).rejects.toThrow('desktop_result_authority_lost');
   expect((await sut.result(running.id))?.state).toBe('running');
+});
+
+it('a model key alone cannot authorize a claim without current qualified runtime evidence', async () => {
+  const { sut, grants, request } = await setup(false);
+  await sut.create(request);
+  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+});
+
+it('qualification expiry and replacement fence input, renewal, completion and staged publication', async () => {
+  const { sut, grants, request } = await setup();
+  const qualificationDb =
+    db.withTables<import('src/schema/tables/desktop-worker-qualification.table.js').DesktopQualificationTables>();
+  await qualificationDb
+    .updateTable('desktop_worker_qualification')
+    .set({ expiresAt: sql`now() + interval '30 seconds'` })
+    .where('sessionId', '=', grants[0].sessionId)
+    .execute();
+  const task = await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const proofDb =
+    db.withTables<import('src/schema/tables/desktop-worker-qualification.table.js').DesktopQualificationTables>();
+  const proof = await proofDb
+    .selectFrom('desktop_worker_qualification')
+    .selectAll()
+    .where('id', '=', claim.attempt.qualificationId!)
+    .executeTakeFirstOrThrow();
+  expect(new Date(claim.attempt.expiresAt)).toEqual(new Date(proof.expiresAt));
+  expect(await sut.heartbeatLease(grants[0], claim.attempt.id)).toEqual(new Date(proof.expiresAt));
+  await proofDb
+    .updateTable('desktop_worker_qualification')
+    .set({ createdAt: sql`now() - interval '2 hours'`, expiresAt: sql`now() - interval '1 hour'` })
+    .where('id', '=', proof.id)
+    .execute();
+  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
+  expect(await sut.fail(grants[0], claim.attempt.id)).toBe(false);
+  await seedDesktopQualification(db, grants[0], request);
+  expect(await sut.input(grants[0], claim.attempt.id)).toBeUndefined();
+  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  const secondTask = await sut.create(request);
+  const second = (await sut.claim(grants[1], [request.modelKey]))!;
+  expect(second.task.id).toBe(secondTask.id);
+  expect(await sut.complete(grants[1], second.attempt.id, { clip: [3, 4] })).toBe(true);
+  await expect(sut.assertAdoption(secondTask.id, secondTask)).resolves.toBeUndefined();
+  await seedDesktopQualification(db, grants[1], request);
+  await expect(sut.assertAdoption(secondTask.id, secondTask)).rejects.toThrow('desktop_result_authority_lost');
+  expect((await sut.result(task.id))?.state).toBe('running');
+});
+
+it('qualification authorizes only the exact request configuration and input kind', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create({ ...request, config: { clip: { textual: { modelName: 'different' } } } });
+  await sut.create({ ...request, inputKind: 'image' });
+  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  const task = await sut.create(request);
+  expect((await sut.claim(grants[0], [request.modelKey]))?.task.id).toBe(task.id);
 });

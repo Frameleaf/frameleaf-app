@@ -13,13 +13,14 @@ import { DB } from 'src/schema/index.js';
 
 export type { DesktopWorkerGrant } from 'src/repositories/desktop-worker.repository.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
+import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopMlTables = {
   desktop_ml_task: DesktopMlTaskTable;
   desktop_ml_attempt: DesktopMlAttemptTable;
 };
-type DesktopMlDatabase = DB & DesktopMlTables & DesktopWorkerTables;
+type DesktopMlDatabase = DB & DesktopMlTables & DesktopWorkerTables & DesktopQualificationTables;
 type Task = Selectable<DesktopMlTaskTable>;
 type Attempt = Selectable<DesktopMlAttemptTable>;
 type TaskMetadata = Omit<Task, 'input'>;
@@ -55,7 +56,7 @@ export class DesktopMlRepository {
   private db: Kysely<DesktopMlDatabase>;
 
   constructor(@InjectKysely() db: Kysely<DB>) {
-    this.db = db.withTables<DesktopMlTables & DesktopWorkerTables>();
+    this.db = db.withTables<DesktopMlTables & DesktopWorkerTables & DesktopQualificationTables>();
   }
 
   async create(request: DesktopMlRequest): Promise<TaskMetadata> {
@@ -103,6 +104,16 @@ export class DesktopMlRepository {
       if (!worker) return;
       modelKeys = modelKeys.filter((key) => worker.modelKeys.includes(key));
       if (modelKeys.length === 0) return;
+      const qualifications = await db
+        .selectFrom('desktop_worker_qualification')
+        .selectAll()
+        .where('sessionId', '=', grant.sessionId)
+        .where('deviceId', '=', grant.deviceId)
+        .where('authorizationEpoch', '=', grant.authorizationEpoch)
+        .where('modelKey', 'in', modelKeys)
+        .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+        .execute();
+      if (qualifications.length === 0) return;
       const busy = await db
         .selectFrom('desktop_ml_attempt as attempt')
         .innerJoin('desktop_ml_task as task', 'task.attemptId', 'attempt.id')
@@ -129,13 +140,24 @@ export class DesktopMlRepository {
           .select(taskColumns)
           .where('id', '=', attempt.taskId)
           .executeTakeFirstOrThrow();
+        if (!(await this.qualification(db, grant, task, attempt.qualificationId))) return;
         return { task, attempt };
       }
 
       const task = await db
         .selectFrom('desktop_ml_task')
         .select(taskColumns)
-        .where('modelKey', 'in', modelKeys)
+        .where((eb) =>
+          eb.or(
+            qualifications.map((q) =>
+              eb.and([
+                eb('modelKey', '=', q.modelKey),
+                eb('configSha256', '=', q.configSha256),
+                eb('inputKind', '=', q.inputKind),
+              ]),
+            ),
+          ),
+        )
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .where((eb) =>
           eb.or([
@@ -158,6 +180,9 @@ export class DesktopMlRepository {
         .skipLocked()
         .executeTakeFirst();
       if (!task) return;
+      const qualification = qualifications.find(
+        (q) => q.modelKey === task.modelKey && q.configSha256 === task.configSha256 && q.inputKind === task.inputKind,
+      )!;
       if (task.attemptId)
         await db
           .updateTable('desktop_ml_attempt')
@@ -170,9 +195,13 @@ export class DesktopMlRepository {
           taskId: task.id,
           deviceId: grant.deviceId,
           workerSessionId: grant.sessionId,
+          qualificationId: qualification.id,
           authorizationEpoch: grant.authorizationEpoch,
           generation: task.generation + 1,
-          expiresAt: leaseEnd(new Date(task.deadlineAt), new Date(worker.expiresAt)),
+          expiresAt: leaseEnd(
+            new Date(task.deadlineAt),
+            new Date(Math.min(new Date(worker.expiresAt).getTime(), new Date(qualification.expiresAt).getTime())),
+          ),
           outcome: null,
         })
         .returningAll()
@@ -300,6 +329,7 @@ export class DesktopMlRepository {
           'attempt.id',
           'attempt.deviceId',
           'attempt.workerSessionId',
+          'attempt.qualificationId',
           'attempt.authorizationEpoch',
           'attempt.generation',
         ])
@@ -312,7 +342,7 @@ export class DesktopMlRepository {
       if (!worker || !worker.modelKeys.includes(expected.modelKey)) throw new Error('desktop_result_authority_lost');
       const task = await db
         .selectFrom('desktop_ml_task')
-        .select('id')
+        .select(['id', 'modelKey', 'configSha256', 'inputKind'])
         .where('id', '=', id)
         .where('state', '=', 'completed')
         .where('attemptId', '=', attempt.id)
@@ -325,9 +355,19 @@ export class DesktopMlRepository {
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .forUpdate()
         .executeTakeFirst();
-      if (!task) throw new Error('desktop_result_authority_lost');
+      if (
+        !task ||
+        !(await this.qualification(
+          db,
+          { ...attempt, sessionId: attempt.workerSessionId },
+          task,
+          attempt.qualificationId,
+        ))
+      )
+        throw new Error('desktop_result_authority_lost');
     };
-    if (transaction) await assert(transaction.withTables<DesktopMlTables & DesktopWorkerTables>());
+    if (transaction)
+      await assert(transaction.withTables<DesktopMlTables & DesktopWorkerTables & DesktopQualificationTables>());
     else await this.db.transaction().execute(assert);
   }
 
@@ -343,6 +383,27 @@ export class DesktopMlRepository {
       .where('id', '=', id)
       .where('state', 'in', ['cancelled', 'failed'])
       .execute();
+  }
+
+  private qualification(
+    db: Transaction<DesktopMlDatabase>,
+    grant: Omit<DesktopWorkerGrant, 'credentialHash'>,
+    task: Pick<Task, 'modelKey' | 'configSha256' | 'inputKind'>,
+    id: string | null,
+  ) {
+    if (!id) return Promise.resolve(undefined);
+    return db
+      .selectFrom('desktop_worker_qualification')
+      .selectAll()
+      .where('id', '=', id)
+      .where('sessionId', '=', grant.sessionId)
+      .where('deviceId', '=', grant.deviceId)
+      .where('authorizationEpoch', '=', grant.authorizationEpoch)
+      .where('modelKey', '=', task.modelKey)
+      .where('configSha256', '=', task.configSha256)
+      .where('inputKind', '=', task.inputKind)
+      .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+      .executeTakeFirst();
   }
 
   private device(db: Transaction<DesktopMlDatabase>, grant: DesktopWorkerGrant) {
@@ -378,6 +439,8 @@ export class DesktopMlRepository {
         .forUpdate()
         .executeTakeFirst();
       if (!task || !worker.modelKeys.includes(task.modelKey)) return;
+      const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
+      if (!qualification) return;
       const live = await db
         .selectFrom('desktop_ml_attempt')
         .select('id')
@@ -387,7 +450,11 @@ export class DesktopMlRepository {
         .$if(state === 'running', (query) => query.where('expiresAt', '>', sql<Date>`clock_timestamp()`))
         .executeTakeFirst();
       if (!live) return;
-      return operation(db, task, new Date(worker.expiresAt));
+      return operation(
+        db,
+        task,
+        new Date(Math.min(new Date(worker.expiresAt).getTime(), new Date(qualification.expiresAt).getTime())),
+      );
     });
   }
 }

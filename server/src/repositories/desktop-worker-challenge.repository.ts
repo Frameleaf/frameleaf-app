@@ -6,6 +6,7 @@ import z from 'zod';
 import { type DesktopWorkerGrant, lockDesktopWorker } from 'src/repositories/desktop-worker.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
+import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import {
   type DesktopModelProfile,
   createDesktopModelChallenge,
@@ -15,7 +16,7 @@ import { DesktopQualificationReceipt, type DesktopRuntimeIdentity } from 'src/ut
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopWorkerChallengeTables = { desktop_worker_challenge: DesktopWorkerChallengeTable };
-type ChallengeDatabase = DB & DesktopWorkerChallengeTables;
+type ChallengeDatabase = DB & DesktopWorkerChallengeTables & DesktopQualificationTables;
 type Challenge = Selectable<DesktopWorkerChallengeTable>;
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 const runtimeSchema = z.strictObject({
@@ -31,7 +32,7 @@ const runtimeSchema = z.strictObject({
 export class DesktopWorkerChallengeRepository {
   private db: Kysely<ChallengeDatabase>;
   constructor(@InjectKysely() db: Kysely<DB>) {
-    this.db = db.withTables<{ desktop_worker_challenge: DesktopWorkerChallengeTable }>();
+    this.db = db.withTables<DesktopWorkerChallengeTables & DesktopQualificationTables>();
   }
 
   /** Call only after release-owned profile selection and factory runtime verification; never grants inference scope. */
@@ -144,6 +145,41 @@ export class DesktopWorkerChallengeRepository {
         return false;
       if (row.reportSha256 !== null)
         return row.reportSha256 === receipt.reportSha256 && row.runtimeFingerprint === receipt.runtimeFingerprint;
+      const spec = z
+        .object({ entries: z.record(z.string(), z.json()), fixtureKind: z.enum(['image', 'text']) })
+        .parse(JSON.parse(row.specJson));
+      await db
+        .deleteFrom('desktop_worker_qualification')
+        .where('deviceId', '=', grant.deviceId)
+        .where((eb) => eb.or([eb('expiresAt', '<=', sql<Date>`clock_timestamp()`), eb('modelKey', '=', row.modelKey)]))
+        .execute();
+      const { count } = await db
+        .selectFrom('desktop_worker_qualification')
+        .select((eb) => eb.fn.countAll<string>().as('count'))
+        .where('deviceId', '=', grant.deviceId)
+        .executeTakeFirstOrThrow();
+      if (Number(count) >= 64) throw new Error('desktop_qualification_capacity');
+      const { acceptedAt } = await db
+        .selectNoFrom(sql<Date>`clock_timestamp()`.as('acceptedAt'))
+        .executeTakeFirstOrThrow();
+      await db
+        .insertInto('desktop_worker_qualification')
+        .values({
+          id: row.id,
+          deviceId: grant.deviceId,
+          sessionId: grant.sessionId,
+          authorizationEpoch: grant.authorizationEpoch,
+          modelKey: row.modelKey,
+          profileSha256: row.profileSha256,
+          configSha256: sha(canonicalJson(spec.entries)),
+          inputKind: spec.fixtureKind,
+          runtime: sql<DesktopRuntimeIdentity>`${row.runtime}::jsonb`,
+          runtimeFingerprint: receipt.runtimeFingerprint,
+          reportSha256: receipt.reportSha256,
+          createdAt: acceptedAt,
+          expiresAt: sql<Date>`${acceptedAt}::timestamptz + interval '1 hour'`,
+        })
+        .execute();
       await db
         .updateTable('desktop_worker_challenge')
         .set({

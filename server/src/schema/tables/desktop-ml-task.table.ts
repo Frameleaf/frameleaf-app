@@ -50,6 +50,7 @@ export class DesktopMlAttemptTable {
   @ForeignKeyColumn(() => DesktopMlTaskTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) taskId!: string;
   @ForeignKeyColumn(() => DesktopDeviceTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) deviceId!: string;
   @Column({ type: 'uuid', nullable: true }) workerSessionId!: string | null;
+  @Column({ type: 'uuid', nullable: true }) qualificationId!: Generated<string | null>;
   @Column({ type: 'integer' }) authorizationEpoch!: number;
   @Column({ type: 'integer' }) generation!: number;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;

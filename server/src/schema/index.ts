@@ -84,6 +84,7 @@ import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { DesktopWorkerChallengeTable } from 'src/schema/tables/desktop-worker-challenge.table.js';
+import { DesktopWorkerQualificationTable } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -220,6 +221,7 @@ export class ImmichDatabase {
     DesktopDeviceTable,
     DesktopWorkerSessionTable,
     DesktopWorkerChallengeTable,
+    DesktopWorkerQualificationTable,
     DesktopMlTaskTable,
     DesktopMlAttemptTable,
     AssetLocalEffectStreamTable,

@@ -56,3 +56,5 @@ proof header; the worker authentication layer validates it. Client-supplied
 arrival claims continue to be stripped or rejected.
 
 Worker sign-in replaces the session ID under the device lock and deletes prior qualification challenges. Ordinary token renewal preserves that session ID and existing leases. Reapproving the same model after a new sign-in cannot revive an earlier attempt or staged result; orphaned running attempts remain bounded by their existing lease deadline.
+
+Validated challenge reports now persist a separate accepted-runtime qualification with a one-hour absolute lifetime. Token renewal neither replaces nor extends it. Fresh sign-in removes it; a new qualification for the same model replaces its UUID. Broker claims require current model scope plus live qualification matching the exact model/configuration/input kind. Every attempt and staged-result adoption stays bound to that UUID and cannot be revived by replacement evidence. Qualification storage alone still does not issue model scope or enable worker readiness; NAS model/index and routing admission remain separate.

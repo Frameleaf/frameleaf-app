@@ -18,6 +18,7 @@ import { DesktopQualificationService } from 'src/services/desktop-qualification.
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
+import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { controllerSetup, getKyselyDB } from 'test/utils.js';
 
@@ -86,6 +87,16 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
     return method === 'post' ? response.send({ payload }) : response;
   };
   const input = Buffer.from('synthetic UTF-8 été');
+  await seedDesktopQualification(
+    db,
+    {
+      sessionId: session.id,
+      deviceId: device.id,
+      authorizationEpoch: device.authorizationEpoch,
+      credentialHash: session.tokenHash,
+    },
+    { modelKey, config: { clip: { textual: { modelName: 'fixture' } } }, inputKind: 'text' },
+  );
   const authority = vi.fn().mockResolvedValue(undefined);
   const dispatched = new DesktopMlService(broker).dispatch({
     request: {
