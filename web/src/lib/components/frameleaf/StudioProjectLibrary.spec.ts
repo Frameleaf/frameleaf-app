@@ -235,4 +235,21 @@ describe('StudioProjectLibrary states and cards', () => {
       vi.useRealTimers();
     }
   });
+
+  it('starts one file export however quickly Create file is pressed twice', async () => {
+    sdkMock.searchStudioProjects.mockResolvedValue({ items: [project(null)], total: 1 });
+    let answer!: (operation: never) => void;
+    sdkMock.exportStudioProjectBundle.mockReset();
+    sdkMock.exportStudioProjectBundle.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+    render(StudioProjectLibrary);
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Actions for Lake trip' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Save as a file…' }));
+    const create = await screen.findByRole('button', { name: 'Create file' });
+    await fireEvent.click(create);
+    await fireEvent.click(create);
+
+    expect(sdkMock.exportStudioProjectBundle).toHaveBeenCalledTimes(1);
+    answer({ id: 'op-1', kind: 'studio-bundle-export', status: 'queued', progress: null, attempt: 0 } as never);
+  });
 });
