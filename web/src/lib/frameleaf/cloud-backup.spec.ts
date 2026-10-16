@@ -56,12 +56,30 @@ describe('cloud backup keys in the browser (FL-160)', () => {
       mode: 'own-memory',
       fingerprint: key.fingerprint,
     });
-    expect(readBackupKeyFile(file, key.fingerprint)).toEqual({ key: key.key });
+    expect(readBackupKeyFile(file, key.fingerprint)).toEqual({ key: file });
     expect(readBackupKeyFile(file, 'AAAA-0000')).toEqual({ error: 'frameleaf_cloud_backup_key_file_other_bucket' });
     expect(readBackupKeyFile('not json')).toEqual({ error: 'frameleaf_cloud_backup_key_file_invalid' });
     expect(readBackupKeyFile(JSON.stringify({ format: 'something-else', key: key.key }))).toEqual({
       error: 'frameleaf_cloud_backup_key_file_invalid',
     });
+  });
+
+  it.each(['client', 'recovery', 'both'])('preserves the complete %s authority in an imported key file', (kind) => {
+    const key = createBackupKey(fixed);
+    const file = JSON.stringify({
+      format: 'frameleaf-backup-key',
+      key: key.key,
+      instanceId: 'vault',
+      ...(kind !== 'recovery' && {
+        client: { vaultId: 'vault', current: 2, keys: { 1: 'older root', 2: 'current root' } },
+      }),
+      ...(kind !== 'client' && { recovery: { anchor: { digest: 'pinned history' }, snapshots: ['signed snapshot'] } }),
+    });
+    expect(readBackupKeyFile(file, key.fingerprint)).toEqual({ key: file });
+  });
+
+  it.each(['null', '[]', 'true', '42', '"text"'])('refuses JSON %s as a key file without throwing', (text) => {
+    expect(readBackupKeyFile(text)).toEqual({ error: 'frameleaf_cloud_backup_key_file_invalid' });
   });
 
   it('asks for the typed acknowledgement without case or surrounding spaces', () => {
