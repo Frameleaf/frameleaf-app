@@ -255,6 +255,16 @@
     }
   };
 
+  // The backup key never outlives its dialog: closing it (Cancel, Close, Escape) forgets what was typed or read.
+  $effect(() => {
+    if (unlockOpen) {
+      return;
+    }
+    unlockValue = '';
+    unlockError = null;
+    unlockFailure = '';
+  });
+
   const readKeyFile = async (file: File | undefined) => {
     if (!file) {
       return;
