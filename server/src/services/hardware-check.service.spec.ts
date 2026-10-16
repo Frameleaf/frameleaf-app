@@ -57,7 +57,10 @@ describe(HardwareCheckService.name, () => {
     });
     expect(result.server.gpu).toEqual({ present: true, visible: true, usable: true });
     expect(result.ml.gpu).toEqual({ present: true, visible: true, usable: true });
-    expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.HardwareCheck, result);
+    expect(mocks.systemMetadata.set).toHaveBeenCalledWith(
+      SystemMetadataKey.HardwareCheck,
+      expect.objectContaining(result),
+    );
     expect(mocks.machineLearning.getContainerHardware).toHaveBeenCalledWith(
       expect.objectContaining({ url: mlDestinationStub.local.url }),
     );
@@ -79,6 +82,127 @@ describe(HardwareCheckService.name, () => {
 
     mocks.machineLearning.getContainerHardware.mockResolvedValue(null);
     await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: null, ml: { reachable: false } });
+  });
+
+  it.each(['destination', 'url', 'credential', 'clip-model', 'description-model'] as const)(
+    'does not retain another source calibration after changing its %s',
+    async (change) => {
+      const config = await sut['getConfig']({ withCache: true });
+      const readConfig = vi
+        .spyOn(sut as unknown as { getConfig: () => Promise<typeof config> }, 'getConfig')
+        .mockResolvedValue(config);
+      await sut.runBenchmark();
+      const replacement = { ...mlDestinationStub.local };
+      if (change === 'destination') replacement.id = 'replacement-worker';
+      if (change === 'url') replacement.url = 'http://replacement-worker:3003';
+      if (change === 'credential') replacement.authToken = 'replacement-test-credential';
+      if (change === 'clip-model') {
+        readConfig.mockResolvedValue({
+          ...config,
+          machineLearning: {
+            ...config.machineLearning,
+            clip: { ...config.machineLearning.clip, modelName: 'replacement-clip' },
+          },
+        } as never);
+      }
+      if (change === 'description-model') {
+        readConfig.mockResolvedValue({
+          ...config,
+          machineLearning: {
+            ...config.machineLearning,
+            imageDescription: { ...config.machineLearning.imageDescription, modelName: 'replacement-description' },
+          },
+        } as never);
+      }
+      mocks.mlDestination.getAll.mockResolvedValue([replacement]);
+
+      await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: null });
+    },
+  );
+
+  it('rechecks an older saved benchmark whose source was never bound', async () => {
+    const benchmark = await sut.runBenchmark();
+    stored = benchmark;
+    mocks.hardwareProbe.readServer.mockClear();
+
+    await expect(sut.getCheck()).resolves.toMatchObject({ benchmark: null });
+
+    expect(mocks.hardwareProbe.readServer).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates calibration when another enabled local destination becomes first', async () => {
+    const other = { ...mlDestinationStub.local, id: 'other-local', url: 'http://other-local:3003' };
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, other]);
+    await sut.runBenchmark();
+    mocks.mlDestination.getAll.mockResolvedValue([other, mlDestinationStub.local]);
+
+    await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: null });
+  });
+
+  it('retains same-source calibration when unrelated destination rows are reordered', async () => {
+    mocks.machineLearning.getRestorationModels.mockRejectedValue(new Error('worker unavailable'));
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.local,
+      mlDestinationStub.libraryLan,
+      mlDestinationStub.lan,
+    ]);
+    const result = await sut.runBenchmark();
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.lan,
+      mlDestinationStub.local,
+      mlDestinationStub.libraryLan,
+    ]);
+
+    await expect(sut.runCheck()).resolves.toMatchObject({ benchmark: result.benchmark });
+  });
+
+  it('measures embeddings and descriptions from one model configuration snapshot', async () => {
+    const config = await sut['getConfig']({ withCache: true });
+    const readConfig = vi
+      .spyOn(sut as unknown as { getConfig: () => Promise<typeof config> }, 'getConfig')
+      .mockResolvedValueOnce(config)
+      .mockResolvedValue({
+        ...config,
+        machineLearning: {
+          ...config.machineLearning,
+          clip: { ...config.machineLearning.clip, modelName: 'later-model' },
+        },
+      });
+    vi.spyOn(
+      sut as unknown as { selectRoutedMlDestination: () => Promise<MlSelection> },
+      'selectRoutedMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Clip));
+    vi.spyOn(
+      sut as unknown as { selectMlDestination: () => Promise<MlSelection> },
+      'selectMlDestination',
+    ).mockResolvedValue(mlSelectionStub(MlWorkload.Enrichment));
+    mocks.machineLearning.describeImage.mockResolvedValue({} as never);
+
+    await sut.runBenchmark();
+
+    expect(readConfig).toHaveBeenCalledOnce();
+    expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      modelName: config.machineLearning.clip.modelName,
+    });
+    expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+      expect.anything(),
+      '/tmp/test.jpg',
+      config.machineLearning.imageDescription,
+    );
+  });
+
+  it('keeps only a private fingerprint and omits it from fresh and cached responses', async () => {
+    const destination = { ...mlDestinationStub.local, authToken: 'private-test-credential' };
+    mocks.mlDestination.getAll.mockResolvedValue([destination]);
+
+    const result = await sut.runBenchmark();
+    const cached = await sut.getCheck();
+
+    expect(stored).toMatchObject({ benchmarkScope: expect.stringMatching(/^[a-f\d]{64}$/) });
+    expect(JSON.stringify(stored)).not.toContain(destination.authToken);
+    expect(result).not.toHaveProperty('benchmarkScope');
+    expect(cached).not.toHaveProperty('benchmarkScope');
+    expect(cached).toEqual(result);
   });
 
   it.each(['other-worker', 'changed-url', 'changed-credential'] as const)(
