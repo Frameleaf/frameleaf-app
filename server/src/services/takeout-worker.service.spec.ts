@@ -456,6 +456,29 @@ describe(TakeoutWorkerService.name, () => {
   });
 
   describe('run', () => {
+    it.each([true, false])(
+      'settles cancellation when an interrupted pause cannot requeue (requeued: %s)',
+      async (requeued) => {
+        operations.settlePause.mockResolvedValue(false);
+        operations.requeue.mockResolvedValue(requeued);
+        const worker = sut as unknown as {
+          settleInterrupt(
+            run: { operation: MediaOperation; claimToken: string },
+            interrupt: { request: 'pause' },
+          ): Promise<void>;
+        };
+
+        await worker.settleInterrupt({ operation: operationOf('import'), claimToken }, { request: 'pause' });
+
+        expect(operations.requeue).toHaveBeenCalledWith(operationId, claimToken, { delayMs: 0, returnAttempt: true });
+        if (requeued) {
+          expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+        } else {
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, claimToken, { released: false });
+        }
+      },
+    );
+
     it('fails a job that does not name an import step', async () => {
       await sut.run({ ...operationOf('scan'), snapshot: {} } as MediaOperation, claimToken);
       expect(operations.fail).toHaveBeenCalledWith(
@@ -749,6 +772,31 @@ describe(TakeoutWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
     });
+
+    it.each([false, true])(
+      'rechecks active authority after a failed pause before importing (renewed: %s)',
+      async (renewed) => {
+        pending = [[itemOf()]];
+        operations.setBulkResult.mockResolvedValueOnce({ ...working, pauseRequestedAt: new Date() });
+        operations.settlePause.mockResolvedValueOnce(false);
+        operations.heartbeat.mockResolvedValue(renewed);
+
+        await sut.run(operationOf('import'), claimToken);
+
+        expect(operations.heartbeat).toHaveBeenCalledWith(operationId, claimToken, expect.any(Number), {
+          requireActiveClaim: true,
+        });
+        if (renewed) {
+          expect(assetMedia.uploadAsset).toHaveBeenCalledOnce();
+          expect(operations.complete).toHaveBeenCalled();
+        } else {
+          expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, claimToken, { released: false });
+          expect(operations.complete).not.toHaveBeenCalled();
+          expect(operations.fail).not.toHaveBeenCalled();
+        }
+      },
+    );
 
     it('acknowledges a cancel at the next progress write', async () => {
       pending = [[itemOf()]];
