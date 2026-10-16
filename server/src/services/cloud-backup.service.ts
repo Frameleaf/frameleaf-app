@@ -737,16 +737,14 @@ export class CloudBackupService {
       this.readClientKeys(dto.key, key, identity.instanceId, false);
       recovery = dto.keyMode === 'own-memory' ? this.memoryRecovery(dto.key, key, identity.instanceId) : null;
 
-      // The stored key modes write and read back the key file first, so a bucket is never claimed with a
-      // key this server could not keep; a claim that then fails takes away only a file this setup created.
-      const keyFile =
-        dto.keyMode === 'own-memory'
-          ? null
-          : await this.storeKey(dto.keyMode, key, {
-              instanceId: identity.instanceId,
-              bucket: connection.bucket,
-              keyFile: dto.key,
-            });
+      // Keep the stored key even on claim failure: the provider may commit before its response is lost.
+      if (dto.keyMode !== 'own-memory') {
+        await this.storeKey(dto.keyMode, key, {
+          instanceId: identity.instanceId,
+          bucket: connection.bucket,
+          keyFile: dto.key,
+        });
+      }
 
       let claim: { existing: boolean; claimedAt: string };
       try {
@@ -756,9 +754,6 @@ export class CloudBackupService {
           now: new Date(),
         });
       } catch (error) {
-        if (keyFile?.created) {
-          await this.keys.remove(identityDirectory(this.configRepository), fingerprint);
-        }
         throw this.asRequestError(error);
       }
 

@@ -596,7 +596,7 @@ describe(CloudBackupService.name, () => {
       expect(store.claim).not.toHaveBeenCalled();
     });
 
-    it('refuses a bucket the claim refuses, and stores nothing', async () => {
+    it('refuses a bucket the claim refuses, retaining the stored key without activating backup', async () => {
       store.claim.mockRejectedValue(
         new CloudBackupClaimError(
           'claimed-by-another-server',
@@ -605,11 +605,29 @@ describe(CloudBackupService.name, () => {
       );
 
       await expect(setup()).rejects.toThrow(ConflictException);
-      // the key file this setup created goes again
-      expect(keys.remove).toHaveBeenCalledWith('/identity', fingerprint);
+      expect(keys.write).toHaveBeenCalledOnce();
+      expect(keys.remove).not.toHaveBeenCalled();
       expect(configWrites()).toHaveLength(0);
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBeUndefined();
     });
+
+    it.each(['server', 'own-stored'])(
+      'retains the %s key when the provider accepts the claim but its response is lost',
+      async (keyMode) => {
+        let claimed = false;
+        store.claim.mockImplementation(() => {
+          claimed = true;
+          return Promise.reject(new Error('claim response lost'));
+        });
+
+        await expect(setup({ keyMode })).rejects.toThrow();
+        expect(claimed).toBe(true);
+        expect(keys.write).toHaveBeenCalledOnce();
+        expect(keys.remove).not.toHaveBeenCalled();
+        expect(configWrites()).toHaveLength(0);
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBeUndefined();
+      },
+    );
 
     it('keeps a key file that was already there when the claim fails', async () => {
       keys.write.mockResolvedValue({ path: '/identity/cloud-backup.key', created: false });
