@@ -183,6 +183,7 @@ describe(RestorationWorkerService.name, () => {
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
+      discard: vi.fn(),
     };
     // Automocked so newly added MediaOperationRepository methods (e.g. the FL-162/FL-163 Frameleaf
     // Cloud job queries below, which restoration never reaches) don't need a literal entry here.

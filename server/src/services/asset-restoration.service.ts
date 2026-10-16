@@ -438,36 +438,58 @@ export class AssetRestorationService {
     });
 
     try {
-      const operation = await this.operationRepository.create({
-        ownerId: source.ownerId,
-        kind: MediaOperationKind.RestorationPreview,
-        destination: mediaOperationDestinationOf(destination.kind),
-        destinationDetail: destination.name,
-        label: source.originalFileName,
-        assetId,
-        resultAssetId: null,
-        retryOfId: null,
-        projectId: null,
-        revisionId: restoration.id,
-        snapshot: this.snapshotOf(restoration, source, 'preview', output),
-        settings: this.settingsOf(restoration, destination.name, true),
-        estimate:
-          estimate.previewSeconds === null
-            ? null
-            : { seconds: estimate.previewSeconds, sizeBytes: null, cloudCost: null },
-      });
-      const bound = await this.restorationRepository.update(restoration.id, { previewOperationId: operation.id });
+      let bound = restoration;
+      const { operation } = await this.operationRepository.createWithin(
+        async () => ({
+          operation: {
+            ownerId: source.ownerId,
+            kind: MediaOperationKind.RestorationPreview,
+            destination: mediaOperationDestinationOf(destination.kind),
+            destinationDetail: destination.name,
+            label: source.originalFileName,
+            assetId,
+            resultAssetId: null,
+            retryOfId: null,
+            projectId: null,
+            revisionId: restoration.id,
+            snapshot: this.snapshotOf(restoration, source, 'preview', output),
+            settings: this.settingsOf(restoration, destination.name, true),
+            estimate:
+              estimate.previewSeconds === null
+                ? null
+                : { seconds: estimate.previewSeconds, sizeBytes: null, cloudCost: null },
+          },
+          value: null,
+        }),
+        async (trx, operation) => {
+          const updated = await this.restorationRepository.transition(
+            restoration.id,
+            [AssetRestorationStatus.PreviewQueued],
+            { status: AssetRestorationStatus.PreviewQueued, previewOperationId: operation.id },
+            trx,
+            { stage: 'preview', id: null },
+          );
+          if (!updated) throw new ConflictException('This restoration was already decided');
+          bound = updated;
+        },
+      );
       this.logger.log(
         `Restoration ${restoration.id} preview queued as operation ${operation.id} on ${destination.name}`,
       );
-      return this.toDto(bound ?? restoration);
+      return this.toDto(bound);
     } catch (error) {
-      // No job means no preview; say so on the row rather than leaving it queued for nothing.
+      // Only an unbound preview is failed; a committed job or later owner decision wins.
       const message = error instanceof Error ? error.message : String(error);
-      await this.restorationRepository.update(restoration.id, {
-        status: AssetRestorationStatus.PreviewFailed,
-        error: message.slice(0, 500),
-      });
+      await this.restorationRepository.transition(
+        restoration.id,
+        [AssetRestorationStatus.PreviewQueued],
+        {
+          status: AssetRestorationStatus.PreviewFailed,
+          error: message.slice(0, 500),
+        },
+        undefined,
+        { stage: 'preview', id: null },
+      );
       throw error;
     }
   }
@@ -514,41 +536,46 @@ export class AssetRestorationService {
       ESTIMATE_WINDOW_DAYS,
     );
 
-    const operation = await this.operationRepository.create({
-      ownerId: restoration.ownerId,
-      kind: MediaOperationKind.Restoration,
-      destination: mediaOperationDestinationOf(destination.kind),
-      destinationDetail: destination.name,
-      label: source.originalFileName,
-      assetId,
-      resultAssetId: null,
-      retryOfId: null,
-      projectId: null,
-      revisionId: restoration.id,
-      snapshot: this.snapshotOf(restoration, source, 'full', output),
-      settings: this.settingsOf(restoration, destination.name, false),
-      estimate:
-        estimate.fullSeconds === null ? null : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
-    });
-
-    const now = new Date();
-    const accepted = await this.restorationRepository.transition(
-      restoration.id,
-      [AssetRestorationStatus.PreviewReady],
-      {
-        status: AssetRestorationStatus.Accepted,
-        fullOperationId: operation.id,
-        reviewedAt: now,
-        previewExpiresAt: previewExpiryAfterDecision(now),
-        estimate,
-        error: null,
+    let accepted = restoration;
+    const { operation } = await this.operationRepository.createWithin(
+      async () => ({
+        operation: {
+          ownerId: restoration.ownerId,
+          kind: MediaOperationKind.Restoration,
+          destination: mediaOperationDestinationOf(destination.kind),
+          destinationDetail: destination.name,
+          label: source.originalFileName,
+          assetId,
+          resultAssetId: null,
+          retryOfId: null,
+          projectId: null,
+          revisionId: restoration.id,
+          snapshot: this.snapshotOf(restoration, source, 'full', output),
+          settings: this.settingsOf(restoration, destination.name, false),
+          estimate:
+            estimate.fullSeconds === null ? null : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
+        },
+        value: null,
+      }),
+      async (trx, operation) => {
+        const now = new Date();
+        const updated = await this.restorationRepository.transition(
+          restoration.id,
+          [AssetRestorationStatus.PreviewReady],
+          {
+            status: AssetRestorationStatus.Accepted,
+            fullOperationId: operation.id,
+            reviewedAt: now,
+            previewExpiresAt: previewExpiryAfterDecision(now),
+            estimate,
+            error: null,
+          },
+          trx,
+        );
+        if (!updated) throw new ConflictException('This restoration was already decided');
+        accepted = updated;
       },
     );
-    if (!accepted) {
-      // Decided from another tab between the read and the write. The job must not run.
-      await this.operationRepository.requestCancel(operation.id, restoration.ownerId);
-      throw new ConflictException('This restoration was already decided');
-    }
     this.logger.log(`Restoration ${restoration.id} accepted; full render queued as operation ${operation.id}`);
     return this.toDto(accepted);
   }
@@ -592,26 +619,19 @@ export class AssetRestorationService {
     if (activeOperationId) {
       await this.operationRepository.requestCancel(activeOperationId, restoration.ownerId);
     }
-    if (restoration.isCurrent) {
-      await this.restorationRepository.setCurrent(assetId, null);
+    const discarded = await this.restorationRepository.discard(restoration.id);
+    if (!discarded) return;
+    const currentOperationId = this.activeOperationId(discarded);
+    if (currentOperationId && currentOperationId !== activeOperationId) {
+      await this.operationRepository.requestCancel(currentOperationId, discarded.ownerId);
     }
 
     const files = [
-      restoration.previewBeforePath,
-      restoration.previewAfterPath,
-      restoration.resultPath,
-      restoration.resultPreviewPath,
+      discarded.previewBeforePath,
+      discarded.previewAfterPath,
+      discarded.resultPath,
+      discarded.resultPreviewPath,
     ].filter((file): file is string => !!file);
-    await this.restorationRepository.update(restoration.id, {
-      status: AssetRestorationStatus.Discarded,
-      previewBeforePath: null,
-      previewAfterPath: null,
-      resultPath: null,
-      resultPreviewPath: null,
-      previewExpiresAt: null,
-      resultExpiresAt: null,
-      isCurrent: false,
-    });
     if (files.length > 0) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
     }

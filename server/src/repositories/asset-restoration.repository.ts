@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
-import { EXPIRING_RESULT_STATUSES } from 'src/utils/restoration.js';
+import { EXPIRING_RESULT_STATUSES, canDiscardRestoration } from 'src/utils/restoration.js';
 
 export type AssetRestoration = Selectable<AssetRestorationTable>;
 export type RestoredForPlayback = Pick<
@@ -154,6 +154,34 @@ export class AssetRestorationRepository {
       .executeTakeFirst()) as AssetRestoration | undefined;
   }
 
+  /** Return the locked row's latest paths and job links as the owner discards it. */
+  async discard(id: string): Promise<AssetRestoration | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const row = await tx
+        .selectFrom('asset_restoration')
+        .selectAll()
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row || !canDiscardRestoration(row.status as AssetRestorationStatus)) return;
+      await tx
+        .updateTable('asset_restoration')
+        .set({
+          status: AssetRestorationStatus.Discarded,
+          previewBeforePath: null,
+          previewAfterPath: null,
+          resultPath: null,
+          resultPreviewPath: null,
+          previewExpiresAt: null,
+          resultExpiresAt: null,
+          isCurrent: false,
+        })
+        .where('id', '=', id)
+        .execute();
+      return row as AssetRestoration;
+    });
+  }
+
   /**
    * Moves the asset's current flag to the given restoration, or clears it for the original. Two
    * statements inside one transaction so the partial unique index never sees two current rows.
@@ -167,12 +195,16 @@ export class AssetRestorationRepository {
         .where('isCurrent', '=', true)
         .execute();
       if (restorationId) {
-        await trx
+        const selected = await trx
           .updateTable('asset_restoration')
           .set({ isCurrent: true })
           .where('id', '=', restorationId)
           .where('assetId', '=', assetId)
-          .execute();
+          .where('status', '=', AssetRestorationStatus.Restored)
+          .where('resultPath', '!=', '')
+          .returning('id')
+          .executeTakeFirst();
+        if (!selected) throw new BadRequestException('Only a finished restoration can be used as the playback version');
       }
     });
   }

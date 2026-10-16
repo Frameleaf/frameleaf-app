@@ -30,12 +30,14 @@ type AnyMock = Mock<(...args: any[]) => any>;
 
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
+const TRX = { isTransaction: true };
 
 describe(AssetRestorationService.name, () => {
   let sut: AssetRestorationService;
   let mocks: ServiceMocks;
   let restorations: { [K in keyof AssetRestorationRepository]: AnyMock };
-  let operations: Pick<{ [K in keyof MediaOperationRepository]: AnyMock }, 'create' | 'requestCancel'>;
+  let operations: Pick<{ [K in keyof MediaOperationRepository]: AnyMock }, 'create' | 'createWithin' | 'requestCancel'>;
+  let recordedOperations: unknown[];
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
     .exif({ exifImageWidth: 6000, exifImageHeight: 4000, orientation: '1', fileSizeInByte: 12_000_000 })
@@ -89,6 +91,7 @@ describe(AssetRestorationService.name, () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mocks = getMocks();
+    recordedOperations = [];
     restorations = {
       create: vi
         .fn()
@@ -113,9 +116,26 @@ describe(AssetRestorationService.name, () => {
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn().mockResolvedValue([]),
       deleteByAsset: vi.fn().mockResolvedValue(void 0),
+      discard: vi.fn(),
     };
     operations = {
-      create: vi.fn().mockImplementation((input) => Promise.resolve({ ...input, id: OPERATION_ID, status: 'queued' })),
+      create: vi.fn().mockImplementation((input) => {
+        const created = { ...input, id: OPERATION_ID, status: 'queued' };
+        recordedOperations.push(created);
+        return Promise.resolve(created);
+      }),
+      createWithin: vi.fn(async (bind, after) => {
+        const before = [...recordedOperations];
+        try {
+          const { operation, value } = await bind(TRX);
+          const created = await operations.create(operation);
+          await after(TRX, created, value);
+          return { operation: created, value };
+        } catch (error) {
+          recordedOperations.splice(0, recordedOperations.length, ...before);
+          throw error;
+        }
+      }),
       requestCancel: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -312,6 +332,77 @@ describe(AssetRestorationService.name, () => {
     });
   });
 
+  describe('atomic admission', () => {
+    let current: AssetRestoration;
+    const request = {
+      mode: AssetRestorationMode.Faithful,
+      upscale: 2 as const,
+      keepGrain: false,
+      destinationId: mlDestinationStub.lan.id,
+    };
+    beforeEach(() => {
+      current = row({ status: AssetRestorationStatus.PreviewQueued, previewOperationId: null });
+      restorations.create.mockImplementation((input) => Promise.resolve((current = { ...current, ...input })));
+      restorations.getForOwner.mockImplementation(() => Promise.resolve({ ...current }));
+      restorations.update.mockImplementation((_id, patch) => Promise.resolve((current = { ...current, ...patch })));
+      restorations.transition.mockImplementation((_id, from, patch, _tx, operation) => {
+        if (
+          !from.includes(current.status) ||
+          (operation &&
+            current[operation.stage === 'preview' ? 'previewOperationId' : 'fullOperationId'] !== operation.id)
+        )
+          return Promise.resolve();
+        return Promise.resolve((current = { ...current, ...patch }));
+      });
+    });
+
+    it('keeps failed preview history without a runnable operation when its link write fails', async () => {
+      restorations.update.mockRejectedValueOnce(new Error('preview link failed'));
+      const transition = restorations.transition.getMockImplementation()!;
+      restorations.transition.mockImplementation((...args) =>
+        args[2].previewOperationId ? Promise.reject(new Error('preview link failed')) : transition(...args),
+      );
+
+      await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toThrow('preview link failed');
+
+      expect(recordedOperations).toEqual([]);
+      expect(current).toMatchObject({ status: AssetRestorationStatus.PreviewFailed, previewOperationId: null });
+    });
+
+    it('rolls back full-render work when accepting its restoration fails', async () => {
+      current.status = AssetRestorationStatus.PreviewReady;
+      restorations.transition.mockRejectedValueOnce(new Error('acceptance write failed'));
+
+      await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toThrow('acceptance write failed');
+
+      expect(recordedOperations).toEqual([]);
+      expect(current.status).toBe(AssetRestorationStatus.PreviewReady);
+    });
+
+    it('leaves no queued full render after another tab decided first', async () => {
+      current.status = AssetRestorationStatus.PreviewReady;
+      restorations.transition.mockResolvedValueOnce(undefined);
+
+      await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toBeInstanceOf(ConflictException);
+
+      expect(recordedOperations).toEqual([]);
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('preserves a discarded preview if its owner decides before binding', async () => {
+      const create = operations.create.getMockImplementation()!;
+      operations.create.mockImplementationOnce((...args) => {
+        current.status = AssetRestorationStatus.Discarded;
+        return create(...args);
+      });
+
+      await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toBeInstanceOf(ConflictException);
+
+      expect(recordedOperations).toEqual([]);
+      expect(current).toMatchObject({ status: AssetRestorationStatus.Discarded, previewOperationId: null });
+    });
+  });
+
   describe('requestPreview', () => {
     const request = {
       mode: AssetRestorationMode.Faithful,
@@ -370,9 +461,6 @@ describe(AssetRestorationService.name, () => {
           ...mlProbeStub.healthy,
           workloads: [MlWorkload.Interpolation],
         });
-        restorations.update.mockImplementation((id: string, patch: Partial<AssetRestoration>) =>
-          Promise.resolve(row({ id, status: AssetRestorationStatus.PreviewQueued, ...patch })),
-        );
       });
 
       it('queues an interpolation preview on the named home worker, keeping the size and the original', async () => {
@@ -495,9 +583,6 @@ describe(AssetRestorationService.name, () => {
     });
 
     it('creates the next revision and a preview job bound to the named destination', async () => {
-      restorations.update.mockImplementation((id: string, patch: Partial<AssetRestoration>) =>
-        Promise.resolve(row({ id, status: AssetRestorationStatus.PreviewQueued, ...patch })),
-      );
       const response = await sut.requestPreview(authStub.user1, asset.id, {
         ...request,
         region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
@@ -536,7 +621,14 @@ describe(AssetRestorationService.name, () => {
           estimate: null,
         }),
       );
-      expect(restorations.update).toHaveBeenCalledWith(RESTORATION_ID, { previewOperationId: OPERATION_ID });
+      expect(operations.createWithin).toHaveBeenCalledTimes(1);
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewQueued],
+        { status: AssetRestorationStatus.PreviewQueued, previewOperationId: OPERATION_ID },
+        TRX,
+        { stage: 'preview', id: null },
+      );
       expect(response.status).toBe(AssetRestorationStatus.PreviewQueued);
       expect(response.activeOperationId).toBe(OPERATION_ID);
     });
@@ -552,9 +644,12 @@ describe(AssetRestorationService.name, () => {
     it('marks the row failed when the job cannot be recorded', async () => {
       operations.create.mockRejectedValue(new Error('database gone'));
       await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toThrow('database gone');
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.PreviewQueued],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewFailed, error: 'database gone' }),
+        undefined,
+        { stage: 'preview', id: null },
       );
     });
   });
@@ -591,7 +686,9 @@ describe(AssetRestorationService.name, () => {
           fullOperationId: OPERATION_ID,
           previewExpiresAt: expect.any(Date),
         }),
+        TRX,
       );
+      expect(operations.createWithin).toHaveBeenCalledTimes(1);
       expect(response.status).toBe(AssetRestorationStatus.Accepted);
       expect(response.activeOperationId).toBe(OPERATION_ID);
     });
@@ -619,15 +716,50 @@ describe(AssetRestorationService.name, () => {
       await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('cancels the job it just queued when another tab decided first', async () => {
+    it('rolls back the new job when another tab decided first', async () => {
       restorations.getForOwner.mockResolvedValue(row());
       restorations.transition.mockResolvedValue(undefined);
       await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toBeInstanceOf(ConflictException);
-      expect(operations.requestCancel).toHaveBeenCalledWith(OPERATION_ID, asset.ownerId);
+      expect(recordedOperations).toEqual([]);
+      expect(operations.requestCancel).not.toHaveBeenCalled();
     });
   });
 
   describe('reject and discard', () => {
+    it('deletes newly published files when discard raced publication', async () => {
+      restorations.getForOwner.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Restoring, fullOperationId: OPERATION_ID }),
+      );
+      restorations.discard.mockResolvedValue(
+        row({
+          status: AssetRestorationStatus.Restored,
+          resultPath: '/latest-result.png',
+          resultPreviewPath: '/latest-preview.jpg',
+        }),
+      );
+
+      await sut.discard(authStub.user1, asset.id, RESTORATION_ID);
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: expect.arrayContaining(['/latest-result.png', '/latest-preview.jpg']) },
+      });
+    });
+
+    it('cancels a newer operation admitted before discard commits', async () => {
+      restorations.getForOwner.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Restoring, fullOperationId: OPERATION_ID }),
+      );
+      restorations.discard.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Restoring, fullOperationId: 'new-operation' }),
+      );
+
+      await sut.discard(authStub.user1, asset.id, RESTORATION_ID);
+
+      expect(operations.requestCancel).toHaveBeenCalledWith(OPERATION_ID, asset.ownerId);
+      expect(operations.requestCancel).toHaveBeenCalledWith('new-operation', asset.ownerId);
+    });
+
     it('records a rejection with a retention date for the preview files', async () => {
       restorations.getForOwner.mockResolvedValue(row());
       const response = await sut.reject(authStub.user1, asset.id, RESTORATION_ID);
@@ -644,29 +776,20 @@ describe(AssetRestorationService.name, () => {
     });
 
     it('discard cancels a running job, drops the playback choice and removes every file', async () => {
-      restorations.getForOwner.mockResolvedValue(
-        row({
-          status: AssetRestorationStatus.Restoring,
-          fullOperationId: OPERATION_ID,
-          isCurrent: true,
-          resultPath: '/data/thumbs/result.png',
-          resultPreviewPath: '/data/thumbs/result_preview.jpg',
-        }),
-      );
+      const discarded = row({
+        status: AssetRestorationStatus.Restoring,
+        fullOperationId: OPERATION_ID,
+        isCurrent: true,
+        resultPath: '/data/thumbs/result.png',
+        resultPreviewPath: '/data/thumbs/result_preview.jpg',
+      });
+      restorations.getForOwner.mockResolvedValue(discarded);
+      restorations.discard.mockResolvedValue(discarded);
 
       await sut.discard(authStub.user1, asset.id, RESTORATION_ID);
 
       expect(operations.requestCancel).toHaveBeenCalledWith(OPERATION_ID, asset.ownerId);
-      expect(restorations.setCurrent).toHaveBeenCalledWith(asset.id, null);
-      expect(restorations.update).toHaveBeenCalledWith(
-        RESTORATION_ID,
-        expect.objectContaining({
-          status: AssetRestorationStatus.Discarded,
-          resultPath: null,
-          previewAfterPath: null,
-          isCurrent: false,
-        }),
-      );
+      expect(restorations.discard).toHaveBeenCalledWith(RESTORATION_ID);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
         data: {

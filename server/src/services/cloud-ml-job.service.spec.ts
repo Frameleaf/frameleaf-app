@@ -479,6 +479,7 @@ describe(CloudMlJobService.name, () => {
       alignWithOperations: vi.fn(),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
+      discard: vi.fn(),
     };
 
     sut = new CloudMlJobService(
