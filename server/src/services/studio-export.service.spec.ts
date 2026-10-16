@@ -1258,6 +1258,38 @@ describe(StudioExportService.name, () => {
       );
     });
 
+    it('binds restored export provenance to the original asset and its source epoch', async () => {
+      await sut.onRenderClaimed(
+        operation({ snapshot: { sourceEpochs: [{ assetId: CLIP, ownerId: OWNER, epoch: '7' }] } }),
+        {
+          workerId: 'worker-1',
+          engineDigest: 'engine-1',
+          entries: [
+            entry({
+              key: `restored-version:${SHARED_CLIP}`,
+              kind: StudioResourceKind.RestoredVersion,
+              id: SHARED_CLIP,
+              assetId: CLIP,
+              checksum: null,
+            }),
+          ],
+        },
+      );
+      expect(repository.recordRenderClaim).toHaveBeenCalledWith(RENDER, {
+        workerId: 'worker-1',
+        engineDigest: 'engine-1',
+        sources: [
+          expect.objectContaining({
+            key: `restored-version:${SHARED_CLIP}`,
+            resourceId: SHARED_CLIP,
+            assetId: CLIP,
+            ownerId: OWNER,
+            sourceEpoch: '7',
+          }),
+        ],
+      });
+    });
+
     it('records provenance and a remote stop obligation when a remote worker claims', async () => {
       repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Rendering }));
 

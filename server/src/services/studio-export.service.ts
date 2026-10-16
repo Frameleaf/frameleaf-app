@@ -181,7 +181,9 @@ const asIso = (value: Date | string | null | undefined): string | null => {
 
 /** The kinds a render may reference that name a library asset by id. */
 const isLibraryEntry = (entry: StudioAuthorizedEntry): boolean =>
-  (entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared') && !!entry.ownerId && isStudioUuid(entry.id);
+  (entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared') &&
+  !!entry.ownerId &&
+  isStudioUuid(entry.assetId ?? entry.id);
 
 /** FL-90's refusal reasons that mean the source is gone rather than no longer shared. */
 const GONE_REASONS: ReadonlySet<string> = new Set([
@@ -195,7 +197,7 @@ export const studioExportSourceOf = (entry: StudioAuthorizedEntry): StudioExport
   key: entry.key,
   kind: entry.kind,
   resourceId: entry.id,
-  assetId: isLibraryEntry(entry) ? entry.id : null,
+  assetId: isLibraryEntry(entry) ? (entry.assetId ?? entry.id) : null,
   ownerId: isLibraryEntry(entry) ? entry.ownerId : null,
   checksum: entry.checksum,
   sourceAccess: entry.sourceAccess,
