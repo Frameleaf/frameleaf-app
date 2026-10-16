@@ -100,9 +100,10 @@ describe(LibraryService.name, () => {
 
       await sut.onConfigInit({ newConfig: systemConfigStub.libraryWatchEnabled as SystemConfig });
 
-      expect(mocks.storage.watch.mock.calls).toEqual(
-        expect.arrayContaining([(library1.importPaths, expect.anything()), (library2.importPaths, expect.anything())]),
-      );
+      expect(mocks.storage.watch).toHaveBeenCalledTimes(2);
+      for (const library of [library1, library2]) {
+        expect(mocks.storage.watch).toHaveBeenCalledWith(library.importPaths, expect.anything(), expect.anything());
+      }
     });
 
     it('should not initialize watcher when watching is disabled', async () => {
@@ -1105,7 +1106,7 @@ describe(LibraryService.name, () => {
         mocks.library.get.mockResolvedValue(library);
         mocks.library.getAll.mockResolvedValue([library]);
         mocks.storage.watch.mockImplementation(
-          makeMockWatcher({ items: [{ event: 'add', value: '/dir1/photo.txt' }] }),
+          makeMockWatcher({ items: [{ event: 'add', value: '/xyz/dir1/photo.jpg' }] }),
         );
 
         await sut.watchAll();
@@ -1122,7 +1123,7 @@ describe(LibraryService.name, () => {
         mocks.library.get.mockResolvedValue(library);
         mocks.library.getAll.mockResolvedValue([library]);
         mocks.storage.watch.mockImplementation(
-          makeMockWatcher({ items: [{ event: 'add', value: '/DIR1/photo.txt' }] }),
+          makeMockWatcher({ items: [{ event: 'add', value: '/xyz/DIR1/photo.jpg' }] }),
         );
 
         await sut.watchAll();
