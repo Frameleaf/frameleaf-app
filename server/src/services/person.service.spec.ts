@@ -756,8 +756,8 @@ describe(PersonService.name, () => {
           data: [{ personId: 'asset-face-1', assetId: '' }],
         }),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(mocks.job.queue).not.toHaveBeenCalledWith();
-      expect(mocks.job.queueAll).not.toHaveBeenCalledWith();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
     it('should reassign a face', async () => {
@@ -1042,29 +1042,32 @@ describe(PersonService.name, () => {
   });
 
   describe('reassignFacesById', () => {
-    it('should create a new person', async () => {
+    it('reassigns a face and refreshes its generated identity text', async () => {
       const face = AssetFaceFactory.create();
       const person = PersonFactory.create();
+      const auth = AuthFactory.create();
 
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
       mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
       mocks.person.getFaceById.mockResolvedValue(getForAssetFace(face));
       mocks.person.reassignFace.mockResolvedValue(1);
       mocks.person.getByGroupId.mockResolvedValue(person);
-      await expect(sut.reassignFacesById(AuthFactory.create(), person.personGroupId, { id: face.id })).resolves.toEqual(
-        {
-          birthDate: person.birthDate,
-          isHidden: person.isHidden,
-          isFavorite: person.isFavorite,
-          id: person.personGroupId,
-          name: person.name,
-          thumbnailPath: person.thumbnailPath,
-          updatedAt: expect.any(String),
-        },
-      );
+      await expect(sut.reassignFacesById(auth, person.personGroupId, { id: face.id })).resolves.toEqual({
+        birthDate: person.birthDate,
+        isHidden: person.isHidden,
+        isFavorite: person.isFavorite,
+        id: person.personGroupId,
+        name: person.name,
+        thumbnailPath: person.thumbnailPath,
+        updatedAt: expect.any(String),
+      });
 
-      expect(mocks.job.queue).not.toHaveBeenCalledWith();
-      expect(mocks.job.queueAll).not.toHaveBeenCalledWith();
+      expect(mocks.person.reassignFace).toHaveBeenCalledWith(face.id, person.personGroupId);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.PersonIdentityRefresh,
+        data: { ownerId: auth.user.id, assetIds: [face.assetId] },
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });
 
     it('should fail if user has not the correct permissions on the asset', async () => {
@@ -1081,8 +1084,8 @@ describe(PersonService.name, () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mocks.job.queue).not.toHaveBeenCalledWith();
-      expect(mocks.job.queueAll).not.toHaveBeenCalledWith();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });
 
@@ -1145,7 +1148,8 @@ describe(PersonService.name, () => {
 
       await expect(sut.handleQueueDetectFaces({})).resolves.toBe(JobStatus.Skipped);
       expect(mocks.job.queue).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForDetectFacesJob).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
     });
 
@@ -1244,7 +1248,8 @@ describe(PersonService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
       await expect(sut.handleQueueRecognizeFaces({})).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.person.selectionForFaces).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
@@ -1375,7 +1380,7 @@ describe(PersonService.name, () => {
       expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.FacialRecognitionState);
       expect(mocks.person.getLatestFaceDate).toHaveBeenCalledOnce();
       expect(mocks.person.selectionForFaces).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
     });
@@ -1497,7 +1502,9 @@ describe(PersonService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
       await expect(sut.handleDetectFaces({ id: 'foo' })).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+      expect(mocks.assetJob.getForDetectFacesJob).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.detectFaces).not.toHaveBeenCalled();
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
       expect(mocks.systemMetadata.get).toHaveBeenCalled();
     });
 
