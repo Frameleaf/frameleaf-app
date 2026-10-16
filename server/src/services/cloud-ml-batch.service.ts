@@ -5,7 +5,7 @@ import type { Transaction } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
-import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { CloudDescriptionBatchCreate, MediaOperation } from 'src/repositories/media-operation.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -34,6 +34,7 @@ import {
 } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, deferJobFailure, jobSignal, queueExecution } from 'src/queue/context.js';
 import { CloudMlGateway, CloudTransferError } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import {
@@ -455,23 +456,13 @@ export class CloudMlBatchService extends BaseService {
 
       // Lock order: the backfill lock (962), then the automatic queue's (961), which automatic batching
       // also holds while it checks open batches and creates its own; so the two never batch one photo.
-      const { batches, operationIds } = await this.databaseRepository.withLock(
-        DatabaseLock.FrameleafCloudMlBatchQueue,
-        () => this.queueBackfill(record, model, gateway, destination, now),
+      const started = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudMlBatchQueue, () =>
+        this.queueBackfill(record, model, gateway, destination, now, store.records),
       );
-      const started = {
-        at: now.toISOString(),
-        batches: operationIds.length,
-        photos: batches.reduce((sum, { assetIds }) => sum + assetIds.length, 0),
-        operationIds,
-      };
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudDescriptionEstimates, {
-        records: store.records.map((entry) => (entry.id === record.id ? { ...entry, owners: {}, started } : entry)),
-      });
-      if (operationIds.length > 0) {
+      if (started.operationIds.length > 0) {
         await this.jobRepository.queue({ name: JobName.CloudMlDescriptionBatch, data: {} });
       }
-      return { batches: started.batches, photos: started.photos, operationIds };
+      return { batches: started.batches, photos: started.photos, operationIds: started.operationIds };
     });
   }
 
@@ -482,7 +473,8 @@ export class CloudMlBatchService extends BaseService {
     gateway: CloudMlGateway,
     destination: MlDestinationRow,
     now: Date,
-  ): Promise<{ batches: Array<{ ownerId: string; assetIds: string[] }>; operationIds: string[] }> {
+    records: CloudDescriptionEstimateRecord[],
+  ): Promise<NonNullable<CloudDescriptionEstimateRecord['started']>> {
     const open = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
     const items = Object.entries(record.owners).flatMap(([ownerId, assetIds]) =>
       assetIds.filter((assetId) => !open.has(assetId)).map((assetId) => ({ assetId, ownerId })),
@@ -497,7 +489,6 @@ export class CloudMlBatchService extends BaseService {
       throw new BadRequestException('These photos would cost more than the estimate; estimate again');
     }
 
-    let operationIds: string[] = [];
     if (batches.length > 0) {
       const wallet = await this.callCloud(() => this.frameleafCloudMlRepository.getWallet(gateway));
       const refusal = this.spendingRefusal(
@@ -511,9 +502,20 @@ export class CloudMlBatchService extends BaseService {
       if (refusal) {
         throw new BadRequestException(refusal);
       }
-      operationIds = await this.createBatches('backfill', destination, model, batches, approvals);
     }
-    return { batches, operationIds };
+    const started: NonNullable<CloudDescriptionEstimateRecord['started']> = {
+      at: now.toISOString(),
+      batches: batches.length,
+      photos: batches.reduce((sum, { assetIds }) => sum + assetIds.length, 0),
+      operationIds: [],
+    };
+    await this.createBatches('backfill', destination, model, batches, approvals, async (tx, operationIds) => {
+      started.operationIds = operationIds;
+      await new SystemMetadataRepository(tx).set(SystemMetadataKey.FrameleafCloudDescriptionEstimates, {
+        records: records.map((entry) => (entry.id === record.id ? { ...entry, owners: {}, started } : entry)),
+      });
+    });
+    return started;
   }
 
   /**
@@ -626,21 +628,22 @@ export class CloudMlBatchService extends BaseService {
       const inBatches = await this.mediaOperationRepository.getOpenCloudDescriptionAssetIds();
       const describable = await this.describable(ready.flat().filter(({ assetId }) => !inBatches.has(assetId)));
       const batches = groupCloudDescriptionBatches(describable);
+      const lastBatchAt = { ...queue.lastBatchAt };
+      for (const items of ready) {
+        lastBatchAt[items[0].ownerId] = now.toISOString();
+      }
       await this.createBatches(
         'automatic',
         destination,
         model,
         batches,
         batches.map(() => null),
+        (tx) =>
+          new SystemMetadataRepository(tx).set(SystemMetadataKey.FrameleafCloudDescriptionQueue, {
+            items: queue.items.filter(({ assetId }) => !taken.has(assetId)),
+            lastBatchAt,
+          }),
       );
-      const lastBatchAt = { ...queue.lastBatchAt };
-      for (const items of ready) {
-        lastBatchAt[items[0].ownerId] = now.toISOString();
-      }
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudDescriptionQueue, {
-        items: queue.items.filter(({ assetId }) => !taken.has(assetId)),
-        lastBatchAt,
-      });
     });
   }
 
@@ -678,9 +681,9 @@ export class CloudMlBatchService extends BaseService {
     model: Pick<CloudCatalogEntry, 'sku' | 'display'>,
     batches: Array<{ ownerId: string; assetIds: string[] }>,
     approvals: Array<number | null>,
+    acknowledge: (tx: Transaction<DB>, operationIds: string[]) => Promise<void>,
   ): Promise<string[]> {
-    const ids: string[] = [];
-    for (const [index, { ownerId, assetIds }] of batches.entries()) {
+    const operations = batches.map(({ ownerId, assetIds }, index): CloudDescriptionBatchCreate => {
       const approvedP90Usd = approvals[index] ?? null;
       const snapshot: CloudDescriptionSnapshot = {
         version: 1,
@@ -692,7 +695,7 @@ export class CloudMlBatchService extends BaseService {
         packKey: cloudDescriptionPackKey(model.sku),
         approvedP90Usd,
       };
-      const operation = await this.mediaOperationRepository.create({
+      return {
         ownerId,
         kind: MediaOperationKind.CloudDescriptionBatch,
         destination: MediaOperationDestination.FrameleafCloud,
@@ -708,9 +711,15 @@ export class CloudMlBatchService extends BaseService {
         estimate: approvedP90Usd === null ? null : { cloudCost: { p90Usd: approvedP90Usd } },
         result: emptyCloudDescriptionResult(assetIds) as unknown as Record<string, unknown>,
         totalUnits: String(assetIds.length),
-      });
-      ids.push(operation.id);
-    }
+      };
+    });
+    const created = await this.mediaOperationRepository.createCloudDescriptionBatches(operations, (tx, rows) =>
+      acknowledge(
+        tx,
+        rows.map(({ id }) => id),
+      ),
+    );
+    const ids = created.map(({ id }) => id);
     if (ids.length > 0) {
       this.logger.log(
         `Queued ${ids.length} Frameleaf Cloud description ${ids.length === 1 ? 'batch' : 'batches'} (${origin})`,

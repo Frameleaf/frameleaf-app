@@ -45,6 +45,10 @@ export type MediaOperationCreate = Omit<
   Insertable<MediaOperationTable>,
   'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt' | 'autoRetries' | 'retryAt'
 >;
+export type CloudDescriptionBatchCreate = MediaOperationCreate & {
+  kind: MediaOperationKind.CloudDescriptionBatch;
+  destination: MediaOperationDestination.FrameleafCloud;
+};
 /**
  * What a worker's failure report did (FL-104).
  *
@@ -302,6 +306,26 @@ export class MediaOperationRepository {
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }
+  /** Commit batch rows and their DB-only acknowledgement before notifying observers. */
+  async createCloudDescriptionBatches(
+    operations: readonly CloudDescriptionBatchCreate[],
+    acknowledge: (tx: Transaction<DB>, operations: MediaOperation[]) => Promise<void>,
+  ): Promise<MediaOperation[]> {
+    const created = await this.db.transaction().execute(async (tx) => {
+      const rows: MediaOperation[] = [];
+      for (const operation of operations) {
+        await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
+        const row = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+        await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
+        rows.push(row);
+      }
+      await acknowledge(tx, rows);
+      return rows;
+    });
+    this.changed(created);
+    return created;
+  }
+
   /** Serialize command submission with the project's edit lease and saves, including duplicate requests. */
   async createStudioReverseCommand(
     operation: MediaOperationCreate,

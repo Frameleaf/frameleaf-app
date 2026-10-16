@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import {
   AssetVisibility,
   DatabaseLock,
@@ -9,7 +10,10 @@ import {
   MediaOperationStatus,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  type CloudDescriptionBatchCreate,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
@@ -2071,6 +2075,117 @@ describe(MediaOperationRepository.name, () => {
   });
 
   describe('Frameleaf Cloud description batches (FL-163)', () => {
+    describe('atomic creation and acknowledgement', () => {
+      const drafts = (ownerId: string): CloudDescriptionBatchCreate[] =>
+        [1, 2].map((index) => ({
+          ownerId,
+          kind: MediaOperationKind.CloudDescriptionBatch,
+          destination: MediaOperationDestination.FrameleafCloud,
+          label: `Atomic description batch ${index}`,
+          snapshot: { version: 1, origin: 'automatic', assetIds: [] },
+        }));
+      const acknowledgement = async (key: string) =>
+        (await sql<{ value: unknown }>`SELECT value FROM system_metadata WHERE key=${key}`.execute(defaultDatabase))
+          .rows[0]?.value;
+
+      it('rolls back earlier batches when a later insert fails, without notifying observers', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const rows = drafts(user.id);
+        rows[1].ownerId = 'not-a-uuid';
+        const events: string[][] = [];
+        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        let acknowledged = false;
+        try {
+          await expect(
+            sut.createCloudDescriptionBatches(rows, async () => {
+              acknowledged = true;
+            }),
+          ).rejects.toThrow();
+          expect(
+            await defaultDatabase.selectFrom('media_operation').select('id').where('ownerId', '=', user.id).execute(),
+          ).toEqual([]);
+          expect(acknowledged).toBe(false);
+          expect(events).toEqual([]);
+        } finally {
+          stop();
+        }
+      });
+
+      it('rolls back the batch rows and acknowledgement together when acknowledgement fails', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const key = `atomic-cloud-batch-${randomUUID()}`;
+        const events: string[][] = [];
+        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        try {
+          await expect(
+            sut.createCloudDescriptionBatches(drafts(user.id), async (tx, rows) => {
+              expect(rows).toHaveLength(2);
+              await sql`INSERT INTO system_metadata(key,value)
+                VALUES(${key},${JSON.stringify({ operationIds: rows.map(({ id }) => id) })}::text::jsonb)`.execute(tx);
+              throw new Error('acknowledgement failed');
+            }),
+          ).rejects.toThrow('acknowledgement failed');
+          expect(
+            await defaultDatabase.selectFrom('media_operation').select('id').where('ownerId', '=', user.id).execute(),
+          ).toEqual([]);
+          expect(await acknowledgement(key)).toBeUndefined();
+          expect(events).toEqual([]);
+        } finally {
+          stop();
+          await sql`DELETE FROM system_metadata WHERE key=${key}`.execute(defaultDatabase);
+        }
+      });
+
+      it('commits batch rows and acknowledgement before notifying observers', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const key = `atomic-cloud-batch-${randomUUID()}`;
+        const events: string[][] = [];
+        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        try {
+          const created = await sut.createCloudDescriptionBatches(drafts(user.id), async (tx, rows) => {
+            expect(tx.isTransaction).toBe(true);
+            expect(events).toEqual([]);
+            expect(
+              await tx.selectFrom('media_operation').select('id').where('ownerId', '=', user.id).execute(),
+            ).toHaveLength(2);
+            await sql`INSERT INTO system_metadata(key,value)
+              VALUES(${key},${JSON.stringify({ operationIds: rows.map(({ id }) => id) })}::text::jsonb)`.execute(tx);
+          });
+          const ids = created.map(({ id }) => id);
+          expect(
+            await defaultDatabase.selectFrom('media_operation').select('id').where('id', 'in', ids).execute(),
+          ).toHaveLength(2);
+          expect(await acknowledgement(key)).toEqual({ operationIds: ids });
+          expect(events).toEqual([ids]);
+        } finally {
+          stop();
+          await sql`DELETE FROM system_metadata WHERE key=${key}`.execute(defaultDatabase);
+        }
+      });
+
+      it('acknowledges an empty eligible batch without creating rows or notifying observers', async () => {
+        const { sut } = setup();
+        const key = `atomic-cloud-batch-${randomUUID()}`;
+        const events: string[][] = [];
+        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        try {
+          await expect(
+            sut.createCloudDescriptionBatches([], async (tx) => {
+              await sql`INSERT INTO system_metadata(key,value) VALUES(${key},'{}'::jsonb)`.execute(tx);
+            }),
+          ).resolves.toEqual([]);
+          expect(await acknowledgement(key)).toEqual({});
+          expect(events).toEqual([]);
+        } finally {
+          stop();
+          await sql`DELETE FROM system_metadata WHERE key=${key}`.execute(defaultDatabase);
+        }
+      });
+    });
+
     const destinationId = 'destination-cloud';
 
     const batch = async (
