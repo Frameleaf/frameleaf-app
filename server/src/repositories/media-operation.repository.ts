@@ -2567,8 +2567,19 @@ export class MediaOperationRepository {
     verifiedArtifact = false,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      if (!(await this.lockClaim(trx, operationId, claimToken, verifiedArtifact))) {
+      if (!(await this.lockClaim(trx, operationId, claimToken))) {
         return false;
+      }
+      if (verifiedArtifact) {
+        const checkpoint = await trx
+          .selectFrom('media_operation_checkpoint')
+          .select('id')
+          .where('operationId', '=', operationId)
+          .where('sequence', '=', chunk.sequence)
+          .forUpdate()
+          .executeTakeFirst();
+        // Evaluate the live lease after both row-lock waits, while neither identity can change.
+        if (!checkpoint || !(await this.lockClaim(trx, operationId, claimToken, true))) return false;
       }
       const result = await trx
         .updateTable('media_operation_checkpoint')
