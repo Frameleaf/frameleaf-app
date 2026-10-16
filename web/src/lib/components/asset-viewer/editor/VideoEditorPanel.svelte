@@ -681,10 +681,11 @@
       return '0:00';
     }
 
-    const safeSeconds = Math.max(0, seconds);
-    const minutes = Math.floor(safeSeconds / 60);
-    const remainingSeconds = Math.floor(safeSeconds % 60);
-    const tenths = Math.round((safeSeconds % 1) * 10);
+    // Round once to tenths, then split, so 59.96 s reads 1:00 and not 0:59.10.
+    const totalTenths = Math.round(Math.max(0, seconds) * 10);
+    const minutes = Math.floor(totalTenths / 600);
+    const remainingSeconds = Math.floor(totalTenths / 10) % 60;
+    const tenths = totalTenths % 10;
 
     return tenths > 0
       ? `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${tenths}`

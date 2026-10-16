@@ -56,12 +56,15 @@
   const timelineAssets = $derived(assets.map((asset) => toTimelineAsset(asset)));
   const downloadFileName = $derived(namedArchiveName(downloadName, $t('frameleaf_archive_name_pet')));
 
+  // Bumped by every reload, so a page still in flight from before it is dropped.
+  let generation = 0;
   const loadNextPage = async (force = false) => {
     if (!hasMore || (isLoading && !force)) {
       return;
     }
 
     const petId = pet.id;
+    const owner = generation;
     isLoading = true;
     try {
       const { assets: page } = await searchAssets({
@@ -72,21 +75,26 @@
           ...(cursor && { cursor }),
         },
       });
-      // A late page for a pet this page has already moved away from is dropped
-      if (petId !== pet.id) {
+      // A late page for a pet this page has already moved away from, or from before a reload, is dropped
+      if (petId !== pet.id || owner !== generation) {
         return;
       }
       assets.push(...page.items);
       cursor = page.nextCursor;
       hasMore = !!page.nextCursor;
     } catch (error) {
-      handleError(error, $t('failed_to_load_assets'));
+      if (owner === generation) {
+        handleError(error, $t('failed_to_load_assets'));
+      }
     } finally {
-      isLoading = false;
+      if (owner === generation) {
+        isLoading = false;
+      }
     }
   };
 
   const reload = async () => {
+    generation++;
     assets = [];
     cursor = null;
     hasMore = true;

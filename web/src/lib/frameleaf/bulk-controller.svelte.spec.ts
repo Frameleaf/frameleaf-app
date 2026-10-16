@@ -209,6 +209,20 @@ describe('the bulk controller', () => {
     expect(session.operations).toHaveLength(0);
   });
 
+  it('retries a failed hand-off with the payload it was submitted with', async () => {
+    vi.mocked(api.createBulkMediaOperation).mockRejectedValueOnce(new Error('offline'));
+
+    await controller.runMatching('add-to-album', session.state, { payload: { albumId: 'album-1' }, submittedTotal: 2 });
+    expect(session.operations[0].status).toBe('failed');
+
+    await controller.retry(session.operations[0]);
+    expect(api.createBulkMediaOperation).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.createBulkMediaOperation).mock.calls[1][0].mediaOperationBulkCreateDto.payload).toEqual({
+      albumId: 'album-1',
+    });
+    expect(session.operations).toHaveLength(0);
+  });
+
   it('cancels while the matching set is still being found, before anything is queued', async () => {
     let resolveSearch: (value: unknown) => void = () => {};
     vi.mocked(api.searchAssets).mockImplementation(

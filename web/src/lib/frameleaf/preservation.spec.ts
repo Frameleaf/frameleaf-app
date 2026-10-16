@@ -50,12 +50,14 @@ describe('scopeToRequest', () => {
     });
   });
 
-  it('turns days into an inclusive range of when the photos were taken', () => {
+  it('turns days into an inclusive range of the local days the photos were taken', () => {
+    // The capture day on the photo's own clock (localDateTime), as the timeline and search count days:
+    // a UTC instant would move an evening photo west of Greenwich into the next day.
     expect(scopeToRequest({ ...emptyScope(), kind: 'dates', from: '2024-01-01', to: '2024-12-31' })).toEqual({
-      filter: { takenAt: { gte: '2024-01-01T00:00:00.000Z', lt: '2025-01-01T00:00:00.000Z' } },
+      filter: { localDateTime: { gte: '2024-01-01T00:00:00.000Z', lt: '2025-01-01T00:00:00.000Z' } },
     });
     expect(scopeToRequest({ ...emptyScope(), kind: 'dates', from: '2024-05-01', to: '' })).toEqual({
-      filter: { takenAt: { gte: '2024-05-01T00:00:00.000Z' } },
+      filter: { localDateTime: { gte: '2024-05-01T00:00:00.000Z' } },
     });
   });
 
