@@ -36,6 +36,9 @@ vi.mock('src/repositories/crypto.repository.js', () => ({ CryptoRepository: clas
 vi.mock('src/repositories/photography-workspace.repository.js', () => ({ PhotographyWorkspaceRepository: class {} }));
 vi.mock('src/repositories/photography-workflow.repository.js', () => ({ PhotographyWorkflowRepository: class {} }));
 
+/** The client preview's reserved recipient id (a v4-shaped UUID no random recipient takes). */
+const PREVIEW_ID = '00000000-0000-4000-8000-000000000000';
+
 /** What the application's exception filter writes for an error thrown by the service. */
 const respond = (error: Error) => {
   const res = { headersSent: false, header: vi.fn().mockReturnThis(), status: vi.fn().mockReturnThis(), json: vi.fn() };
@@ -1350,7 +1353,7 @@ describe('photography gallery hero, studio summary and client preview', () => {
     expect(Date.parse(preview.expiresAt)).toBeLessThanOrEqual(after + 3_600_000);
     expect(s.row().revision).toBe(revision);
     const stored = s.row().value.sessions.at(-1)!;
-    expect(stored).toMatchObject({ recipientId: 'preview', preview: true, expiresAt: preview.expiresAt });
+    expect(stored).toMatchObject({ recipientId: PREVIEW_ID, preview: true, expiresAt: preview.expiresAt });
     expect(stored.hash).not.toBe(preview.session);
     const sessions = s.row().value.sessions.length;
     const stranger = { user: { id: randomUUID(), name: 'Neighbour' }, session: { hasElevatedPermission: false } };
@@ -1371,7 +1374,7 @@ describe('photography gallery hero, studio summary and client preview', () => {
     expect(PhotographyGalleryDto.schema.safeParse(gallery).success).toBe(true);
     expect(gallery).toMatchObject({
       preview: true,
-      recipient: { id: 'preview', name: 'Portrait', canDownload: false },
+      recipient: { id: PREVIEW_ID, name: 'Portrait', canDownload: false },
       title: 'Portrait',
       choices: [],
       notes: [],
@@ -1384,7 +1387,7 @@ describe('photography gallery hero, studio summary and client preview', () => {
     shoot(s, { client: 'The Lee family', date: '2026-09-12' });
     expect(await s.service.gallery(s.shootId, session)).toMatchObject({
       date: '2026-09-12',
-      recipient: { id: 'preview', name: 'The Lee family', canDownload: false },
+      recipient: { id: PREVIEW_ID, name: 'The Lee family', canDownload: false },
     });
     for (const kind of ['thumbnail', 'preview'])
       expect((await s.service.file(s.shootId, session, s.captureId, kind)).path).toBeTruthy();

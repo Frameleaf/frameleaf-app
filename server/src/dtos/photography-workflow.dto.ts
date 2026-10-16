@@ -432,7 +432,7 @@ export class PhotographyGalleryDto extends createZodDto(
     date: z.string().nullable().describe("The shoot's date (YYYY-MM-DD), or null when the shoot is not found"),
     preview: z.boolean().describe("True for the studio's view-only client preview session"),
     recipient: z.object({
-      id: z.string().describe('Recipient ID, or "preview" for a client preview session'),
+      id: Id,
       name: z.string(),
       canDownload: z.boolean(),
     }),

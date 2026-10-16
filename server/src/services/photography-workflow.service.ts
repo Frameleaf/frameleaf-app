@@ -241,8 +241,8 @@ export type PhotographyWorkflow = {
 const iso = () => new Date().toISOString();
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 const expired = (at: string | null) => at !== null && Date.parse(at) <= Date.now();
-/** Never a real recipient: recipient IDs are UUIDs. */
-const PREVIEW_RECIPIENT_ID = 'preview';
+/** Never a real recipient (those are random v4 UUIDs); still a UUID so the response contract keeps `format: uuid`. */
+const PREVIEW_RECIPIENT_ID = '00000000-0000-4000-8000-000000000000';
 const PREVIEW_SESSION_MS = 3_600_000;
 const PREVIEW_SESSION_LIMIT = 20;
 
