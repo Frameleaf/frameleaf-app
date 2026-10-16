@@ -89,6 +89,7 @@ export class ICloudScheduledWorkerService {
       };
       const holder = `icloud-sync:audit:${operation.id}`;
       let itemClaimId: string | undefined;
+      let settlement: 'capacity' | 'paused' | 'cancelled' | undefined;
       const controller = new AbortController();
       let checking: Promise<void> | undefined;
       let timer: ReturnType<typeof setInterval> | undefined;
@@ -107,7 +108,7 @@ export class ICloudScheduledWorkerService {
           1800,
         );
         if (!claim || claim.holder !== holder) {
-          await this.operations.requeue(operation.id, claimToken, { delayMs: 60_000, returnAttempt: true });
+          settlement = 'capacity';
           return;
         }
         itemClaimId = claim.id;
@@ -116,7 +117,7 @@ export class ICloudScheduledWorkerService {
         }
         const resource = await this.repository.allocate(authority, operation.ownerId);
         if (!resource) {
-          await this.operations.requeue(operation.id, claimToken, { delayMs: 60_000, returnAttempt: true });
+          settlement = 'capacity';
           return;
         }
         const input = {
@@ -219,7 +220,7 @@ export class ICloudScheduledWorkerService {
           return;
         }
         if (state.pauseRequestedAt && !state.cancelRequestedAt) {
-          await this.operations.settlePause(operation.id, claimToken);
+          settlement = 'paused';
           return;
         }
         unavailable = true;
@@ -233,7 +234,7 @@ export class ICloudScheduledWorkerService {
         }
         if (state.cancelRequestedAt) {
           await this.repository.cancelRemaining(authority, operation.ownerId);
-          await this.operations.acknowledgeCancel(operation.id, claimToken, { released: true });
+          settlement = 'cancelled';
           return;
         }
       } finally {
@@ -242,6 +243,23 @@ export class ICloudScheduledWorkerService {
         await checking;
         if (itemClaimId) {
           await this.identities.release(operation.ownerId, [itemClaimId], holder);
+        }
+        switch (settlement) {
+          case undefined: {
+            break;
+          }
+          case 'capacity': {
+            await this.operations.requeue(operation.id, claimToken, { delayMs: 60_000, returnAttempt: true });
+            break;
+          }
+          case 'paused': {
+            await this.operations.settlePause(operation.id, claimToken);
+            break;
+          }
+          case 'cancelled': {
+            await this.operations.acknowledgeCancel(operation.id, claimToken, { released: true });
+            break;
+          }
         }
       }
       processed++;

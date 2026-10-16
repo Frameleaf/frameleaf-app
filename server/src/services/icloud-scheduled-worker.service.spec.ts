@@ -1,6 +1,99 @@
 import { AssetType } from 'src/enum.js';
 import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-worker.service.js';
 
+describe('scheduled iCloud item claim settlement', () => {
+  it.each([
+    ['capacity', false],
+    ['capacity', true],
+    ['cancellation', false],
+    ['cancellation', true],
+    ['pause', false],
+    ['pause', true],
+  ] as const)('releases the claim before %s settlement (release failure: %s)', async (phase, failedRelease) => {
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const failure = new Error('controlled item claim release failure');
+    const repository = {
+      dispatch: vi.fn().mockResolvedValue([{ id: 'audit', result: 'pending' }]),
+      stopState: vi
+        .fn()
+        .mockResolvedValueOnce({ live: true })
+        .mockResolvedValue({
+          live: true,
+          ...(phase === 'pause' ? { pauseRequestedAt: new Date() } : { cancelRequestedAt: new Date() }),
+        }),
+      check: vi.fn().mockResolvedValue({ source: { sourceAssetId: 'ITEM' } }),
+      bindClaim: vi.fn().mockResolvedValue(true),
+      allocate: vi.fn().mockResolvedValue(phase === 'capacity' ? undefined : { id: 'resource', leaseToken: 'lease' }),
+      settleUnavailable: vi.fn().mockResolvedValue(true),
+      cancelRemaining: vi.fn().mockResolvedValue(true),
+    };
+    const identities = {
+      claim: vi.fn().mockResolvedValue([{ id: 'item-claim', holder: 'icloud-sync:audit:operation' }]),
+      release: vi.fn(() => {
+        entered.resolve();
+        return release.promise;
+      }),
+    };
+    const operations = {
+      reportProgress: vi.fn().mockResolvedValue(true),
+      requeue: vi.fn().mockResolvedValue(true),
+      acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      settlePause: vi.fn().mockResolvedValue(true),
+      complete: vi.fn(),
+    };
+    const staging = {
+      download: vi.fn().mockRejectedValue(new Error('controlled cancelled download')),
+      cleanupRetired: vi.fn().mockResolvedValue(undefined),
+    };
+    const sut = new ICloudScheduledWorkerService(
+      repository as never,
+      identities as never,
+      staging as never,
+      {} as never,
+      operations as never,
+      { enabled: () => true } as never,
+    );
+    const running = sut.run({ id: 'operation', ownerId: 'owner' } as never, 'token').catch((error: unknown) => error);
+    try {
+      await entered.promise;
+      const earlyTransitions =
+        operations.requeue.mock.calls.length +
+        operations.acknowledgeCancel.mock.calls.length +
+        operations.settlePause.mock.calls.length;
+      if (failedRelease) release.reject(failure);
+      else release.resolve();
+      const error = await running;
+      expect(earlyTransitions).toBe(0);
+      expect(error).toBe(failedRelease ? failure : undefined);
+      expect(operations.complete).not.toHaveBeenCalled();
+      if (failedRelease) {
+        expect(operations.requeue).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+        expect(operations.settlePause).not.toHaveBeenCalled();
+      } else if (phase === 'capacity') {
+        expect(operations.requeue).toHaveBeenCalledWith('operation', 'token', {
+          delayMs: 60_000,
+          returnAttempt: true,
+        });
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      } else if (phase === 'cancellation') {
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith('operation', 'token', { released: true });
+        expect(operations.requeue).not.toHaveBeenCalled();
+      } else {
+        expect(operations.settlePause).toHaveBeenCalledWith('operation', 'token');
+        expect(operations.requeue).not.toHaveBeenCalled();
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      }
+    } finally {
+      release.resolve();
+      await running;
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('scheduled iCloud publication descriptor settlement', () => {
   it.each([
     ['match', false],
