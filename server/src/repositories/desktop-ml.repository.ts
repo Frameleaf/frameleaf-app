@@ -140,6 +140,7 @@ export class DesktopMlRepository {
           .select(taskColumns)
           .where('id', '=', attempt.taskId)
           .executeTakeFirstOrThrow();
+        if (task.ownerId !== worker.ownerId) return;
         const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
         if (!qualification) return;
         return { task, attempt, qualificationExpiresAt: new Date(qualification.expiresAt) };
@@ -148,6 +149,7 @@ export class DesktopMlRepository {
       const task = await db
         .selectFrom('desktop_ml_task')
         .select(taskColumns)
+        .where('ownerId', '=', worker.ownerId)
         .where((eb) =>
           eb.or(
             qualifications.map((q) =>
@@ -309,6 +311,29 @@ export class DesktopMlRepository {
     });
   }
 
+  async hasLiveAttempt(id: string): Promise<boolean> {
+    const { rows } = await sql<{ live: boolean }>`SELECT EXISTS (
+      SELECT 1 FROM desktop_ml_task t
+      JOIN desktop_ml_attempt a ON a.id=t."attemptId" AND a."taskId"=t.id AND a.generation=t.generation
+      JOIN desktop_worker_session w ON w.id=a."workerSessionId" AND w."deviceId"=a."deviceId"
+      JOIN desktop_device d ON d.id=a."deviceId"
+      JOIN "user" u ON u.id=d."userId" AND u.id=t."ownerId"
+      JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
+      JOIN desktop_worker_qualification q ON q.id=a."qualificationId" AND q."sessionId"=w.id
+        AND q."deviceId"=d.id AND q."authorizationEpoch"=d."authorizationEpoch"
+        AND q."modelKey"=t."modelKey" AND q."configSha256"=t."configSha256" AND q."inputKind"=t."inputKind"
+      WHERE t.id=${id} AND t.state='running' AND t."deadlineAt">clock_timestamp()
+        AND a.outcome IS NULL AND a."expiresAt">clock_timestamp()
+        AND a."authorizationEpoch"=d."authorizationEpoch" AND w."authorizationEpoch"=d."authorizationEpoch"
+        AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
+        AND w."lastSeenAt">clock_timestamp()-interval '90 seconds'
+        AND w."modelKeys" @> jsonb_build_array(t."modelKey") AND q."expiresAt">clock_timestamp()
+        AND d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
+        AND u."isAdmin" AND u."deletedAt" IS NULL AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
+    ) AS live`.execute(this.db);
+    return rows[0]?.live;
+  }
+
   result(id: string): Promise<TaskMetadata | undefined> {
     return this.db
       .selectFrom('desktop_ml_task')
@@ -341,7 +366,8 @@ export class DesktopMlRepository {
         .executeTakeFirst();
       if (!attempt?.workerSessionId) throw new Error('desktop_result_authority_lost');
       const worker = await lockDesktopWorkerForAdoption(db, { ...attempt, sessionId: attempt.workerSessionId });
-      if (!worker || !worker.modelKeys.includes(expected.modelKey)) throw new Error('desktop_result_authority_lost');
+      if (!worker || worker.ownerId !== expected.ownerId || !worker.modelKeys.includes(expected.modelKey))
+        throw new Error('desktop_result_authority_lost');
       const task = await db
         .selectFrom('desktop_ml_task')
         .select(['id', 'modelKey', 'configSha256', 'inputKind'])
@@ -440,7 +466,7 @@ export class DesktopMlRepository {
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .forUpdate()
         .executeTakeFirst();
-      if (!task || !worker.modelKeys.includes(task.modelKey)) return;
+      if (!task || task.ownerId !== worker.ownerId || !worker.modelKeys.includes(task.modelKey)) return;
       const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
       if (!qualification) return;
       const live = await db

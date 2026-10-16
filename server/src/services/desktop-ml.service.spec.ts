@@ -4,7 +4,14 @@ import * as context from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 
-const repository = { create: vi.fn(), result: vi.fn(), cancel: vi.fn(), assertAdoption: vi.fn(), discard: vi.fn() };
+const repository = {
+  hasLiveAttempt: vi.fn(),
+  create: vi.fn(),
+  result: vi.fn(),
+  cancel: vi.fn(),
+  assertAdoption: vi.fn(),
+  discard: vi.fn(),
+};
 const request = () => ({
   ownerId: 'owner',
   modelKey: 'model',
@@ -17,6 +24,7 @@ const request = () => ({
 let service: DesktopMlService;
 beforeEach(() => {
   vi.resetAllMocks();
+  repository.hasLiveAttempt.mockResolvedValue(true);
   repository.create.mockResolvedValue({ id: 'task' });
   repository.cancel.mockResolvedValue(true);
   service = new DesktopMlService(repository as never, {} as never);
@@ -214,4 +222,24 @@ it('preserves operation-owned execution instead of inventing a library dependenc
     clip: [1, 2],
   });
   expect(execution.dependencyReason).toBeUndefined();
+});
+
+it('defers a claimed task when its authenticated helper is no longer live, fencing late output', async () => {
+  const execution = queued();
+  repository.result.mockResolvedValue({ state: 'running', generation: 1 });
+  repository.hasLiveAttempt.mockResolvedValue(false);
+  const controller = new AbortController();
+  const fallback = setTimeout(() => controller.abort(), 30);
+  try {
+    await expect(
+      context.queueExecution.run(execution, () => service.dispatch({ ...options(), signal: controller.signal })),
+    ).rejects.toBeInstanceOf(JobDependencyUnavailable);
+    expect(execution.dependencyReason).toBe('destination-unavailable');
+    expect(repository.cancel).toHaveBeenCalledWith('task');
+    expect(repository.discard).toHaveBeenCalledWith('task');
+    expect(repository.assertAdoption).not.toHaveBeenCalled();
+  } finally {
+    clearTimeout(fallback);
+    controller.abort();
+  }
 });

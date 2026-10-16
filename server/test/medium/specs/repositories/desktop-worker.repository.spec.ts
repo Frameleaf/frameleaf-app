@@ -6,6 +6,10 @@ import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositor
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import {
+  down as removePresence,
+  up as addPresence,
+} from 'src/schema/migrations/2100000002980-DesktopWorkerPresence.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
@@ -170,4 +174,40 @@ it('fences an already-authenticated grant after sign-in reissue or token rotatio
   expect(await sut.rotate(current, replacementHash, Buffer.alloc(32, 13))).toBeUndefined();
   const renewed = (await sut.consume(replacement.id, nextHash, 1))!;
   expect(await sut.revoke(renewed)).toBe(true);
+});
+
+it('records liveness only for a successfully authenticated counter, never issuance, replay or wrong credentials', async () => {
+  const { sut, input } = await setup();
+  const session = (await sut.issue(input))!;
+  expect(session.lastSeenAt).toBeNull();
+  expect(await sut.consume(session.id, input.tokenHash, 1)).toBeDefined();
+  expect((await sut.session(session.id, input.tokenHash))!.lastSeenAt).toBeInstanceOf(Date);
+  const old = new Date(Date.now() - 100_000);
+  await workerDb.updateTable('desktop_worker_session').set({ lastSeenAt: old }).where('id', '=', session.id).execute();
+  expect(await sut.consume(session.id, input.tokenHash, 1)).toBeUndefined();
+  expect(await sut.consume(session.id, Buffer.alloc(32, 99), 2)).toBeUndefined();
+  expect((await sut.session(session.id, input.tokenHash))!.lastSeenAt).toEqual(old);
+  expect(await sut.consume(session.id, input.tokenHash, 2)).toBeDefined();
+  expect((await sut.session(session.id, input.tokenHash))!.lastSeenAt!.getTime()).toBeGreaterThan(old.getTime());
+});
+
+it('adds unobserved presence to existing rows and reverses only the new column', async () => {
+  const scope = `presence_${randomUUID().replaceAll('-', '')}`;
+  await db.schema.createSchema(scope).execute();
+  const scratch = db.withSchema(scope) as Kysely<any>;
+  try {
+    await scratch.schema
+      .createTable('desktop_worker_session')
+      .addColumn('id', 'integer', (column) => column.primaryKey())
+      .execute();
+    await scratch.insertInto('desktop_worker_session').values({ id: 1 }).execute();
+    await addPresence(scratch);
+    expect(await scratch.selectFrom('desktop_worker_session').selectAll().execute()).toEqual([
+      { id: 1, lastSeenAt: null },
+    ]);
+    await removePresence(scratch);
+    expect(await scratch.selectFrom('desktop_worker_session').selectAll().execute()).toEqual([{ id: 1 }]);
+  } finally {
+    await db.schema.dropSchema(scope).cascade().execute();
+  }
 });

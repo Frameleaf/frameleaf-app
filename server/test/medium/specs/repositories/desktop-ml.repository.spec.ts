@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, type Updateable, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -82,6 +82,9 @@ const setup = async (withQualification = true, profile?: DesktopModelProfile) =>
     inputKind: profile?.spec.fixtureKind ?? ('text' as const),
     deadlineAt: new Date(Date.now() + 120_000),
   };
+  await Promise.all(
+    grants.map((grant) => new DesktopWorkerRepository(db).consume(grant.sessionId, grant.credentialHash, 1)),
+  );
   if (withQualification) await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
   return { sut: new DesktopMlRepository(db), second: new DesktopMlRepository(db), devices, grants, request };
 };
@@ -587,99 +590,277 @@ it('publishes a synthetic pool result only with the real index and broker transa
   }
 });
 
-it('durably waits for an unclaimed helper, restarts, and completes the same pinned job without retry-credit loss', async () => {
-  const { sut: broker, second: helper, grants, request } = await setup();
-  const queue = `desktop-wait-${randomUUID()}`;
-  let worker = randomUUID();
-  let store = new SqlQueueStore(db);
-  await store.initialize([queue], worker);
-  const pinned = randomUUID();
-  const runId = await store.createRun('desktop-helper-wait', {});
-  await store.enqueue([
-    {
-      queue,
-      name: JobName.SmartSearch,
-      data: { id: randomUUID(), _queueDestinations: { clip: pinned } },
-      safeToRetry: true,
-      sensitive: false,
-      deadlineMs: 120_000,
-      runId,
-      itemKey: request.ownerId,
-      rootItemKey: request.ownerId,
-    },
-  ]);
-  await store.finishEnumeration(runId);
-  const executor = (repository: DesktopMlRepository) => {
-    const service = new DesktopMlService(repository, new DesktopClipIndexRepository(db));
-    const jobs = new JobRepository(
-      {} as never,
-      {} as never,
+it.each(['unclaimed', 'stale-worker'] as const)(
+  'durably waits for %s, restarts, and completes the same pinned job without retry-credit loss',
+  async (mode) => {
+    const { sut: broker, second: helper, grants, request } = await setup();
+    const queue = `desktop-wait-${randomUUID()}`;
+    let worker = randomUUID();
+    let store = new SqlQueueStore(db);
+    await store.initialize([queue], worker);
+    const pinned = randomUUID();
+    const runId = await store.createRun('desktop-helper-wait', {});
+    await store.enqueue([
       {
-        emit: async () => {
-          expect(await jobs.pinDestination(MlWorkload.Clip, randomUUID())).toBe(pinned);
-          await service.dispatch({
-            request: { ...request, deadlineAt: new Date(Date.now() + 120_000) },
-            assertAuthority: async () => {},
-            decodeResult: (value) => value,
-          });
-        },
-      } as never,
-      LoggingRepository.create(),
-      db,
-    );
-    return jobs;
-  };
-  const [first] = await store.claim(queue, worker);
-  await executor(broker)['execute'](first, new AbortController());
-  const blocked = await db
-    .selectFrom('job')
-    .select(['state', 'dependencyReason', 'retryBaseAttempt', 'data'])
-    .where('id', '=', first.id)
-    .executeTakeFirstOrThrow();
-  expect(blocked).toMatchObject({ state: 'pending', dependencyReason: 'destination-unavailable', retryBaseAttempt: 1 });
-  expect(blocked.data).toMatchObject({ _queueDestinations: { clip: pinned } });
-  expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
-    state: 'blocked',
-    blocked: 1,
-    failed: 0,
-    completed: 0,
-  });
-  expect(
-    await brokerDb.selectFrom('desktop_ml_task').selectAll().where('ownerId', '=', request.ownerId).execute(),
-  ).toEqual([]);
-
-  // New queue and broker facades use only persisted state, as after a NAS process restart.
-  worker = randomUUID();
-  store = new SqlQueueStore(db);
-  await store.initialize([queue], worker);
-  await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
-  const [resumed] = await store.claim(queue, worker);
-  expect(resumed.id).toBe(first.id);
-  const reloaded = new DesktopMlRepository(db);
-  const ready = Promise.withResolvers<Awaited<ReturnType<typeof reloaded.create>>>();
-  const create = reloaded.create.bind(reloaded);
-  vi.spyOn(reloaded, 'create').mockImplementation(async (input) => {
-    const task = await create(input);
-    ready.resolve(task);
-    return task;
-  });
-  const executing = executor(reloaded)['execute'](resumed, new AbortController());
-  const task = await ready.promise;
-  const assigned = (await helper.claim(grants[0], [request.modelKey]))!;
-  expect(assigned.task.id).toBe(task.id);
-  expect(await helper.complete(grants[0], assigned.attempt.id, { clip: [1, 2] })).toBe(true);
-  await executing;
-  expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
-    state: 'completed',
-    failed: 0,
-    completed: 1,
-  });
-  expect(
-    await db
+        queue,
+        name: JobName.SmartSearch,
+        data: { id: randomUUID(), _queueDestinations: { clip: pinned } },
+        safeToRetry: true,
+        sensitive: false,
+        deadlineMs: 120_000,
+        runId,
+        itemKey: request.ownerId,
+        rootItemKey: request.ownerId,
+      },
+    ]);
+    await store.finishEnumeration(runId);
+    const executor = (repository: DesktopMlRepository) => {
+      const service = new DesktopMlService(repository, new DesktopClipIndexRepository(db));
+      const jobs = new JobRepository(
+        {} as never,
+        {} as never,
+        {
+          emit: async () => {
+            expect(await jobs.pinDestination(MlWorkload.Clip, randomUUID())).toBe(pinned);
+            await service.dispatch({
+              request: { ...request, deadlineAt: new Date(Date.now() + 120_000) },
+              assertAuthority: async () => {},
+              decodeResult: (value) => value,
+            });
+          },
+        } as never,
+        LoggingRepository.create(),
+        db,
+      );
+      return jobs;
+    };
+    const firstReady = Promise.withResolvers<Awaited<ReturnType<typeof broker.create>>>();
+    const createFirst = broker.create.bind(broker);
+    vi.spyOn(broker, 'create').mockImplementation(async (input) => {
+      const task = await createFirst(input);
+      firstReady.resolve(task);
+      return task;
+    });
+    const [first] = await store.claim(queue, worker);
+    const firstExecution = executor(broker)['execute'](first, new AbortController());
+    if (mode === 'stale-worker') {
+      const task = await firstReady.promise;
+      const held = (await helper.claim(grants[0], [request.modelKey]))!;
+      expect(held.task.id).toBe(task.id);
+      await sql`update desktop_worker_session set "lastSeenAt"=clock_timestamp()-interval '91 seconds'
+      where id=${grants[0].sessionId}::uuid`.execute(db);
+      await firstExecution;
+      expect(await helper.input(grants[0], held.attempt.id)).toBeUndefined();
+      expect(await helper.complete(grants[0], held.attempt.id, { clip: [9, 9] })).toBe(false);
+    } else await firstExecution;
+    const blocked = await db
       .selectFrom('job')
-      .select(['state', 'attempt', 'retryBaseAttempt'])
+      .select(['state', 'dependencyReason', 'retryBaseAttempt', 'data'])
       .where('id', '=', first.id)
-      .executeTakeFirstOrThrow(),
-  ).toMatchObject({ state: 'completed', attempt: 2, retryBaseAttempt: 1 });
-  expect(await reloaded.result(task.id)).toBeUndefined();
-}, 20_000);
+      .executeTakeFirstOrThrow();
+    expect(blocked).toMatchObject({
+      state: 'pending',
+      dependencyReason: 'destination-unavailable',
+      retryBaseAttempt: 1,
+    });
+    expect(blocked.data).toMatchObject({ _queueDestinations: { clip: pinned } });
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+      state: 'blocked',
+      blocked: 1,
+      failed: 0,
+      completed: 0,
+    });
+    expect(
+      await brokerDb.selectFrom('desktop_ml_task').selectAll().where('ownerId', '=', request.ownerId).execute(),
+    ).toEqual([]);
+
+    // New queue and broker facades use only persisted state, as after a NAS process restart.
+    worker = randomUUID();
+    store = new SqlQueueStore(db);
+    await store.initialize([queue], worker);
+    await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
+    expect(
+      await new DesktopWorkerRepository(db).consume(grants[0].sessionId, grants[0].credentialHash, 2),
+    ).toBeDefined();
+    const [resumed] = await store.claim(queue, worker);
+    expect(resumed.id).toBe(first.id);
+    const reloaded = new DesktopMlRepository(db);
+    const ready = Promise.withResolvers<Awaited<ReturnType<typeof reloaded.create>>>();
+    const create = reloaded.create.bind(reloaded);
+    vi.spyOn(reloaded, 'create').mockImplementation(async (input) => {
+      const task = await create(input);
+      ready.resolve(task);
+      return task;
+    });
+    const executing = executor(reloaded)['execute'](resumed, new AbortController());
+    const task = await ready.promise;
+    const assigned = (await helper.claim(grants[0], [request.modelKey]))!;
+    expect(assigned.task.id).toBe(task.id);
+    expect(await helper.complete(grants[0], assigned.attempt.id, { clip: [1, 2] })).toBe(true);
+    await executing;
+    expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+      state: 'completed',
+      failed: 0,
+      completed: 1,
+    });
+    expect(
+      await db
+        .selectFrom('job')
+        .select(['state', 'attempt', 'retryBaseAttempt'])
+        .where('id', '=', first.id)
+        .executeTakeFirstOrThrow(),
+    ).toMatchObject({ state: 'completed', attempt: 2, retryBaseAttempt: 1 });
+    expect(await reloaded.result(task.id)).toBeUndefined();
+  },
+  20_000,
+);
+
+it.each([
+  'unknown',
+  'stale',
+  'revoked-worker',
+  'revoked-device',
+  'removed-admin',
+  'expired-photo',
+  'expired-qualification',
+  'changed-config',
+  'removed-model',
+  'expired-attempt',
+] as const)('does not treat %s as a live admitted attempt', async (reason) => {
+  const { sut, grants, request, devices } = await setup();
+  const task = await sut.create(request);
+  const grant = grants[0];
+  const claimed = (await sut.claim(grant, [request.modelKey]))!;
+  try {
+    expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+    switch (reason) {
+      case 'unknown': {
+        await workerDbUpdate({ lastSeenAt: null });
+        break;
+      }
+      case 'stale': {
+        await workerDbUpdate({ lastSeenAt: new Date(Date.now() - 91_000) });
+        break;
+      }
+      case 'revoked-worker': {
+        await workerDbUpdate({ revokedAt: new Date() });
+        break;
+      }
+      case 'revoked-device': {
+        await devices.revoke(request.ownerId, grant.deviceId);
+        break;
+      }
+      case 'removed-admin': {
+        await db.updateTable('user').set({ isAdmin: false }).where('id', '=', request.ownerId).execute();
+        break;
+      }
+      case 'expired-photo': {
+        await sql`update session set "expiresAt"=clock_timestamp()-interval '1 second' where id=(
+            select "photoSessionId" from desktop_worker_session where id=${grant.sessionId}::uuid)`.execute(db);
+        break;
+      }
+      case 'expired-qualification': {
+        await sql`update desktop_worker_qualification set "expiresAt"=clock_timestamp()-interval '1 second',
+            "createdAt"=clock_timestamp()-interval '1 hour' where "sessionId"=${grant.sessionId}::uuid`.execute(db);
+        break;
+      }
+      case 'changed-config': {
+        await sql`update desktop_worker_qualification set "configSha256"=${'f'.repeat(64)}
+            where "sessionId"=${grant.sessionId}::uuid`.execute(db);
+        break;
+      }
+      case 'removed-model': {
+        await workerDbUpdate({ modelKeys: [] });
+        break;
+      }
+      case 'expired-attempt': {
+        await brokerDb
+          .updateTable('desktop_ml_attempt')
+          .set({ expiresAt: new Date(0) })
+          .where('id', '=', claimed.attempt.id)
+          .execute();
+        break;
+      }
+    }
+    expect(await sut.hasLiveAttempt(task.id)).toBe(false);
+  } finally {
+    await sut.cancel(task.id);
+    await sut.discard(task.id);
+  }
+  async function workerDbUpdate(value: Updateable<DesktopWorkerTables['desktop_worker_session']>) {
+    await brokerDb.updateTable('desktop_worker_session').set(value).where('id', '=', grant.sessionId).execute();
+  }
+});
+it('ordinary credential rotation preserves current authenticated presence and the accepted attempt', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  await sut.claim(grants[0], [request.modelKey]);
+  try {
+    const rotated = await new DesktopWorkerRepository(db).rotate(
+      grants[0],
+      grants[0].credentialHash,
+      Buffer.alloc(32, 76),
+    );
+    expect(rotated).toBeDefined();
+    expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  } finally {
+    await sut.cancel(task.id);
+    await sut.discard(task.id);
+  }
+});
+
+it('never claims another account task even when its qualified model and configuration match', async () => {
+  const a = await setup();
+  const b = await setup();
+  const key = a.request.modelKey;
+  await brokerDb
+    .updateTable('desktop_worker_session')
+    .set({ modelKeys: [key] })
+    .where('id', '=', b.grants[0].sessionId)
+    .execute();
+  await seedDesktopQualification(db, b.grants[0], a.request);
+  const foreign = await a.sut.create({ ...a.request, ownerId: b.request.ownerId, input: Buffer.from('synthetic B') });
+  const own = await a.sut.create({ ...a.request, input: Buffer.from('synthetic A') });
+  try {
+    const assignedA = (await a.sut.claim(a.grants[0], [key]))!;
+    expect(assignedA.task.id).toBe(own.id);
+    expect(await a.sut.input(a.grants[0], assignedA.attempt.id)).toEqual(Buffer.from('synthetic A'));
+    const assignedB = (await b.sut.claim(b.grants[0], [key]))!;
+    expect(assignedB.task.id).toBe(foreign.id);
+    expect(await b.sut.input(b.grants[0], assignedB.attempt.id)).toEqual(Buffer.from('synthetic B'));
+  } finally {
+    for (const task of [own, foreign]) {
+      await a.sut.cancel(task.id);
+      await a.sut.discard(task.id);
+    }
+  }
+});
+it.each(['running', 'completed'] as const)(
+  'fences an existing %s cross-account attempt at every data boundary',
+  async (state) => {
+    const a = await setup();
+    const b = await setup();
+    const task = await a.sut.create(a.request);
+    const lease = (await a.sut.claim(a.grants[0], [a.request.modelKey]))!;
+    try {
+      if (state === 'completed')
+        expect(await a.sut.complete(a.grants[0], lease.attempt.id, { clip: [1, 2] })).toBe(true);
+      await brokerDb
+        .updateTable('desktop_ml_task')
+        .set({ ownerId: b.request.ownerId })
+        .where('id', '=', task.id)
+        .execute();
+      expect(await a.sut.input(a.grants[0], lease.attempt.id)).toBeUndefined();
+      expect(await a.sut.heartbeat(a.grants[0], lease.attempt.id)).toBe(false);
+      expect(await a.sut.complete(a.grants[0], lease.attempt.id, { clip: [1, 2] })).toBe(false);
+      if (state === 'running') expect(await a.sut.claim(a.grants[0], [a.request.modelKey])).toBeUndefined();
+      else
+        await expect(a.sut.assertAdoption(task.id, { ...task, ownerId: b.request.ownerId })).rejects.toThrow(
+          'desktop_result_authority_lost',
+        );
+    } finally {
+      await a.sut.cancel(task.id);
+      await a.sut.discard(task.id);
+    }
+  },
+);

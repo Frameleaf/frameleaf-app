@@ -26,15 +26,14 @@ async function lockWorkerAuthority(
   db: QueryExecutorProvider,
   grant: Omit<DesktopWorkerGrant, 'credentialHash'>,
   credentialHash: Buffer | null,
-): Promise<{ modelKeys: string[]; expiresAt: Date } | undefined> {
+): Promise<{ ownerId: string; modelKeys: string[]; expiresAt: Date } | undefined> {
   const credential = credentialHash === null ? sql`true` : sql`w."tokenHash"=${credentialHash}`;
   const { rows: owners } = await sql<{ id: string }>`SELECT u.id FROM "user" u JOIN desktop_device d ON d."userId"=u.id
     WHERE d.id=${grant.deviceId} AND u."isAdmin" AND u."deletedAt" IS NULL FOR SHARE OF u`.execute(db);
   if (owners.length !== 1) return;
   const { rows: devices } = await sql`SELECT id FROM desktop_device WHERE id=${grant.deviceId}
-    AND "authorizationEpoch"=${grant.authorizationEpoch} AND state='preparing' AND mode='client-worker' AND "revokedAt" IS NULL FOR UPDATE`.execute(
-    db,
-  );
+    AND "userId"=${owners[0].id} AND "authorizationEpoch"=${grant.authorizationEpoch}
+    AND state='preparing' AND mode='client-worker' AND "revokedAt" IS NULL FOR UPDATE`.execute(db);
   if (devices.length !== 1) return;
   const { rows } = await sql<{
     modelKeys: string[];
@@ -45,7 +44,7 @@ async function lockWorkerAuthority(
     AND p."userId"=${owners[0].id} AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp()) FOR SHARE OF w`.execute(
     db,
   );
-  return rows[0];
+  return rows[0] ? { ...rows[0], ownerId: owners[0].id } : undefined;
 }
 
 /** Lock owner/device/session and require the exact credential used to authenticate this request. */
@@ -241,7 +240,7 @@ export class DesktopWorkerRepository {
       if (!(await lockDesktopWorker(db, grant))) return;
       const updated = await db
         .updateTable('desktop_worker_session')
-        .set({ lastSequence: sequence })
+        .set({ lastSequence: sequence, lastSeenAt: sql<Date>`clock_timestamp()` })
         .where('id', '=', id)
         .where('tokenHash', '=', tokenHash)
         .where('lastSequence', '<', sequence)

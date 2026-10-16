@@ -218,6 +218,14 @@ export class DesktopMlService {
         signal.throwIfAborted();
         if (!row || row.state === 'cancelled') throw new Error('desktop_inference_cancelled');
         if (row.state === 'failed') throw new Error('desktop_inference_failed');
+        if (canDefer && row.state === 'running') {
+          const live = await this.repository.hasLiveAttempt(task.id);
+          signal.throwIfAborted();
+          if (!live) {
+            deferJobUntilDependency('destination-unavailable');
+            throw new Error('desktop_helper_unavailable');
+          }
+        }
         if (canDefer && row.state === 'pending' && row.generation === 0 && performance.now() >= pendingUntil) {
           deferJobUntilDependency('destination-unavailable');
           throw new Error('desktop_helper_unavailable');

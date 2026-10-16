@@ -19,6 +19,7 @@ export class DesktopWorkerSessionTable {
   @Column({ type: 'bytea' }) tokenHash!: Buffer;
   @Column({ type: 'integer' }) authorizationEpoch!: number;
   @Column({ type: 'integer', default: 0 }) lastSequence!: Generated<number>;
+  @Column({ type: 'timestamp with time zone', nullable: true }) lastSeenAt!: Generated<Timestamp | null>;
   @Column({ type: 'jsonb', default: '[]' }) modelKeys!: Generated<string[]>;
   @Column({ type: 'timestamp with time zone' }) expiresAt!: Timestamp;
   @Column({ type: 'timestamp with time zone', nullable: true }) revokedAt!: Timestamp | null;
