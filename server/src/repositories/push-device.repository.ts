@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, expressionBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Selectable } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { PushDeviceActivityTable, PushDeviceTable } from 'src/schema/tables/push-device.table.js';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
+import type { PushSendRequest } from 'src/utils/frameleaf-push.js';
 import { AssetVisibility, MediaOperationKind, PushPlatform } from 'src/enum.js';
 import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
@@ -14,6 +15,22 @@ export type PushDeviceActivity = Selectable<PushDeviceActivityTable>;
 export type PushDeviceWithActivities = PushDevice & {
   activities: PushDeviceActivity[];
 };
+export type PushTokenRef = Pick<PushSendRequest, 'token' | 'platform'> & { id: string };
+
+const matchesPushPlatform = (platform: PushSendRequest['platform']) => {
+  const eb = expressionBuilder<DB, 'push_device'>();
+  return platform === 'fcm'
+    ? eb('push_device.platform', '=', PushPlatform.Android)
+    : eb.and([
+        eb('push_device.platform', '=', PushPlatform.Ios),
+        eb(
+          eb.fn.coalesce('push_device.apnsEnvironment', eb.val('production')),
+          '=',
+          platform === 'apns-sandbox' ? 'sandbox' : 'production',
+        ),
+      ]);
+};
+
 export type PushDeviceRegistration = {
   userId: string;
   sessionId: string;
@@ -152,23 +169,42 @@ export class PushDeviceRepository {
       .execute((tx) => tx.deleteFrom('push_device').where('userId', '=', userId).executeTakeFirst());
     return Number(result.numDeletedRows);
   }
-  /** The gateway said these tokens are gone (APNs 410, FCM UNREGISTERED). */
-  async deleteByIds(ids: string[]): Promise<void> {
-    if (ids.length === 0) {
+  /** A late gateway refusal must not remove a replacement token or a changed delivery platform. */
+  async deleteByIds(tokens: PushTokenRef[]): Promise<void> {
+    if (tokens.length === 0) {
       return;
     }
-    await this.db.transaction().execute((tx) => tx.deleteFrom('push_device').where('id', '=', anyUuid(ids)).execute());
+    await this.db.transaction().execute((tx) =>
+      tx
+        .deleteFrom('push_device')
+        .where((eb) =>
+          eb.or(
+            tokens.map(({ id, token, platform }) =>
+              eb.and([eb('id', '=', id), eb('pushToken', '=', token), matchesPushPlatform(platform)]),
+            ),
+          ),
+        )
+        .execute(),
+    );
   }
   /** Forget a push-to-start token the gateway reported gone, keeping the registration. */
-  async clearPushToStartTokens(ids: string[]): Promise<void> {
-    if (ids.length === 0) {
+  async clearPushToStartTokens(tokens: PushTokenRef[]): Promise<void> {
+    if (tokens.length === 0) {
       return;
     }
-    await this.db
-      .transaction()
-      .execute((tx) =>
-        tx.updateTable('push_device').set({ pushToStartToken: null }).where('id', '=', anyUuid(ids)).execute(),
-      );
+    await this.db.transaction().execute((tx) =>
+      tx
+        .updateTable('push_device')
+        .set({ pushToStartToken: null })
+        .where((eb) =>
+          eb.or(
+            tokens.map(({ id, token, platform }) =>
+              eb.and([eb('id', '=', id), eb('pushToStartToken', '=', token), matchesPushPlatform(platform)]),
+            ),
+          ),
+        )
+        .execute(),
+    );
   }
   setActivity(
     deviceId: string,
@@ -231,13 +267,32 @@ export class PushDeviceRepository {
       );
     return Number(result.numDeletedRows) > 0;
   }
-  async deleteActivitiesByIds(ids: string[]): Promise<void> {
-    if (ids.length === 0) {
+  async deleteActivitiesByIds(tokens: PushTokenRef[]): Promise<void> {
+    if (tokens.length === 0) {
       return;
     }
-    await this.db
-      .transaction()
-      .execute((tx) => tx.deleteFrom('push_device_activity').where('id', '=', anyUuid(ids)).execute());
+    await this.db.transaction().execute((tx) =>
+      tx
+        .deleteFrom('push_device_activity')
+        .where((eb) =>
+          eb.or(
+            tokens.map(({ id, token, platform }) =>
+              eb.and([
+                eb('id', '=', id),
+                eb('token', '=', token),
+                eb.exists(
+                  eb
+                    .selectFrom('push_device')
+                    .select('push_device.id')
+                    .whereRef('push_device.id', '=', 'push_device_activity.deviceId')
+                    .where(matchesPushPlatform(platform)),
+                ),
+              ]),
+            ),
+          ),
+        )
+        .execute(),
+    );
   }
   async markDelivered(ids: string[]): Promise<void> {
     if (ids.length === 0) {
