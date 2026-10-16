@@ -96,9 +96,17 @@ describe('bundled worker formats: every combination, encoded and probed', () => 
           assert.equal(text.codec_name, format.textTrack);
           assert.equal(text.tags?.language ?? 'und', 'und'); // Matroska and MOV omit an undetermined language
           assert.equal(text.disposition.default, 1);
-          // The track decodes back to the same cue the server sealed.
+          // The track decodes back to the same cue the server sealed, timed against the picture: Matroska
+          // shifts every stream by a copied AAC track's priming (21 ms), so the cue's absolute time moves
+          // with the video and only its offset from the first frame is meaningful.
           const { stdout } = await execFileAsync('ffmpeg', ['-v', 'error', '-i', output, '-map', '0:s:0', '-c:s', 'srt', '-f', 'srt', 'pipe:1']);
-          assert.match(stdout, /00:00:00,100 --> 00:00:00,600\r?\nHello/);
+          const cue = /(\d\d):(\d\d):(\d\d),(\d{3}) --> (\d\d):(\d\d):(\d\d),(\d{3})\r?\nHello/.exec(stdout);
+          assert.ok(cue, `no "Hello" cue in ${JSON.stringify(stdout)}`);
+          const seconds = (h, m, s, ms) => Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(ms) / 1000;
+          const { stdout: startTime } = await execFileAsync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=start_time', '-of', 'csv=p=0', output]);
+          const pictureStart = Number(startTime.trim()) || 0;
+          near(seconds(...cue.slice(1, 5)) - pictureStart, 0.1, 0.002);
+          near(seconds(...cue.slice(5, 9)) - pictureStart, 0.6, 0.002);
         } else {
           assert.equal(text, undefined);
         }
