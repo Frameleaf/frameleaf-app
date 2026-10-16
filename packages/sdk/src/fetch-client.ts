@@ -5890,6 +5890,9 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type DesktopMemberApprovalDto = {
+    enabled: boolean;
+};
 export type DesktopCapabilitiesDto = {
     enrollmentPolicy: DesktopEnrollmentPolicy;
     features: {
@@ -21024,6 +21027,35 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Read desktop processing approval for a member account
+ */
+export function readDesktopMemberApproval({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopMemberApprovalDto;
+    }>(`/desktop/accounts/${encodeURIComponent(id)}/approval`, {
+        ...opts
+    }));
+}
+/**
+ * Approve or remove desktop processing for a member account
+ */
+export function setDesktopMemberApproval({ id, desktopMemberApprovalDto }: {
+    id: string;
+    desktopMemberApprovalDto: DesktopMemberApprovalDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopMemberApprovalDto;
+    }>(`/desktop/accounts/${encodeURIComponent(id)}/approval`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: desktopMemberApprovalDto
+    })));
+}
+/**
  * Get desktop capabilities
  */
 export function getDesktopCapabilities(opts?: Oazapfts.RequestOpts) {
@@ -31170,7 +31202,8 @@ export enum Unit {
     Minute = "minute"
 }
 export enum DesktopEnrollmentPolicy {
-    Administrators = "administrators"
+    Administrators = "administrators",
+    AccountApproved = "account-approved"
 }
 export enum DesktopArchitecture {
     Arm64 = "arm64",

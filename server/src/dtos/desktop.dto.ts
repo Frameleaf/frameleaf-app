@@ -59,9 +59,11 @@ export class DesktopCapabilitiesDto extends createZodDto(
       sources: z.literal(false),
       nativeHost: z.literal(false),
     }),
-    enrollmentPolicy: z.literal('administrators').meta({ id: 'DesktopEnrollmentPolicy' }),
+    enrollmentPolicy: z.enum(['administrators', 'account-approved']).meta({ id: 'DesktopEnrollmentPolicy' }),
   }),
 ) {}
+
+export class DesktopMemberApprovalDto extends createZodDto(z.strictObject({ enabled: z.boolean() })) {}
 
 /** A fixed, language-independent proof binds enrollment to this server and authenticated account. */
 export const enrollmentMessage = (serverId: string, accountId: string, dto: DesktopEnrollmentDto): string =>

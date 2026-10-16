@@ -6,8 +6,11 @@ import type {
   DesktopQualificationTables,
   DesktopWorkerQualificationTable,
 } from 'src/schema/tables/desktop-worker-qualification.table.js';
+import { SystemMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
+import { desktopAccountPermitted, desktopAssistancePolicySchema } from 'src/utils/desktop-assistance-policy.js';
+import { EFFECTIVE_CONFIG_LOCK } from 'src/utils/effective-config-lock.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopWorkerTables = { desktop_worker_session: DesktopWorkerSessionTable };
@@ -22,15 +25,26 @@ export type DesktopWorkerSession = Selectable<DesktopWorkerSessionTable>;
 const expires = sql<Date>`clock_timestamp() + interval '1 hour'`;
 const models = z.array(z.string().min(1).max(256)).max(64);
 
+export async function desktopWorkerAccountAllowed(db: QueryExecutorProvider, ownerId: string, isAdmin: boolean) {
+  const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
+    WHERE key=${SystemMetadataKey.FrameleafDesktopAssistance}`.execute(db);
+  const parsed = desktopAssistancePolicySchema.safeParse(rows[0]?.value ?? { version: 1, accounts: {} });
+  return parsed.success && desktopAccountPermitted(parsed.data, ownerId, isAdmin);
+}
+
 async function lockWorkerAuthority(
   db: QueryExecutorProvider,
   grant: Omit<DesktopWorkerGrant, 'credentialHash'>,
   credentialHash: Buffer | null,
 ): Promise<{ ownerId: string; modelKeys: string[]; expiresAt: Date } | undefined> {
+  await sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${EFFECTIVE_CONFIG_LOCK},0))`.execute(db);
   const credential = credentialHash === null ? sql`true` : sql`w."tokenHash"=${credentialHash}`;
-  const { rows: owners } = await sql<{ id: string }>`SELECT u.id FROM "user" u JOIN desktop_device d ON d."userId"=u.id
-    WHERE d.id=${grant.deviceId} AND u."isAdmin" AND u."deletedAt" IS NULL FOR SHARE OF u`.execute(db);
-  if (owners.length !== 1) return;
+  const { rows: owners } = await sql<{
+    id: string;
+    isAdmin: boolean;
+  }>`SELECT u.id, u."isAdmin" FROM "user" u JOIN desktop_device d ON d."userId"=u.id
+    WHERE d.id=${grant.deviceId} AND u."deletedAt" IS NULL FOR SHARE OF u`.execute(db);
+  if (owners.length !== 1 || !(await desktopWorkerAccountAllowed(db, owners[0].id, owners[0].isAdmin))) return;
   const { rows: devices } = await sql`SELECT id FROM desktop_device WHERE id=${grant.deviceId}
     AND "userId"=${owners[0].id} AND "authorizationEpoch"=${grant.authorizationEpoch}
     AND state='preparing' AND mode='client-worker' AND "revokedAt" IS NULL FOR UPDATE`.execute(db);
@@ -139,19 +153,22 @@ export class DesktopWorkerRepository {
     return true;
   }
 
-  device(userId: string, id: string) {
-    return this.db
+  async device(userId: string, id: string) {
+    const row = await this.db
       .selectFrom('desktop_device as device')
       .innerJoin('user as owner', 'owner.id', 'device.userId')
       .selectAll('device')
+      .select('owner.isAdmin')
       .where('device.id', '=', id)
       .where('device.userId', '=', userId)
       .where('device.state', '=', 'preparing')
       .where('device.mode', '=', 'client-worker')
       .where('device.revokedAt', 'is', null)
-      .where('owner.isAdmin', '=', true)
       .where('owner.deletedAt', 'is', null)
       .executeTakeFirst();
+    if (!row || !(await desktopWorkerAccountAllowed(this.db, userId, row.isAdmin))) return;
+    const { isAdmin: _isAdmin, ...device } = row;
+    return device;
   }
 
   issue(input: {
@@ -164,11 +181,13 @@ export class DesktopWorkerRepository {
     if (input.tokenHash.length !== 32) throw new Error('desktop_worker_hash_invalid');
     const modelKeys = models.parse(input.modelKeys);
     return this.db.transaction().execute(async (db) => {
+      await sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${EFFECTIVE_CONFIG_LOCK},0))`.execute(db);
       const { rows: owners } = await sql<{
         id: string;
-      }>`SELECT u.id FROM "user" u JOIN desktop_device d ON d."userId"=u.id
-        WHERE d.id=${input.deviceId} AND u."isAdmin" AND u."deletedAt" IS NULL FOR SHARE OF u`.execute(db);
-      if (owners.length !== 1) return;
+        isAdmin: boolean;
+      }>`SELECT u.id, u."isAdmin" FROM "user" u JOIN desktop_device d ON d."userId"=u.id
+        WHERE d.id=${input.deviceId} AND u."deletedAt" IS NULL FOR SHARE OF u`.execute(db);
+      if (owners.length !== 1 || !(await desktopWorkerAccountAllowed(db, owners[0].id, owners[0].isAdmin))) return;
       const photo = await db
         .selectFrom('session')
         .select('id')
@@ -202,14 +221,15 @@ export class DesktopWorkerRepository {
     });
   }
 
-  session(id: string, tokenHash: Buffer) {
-    return this.db
+  async session(id: string, tokenHash: Buffer) {
+    const row = await this.db
       .selectFrom('desktop_worker_session as worker')
       .innerJoin('desktop_device as device', 'device.id', 'worker.deviceId')
       .innerJoin('user as owner', 'owner.id', 'device.userId')
       .innerJoin('session as photo', 'photo.id', 'worker.photoSessionId')
       .selectAll('worker')
       .select('device.publicKey')
+      .select(['owner.id as ownerId', 'owner.isAdmin'])
       .where('worker.id', '=', id)
       .where('worker.tokenHash', '=', tokenHash)
       .where('worker.revokedAt', 'is', null)
@@ -219,12 +239,14 @@ export class DesktopWorkerRepository {
       .where('device.state', '=', 'preparing')
       .where('device.mode', '=', 'client-worker')
       .where('device.revokedAt', 'is', null)
-      .where('owner.isAdmin', '=', true)
       .where('owner.deletedAt', 'is', null)
       .where((eb) =>
         eb.or([eb('photo.expiresAt', 'is', null), eb('photo.expiresAt', '>', sql<Date>`clock_timestamp()`)]),
       )
       .executeTakeFirst();
+    if (!row || !(await desktopWorkerAccountAllowed(this.db, row.ownerId, row.isAdmin))) return;
+    const { ownerId: _ownerId, isAdmin: _isAdmin, ...session } = row;
+    return session;
   }
 
   async consume(id: string, tokenHash: Buffer, sequence: number): Promise<DesktopWorkerGrant | undefined> {

@@ -21,6 +21,7 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import AccountPreferencesEditor from '$lib/components/frameleaf/AccountPreferencesEditor.svelte';
   import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
+  import DesktopMemberApproval from '$lib/components/frameleaf/DesktopMemberApproval.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import {
     HISTORY_PAGE_SIZE,
@@ -281,6 +282,9 @@
   </div>
 {:else if tab === 'security'}
   <AccountSecurityPanel {user} {sessions} />
+  {#if !user.isAdmin && !user.deletedAt}
+    <DesktopMemberApproval userId={user.id} />
+  {/if}
 {:else if tab === 'activity'}
   {#if history.length > 0}
     <ol class="resource-history">

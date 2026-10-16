@@ -37,12 +37,13 @@ describe('desktop enrollment authority', () => {
     });
   });
   let service: DesktopDeviceService;
-  const policy = { enable: vi.fn() };
+  const policy = { enable: vi.fn(), read: vi.fn() };
   const repository = { enroll: vi.fn(), list: vi.fn(), revoke: vi.fn(), endSession: vi.fn() };
   const metadata = { get: vi.fn().mockResolvedValue({ id: 'server' }) };
   beforeEach(() => {
     vi.clearAllMocks();
     policy.enable.mockResolvedValue(undefined);
+    policy.read.mockResolvedValue(undefined);
     service = new DesktopDeviceService(repository as never, metadata as never, policy as never);
   });
   it('rejects unknown protocols and unbounded or newline-bearing display names', () => {
@@ -89,6 +90,21 @@ describe('desktop enrollment authority', () => {
       await service.enroll({ user: { id: accountId, isAdmin: false }, session: { id: 'session' } } as never, request()),
     ).toMatchObject({ state: 'awaiting-approval' });
     expect(policy.enable).not.toHaveBeenCalled();
+  });
+  it('prepares an explicitly approved member without granting other accounts or administrator powers', async () => {
+    repository.enroll.mockImplementation((row) =>
+      Promise.resolve({ ...row, id: 'device', revokedAt: null, createdAt: new Date() }),
+    );
+    policy.read.mockResolvedValue({ revisionId: installationId, memberApproved: true });
+    const member = { user: { id: accountId, isAdmin: false }, session: { id: 'session' } } as never;
+    expect(await service.enroll(member, request())).toMatchObject({ state: 'preparing' });
+    expect(await service.capabilities(member)).toMatchObject({
+      enrollmentPolicy: 'account-approved',
+      features: { worker: false },
+    });
+    expect(policy.enable).not.toHaveBeenCalled();
+    policy.read.mockResolvedValue({ revisionId: installationId });
+    expect(await service.enroll(member, request())).toMatchObject({ state: 'awaiting-approval' });
   });
   it('refuses an enrollment replayed for another account or server', async () => {
     await expect(

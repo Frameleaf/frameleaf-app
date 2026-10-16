@@ -45,9 +45,15 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.destroy();
 });
-const setup = async (withQualification = true, profile?: DesktopModelProfile) => {
+const setup = async (withQualification = true, profile?: DesktopModelProfile, member = false) => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-  const { user } = await ctx.newUser({ isAdmin: true });
+  const { user } = await ctx.newUser({ isAdmin: !member });
+  const policies = new DesktopAssistancePolicyService(new SystemMetadataRepository(db));
+  if (member) {
+    const { user: administrator } = await ctx.newUser({ isAdmin: true });
+    const { session } = await ctx.newSession({ userId: administrator.id });
+    await policies.setMemberApproval({ user: administrator, session } as never, user.id, true);
+  } else await policies.enable(user.id);
   const { session: photoSession } = await ctx.newSession({ userId: user.id });
   const modelKey = profile?.modelKey ?? randomUUID();
   const devices = new DesktopDeviceRepository(db);
@@ -97,6 +103,17 @@ const setup = async (withQualification = true, profile?: DesktopModelProfile) =>
   if (withQualification) await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
   return { sut: new DesktopMlRepository(db), second: new DesktopMlRepository(db), devices, grants, request };
 };
+
+it('lets an approved member claim its own work and never another account with the same model', async () => {
+  const own = await setup(true, undefined, true);
+  const other = await setup();
+  await own.sut.create({ ...other.request, modelKey: own.request.modelKey });
+  expect(await own.sut.claim(own.grants[0], [own.request.modelKey])).toBeUndefined();
+  const task = await own.sut.create(own.request);
+  const claimed = await own.sut.claim(own.grants[0], [own.request.modelKey]);
+  expect(claimed?.task.id).toBe(task.id);
+  expect(await own.sut.hasLiveAttempt(task.id)).toBe(true);
+});
 
 it('two repository instances racing claim one task once and preserve scoped input', async () => {
   const { sut, second, grants, request } = await setup();

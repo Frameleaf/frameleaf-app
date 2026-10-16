@@ -3,6 +3,7 @@ import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { desktopSessionMessage, desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
+import { lockDesktopWorker, lockDesktopWorkerForAdoption } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -11,6 +12,7 @@ import {
   up as addPresence,
 } from 'src/schema/migrations/2100000002980-DesktopWorkerPresence.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
@@ -29,6 +31,7 @@ afterAll(async () => {
 const setup = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser({ isAdmin: true });
+  await new DesktopAssistancePolicyService(new SystemMetadataRepository(db)).enable(user.id);
   const photo = await db
     .insertInto('session')
     .values({
@@ -64,6 +67,67 @@ const setup = async () => {
   };
   return { sut: new DesktopWorkerRepository(db), second: new DesktopWorkerRepository(db), devices, user, input, keys };
 };
+it('requires explicit member approval and fences old credentials across removal and reapproval', async () => {
+  const { sut, devices, user, input } = await setup();
+  const administrator = await setup();
+  const policies = new DesktopAssistancePolicyService(new SystemMetadataRepository(db));
+  const auth = { user: administrator.user, session: { id: administrator.input.photoSessionId } } as never;
+  await db.updateTable('user').set({ isAdmin: false }).where('id', '=', user.id).execute();
+  expect(await sut.issue(input)).toBeUndefined();
+  await policies.setMemberApproval(auth, user.id, true);
+  expect(await sut.issue(input)).toBeUndefined();
+  const resume = async () => {
+    const row = (await devices.list(user.id))[0];
+    return (await devices.enroll({
+      userId: row.userId,
+      installationId: row.installationId,
+      publicKey: row.publicKey,
+      name: row.name,
+      platform: row.platform,
+      architecture: row.architecture,
+      mode: row.mode,
+      state: 'preparing',
+    }))!;
+  };
+  const device = await resume();
+  const admitted = { ...input, authorizationEpoch: device.authorizationEpoch };
+  const session = (await sut.issue(admitted))!;
+  const grant = (await sut.consume(session.id, input.tokenHash, 1))!;
+  expect(grant).toBeDefined();
+  const ready = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  const use = db.transaction().execute(async (tx) => {
+    expect(await lockDesktopWorker(tx, grant)).toBeDefined();
+    ready.resolve();
+    await finish.promise;
+  });
+  await ready.promise;
+  let removed = false;
+  const removal = policies.setMemberApproval(auth, user.id, false).then(() => {
+    removed = true;
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(removed).toBe(false);
+  } finally {
+    finish.resolve();
+  }
+  await use;
+  await removal;
+  expect(await sut.session(session.id, input.tokenHash)).toBeUndefined();
+  expect(await sut.consume(session.id, input.tokenHash, 2)).toBeUndefined();
+  expect(await sut.rotate(grant, input.tokenHash, Buffer.alloc(32, 9))).toBeUndefined();
+  await db.transaction().execute(async (tx) => {
+    expect(await lockDesktopWorker(tx, grant)).toBeUndefined();
+    expect(await lockDesktopWorkerForAdoption(tx, grant)).toBeUndefined();
+  });
+  await policies.setMemberApproval(auth, user.id, true);
+  const fresh = await resume();
+  expect(fresh.authorizationEpoch).toBeGreaterThan(device.authorizationEpoch);
+  expect(await sut.session(session.id, input.tokenHash)).toBeUndefined();
+  expect(await sut.issue(admitted)).toBeUndefined();
+  expect(await sut.issue({ ...input, authorizationEpoch: fresh.authorizationEpoch })).toBeDefined();
+});
 it('replaces the sign-in association but keeps it through token renewal', async () => {
   const { sut, input } = await setup();
   const first = (await sut.issue(input))!;

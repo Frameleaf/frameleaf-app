@@ -171,7 +171,7 @@ it.skipIf(!desktop || !pack || !cache)(
       await metadata.withConfigTransaction((metadataRepo) =>
         sut.updateConfig(config, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
       );
-      const { user } = await ctx.newUser({ isAdmin: true });
+      const { user } = await ctx.newUser({ isAdmin: !ocr });
       const { session: photo } = await ctx.newSession({ userId: user.id });
       const index = new DesktopClipIndexRepository(db);
       const routes = new MlDestinationRepository(db);
@@ -193,7 +193,11 @@ it.skipIf(!desktop || !pack || !cache)(
       ml.setup(config.machineLearning);
       const broker = new DesktopMlRepository(db);
       const policies = new DesktopAssistancePolicyService(metadata);
-      await policies.enable(user.id);
+      if (ocr) {
+        const { user: administrator } = await ctx.newUser({ isAdmin: true });
+        const { session } = await ctx.newSession({ userId: administrator.id });
+        await policies.setMemberApproval({ user: administrator, session } as never, user.id, true);
+      } else await policies.enable(user.id);
       const pool = new DesktopMlService(broker, index, policies, routes, ml);
       pool.onBootstrap();
       const workers = new DesktopWorkerRepository(db);

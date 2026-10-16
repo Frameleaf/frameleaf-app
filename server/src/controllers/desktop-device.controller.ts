@@ -1,12 +1,18 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { DesktopSessionDto, DesktopSessionRequestDto } from 'src/dtos/desktop-worker.dto.js';
-import { DesktopCapabilitiesDto, DesktopDeviceDto, DesktopEnrollmentDto } from 'src/dtos/desktop.dto.js';
-import { ApiTag } from 'src/enum.js';
+import {
+  DesktopCapabilitiesDto,
+  DesktopDeviceDto,
+  DesktopEnrollmentDto,
+  DesktopMemberApprovalDto,
+} from 'src/dtos/desktop.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -18,7 +24,26 @@ export class DesktopDeviceController {
   constructor(
     private service: DesktopDeviceService,
     private workerAuth: DesktopWorkerAuthService,
+    private policy: DesktopAssistancePolicyService,
   ) {}
+
+  @Get('accounts/:id/approval')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({ summary: 'Read desktop processing approval for a member account', history: history() })
+  readDesktopMemberApproval(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<DesktopMemberApprovalDto> {
+    return this.policy.readMemberApproval(auth, id);
+  }
+
+  @Put('accounts/:id/approval')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @Endpoint({ summary: 'Approve or remove desktop processing for a member account', history: history() })
+  setDesktopMemberApproval(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: DesktopMemberApprovalDto,
+  ): Promise<DesktopMemberApprovalDto> {
+    return this.policy.setMemberApproval(auth, id, dto.enabled);
+  }
 
   @Get('capabilities')
   @Authenticated({ permission: false })

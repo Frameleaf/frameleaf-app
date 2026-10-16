@@ -10,8 +10,10 @@ import {
 } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { DesktopQualificationReceipt, type DesktopRuntimeIdentity } from 'src/utils/desktop-qualification.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -42,6 +44,7 @@ const runtime = {
 const setup = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser({ isAdmin: true });
+  await new DesktopAssistancePolicyService(new SystemMetadataRepository(db)).enable(user.id);
   const { session: photo } = await ctx.newSession({ userId: user.id });
   const device = (await new DesktopDeviceRepository(db).enroll({
     userId: user.id,

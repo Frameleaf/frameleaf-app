@@ -35,6 +35,7 @@ afterAll(async () => {
 it('dispatches synthetic NAS input through signed HTTP claims and retains idempotent completion after consumption', async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser({ isAdmin: true });
+  await new DesktopAssistancePolicyService(new SystemMetadataRepository(db)).enable(user.id);
   const { session: photo } = await ctx.newSession({ userId: user.id });
   const keys = generateKeyPairSync('ed25519');
   const device = (await new DesktopDeviceRepository(db).enroll({

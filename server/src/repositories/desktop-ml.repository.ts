@@ -6,6 +6,7 @@ import z from 'zod';
 import {
   type DesktopWorkerGrant,
   type DesktopWorkerTables,
+  desktopWorkerAccountAllowed,
   lockDesktopWorker,
   lockDesktopWorkerForAdoption,
 } from 'src/repositories/desktop-worker.repository.js';
@@ -354,8 +355,8 @@ export class DesktopMlRepository {
   }
 
   async hasLiveAttempt(id: string): Promise<boolean> {
-    const { rows } = await sql<{ live: boolean }>`SELECT EXISTS (
-      SELECT 1 FROM desktop_ml_task t
+    const { rows } = await sql<{ ownerId: string; isAdmin: boolean }>`
+      SELECT u.id AS "ownerId", u."isAdmin" FROM desktop_ml_task t
       JOIN desktop_ml_attempt a ON a.id=t."attemptId" AND a."taskId"=t.id AND a.generation=t.generation
       JOIN desktop_worker_session w ON w.id=a."workerSessionId" AND w."deviceId"=a."deviceId"
       JOIN desktop_device d ON d.id=a."deviceId"
@@ -371,9 +372,9 @@ export class DesktopMlRepository {
         AND w."lastSeenAt">clock_timestamp()-interval '90 seconds'
         AND w."modelKeys" @> jsonb_build_array(t."modelKey") AND q."expiresAt">clock_timestamp()
         AND d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
-        AND u."isAdmin" AND u."deletedAt" IS NULL AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
-    ) AS live`.execute(this.db);
-    return rows[0]?.live;
+        AND u."deletedAt" IS NULL AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
+      LIMIT 1`.execute(this.db);
+    return !!rows[0] && desktopWorkerAccountAllowed(this.db, rows[0].ownerId, rows[0].isAdmin);
   }
 
   result(id: string): Promise<TaskMetadata | undefined> {

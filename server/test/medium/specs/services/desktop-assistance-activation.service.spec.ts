@@ -57,6 +57,9 @@ const setup = async (consent = true) => {
     mode: 'client-worker',
     state: 'preparing',
   }))!;
+  const metadata = new SystemMetadataRepository(db);
+  const policies = new DesktopAssistancePolicyService(metadata);
+  await policies.enable(user.id);
   const workers = new DesktopWorkerRepository(db);
   const session = (await workers.issue({
     deviceId: device.id,
@@ -71,9 +74,10 @@ const setup = async (consent = true) => {
     config: profile.spec.entries,
     inputKind: 'image',
   });
-  const metadata = new SystemMetadataRepository(db);
-  const policies = new DesktopAssistancePolicyService(metadata);
-  if (consent) await policies.enable(user.id);
+  if (!consent)
+    await metadata.withConfigTransaction((metadata) =>
+      metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
+    );
   const routes = new MlDestinationRepository(db);
   const destination = await routes.create({
     kind: MlDestinationKind.Local,
@@ -136,7 +140,7 @@ it('keeps the index unadmitted and scope empty when consent is absent', async ()
     'desktop_pool_policy_required',
   );
   expect(await f.index.getActive()).toBeUndefined();
-  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
+  expect(await f.workers.session(f.session.id, f.session.tokenHash)).toBeUndefined();
 });
 it.each(['revoke', 'expiry', 'credential'])(
   'rolls back index admission when %s invalidates the helper before grant',
@@ -144,12 +148,17 @@ it.each(['revoke', 'expiry', 'credential'])(
     const f = await setup();
     f.proof.assertCurrent.mockImplementationOnce(async () => {
       if (reason === 'revoke') await f.devices.revoke(f.user.id, f.device.id);
-      else if (reason === 'credential') await f.workers.rotate(f.grant, f.session.tokenHash, Buffer.alloc(32, 4));
-      else
+      else if (reason === 'expiry')
         await sql`UPDATE desktop_worker_qualification SET "createdAt"=now()-interval '2 hours', "expiresAt"=now()-interval '1 hour' WHERE id=${f.qualification.id}::uuid`.execute(
           db,
         );
     });
+    if (reason === 'credential') {
+      f.nas.verify.mockImplementationOnce(async () => {
+        await f.workers.rotate(f.grant, f.session.tokenHash, Buffer.alloc(32, 4));
+        return f.proof;
+      });
+    }
     await expect(f.service.activate(f.grant, f.qualification, space.spaceKey)).rejects.toThrow(
       'desktop_worker_activation_invalid',
     );
@@ -172,7 +181,7 @@ it('rechecks consent after NAS verification before making any grant', async () =
     'desktop_pool_policy_changed',
   );
   expect(await f.index.getActive()).toBeUndefined();
-  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
+  expect(await f.workers.session(f.session.id, f.session.tokenHash)).toBeUndefined();
 });
 it('preserves a route pinned while qualification was in progress', async () => {
   const f = await setup();

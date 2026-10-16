@@ -26,7 +26,10 @@ export class DesktopDeviceService {
     return {
       protocolVersion: 1,
       serverId: await stableServerId({ systemMetadataRepository: this.systemMetadataRepository }),
-      enrollmentPolicy: 'administrators',
+      enrollmentPolicy:
+        !auth.user.isAdmin && (await this.policy.read(auth.user.id))?.memberApproved === true
+          ? 'account-approved'
+          : 'administrators',
       features: { enrollment: true, worker: false, workerSession: true, sources: false, nativeHost: false },
     };
   }
@@ -51,6 +54,7 @@ export class DesktopDeviceService {
     ) {
       throw new ForbiddenException('device_proof_invalid');
     }
+    const permitted = auth.user.isAdmin || (await this.policy.read(auth.user.id))?.memberApproved === true;
     const row = await this.repository.enroll({
       userId: auth.user.id,
       installationId: dto.installationId,
@@ -59,7 +63,7 @@ export class DesktopDeviceService {
       platform: dto.platform,
       architecture: dto.architecture,
       mode: dto.mode,
-      state: auth.user.isAdmin ? 'preparing' : 'awaiting-approval',
+      state: permitted ? 'preparing' : 'awaiting-approval',
     });
     if (!row) throw new ConflictException('desktop_identity_revoked_or_changed');
     if (auth.user.isAdmin && dto.mode === 'client-worker') await this.policy.enable(auth.user.id);

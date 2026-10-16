@@ -37,8 +37,8 @@ export class DesktopWorkerAuthService {
   ) {}
 
   async issue(auth: AuthDto, input: DesktopSessionRequestDto): Promise<DesktopSessionDto> {
-    if (!auth.session || auth.apiKey || auth.sharedLink || auth.system || !auth.user.isAdmin)
-      throw new ForbiddenException('desktop_worker_administrator_photo_session_required');
+    if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
+      throw new ForbiddenException('desktop_worker_photo_session_required');
     const request = DesktopSessionRequestSchema.parse(input);
     const device = await this.repository.device(auth.user.id, request.deviceId);
     const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });

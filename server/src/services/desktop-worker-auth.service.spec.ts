@@ -51,17 +51,23 @@ beforeEach(() => {
   });
   service = new DesktopWorkerAuthService(repository as never, metadata as never);
 });
-it('requires an administrator photo session and possession of the installation key for initial issuance', async () => {
+it('requires an admitted device, photo session and possession of the installation key for initial issuance', async () => {
   const result = await service.issue(auth, initial());
   expect(result).toMatchObject({ sessionId, authorizationEpoch: 7, modelKeys: [], scopes: ['library-inference'] });
   expect(result.workerToken).toMatch(/^[a-f0-9]{64}$/);
   expect(repository.issue.mock.calls[0][0].tokenHash).not.toEqual(Buffer.from(result.workerToken));
+  repository.device.mockResolvedValueOnce(undefined);
   await expect(
     service.issue({ user: { id: 'account', isAdmin: false }, session: {} } as never, initial()),
   ).rejects.toThrow();
   await expect(
     service.issue({ user: { id: 'account', isAdmin: true }, apiKey: {} } as never, initial()),
   ).rejects.toThrow();
+});
+it('issues only inference scope to a policy-admitted member device', async () => {
+  const member = { user: { id: 'account', isAdmin: false }, session: { id: 'photo-session' } } as never;
+  expect(await service.issue(member, initial())).toMatchObject({ scopes: ['library-inference'], modelKeys: [] });
+  expect(repository.device).toHaveBeenCalledWith('account', deviceId);
 });
 it('rejects cross-server, cross-account and changed-device issuance proofs', async () => {
   await expect(service.issue(auth, { ...initial(), deviceId: sessionId })).rejects.toThrow();
