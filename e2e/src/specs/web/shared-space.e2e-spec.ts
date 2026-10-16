@@ -8,6 +8,7 @@ import {
   removeUserFromAlbum,
   setUserOnboarding,
   updateAlbumUser,
+  updateMyPreferences,
 } from '@frameleaf/sdk';
 import { expect, test } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
@@ -92,7 +93,9 @@ test.describe('Shared spaces', () => {
     await page.goto(`/sharing/${space.id}`);
     // SHARING-P5: the choice is a dialog the Photos tab's button opens; progress stays on the tab.
     const dialog = page.getByRole('dialog', { name: 'Add everything matching' });
-    const section = page.getByRole('region', { name: 'Bulk operations' });
+    // The Photos tab's strip. The (closed, see-through) selection bar further down carries the same
+    // session operations, so it is the first of two.
+    const section = page.getByRole('region', { name: 'Bulk operations' }).first();
     // The button works once the page is interactive; a click before hydration does nothing.
     await expect(async () => {
       await page.getByRole('button', { name: 'Add matching…' }).click();
@@ -147,6 +150,11 @@ test.describe('Shared spaces', () => {
     await utils.createFace({ assetId: editorAsset.id, personGroupId: nana.id });
 
     const name = async (accessToken: string, personName: string, spaceName: string) => {
+      // ACCOUNT-P2: a space suggests your own people only once you turn that on (off by default).
+      await updateMyPreferences(
+        { userPreferencesUpdateDto: { people: { suggestInSpaces: true } } },
+        { headers: asBearerAuth(accessToken) },
+      );
       const context = await browser.newContext();
       await utils.setAuthCookies(context, accessToken);
       const page = await context.newPage();
