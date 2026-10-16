@@ -1098,7 +1098,8 @@
       id: 'studio',
       label: $t('frameleaf_selection_open_in_studio'),
       icon: mdiOpenInNew,
-      // Not the accent button: handing a selection to Studio is one option among several.
+      // The capsule's one accent button, as in the prototype (App.jsx `primary: true`).
+      primary: true,
       disabled: studioIds.length === 0,
       onClick: openInStudio,
     },
@@ -1996,7 +1997,8 @@
     transform-origin: left bottom;
   }
   @supports (animation-timeline: scroll()) {
-    .fl-library.has-sticky-toolbar :global(.fl-timeline-scroll) {
+    /* The Years and Months cards scroll in their own scroller (TimelineCards), the header with them. */
+    .fl-library.has-sticky-toolbar :global(:is(.fl-timeline-scroll, .fl-tl-cards-scroll)) {
       scroll-timeline: --fl-library block;
     }
     .has-sticky-toolbar .fl-library-header :global(h1) {

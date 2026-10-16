@@ -197,6 +197,8 @@
     tileLayout === 'timeline' ? null : cellGridOptions(tileLayout, thumbnailSize, libraryGridPreferences.phone),
   );
 
+  const groupHeaderLead = $derived(maxMd ? 8 : 16);
+
   $effect(() => {
     if (cells) {
       // One gutter between months, so the grid reads as one surface (apple-style.css `gap: 2px`).
@@ -207,18 +209,21 @@
     // manager reserves above each day's rows is exactly what the day group draws there: its header
     // in the Timeline, a plain gap where there is none.
     // Thumbnail size scales the row height too; the default size keeps the default height.
+    // A header's height includes `groupHeaderLead` above its title, the room between one group's
+    // last row and the next group (template `.tl-group` margin-bottom; 24px between sections, 16px
+    // on phones).
     timelineManager.setLayoutOptions(
       maxMd
         ? {
             rowHeight: timelineRowHeight(100, thumbnailSize),
-            headerHeight: showDayHeaders ? 32 : 8,
+            headerHeight: showDayHeaders ? 32 + groupHeaderLead : 8,
             gap: 8,
             fillRowWidth: true,
             captionHeight: rowCaptionHeight,
           }
         : {
             rowHeight: timelineRowHeight(235, thumbnailSize),
-            headerHeight: showDayHeaders ? 48 : 12,
+            headerHeight: showDayHeaders ? 48 + groupHeaderLead : 12,
             gap: 12,
             fillRowWidth: true,
             captionHeight: rowCaptionHeight,
@@ -1225,7 +1230,7 @@
 {#snippet top()}
   {@render header?.()}
   {#if onGroupingChange && showDayHeaders}
-    <div class="fl-grouping">
+    <div class="fl-grouping" class:is-flow={!curated}>
       <span class="fl-grouping-hint">
         {$t(isMacPlatform() ? 'frameleaf_library_grouping_hint_mac' : 'frameleaf_library_grouping_hint')}
       </span>
@@ -1250,6 +1255,7 @@
   class:is-groupable={onGroupingChange && showDayHeaders}
   class:is-zoomable={tileLayout !== 'timeline' && tileLayout !== 'list' && !!onThumbnailSizeChange}
   data-testid="frameleaf-timeline"
+  style:--fl-group-header-lead="{groupHeaderLead}px"
   bind:this={root}
 >
   {#if curated && (grouping === 'years' || grouping === 'months')}
@@ -1535,6 +1541,10 @@
     gap: 14px;
     /* Clear of the toolbar band above it (the prototype's `.timeline-library` starts 20px under it). */
     margin-block: var(--fl-space-5) var(--fl-space-3);
+  }
+  /* Over photos the first group header's own lead is the room under the control. */
+  .fl-grouping.is-flow {
+    margin-block-end: 0;
   }
   .fl-grouping-hint {
     /* On the line of the toolbar's count. */
