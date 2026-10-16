@@ -326,6 +326,12 @@ describe(AssetService.name, () => {
   });
 
   describe('update', () => {
+    beforeEach(() => {
+      mocks.asset.withLivePhotoUpdate.mockImplementation((_id, _motion, write) =>
+        write(mocks.asset as never, mocks.access as never),
+      );
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+    });
     it('should require asset write access for the id', async () => {
       await expect(
         sut.update(authStub.admin, 'asset-1', { visibility: AssetVisibility.Timeline }),
@@ -632,10 +638,11 @@ describe(AssetService.name, () => {
 
     it('should link a live video', async () => {
       const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Timeline });
-      const stillAsset = AssetFactory.create();
+      const stillAsset = AssetFactory.from().owner(motionAsset.owner).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([stillAsset.id]));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(stillAsset));
+      mocks.asset.getById.mockImplementation(async (id) =>
+        getForAsset(id === motionAsset.id ? motionAsset : stillAsset),
+      );
       mocks.asset.update.mockResolvedValue(getForAsset(stillAsset));
       const auth = AuthFactory.from(motionAsset.owner).build();
 
@@ -658,12 +665,10 @@ describe(AssetService.name, () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video, visibility: AssetVisibility.Hidden })
         .owner(auth.user)
         .build();
-      const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
-      const unlinkedAsset = AssetFactory.create();
+      const asset = AssetFactory.from({ livePhotoVideoId: motionAsset.id }).owner(auth.user).build();
+      const unlinkedAsset = { ...asset, livePhotoVideoId: null };
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(unlinkedAsset));
+      mocks.asset.getById.mockImplementation(async (id) => getForAsset(id === motionAsset.id ? motionAsset : asset));
       mocks.asset.update.mockResolvedValueOnce(getForAsset(unlinkedAsset));
 
       await sut.update(auth, asset.id, { livePhotoVideoId: null });
@@ -693,6 +698,227 @@ describe(AssetService.name, () => {
 
       expect(mocks.asset.update).not.toHaveBeenCalled();
       expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Live Photo edit commit', () => {
+    const auth = AuthFactory.create();
+    type Row = ReturnType<typeof getForAsset> & { isLocked?: boolean };
+    let rows: Map<string, Row>;
+    let committed: boolean;
+    let failing: string | undefined;
+    let revoked: boolean;
+    let exif: string | undefined;
+    let effects: boolean[];
+
+    beforeEach(() => {
+      rows = new Map(
+        [
+          AssetFactory.from({ id: 'photo', ownerId: auth.user.id, livePhotoVideoId: 'old' }).build(),
+          AssetFactory.from({ id: 'video', ownerId: auth.user.id, type: AssetType.Video }).build(),
+          AssetFactory.from({
+            id: 'old',
+            ownerId: auth.user.id,
+            type: AssetType.Video,
+            visibility: AssetVisibility.Hidden,
+          }).build(),
+        ].map((asset) => [asset.id, getForAsset(asset)]),
+      );
+      committed = false;
+      failing = undefined;
+      revoked = false;
+      exif = undefined;
+      effects = [];
+      mocks.access.asset.checkOwnerAccess.mockImplementation(async () => new Set(revoked ? [] : ['photo']));
+      mocks.asset.getById.mockImplementation(async (id) => rows.get(id));
+      mocks.asset.getByIds.mockImplementation(async (ids) => ids.flatMap((id) => rows.get(id) ?? []));
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+      mocks.asset.findLockGroupIds.mockImplementation(async (ids) => ids);
+      mocks.asset.update.mockImplementation(async (update) => {
+        const row = rows.get(update.id);
+        if (!row) return undefined;
+        Object.assign(row, update);
+        if (failing === (update.id === 'photo' ? 'photo' : 'motion')) throw new Error('write failed');
+        return row;
+      });
+      mocks.asset.upsertExif.mockImplementation(async ({ exif: update }) => {
+        exif = update.description ?? undefined;
+        if (failing === 'exif') throw new Error('write failed');
+        return undefined as never;
+      });
+      mocks.asset.lock.mockImplementation(async (ids) => {
+        for (const id of ids) rows.get(id)!.isLocked = true;
+        return ids;
+      });
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      mocks.job.queue.mockImplementation(async () => {
+        effects.push(committed);
+      });
+      mocks.event.emit.mockImplementation(async () => {
+        effects.push(committed);
+      });
+      Object.assign(mocks.asset, {
+        withLivePhotoUpdate: vi.fn(
+          async (
+            _id: string,
+            _motion: string | null,
+            write: (assets: ServiceMocks['asset'], access: ServiceMocks['access']) => Promise<unknown>,
+          ) => {
+            const before = structuredClone(rows);
+            const beforeExif = exif;
+            try {
+              const result = await write(mocks.asset, mocks.access);
+              if (failing === 'commit') throw new Error('write failed');
+              committed = true;
+              return result;
+            } catch (error) {
+              rows = before;
+              exif = beforeExif;
+              throw error;
+            }
+          },
+        ),
+      });
+    });
+
+    it.each(['motion', 'photo', 'exif', 'commit'])(
+      'rolls back a failed %s stage without publishing effects',
+      async (stage) => {
+        failing = stage;
+        const before = structuredClone(rows);
+        await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video', description: 'changed' })).rejects.toThrow(
+          'write failed',
+        );
+        expect(rows).toEqual(before);
+        expect(exif).toBeUndefined();
+        expect(effects).toEqual([]);
+      },
+    );
+
+    it('rolls back the photo unlink when restoring motion visibility fails', async () => {
+      failing = 'motion';
+      const before = structuredClone(rows);
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: null })).rejects.toThrow('write failed');
+      expect(rows).toEqual(before);
+      expect(effects).toEqual([]);
+    });
+
+    it('commits both parts and EXIF before sidecar jobs and hide/show events', async () => {
+      await sut.update(auth, 'photo', {
+        livePhotoVideoId: 'video',
+        description: 'changed',
+        latitude: null,
+        longitude: null,
+      });
+      expect(rows.get('photo')!.livePhotoVideoId).toBe('video');
+      expect(rows.get('video')!.visibility).toBe(AssetVisibility.Hidden);
+      expect(rows.get('old')!.visibility).toBe(rows.get('photo')!.visibility);
+      expect(exif).toBe('changed');
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['photo', 'old', 'video']);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', { assetId: 'video', userId: auth.user.id });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetShow', { assetId: 'old', userId: auth.user.id });
+      expect(effects.length).toBeGreaterThan(0);
+      expect(effects.every(Boolean)).toBe(true);
+    });
+
+    it('rechecks photo access after acquiring the transaction locks', async () => {
+      mocks.access.asset.checkOwnerAccess.mockImplementationOnce(async () => {
+        revoked = true;
+        return new Set(['photo']);
+      });
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a Locked motion from an ordinary session before any writes', async () => {
+      rows.get('video')!.isLocked = true;
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'type', 'owner', 'deleted', 'still type'])(
+      'refuses a motion link with invalid %s before any writes',
+      async (invalid) => {
+        if (invalid === 'missing') rows.delete('video');
+        if (invalid === 'type') rows.get('video')!.type = AssetType.Image;
+        if (invalid === 'owner') rows.get('video')!.ownerId = 'other-owner';
+        if (invalid === 'deleted') rows.get('video')!.deletedAt = new Date();
+        if (invalid === 'still type') rows.get('photo')!.type = AssetType.Video;
+        await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(effects).toEqual([]);
+      },
+    );
+
+    it('refuses mixed Locked classes even from an elevated session', async () => {
+      rows.get('video')!.isLocked = true;
+      await expect(
+        sut.update({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, 'photo', {
+          livePhotoVideoId: 'video',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('allows an explicit move to Locked without a PIN and locks both old and new motion parts before commit', async () => {
+      rows.get('video')!.isLocked = true;
+      const response = await sut.update(auth, 'photo', {
+        livePhotoVideoId: 'video',
+        visibility: AssetVisibility.Locked,
+      });
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['photo', 'old', 'video'], AssetLockReason.Marked, auth.user.id);
+      expect(response.visibility).toBe(AssetVisibility.Locked);
+      expect(effects.every(Boolean)).toBe(true);
+    });
+
+    it('does not restore a detached motion still referenced by another photo', async () => {
+      mocks.asset.getLivePhotoCount.mockResolvedValue(1);
+      await sut.update(auth, 'photo', { livePhotoVideoId: null });
+      expect(rows.get('old')!.visibility).toBe(AssetVisibility.Hidden);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetShow', expect.anything());
+    });
+
+    it.each([null, 'video'])(
+      'preserves the Android unlink restriction when changing the motion to %s',
+      async (livePhotoVideoId) => {
+        rows.get('old')!.originalPath = StorageCore.getBaseFolder(StorageFolder.EncodedVideo) + '/motion.mp4';
+        await expect(sut.update(auth, 'photo', { livePhotoVideoId })).rejects.toThrow(
+          'Cannot unlink Android motion photos',
+        );
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+        expect(effects).toEqual([]);
+      },
+    );
+
+    it('allows an elevated owner to pair two Locked parts', async () => {
+      rows.get('photo')!.isLocked = true;
+      rows.get('video')!.isLocked = true;
+      await sut.update({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, 'photo', {
+        livePhotoVideoId: 'video',
+      });
+      expect(rows.get('photo')!.livePhotoVideoId).toBe('video');
+      expect(effects.every(Boolean)).toBe(true);
+    });
+
+    it('refuses to detach a Locked motion from an ordinary session', async () => {
+      rows.get('old')!.isLocked = true;
+      await expect(sut.update(auth, 'photo', { livePhotoVideoId: null })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it("never changes another owner's motion when detaching a malformed legacy link", async () => {
+      rows.get('old')!.ownerId = 'other-owner';
+      await sut.update(auth, 'photo', { livePhotoVideoId: 'video', latitude: null, longitude: null });
+      expect(rows.get('old')!.visibility).toBe(AssetVisibility.Hidden);
+      expect(mocks.asset.update).not.toHaveBeenCalledWith(expect.objectContaining({ id: 'old' }));
+      expect(mocks.asset.clearLocation).toHaveBeenCalledWith(['photo', 'video']);
     });
   });
 

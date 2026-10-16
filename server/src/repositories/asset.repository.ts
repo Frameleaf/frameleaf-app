@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import {
   ExpressionBuilder,
   Insertable,
@@ -36,6 +36,7 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -1588,6 +1589,50 @@ export class AssetRepository {
       return updated;
     });
   }
+  async withLivePhotoUpdate<T>(
+    id: string,
+    motionId: string | null,
+    write: (assets: AssetRepository, access: AccessRepository) => Promise<T>,
+  ): Promise<T> {
+    const initial = await this.getById(id);
+    if (!initial) throw new BadRequestException('Asset not found');
+    const roots = [id, initial.livePhotoVideoId, motionId].filter((id): id is string => !!id);
+    const lockedSet = new Set([...roots, ...(await this.findLockGroupIds(roots))].map((id) => id.toLowerCase()));
+    const lockedIds = [...lockedSet].sort();
+    try {
+      return await this.inTransaction(async (tx) => {
+        for (const id of lockedIds) {
+          await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+        }
+        // Group writers may hold rows before metadata locks; refuse contention rather than invert their order.
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', 'in', lockedIds)
+          .orderBy('id')
+          .forUpdate()
+          .noWait()
+          .execute();
+        const assets = new AssetRepository(tx);
+        const current = await assets.getById(id);
+        const group = await assets.findLockGroupIds(roots);
+        if (
+          !current ||
+          current.livePhotoVideoId !== initial.livePhotoVideoId ||
+          group.some((id) => !lockedSet.has(id.toLowerCase()))
+        ) {
+          throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+        }
+        return write(assets, new AccessRepository(tx));
+      });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01')) {
+        throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+      }
+      throw error;
+    }
+  }
+
   /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
   private inTransaction<T>(callback: (tx: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);

@@ -34,6 +34,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getByLibraryIdAndOriginalPath: vitest.fn(),
     deleteAll: vitest.fn(),
     update: vitest.fn(),
+    withLivePhotoUpdate: vitest.fn(),
     remove: vitest.fn(),
     // FL-179: the move runs its filesystem side in the repository's transaction, as the repository does
     moveFile: vitest.fn(

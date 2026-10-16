@@ -1,5 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -191,9 +190,10 @@ export const removeAssets = async (
 
 export type AssetHookRepositories = { asset: AssetRepository; event: EventRepository };
 
-export const onBeforeLink = async (
-  { asset: assetRepository, event: eventRepository }: AssetHookRepositories,
-  { userId, livePhotoVideoId }: { userId: string; livePhotoVideoId: string },
+export const getLivePhotoMotion = async (
+  assetRepository: AssetRepository,
+  userId: string,
+  livePhotoVideoId: string,
 ) => {
   const motionAsset = await assetRepository.getById(livePhotoVideoId);
   if (!motionAsset) {
@@ -205,35 +205,19 @@ export const onBeforeLink = async (
   if (motionAsset.ownerId !== userId) {
     throw new BadRequestException('Live photo video does not belong to the user');
   }
+  return motionAsset;
+};
 
-  if (motionAsset && motionAsset.visibility === AssetVisibility.Timeline) {
+export const onBeforeLink = async (
+  { asset: assetRepository, event: eventRepository }: AssetHookRepositories,
+  { userId, livePhotoVideoId }: { userId: string; livePhotoVideoId: string },
+) => {
+  const motionAsset = await getLivePhotoMotion(assetRepository, userId, livePhotoVideoId);
+
+  if (motionAsset.visibility === AssetVisibility.Timeline) {
     await assetRepository.update({ id: livePhotoVideoId, visibility: AssetVisibility.Hidden });
     await eventRepository.emit('AssetHide', { assetId: motionAsset.id, userId });
   }
-};
-
-export const onBeforeUnlink = async (
-  { asset: assetRepository }: AssetHookRepositories,
-  { livePhotoVideoId }: { livePhotoVideoId: string },
-) => {
-  const motion = await assetRepository.getById(livePhotoVideoId);
-  if (!motion) {
-    return null;
-  }
-
-  if (StorageCore.isAndroidMotionPath(motion.originalPath)) {
-    throw new BadRequestException('Cannot unlink Android motion photos');
-  }
-
-  return motion;
-};
-
-export const onAfterUnlink = async (
-  { asset: assetRepository, event: eventRepository }: AssetHookRepositories,
-  { userId, livePhotoVideoId, visibility }: { userId: string; livePhotoVideoId: string; visibility: AssetVisibility },
-) => {
-  await assetRepository.update({ id: livePhotoVideoId, visibility });
-  await eventRepository.emit('AssetShow', { assetId: livePhotoVideoId, userId });
 };
 
 export type LivePhotoLinkRepositories = {
