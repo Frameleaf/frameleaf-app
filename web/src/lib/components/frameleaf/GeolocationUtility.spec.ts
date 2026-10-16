@@ -107,6 +107,18 @@ describe('location utility', () => {
     expect(screen.getByRole('checkbox', { name: 'two.jpg' })).toBeChecked();
     expect(state.info).toHaveBeenCalledTimes(1);
   });
+  it('treats a written location as done even when the item cannot be read back', async () => {
+    state.run.mockResolvedValue({ succeeded: ['one'], failed: [] });
+    state.info.mockRejectedValue(new Error('offline'));
+    render(GeolocationUtility);
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'one.jpg' }));
+    await setCoordinates('10', '20');
+    await userEvent.click(screen.getByRole('button', { name: /Apply to/ }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Confirm/ }));
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'one.jpg' })).not.toBeChecked());
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
   it('removes the location of the selected located items after a review (FL-51)', async () => {
     state.search.mockResolvedValue({
       assets: {

@@ -1,4 +1,10 @@
-import { updateMemory, type MemoryResponseDto } from '@frameleaf/sdk';
+import {
+  getMemoryExport,
+  getMemoryExports,
+  updateMemory,
+  type MemoryExportResponseDto,
+  type MemoryResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +35,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   searchMemories: vi.fn().mockResolvedValue([]),
   memoriesStatistics: vi.fn().mockResolvedValue({ total: 0 }),
   getMemoryExports: vi.fn().mockResolvedValue([]),
+  getMemoryExport: vi.fn(),
   getAssetInfo: vi.fn().mockResolvedValue({
     id: 'asset-2',
     exifInfo: { city: 'Lisbon' },
@@ -149,5 +156,40 @@ describe('MemoryPlayerPanel (FL-62)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Make a movie in Studio' }));
 
     expect(goto).toHaveBeenCalledWith(expect.stringMatching(/^\/studio\?.*asset-1.*asset-2.*asset-3/));
+  });
+
+  it('stops following an export once the player is gone, even with a read on its way', async () => {
+    const running = {
+      id: 'export-1',
+      memoryId: 'memory-1',
+      format: 'archive',
+      status: 'running',
+      title: 'On this day',
+      assetCount: 3,
+      processedAssets: 1,
+      isDownloadable: false,
+      createdAt: '2026-09-25T00:00:00.000Z',
+    } as unknown as MemoryExportResponseDto;
+    vi.mocked(getMemoryExports).mockResolvedValue([running]);
+    let answer: (value: MemoryExportResponseDto) => void = () => {};
+    vi.mocked(getMemoryExport)
+      .mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never)
+      .mockResolvedValue(running);
+    vi.useFakeTimers();
+    try {
+      const { unmount } = render(MemoryPlayerPanel);
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(getMemoryExports).toHaveBeenCalledWith({ memoryId: 'memory-1' });
+      expect(getMemoryExport).toHaveBeenCalledTimes(1);
+
+      unmount();
+      answer(running);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(getMemoryExport).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(getMemoryExports).mockResolvedValue([]);
+    }
   });
 });

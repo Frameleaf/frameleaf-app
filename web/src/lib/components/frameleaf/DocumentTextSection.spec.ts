@@ -132,4 +132,29 @@ describe('DocumentTextSection', () => {
       assetCacheManager.clearOcrCache();
     }
   });
+
+  it('stops waiting for a new reading once the section is gone', async () => {
+    const before = { ...document(), canEdit: true, recognition: { enabled: true, routed: true } };
+    sdkMock.getDocument.mockResolvedValueOnce(before);
+    const { unmount } = render(DocumentTextSection, { asset });
+    const readAgain = await screen.findByRole('button', { name: en.frameleaf_documents_read_again });
+    vi.useFakeTimers();
+    try {
+      let answer: (value: DocumentResponseDto) => void = () => {};
+      sdkMock.getDocument.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+      await fireEvent.click(readAgain);
+      await vi.advanceTimersByTimeAsync(DOCUMENT_REREAD_POLL_MS);
+      expect(sdkMock.getDocument).toHaveBeenCalledTimes(2);
+
+      // the viewer closes while that read is on its way
+      unmount();
+      answer(before);
+      sdkMock.getDocument.mockResolvedValue(before);
+      await vi.advanceTimersByTimeAsync(DOCUMENT_REREAD_POLL_MS * 3);
+
+      expect(sdkMock.getDocument).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

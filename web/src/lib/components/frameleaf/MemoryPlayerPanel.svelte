@@ -666,6 +666,8 @@
   let exportRun = $state<MemoryExportResponseDto | undefined>();
   let exportBusy = $state(false);
   let exportTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Bumped when the memory changes or the player goes: an answer about an earlier run is dropped. */
+  let exportGeneration = 0;
 
   const exportActive = $derived(!!exportRun && isExportActive(exportRun.status));
   const exportPercent = $derived(exportRun ? Math.round(exportProgress(exportRun) * 100) : 0);
@@ -683,9 +685,17 @@
     if (!exportRun) {
       return;
     }
+    const asked = exportGeneration;
     try {
-      exportRun = await getMemoryExport({ id: exportRun.id });
+      const next = await getMemoryExport({ id: exportRun.id });
+      if (asked !== exportGeneration) {
+        return;
+      }
+      exportRun = next;
     } catch (error) {
+      if (asked !== exportGeneration) {
+        return;
+      }
       // the run is gone (deleted, or its memory was), so there is nothing left to follow
       handleError(error, $t('frameleaf_memories_export_failed'));
       exportRun = undefined;
@@ -704,6 +714,7 @@
   // reload, or from another tab — instead of offering to start a second one.
   $effect(() => {
     const memoryId = current?.memory.id;
+    exportGeneration++;
     stopPolling();
     exportRun = undefined;
     if (!memoryId) {
@@ -734,6 +745,7 @@
 
     return () => {
       stale = true;
+      exportGeneration++;
       stopPolling();
     };
   });
@@ -743,8 +755,13 @@
       return;
     }
     exportBusy = true;
+    const asked = exportGeneration;
     try {
-      exportRun = await createMemoryExport({ id: current.memory.id, memoryExportCreateDto: {} });
+      const created = await createMemoryExport({ id: current.memory.id, memoryExportCreateDto: {} });
+      if (asked !== exportGeneration) {
+        return;
+      }
+      exportRun = created;
       status = $t('frameleaf_memories_export_started');
       if (isExportActive(exportRun.status)) {
         stopPolling();
@@ -762,8 +779,13 @@
       return;
     }
     exportBusy = true;
+    const asked = exportGeneration;
     try {
-      exportRun = await cancelMemoryExport({ id: exportRun.id });
+      const cancelled = await cancelMemoryExport({ id: exportRun.id });
+      if (asked !== exportGeneration) {
+        return;
+      }
+      exportRun = cancelled;
       status = $t('frameleaf_memories_export_cancelled');
       if (!isExportActive(exportRun.status)) {
         stopPolling();

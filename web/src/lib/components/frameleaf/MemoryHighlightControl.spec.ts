@@ -207,4 +207,29 @@ describe('MemoryHighlightControl (FL-194)', () => {
     const open = await screen.findByRole('link', { name: 'frameleaf_memories_highlight_open_saved' });
     expect(open).toHaveAttribute('href', '/photos/asset-saved');
   });
+
+  it("never carries one memory's render over to the next memory", async () => {
+    sdkMock.getMemoryExports.mockImplementation(({ memoryId }) =>
+      Promise.resolve([memoryId === 'memory-1' ? run() : run({ id: 'run-2', memoryId: 'memory-2' })]),
+    );
+    let answer: (value: MemoryExportResponseDto) => void = () => {};
+    sdkMock.getMemoryExport.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+    const { rerender } = renderControl();
+    await waitFor(() => expect(sdkMock.getMemoryExport).toHaveBeenCalledTimes(1));
+
+    // the player moves on to another memory while the first one's render is being read
+    await rerender({ memoryId: 'memory-2', memoryTitle: 'Beach day', pollMs: 10 });
+    await waitFor(() => expect(sdkMock.getMemoryExports).toHaveBeenLastCalledWith({ memoryId: 'memory-2' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    sdkMock.getMemoryExport.mockImplementation(({ id }) =>
+      Promise.resolve(id === 'run-2' ? run({ id: 'run-2', memoryId: 'memory-2' }) : run()),
+    );
+    answer(run({ status: MemoryExportStatus.Ready, isDownloadable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // memory-2 follows its own render only, and nothing is reported as failed
+    expect(sdkMock.getMemoryExport.mock.calls.slice(1).every(([{ id }]) => id === 'run-2')).toBe(true);
+    expect(screen.queryByRole('button', { name: 'frameleaf_memories_highlight_download' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'frameleaf_memories_highlight_cancel' })).toBeInTheDocument();
+  });
 });

@@ -72,7 +72,7 @@
     type EnrichmentPreviewResponseDto,
     type MediaOperationDto,
   } from '@frameleaf/sdk';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type Props = {
@@ -106,6 +106,8 @@
   let recentPlans = $state<MediaOperationDto[]>([]);
   let busy = $state(false);
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A read on its way when the dialog closed or went must not start following again. */
+  let destroyed = false;
 
   /** Every asset chosen so far, whichever filter it was chosen under. */
   let chosen = $state<Record<string, AssetResponseDto>>({});
@@ -203,7 +205,11 @@
       () =>
         void (async () => {
           try {
-            follow(await getEnrichmentPlan({ id: next.operation.id }));
+            const latest = await getEnrichmentPlan({ id: next.operation.id });
+            if (destroyed || !open) {
+              return;
+            }
+            follow(latest);
           } catch (error) {
             handleError(error, $t('frameleaf_enrichment_plan_error'));
           }
@@ -229,8 +235,9 @@
     void loadOptions();
     void loadRecentPlans();
     const previous = lastPlan(authManager.user.id);
-    // Reopening returns to the plan this browser last followed; the plan itself is the server's.
-    if (previous && !untrack(() => plan)) {
+    // Reopening returns to the plan this browser last followed, read afresh: following stopped
+    // while the dialog was closed. The plan itself is the server's.
+    if (previous) {
       void openPlan(previous);
     }
   });
@@ -241,7 +248,10 @@
     }
   });
 
-  onDestroy(stopPolling);
+  onDestroy(() => {
+    destroyed = true;
+    stopPolling();
+  });
 
   /* ---------------------------------------------------------------- */
   /* Actions                                                           */
