@@ -192,7 +192,7 @@ export class PartnerOriginRepository {
   }
   /** The recipient's value and override marker commit together, ordered against propagation. */
   async withOriginEdit<T>(kind: OriginKind, ids: string[], fields: string[], write: () => Promise<T>): Promise<T> {
-    if (ids.length === 0 || fields.length === 0) return write();
+    if (ids.length === 0) return write();
     const { table, key } = TABLES[kind];
     return this.db.transaction().execute(async (tx) => {
       await sql`

@@ -1165,6 +1165,82 @@ describe(PartnerCopyService.name, () => {
       return { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy, origins };
     };
 
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'rolls %s membership back when its override marker fails',
+      async (action) => {
+        const { albums, albumCtx, bob, first, third, copyOf, albumCopy, origins } = await shareWithAlbum();
+        const assetId = await copyOf(action === 'remove' ? first.id : third.id);
+        const before = await albumAssetIds(albumCopy);
+        const marker = vi
+          .spyOn(albumCtx.get(PartnerOriginRepository), 'markOverridden')
+          .mockRejectedValueOnce(new Error('override unavailable'));
+        try {
+          await expect(
+            action === 'bulk-add'
+              ? albums.addAssetsToAlbums(factory.auth({ user: bob }), { albumIds: [albumCopy], assetIds: [assetId] })
+              : action === 'add'
+                ? albums.addAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] })
+                : albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] }),
+          ).rejects.toThrow('override unavailable');
+        } finally {
+          marker.mockRestore();
+        }
+        expect(await albumAssetIds(albumCopy)).toEqual(before);
+        expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).not.toContain(
+          AlbumOriginField.Membership,
+        );
+      },
+    );
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'preserves %s membership when propagation starts before the override commits',
+      async (action) => {
+        const { sut, albums, albumCtx, bob, album, first, third, copyOf, albumCopy, origins } = await shareWithAlbum();
+        const assetId = await copyOf(action === 'remove' ? first.id : third.id);
+        const recipientOrigins = albumCtx.get(PartnerOriginRepository);
+        const markOverridden = recipientOrigins.markOverridden.bind(recipientOrigins);
+        const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+        const { promise: held, resolve: release } = Promise.withResolvers<void>();
+        const marker = vi.spyOn(recipientOrigins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          ready();
+          await held;
+          return markOverridden(...args);
+        });
+        const getFollowers = origins.getFollowers.bind(origins);
+        const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+          const followers = await getFollowers(...args);
+          expect(followers.map((row) => row.id)).toContain(albumCopy);
+          selectedNow();
+          return followers;
+        });
+        const editing =
+          action === 'bulk-add'
+            ? albums.addAssetsToAlbums(factory.auth({ user: bob }), { albumIds: [albumCopy], assetIds: [assetId] })
+            : action === 'add'
+              ? albums.addAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] })
+              : albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] });
+        try {
+          await written;
+          const propagating = sut.handlePropagate({
+            kind: 'album',
+            sourceId: album.id,
+            fields: [AlbumOriginField.Membership],
+          });
+          await selected;
+          release();
+          await Promise.all([editing, propagating]);
+        } finally {
+          release();
+          await editing;
+          marker.mockRestore();
+          selection.mockRestore();
+        }
+        expect((await albumAssetIds(albumCopy)).includes(assetId)).toBe(action !== 'remove');
+        expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).toContain(AlbumOriginField.Membership);
+      },
+    );
+
     it('keeps an album title edit and its override marker in the same transaction', async () => {
       const { albums, albumCtx, bob, albumCopy } = await shareWithAlbum();
       const marker = vi
