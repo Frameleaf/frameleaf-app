@@ -816,9 +816,10 @@ export class TakeoutWorkerService {
     const { auth, row } = run;
     const extension = path.extname(item.name).toLowerCase();
     const destination = StorageCore.getNestedPath(StorageFolder.Upload, row.ownerId, `${randomUUID()}${extension}`);
-    await this.repository.itemCreating(item.id, destination);
     const digest = await this.staging
-      .copyToLibrary(item.path, item.size, destination, run.controller.signal)
+      .copyToLibrary(item.path, item.size, destination, run.controller.signal, () =>
+        this.repository.itemCreating(item.id, destination),
+      )
       .catch((error) => {
         throw error instanceof TakeoutStagingError ? new TakeoutItemError(error.message) : error;
       });

@@ -161,11 +161,18 @@ describe(TakeoutWorkerService.name, () => {
       isInsideRoots: vi.fn((folder: string, roots: string[]) =>
         Promise.resolve(roots.some((root) => folder.startsWith(root))),
       ),
-      copyToLibrary: vi.fn().mockResolvedValue({
-        size: 10,
-        checksum: Buffer.alloc(32, 1),
-        legacyChecksum: Buffer.alloc(20, 1),
-      }),
+      copyToLibrary: vi.fn(
+        async (
+          _staged: string,
+          _size: number,
+          _destination: string,
+          _signal: AbortSignal,
+          onCreated: () => Promise<void>,
+        ) => {
+          await onCreated();
+          return { size: 10, checksum: Buffer.alloc(32, 1), legacyChecksum: Buffer.alloc(20, 1) };
+        },
+      ),
     };
     assetMedia = {
       bulkUploadCheck: vi.fn().mockResolvedValue({ results: [{ id: 'sha256' }, { id: 'sha1' }] }),
@@ -244,6 +251,15 @@ describe(TakeoutWorkerService.name, () => {
   });
 
   describe('import', () => {
+    it('never records or cleans up a destination whose exclusive creation failed', async () => {
+      pending = [[itemOf()]];
+      staging.copyToLibrary.mockRejectedValueOnce(Object.assign(new Error('already exists'), { code: 'EEXIST' }));
+      await sut.run(operationOf('import'), claimToken);
+      expect(repository.itemCreating).not.toHaveBeenCalled();
+      expect(staging.remove).not.toHaveBeenCalled();
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+    });
+
     it('copies a new photo into the library, applies its metadata and restores its album', async () => {
       pending = [[itemOf()]];
 
@@ -258,6 +274,7 @@ describe(TakeoutWorkerService.name, () => {
         10,
         expect.stringMatching(/^\/data\/upload\/user-id\/.+\.jpg$/),
         expect.any(AbortSignal),
+        expect.any(Function),
       );
       expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
         expect.objectContaining({ user: expect.objectContaining({ id: ownerId }) }),
