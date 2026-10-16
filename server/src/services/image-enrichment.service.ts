@@ -2015,7 +2015,9 @@ export class ImageEnrichmentService extends BaseService {
     const tagHash = hash(tags);
     const descriptionMetadata = metadata.description?.status === 'success' ? metadata.description : undefined;
     const hasStoredTagApplication =
-      !!descriptionMetadata?.appliedTagHash || !!descriptionMetadata?.appliedTagValues?.length;
+      previousTagValues.length > 0 ||
+      !!descriptionMetadata?.appliedTagHash ||
+      !!descriptionMetadata?.appliedTagValues?.length;
     if (
       descriptionMetadata &&
       (tags.length > 0 || hasStoredTagApplication) &&
