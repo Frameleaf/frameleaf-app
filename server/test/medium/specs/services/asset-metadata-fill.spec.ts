@@ -3,6 +3,7 @@ import { AssetLockReason, AssetType, AssetVisibility, JobName, QueueName } from 
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
@@ -25,7 +26,7 @@ describe('Matched import metadata fills', () => {
   const setup = async (visibility = AssetVisibility.Timeline) => {
     const { sut, ctx } = newMediumService(AssetService, {
       database: db,
-      real: [AssetRepository, AccessRepository, PartnerOriginRepository],
+      real: [AssetRepository, AccessRepository, PartnerOriginRepository, DatabaseRepository],
       mock: [JobRepository, LoggingRepository, WebsocketRepository],
     });
     const { auth, user } = await ctx.newSyncAuthUser();
@@ -47,6 +48,56 @@ describe('Matched import metadata fills', () => {
     });
     return { sut, ctx, auth, user, asset, assets, jobs };
   };
+
+  it.each([
+    { action: 'single', failing: 'lock' },
+    { action: 'single', failing: 'override' },
+    { action: 'bulk', failing: 'lock' },
+    { action: 'bulk', failing: 'override' },
+  ] as const)('rolls back $action sensitive metadata on $failing failure', async ({ action, failing }) => {
+    const { sut, ctx, auth, user, asset, assets, jobs } = await setup();
+    const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newStack({ ownerId: user.id }, [asset.id, sibling.id]);
+    const { user: sharer } = await ctx.newUser();
+    const origins = ctx.get(PartnerOriginRepository);
+    const ids = [asset.id, sibling.id];
+    for (const id of ids) {
+      const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+      await origins.createAssetOrigin({
+        id,
+        sourceId: source.id,
+        ownerId: user.id,
+        rootOwnerId: sharer.id,
+        partnerSharedById: sharer.id,
+      });
+    }
+    const original = origins.markOverridden.bind(origins);
+    const failure =
+      failing === 'lock'
+        ? vi.spyOn(assets, 'lock').mockRejectedValueOnce(new Error('metadata phase failed'))
+        : vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+            await original(...args);
+            throw new Error('metadata phase failed');
+          });
+    const item = { key: 'ml-enrichment', value: { nsfwDetection: { review: { isNsfw: true } } } };
+    try {
+      const write =
+        action === 'single'
+          ? sut.upsertMetadata(auth, asset.id, { items: [item] })
+          : sut.upsertBulkMetadata(auth, { items: [{ assetId: asset.id, ...item }] });
+      await expect(write).rejects.toThrow('metadata phase failed');
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await assets.getMetadataByKey(asset.id, item.key)).toBeUndefined();
+    expect(
+      (await db.selectFrom('asset').select('is_nsfw').where('id', '=', asset.id).executeTakeFirstOrThrow()).is_nsfw,
+    ).toBe(false);
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).toEqual([]);
+    for (const id of ids) expect((await origins.getOrigin('asset', id))?.overriddenFields).toEqual([]);
+    expect(jobs.queue).not.toHaveBeenCalled();
+    expect(jobs.queueAll).not.toHaveBeenCalled();
+  });
 
   it.each(['ordinary', 'unlink', 'replace'] as const)(
     'rolls back %s pairing, metadata, locks and group overrides when recording fails',

@@ -2464,7 +2464,95 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('sensitive metadata origin admission', () => {
+    it.each(['single', 'bulk'] as const)(
+      'admits %s metadata before persisting an owner-sensitive review',
+      async (action) => {
+        const item = { key: AssetMetadataKey.MlEnrichment, value: { nsfwDetection: { review: { isNsfw: true } } } };
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValue(['asset-1', 'sibling']);
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        const edit =
+          action === 'single'
+            ? sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] })
+            : sut.upsertBulkMetadata(authStub.admin, { items: [{ assetId: 'asset-1', ...item }] });
+        await expect(edit).rejects.toThrow('origin busy');
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertBulkMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['single', 'bulk'] as const)(
+      'records %s owner group overrides inside the metadata transaction',
+      async (action) => {
+        const ids = ['asset-1', 'sibling'];
+        const item = { key: AssetMetadataKey.MlEnrichment, value: { nsfwDetection: { review: { isNsfw: true } } } };
+        const trx = { isTransaction: true } as never;
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+        mocks.asset.lock.mockResolvedValue([]);
+        mocks.database.withAssetMetadataLocks.mockImplementation((_ids, write) => write(trx));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+          expect(new Set(admitted)).toEqual(new Set(ids));
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+            'asset',
+            ids,
+            ['visibility'],
+            authStub.admin.user.id,
+            trx,
+          );
+          committed = true;
+          return result;
+        });
+        if (action === 'single') await sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] });
+        else await sut.upsertBulkMetadata(authStub.admin, { items: [{ assetId: 'asset-1', ...item }] });
+        expect(committed).toBe(true);
+        expect(mocks.asset.lockGroupRows).toHaveBeenCalledWith(['asset-1'], trx);
+      },
+    );
+
+    it('prepares detection policy before metadata writes can commit', async () => {
+      const item = {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } },
+      };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      vi.spyOn(sut, 'getConfig').mockRejectedValue(new Error('policy unavailable'));
+      await expect(sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] })).rejects.toThrow(
+        'policy unavailable',
+      );
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('keeps a detection-only metadata lock free of owner overrides', async () => {
+      const item = {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true } } },
+      };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.findLockGroupIds.mockResolvedValue(['asset-1', 'sibling']);
+      mocks.asset.lock.mockResolvedValue([]);
+      vi.spyOn(sut, 'getConfig').mockResolvedValue({
+        ...defaults,
+        machineLearning: {
+          ...defaults.machineLearning,
+          nsfwDetection: { ...defaults.machineLearning.nsfwDetection, hideFromLibrary: true },
+        },
+      });
+      await sut.upsertMetadata(authStub.admin, 'asset-1', { items: [item] });
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1'], AssetLockReason.Detected, null);
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+    });
+  });
+
   describe('upsertMetadata', () => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
     it('should throw a bad request exception if duplicate keys are sent', async () => {
       const asset = AssetFactory.create();
       const items = [
@@ -2523,6 +2611,9 @@ describe(AssetService.name, () => {
   });
 
   describe.each(['upsertMetadata', 'upsertBulkMetadata'] as const)('%s metadata review validation', (method) => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
     it.each([
       [{}, AssetLockReason.Detected],
       [{ isNsfw: 'false' }, AssetLockReason.Detected],

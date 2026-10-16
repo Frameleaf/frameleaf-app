@@ -655,37 +655,15 @@ export class AssetService extends BaseService {
   }
 
   /**
-   * Locks and follows up (FL-34, FL-53): every cover, featured photo and face thumbnail the newly locked
-   * assets were is released in the lock's transaction; the people whose featured face moved get a new
-   * thumbnail, and a profile picture copied from one of the photos is replaced.
-   */
-  private async lockAssets(
-    auth: AuthDto,
-    ids: string[],
-    reason: AssetLockReason,
-    { pushedByCaller = [] }: { pushedByCaller?: string[] } = {},
-  ): Promise<void> {
-    if (ids.length === 0) {
-      return;
-    }
-    const locked = await this.assetRepository.lock(ids, reason, auth.user.id);
-    if (locked.length > 0) {
-      await this.afterAssetsLocked(locked);
-      // everything the lock carried along (stack siblings, live photo parts), not what the caller pushes
-      const pushed = new Set(pushedByCaller);
-      await this.notifyAssetsUpdated(
-        locked.filter((id) => !pushed.has(id)),
-        auth.user.id,
-      );
-    }
-  }
-
-  /**
    * A sensitive verdict written through the metadata API locks the asset like the detector's own
    * (FL-34): an owner's review marking it sensitive is their lock (`marked`); a detection result locks
    * it as `detected` when "hide sensitive detections" is on. Nothing is ever unlocked here.
    */
-  private async lockSensitiveMetadata(auth: AuthDto, items: { assetId: string; key: string; value: unknown }[]) {
+  private async lockSensitiveMetadata<T>(
+    auth: AuthDto,
+    items: { assetId: string; key: string; value: unknown }[],
+    write: () => Promise<T>,
+  ): Promise<T> {
     const marked: string[] = [];
     const detected: string[] = [];
     for (const { assetId, key, value } of items) {
@@ -701,16 +679,55 @@ export class AssetService extends BaseService {
       }
     }
 
-    await this.lockAssets(auth, marked, AssetLockReason.Marked);
-    if (detected.length > 0) {
-      const { machineLearning } = await this.getConfig({ withCache: true });
-      if (isNsfwHidingEnabled(machineLearning)) {
-        const locked = await this.assetRepository.lock(detected, AssetLockReason.Detected, null);
-        if (locked.length > 0) {
-          await this.afterAssetsLocked(locked);
-        }
-      }
+    const hideDetections =
+      detected.length > 0 && isNsfwHidingEnabled((await this.getConfig({ withCache: true })).machineLearning);
+    const lockIds = [...marked, ...(hideDetections ? detected : [])];
+    if (lockIds.length === 0) return write();
+    const originIds = [
+      ...new Set([...items.map(({ assetId }) => assetId), ...(await this.assetRepository.findLockGroupIds(lockIds))]),
+    ];
+    const admitted = new Set(originIds);
+    const { result, markedLocked, detectedLocked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      originIds,
+      [],
+      () =>
+        this.databaseRepository.withAssetMetadataLocks(originIds, async (trx) => {
+          await this.assetRepository.lockGroupRows(lockIds, trx);
+          const currentGroup = await this.assetRepository.findLockGroupIds(lockIds);
+          if (currentGroup.some((id) => !admitted.has(id)))
+            throw new ConflictException('Lock group changed; retry the update');
+          const visibilityIds = marked.length > 0 ? await this.assetRepository.findLockGroupIds(marked) : [];
+          const result = await write();
+          const markedLocked =
+            marked.length > 0 ? await this.assetRepository.lock(marked, AssetLockReason.Marked, auth.user.id) : [];
+          const detectedLocked = hideDetections
+            ? await this.assetRepository.lock(detected, AssetLockReason.Detected, null)
+            : [];
+          if (visibilityIds.length > 0)
+            await this.partnerOriginRepository.markOverridden(
+              'asset',
+              visibilityIds,
+              [AssetOriginField.Visibility],
+              auth.user.id,
+              trx,
+            );
+          return { result, markedLocked, detectedLocked, visibilityIds };
+        }),
+    );
+    if (markedLocked.length > 0) {
+      await this.afterAssetsLocked(markedLocked);
+      await this.notifyAssetsUpdated(markedLocked, auth.user.id);
     }
+    if (detectedLocked.length > 0) await this.afterAssetsLocked(detectedLocked);
+    if (visibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        visibilityIds,
+        [AssetOriginField.Visibility],
+      );
+    return result;
   }
 
   /**
@@ -1115,9 +1132,7 @@ export class AssetService extends BaseService {
     // 'ml-enrichment' items, so a malicious or curious user who writes
     // 'ml-enrichment' here cannot leave the boolean column out of sync with
     // the JSONB. See AssetRepository.syncIsNsfwForItems.
-    const result = await this.assetRepository.upsertBulkMetadata(dto.items);
-    await this.lockSensitiveMetadata(auth, dto.items);
-    return result;
+    return this.lockSensitiveMetadata(auth, dto.items, () => this.assetRepository.upsertBulkMetadata(dto.items));
   }
 
   async upsertMetadata(auth: AuthDto, id: string, dto: AssetMetadataUpsertDto): Promise<AssetMetadataResponseDto[]> {
@@ -1134,12 +1149,11 @@ export class AssetService extends BaseService {
 
     // See `upsertBulkMetadata` — the repository handles the asset.is_nsfw
     // sync for any 'ml-enrichment' items in the payload.
-    const result = await this.assetRepository.upsertMetadata(id, dto.items);
-    await this.lockSensitiveMetadata(
+    return this.lockSensitiveMetadata(
       auth,
       dto.items.map((item) => ({ assetId: id, ...item })),
+      () => this.assetRepository.upsertMetadata(id, dto.items),
     );
-    return result;
   }
 
   async getMetadataByKey(auth: AuthDto, id: string, key: string): Promise<AssetMetadataResponseDto> {
