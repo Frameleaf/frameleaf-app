@@ -8,10 +8,12 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -36,6 +38,9 @@ const setup = (db?: Kysely<DB>) => {
       SmartAlbumRepository,
       TagRepository,
       UserRepository,
+      // album members carry the supporter tag (no licence here, so nobody is a supporter)
+      FrameleafUserLicenseRepository,
+      SystemMetadataRepository,
     ],
     mock: [EventRepository, LoggingRepository],
   });

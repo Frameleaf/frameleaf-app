@@ -91,6 +91,8 @@ const setup = async () => {
     frameleafCloud: { ...env.frameleafCloud, url: 'https://cloud.test' },
   });
   ctx.getMock(EventRepository).emit.mockResolvedValue();
+  // unlink cleanup drops the cached Cloud tokens
+  ctx.getMock(FrameleafCloudRepository).forget.mockReturnValue();
   const audit = ctx.getMock(AdminAuditRepository);
   audit.create.mockResolvedValue();
   const { result: actor } = await ctx.newUser({ isAdmin: true });

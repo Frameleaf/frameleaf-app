@@ -14,7 +14,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserService } from 'src/services/user.service.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -307,7 +307,8 @@ describe(UserService.name, () => {
       const dto = { download: { archiveSize: 1_234_567 } };
 
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject({
-        download: { archiveSize: 4 * HumanReadableSize.GiB },
+        // D5: archive sizes are decimal (4 GB)
+        download: { archiveSize: 4 * DecimalSize.GB },
       });
       await expect(sut.updateMyPreferences(auth, dto)).resolves.toMatchObject(dto);
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject(dto);

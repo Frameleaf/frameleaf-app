@@ -11,6 +11,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
@@ -44,6 +45,8 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         ClassificationRepository,
         CryptoRepository,
         DatabaseRepository,
+        // the plugin's album search marks supporters among album members
+        FrameleafUserLicenseRepository,
         LoggingRepository,
         PartnerRepository,
         // assetLock moves an asset into the Locked folder, which re-picks face thumbnails (FL-53)
@@ -342,12 +345,12 @@ describe('core plugin', () => {
         ],
       });
 
+      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
+
+      // counted after the run: the step must not create a "Screenshots" album beside the chosen one
       const albums = await ctx.get(AlbumRepository).getAll(user.id);
       expect(albums).toHaveLength(1);
       expect(albums[0].albumName).toEqual(album.albumName);
-
-      await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
-
       await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [asset.id])).resolves.toContain(asset.id);
     });
 

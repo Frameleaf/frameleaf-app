@@ -37,6 +37,8 @@ describe(PartnerOriginRepository.name, () => {
     const { user: bob } = await ctx.newUser();
     await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
     const { asset: source } = await ctx.newAsset({ ownerId: alice.id });
+    // a physical file is registered from the upload's recorded size
+    await ctx.newExif({ assetId: source.id, fileSizeInByte: 1000 });
     const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(source.id);
     if (!original) throw new Error('Expected source physical file');
     const copyId = operation === 'propagation' ? (await ctx.newAsset({ ownerId: bob.id })).asset.id : source.id;

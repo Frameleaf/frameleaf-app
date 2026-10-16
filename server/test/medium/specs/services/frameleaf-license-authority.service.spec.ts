@@ -173,6 +173,9 @@ const setup = async () => {
     context.getMock(UserRepository).getAdmins.mockResolvedValue([]);
     context.getMock(EventRepository).emit.mockResolvedValue();
     context.getMock(FrameleafAccountRepository).deleteAllSessions.mockResolvedValue([]);
+    // no cached discovery document, and unlink drops the cached Cloud tokens
+    context.getMock(FrameleafCloudRepository).peekDiscovery.mockReturnValue(null);
+    context.getMock(FrameleafCloudRepository).forget.mockReturnValue();
   }
   const metadata = ctx.get(SystemMetadataRepository);
   const previousLink = await metadata.get(SystemMetadataKey.FrameleafCloudLink),

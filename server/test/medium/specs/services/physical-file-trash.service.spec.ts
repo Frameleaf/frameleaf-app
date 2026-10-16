@@ -218,16 +218,24 @@ describe(PhysicalFileTrashService.name, () => {
     const inspectionError = new Error('inspection failed');
     const compensationError = new Error('move back failed');
     storage.stat.mockRejectedValueOnce(inspectionError);
-    storage.rename.mockImplementationOnce(rename).mockRejectedValueOnce(compensationError);
+    // the move back keeps failing: the inline compensation and the journal's own recovery attempt
+    storage.rename.mockImplementationOnce(rename).mockRejectedValue(compensationError);
 
     await expect(sut.restore(entry.id)).rejects.toMatchObject({
       errors: [inspectionError, compensationError],
       cause: compensationError,
     });
+    storage.rename.mockImplementation(rename);
 
     const target = storage.rename.mock.calls[0][1];
     await expect(trash.getById(entry.id)).resolves.toEqual(entry);
     await expect(readFile(target)).resolves.toEqual(bytes);
+    // the journalled move stays (raw SQL, as the repository writes it), so a later recovery returns
+    // the bytes to the trash path
+    const { rows: journal } = await sql<{ oldPath: string; newPath: string }>`
+      SELECT "oldPath", "newPath" FROM public.move_history
+      WHERE "pathType" = 'file_trash' AND "oldPath" = ${entry.path}`.execute(database);
+    expect(journal).toEqual([{ oldPath: entry.path, newPath: target }]);
     await expect(database.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute()).resolves.toEqual(
       [],
     );

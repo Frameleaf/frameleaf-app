@@ -647,6 +647,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case ConfigRepository:
     case CryptoRepository:
     case AssetChecksumRepository:
+    case FrameleafAccountRepository:
     case LibraryRepository:
     case MemoryRepository:
     case IntegrityRepository:
