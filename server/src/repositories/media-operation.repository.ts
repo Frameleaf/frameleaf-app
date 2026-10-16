@@ -535,7 +535,7 @@ export class MediaOperationRepository {
         };
       }
   > {
-    return this.db.transaction().execute(async (trx) => {
+    const result = await this.db.transaction().execute(async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(${lock})`.execute(trx);
       const active = await trx
         .selectFrom('media_operation')
@@ -554,9 +554,10 @@ export class MediaOperationRepository {
         .values(operation)
         .returningAll()
         .executeTakeFirstOrThrow();
-      this.changed(created as unknown as MediaOperationChange);
       return { created: created as unknown as MediaOperation };
     });
+    if (result.created) this.changed(result.created);
+    return result;
   }
   /**
    * Create a job unless one of the same kind is already unfinished for the same subject, named by a
@@ -599,10 +600,11 @@ export class MediaOperationRepository {
         .values(operation)
         .returningAll()
         .executeTakeFirstOrThrow();
-      this.changed(created as unknown as MediaOperationChange);
       return { created: created as unknown as MediaOperation };
     };
-    return executor ? create(executor) : this.db.transaction().execute(create);
+    const result = await (executor ? create(executor) : this.db.transaction().execute(create));
+    if (result.created) this.changed(result.created, executor);
+    return result;
   }
   /**
    * The newest job of one kind for each of these subjects, named by a snapshot key (FL-78: each
@@ -1209,7 +1211,7 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst();
     const updated = await (executor ? run(executor) : this.write(run));
-    this.changed(updated);
+    this.changed(updated, executor);
     return !!updated;
   }
   /** Whether an asset may be adopted as this owner's result: theirs, and not deleted (FL-43). */
@@ -1245,10 +1247,11 @@ export class MediaOperationRepository {
     claimToken: string,
     publish: (trx: Transaction<DB>) => Promise<boolean>,
   ): Promise<'completed' | 'rejected' | 'lost'> {
-    return this.db.transaction().execute(async (trx) => {
+    let completed: MediaOperationChange | undefined;
+    const outcome = await this.db.transaction().execute(async (trx): Promise<'completed' | 'rejected' | 'lost'> => {
       const held = await trx
         .selectFrom('media_operation')
-        .select('id')
+        .select(['id', 'ownerId'])
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
         .where('status', '=', MediaOperationStatus.Validating)
@@ -1265,8 +1268,11 @@ export class MediaOperationRepository {
         // publication back, so an adopted output and an unfinished job are never committed apart.
         throw new Error(`Media operation ${id} could not complete under the claim that published it`);
       }
+      completed = held;
       return 'completed';
     });
+    this.changed(completed);
+    return outcome;
   }
   /** Move a claimed job to `validating`. The last gate before anything is published. */
   async beginValidation(
