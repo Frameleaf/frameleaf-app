@@ -4,8 +4,8 @@ import { open } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 import z from 'zod';
 import type { Transaction } from 'kysely';
-import type { MlSelection, ModelPayload } from 'src/repositories/machine-learning.repository.js';
 import type { DB } from 'src/schema/index.js';
+import { OnEvent } from 'src/decorators.js';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
@@ -14,6 +14,12 @@ import {
   DesktopClipIndexRepository,
 } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopMlRepository, DesktopMlRequest } from 'src/repositories/desktop-ml.repository.js';
+import {
+  type DesktopPoolOptions,
+  MachineLearningRepository,
+  type MlSelection,
+  type ModelPayload,
+} from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
@@ -26,16 +32,21 @@ export class DesktopMlService {
     private index: DesktopClipIndexRepository,
     private policies?: DesktopAssistancePolicyService,
     private routes?: MlDestinationRepository,
+    private machineLearning?: MachineLearningRepository,
   ) {}
 
-  async selectBackgroundPool(
-    selection: MlSelection,
-    options: {
-      jobId?: string | null;
-      modelName: string;
-      assertConfig: (tx?: Transaction<DB>) => Promise<void>;
-    },
-  ): Promise<MlSelection> {
+  @OnEvent({ name: 'AppBootstrap' })
+  onBootstrap() {
+    if (!this.machineLearning) throw new Error('desktop_pool_authority_unavailable');
+    this.machineLearning.setDesktopPoolSelector(this.selectBackgroundPool.bind(this));
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  onShutdown() {
+    this.machineLearning?.setDesktopPoolSelector(null);
+  }
+
+  async selectBackgroundPool(selection: MlSelection, options: DesktopPoolOptions): Promise<MlSelection> {
     const context = queueExecution.getStore();
     if (
       !context ||

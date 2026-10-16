@@ -42,7 +42,6 @@ import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
@@ -266,6 +265,13 @@ export type MlUsage = {
  * so a call cannot reach a destination the caller did not name. `record` is the accounting
  * hook the selection owner installs; the repository calls it exactly once per request.
  */
+export type DesktopPoolOptions = {
+  jobId?: string | null;
+  modelName: string;
+  assertConfig: (tx?: Transaction<DB>) => Promise<void>;
+};
+export type DesktopPoolSelector = (selection: MlSelection, options: DesktopPoolOptions) => Promise<MlSelection>;
+
 export type MlSelection = {
   /** Internal admitted background pool; never reconstructed from an API response. */
   desktopClip?: (payload: ModelPayload, profile: DesktopModelProfile) => Promise<unknown>;
@@ -463,6 +469,7 @@ export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
 @Injectable()
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
+  private desktopPoolSelector: DesktopPoolSelector | null = null;
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
   private probeCache = new Map<string, { authToken?: string; authorityIdentity?: string; probe: MlEndpointProbe }>();
@@ -481,7 +488,6 @@ export class MachineLearningRepository implements RestorationInference {
     private configRepo?: ConfigRepository,
     private metadataRepo?: SystemMetadataRepository,
     private clipIndex?: DesktopClipIndexRepository,
-    private desktopMl?: DesktopMlService,
   ) {
     this.logger.setContext(MachineLearningRepository.name);
   }
@@ -1035,10 +1041,15 @@ export class MachineLearningRepository implements RestorationInference {
     };
   }
 
+  setDesktopPoolSelector(selector: DesktopPoolSelector | null) {
+    this.desktopPoolSelector = selector;
+  }
+
   async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
-    if (!this.desktopMl || !queueExecution.getStore() || selection.workload !== MlWorkload.Clip) return selection;
+    if (!queueExecution.getStore() || selection.workload !== MlWorkload.Clip) return selection;
+    if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
     const modelName = this.config.clip.modelName;
-    return this.desktopMl.selectBackgroundPool(selection, {
+    return this.desktopPoolSelector(selection, {
       jobId,
       modelName,
       assertConfig: async (tx?: Transaction<DB>) => {

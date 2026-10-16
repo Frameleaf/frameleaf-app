@@ -4,6 +4,8 @@ import type { MlSelection } from 'src/repositories/machine-learning.repository.j
 import { defaults } from 'src/config.js';
 import { JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 
 const ownerId = '8da8d162-c2c3-4d1d-b6e1-9148b0bfd327';
@@ -76,19 +78,47 @@ it.each(['interactive', 'pinned', 'legacy', 'other-account', 'other-workload'])(
       expect(await select('asset')).toBe(selection);
       return;
     }
-    if (mode === 'pinned' || mode === 'legacy')
-      routes.getRouteStates.mockResolvedValue([
-        { workload: MlWorkload.Clip, destinationId: 'nas', origin: mode, revisionId: 'route' },
-      ]);
-    else if (mode === 'other-account') context.sourceAuthorities!.get('asset')!.ownerId = other;
-    else if (mode === 'other-workload') selection.workload = MlWorkload.PetRecognition;
+    switch (mode) {
+      case 'pinned':
+      case 'legacy': {
+        routes.getRouteStates.mockResolvedValue([
+          { workload: MlWorkload.Clip, destinationId: 'nas', origin: mode, revisionId: 'route' },
+        ]);
+        break;
+      }
+      case 'other-account': {
+        context.sourceAuthorities!.get('asset')!.ownerId = other;
+        break;
+      }
+      case 'other-workload': {
+        selection.workload = MlWorkload.PetRecognition;
+        break;
+      }
+      default: {
+        break;
+      }
+    }
     await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
   },
 );
 it.each(['unknown', 'ambiguous', 'index'])('waits without falling back for %s authority', async (mode) => {
-  if (mode === 'unknown') context.sourceAuthorities!.clear();
-  else if (mode === 'ambiguous') context.sourceAuthorities!.set('other', { ownerId: other, assertCurrent: vi.fn() });
-  else if (mode === 'index') index.selectProfile.mockResolvedValue(undefined);
+  switch (mode) {
+    case 'unknown': {
+      context.sourceAuthorities!.clear();
+      break;
+    }
+    case 'ambiguous': {
+      context.sourceAuthorities!.set('other', { ownerId: other, assertCurrent: vi.fn() });
+      break;
+    }
+    case 'index': {
+      index.selectProfile.mockResolvedValue(undefined);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
   await queueExecution.run(context, async () => {
     await expect(select(mode === 'ambiguous' ? undefined : 'asset')).rejects.toThrow();
     expect(context.dependencyReason).toBe(mode === 'index' ? 'destination-configuration' : 'source-unavailable');
@@ -108,4 +138,18 @@ it('retains a captured source guard if another asset is guarded later', async ()
     policies.assertCurrent.mockRejectedValue(new Error('revoked'));
     await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('revoked');
   });
+});
+
+it('registers the pool selector at bootstrap and refuses queued work after shutdown', async () => {
+  const ml = new MachineLearningRepository(LoggingRepository.create(), undefined, undefined, undefined, index as never);
+  ml.setup({ ...defaults.machineLearning, urls: [selection.endpoint.url] });
+  const registered = new DesktopMlService({} as never, index as never, policies as never, routes as never, ml);
+  await queueExecution.run(context, async () => {
+    await expect(ml.selectBackgroundPool(selection, 'asset')).rejects.toThrow('desktop_pool_authority_unavailable');
+    registered.onBootstrap();
+    expect((await ml.selectBackgroundPool(selection, 'asset')).desktopClip).toBeTypeOf('function');
+    registered.onShutdown();
+    await expect(ml.selectBackgroundPool(selection, 'asset')).rejects.toThrow('desktop_pool_authority_unavailable');
+  });
+  expect(await ml.selectBackgroundPool(selection, 'asset')).toBe(selection);
 });

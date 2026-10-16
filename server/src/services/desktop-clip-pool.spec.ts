@@ -237,15 +237,9 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
       ]),
     assertDefaultRoute: vi.fn(),
   };
-  service = new DesktopMlService(repository as never, index as never, policies as never, routes as never);
-  ml = new MachineLearningRepository(
-    LoggingRepository.create(),
-    undefined,
-    undefined,
-    undefined,
-    index as never,
-    service,
-  );
+  ml = new MachineLearningRepository(LoggingRepository.create(), undefined, undefined, undefined, index as never);
+  service = new DesktopMlService(repository as never, index as never, policies as never, routes as never, ml);
+  service.onBootstrap();
   ml.setup(settings.machineLearning);
   context.sourceAuthorities = new Map([[ownerId, { ownerId, assertCurrent: vi.fn() }]]);
   mocks.machineLearning.selectBackgroundPool.mockImplementation(ml.selectBackgroundPool.bind(ml));
