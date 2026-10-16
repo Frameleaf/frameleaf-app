@@ -1,6 +1,6 @@
 import { render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import logoOnDarkUrl from '../../assets/frameleaf/frameleaf-logo-on-dark.svg?url';
+import logoDarkUrl from '../../assets/frameleaf/frameleaf-logo-dark.svg?url';
 import logoOnLightUrl from '../../assets/frameleaf/frameleaf-logo-on-light.svg?url';
 import symbolUrl from '../../assets/frameleaf/frameleaf-symbol.svg?url';
 import Logo from './Logo.svelte';
@@ -23,14 +23,15 @@ describe('Frameleaf Logo (FL-135)', () => {
     expect(img?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('renders the dark lockup, with no green leaf in the wordmark, for the inline variant in dark theme (D7)', () => {
+  it("renders the brand kit's own dark logo for the inline variant in dark theme, with no plate", () => {
     const { container } = render(Logo, { variant: 'inline', theme: 'dark' });
-    const img = container.querySelector('img');
-    expect(img?.getAttribute('src')).toBe(logoOnDarkUrl);
-    expect(img?.getAttribute('alt')).toBe('Frameleaf');
+    const images = [...container.querySelectorAll('img')];
+    expect(images.map((img) => img.getAttribute('src'))).toEqual([logoDarkUrl]);
+    expect(images[0].getAttribute('alt')).toBe('Frameleaf');
+    expect(images[0].parentElement).toBe(container);
   });
 
-  it('swaps to the dark-ink lockup on a light surface, one image with no plate (D7)', () => {
+  it('swaps to the light version (dark-ink "Frame") on a light surface, one image with no plate', () => {
     const { container } = render(Logo, { variant: 'inline', theme: 'light' });
     const images = [...container.querySelectorAll('img')];
     expect(images.map((img) => img.getAttribute('src'))).toEqual([logoOnLightUrl]);

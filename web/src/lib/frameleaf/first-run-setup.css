@@ -1369,15 +1369,12 @@
   position: relative;
   overflow: hidden;
 }
-/* The mark on a dark tile with a soft teal glow (the stage's canvas, not an Ink surface). */
+/* The mark by itself, never on a tile or plate (owner, 2026-10-16). */
 .frs-link-art {
   display: grid;
   place-items: center;
   width: 84px;
   height: 84px;
-  border-radius: 22px;
-  background: var(--fl-canvas);
-  box-shadow: 0 0 40px rgba(0, 196, 214, 0.25);
 }
 .frs-link-art img {
   width: 50px;
@@ -1652,7 +1649,6 @@
   .frs-link-art {
     width: 64px;
     height: 64px;
-    border-radius: 16px;
     justify-self: start;
   }
   .frs-link-art img {

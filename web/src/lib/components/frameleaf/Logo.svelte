@@ -2,8 +2,8 @@
   /**
    * The Frameleaf brand mark (FL-135), and the one place its usage rules live.
    *
-   * Sourced only from the authorized `design/frameleaf/brand-kit` originals; nothing here is
-   * redrawn, recolored or re-exported.
+   * Sourced from the authorized `design/frameleaf/brand-kit` originals, plus the one light-surface
+   * derivative described below; nothing here is redrawn, recolored or re-exported.
    *
    * Which artwork is drawn follows from three props:
    *
@@ -12,13 +12,14 @@
    *   branding. The transparent gradient symbol (`frameleaf-symbol.svg`) is safe on any surface.
    * - `lockup` (or `inline`): the symbol with the wordmark.
    *
-   * `surface` (or the earlier name `theme`): what the mark sits on, not the app theme. There is
-   * no plate behind the lockup on either surface (owner decision D7, 2026-10-16).
-   * - `dark`: `frameleaf-logo-on-dark.svg`, the kit's dark logo with the whole wordmark in its
-   *   near-white (no green "leaf"; design/frameleaf/derivatives/frameleaf-logo-dark-app.svg).
-   * - `light`: `frameleaf-logo-on-light.svg`, the dark-ink derivative
-   *   (design/frameleaf/derivatives/frameleaf-logo-light.svg). A white wordmark never goes on a
-   *   light surface.
+   * `surface` (or the earlier name `theme`): what the mark sits on, not the app theme. The light and
+   * dark versions of the logo, never in a box or plate (owner, 2026-10-16):
+   * - `dark`: `frameleaf-logo-dark.svg`, the brand kit's logo for dark backgrounds, unmodified
+   *   (white "Frame", green "leaf").
+   * - `light`: `frameleaf-logo-on-light.svg`, the light version
+   *   (design/frameleaf/derivatives/frameleaf-logo-light.svg, FL-135): the kit's dark logo with
+   *   "Frame" in dark ink, because the kit ships no light-background wordmark. A white wordmark
+   *   never goes on a light surface.
    * - `auto`: follows the app theme, for a mark that sits on the canvas or a panel.
    *
    * `mono`: the single-colour white artwork (`frameleaf-symbol-white.svg`,
@@ -37,7 +38,7 @@
    */
   import { LOGO_CLEAR_SPACE, LOGO_MIN_HEIGHT } from '$lib/frameleaf/tokens';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
-  import logoOnDarkUrl from '../../assets/frameleaf/frameleaf-logo-on-dark.svg?url';
+  import logoDarkUrl from '../../assets/frameleaf/frameleaf-logo-dark.svg?url';
   import logoOnLightUrl from '../../assets/frameleaf/frameleaf-logo-on-light.svg?url';
   import logoWhiteUrl from '../../assets/frameleaf/frameleaf-logo-white.svg?url';
   import symbolWhiteUrl from '../../assets/frameleaf/frameleaf-symbol-white.svg?url';
@@ -109,7 +110,7 @@
   />
 {:else}
   <img
-    src={onDark ? (white ? logoWhiteUrl : logoOnDarkUrl) : logoOnLightUrl}
+    src={onDark ? (white ? logoWhiteUrl : logoDarkUrl) : logoOnLightUrl}
     alt={decorative ? '' : name}
     aria-hidden={decorative || undefined}
     class="fl-logo-lockup {sizedClass}"

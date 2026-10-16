@@ -1,11 +1,11 @@
 {
   "approvedReferences": [
     {
-      "bytes": 10086,
+      "bytes": 10090,
       "id": "reference:design/frameleaf/tokens.json",
       "path": "design/frameleaf/tokens.json",
       "role": "approved-token-reference",
-      "sha256": "0e01e3b8a6a85fec888364b588c21c206be5dda2cd9c15b7c2bb6442a618a247"
+      "sha256": "9fca8e9c4f86d174381565625b86e514b2d6f2db215eb49385aa761fa3208122"
     },
     {
       "bytes": 988033,

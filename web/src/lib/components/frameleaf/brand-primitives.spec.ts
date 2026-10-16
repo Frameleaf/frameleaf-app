@@ -203,7 +203,7 @@ describe('Frameleaf brand primitives', () => {
       expect(lockup.container.querySelector('img')?.getAttribute('src')).toBe(logoWhiteUrl);
       lockup.unmount();
 
-      // There is no mono artwork for a light surface: the dark-ink lockup (D7).
+      // There is no mono artwork for a light surface: the light version, with dark-ink "Frame".
       const light = render(Logo, { variant: 'lockup', surface: 'light', mono: true });
       const images = [...light.container.querySelectorAll('img')].map((img) => img.getAttribute('src'));
       expect(images).toEqual([logoOnLightUrl]);

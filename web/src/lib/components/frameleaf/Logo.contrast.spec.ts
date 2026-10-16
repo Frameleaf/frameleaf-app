@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
- * FL-29: "verify logo contrast in both themes". This measures the lockups the app swaps by theme
- * (D7, 2026-10-16) against the theme canvases (tokens.css `--fl-canvas`): on the dark surface the
- * whole wordmark is the kit's near-white (text, 4.5:1; no green "leaf"), the gradient symbol is a
- * graphic (3:1), and on the light surface "Frame" is the dark-ink derivative's #111d26. The light
- * lockup keeps the brand's green "leaf" lettering, which is below 3:1 there, so the name is always
- * in the image's accessible name as well.
+ * FL-29: "verify logo contrast in both themes". This measures the light and dark versions of the
+ * logo the app swaps by theme (owner, 2026-10-16) against the theme canvases (tokens.css
+ * `--fl-canvas`): on the dark surface the brand kit's own logo has a near-white "Frame" and a
+ * green "leaf" (text, 4.5:1), the gradient symbol is a graphic (3:1), and on the light surface
+ * "Frame" is the dark-ink derivative's #111d26. The light version keeps the brand's green "leaf"
+ * lettering, which is below 3:1 there, so the name is always in the image's accessible name as well.
  */
 const assets = resolve(import.meta.dirname, '../../assets/frameleaf');
 const colours = (file: string, attribute: 'fill' | 'stop-color') =>
@@ -38,13 +38,17 @@ const canvas = (theme: 'dark' | 'light') => {
 };
 
 describe('Frameleaf logo contrast (FL-29)', () => {
-  it('reads the whole dark wordmark at 4.5:1 or more on the dark canvas, with no green leaf (D7)', () => {
-    const fills = colours('frameleaf-logo-on-dark.svg', 'fill');
-    // "Frame" and "leaf", both the near-white; no gradient fill is left in the wordmark.
-    expect(fills).toEqual(['#f7f9fc', '#f7f9fc']);
-    expect(readFileSync(resolve(assets, 'frameleaf-logo-on-dark.svg'), 'utf8')).not.toContain('wordmark-leaf');
-    for (const fill of fills) {
-      expect(contrast(fill, canvas('dark'))).toBeGreaterThanOrEqual(4.5);
+  it('reads the whole dark wordmark, white "Frame" and green "leaf", at 4.5:1 or more on the dark canvas', () => {
+    const fills = colours('frameleaf-logo-dark.svg', 'fill');
+    // "Frame" is the kit's near-white; "leaf" is the kit's green wordmark gradient.
+    expect(fills).toEqual(['#f7f9fc']);
+    const svg = readFileSync(resolve(assets, 'frameleaf-logo-dark.svg'), 'utf8');
+    expect(svg).toContain('fill="url(#wordmark-leaf)"');
+    const leafGradient = svg.match(/<linearGradient id="wordmark-leaf"[\s\S]*?<\/linearGradient>/)?.[0] ?? '';
+    const leafStops = [...leafGradient.matchAll(/stop-color="(#[0-9a-fA-F]{6})"/g)].map(([, hex]) => hex);
+    expect(leafStops.length).toBeGreaterThan(0);
+    for (const colour of [...fills, ...leafStops]) {
+      expect(contrast(colour, canvas('dark'))).toBeGreaterThanOrEqual(4.5);
     }
   });
 
@@ -69,7 +73,7 @@ describe('Frameleaf logo contrast (FL-29)', () => {
     // Measured below 3:1: which is why the lockup always carries the name as its accessible name.
     expect(weakest).toBeLessThan(3);
     const logo = readFileSync(resolve(import.meta.dirname, 'Logo.svelte'), 'utf8');
-    expect(logo).toMatch(/src=\{onDark \? \(white \? logoWhiteUrl : logoOnDarkUrl\) : logoOnLightUrl\}/);
+    expect(logo).toMatch(/src=\{onDark \? \(white \? logoWhiteUrl : logoDarkUrl\) : logoOnLightUrl\}/);
     expect(logo).toMatch(/alt=\{decorative \? '' : name\}/);
   });
 });
