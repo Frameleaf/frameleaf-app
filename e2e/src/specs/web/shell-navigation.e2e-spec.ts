@@ -97,22 +97,13 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       await test.step(name, async () => {
         const previous = page.url();
         await railLink(page, name).click();
-        if (name === 'Locked') {
-          // Locked is gated: without an unlocked session it asks for the PIN first, then continues
-          // to Locked. Back returns to the page the rail was used from.
-          await page.waitForURL(
-            (url) => url.pathname === '/auth/pin-prompt' && url.searchParams.get('continue') === href,
-          );
-          // The redirect changes the address before the PIN page finishes rendering.
-          await expect(page.getByRole('heading', { name: 'Create a PIN', exact: true })).toBeVisible();
-          await expect(errorTitle(page)).toHaveCount(0);
-          await page.goBack();
-          await page.waitForURL(at(previous));
-          await expect(rail(page)).toBeVisible();
-          return;
-        }
         await page.waitForURL(at(href));
         await expect(errorTitle(page), `${name} (${href}) opens a page`).toHaveCount(0);
+        if (name === 'Locked') {
+          // LIB-P2: without an unlocked session Locked opens in the app, the rail in place, and its
+          // card asks for the PIN.
+          await expect(page.getByTestId('library-locked-gate')).toBeVisible();
+        }
         if (new URL(page.url()).pathname === '/user-settings') {
           // Tools, Library Care and Settings open Command Center areas, which bring their own
           // navigation in place of the library rail (CommandCenter.jsx); Back returns to the rail.

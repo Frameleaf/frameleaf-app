@@ -98,9 +98,9 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(traces(page, plain.id).first()).toBeVisible();
     await expect(traces(page, locked.id)).toHaveCount(0);
 
-    // the Locked view itself now needs the PIN again
+    // the Locked view itself now needs the PIN again, asked for in the app (LIB-P2)
     await page.goto('/locked');
-    await expect(page).toHaveURL(/pin/);
+    await expect(page.getByTestId('library-locked-gate')).toBeVisible();
     await expect(traces(page, locked.id)).toHaveCount(0);
   });
 
