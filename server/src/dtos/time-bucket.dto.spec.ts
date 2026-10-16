@@ -1,5 +1,30 @@
-import { TimeBucketAssetDto, TimeBucketDto, TimelineOrderedDto } from 'src/dtos/time-bucket.dto.js';
+import {
+  TimeBucketAssetDto,
+  TimeBucketDto,
+  TimelineHighlightsDto,
+  TimelineOrderedDto,
+} from 'src/dtos/time-bucket.dto.js';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+
+describe('timeline bounding boxes', () => {
+  it.each([',,,', ',0,1,1', '0,,1,1', '0,0,,1', '0,0,1,', '0, ,1,1'])(
+    'refuses missing coordinate components in %s',
+    (bbox) => {
+      expect(TimeBucketDto.schema.safeParse({ bbox }).success).toBe(false);
+      expect(TimeBucketAssetDto.schema.safeParse({ bbox, timeBucket: '2024-01-01' }).success).toBe(false);
+      expect(TimelineOrderedDto.schema.safeParse({ bbox, sort: 'filename' }).success).toBe(false);
+      expect(TimelineHighlightsDto.schema.safeParse({ bbox }).success).toBe(false);
+    },
+  );
+
+  it.each([
+    ['0,0,0,0', { west: 0, south: 0, east: 0, north: 0 }],
+    [' -1 , 0 , 1 , 2 ', { west: -1, south: 0, east: 1, north: 2 }],
+    ['170,-10,-170,10', { west: 170, south: -10, east: -170, north: 10 }],
+  ] as const)('retains explicit coordinates in %s', (bbox, expected) => {
+    expect(TimeBucketDto.schema.parse({ bbox }).bbox).toEqual(expected);
+  });
+});
 
 describe('Best Photos on the timeline (LIB-P3)', () => {
   it('reads bestPhotos from the query string on the buckets, a bucket and the ordered page', () => {

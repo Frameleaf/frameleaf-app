@@ -83,7 +83,7 @@ const TimeBucketQueryBaseSchema = z
         }
 
         const [west, south, east, north] = parts.map(Number);
-        if ([west, south, east, north].some((part) => Number.isNaN(part))) {
+        if (parts.some((part) => part.trim() === '') || [west, south, east, north].some((part) => Number.isNaN(part))) {
           ctx.issues.push({
             code: 'custom',
             message: 'bbox parts must be valid numbers',
