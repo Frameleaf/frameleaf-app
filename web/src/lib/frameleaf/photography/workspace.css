@@ -280,7 +280,11 @@
 .phw {
   display: flex;
   flex: 1;
-  width: 100%;
+  /* Fill the page body edge to edge, as in the prototype: the shared layout insets page content
+     by 0.5rem and does not stretch it, which left the rail short and floating. */
+  width: calc(100% + 1rem);
+  height: calc(100% + 1rem);
+  margin: -0.5rem;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -361,9 +365,17 @@
   border-radius: var(--fl-radius-control);
   color: var(--fl-muted);
 }
+.phw-rail nav button:hover {
+  background: var(--fl-raised);
+}
 .phw-rail nav button[aria-current='page'] {
   color: var(--fl-text);
   background: color-mix(in srgb, var(--fl-text) 8%, var(--fl-panel));
+}
+.phw-rail nav button[aria-current='page'] > svg,
+.phw-rail-bottom > svg,
+.phw-save svg {
+  color: var(--fl-accent);
 }
 .phw-rail-bottom {
   margin-top: auto;
@@ -436,7 +448,8 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 22px 24px;
+  padding: 22px 24px 32px;
+  scrollbar-gutter: stable;
 }
 .phw-list-tools {
   display: flex;
@@ -456,6 +469,9 @@
   background: var(--fl-panel);
   flex: 1;
   max-width: 340px;
+}
+.phw-search:focus-within {
+  border-color: var(--fl-accent);
 }
 .phw input,
 .phw select,
@@ -486,6 +502,9 @@
   border-radius: var(--fl-radius-card);
   background: var(--fl-panel);
 }
+.phw-shoot-card:hover {
+  border-color: color-mix(in srgb, var(--fl-text) 35%, var(--fl-border));
+}
 .phw-shoot-image {
   position: relative;
   display: grid;
@@ -504,10 +523,14 @@
   left: 12px;
   bottom: 12px;
   padding: 4px 8px;
-  border-radius: var(--fl-radius-control);
+  border: 1px solid #ffffff30;
+  border-radius: 6px;
   font-size: var(--fl-font-micro);
-  background: var(--fl-panel);
-  color: var(--fl-text);
+  white-space: nowrap;
+  /* A dark chip over the cover, as in the prototype, so it reads on any photo in both themes. */
+  background: #171d21db;
+  color: #fff;
+  backdrop-filter: var(--fl-material-blur);
 }
 .phw-shoot-text {
   padding: 15px;
@@ -528,8 +551,10 @@
 .phw-shoot-text footer {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fl-border);
   color: var(--fl-muted);
   font-size: var(--fl-font-micro);
 }
@@ -582,8 +607,8 @@
 .phw-stages i {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border: 1px solid var(--fl-border);
   border-radius: 50%;
   font-style: normal;
@@ -661,19 +686,19 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--fl-border);
-  border-radius: var(--fl-radius-control);
+  border-radius: var(--fl-radius-card);
   background: var(--fl-panel);
 }
 .phw-photo.is-selected {
-  outline: 2px solid var(--fl-accent);
-  outline-offset: var(--fl-focus-offset);
+  border-color: var(--fl-accent);
+  box-shadow: 0 0 0 1px var(--fl-accent);
 }
-.phw-photo.is-rejected img {
-  opacity: 0.45;
+.phw-photo.is-rejected .phw-open-photo {
+  opacity: 0.35;
 }
 .phw-photo-image {
   position: relative;
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
 }
 .phw-open-photo {
@@ -695,13 +720,16 @@
 .phw-raw,
 .phw-edited {
   position: absolute;
-  bottom: 8px;
-  left: 8px;
+  bottom: 7px;
+  left: 7px;
   font-size: 9px;
-  padding: 3px 5px;
-  color: var(--fl-text);
-  background: var(--fl-panel);
+  font-weight: 600;
+  padding: 2px 5px;
+  border: 1px solid #ffffff25;
+  color: #fff;
+  background: #171d21d9;
   border-radius: var(--fl-radius-xs);
+  pointer-events: none;
 }
 .phw-edited {
   left: auto;
@@ -730,8 +758,14 @@
   min-height: 26px;
   color: var(--fl-muted);
 }
+.phw-stars button:hover {
+  background: var(--fl-raised);
+}
 .phw-stars button[aria-pressed='true'] {
   color: var(--fl-accent);
+}
+.phw-stars .phw-reject {
+  margin-inline-start: auto;
 }
 .phw-inspector {
   overflow: hidden;
@@ -801,6 +835,19 @@
   line-height: 1.5;
   margin-top: 14px;
 }
+/* The culling hint sits between the selection row and the contact sheet: clear of the grid below. */
+.phw-selection-tools + .phw-small {
+  margin: 0 0 var(--fl-space-3);
+}
+/* "All shoots" is a quiet text link beside the stages, as in the prototype. */
+.phw-shoot-top > .fl-control {
+  padding-inline-start: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.phw-rail-bottom > a {
+  font-size: var(--fl-font-micro);
+}
 .phw-new-shoot {
   padding: 18px;
 }
@@ -850,12 +897,10 @@
   .phw {
     flex-direction: column;
   }
+  /* The prototype's phone rail: the back link over a grid of icon tiles, every section in view. */
   .phw-rail {
     flex-basis: auto;
     flex-shrink: 0;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
     padding: 8px 12px;
     border-inline-end: 0;
     border-bottom: 1px solid var(--fl-border);
@@ -865,21 +910,36 @@
     display: none;
   }
   .phw-rail nav {
-    flex: 1;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
     margin-bottom: 0;
-    overflow: auto;
   }
   .phw-rail nav button {
-    flex-shrink: 0;
-    padding: 8px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-height: 48px;
+    padding: 6px 2px;
+    font-size: 10px;
+    text-align: center;
+  }
+  .phw-rail nav .phw-nav-heading {
+    grid-column: 1 / -1;
   }
   .phw-return {
-    font-size: 0;
-    padding: 4px;
+    padding: 4px 3px;
+    min-height: 32px;
   }
   .phw-header {
     gap: 10px;
+    padding: 14px var(--fl-space-4);
+  }
+  .phw-scroll {
+    padding: var(--fl-space-4) var(--fl-space-4) var(--fl-space-6);
+  }
+  .phw-list-tools > .phw-search {
+    flex-basis: 100%;
   }
   .phw-header h1 {
     font-size: 21px;

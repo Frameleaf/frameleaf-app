@@ -133,6 +133,13 @@
   let versionError = $state('');
   let versionsLoading = $state(false);
   let grid = $state<HTMLElement>();
+  let scroller = $state<HTMLElement>();
+  // Opening a shoot or another section starts at its top, not at the scroll offset the list had.
+  $effect(() => {
+    void activeId;
+    void section;
+    scroller?.scrollTo({ top: 0 });
+  });
   let generation = 0;
   let detailGeneration = 0;
   let versionGeneration = 0;
@@ -203,9 +210,13 @@
   const subtitle = $derived(
     section === 'branding'
       ? $t('frameleaf_photography_branding_lead')
-      : active && (section === 'shoots' || isShootSection(section))
-        ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
-        : $t('frameleaf_photography_shoots_lead'),
+      : section === 'watermarks'
+        ? $t('frameleaf_photography_watermarks_lead')
+        : section === 'website'
+          ? $t('frameleaf_photography_website_lead')
+          : active && (section === 'shoots' || isShootSection(section))
+            ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
+            : $t('frameleaf_photography_shoots_lead'),
   );
 
   function resetRatings() {
@@ -653,7 +664,7 @@
         retrying={loading}
         retryLabel={$t('frameleaf_photography_reload_shoots')}
       />{/if}
-    <main class="phw-scroll" aria-busy={loading}>
+    <main class="phw-scroll" aria-busy={loading} bind:this={scroller}>
       {#if section === 'branding'}<PhotographyBranding
           onSaved={() => {
             void reload();

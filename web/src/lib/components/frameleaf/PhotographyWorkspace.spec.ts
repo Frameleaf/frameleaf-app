@@ -68,14 +68,14 @@ describe('PhotographyWorkspace', () => {
     expect(screen.queryByText(/project/i)).toBeNull();
     const rail = screen.getByRole('navigation', { name: 'Photography workspace' });
     // a shoot's sections are not offered until a shoot is open
-    expect(within(rail).queryByRole('button', { name: 'Selections & delivery' })).toBeNull();
+    expect(within(rail).queryByRole('button', { name: 'Orders & delivery' })).toBeNull();
     const card = await screen.findByRole('button', { name: /Harbour portraits/ });
     expect(screen.queryByText(/project/i)).toBeNull();
     await fireEvent.click(card);
-    for (const name of ['Photos', 'Intake & assembly', 'Client workflow', 'Selections & delivery', 'Presentation']) {
+    for (const name of ['Photographs', 'Intake & assembly', 'Client workflow', 'Orders & delivery', 'Presentation']) {
       expect(await within(rail).findByRole('button', { name })).toBeInTheDocument();
     }
-    expect(within(rail).getByRole('button', { name: 'Publish & invite' })).toBeInTheDocument();
+    expect(within(rail).getByRole('button', { name: 'Publishing' })).toBeInTheDocument();
     expect(screen.queryByText(/project/i)).toBeNull();
   });
 
