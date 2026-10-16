@@ -13,7 +13,7 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(10);
+  expect(catalogue.profiles).toHaveLength(11);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
@@ -111,6 +111,7 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     'a14a99cad4f9e208fd8729680a37211dd09ed13b9e34462559c13f9dd35826a3',
     '4756b97c88cdafaf134d234d96f49b64c9ec16294e6966c3eb9d94d4a60b66fa',
     '314c297749e23952b8541b47000e191dbccbac1556c5710b8f23a03d5d21391f',
+    '10a83ae85fa830c3097abaa4117a6adf6542b7ac3fbddb998599f3ef6382cc9d',
   ];
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {

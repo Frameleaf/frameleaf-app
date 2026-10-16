@@ -44,7 +44,9 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
+import { faceEntries } from 'src/utils/desktop-face.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
+import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
@@ -272,12 +274,14 @@ export type DesktopPoolOptions = {
   jobId?: string | null;
   modelName: string;
   ocr?: MachineLearningConfig['ocr'];
+  face?: MachineLearningConfig['facialRecognition'];
   assertConfig: (tx?: Transaction<DB>) => Promise<void>;
 };
 export type DesktopPoolSelector = (selection: MlSelection, options: DesktopPoolOptions) => Promise<MlSelection>;
 
 export type MlSelection = {
   /** Internal admitted background pool; never reconstructed from an API response. */
+  desktopFace?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
   desktopOcr?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
   desktopClip?: (payload: ModelPayload, profile: DesktopModelProfile) => Promise<unknown>;
   destinationId: string;
@@ -958,9 +962,10 @@ export class MachineLearningRepository implements RestorationInference {
     selection: MlSelection,
     payload: ModelPayload,
     config: MachineLearningRequest,
-    bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T },
+    bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T; path?: 'predict-face-bound' },
   ): Promise<T> {
-    if (selection.desktopClip || selection.desktopOcr) throw new Error('desktop_bound_profile_required');
+    if (selection.desktopClip || selection.desktopOcr || selection.desktopFace)
+      throw new Error('desktop_bound_profile_required');
     if (selection.endpoint.cloud) {
       throw new CloudJobsUnavailableError(selection.workload);
     }
@@ -985,12 +990,15 @@ export class MachineLearningRepository implements RestorationInference {
     let body: string;
     try {
       await this.authorize(selection.endpoint);
-      ({ response, body } = await fetchJobText(new URL(bound ? 'predict-bound' : 'predict', selection.endpoint.url), {
-        method: 'POST',
-        headers: this.authHeaders(selection.endpoint),
-        body: formData,
-        redirect: 'error',
-      }));
+      ({ response, body } = await fetchJobText(
+        new URL(bound?.path ?? (bound ? 'predict-bound' : 'predict'), selection.endpoint.url),
+        {
+          method: 'POST',
+          headers: this.authHeaders(selection.endpoint),
+          body: formData,
+          redirect: 'error',
+        },
+      ));
       await this.authorize(selection.endpoint);
     } catch (error: Error | unknown) {
       this.probeCache.delete(selection.endpoint.url);
@@ -1031,14 +1039,51 @@ export class MachineLearningRepository implements RestorationInference {
     return Buffer.byteLength(payload.text);
   }
 
-  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
-    const request = {
-      [ModelTask.FACIAL_RECOGNITION]: {
-        [ModelType.DETECTION]: { modelName, options: { minScore } },
-        [ModelType.RECOGNITION]: { modelName },
+  async detectBoundFaces(selection: MlSelection, imagePath: string, profile: DesktopModelProfile) {
+    if (
+      selection.workload !== MlWorkload.Face ||
+      profile.workload !== 'face' ||
+      profile.embeddingDimensions !== 512 ||
+      profile.spec.fixtureKind !== 'image' ||
+      profile.modelKey !== profile.spec.modelKey
+    )
+      throw new Error('producer_input_invalid');
+    const { protocolVersion, modelKey, entries, models, preprocessingSha256 } = profile.spec;
+    return this.predict(selection, { imagePath }, entries as MachineLearningRequest, {
+      path: 'predict-face-bound',
+      binding: { protocolVersion, modelKey, entries, models, preprocessingSha256 },
+      parse: (value) => {
+        const response = z
+          .strictObject({
+            protocolVersion: z.literal(1),
+            modelKey: z.literal(profile.modelKey),
+            preprocessingSha256: z.literal(profile.spec.preprocessingSha256),
+            result: z.unknown(),
+          })
+          .parse(value);
+        return parseBoundFaceResult(response.result);
       },
-    };
-    const response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
+    });
+  }
+
+  async detectFaces(selection: MlSelection, imagePath: string, { modelName, minScore }: FaceDetectionOptions) {
+    const request = faceEntries({ modelName, minScore });
+    let response: FacialRecognitionResponse;
+    if (selection.desktopFace) {
+      const size = await this.measure({ imagePath });
+      if (!size || size > 16 * 1024 * 1024) throw new Error('desktop_input_size_invalid');
+      const started = Date.now();
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopFace({ imagePath }, request);
+        response = parseBoundFaceResult(result);
+        received = Buffer.byteLength(JSON.stringify(result));
+        outcome = 'success';
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    } else response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request);
     return {
       imageHeight: response.imageHeight,
       imageWidth: response.imageWidth,
@@ -1051,18 +1096,23 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
-    if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr].includes(selection.workload)) return selection;
+    if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload))
+      return selection;
     if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
     const ocr = selection.workload === MlWorkload.Ocr ? structuredClone(this.config.ocr) : undefined;
-    const modelName = ocr?.modelName ?? this.config.clip.modelName;
+    const face = selection.workload === MlWorkload.Face ? structuredClone(this.config.facialRecognition) : undefined;
+    const modelName = face?.modelName ?? ocr?.modelName ?? this.config.clip.modelName;
     return this.desktopPoolSelector(selection, {
       jobId,
       modelName,
       ...(ocr && { ocr }),
+      ...(face && { face }),
       assertConfig: (tx?: Transaction<DB>) =>
-        ocr
-          ? this.assertDesktopOcrConfig(selection, ocrEntries(ocr), tx, ocr)
-          : this.assertDesktopPoolConfig(selection, modelName, tx),
+        face
+          ? this.assertDesktopFaceConfig(selection, faceEntries(face), tx, face)
+          : ocr
+            ? this.assertDesktopOcrConfig(selection, ocrEntries(ocr), tx, ocr)
+            : this.assertDesktopPoolConfig(selection, modelName, tx),
     });
   }
 
@@ -1111,6 +1161,32 @@ export class MachineLearningRepository implements RestorationInference {
       !current.ocr.enabled ||
       canonicalJson(ocrEntries(current.ocr)) !== canonicalJson(entries) ||
       (expected && canonicalJson(current.ocr) !== canonicalJson(expected)) ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
+  }
+
+  async assertDesktopFaceConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    entries: unknown,
+    tx?: Transaction<DB>,
+    expected?: MachineLearningConfig['facialRecognition'],
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.facialRecognition.enabled ||
+      canonicalJson(faceEntries(current.facialRecognition)) !== canonicalJson(entries) ||
+      (expected && canonicalJson(current.facialRecognition) !== canonicalJson(expected)) ||
       (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
     )
       throw new Error('desktop_pool_config_changed');

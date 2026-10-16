@@ -25,6 +25,41 @@ export class DesktopAssistanceActivationService {
     private machineLearning?: MachineLearningRepository,
   ) {}
 
+  async activateFace(grant: DesktopWorkerGrant, qualification: Qualification, modelKey: string): Promise<void> {
+    if (qualification.modelKey !== modelKey) throw new ConflictException('desktop_pool_model_unavailable');
+    const ownerId = await this.workers.owner(grant);
+    if (!ownerId) throw new UnauthorizedException('desktop_worker_activation_invalid');
+    const account = await this.policies.read(ownerId);
+    if (!account) throw new ConflictException('desktop_pool_policy_required');
+    const proof = await this.nas.verifyFace(modelKey).catch((error: unknown) => {
+      if (error instanceof ConflictException) throw error;
+      throw new ConflictException('desktop_nas_face_producer_unavailable', { cause: error });
+    });
+    if (!proof.modelKeys.includes(qualification.modelKey))
+      throw new ConflictException('desktop_pool_model_unavailable');
+    await this.metadata
+      .withConfigTransaction(async (_metadata, tx) => {
+        await this.policies.assertCurrent(ownerId, account.revisionId, tx);
+        await this.destinations.assertDefaultRoute(proof.selection, proof.routeRevisionId, tx, MlWorkload.Face);
+        await proof.assertCurrent(tx);
+        if (
+          !(await this.workers.grantQualifiedModel({ grant, ownerId, qualification, modelKeys: proof.modelKeys }, tx))
+        )
+          throw new UnauthorizedException('desktop_worker_activation_invalid');
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ConflictException || error instanceof UnauthorizedException) throw error;
+        if (
+          error instanceof Error &&
+          ['desktop_pool_route_changed', 'desktop_pool_destination_changed', 'desktop_pool_policy_changed'].includes(
+            error.message,
+          )
+        )
+          throw new ConflictException(error.message, { cause: error });
+        throw error;
+      });
+  }
+
   async activateOcr(
     grant: DesktopWorkerGrant,
     qualification: Qualification,

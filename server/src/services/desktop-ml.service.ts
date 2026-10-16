@@ -30,6 +30,7 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { assertAssetSource } from 'src/utils/asset-source-authority.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopMlDisclosure,
   desktopEndpointDigest,
@@ -37,6 +38,7 @@ import {
 } from 'src/utils/desktop-ml-disclosure.js';
 import { desktopOcrProfile, ocrEntries } from 'src/utils/desktop-ocr.js';
 import { DATABASE_ACQUIRE_TIMEOUT_MS } from 'src/utils/execution-database.js';
+import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
@@ -66,7 +68,7 @@ export class DesktopMlService {
     const context = queueExecution.getStore();
     if (
       !context ||
-      ![MlWorkload.Clip, MlWorkload.Ocr].includes(selection.workload) ||
+      ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload) ||
       ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(selection.kind) ||
       selection.endpoint.cloud
     )
@@ -96,11 +98,40 @@ export class DesktopMlService {
     const assertAuthority = async (tx?: Transaction<DB>) => {
       await this.policies!.assertCurrent(ownerId, account.revisionId, tx);
       if (selection.workload === MlWorkload.Clip) await this.routes!.assertDefaultRoute(selection, revisionId, tx);
-      else await this.routes!.assertDefaultRoute(selection, revisionId, tx, MlWorkload.Ocr);
+      else await this.routes!.assertDefaultRoute(selection, revisionId, tx, selection.workload);
       await options.assertConfig(tx);
       await source.assertCurrent(tx);
     };
     await assertAuthority();
+    if (selection.workload === MlWorkload.Face) {
+      if (!options.face) throw new Error('desktop_pool_model_unavailable');
+      let profile: DesktopModelProfile;
+      try {
+        profile = desktopFaceProfile(options.face);
+      } catch (error) {
+        deferJobUntilDependency('destination-configuration');
+        throw error;
+      }
+      return this.selectImagePool(selection, {
+        ownerId,
+        profile,
+        assertAuthority,
+        disclosure: {
+          version: 3,
+          workload: 'face',
+          source: source.snapshot,
+          policyRevision: account.revisionId,
+          routeRevision: revisionId,
+          destinationId: selection.destinationId,
+          kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
+          endpointSha256: desktopEndpointDigest(selection.endpoint),
+          modelName: options.modelName,
+          modelKey: profile.modelKey,
+          face: structuredClone(options.face),
+          job: { id: context.claim.id, token: context.claim.token },
+        },
+      });
+    }
     if (selection.workload === MlWorkload.Ocr) {
       if (!options.ocr) throw new Error('desktop_pool_model_unavailable');
       let profile: DesktopModelProfile;
@@ -253,9 +284,22 @@ export class DesktopMlService {
       assertAuthority: (tx?: Transaction<DB>) => Promise<void>;
     },
   ): MlSelection {
+    return this.selectImagePool(selection, options);
+  }
+
+  private selectImagePool(
+    selection: MlSelection,
+    options: {
+      ownerId: string;
+      profile: DesktopModelProfile;
+      disclosure: DesktopMlDisclosure;
+      assertAuthority: (tx?: Transaction<DB>) => Promise<void>;
+    },
+  ): MlSelection {
     const context = queueExecution.getStore();
     if (
       !context ||
+      selection.desktopFace ||
       selection.desktopOcr ||
       selection.desktopClip ||
       typeof selection.endpoint.assertAuthority !== 'function'
@@ -284,7 +328,7 @@ export class DesktopMlService {
     return Object.freeze({
       ...selection,
       endpoint,
-      desktopOcr: async (payload: ModelPayload, entries: unknown) => {
+      [profile.workload === 'face' ? 'desktopFace' : 'desktopOcr']: async (payload: ModelPayload, entries: unknown) => {
         if (
           queueExecution.getStore() !== context ||
           !('imagePath' in payload) ||
@@ -307,7 +351,8 @@ export class DesktopMlService {
             ),
           },
           assertAuthority,
-          decodeResult: parseBoundOcrResult,
+          decodeResult: (value) =>
+            profile.workload === 'face' ? parseBoundFaceResult(value) : parseBoundOcrResult(value),
           signal: context.signal,
         });
       },
@@ -334,7 +379,18 @@ export class DesktopMlService {
         throw new Error('desktop_pool_destination_changed');
       const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
       await routes.assertRecoveryAuthority(destination);
-      if (authority.version === 2) {
+      if (authority.version === 3) {
+        await routes.assertDefaultRoute(selection, authority.routeRevision, tx, MlWorkload.Face);
+        const profile = desktopFaceProfile(authority.face);
+        if (
+          task.modelKey !== authority.modelKey ||
+          profile.modelKey !== task.modelKey ||
+          authority.modelName !== authority.face.modelName ||
+          canonicalJson(task.config) !== canonicalJson(faceEntries(authority.face))
+        )
+          throw new Error('desktop_pool_profile_changed');
+        await this.machineLearning.assertDesktopFaceConfig(selection, profile.spec.entries, tx, authority.face);
+      } else if (authority.version === 2) {
         await routes.assertDefaultRoute(selection, authority.routeRevision, tx, MlWorkload.Ocr);
         const profile = desktopOcrProfile(authority.ocr);
         if (

@@ -182,3 +182,21 @@ it('selects the exact OCR workload without requiring a CLIP index or NAS inferen
     expect(assertSource).toHaveBeenCalledOnce();
   });
 });
+
+it('selects a qualified face workload without changing the CLIP index', async () => {
+  selection.workload = MlWorkload.Face;
+  routes.getRouteStates.mockResolvedValue([
+    { workload: MlWorkload.Face, destinationId: 'nas', origin: 'default', revisionId: 'route' },
+  ]);
+  await queueExecution.run(context, async () => {
+    const chosen = await service.selectBackgroundPool(selection, {
+      jobId: 'asset',
+      modelName: defaults.machineLearning.facialRecognition.modelName,
+      face: defaults.machineLearning.facialRecognition,
+      assertConfig,
+    });
+    expect(chosen.desktopFace).toBeTypeOf('function');
+    expect(index.selectProfile).not.toHaveBeenCalled();
+    expect(assertSource).toHaveBeenCalledOnce();
+  });
+});

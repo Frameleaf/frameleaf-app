@@ -24,7 +24,7 @@ it('maps every released exact text/image producer to its explicit space without 
   expect(spaces.spaces).toHaveLength(2);
   expect(spaces.spaces[0].spaceKey).not.toBe(spaces.spaces[1].spaceKey);
   for (const profile of catalogue.profiles) {
-    if (profile.workload === 'ocr') {
+    if (profile.workload !== 'clip') {
       expect(findDesktopClipSpace(spaces, profile.modelKey)).toBeUndefined();
       continue;
     }

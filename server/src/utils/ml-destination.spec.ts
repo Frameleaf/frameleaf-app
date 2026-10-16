@@ -430,25 +430,32 @@ describe('consent and probe helpers', () => {
 });
 
 describe('selectMlDestination', () => {
-  it('admits an authorized desktop pool before probing an unavailable NAS backend and keeps accounting', async () => {
-    const d = deps({ probe: { ...mlProbeStub.healthy, reachable: false } });
-    const desktopClip = vi.fn();
-    const selectBackgroundPool = vi.fn((selection: MlSelection) => Promise.resolve({ ...selection, desktopClip }));
-    const chosen = await selectMlDestination(
-      { ...d, selectBackgroundPool },
-      { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, jobId: 'queued-job' },
-    );
-    expect(chosen.desktopClip).toBe(desktopClip);
-    expect(selectBackgroundPool).toHaveBeenCalledOnce();
-    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
-    expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
-    await chosen.endpoint.assertAuthority!();
-    expect(d.mlDestinationRepository.assertRecoveryAuthority).toHaveBeenCalledTimes(3);
-    chosen.record({ bytesSent: 1, bytesReceived: 2, durationMs: 3, outcome: 'success' });
-    expect(d.mlDestinationRepository.recordAccounting).toHaveBeenCalledWith(
-      expect.objectContaining({ destinationId: mlDestinationStub.local.id, jobId: 'queued-job', costUsd: null }),
-    );
-  });
+  it.each([MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face])(
+    'admits an authorized %s desktop pool before probing an unavailable NAS backend and keeps accounting',
+    async (workload) => {
+      const d = deps({ probe: { ...mlProbeStub.healthy, reachable: false } });
+      const desktop = vi.fn();
+      const property =
+        workload === MlWorkload.Clip ? 'desktopClip' : workload === MlWorkload.Ocr ? 'desktopOcr' : 'desktopFace';
+      const selectBackgroundPool = vi.fn((selection: MlSelection) =>
+        Promise.resolve({ ...selection, [property]: desktop }),
+      );
+      const chosen = await selectMlDestination(
+        { ...d, selectBackgroundPool },
+        { workload, destinationId: mlDestinationStub.local.id, jobId: 'queued-job' },
+      );
+      expect(chosen[property]).toBe(desktop);
+      expect(selectBackgroundPool).toHaveBeenCalledOnce();
+      expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+      expect(d.mlDestinationRepository.recordProbe).not.toHaveBeenCalled();
+      await chosen.endpoint.assertAuthority!();
+      expect(d.mlDestinationRepository.assertRecoveryAuthority).toHaveBeenCalledTimes(3);
+      chosen.record({ bytesSent: 1, bytesReceived: 2, durationMs: 3, outcome: 'success' });
+      expect(d.mlDestinationRepository.recordAccounting).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: mlDestinationStub.local.id, jobId: 'queued-job', costUsd: null }),
+      );
+    },
+  );
 
   it.each([{ enabled: false }, { workloads: [] }, { budgetLimitUsd: 0 }, { url: null }])(
     'refuses static permission failure %j before desktop pool selection',
@@ -507,7 +514,7 @@ describe('selectMlDestination', () => {
     await selectMlDestination(
       { ...d, selectBackgroundPool },
       {
-        workload: MlWorkload.Face,
+        workload: MlWorkload.Enrichment,
         destinationId: mlDestinationStub.local.id,
       },
     );

@@ -23,6 +23,7 @@ import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
@@ -34,6 +35,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
@@ -44,6 +46,7 @@ import { DesktopQualificationService } from 'src/services/desktop-qualification.
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
+import { PersonService } from 'src/services/person.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
@@ -53,7 +56,9 @@ import { controllerSetup, getKyselyDB } from 'test/utils.js';
 const desktop = process.env.FRAMELEAF_NATIVE_DESKTOP_ROOT;
 const pack = process.env.FRAMELEAF_FACTORY_TEST_PACK;
 const cache = process.env.FRAMELEAF_FACTORY_MODEL_CACHE;
-const ocr = process.env.FRAMELEAF_FACTORY_TEST_WORKLOAD === 'ocr';
+const workload = process.env.FRAMELEAF_FACTORY_TEST_WORKLOAD ?? 'clip';
+const ocr = workload === 'ocr';
+const face = workload === 'face';
 const port = async () => {
   const socket = createTcpServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
@@ -89,7 +94,7 @@ it.skipIf(!desktop || !pack || !cache)(
         (p: { workload: string; runtimeSourceRevision: string; spec: { fixtureKind: string } }) =>
           p.runtimeSourceRevision === runtime.sourceRevision &&
           p.spec.fixtureKind === 'image' &&
-          p.workload === (ocr ? 'ocr' : 'clip'),
+          p.workload === workload,
       );
       expect(profile).toBeDefined();
       const image = Buffer.from(profile.fixtureBase64, 'base64');
@@ -100,15 +105,15 @@ it.skipIf(!desktop || !pack || !cache)(
       const nasUrl = `http://127.0.0.1:${mlPort}`;
       if (!ocr) {
         python = spawn(
-          join(pack!, 'payload', runtime.python),
+          face ? join(process.cwd(), '../machine-learning/.venv/bin/python') : join(pack!, 'payload', runtime.python),
           [
-            '-I',
+            ...(face ? [] : ['-I']),
             '-B',
             '-c',
-            `from immich_ml.native_ort import configure; configure('CPUExecutionProvider'); import uvicorn; uvicorn.run('immich_ml.main:app',host='127.0.0.1',port=${mlPort},workers=1,access_log=False)`,
+            `from immich_ml.native_ort import configure; configure('CPUExecutionProvider'); import uvicorn; uvicorn.run('${face ? 'immich_ml.nas_app:app' : 'immich_ml.main:app'}',host='127.0.0.1',port=${mlPort},workers=1,access_log=False)`,
           ],
           {
-            cwd: root,
+            cwd: face ? join(process.cwd(), '../machine-learning') : root,
             stdio: ['ignore', 'ignore', 'pipe'],
             env: {
               PATH: process.env.PATH,
@@ -116,6 +121,8 @@ it.skipIf(!desktop || !pack || !cache)(
               HF_HUB_OFFLINE: '1',
               TRANSFORMERS_OFFLINE: '1',
               MACHINE_LEARNING_MODEL_DOWNLOADS: 'false',
+              MACHINE_LEARNING_ANN: 'false',
+              MACHINE_LEARNING_RKNN: 'false',
               MACHINE_LEARNING_CACHE_FOLDER: cache!,
               MACHINE_LEARNING_MODEL_INTRA_OP_THREADS: '4',
               MACHINE_LEARNING_MODEL_INTER_OP_THREADS: '1',
@@ -175,12 +182,12 @@ it.skipIf(!desktop || !pack || !cache)(
         url: nasUrl,
         authToken: mlToken,
         enabled: true,
-        workloads: [ocr ? MlWorkload.Ocr : MlWorkload.Clip],
+        workloads: [face ? MlWorkload.Face : ocr ? MlWorkload.Ocr : MlWorkload.Clip],
         budgetLimitUsd: null,
         maxRuntimeMinutes: null,
         maxUploadBytes: null,
       });
-      await routes.setDefaultRoute(ocr ? MlWorkload.Ocr : MlWorkload.Clip, destination.id);
+      await routes.setDefaultRoute(face ? MlWorkload.Face : ocr ? MlWorkload.Ocr : MlWorkload.Clip, destination.id);
       const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
       ml.setup(config.machineLearning);
       const broker = new DesktopMlRepository(db);
@@ -335,8 +342,10 @@ it.skipIf(!desktop || !pack || !cache)(
           workRoot: join(root, 'desktop'),
         }) + '\n',
       );
-      expect(await message('NATIVE_QUALIFIED')).toEqual({ roles: ocr ? 1 : 3 });
-      expect((await workers.session(session.id, session.tokenHash))!.modelKeys).toHaveLength(ocr ? 1 : 3);
+      expect(await message('NATIVE_QUALIFIED')).toEqual({ roles: workload === 'clip' ? 3 : 1 });
+      expect((await workers.session(session.id, session.tokenHash))!.modelKeys).toHaveLength(
+        workload === 'clip' ? 3 : 1,
+      );
 
       const jobs = new JobRepository({} as never, configRepo, {} as never, LoggingRepository.create(), db);
       const ocrFixture = ocr
@@ -346,7 +355,34 @@ it.skipIf(!desktop || !pack || !cache)(
             mock: [LoggingRepository],
           })
         : undefined;
-      const handler = ocrFixture?.sut ?? sut;
+      const faceFixture = face
+        ? newMediumService(PersonService, {
+            database: db,
+            real: [
+              AssetRepository,
+              AssetJobRepository,
+              ConfigRepository,
+              CryptoRepository,
+              PersonRepository,
+              SystemMetadataRepository,
+            ],
+            mock: [LoggingRepository],
+          })
+        : undefined;
+      let existingFace: { faceId: string; embedding: string } | undefined;
+      if (faceFixture) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const { assetFace } = await faceFixture.ctx.newAssetFace({ assetId: asset.id! });
+        existingFace = { faceId: assetFace.id, embedding: JSON.stringify(Array.from({ length: 512 }, () => 0.125)) };
+        await db.insertInto('face_search').values(existingFace).execute();
+      }
+      const handler = faceFixture?.sut ?? ocrFixture?.sut ?? sut;
+      if (faceFixture)
+        Object.assign(faceFixture.sut, {
+          mlDestinationRepository: routes,
+          machineLearningRepository: ml,
+          jobRepository: jobs,
+        });
       if (ocrFixture)
         Object.assign(ocrFixture.sut, {
           mlDestinationRepository: routes,
@@ -362,8 +398,17 @@ it.skipIf(!desktop || !pack || !cache)(
         queueName: followup.queue,
         handler: sut.handlePostprocessClip.bind(sut),
       };
-      const queue = ocr ? QueueName.Ocr : QueueName.SmartSearch;
-      const jobName = ocr ? JobName.Ocr : JobName.SmartSearch;
+      if (faceFixture) {
+        const followup = new Reflector().get(MetadataKey.JobConfig, PersonService.prototype.handleRecognizeFaces);
+        jobs['handlers'][JobName.FacialRecognition] = {
+          label: 'native-face-fixture-followup',
+          jobName: JobName.FacialRecognition,
+          queueName: followup.queue,
+          handler: faceFixture.sut.handleRecognizeFaces.bind(faceFixture.sut),
+        };
+      }
+      const queue = face ? QueueName.FaceDetection : ocr ? QueueName.Ocr : QueueName.SmartSearch;
+      const jobName = face ? JobName.AssetDetectFaces : ocr ? JobName.Ocr : JobName.SmartSearch;
       const store = new SqlQueueStore(db);
       const workerId = randomUUID();
       await store.initialize([queue], workerId);
@@ -376,6 +421,12 @@ it.skipIf(!desktop || !pack || !cache)(
           fileModifiedAt: new Date('2020-01-01T00:00:00Z'),
         });
         await ctx.newAssetFile({ assetId: asset.id!, path, type: AssetFileType.Preview });
+        if (face)
+          await ctx.newExif({
+            assetId: asset.id!,
+            exifImageWidth: profile.spec.expectedOutput.imageWidth,
+            exifImageHeight: profile.spec.expectedOutput.imageHeight,
+          });
         await store.enqueue([
           {
             queue,
@@ -405,19 +456,36 @@ it.skipIf(!desktop || !pack || !cache)(
               abort.abort();
             });
         }, 10_000);
-        const prepared = queueExecution.run(context, () =>
-          ocr ? (handler as OcrService).handleOcr({ id: asset.id! }) : sut.handleEncodeClip({ id: asset.id! }),
-        );
+        const claiming = vi.spyOn(broker, 'claim');
         native.stdin!.write('{"command":"execute"}\n');
-        expect(await message('NATIVE_EXECUTED')).toEqual({ iteration: 1 });
+        await vi.waitFor(() => expect(claiming).toHaveBeenCalled(), { timeout: 30_000 });
+        const prepared = queueExecution.run(context, () =>
+          face
+            ? (handler as PersonService).handleDetectFaces({ id: asset.id! })
+            : ocr
+              ? (handler as OcrService).handleOcr({ id: asset.id! })
+              : sut.handleEncodeClip({ id: asset.id! }),
+        );
+        const executed = message('NATIVE_EXECUTED');
+        expect(
+          await Promise.race([
+            executed,
+            prepared.then((status) => {
+              expect(status).toBe(JobStatus.Success);
+              return executed;
+            }),
+          ]),
+        ).toEqual({ iteration: 1 });
         expect(await prepared).toBe(JobStatus.Success);
         expect(await search.getEmbedding(asset.id!)).toBeUndefined();
         const publish = () =>
           store.complete(claim, context.followups, (tx) =>
             queueExecution.run(context, () =>
-              publicationTransaction.run(tx, async () => {
-                for (const adopt of context.adoptions) await adopt(tx);
-              }),
+              publicationTransaction.run(tx, () =>
+                jobs.collectFollowups(async () => {
+                  for (const adopt of context.adoptions) await adopt(tx);
+                }),
+              ),
             ),
           );
         await db!
@@ -426,6 +494,8 @@ it.skipIf(!desktop || !pack || !cache)(
           .where('id', '=', asset.id!)
           .execute();
         await expect(publish()).rejects.toThrow('Asset inputs changed');
+        if (face)
+          expect(await db.selectFrom('asset_face').select('id').where('assetId', '=', asset.id!).execute()).toEqual([]);
         expect(await search.getEmbedding(asset.id!)).toBeUndefined();
         await db!
           .updateTable('asset')
@@ -434,7 +504,21 @@ it.skipIf(!desktop || !pack || !cache)(
           .execute();
         expect(await publish()).toBe(true);
         for (const after of context.afterCommit ?? []) await after();
-        if (ocr) {
+        if (face) {
+          const rows = await db
+            .selectFrom('asset_face')
+            .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
+            .select(['asset_face.id', 'face_search.embedding'])
+            .where('asset_face.assetId', '=', asset.id!)
+            .execute();
+          expect(rows).toHaveLength(profile.spec.expectedOutput['facial-recognition'].length);
+          for (const [index, row] of rows.entries()) {
+            const expected = JSON.parse(profile.spec.expectedOutput['facial-recognition'][index].embedding);
+            const actual = JSON.parse(row.embedding);
+            expect(actual).toHaveLength(512);
+            for (const [i, value] of (actual as number[]).entries()) expect(value).toBeCloseTo(expected[i], 3);
+          }
+        } else if (ocr) {
           const rows = await db.selectFrom('asset_ocr').select('text').where('assetId', '=', asset.id!).execute();
           expect(rows.map((row) => row.text)).toEqual(profile.spec.expectedOutput.ocr.text);
           expect(python).toBeUndefined();
@@ -443,6 +527,10 @@ it.skipIf(!desktop || !pack || !cache)(
           expect(row?.producerModelKey).toBe(profile.modelKey);
           expect(JSON.parse(row!.embedding)).toHaveLength(768);
         }
+        if (existingFace)
+          expect(
+            await db.selectFrom('face_search').selectAll().where('faceId', '=', existingFace.faceId).executeTakeFirst(),
+          ).toEqual(existingFace);
         expect(
           (await db.selectFrom('job').select('state').where('id', '=', claim.id).executeTakeFirstOrThrow()).state,
         ).toBe('completed');

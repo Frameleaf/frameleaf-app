@@ -31,6 +31,19 @@ export const desktopMlDisclosureSchema = z.discriminatedUnion('version', [
       documentFields: z.boolean(),
     }),
   }),
+  z.strictObject({
+    ...common,
+    version: z.literal(3),
+    workload: z.literal('face'),
+    modelKey: z.string().regex(/^face:[a-f0-9]{64}$/),
+    face: z.strictObject({
+      enabled: z.boolean(),
+      modelName: z.string().min(1).max(128),
+      minScore: z.number().min(0.1).max(1),
+      maxDistance: z.number().min(0.1).max(2),
+      minFaces: z.number().int().positive(),
+    }),
+  }),
 ]);
 export type DesktopMlDisclosure = z.infer<typeof desktopMlDisclosureSchema>;
 export const desktopEndpointDigest = (endpoint: Pick<MlEndpoint, 'url' | 'authToken'>) =>

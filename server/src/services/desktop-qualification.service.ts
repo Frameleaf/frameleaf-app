@@ -19,6 +19,7 @@ import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.ser
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { findDesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
+import { faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopModelProfile,
   createDesktopModelChallenge,
@@ -80,6 +81,14 @@ export class DesktopQualificationService {
       } catch (error) {
         if (error instanceof ConflictException) throw error;
         throw new ConflictException('desktop_nas_producer_unavailable', { cause: error });
+      }
+    } else if (profile.workload === 'face') {
+      try {
+        const proof = await this.nasProducer.verifyFace(profile.modelKey);
+        await proof.assertCurrent();
+      } catch (error) {
+        if (error instanceof ConflictException) throw error;
+        throw new ConflictException('desktop_nas_face_producer_unavailable', { cause: error });
       }
     }
     let row;
@@ -145,7 +154,8 @@ export class DesktopQualificationService {
     const qualification = await this.challenges.readAccepted(grant, id);
     if (!qualification) throw new UnauthorizedException('desktop_qualification_invalid');
     this.assertAccepted(qualification, profile);
-    if (profile.workload === 'ocr') await this.activation.activateOcr(grant, qualification, profile);
+    if (profile.workload === 'face') await this.activation.activateFace(grant, qualification, profile.modelKey);
+    else if (profile.workload === 'ocr') await this.activation.activateOcr(grant, qualification, profile);
     else
       await this.activation.activate(
         grant,
@@ -212,8 +222,11 @@ export class DesktopQualificationService {
         ? !config.machineLearning.clip.enabled ||
           !findDesktopClipSpace(this.spaces, profile.modelKey) ||
           config.machineLearning.clip.modelName !== profile.modelName
-        : !config.machineLearning.ocr.enabled ||
-          canonicalJson(ocrEntries(config.machineLearning.ocr)) !== canonicalJson(profile.spec.entries)) ||
+        : profile.workload === 'face'
+          ? !config.machineLearning.facialRecognition.enabled ||
+            canonicalJson(faceEntries(config.machineLearning.facialRecognition)) !== canonicalJson(profile.spec.entries)
+          : !config.machineLearning.ocr.enabled ||
+            canonicalJson(ocrEntries(config.machineLearning.ocr)) !== canonicalJson(profile.spec.entries)) ||
       Buffer.from(profile.fixtureBase64, 'base64').length > 2 * 1024 * 1024
     )
       throw new ConflictException('desktop_model_profile_unavailable');

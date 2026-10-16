@@ -101,7 +101,7 @@ const setup = async (consent = true) => {
     },
     assertCurrent: vi.fn().mockResolvedValue(undefined),
   };
-  const nas = { verify: vi.fn().mockResolvedValue(proof) };
+  const nas = { verify: vi.fn().mockResolvedValue(proof), verifyFace: vi.fn() };
   const index = new DesktopClipIndexRepository(db);
   const service = new DesktopAssistanceActivationService(workers, index, nas as never, policies, metadata, routes);
   return {
@@ -303,4 +303,36 @@ it('activates OCR without CLIP inference or index admission and rejects a change
   );
   await expect(service.activateOcr(f.grant, qualification, ocr)).rejects.toThrow('desktop_pool_config_changed');
   await expect(service.activateOcr(f.grant, qualification, ocr)).rejects.toBeInstanceOf(ConflictException);
+});
+
+it('grants a face role only after current NAS producer proof and leaves existing indices untouched', async () => {
+  const f = await setup();
+  const face = JSON.parse(readFileSync('test/fixtures/desktop-face-profile.json', 'utf8'));
+  const qualification = await seedDesktopQualification(db, f.grant, {
+    modelKey: face.modelKey,
+    config: face.spec.entries,
+    inputKind: 'image',
+  });
+  await db
+    .updateTable('ml_destination')
+    .set({ workloads: [MlWorkload.Clip, MlWorkload.Face] })
+    .where('id', '=', f.destination.id)
+    .execute();
+  await f.routes.setDefaultRoute(MlWorkload.Face, f.destination.id);
+  const route = (await f.routes.getRouteStates()).find((route) => route.workload === MlWorkload.Face)!;
+  const proof = {
+    ...f.proof,
+    modelKeys: [face.modelKey],
+    selection: { ...f.proof.selection, workload: MlWorkload.Face },
+    routeRevisionId: route.revisionId,
+  };
+  f.nas.verifyFace.mockResolvedValue(proof);
+  await f.service.activateFace(f.grant, qualification, face.modelKey);
+  expect(f.nas.verifyFace).toHaveBeenCalledWith(face.modelKey);
+  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([face.modelKey]);
+  expect(await f.index.getActive()).toBeUndefined();
+  proof.assertCurrent.mockRejectedValue(new ConflictException('desktop_nas_producer_changed'));
+  await expect(f.service.activateFace(f.grant, qualification, face.modelKey)).rejects.toThrow(
+    'desktop_nas_producer_changed',
+  );
 });

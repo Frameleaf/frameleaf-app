@@ -887,7 +887,7 @@ it('revalidates disclosure authority inside the authenticated lease before retur
   expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ ownerId: request.ownerId }), expect.anything());
 });
 
-it.each([MlWorkload.Clip, MlWorkload.Ocr])(
+it.each([MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face])(
   'reconstructs durable %s disclosure and refuses revoked source, policy, route, config and job authority',
   async (workload) => {
     const profiles: DesktopModelProfile[] = JSON.parse(
@@ -948,7 +948,12 @@ it.each([MlWorkload.Clip, MlWorkload.Ocr])(
     await store.enqueue([
       {
         queue,
-        name: workload === MlWorkload.Clip ? JobName.SmartSearch : JobName.Ocr,
+        name:
+          workload === MlWorkload.Clip
+            ? JobName.SmartSearch
+            : workload === MlWorkload.Face
+              ? JobName.AssetDetectFaces
+              : JobName.Ocr,
         data: { id: asset.id },
         safeToRetry: true,
         sensitive: false,
@@ -999,11 +1004,18 @@ it.each([MlWorkload.Clip, MlWorkload.Ocr])(
         );
         return workload === MlWorkload.Clip
           ? ml.encodeImage(selected, path, config.machineLearning.clip)
-          : ml.ocr(selected, path, config.machineLearning.ocr);
+          : workload === MlWorkload.Face
+            ? ml.detectFaces(selected, path, config.machineLearning.facialRecognition)
+            : ml.ocr(selected, path, config.machineLearning.ocr);
       });
       // Observe rejection immediately so teardown cancellation cannot become an unhandled promise.
       void dispatched.catch(() => {});
-      const task = await ready.promise;
+      const task = await Promise.race([
+        ready.promise,
+        dispatched.then(() => {
+          throw new Error('task was not dispatched');
+        }),
+      ]);
       taskId = task.id;
       expect(task.disclosure).not.toBeNull();
       expect(JSON.stringify(task.disclosure)).not.toContain('authToken');
@@ -1089,14 +1101,17 @@ it.each([MlWorkload.Clip, MlWorkload.Ocr])(
         );
       } else {
         expect(await index.getActive()).toEqual(priorIndex);
-        const originalScore = config.machineLearning.ocr.minDetectionScore;
+        const settings =
+          workload === MlWorkload.Face ? config.machineLearning.facialRecognition : config.machineLearning.ocr;
+        const scoreKey = workload === MlWorkload.Face ? 'minScore' : 'minDetectionScore';
+        const originalScore = settings[scoreKey as keyof typeof settings];
         await changed(
           () => {
-            config.machineLearning.ocr.minDetectionScore = 0.6;
+            Object.assign(settings, { [scoreKey]: 0.6 });
             return writeConfig(true);
           },
           () => {
-            config.machineLearning.ocr.minDetectionScore = originalScore;
+            Object.assign(settings, { [scoreKey]: originalScore });
             return writeConfig(true);
           },
           'desktop_pool_config_changed',
@@ -1148,6 +1163,7 @@ it.each([MlWorkload.Clip, MlWorkload.Ocr])(
       );
     }
   },
+  30_000,
 );
 
 it('migrates old broker tasks to unproven disclosure and reverses without deleting their rows', async () => {
