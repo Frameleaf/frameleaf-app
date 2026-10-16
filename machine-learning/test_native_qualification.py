@@ -147,44 +147,17 @@ def test_driver_changes_invalidate_fingerprint_without_using_free_memory() -> No
 
 
 def test_production_text_pipeline_qualification_binds_artifacts_fixture_and_runtime(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_clip_cache: tuple[str, Path, dict[str, str]]
 ) -> None:
     import os
     import subprocess
     import sys
 
-    from tokenizers import Tokenizer, models, pre_tokenizers
-
     from immich_ml.native_qualification import preprocessing_identity
     from immich_ml.staging import RECEIPT, cache_hashes
 
-    name = "ViT-B-32__openai"
-    cache = tmp_path / "cache" / "clip" / name
+    name, cache, hashes = synthetic_clip_cache
     textual = cache / "textual"
-    textual.mkdir(parents=True)
-    weights = numpy_helper.from_array(np.ones((4, 2), dtype=np.float32), name="weights")
-    model = helper.make_model(
-        helper.make_graph(
-            [
-                helper.make_node("Cast", ["text"], ["float"], to=TensorProto.FLOAT),
-                helper.make_node("MatMul", ["float", "weights"], ["embedding"]),
-            ],
-            "synthetic-clip",
-            [helper.make_tensor_value_info("text", TensorProto.INT32, [1, 4])],
-            [helper.make_tensor_value_info("embedding", TensorProto.FLOAT, [1, 2])],
-            [weights],
-        ),
-        opset_imports=[helper.make_opsetid("", 17)],
-        ir_version=9,
-    )
-    onnx.save(model, textual / "model.onnx")
-    tokenizer = Tokenizer(models.WordLevel({"<pad>": 0, "<unk>": 1, "frameleaf": 2, "fixture": 3}, unk_token="<unk>"))
-    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-    tokenizer.save(str(textual / "tokenizer.json"))
-    (textual / "tokenizer_config.json").write_text(json.dumps({"pad_token": "<pad>"}))
-    (cache / "config.json").write_text(json.dumps({"text_cfg": {"context_length": 4}}))
-    hashes = cache_hashes(cache)
-    (cache / RECEIPT).write_text(json.dumps(hashes))
     fixture = tmp_path / "fixture.txt"
     fixture.write_text("frameleaf fixture")
     spec = {

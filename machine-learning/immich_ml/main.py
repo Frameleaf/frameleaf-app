@@ -33,6 +33,7 @@ from .config import PreloadModelData, log, model_source, settings
 from .env_aliases import read_env
 from .hardware_report import container_report
 from .models.cache import ModelCache
+from .producer_binding import BoundPredictor
 from .schemas import (
     ImageDescriptionAcceleration,
     InferenceEntries,
@@ -51,6 +52,7 @@ from .schemas import (
 MultiPartParser.spool_max_size = 2**26  # spools to disk if payload is 64 MiB or larger
 
 model_cache = ModelCache(revalidate=settings.model_ttl > 0)
+bound_predictor = BoundPredictor()
 thread_pool: ThreadPoolExecutor | None = None
 lock = threading.Lock()
 active_requests = 0
@@ -388,6 +390,19 @@ def _torch_cuda_info() -> tuple[bool, int]:
         return False, 0
 
     return True, torch.cuda.device_count()
+
+
+@app.post("/predict-bound", dependencies=[Depends(update_state)])
+async def predict_bound(
+    binding: str = Form(), image: bytes | None = File(default=None), text: str | None = Form(default=None)
+) -> ORJSONResponse:
+    if (image is None) == (text is None):
+        raise HTTPException(422, "Exactly one inference input required")
+    try:
+        result = await run(bound_predictor.predict, binding, image, text)
+    except Exception as error:
+        raise HTTPException(409, "model_identity_unavailable") from error
+    return ORJSONResponse(result)
 
 
 @app.post("/predict", dependencies=[Depends(update_state)])

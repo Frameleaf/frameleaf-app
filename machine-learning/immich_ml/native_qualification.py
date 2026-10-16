@@ -70,13 +70,16 @@ class StagedModel(Contract):
         return value
 
 
-class QualificationSpec(Contract):
+class ModelBindingSpec(Contract):
     protocol_version: int = Field(ge=1, le=1)
     model_key: str = Field(min_length=1, max_length=256)
-    provider: str
     models: list[StagedModel] = Field(min_length=1, max_length=64)
     entries: dict[str, Any]
     preprocessing_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class QualificationSpec(ModelBindingSpec):
+    provider: str
     fixture_file: str
     fixture_kind: str = Field(pattern=r"^(image|text)$")
     fixture_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -92,7 +95,9 @@ class QualificationSpec(Contract):
 
 def preprocessing_identity() -> str:
     root = Path(__file__).parent
-    files = sorted((root / "models").rglob("*.py")) + [root / name for name in ("main.py", "schemas.py", "config.py")]
+    files = sorted((root / "models").rglob("*.py")) + [
+        root / name for name in ("main.py", "schemas.py", "config.py", "producer_binding.py")
+    ]
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes())
@@ -117,7 +122,9 @@ def validate_external_weights(model_path: Path, root: Path, artifacts: dict[str,
     visit(proto)
 
 
-def verify_models(spec: QualificationSpec, cache_dir: Path) -> tuple[InferenceEntries, list[InferenceModel]]:
+def verify_models(
+    spec: ModelBindingSpec, cache_dir: Path, *, require_staged: bool = True
+) -> tuple[InferenceEntries, list[InferenceModel]]:
     from immich_ml.models import from_model_type
     from immich_ml.native_runtime import library_entries
     from immich_ml.staging import cache_hashes, verify_staged
@@ -139,7 +146,8 @@ def verify_models(spec: QualificationSpec, cache_dir: Path) -> tuple[InferenceEn
             raise ValueError("native_model_name_not_canonical")
         if not model.cache_dir.resolve().is_relative_to(cache_dir.resolve()):
             raise ValueError("native_cache_directory_invalid")
-        verify_staged(model.cache_dir)
+        if require_staged:
+            verify_staged(model.cache_dir)
         if cache_hashes(model.cache_dir) != item.artifacts:
             raise ValueError("native_staged_hash_mismatch")
         if model.model_path.suffix != ".onnx":

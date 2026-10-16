@@ -7,6 +7,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import z from 'zod';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
@@ -932,11 +933,22 @@ export class MachineLearningRepository implements RestorationInference {
    * the destination was the caller's explicit choice and moving the media elsewhere would
    * silently change where it goes.
    */
-  private async predict<T>(selection: MlSelection, payload: ModelPayload, config: MachineLearningRequest): Promise<T> {
+  private async predict<T>(
+    selection: MlSelection,
+    payload: ModelPayload,
+    config: MachineLearningRequest,
+    bound?: { binding: Record<string, unknown>; parse: (value: unknown) => T },
+  ): Promise<T> {
     if (selection.endpoint.cloud) {
       throw new CloudJobsUnavailableError(selection.workload);
     }
     const formData = await this.getFormData(payload, config);
+    if (bound) {
+      formData.set('binding', JSON.stringify(bound.binding));
+      const input = formData.get('image') ?? formData.get('text');
+      const size = input instanceof Blob ? input.size : Buffer.byteLength(input ?? '');
+      if (!size || size > 16 * 1024 * 1024) throw new Error('producer_input_invalid');
+    }
     const bytesSent = await this.measure(payload);
     const started = Date.now();
     const usage = (outcome: MlUsage['outcome'], bytesReceived: number): MlUsage => ({
@@ -951,7 +963,7 @@ export class MachineLearningRepository implements RestorationInference {
     let body: string;
     try {
       await this.authorize(selection.endpoint);
-      ({ response, body } = await fetchJobText(new URL('predict', selection.endpoint.url), {
+      ({ response, body } = await fetchJobText(new URL(bound ? 'predict-bound' : 'predict', selection.endpoint.url), {
         method: 'POST',
         headers: this.authHeaders(selection.endpoint),
         body: formData,
@@ -974,6 +986,17 @@ export class MachineLearningRepository implements RestorationInference {
       );
     }
 
+    if (bound) {
+      let result: T;
+      try {
+        result = bound.parse(JSON.parse(body));
+      } catch {
+        selection.record(usage('failure', body.length));
+        throw new Error('producer_result_invalid');
+      }
+      selection.record(usage('success', body.length));
+      return result;
+    }
     selection.record(usage('success', body.length));
     return JSON.parse(body) as T;
   }
@@ -1005,6 +1028,45 @@ export class MachineLearningRepository implements RestorationInference {
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
     const response = await this.predict<ClipVisualResponse>(selection, { imagePath }, request);
     return response[ModelTask.SEARCH];
+  }
+
+  async encodeBoundClip(selection: MlSelection, payload: ModelPayload, profile: DesktopModelProfile) {
+    const image = 'imagePath' in payload;
+    if (
+      selection.workload !== MlWorkload.Clip ||
+      image === 'text' in payload ||
+      image !== (profile.spec.fixtureKind === 'image') ||
+      profile.modelKey !== profile.spec.modelKey
+    )
+      throw new Error('producer_input_invalid');
+    const size = await this.measure(payload);
+    if (!size || size > 16 * 1024 * 1024) throw new Error('producer_input_invalid');
+    const { protocolVersion, modelKey, entries, models, preprocessingSha256 } = profile.spec;
+    return this.predict(selection, payload, entries as MachineLearningRequest, {
+      binding: { protocolVersion, modelKey, entries, models, preprocessingSha256 },
+      parse: (value) => {
+        const parsed = z
+          .strictObject({
+            protocolVersion: z.literal(1),
+            modelKey: z.literal(profile.modelKey),
+            preprocessingSha256: z.literal(profile.spec.preprocessingSha256),
+            result: z.strictObject({
+              clip: z.string().max(4 * 1024 * 1024),
+              imageWidth: z.number().int().positive().optional(),
+              imageHeight: z.number().int().positive().optional(),
+            }),
+          })
+          .parse(value);
+        if (
+          image
+            ? parsed.result.imageWidth === undefined || parsed.result.imageHeight === undefined
+            : parsed.result.imageWidth !== undefined || parsed.result.imageHeight !== undefined
+        )
+          throw new Error('producer_result_invalid');
+        z.array(z.number().finite()).length(profile.embeddingDimensions).parse(JSON.parse(parsed.result.clip));
+        return { embedding: parsed.result.clip, modelKey: parsed.modelKey };
+      },
+    });
   }
 
   async encodeText(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
