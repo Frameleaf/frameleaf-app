@@ -135,15 +135,7 @@ export function validPrivateCopy(record: unknown): record is ScheduledPrivateCop
   ) {
     return false;
   }
-  return (
-    copy.identity === null ||
-    (['dev', 'ino', 'size', 'uid'].every(
-      (key) =>
-        Number.isSafeInteger(copy.identity![key as keyof PrivateCopyIdentity]) &&
-        copy.identity![key as keyof PrivateCopyIdentity] >= 0,
-    ) &&
-      copy.identity.size <= copy.reservedCopyBytes)
-  );
+  return copy.identity === null || (validInputIdentity(copy.identity) && copy.identity.size <= copy.reservedCopyBytes);
 }
 
 /** Only these producer-owned inode names, under managed DB path locks; no global FS atomicity claim. */
