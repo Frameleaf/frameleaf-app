@@ -76,7 +76,7 @@ it('reconstructs the actual policy and route from storage and refuses route chan
   const destination = await routes.create({
     kind: MlDestinationKind.Local,
     name: 'synthetic NAS',
-    url: null,
+    url: 'https://unused.invalid',
     authToken: null,
     enabled: true,
     workloads: [MlWorkload.Clip],
@@ -129,6 +129,11 @@ it('reconstructs the actual policy and route from storage and refuses route chan
     await routes.update(destination.id, { enabled: false });
     await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('desktop_pool_destination_changed');
     await routes.update(destination.id, { enabled: true });
+    await routes.update(destination.id, { url: 'https://changed.invalid' });
+    await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('desktop_pool_destination_changed');
+    await routes.update(destination.id, { url: selection.endpoint.url, authToken: 'synthetic-changed-token' });
+    await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('desktop_pool_destination_changed');
+    await routes.update(destination.id, { authToken: null });
     await routes.clearRoute(MlWorkload.Clip);
     await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('desktop_pool_route_changed');
   });

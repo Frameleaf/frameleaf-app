@@ -56,6 +56,11 @@ const setup = () => {
   storage.unlink.mockResolvedValue();
 
   const machineLearning = automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
+  // These SQL/privacy fixtures retain their synthetic legacy vectors without index transitions.
+  machineLearning.captureClipRead.mockResolvedValue({
+    assertCurrent: () => Promise.resolve(),
+    publish: (write) => write(),
+  });
   machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
   machineLearning.encodeImage.mockImplementation(() => Promise.resolve(newEmbedding()));
 
