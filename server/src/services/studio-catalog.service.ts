@@ -17,7 +17,7 @@ import { requireAccess } from 'src/utils/access.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { parseSourcePixelLayout } from 'src/utils/media-decode.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { type Rational, rational } from 'src/utils/rational-time.js';
+import { rational } from 'src/utils/rational-time.js';
 import {
   STUDIO_FONT_MEDIA_TYPES,
   findStudioBundledFont,
@@ -25,23 +25,10 @@ import {
   studioBundledFontPath,
 } from 'src/utils/studio-fonts.js';
 import { buildStudioAuthorizedInventory } from 'src/utils/studio-inventory.js';
+import { cadenceFromDecimal } from 'src/utils/studio-timing.js';
 
 /** An integer frame rate, or an NTSC n/1001 one, read back from a stored float (graph protocol 3.2). */
-export const exactFrameRateOf = (fps: number | null | undefined): Rational | null => {
-  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps <= 0) {
-    return null;
-  }
-  if (Number.isSafeInteger(fps)) {
-    return rational(fps, 1);
-  }
-  for (const num of [24_000, 30_000, 48_000, 60_000, 120_000]) {
-    const ntsc = num / 1001;
-    if (Math.abs(fps - ntsc) < 1e-9 || Math.round(ntsc * 1000) / 1000 === fps) {
-      return rational(num, 1001);
-    }
-  }
-  return null;
-};
+export const exactFrameRateOf = cadenceFromDecimal;
 
 type StudioMediaColor = Pick<
   StudioMediaFactsDto,
