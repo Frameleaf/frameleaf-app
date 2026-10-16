@@ -185,6 +185,13 @@ const AlbumUserResponseSchema = z
   .object({
     user: UserResponseSchema,
     role: AlbumUserRoleSchema,
+    supporter: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this person is a Frameleaf supporter: they hold an Individual licence, or this server holds a Server licence. Sent by GET /albums and GET /albums/{id}',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'AlbumUserResponseDto' });
 

@@ -29,6 +29,7 @@ describe(DownloadService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DownloadService));
     mocks.partner.getAll.mockResolvedValue([]);
+    mocks.downloadRepository.getSidecars.mockResolvedValue([]);
   });
 
   describe('downloadArchive', () => {
@@ -233,6 +234,64 @@ describe(DownloadService.name, () => {
       });
 
       expect(archiveMock.addFile).toHaveBeenCalledWith('/path/to/realpath.jpg', asset.originalFileName);
+    });
+
+    describe('Downloads preferences (ACCOUNT-P5)', () => {
+      const setup = (preferences: Record<string, unknown>) => {
+        const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+        const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC', originalPath: '/original.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginals.mockResolvedValue([{ ...asset, editedPath: '/edited.jpeg' }]);
+        mocks.storage.createZipStream.mockReturnValue(archive);
+        mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        mocks.downloadRepository.getSidecars.mockResolvedValue([{ assetId: asset.id, path: '/original.HEIC.xmp' }]);
+        mocks.user.getMetadata.mockResolvedValue([{ key: UserMetadataKey.Preferences, value: preferences }]);
+        return { archive, asset };
+      };
+
+      it("puts each photo's details file beside it and holds the original, by default", async () => {
+        const { archive, asset } = setup({});
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
+
+        expect(mocks.asset.getForOriginals).toHaveBeenCalledWith([asset.id], false);
+        expect(archive.addFile.mock.calls).toEqual([
+          ['/original.HEIC', 'IMG_1.HEIC'],
+          ['/original.HEIC.xmp', 'IMG_1.HEIC.xmp'],
+        ]);
+      });
+
+      it('follows "My edited version" and no details file', async () => {
+        const { archive, asset } = setup({ download: { edited: true, includeSidecar: false } });
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id] });
+
+        expect(mocks.asset.getForOriginals).toHaveBeenCalledWith([asset.id], true);
+        expect(mocks.downloadRepository.getSidecars).not.toHaveBeenCalled();
+        expect(archive.addFile.mock.calls).toEqual([['/edited.jpeg', 'IMG_1.jpeg']]);
+      });
+
+      it('lets the request decide over the preferences, and skips a details file missing on disk', async () => {
+        const { archive, asset } = setup({ download: { includeSidecar: false } });
+        mocks.storage.checkFileExists.mockResolvedValue(false);
+
+        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: false, includeSidecar: true });
+
+        expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+        expect(mocks.downloadRepository.getSidecars).toHaveBeenCalledWith([asset.id]);
+        expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+      });
+
+      it("never applies the link owner's preferences to a shared-link download", async () => {
+        const { archive, asset } = setup({ download: { edited: true, includeSidecar: true } });
+        mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
+
+        await sut.downloadArchive(authStub.adminSharedLink, { assetIds: [asset.id] });
+
+        expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+        expect(archive.addFile.mock.calls).toEqual([['/original.HEIC', 'IMG_1.HEIC']]);
+      });
     });
   });
 

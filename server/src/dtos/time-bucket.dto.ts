@@ -2,6 +2,7 @@ import { DateTime } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { BBoxSchema } from 'src/dtos/bbox.dto.js';
+import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import {
   AssetLockReason,
   AssetLockReasonSchema,
@@ -24,6 +25,16 @@ const TimeBucketQueryBaseSchema = z
     personId: z.uuidv4().optional().describe('Filter assets containing a specific person (face recognition)'),
     petId: z.uuidv4().optional().describe('Filter assets in which the caller confirmed one of their own pets'),
     tagId: z.uuidv4().optional().describe('Filter assets with a specific tag'),
+    withChildTags: stringToBool
+      .optional()
+      .describe(
+        'With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself.',
+      ),
+    bestPhotos: stringToBool
+      .optional()
+      .describe(
+        `Only your own Best Photos: your own images and videos with a Best Photos score of at least ${BEST_PHOTOS_MIN_SCORE}. Always scoped to your own library; not available through a shared link or with visibility LOCKED`,
+      ),
     isFavorite: stringToBool
       .optional()
       .describe('Filter by favorite status (true for favorites only, false for non-favorites only)'),
@@ -110,9 +121,9 @@ const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
 export const TIMELINE_ORDERED_MAX_TAKE = 1000;
 const TimelineOrderedSchema = TimeBucketQueryBaseSchema.extend({
   sort: z
-    .enum(['filename', 'rating'])
+    .enum(['filename', 'rating', 'quality'])
     .describe(
-      'filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture',
+      'filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true',
     )
     .meta({ id: 'TimelineOrderedSort' }),
   after: z.string().max(8192).optional().describe('Continue after the previous ordered page cursor; overrides skip'),

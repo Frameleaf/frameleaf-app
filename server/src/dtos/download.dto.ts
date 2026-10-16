@@ -24,6 +24,17 @@ const DownloadResponseSchema = z
   })
   .meta({ id: 'DownloadResponseDto' });
 
+// a POST form sends booleans as the text "true" / "false"
+const formBoolean = z.preprocess((val) => {
+  if (val === 'true') {
+    return true;
+  }
+  if (val === 'false') {
+    return false;
+  }
+  return val;
+}, z.boolean());
+
 const DownloadArchiveSchema = z
   .object({
     // Support receiving assetIds as a comma-separated string due to POST form submission.
@@ -33,18 +44,16 @@ const DownloadArchiveSchema = z
       .preprocess((val) => (typeof val === 'string' ? val.split(',') : val), z.array(z.uuidv4()))
       .nonoptional()
       .describe('Asset IDs'),
-    edited: z
-      .preprocess((val) => {
-        if (val === 'true') {
-          return true;
-        }
-        if (val === 'false') {
-          return false;
-        }
-        return val;
-      }, z.boolean())
+    edited: formBoolean
       .optional()
-      .describe('Download edited asset if available'),
+      .describe(
+        "Download edited asset if available. Left out, the account's download.edited preference decides (shared links: the original)",
+      ),
+    includeSidecar: formBoolean
+      .optional()
+      .describe(
+        "Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no)",
+      ),
     archiveName: z.string().optional().describe('The name of the archive to download, without extension'),
   })
   .meta({ id: 'DownloadArchiveDto' });

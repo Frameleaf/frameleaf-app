@@ -53,6 +53,11 @@ const PeopleUpdateSchema = z
     enabled: z.boolean().optional().describe('Whether people are enabled'),
     sidebarWeb: z.boolean().optional().describe('Whether people appear in web sidebar'),
     minimumFaces: z.int().min(1).optional().describe('People face threshold'),
+    suggestInSpaces: z
+      .boolean()
+      .optional()
+      .describe('Whether a shared Space suggests which of my named people appear in it')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .optional()
   .meta({ id: 'PeopleUpdate' });
@@ -86,9 +91,31 @@ const DownloadUpdateSchema = z
   .object({
     archiveSize: z.int().min(1).optional().describe('Maximum archive size in bytes'),
     includeEmbeddedVideos: z.boolean().optional().describe('Whether to include embedded videos in downloads'),
+    edited: z
+      .boolean()
+      .optional()
+      .describe('Whether downloads hold the edited version when there is one (false: the original)')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+    includeSidecar: z
+      .boolean()
+      .optional()
+      .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .optional()
   .meta({ id: 'DownloadUpdate' });
+
+const SearchPreferencesUpdateSchema = z
+  .object({
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none',
+      ),
+  })
+  .optional()
+  .meta({ id: 'SearchPreferencesUpdate' });
 
 const PurchaseUpdateSchema = z
   .object({
@@ -183,6 +210,7 @@ const UserPreferencesUpdateSchema = z
     privacy: PrivacyUpdateSchema,
     purchase: PurchaseUpdateSchema,
     ratings: RatingsUpdateSchema,
+    search: SearchPreferencesUpdateSchema,
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
@@ -222,6 +250,10 @@ const PeopleResponseSchema = z
     enabled: z.boolean().describe('Whether people are enabled'),
     sidebarWeb: z.boolean().describe('Whether people appear in web sidebar'),
     minimumFaces: z.int().min(1).optional().describe('People face threshold'),
+    suggestInSpaces: z
+      .boolean()
+      .describe('Whether a shared Space suggests which of my named people appear in it')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'PeopleResponse' });
 
@@ -257,8 +289,26 @@ const DownloadResponseSchema = z
   .object({
     archiveSize: z.int().describe('Maximum archive size in bytes'),
     includeEmbeddedVideos: z.boolean().describe('Whether to include embedded videos in downloads'),
+    edited: z
+      .boolean()
+      .describe('Whether downloads hold the edited version when there is one (false: the original)')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+    includeSidecar: z
+      .boolean()
+      .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'DownloadResponse' });
+
+const SearchPreferencesResponseSchema = z
+  .object({
+    includeArchived: z
+      .boolean()
+      .describe(
+        'Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none',
+      ),
+  })
+  .meta({ id: 'SearchPreferencesResponse' });
 
 const PurchaseResponseSchema = z
   .object({
@@ -306,6 +356,7 @@ const UserPreferencesResponseSchema = z
     people: PeopleResponseSchema,
     privacy: PrivacyResponseSchema,
     ratings: RatingsResponseSchema,
+    search: SearchPreferencesResponseSchema,
     sharedLinks: SharedLinksResponseSchema,
     tags: TagsResponseSchema,
     emailNotifications: EmailNotificationsResponseSchema,

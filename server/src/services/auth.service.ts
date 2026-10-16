@@ -31,7 +31,7 @@ import { AdminAuditAction, AuthCookie, AuthType, JobName, Permission, RequestHea
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted } from 'src/utils/access.js';
-import { HumanReadableSize } from 'src/utils/bytes.js';
+import { DecimalSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
 import {
@@ -810,7 +810,8 @@ export class AuthService extends BaseService {
           normalizedEmail,
         email: normalizedEmail,
         oauthId: profile.sub,
-        quotaSizeInBytes: storageQuota === null ? null : storageQuota * HumanReadableSize.GiB,
+        // D5: the claim and the default quota are decimal GB
+        quotaSizeInBytes: storageQuota === null ? null : storageQuota * DecimalSize.GB,
         storageLabel: storageLabel || null,
         isAdmin,
       });

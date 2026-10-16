@@ -661,7 +661,7 @@ export type CloudStatusResponseDto = {
     signInButtonText: string;
     /** The OpenID client ID for Sign in with Frameleaf */
     signInClientId: string | null;
-    /** Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited */
+    /** Storage quota in GB (1 GB = 1,000,000,000 bytes) for accounts created through a Frameleaf invitation; null is unlimited */
     signInInvitedStorageQuota: number | null;
     signInIssuer: string | null;
     /** Accounts here linked to a Frameleaf account */
@@ -1106,7 +1106,7 @@ export type RemoteAccessUsageResponseDto = {
 export type CloudSignInUpdateDto = {
     /** The Sign in with Frameleaf button text */
     buttonText?: string;
-    /** Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited */
+    /** Storage quota in GB (1 GB = 1,000,000,000 bytes) for accounts created through a Frameleaf invitation from now on; null is unlimited */
     invitedStorageQuota?: number | null;
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
@@ -1306,7 +1306,7 @@ export type AdminConfigFrameleafRemoteAccessDto = {
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
-    /** Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota. */
+    /** Storage quota in GB (1 GB = 1,000,000,000 bytes) for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota. */
     invitedStorageQuota?: number | null;
     /** Show Sign in with Frameleaf on the local sign-in page too */
     showOnLocalLogin: boolean;
@@ -1676,7 +1676,7 @@ export type AdminConfigOAuthDto = {
     clientSecret: string;
     /** Read-only indicator that a client secret is stored. Set by the server; ignored on write. */
     clientSecretConfigured?: boolean;
-    /** Default storage quota */
+    /** Default storage quota in GB (1 GB = 1,000,000,000 bytes) when the provider sends none */
     defaultStorageQuota: number | null;
     /** Enabled */
     enabled: boolean;
@@ -1700,7 +1700,7 @@ export type AdminConfigOAuthDto = {
     signingAlgorithm: string;
     /** Storage label claim */
     storageLabelClaim: string;
-    /** Storage quota claim */
+    /** Storage quota claim, a number of GB (1 GB = 1,000,000,000 bytes) */
     storageQuotaClaim: string;
     /** Timeout */
     timeout: number;
@@ -3004,8 +3004,12 @@ export type CastResponse = {
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
+    /** Whether downloads hold the edited version when there is one (false: the original) */
+    edited: boolean;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos: boolean;
+    /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
+    includeSidecar: boolean;
 };
 export type EmailNotificationsResponse = {
     /** Whether to receive email notifications for album invites */
@@ -3036,6 +3040,8 @@ export type PeopleResponse = {
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
     sidebarWeb: boolean;
+    /** Whether a shared Space suggests which of my named people appear in it */
+    suggestInSpaces: boolean;
 };
 export type SuppressionResponse = {
     /** Person IDs to suppress from locked browsing sessions */
@@ -3071,6 +3077,10 @@ export type SavedSearch = {
     query: {
         [key: string]: any;
     };
+};
+export type SearchPreferencesResponse = {
+    /** Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none */
+    includeArchived: boolean;
 };
 export type SharedLinksResponse = {
     /** Whether shared links are enabled */
@@ -3109,6 +3119,7 @@ export type UserPreferencesResponseDto = {
     revision: string;
     /** Saved searches (always present). Empty for an administrator, and without any that names a Locked person, pet or tag while the session is locked */
     savedSearches?: SavedSearch[];
+    search: SearchPreferencesResponse;
     sharedLinks: SharedLinksResponse;
     tags: TagsResponse;
 };
@@ -3127,8 +3138,12 @@ export type CastUpdate = {
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
     archiveSize?: number;
+    /** Whether downloads hold the edited version when there is one (false: the original) */
+    edited?: boolean;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos?: boolean;
+    /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
+    includeSidecar?: boolean;
 };
 export type EmailNotificationsUpdate = {
     /** Whether to receive email notifications for album invites */
@@ -3159,6 +3174,8 @@ export type PeopleUpdate = {
     minimumFaces?: number;
     /** Whether people appear in web sidebar */
     sidebarWeb?: boolean;
+    /** Whether a shared Space suggests which of my named people appear in it */
+    suggestInSpaces?: boolean;
 };
 export type SuppressionUpdate = {
     /** Person IDs to suppress from locked browsing sessions */
@@ -3186,6 +3203,10 @@ export type RatingsUpdate = {
 export type RecentlyAddedUpdate = {
     /** Whether the recently added page appears in the web sidebar */
     sidebarWeb?: boolean;
+};
+export type SearchPreferencesUpdate = {
+    /** Whether the search screens show archived photos. Clients apply it by sending a visibility; the server does not change a search that names none */
+    includeArchived?: boolean;
 };
 export type SharedLinksUpdate = {
     /** Whether shared links are enabled */
@@ -3224,6 +3245,7 @@ export type UserPreferencesUpdateDto = {
     recentlyAdded?: RecentlyAddedUpdate;
     /** Saved searches, replacing the whole list (at most 50). Only the account itself can change them */
     savedSearches?: SavedSearch[];
+    search?: SearchPreferencesUpdate;
     sharedLinks?: SharedLinksUpdate;
     tags?: TagsUpdate;
 };
@@ -3444,6 +3466,8 @@ export type BulkIdResponseDto = {
 };
 export type AlbumUserResponseDto = {
     role: AlbumUserRole;
+    /** Whether this person is a Frameleaf supporter: they hold an Individual licence, or this server holds a Server licence. Sent by GET /albums and GET /albums/{id} */
+    supporter?: boolean;
     user: UserResponseDto;
 };
 export type ContributorCountResponseDto = {
@@ -6265,8 +6289,10 @@ export type DownloadArchiveDto = {
     archiveName?: string;
     /** Asset IDs */
     assetIds: string[];
-    /** Download edited asset if available */
+    /** Download edited asset if available. Left out, the account's download.edited preference decides (shared links: the original) */
     edited?: boolean;
+    /** Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no) */
+    includeSidecar?: boolean;
 };
 export type DownloadInfoDto = {
     /** Album ID to download */
@@ -8947,6 +8973,8 @@ export type PhotographyGalleryDto = {
     }[];
     checkoutAvailable: boolean;
     choices: string[];
+    /** The shoot's date (YYYY-MM-DD), or null when the shoot is not found */
+    date: string | null;
     mode: Mode2;
     notes: {
         annotations?: {
@@ -9067,6 +9095,8 @@ export type PhotographyGalleryDto = {
         spacing: Spacing;
         template: Template;
     };
+    /** True for the studio's view-only client preview session */
+    preview: boolean;
     pricing: {
         additionalPrice: number;
         bundles: {
@@ -9098,6 +9128,7 @@ export type PhotographyGalleryDto = {
     }[];
     recipient: {
         canDownload: boolean;
+        /** Recipient ID, or "preview" for a client preview session */
         id: string;
         name: string;
     };
@@ -9158,6 +9189,23 @@ export type PhotographyGallerySessionResponseDto = {
     expiresAt: string;
     recipientId: string;
     session: string;
+};
+export type PhotographyGalleryPasswordRequiredDto = {
+    /** Studio brand for the password screen; logoUrl is always null */
+    brand: {
+        background: string;
+        color: string;
+        email: string;
+        font: string;
+        logoUrl: string | null;
+        name: string;
+        phone: string;
+        tagline: string;
+        textColor: string;
+    };
+    message: string;
+    /** Always true: the invitation is valid and needs its password */
+    passwordRequired: boolean;
 };
 export type PhotographyWorkflowMutationDto = {
     expectedRevision: string | null;
@@ -9701,8 +9749,13 @@ export type PhotographyPublicSiteDto = {
 };
 export type PhotographyWorkflowListDto = {
     galleries: {
+        currency: string;
         expiresAt: string | null;
+        /** Recipients that are neither revoked nor expired */
+        invited: number;
         mode: string;
+        /** Total of quoted and accepted (unpaid) orders, in minor units of currency */
+        outstanding: number;
         pendingEdits: number;
         published: boolean;
         readyCount: number;
@@ -10471,6 +10524,11 @@ export type PhotographyPaymentDto = {
     action: Action4;
     expectedRevision: string | null;
     reference: string;
+};
+export type PhotographyPreviewSessionDto = {};
+export type PhotographyPreviewSessionResponseDto = {
+    expiresAt: string;
+    session: string;
 };
 export type PhotographyPublicationDto = {
     expectedRevision: string | null;
@@ -13328,6 +13386,8 @@ export type SharedSpaceMemberResponseDto = {
     /** True while the invitation has not been accepted */
     pending: boolean;
     role: AlbumUserRole;
+    /** Whether this person is a Frameleaf supporter: they hold an Individual licence, or this server holds a Server licence */
+    supporter?: boolean;
     user: UserResponseDto;
 };
 export type SharedSpaceMembersResponseDto = {
@@ -16997,6 +17057,8 @@ export type TimeBucketAssetDto = {
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
     bbox?: string;
+    /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
+    bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17025,6 +17087,8 @@ export type TimeBucketAssetDto = {
     userId?: string;
     /** Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
     visibility?: AssetVisibility;
+    /** With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself. */
+    withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
@@ -17037,6 +17101,8 @@ export type TimeBucketDto = {
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
     bbox?: string;
+    /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
+    bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17063,6 +17129,8 @@ export type TimeBucketDto = {
     userId?: string;
     /** Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
     visibility?: AssetVisibility;
+    /** With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself. */
+    withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
@@ -17075,6 +17143,8 @@ export type TimelineHighlightsDto = {
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
     bbox?: string;
+    /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
+    bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
     grouping?: TimelineHighlightGrouping;
@@ -17104,6 +17174,8 @@ export type TimelineHighlightsDto = {
     userId?: string;
     /** Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
     visibility?: AssetVisibility;
+    /** With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself. */
+    withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
@@ -17120,6 +17192,8 @@ export type TimelineOrderedDto = {
     bbox?: string;
     /** Read the page before this ordered cursor; overrides skip */
     before?: string;
+    /** Only your own Best Photos: your own images and videos with a Best Photos score of at least 0.9. Always scoped to your own library; not available through a shared link or with visibility LOCKED */
+    bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
@@ -17151,6 +17225,8 @@ export type TimelineOrderedDto = {
     userId?: string;
     /** Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
     visibility?: AssetVisibility;
+    /** With tagId: also match assets tagged with a tag inside it. Defaults to true; false matches only assets tagged with this tag itself. */
+    withChildTags?: boolean;
     /** Include location data in the response */
     withCoordinates?: boolean;
     /** Include stacked assets in the response. When true, only primary assets from stacks are returned. */
@@ -24643,6 +24719,9 @@ export function photographyFile({ xPhotographySession, captureId, id, kind }: {
         })
     }));
 }
+/**
+ * Exchanges an invitation for a gallery session. A valid invitation with a missing or wrong password answers 401 with passwordRequired and the studio brand; an invalid, expired, or revoked invitation answers 403.
+ */
 export function photographySession({ id, photographyGallerySessionDto }: {
     id: string;
     photographyGallerySessionDto: PhotographyGallerySessionDto;
@@ -24650,6 +24729,11 @@ export function photographySession({ id, photographyGallerySessionDto }: {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: PhotographyGallerySessionResponseDto;
+    } | {
+        status: 401;
+        data: PhotographyGalleryPasswordRequiredDto;
+    } | {
+        status: 403;
     }>(`/photography/galleries/${encodeURIComponent(id)}/session`, oazapfts.json({
         ...opts,
         method: "POST",
@@ -25055,6 +25139,24 @@ export function photographyApplyPreset({ id, presetId, photographyWorkflowMutati
         ...opts,
         method: "POST",
         body: photographyWorkflowMutationDto
+    })));
+}
+/**
+ * Starts a one-hour client preview session for the gallery. Send it as X-Photography-Session to the gallery, photo, and logo reads under /photography/galleries/{id}; the gallery then reports preview: true. A preview shows every published photograph and cannot choose, submit, approve, order, check out, or download (403).
+ */
+export function photographyPreview({ id, photographyPreviewSessionDto }: {
+    id: string;
+    photographyPreviewSessionDto: PhotographyPreviewSessionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyPreviewSessionResponseDto;
+    } | {
+        status: 409;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/preview`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPreviewSessionDto
     })));
 }
 export function photographyPublish({ id, photographyPublicationDto }: {
@@ -28941,10 +29043,11 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
+    bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
     isTrashed?: boolean;
@@ -28960,6 +29063,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
     timeBucket: string;
     userId?: string;
     visibility?: AssetVisibility;
+    withChildTags?: boolean;
     withCoordinates?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
@@ -28970,6 +29074,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
         albumId,
         assetType,
         bbox,
+        bestPhotos,
         dateType,
         isFavorite,
         isTrashed,
@@ -28985,6 +29090,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
         timeBucket,
         userId,
         visibility,
+        withChildTags,
         withCoordinates,
         withStacked
     }))}`, {
@@ -28994,10 +29100,11 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
+    bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
     isTrashed?: boolean;
@@ -29012,6 +29119,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
     tagId?: string;
     userId?: string;
     visibility?: AssetVisibility;
+    withChildTags?: boolean;
     withCoordinates?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
@@ -29022,6 +29130,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
         albumId,
         assetType,
         bbox,
+        bestPhotos,
         dateType,
         isFavorite,
         isTrashed,
@@ -29036,6 +29145,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
         tagId,
         userId,
         visibility,
+        withChildTags,
         withCoordinates,
         withStacked
     }))}`, {
@@ -29045,10 +29155,11 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
+    bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
     grouping?: TimelineHighlightGrouping;
     highlightCount?: number;
@@ -29065,6 +29176,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
     tagId?: string;
     userId?: string;
     visibility?: AssetVisibility;
+    withChildTags?: boolean;
     withCoordinates?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
@@ -29075,6 +29187,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
         albumId,
         assetType,
         bbox,
+        bestPhotos,
         dateType,
         grouping,
         highlightCount,
@@ -29091,6 +29204,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
         tagId,
         userId,
         visibility,
+        withChildTags,
         withCoordinates,
         withStacked
     }))}`, {
@@ -29100,12 +29214,13 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     before?: string;
+    bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
     isTrashed?: boolean;
@@ -29123,6 +29238,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, da
     take?: number;
     userId?: string;
     visibility?: AssetVisibility;
+    withChildTags?: boolean;
     withCoordinates?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
@@ -29135,6 +29251,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, da
         assetType,
         bbox,
         before,
+        bestPhotos,
         dateType,
         isFavorite,
         isTrashed,
@@ -29152,6 +29269,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, da
         take,
         userId,
         visibility,
+        withChildTags,
         withCoordinates,
         withStacked
     }))}`, {
@@ -33443,7 +33561,8 @@ export enum TimelineHighlightGrouping {
 }
 export enum TimelineOrderedSort {
     Filename = "filename",
-    Rating = "rating"
+    Rating = "rating",
+    Quality = "quality"
 }
 export enum UtilityActivityTool {
     LargeFiles = "large-files"

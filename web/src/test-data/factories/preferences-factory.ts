@@ -12,6 +12,8 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   download: {
     archiveSize: 0,
     includeEmbeddedVideos: false,
+    edited: false,
+    includeSidecar: true,
   },
   emailNotifications: {
     albumInvite: false,
@@ -30,6 +32,10 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   people: {
     enabled: false,
     sidebarWeb: false,
+    suggestInSpaces: false,
+  },
+  search: {
+    includeArchived: false,
   },
   privacy: {
     suppression: {

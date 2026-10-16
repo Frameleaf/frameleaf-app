@@ -404,6 +404,21 @@ export class PhotographyInvitationDto extends createZodDto(
 export class PhotographyGallerySessionResponseDto extends createZodDto(
   z.object({ session: z.string(), expiresAt: z.string(), recipientId: Id }),
 ) {}
+export class PhotographyGalleryPasswordRequiredDto extends createZodDto(
+  z
+    .object({
+      message: z.string(),
+      passwordRequired: z.boolean().describe('Always true: the invitation is valid and needs its password'),
+      brand: PublicBrandSchema.describe('Studio brand for the password screen; logoUrl is always null'),
+    })
+    .meta({ id: 'PhotographyGalleryPasswordRequiredDto' }),
+) {}
+export class PhotographyPreviewSessionDto extends createZodDto(
+  z.strictObject({}).meta({ id: 'PhotographyPreviewSessionDto' }),
+) {}
+export class PhotographyPreviewSessionResponseDto extends createZodDto(
+  z.object({ session: z.string(), expiresAt: z.string() }).meta({ id: 'PhotographyPreviewSessionResponseDto' }),
+) {}
 export class PhotographyGalleryDto extends createZodDto(
   z.object({
     revision: Revision,
@@ -414,7 +429,13 @@ export class PhotographyGalleryDto extends createZodDto(
     checkoutAvailable: z.boolean(),
     publishedGenerationId: Id.nullable(),
     chapters: z.array(PhotographyChapterSchema),
-    recipient: z.object({ id: Id, name: z.string(), canDownload: z.boolean() }),
+    date: z.string().nullable().describe("The shoot's date (YYYY-MM-DD), or null when the shoot is not found"),
+    preview: z.boolean().describe("True for the studio's view-only client preview session"),
+    recipient: z.object({
+      id: z.string().describe('Recipient ID, or "preview" for a client preview session'),
+      name: z.string(),
+      canDownload: z.boolean(),
+    }),
     choices: Ids,
     notes: z.array(NoteSchema),
     receipts: z.array(ReceiptSchema),
@@ -497,6 +518,12 @@ export class PhotographyWorkflowListDto extends createZodDto(
         published: z.boolean(),
         submittedRounds: z.int(),
         unpaidOrders: z.int(),
+        outstanding: z
+          .int()
+          .min(0)
+          .describe('Total of quoted and accepted (unpaid) orders, in minor units of currency'),
+        currency: z.string(),
+        invited: z.int().min(0).describe('Recipients that are neither revoked nor expired'),
         readyCount: z.int(),
         pendingEdits: z.int(),
       }),

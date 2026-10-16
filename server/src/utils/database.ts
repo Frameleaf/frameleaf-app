@@ -493,15 +493,23 @@ export function withTags(eb: ExpressionBuilder<DB, 'asset'>) {
 export function truncatedDate<O>(order: AssetOrderBy = AssetOrderBy.TakenAt, size?: 'DAY' | 'MONTH') {
   return sql<O>`date_trunc(${sql.lit(size ?? 'MONTH')}, ${sql.ref(order === AssetOrderBy.CreatedAt ? 'asset.createdAt' : 'localDateTime')} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
 }
-export function withTagId<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagId: string) {
+/** Assets tagged with `tagId` or, unless `withChildTags` is false (DISCOVERY-P4), with a tag inside it. */
+export function withTagId<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagId: string, withChildTags = true) {
   return qb.where((eb) =>
-    eb.exists(
-      eb
-        .selectFrom('tag_closure')
-        .innerJoin('tag_asset', 'tag_asset.tagId', 'tag_closure.id_descendant')
-        .whereRef('tag_asset.assetId', '=', 'asset.id')
-        .where('tag_closure.id_ancestor', '=', tagId),
-    ),
+    withChildTags
+      ? eb.exists(
+          eb
+            .selectFrom('tag_closure')
+            .innerJoin('tag_asset', 'tag_asset.tagId', 'tag_closure.id_descendant')
+            .whereRef('tag_asset.assetId', '=', 'asset.id')
+            .where('tag_closure.id_ancestor', '=', tagId),
+        )
+      : eb.exists(
+          eb
+            .selectFrom('tag_asset')
+            .whereRef('tag_asset.assetId', '=', 'asset.id')
+            .where('tag_asset.tagId', '=', tagId),
+        ),
   );
 }
 const isCJK = (c: number): boolean =>

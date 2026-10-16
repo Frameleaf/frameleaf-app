@@ -33,6 +33,7 @@ import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import { FileDownloadResponse, getFilenameExtension } from 'src/utils/file.js';
 import { isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import {
   type CommentThreadInfo,
   type SpaceLike,
@@ -59,6 +60,7 @@ import {
   spaceOwnerId,
   threadComments,
 } from 'src/utils/shared-space.js';
+import { getSupporters } from 'src/utils/supporter.js';
 
 /**
  * What every read of a shared space's content excludes.
@@ -350,7 +352,15 @@ export class SharedSpaceService extends BaseService {
       });
     }
 
-    return { members };
+    // supporter option (b): the "Supporter" tag beside each member who is one
+    const isSupporter = await getSupporters(
+      {
+        systemMetadataRepository: this.systemMetadataRepository,
+        frameleafUserLicenseRepository: this.frameleafUserLicenseRepository,
+      },
+      members.map(({ user }) => user.id),
+    );
+    return { members: members.map((member) => ({ ...member, supporter: isSupporter(member.user.id) })) };
   }
 
   /**
@@ -497,6 +507,12 @@ export class SharedSpaceService extends BaseService {
         linkedAt: asDateTimeString(link.createdAt),
         canUnlink: canUnlink(space, auth.user.id, link.personOwnerId),
       });
+    }
+
+    // ACCOUNT-P2: suggestions only for an account that turned "Suggest matching people in shared Spaces" on
+    const { people } = getPreferences((await this.userRepository.getMetadata(auth.user.id)) ?? []);
+    if (!people.suggestInSpaces) {
+      return { linked, candidates: [] };
     }
 
     const alreadyLinked = new Set(

@@ -95,7 +95,7 @@ describe('evaluateAdmission', () => {
     expect(evaluateAdmission({ ...base, destination, probe, workload: MlWorkload.PetRecognition })).toEqual({
       admitted: false,
       refusal: MlAdmissionRefusal.InsufficientMemory,
-      detail: 'This server has 0.5 GiB of GPU memory; pet-recognition needs 1.0 GiB',
+      detail: 'This server has 0.5 GB of GPU memory; pet-recognition needs 1.1 GB',
     });
   });
 

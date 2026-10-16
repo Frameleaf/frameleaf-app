@@ -46,6 +46,7 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
+import { getSupporters } from 'src/utils/supporter.js';
 
 /** Why an editor's move is refused. The album's place is one stored value that everyone sees. */
 export const ALBUM_MOVE_OWNER_ONLY =
@@ -98,11 +99,32 @@ export class AlbumService extends BaseService {
       albums.map((album) => album.id),
       ownerId,
     );
-    return albums.map((album) => {
-      const item = this.withReadableParent(this.toListItem(album, albumMetadata), readable);
-      const origin = origins.get(album.id);
-      return origin ? { ...item, origin } : item;
-    });
+    return this.withSupporters(
+      auth,
+      albums.map((album) => {
+        const item = this.withReadableParent(this.toListItem(album, albumMetadata), readable);
+        const origin = origins.get(album.id);
+        return origin ? { ...item, origin } : item;
+      }),
+    );
+  }
+
+  /** Supporter option (b): mark the members who are supporters. A shared-link visitor is not told. */
+  private async withSupporters(auth: AuthDto, albums: AlbumResponseDto[]): Promise<AlbumResponseDto[]> {
+    if (auth.sharedLink || albums.length === 0) {
+      return albums;
+    }
+    const isSupporter = await getSupporters(
+      {
+        systemMetadataRepository: this.systemMetadataRepository,
+        frameleafUserLicenseRepository: this.frameleafUserLicenseRepository,
+      },
+      albums.flatMap(({ albumUsers }) => albumUsers.map(({ user }) => user.id)),
+    );
+    return albums.map((album) => ({
+      ...album,
+      albumUsers: album.albumUsers.map((member) => ({ ...member, supporter: isSupporter(member.user.id) })),
+    }));
   }
 
   /**
@@ -247,8 +269,9 @@ export class AlbumService extends BaseService {
     });
 
     const readable = await this.readableParents(auth, [mappedAlbum]);
+    const [withSupporters] = await this.withSupporters(auth, [mapAlbum(mappedAlbum)]);
     return {
-      ...this.withReadableParent(mapAlbum(mappedAlbum), readable),
+      ...this.withReadableParent(withSupporters, readable),
       startDate: asDateTimeString(albumMetadataForIds?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadataForIds?.endDate ?? undefined),
       assetCount: albumMetadataForIds?.assetCount ?? 0,

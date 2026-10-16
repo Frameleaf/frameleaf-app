@@ -1526,10 +1526,17 @@ describe(AlbumService.name, () => {
         },
       ]);
 
-      await sut.get(AuthFactory.create(owner), album.id);
+      mocks.frameleafUserLicense.getUserIds.mockResolvedValue([owner.id]);
+
+      const result = await sut.get(AuthFactory.create(owner), album.id);
 
       expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
       expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([album.id]));
+      // supporter option (b): each member says whether they are a supporter
+      expect(result.albumUsers.map(({ user, supporter }) => [user.id === owner.id, supporter])).toEqual([
+        [true, true],
+        [false, false],
+      ]);
     });
 
     it('names the built-in smart album kind so Re-evaluate is scoped to it (FL-83, AL-6)', async () => {

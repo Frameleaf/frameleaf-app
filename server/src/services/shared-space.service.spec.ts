@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { SharedSpaceEvent } from 'src/repositories/album-user.repository.js';
-import { AlbumKind, AlbumUserRole, AssetFileType, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetFileType, SharedSpaceEventType, UserMetadataKey } from 'src/enum.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { ActivityFactory } from 'test/factories/activity.factory.js';
@@ -395,13 +395,16 @@ describe(SharedSpaceService.name, () => {
         },
       ]);
       mocks.user.get.mockResolvedValue(invitedUser);
+      mocks.frameleafUserLicense.getUserIds.mockResolvedValue([invitedUser.id]);
 
       const { members } = await sut.getMembers(AuthFactory.create(owner), space.id);
 
       expect(members).toHaveLength(3);
       expect(members.filter(({ pending }) => pending)).toEqual([
-        expect.objectContaining({ role: AlbumUserRole.Viewer, pending: true }),
+        expect.objectContaining({ role: AlbumUserRole.Viewer, pending: true, supporter: true }),
       ]);
+      // supporter option (b): the tag follows each member's own Individual licence on an unlicensed server
+      expect(members.filter(({ supporter }) => supporter).map(({ user }) => user.id)).toEqual([invitedUser.id]);
     });
   });
 
@@ -679,6 +682,9 @@ describe(SharedSpaceService.name, () => {
       ]);
       mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
       mocks.user.get.mockResolvedValue(editor);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { people: { suggestInSpaces: true } } },
+      ]);
       mocks.albumUser.getSpacePersonCandidates.mockResolvedValue([
         {
           personGroupId: alreadyLinked,
@@ -715,6 +721,21 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.getSpacePersonCandidates).toHaveBeenCalledWith(space.id, editor.id, {
         excludeNsfw: true,
       });
+    });
+
+    it('suggests nobody unless the account turned "Suggest matching people in shared Spaces" on (ACCOUNT-P2)', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.albumUser.getLinkedPeople.mockResolvedValue([]);
+      mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await expect(sut.getPeople(AuthFactory.create(editor), space.id)).resolves.toEqual({
+        linked: [],
+        candidates: [],
+      });
+      expect(mocks.user.getMetadata).toHaveBeenCalledWith(editor.id);
+      expect(mocks.albumUser.getSpacePersonCandidates).not.toHaveBeenCalled();
     });
   });
 

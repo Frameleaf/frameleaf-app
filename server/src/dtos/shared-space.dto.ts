@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { HistoryBuilder } from 'src/decorators.js';
 import { PersonResponseSchema } from 'src/dtos/person.dto.js';
 import { UserResponseSchema } from 'src/dtos/user.dto.js';
 import { AlbumUserRoleSchema, SharedSpaceEventTypeSchema } from 'src/enum.js';
@@ -62,6 +63,13 @@ const SharedSpaceMemberResponseSchema = z
     role: AlbumUserRoleSchema,
     pending: z.boolean().describe('True while the invitation has not been accepted'),
     invitedAt: z.string().meta({ format: 'date-time' }).optional().describe('When a pending invitation was sent'),
+    supporter: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this person is a Frameleaf supporter: they hold an Individual licence, or this server holds a Server licence',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'SharedSpaceMemberResponseDto' });
 
