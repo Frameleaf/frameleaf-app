@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -427,15 +427,21 @@ export class AssetService extends BaseService {
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    const { locationVideoIds, locked } = await this.partnerOriginRepository.withOriginEdit(
+    const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;
+    const admitted = new Set(originIds);
+    const { locationVideoIds, locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
       'asset',
-      ids,
+      originIds,
       [],
       async () => {
         const locked =
           visibility === AssetVisibility.Locked
             ? await this.assetRepository.lock(ids, AssetLockReason.Marked, auth.user.id)
             : [];
+        const visibilityIds =
+          visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : [];
+        if (visibilityIds.some((id) => !admitted.has(id)))
+          throw new ConflictException('Lock group changed; retry the update');
         const storedVisibility = visibility === AssetVisibility.Locked ? undefined : visibility;
         const assetDto = omitBy(
           { isFavorite, visibility: storedVisibility, duplicateId, ...getAssetDateTimeUpdates(dateTimeOriginal) },
@@ -492,7 +498,14 @@ export class AssetService extends BaseService {
         }
 
         await this.partnerOriginRepository.markOverridden('asset', ids, getAssetEditFields(dto), auth.user.id);
-        return { locationVideoIds, locked };
+        if (visibilityIds.length > 0)
+          await this.partnerOriginRepository.markOverridden(
+            'asset',
+            visibilityIds,
+            [AssetOriginField.Visibility],
+            auth.user.id,
+          );
+        return { locationVideoIds, locked, visibilityIds };
       },
     );
     if (locked.length > 0) {
@@ -511,6 +524,16 @@ export class AssetService extends BaseService {
       ids,
       getAssetEditFields(dto),
     );
+
+    const requested = new Set(ids);
+    const siblingVisibilityIds = visibilityIds.filter((id) => !requested.has(id));
+    if (siblingVisibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        siblingVisibilityIds,
+        [AssetOriginField.Visibility],
+      );
 
     // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
     // push the same real-time update to `ids` and to every one of them, so every open session reflects
@@ -574,11 +597,26 @@ export class AssetService extends BaseService {
    */
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
-    const locked = await this.partnerOriginRepository.withOriginEdit('asset', dto.ids, [], async () => {
-      const locked = await this.assetRepository.lock(dto.ids, AssetLockReason.Marked, auth.user.id);
-      await this.partnerOriginRepository.markOverridden('asset', dto.ids, [AssetOriginField.Visibility], auth.user.id);
-      return locked;
-    });
+    const originIds = await this.assetRepository.findLockGroupIds(dto.ids);
+    const admitted = new Set(originIds);
+    const { locked, visibilityIds } = await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      originIds,
+      [],
+      async () => {
+        const locked = await this.assetRepository.lock(dto.ids, AssetLockReason.Marked, auth.user.id);
+        const visibilityIds = await this.assetRepository.findLockGroupIds(dto.ids);
+        if (visibilityIds.some((id) => !admitted.has(id)))
+          throw new ConflictException('Lock group changed; retry the update');
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          visibilityIds,
+          [AssetOriginField.Visibility],
+          auth.user.id,
+        );
+        return { locked, visibilityIds };
+      },
+    );
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
       await this.notifyAssetsUpdated(locked, auth.user.id);
@@ -587,7 +625,7 @@ export class AssetService extends BaseService {
     await recordAssetEdit(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
       auth.user.id,
-      dto.ids,
+      visibilityIds,
       [AssetOriginField.Visibility],
     );
   }

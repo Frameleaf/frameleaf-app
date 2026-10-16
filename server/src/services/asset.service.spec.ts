@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
@@ -1225,7 +1225,75 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('lock cascade origins', () => {
+    it.each(['direct', 'bulk'] as const)(
+      'protects %s lock siblings before commit, including already-locked members',
+      async (action) => {
+        const ids = ['asset-1', 'sibling'];
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+        mocks.asset.lock.mockResolvedValue([]);
+        mocks.partnerOrigin.getIdsWithFollowers.mockImplementation((_kind, ids) => Promise.resolve(ids));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+          expect(admitted).toEqual(ids);
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+            'asset',
+            ids,
+            ['visibility'],
+            authStub.admin.user.id,
+          );
+          committed = true;
+          return result;
+        });
+        mocks.job.queueAll.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        if (action === 'direct') await sut.lock(authStub.admin, { ids: ['asset-1'] });
+        else
+          await sut.updateAll(authStub.admin, {
+            ids: ['asset-1'],
+            visibility: AssetVisibility.Locked,
+            description: 'Mine',
+          });
+        expect(committed).toBe(true);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'sibling', fields: ['visibility'] } },
+          ]),
+        );
+        expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalledWith(
+          'asset',
+          ids,
+          expect.arrayContaining(['description']),
+          authStub.admin.user.id,
+        );
+      },
+    );
+
+    it.each(['direct', 'bulk'] as const)(
+      'rejects an expanded %s lock group before override recording',
+      async (action) => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.asset.findLockGroupIds.mockResolvedValueOnce(['asset-1']).mockResolvedValue(['asset-1', 'sibling']);
+        mocks.asset.lock.mockResolvedValue([]);
+        const edit =
+          action === 'direct'
+            ? sut.lock(authStub.admin, { ids: ['asset-1'] })
+            : sut.updateAll(authStub.admin, { ids: ['asset-1'], visibility: AssetVisibility.Locked });
+        await expect(edit).rejects.toBeInstanceOf(ConflictException);
+        expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('updateAll', () => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
     it.each([AssetVisibility.Archive, AssetVisibility.Locked])(
       'admits origin edits before bulk %s writes',
       async (visibility) => {
@@ -1485,6 +1553,9 @@ describe(AssetService.name, () => {
   });
 
   describe('lock (FL-34)', () => {
+    beforeEach(() => {
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
+    });
     it('takes origin admission before locking or publishing lock effects', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
       mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
