@@ -29259,6 +29259,15 @@
           "isArray": false,
           "length": 768,
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "producerModelKey",
+          "tableName": "smart_search",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -29300,6 +29309,14 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "smart_search_producer_key_check",
+          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "tableName": "smart_search",
+          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "synchronize": true
         }
       ],

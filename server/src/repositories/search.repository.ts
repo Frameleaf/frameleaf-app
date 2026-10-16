@@ -772,12 +772,29 @@ export class SearchRepository {
       .execute();
   }
 
-  async upsert(assetId: string, embedding: string): Promise<void> {
+  async upsert(assetId: string, value: string | { embedding: string; modelKey: string }): Promise<void> {
+    const { embedding, modelKey: producerModelKey } =
+      typeof value === 'string'
+        ? { embedding: value, modelKey: null }
+        : z
+            .strictObject({
+              embedding: z
+                .string()
+                .min(1)
+                .max(4 * 1024 * 1024),
+              modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+            })
+            .parse(value);
     const adopt = async (db: Kysely<DB>) => {
       await db
         .insertInto('smart_search')
-        .values({ assetId, embedding })
-        .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') })))
+        .values({ assetId, embedding, producerModelKey })
+        .onConflict((oc) =>
+          oc.column('assetId').doUpdateSet((eb) => ({
+            embedding: eb.ref('excluded.embedding'),
+            producerModelKey: eb.ref('excluded.producerModelKey'),
+          })),
+        )
         .execute();
     };
     if (!deferJobAdoption(adopt)) {

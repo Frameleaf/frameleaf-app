@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "015d0e06f87050e2b6a808d2583962b852ea0e81",
+  "sourceCommit": "38fb14ca1d68437795fd11f7341e30a541b8517e",
   "sourceHashes": {
     "src/enum.ts": "0407d6c7792379d5e1355e6a971d89bbaeda62e3cf078c93084daecdeb48c864",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -104,7 +104,7 @@
     "src/schema/tables/smart-album-exclusion.table.ts": "921885e9bdcff1608f487d63513fa798203686d912cf1602e988290f415fb5cd",
     "src/schema/tables/smart-album.table.ts": "cf05f0f1d4bdc60cd581f7c6f90cc3bbcdcc822ef5e9bf986b378bd15088d8e1",
     "src/schema/tables/smart-search-description.table.ts": "d5a8f4d566f4d89f7365534da9f129cd73e4902c6797a2f3588ffe9f875e4eba",
-    "src/schema/tables/smart-search.table.ts": "b15a8c6b72292743d6c50eae0713f75da2163ce88e277efb7d53db99df76de7b",
+    "src/schema/tables/smart-search.table.ts": "df69985c36c4ae3386574c3b991b273ca1890b71f396b753c8f8199d9aaa8ebe",
     "src/schema/tables/stack-audit.table.ts": "c0f1a2202dabba97fc270ac95c0510dad8f18597abe94a488ba248454076aff1",
     "src/schema/tables/stack.table.ts": "d4aaadc5c5bcd1b25d49172c7e4d77fb03ed96b558709d3257863e86e0a3c1d5",
     "src/schema/tables/studio-export.table.ts": "a19caf2aa0fe338904669a8d0e3f45451d2813e59f94e80e131e87ecee7ffb31",
@@ -135,6 +135,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "a135566d0ca02fcec2e8ec8362de9f05c5312354beec2ad48b105c3773e1ab8a",
-  "rawMetadataSha256": "da8460fa83b7df82bd7b1163292b1f0ba4357b9115e5412c07aa977a531850d1"
+  "dumpSha256": "447cb98123e395c65a694496a88f8926582f13f15fc29abb81449c7619859833",
+  "rawMetadataSha256": "6522157aca55f3000fd20f8dda8069b0cb3f52f9738816d84ab85e678a8c29a3"
 }

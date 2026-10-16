@@ -263,6 +263,20 @@ describe(PartnerCopyService.name, () => {
   );
 
   describe('copyAsset', () => {
+    it('copies exact CLIP producer provenance with the unchanged vector, including unknown legacy origins', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const embedding = JSON.stringify(Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0)));
+      for (const producerModelKey of [null, `clip:${'a'.repeat(64)}`]) {
+        const source = await newSourceAsset(ctx, alice.id);
+        await db.insertInto('smart_search').values({ assetId: source.id, embedding, producerModelKey }).execute();
+        const copyId = await sut.copyAsset(source.id, bob.id, alice.id);
+        expect(copyId).toBeDefined();
+        expect(await ctx.get(SearchRepository).getEmbedding(copyId!)).toMatchObject({ embedding, producerModelKey });
+      }
+    });
     it('repairs thumbnail admission on replay of a copy made before source derivatives were published', async () => {
       const { sut, ctx, origins } = setup();
       const { user: alice } = await ctx.newUser();
