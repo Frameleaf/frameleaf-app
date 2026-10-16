@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { AssetLockReason, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -47,6 +47,39 @@ describe('Matched import metadata fills', () => {
     });
     return { sut, ctx, auth, user, asset, assets, jobs };
   };
+
+  it.each(['direct', 'bulk'] as const)(
+    'pins every already-locked %s group member without pinning unrelated fields',
+    async (action) => {
+      const { sut, ctx, auth, user, asset, assets } = await setup();
+      const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newStack({ ownerId: user.id }, [asset.id, sibling.id]);
+      const ids = [asset.id, sibling.id];
+      await assets.lock([asset.id], AssetLockReason.Marked, user.id);
+      auth.session!.hasElevatedPermission = true;
+      const { user: sharer } = await ctx.newUser();
+      const origins = ctx.get(PartnerOriginRepository);
+      for (const id of ids) {
+        const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+        await origins.createAssetOrigin({
+          id,
+          sourceId: source.id,
+          ownerId: user.id,
+          rootOwnerId: sharer.id,
+          partnerSharedById: sharer.id,
+        });
+      }
+      if (action === 'direct') await sut.lock(auth, { ids: [asset.id] });
+      else await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked, description: 'Mine' });
+      for (const id of ids) expect((await origins.getOrigin('asset', id))?.overriddenFields).toContain('visibility');
+      expect((await origins.getOrigin('asset', sibling.id))?.overriddenFields).toEqual(['visibility']);
+      expect((await assets.getById(sibling.id, { exifInfo: true }))?.exifInfo).toBeNull();
+      if (action === 'bulk') {
+        expect((await origins.getOrigin('asset', asset.id))?.overriddenFields).toContain('description');
+        expect((await assets.getById(asset.id, { exifInfo: true }))?.exifInfo?.description).toBe('Mine');
+      }
+    },
+  );
 
   it('waits for origin admission before entering metadata write locks', async () => {
     const { sut, ctx, auth, user, asset, assets } = await setup();
