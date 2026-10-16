@@ -32,7 +32,7 @@ describe(AppController.name, () => {
     });
 
     it('should not be an authenticated route', async () => {
-      await request(ctx.getHttpServer()).post('/.well-known/frameleaf');
+      await request(ctx.getHttpServer()).get('/.well-known/frameleaf').expect(200);
       expect(ctx.authenticate).not.toHaveBeenCalled();
     });
 
@@ -52,7 +52,7 @@ describe(AppController.name, () => {
 
   describe('GET /custom.css', () => {
     it('should not be an authenticated route', async () => {
-      await request(ctx.getHttpServer()).post('/custom.css');
+      await request(ctx.getHttpServer()).get('/custom.css').expect(200);
       expect(ctx.authenticate).not.toHaveBeenCalled();
     });
 
