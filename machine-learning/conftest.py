@@ -22,7 +22,15 @@ def mock_get_model() -> Iterator[mock.Mock]:
         yield mocked
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(autouse=True)
+def isolated_thread_pool() -> Iterator[None]:
+    # Each test models a fresh worker, including tests that call main.run without entering an ASGI lifespan.
+    with mock.patch("immich_ml.main.thread_pool", None):
+        yield
+
+
+# Native factory tests also own this module's executor; never overlap their lifespan with a shared client.
+@pytest.fixture
 def deployed_app() -> Iterator[TestClient]:
     with TestClient(app) as client:
         yield client
