@@ -805,9 +805,10 @@ describe(SearchService.name, () => {
       await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.NsfwOverridden)).resolves.toEqual(
         expect.arrayContaining([overriddenSafe.id]),
       );
-      await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.NsfwOverridden)).resolves.not.toEqual(
-        expect.arrayContaining([acceptedNsfw.id, unreviewedNsfw.id]),
-      );
+      // each on its own: not.arrayContaining([a, b]) would pass with one of them listed
+      const overriddenIds = await idsForFilter(sut, user.id, ImageEnrichmentFilter.NsfwOverridden);
+      expect(overriddenIds).not.toContain(acceptedNsfw.id);
+      expect(overriddenIds).not.toContain(unreviewedNsfw.id);
       await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.ImageDescriptionFailed)).resolves.toEqual(
         expect.arrayContaining([descriptionFailed.id]),
       );
@@ -839,15 +840,17 @@ describe(SearchService.name, () => {
       await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.MissingImageDescription)).resolves.toEqual(
         expect.arrayContaining([missingBoth.id, nsfwDone.id]),
       );
-      await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.MissingImageDescription)).resolves.not.toEqual(
-        expect.arrayContaining([descriptionDone.id, video.id]),
-      );
+      // each on its own: not.arrayContaining([a, b]) would pass with one of them listed
+      const missingDescriptionIds = await idsForFilter(sut, user.id, ImageEnrichmentFilter.MissingImageDescription);
+      expect(missingDescriptionIds).not.toContain(descriptionDone.id);
+      expect(missingDescriptionIds).not.toContain(video.id);
       await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.MissingNsfwDetection)).resolves.toEqual(
         expect.arrayContaining([missingBoth.id, descriptionDone.id]),
       );
-      await expect(idsForFilter(sut, user.id, ImageEnrichmentFilter.MissingNsfwDetection)).resolves.not.toEqual(
-        expect.arrayContaining([nsfwDone.id, video.id]),
-      );
+      // each on its own: not.arrayContaining([a, b]) would pass with one of them listed
+      const missingNsfwIds = await idsForFilter(sut, user.id, ImageEnrichmentFilter.MissingNsfwDetection);
+      expect(missingNsfwIds).not.toContain(nsfwDone.id);
+      expect(missingNsfwIds).not.toContain(video.id);
     });
   });
 
