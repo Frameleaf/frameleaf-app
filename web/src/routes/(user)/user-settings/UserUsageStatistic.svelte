@@ -174,4 +174,10 @@
     padding-bottom: var(--fl-space-5);
     overflow-x: auto;
   }
+  /* As the prototype's year grids: the whole year fits the card, the weekday names in their own
+     column and every week sharing the rest, so today's square is in view instead of past the edge. */
+  .grid :global(.grid-flow-col) {
+    grid-template-columns: auto;
+    grid-auto-columns: minmax(0, 1fr);
+  }
 </style>

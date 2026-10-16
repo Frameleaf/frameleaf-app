@@ -60,7 +60,7 @@
     type TakeoutRootDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCheck, mdiImageOffOutline } from '@mdi/js';
+  import { mdiAlertCircleOutline, mdiCheck, mdiImageOffOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -535,9 +535,12 @@
         <strong>{$t('frameleaf_takeout_step_import')}</strong>{$t('frameleaf_takeout_start_step_import')}
       </li>
     </ol>
-    <div class="note-box warn" role="note">
-      <strong>{$t('frameleaf_takeout_all_files_title')}</strong>
-      <p>{$t('frameleaf_takeout_all_files_body')}</p>
+    <div class="note-box warn with-icon" role="note">
+      <span class="note-icon" aria-hidden="true"><Icon icon={mdiAlertCircleOutline} size="20" /></span>
+      <div>
+        <strong>{$t('frameleaf_takeout_all_files_title')}</strong>
+        <p>{$t('frameleaf_takeout_all_files_body')}</p>
+      </div>
     </div>
 
     {#if isAdmin}
@@ -955,6 +958,13 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     background: var(--fl-raised);
+    /* As the prototype's Steps: the step name in text colour, what happens in it quieter. */
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .intro li strong {
+    color: var(--fl-text);
+    font-size: var(--fl-font-size);
   }
   .bar {
     display: grid;
@@ -981,8 +991,23 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  /* The prototype's warning notice (settings-v2 kit `Notice tone="warn"`): a warm wash, not just a line. */
   .note-box.warn {
-    border-color: var(--fl-warning);
+    border-color: color-mix(in srgb, var(--fl-warning) 55%, var(--fl-border));
+    background: color-mix(in srgb, var(--fl-warning) 10%, var(--fl-panel));
+  }
+  .note-box.with-icon {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.75rem;
+  }
+  .note-box.with-icon > div {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .note-icon {
+    display: inline-flex;
+    color: var(--fl-warning);
   }
   .note-box.good {
     border-color: var(--fl-teal);
