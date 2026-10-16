@@ -590,6 +590,41 @@ describe(ICloudSyncService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it.each([true, false])(
+      'stops after a failed pause when active claim renewal is refused (cancelled: %s)',
+      async (cancelled) => {
+        operations.setBulkResult.mockResolvedValue({ ...working, pauseRequestedAt: new Date() });
+        operations.settlePause.mockResolvedValue(false);
+        operations.heartbeat.mockResolvedValue(false);
+        operations.acknowledgeCancel.mockResolvedValue(cancelled);
+
+        await sut.run(operation(), 'token');
+
+        expect(repository.claim).toHaveBeenCalledTimes(1);
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run', 'token', { released: false });
+        if (cancelled) {
+          expect(repository.endRun).toHaveBeenCalledWith('connection', 'cancelled');
+        } else {
+          expect(repository.endRun).not.toHaveBeenCalled();
+        }
+        expect(operations.complete).not.toHaveBeenCalled();
+      },
+    );
+
+    it('continues after a withdrawn pause only while its claim is active', async () => {
+      operations.setBulkResult
+        .mockResolvedValueOnce({ ...working, pauseRequestedAt: new Date() })
+        .mockResolvedValue(working);
+      operations.settlePause.mockResolvedValue(false);
+
+      await sut.run(operation(), 'token');
+
+      expect(operations.heartbeat).toHaveBeenCalledWith('run', 'token', expect.any(Number), {
+        requireActiveClaim: true,
+      });
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
     it('waits, without spending an attempt, while its owner is signing in again', async () => {
       repository.get.mockResolvedValue({ ...connection, state: 'authenticating' });
       await sut.run(operation(), 'token');

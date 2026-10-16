@@ -842,9 +842,16 @@ export class ICloudSyncService {
       this.logger.log(`iCloud sync run ${id} cancelled by its owner`);
       return false;
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claim.claimToken))) {
-      this.logger.log(`iCloud sync run ${id} paused by its owner`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claim.claimToken)) {
+        this.logger.log(`iCloud sync run ${id} paused by its owner`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claim.claimToken, ICLOUD_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.acknowledgeCancel(claim, connectionId);
+        return false;
+      }
     }
     return true;
   }
