@@ -1,5 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { access, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { PhysicalFileType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -108,6 +111,36 @@ describe(PhysicalFileTrashRepository.name, () => {
   });
 
   describe('trash, untrash and purge', () => {
+    it('recovers an untrash move that completed before its callback rejected', async () => {
+      const { sut } = setup();
+      const directory = await mkdtemp(join(tmpdir(), 'frameleaf-untrash-rollback-'));
+      onTestFinished(() => rm(directory, { recursive: true, force: true }));
+      const source = join(directory, 'trashed.jpg');
+      const target = join(directory, 'restored.jpg');
+      const id = randomUUID();
+      const checksum = randomBytes(32);
+      const bytes = Buffer.from('private untrash rollback control');
+      await writeFile(source, bytes);
+      await sql`INSERT INTO public.physical_file_trash
+        (id, path, checksum, "sizeInBytes", "originalFileName")
+        VALUES (${id}::uuid, ${source}, ${checksum}, ${bytes.length}, 'photo.jpg')`.execute(defaultDatabase);
+      const failure = new Error('move acknowledgement failed');
+      const move = vi.fn(async (from: string, to: string) => {
+        await rename(from, to);
+        if (from === source) throw failure;
+      });
+
+      await expect(sut.untrash(id, target, move)).rejects.toBe(failure);
+
+      await expect(readFile(source)).resolves.toEqual(bytes);
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(sut.getById(id)).resolves.toMatchObject({ path: source });
+      const journal = await sql`SELECT id FROM public.move_history
+        WHERE "pathType" = 'file_trash' AND "oldPath" = ${source}`.execute(defaultDatabase);
+      expect(journal.rows).toEqual([]);
+      expect(move).toHaveBeenLastCalledWith(target, source);
+    });
+
     const trashOne = async (
       ctx: MediumTestContext,
       sut: PhysicalFileTrashRepository,

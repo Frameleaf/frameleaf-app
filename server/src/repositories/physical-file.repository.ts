@@ -213,12 +213,13 @@ export const withFileTrashMove = async <T>(
   originalFileName: string,
   move: PhysicalFileTrashMove,
   callback: (trx: Transaction<DB>, id: string) => Promise<T>,
+  targetPath?: string,
 ): Promise<T> => {
   if (await recoverFileTrashMoves(db, move, path)) {
     throw new ConflictException('An interrupted file trash move needs recovery');
   }
   const id = randomUUID();
-  const target = StorageCore.getFileTrashPath(id, originalFileName);
+  const target = targetPath ?? StorageCore.getFileTrashPath(id, originalFileName);
   await sql`INSERT INTO public.move_history (id, "entityId", "pathType", "oldPath", "newPath")
     VALUES (${id}::uuid, ${id}::uuid, 'file_trash', ${path}, ${target})`.execute(db);
   try {
