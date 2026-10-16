@@ -20,7 +20,12 @@ export class ICloudMetadataService {
 
   @OnEvent({ name: 'AssetMetadataExtracted', priority: -100 })
   async onAssetMetadataExtracted({ assetId, userId }: ArgOf<'AssetMetadataExtracted'>): Promise<void> {
-    await this.afterLocked(await this.repository.afterExtraction(assetId, userId), userId);
+    const locked: string[] = [];
+    try {
+      await this.repository.afterExtraction(assetId, userId, locked);
+    } finally {
+      await this.afterLocked(locked, userId);
+    }
   }
 
   /**

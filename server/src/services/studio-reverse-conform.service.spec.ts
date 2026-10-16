@@ -191,6 +191,61 @@ describe(StudioReverseConformService.name, () => {
     },
   );
 
+  it.each(['source', 'master', 'preview', 'source-geometry', 'preview-geometry', 'source-packets'])(
+    'stops the %s probe on producer shutdown before cleanup or publication',
+    async (stage) => {
+      const { sut, operation, media, renderer, operations, projects } = setup();
+      const started = Promise.withResolvers<void>();
+      let observed: AbortSignal | undefined;
+      let release = () => {};
+      const block = (signal?: AbortSignal): Promise<never> => {
+        observed = signal;
+        started.resolve();
+        return new Promise((_resolve, reject) => {
+          release = () => reject(new Error('controlled probe released'));
+          if (signal?.aborted) reject(signal.reason);
+          else signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      };
+      if (stage.endsWith('geometry')) {
+        renderer.probeGeometry.mockImplementation((path: string, _index: number, signal?: AbortSignal) =>
+          (stage === 'preview-geometry') === path.endsWith('.mp4')
+            ? block(signal)
+            : Promise.resolve({ width: 32, height: 32, sampleAspectRatio: '1:1' }),
+        );
+      } else if (stage === 'source-packets') {
+        media.probePackets.mockImplementation((_path: string, _index: number, options?: { signal?: AbortSignal }) =>
+          block(options?.signal),
+        );
+      } else {
+        media.probe.mockImplementation((path: string, options?: { signal?: AbortSignal }) => {
+          const match =
+            stage === 'source'
+              ? path === '/source.mkv'
+              : stage === 'preview'
+                ? path.endsWith('.mp4')
+                : path.endsWith('source-reversed.mkv');
+          return match
+            ? block(options?.signal)
+            : Promise.resolve(path.endsWith('.mp4') ? reversePreviewInfo() : reverseVideoInfo());
+        });
+      }
+      const run = sut.run({ operation, claimToken });
+      try {
+        await started.promise;
+        await sut.onShutdown();
+        expect(observed).toBeInstanceOf(AbortSignal);
+        expect(observed!.aborted).toBe(true);
+        await run;
+        expect(operations.publishValidated).not.toHaveBeenCalled();
+        expect(projects.registerGeneratedResource).not.toHaveBeenCalled();
+      } finally {
+        release();
+        await run;
+      }
+    },
+  );
+
   it('requires the complete manifest at submit', async () => {
     const { sut, operations, resources } = setup();
     resources.resolveProjectResources.mockResolvedValue({ manifest: { complete: false, entries: [] } });

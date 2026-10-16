@@ -260,7 +260,7 @@ const DATE_RULES: Array<{ pattern: RegExp; valid: (match: RegExpExecArray) => bo
   },
 ];
 
-const AMOUNT = /(?:[$€£¥]\s?)?\d{1,3}(?:[,\s.]\d{3})*[.,]\d{2}(?!\d)|[$€£¥]\s?\d+(?!\d)/;
+const AMOUNT = /(?:[$€£¥]\s?)?(?<!\d)\d+(?:[,\s.]\d{3})*[.,]\d{2}(?!\d)|[$€£¥]\s?\d+(?!\d)/;
 const SUBTOTAL = /\bsub[\s-]?total\b/i;
 const STRONG_TOTAL = /\b(grand\s+total|total\s+due|amount\s+due|balance\s+due|total\s+to\s+pay|montant\s+total)\b/i;
 const TOTAL = /\b(total|totale|summe|montant)\b/i;
@@ -328,7 +328,9 @@ export const suggestDocumentFields = (lines: SourceLine[]): Map<DocumentField, A
   const ordered = [...lines].sort((a, b) => compareReadingOrder(a.region, b.region));
   const suggestions = new Map<DocumentField, AssembledCandidate[]>();
   const add = (field: DocumentField, item: AssembledCandidate) => {
-    suggestions.set(field, [...(suggestions.get(field) ?? []), item]);
+    const items = suggestions.get(field) ?? [];
+    items.push(item);
+    suggestions.set(field, items);
   };
 
   const totals: Array<{ rank: number; index: number; item: AssembledCandidate }> = [];

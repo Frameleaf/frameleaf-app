@@ -1,9 +1,23 @@
-import { memoriesStatistics, searchMemories, type MemoryResponseDto } from '@frameleaf/sdk';
+import {
+  getMemoryShowLess,
+  MemoryShowLessKind,
+  memoriesStatistics,
+  searchMemories,
+  type MemoryResponseDto,
+} from '@frameleaf/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deferredPromise } from '@test-data/deferred';
 
+const session = vi.hoisted(() => ({ generation: 0 }));
 const state = vi.hoisted(() => ({
-  auth: { authenticated: false, user: { id: 'me' } },
+  auth: {
+    authenticated: false,
+    user: { id: 'me' },
+    captureSession: () => {
+      const generation = session.generation;
+      return () => generation === session.generation;
+    },
+  },
   events: {} as Record<string, () => unknown>,
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: state.auth }));
@@ -19,6 +33,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchMemories: vi.fn(),
   memoriesStatistics: vi.fn(),
+  getMemoryShowLess: vi.fn(),
 }));
 
 const memory = (id: string, assets = [{ id: `asset-${id}` }]) => ({ id, assets }) as MemoryResponseDto;
@@ -32,6 +47,7 @@ beforeEach(async () => {
   state.events = {};
   vi.mocked(searchMemories).mockReset().mockResolvedValue([]);
   vi.mocked(memoriesStatistics).mockReset().mockResolvedValue({ total: 0 });
+  vi.mocked(getMemoryShowLess).mockReset().mockResolvedValue([]);
   ({ memoryManager: manager } = await import('./memory-manager.svelte'));
 });
 afterEach(() => {
@@ -79,19 +95,31 @@ describe('memory page ownership', () => {
     const currentPage = deferredPromise<MemoryResponseDto[]>();
     vi.mocked(searchMemories)
       .mockResolvedValueOnce([memory('old')])
-      .mockReturnValueOnce(currentPage.promise);
+      .mockReturnValueOnce(currentPage.promise)
+      .mockResolvedValueOnce([memory('hidden-current')]);
+    vi.mocked(getMemoryShowLess).mockResolvedValueOnce([
+      { kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'current-person' },
+    ]);
     vi.mocked(memoriesStatistics).mockReturnValueOnce(oldStatistics.promise).mockResolvedValueOnce({ total: 1 });
     const oldLoading = manager.refresh();
     await vi.waitFor(() => expect(memoriesStatistics).toHaveBeenCalledTimes(1));
     const currentLoading = manager.reloadForSessionAccess();
-    expect(searchMemories).toHaveBeenCalledTimes(2);
+    const currentPageLoading = manager.loading;
+    expect(currentPageLoading).toBeDefined();
+    expect(searchMemories).toHaveBeenCalledTimes(3);
+    expect(searchMemories).toHaveBeenCalledWith({ isHidden: true, order: 'desc', size: 250 });
+    expect(getMemoryShowLess).toHaveBeenCalledOnce();
     oldStatistics.resolve({ total: 999 });
     await oldLoading;
-    expect(manager.loading).toBe(currentLoading);
+    expect(manager.loading).toBe(currentPageLoading);
     expect(manager.memories).toEqual([]);
     currentPage.resolve([memory('current')]);
     await currentLoading;
     expect(manager.total).toBe(1);
+    expect(manager.hidden.map(({ id }) => id)).toEqual(['hidden-current']);
+    expect(manager.showLess).toEqual([
+      { kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'current-person' },
+    ]);
     expect(manager.memories.map(({ id }) => id)).toEqual(['current']);
     expect(manager.loading).toBeUndefined();
   });
@@ -128,4 +156,53 @@ describe('memory page ownership', () => {
     await vi.advanceTimersByTimeAsync(3_600_000);
     expect(searchMemories).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('direct memory read ownership', () => {
+  it.each([
+    ['memory', 'logout'],
+    ['hidden', 'logout'],
+    ['rules', 'logout'],
+    ['memory', 'session'],
+    ['hidden', 'session'],
+    ['rules', 'session'],
+  ] as const)('does not republish %s after %s', async (kind, change) => {
+    const response = deferredPromise<MemoryResponseDto[]>();
+    const rules = deferredPromise<Awaited<ReturnType<typeof getMemoryShowLess>>>();
+    vi.mocked(searchMemories).mockReturnValueOnce(response.promise);
+    vi.mocked(getMemoryShowLess).mockReturnValueOnce(rules.promise);
+    const loading =
+      kind === 'memory'
+        ? manager.loadMemory('private')
+        : kind === 'hidden'
+          ? manager.loadHidden()
+          : manager.loadShowLess();
+    if (change === 'logout') {
+      state.events.AuthLogout();
+    } else {
+      session.generation++;
+    }
+    response.resolve([memory('private')]);
+    rules.resolve([{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'private-person' }]);
+    await loading;
+    expect(manager.memories).toEqual([]);
+    expect(manager.hidden).toEqual([]);
+    expect(manager.showLess).toEqual([]);
+  });
+
+  it('clears already loaded hidden memories and show-less rules on logout', () => {
+    manager.hidden = [memory('private')];
+    manager.showLess = [{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'private-person' }];
+    state.events.AuthLogout();
+    expect(manager.hidden).toEqual([]);
+    expect(manager.showLess).toEqual([]);
+  });
+});
+
+it('preserves auxiliary memory settings during an ordinary filter change', () => {
+  manager.hidden = [memory('hidden')];
+  manager.showLess = [{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'person' }];
+  manager.setFilters({ size: 17 });
+  expect(manager.hidden.map(({ id }) => id)).toEqual(['hidden']);
+  expect(manager.showLess).toEqual([{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'person' }]);
 });

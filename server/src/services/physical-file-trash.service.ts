@@ -17,7 +17,7 @@ import {
 import { AssetVisibility, ChecksumAlgorithm, FrameleafWorker, JobName, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
-import { moveFileWithin } from 'src/utils/file-trash.js';
+import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
@@ -85,87 +85,88 @@ export class PhysicalFileTrashService extends BaseService {
     }
 
     const extension = extname(entry.originalFileName) || extname(entry.path);
-    const target = StorageCore.getNestedPath(
-      StorageFolder.Upload,
-      owner.id,
-      `${this.cryptoRepository.randomUUID()}${extension}`,
+    const assetId = this.cryptoRepository.randomUUID();
+    const target = StorageCore.getNestedPath(StorageFolder.Upload, owner.id, `${assetId}${extension}`);
+    const expected = { checksum: entry.checksum, sizeInBytes: entry.sizeInBytes };
+    const checks = storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+      this.logger.warn(`Restored ${assetId} keeps its own file: the stored copy at ${path} holds other bytes`),
     );
+    const proof = await this.physicalFileRepository.proveStoredCopy(assetId, expected, checks.verify);
     let stat!: Awaited<ReturnType<typeof this.storageRepository.stat>>;
-    const restored = await this.physicalFileTrashRepository.untrash(id, target, async (from, to) => {
-      await this.move(from, to);
-      try {
-        stat = await this.storageRepository.stat(to);
-      } catch (error) {
-        try {
-          await this.move(to, from);
-        } catch (compensationError) {
-          this.logger.error('File-trash inspection failed', error);
-          this.logger.error('File-trash move-back failed', compensationError);
-          throw new AggregateError(
-            [error, compensationError],
-            `File-trash inspection failed and the file could not be moved back from ${to} to ${from}`,
-            { cause: compensationError },
-          );
-        }
-        throw error;
-      }
-    });
-    if (!restored) {
-      throw new NotFoundException('File not found in the file trash');
-    }
-
     let asset: Asset | undefined;
+    let linked = false;
     try {
-      asset = await this.assetRepository.create({
-        ownerId: owner.id,
-        libraryId: null,
-        checksum: entry.checksum,
-        checksumAlgorithm: entry.checksum.length === 32 ? ChecksumAlgorithm.sha256File : ChecksumAlgorithm.sha1File,
-        originalPath: target,
-        fileCreatedAt: stat.mtime,
-        fileModifiedAt: stat.mtime,
-        localDateTime: stat.mtime,
-        type: mimeTypes.assetType(target),
-        isFavorite: false,
-        duration: null,
-        visibility: AssetVisibility.Timeline,
-        livePhotoVideoId: null,
-        originalFileName: entry.originalFileName,
-      });
-      await this.assetRepository.upsertExif({
-        exif: { assetId: asset.id, fileSizeInByte: entry.sizeInBytes },
-        lockedPropertiesBehavior: 'override',
-      });
-      const stored = await this.physicalFileRepository.linkUploadedOriginal(
-        asset.id,
-        { checksum: entry.checksum, sizeInBytes: entry.sizeInBytes },
-        { exists: (path) => this.storageRepository.checkFileExists(path) },
+      const restored = await this.physicalFileTrashRepository.untrash(
+        id,
+        target,
+        async (from, to) => {
+          await this.move(from, to);
+          try {
+            stat = await this.storageRepository.stat(to);
+          } catch (error) {
+            try {
+              await this.move(to, from);
+            } catch (compensationError) {
+              this.logger.error('File-trash inspection failed', error);
+              this.logger.error('File-trash move-back failed', compensationError);
+              throw new AggregateError(
+                [error, compensationError],
+                `File-trash inspection failed and the file could not be moved back from ${to} to ${from}`,
+                { cause: compensationError },
+              );
+            }
+            throw error;
+          }
+        },
+        async (trx) => {
+          asset = await this.assetRepository.create(
+            {
+              id: assetId,
+              ownerId: owner.id,
+              libraryId: null,
+              checksum: entry.checksum,
+              checksumAlgorithm:
+                entry.checksum.length === 32 ? ChecksumAlgorithm.sha256File : ChecksumAlgorithm.sha1File,
+              originalPath: target,
+              fileCreatedAt: stat.mtime,
+              fileModifiedAt: stat.mtime,
+              localDateTime: stat.mtime,
+              type: mimeTypes.assetType(target),
+              isFavorite: false,
+              duration: null,
+              visibility: AssetVisibility.Timeline,
+              livePhotoVideoId: null,
+              originalFileName: entry.originalFileName,
+            },
+            undefined,
+            trx,
+          );
+          await this.assetRepository.upsertExif(
+            {
+              exif: { assetId: asset.id, fileSizeInByte: entry.sizeInBytes },
+              lockedPropertiesBehavior: 'override',
+            },
+            trx,
+          );
+          const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, checks, {
+            transaction: trx,
+            proof,
+          });
+          linked = stored?.linked === true;
+        },
       );
-      if (stored?.linked) {
-        // the same content reached the server again meanwhile: keep that one file
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [target] } });
+      if (!restored || !asset) {
+        throw new NotFoundException('File not found in the file trash');
       }
     } catch (error) {
-      if (asset) {
-        await this.assetRepository.remove({ id: asset.id });
-      }
-      // nothing references the restored file now: it goes back to the trash, never unlinked
-      await this.physicalFileRepository.deleteUnreferencedPath(target, () => this.storageRepository.unlink(target), {
-        trash: {
-          move: (from, to) => this.move(from, to),
-          original: {
-            checksum: entry.checksum,
-            sizeInBytes: entry.sizeInBytes,
-            ownerId: entry.lastOwnerId,
-            assetId: entry.lastAssetId,
-            originalFileName: entry.originalFileName,
-          },
-        },
-      });
       if (isAssetChecksumConstraint(error)) {
         throw new ConflictException('That library already holds this file');
       }
       throw error;
+    }
+    if (linked) {
+      // A concurrent upload owns the retained copy; this unreferenced extra can be removed.
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [target] } });
     }
 
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } });

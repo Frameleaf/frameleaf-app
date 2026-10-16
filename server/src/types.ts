@@ -264,6 +264,7 @@ export interface VideoCodecSWConfig {
 
 export interface ProbeOptions {
   countFrames: boolean;
+  signal?: AbortSignal;
 }
 
 export interface VideoInterfaces {

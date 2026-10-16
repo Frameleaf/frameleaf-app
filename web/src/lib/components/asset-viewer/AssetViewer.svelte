@@ -181,6 +181,26 @@
   const asset = $derived(previewStackedAsset ?? cursor.current);
   let developLookupGeneration = 0;
   let viewerAlive = true;
+  let viewGeneration = 0;
+  let slideshowGeneration = 0;
+  let slideshowNavigationGeneration = 0;
+  const captureSlideshow = () => {
+    const generation = slideshowGeneration;
+    const navigationGeneration = slideshowNavigationGeneration;
+    const isCurrentSession = authManager.captureSession();
+    return () =>
+      viewerAlive &&
+      generation === slideshowGeneration &&
+      navigationGeneration === slideshowNavigationGeneration &&
+      isCurrentSession() &&
+      $slideshowState === SlideshowState.PlaySlideshow;
+  };
+  const captureView = () => {
+    const id = asset.id;
+    const generation = viewGeneration;
+    const isCurrentSession = authManager.captureSession();
+    return () => viewerAlive && generation === viewGeneration && asset.id === id && isCurrentSession();
+  };
   /**
    * The owner's photo may have a saved edit, and the address of its preview follows that edit. The
    * photo is on screen from the first frame all the same (its thumbhash and thumbnail never depend on
@@ -323,13 +343,11 @@
     if (authManager.isSharedLink || !withStacked) {
       return;
     }
-
-    if (asset.stack) {
-      stack = await getStack({ id: asset.stack.id });
-    }
-
-    if (!stack?.assets.some(({ id }) => id === asset.id)) {
-      stack = null;
+    const target = asset;
+    const isCurrent = captureView();
+    const loaded = target.stack ? await getStack({ id: target.stack.id }) : null;
+    if (isCurrent()) {
+      stack = loaded?.assets.some(({ id }) => id === target.id) ? loaded : null;
     }
   };
 
@@ -424,6 +442,7 @@
     // FL-36: a slideshow starts only from a stopped viewer; resuming from pause is not a new run.
     let previousSlideshowState = $slideshowState;
     const slideshowStateUnsubscribe = slideshowState.subscribe((value) => {
+      slideshowGeneration++;
       const previous = previousSlideshowState;
       previousSlideshowState = value;
       if (value === SlideshowState.PlaySlideshow && previous !== SlideshowState.PauseSlideshow) {
@@ -436,6 +455,7 @@
     });
 
     const slideshowNavigationUnsubscribe = slideshowNavigation.subscribe((value) => {
+      slideshowNavigationGeneration++;
       if (value !== SlideshowNavigation.Shuffle) {
         return;
       }
@@ -471,11 +491,15 @@
 
   // FL-113: the quick editor says whether a saved version changed what the viewer should show.
   const closeEditor = async (refreshAsset = false) => {
+    const isCurrent = captureView();
     if (refreshAsset) {
       // What the photo shows is about to change: the current picture stays until the new one has loaded.
       holdCurrentPhoto('ready');
       bumpPlaybackRevision(asset.id);
       const refreshedAsset = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       onAssetChange?.(refreshedAsset);
       assetViewerManager.setAsset(refreshedAsset);
     }
@@ -550,7 +574,11 @@
 
   // FL-38: after the face tagger saves, re-read the asset and its faces, as closeEditor does.
   const refreshFaces = async () => {
+    const isCurrent = captureView();
     const refreshedAsset = await getAssetInfo({ id: asset.id });
+    if (!isCurrent()) {
+      return;
+    }
     onAssetChange?.(refreshedAsset);
     assetViewerManager.setAsset(refreshedAsset);
     faceManager.clear();
@@ -601,45 +629,57 @@
       return;
     }
 
+    const isCurrentView = captureView();
+    const isCurrentSession = authManager.captureSession();
+    const isCurrentSlideshow = captureSlideshow();
+    const wasSlideshow = $slideshowState === SlideshowState.PlaySlideshow;
     void tracker
       .invoke(async () => {
-        const isShuffle =
-          $slideshowState === SlideshowState.PlaySlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
-
-        let hasNext: boolean;
-
-        if (isShuffle) {
-          hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
-          if (!hasNext) {
-            const asset = await onRandom?.();
-            if (asset) {
-              slideshowHistory.queue(asset);
-              hasNext = true;
+        try {
+          const isShuffle = wasSlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
+          let hasNext: boolean;
+          if (isShuffle) {
+            hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
+            if (!hasNext) {
+              const randomAsset = await onRandom?.();
+              if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== randomAsset?.id)) {
+                return;
+              }
+              if (randomAsset) {
+                slideshowHistory.queue(randomAsset);
+                hasNext = true;
+              }
+            }
+          } else {
+            const target = order === 'previous' ? cursor.previousAsset : cursor.nextAsset;
+            hasNext = await goToAsset(target);
+            if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== target?.id)) {
+              return;
             }
           }
-        } else {
-          hasNext = order === 'previous' ? await goToAsset(cursor.previousAsset) : await goToAsset(cursor.nextAsset);
+          if (!isCurrentSlideshow()) {
+            return;
+          }
+          if (!hasNext && $slideshowRepeat && slideshowStartAssetId) {
+            await assetViewerManager.setAssetId(slideshowStartAssetId, {
+              isCurrent: () => isCurrentView() && isCurrentSlideshow(),
+              onSet: () => ($restartSlideshowProgress = true),
+            });
+            return;
+          }
+          if (hasNext) {
+            $restartSlideshowProgress = true;
+          } else {
+            await handleStopSlideshow();
+          }
+        } catch (error) {
+          if (isCurrentView() && (!wasSlideshow || isCurrentSlideshow())) {
+            throw error;
+          }
         }
-
-        if ($slideshowState !== SlideshowState.PlaySlideshow) {
-          return;
-        }
-
-        if (hasNext) {
-          $restartSlideshowProgress = true;
-          return;
-        }
-
-        if ($slideshowRepeat && slideshowStartAssetId) {
-          await assetViewerManager.setAssetId(slideshowStartAssetId);
-          $restartSlideshowProgress = true;
-          return;
-        }
-
-        await handleStopSlideshow();
       }, $t('error_while_navigating'))
       .then(() => {
-        if (!queuedWhileBusy) {
+        if (!viewerAlive || !isCurrentSession() || !queuedWhileBusy) {
           return;
         }
         const queuedOrder = queuedWhileBusy;
@@ -720,7 +760,14 @@
   let assetViewerHtmlElement = $state<HTMLElement>();
 
   const slideshowHistory = new SlideshowHistory((asset) => {
-    handlePromiseError(assetViewerManager.setAssetId(asset.id).then(() => ($restartSlideshowProgress = true)));
+    const isCurrentView = captureView();
+    const isCurrentSlideshow = captureSlideshow();
+    handlePromiseError(
+      assetViewerManager.setAssetId(asset.id, {
+        isCurrent: () => isCurrentView() && isCurrentSlideshow(),
+        onSet: () => ($restartSlideshowProgress = true),
+      }),
+    );
   });
 
   const handleVideoStarted = () => {
@@ -745,15 +792,22 @@
   };
 
   const handleStopSlideshow = async () => {
+    const generation = slideshowGeneration;
+    const isCurrentSession = authManager.captureSession();
+    const isCurrent = () => viewerAlive && generation === slideshowGeneration && isCurrentSession();
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_exit_fullscreen'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_exit_fullscreen'));
+      }
     } finally {
-      $stopSlideshowProgress = true;
-      $slideshowState = SlideshowState.None;
+      if (isCurrent()) {
+        $stopSlideshowProgress = true;
+        $slideshowState = SlideshowState.None;
+      }
     }
   };
 
@@ -788,6 +842,9 @@
         break;
       }
       case AssetAction.REMOVE_ASSET_FROM_STACK: {
+        if (!viewerAlive || action.asset.id !== asset.id) {
+          break;
+        }
         stack = action.stack;
         if (stack) {
           cursor = { ...cursor, current: stack.assets[0] };
@@ -801,7 +858,14 @@
         break;
       }
       case AssetAction.SET_PERSON_FEATURED_PHOTO: {
-        const assetInfo = await getAssetInfo({ id: asset.id });
+        if (!viewerAlive || action.asset.id !== asset.id) {
+          break;
+        }
+        const isCurrent = captureView();
+        const assetInfo = await getAssetInfo({ id: action.asset.id });
+        if (!isCurrent()) {
+          break;
+        }
         cursor.current = { ...asset, people: assetInfo.people };
         eventManager.emit('AssetUpdate', cursor.current);
         break;
@@ -819,7 +883,9 @@
         break;
       }
       case AssetAction.UNSTACK: {
-        closeViewer();
+        if (viewerAlive && action.assets.some((member) => member.id === asset.id)) {
+          closeViewer();
+        }
         break;
       }
       // no default
@@ -848,18 +914,22 @@
   };
 
   const refresh = async () => {
+    const target = asset;
+    const isCurrent = captureView();
     // FL-35: a panorama always opens looking around again after a navigation.
     assetViewerManager.resetPanoramaView();
     await refreshStack();
+    if (!isCurrent()) {
+      return;
+    }
     ocrManager.clear();
     faceManager.clear();
     if (!sharedLink) {
-      if (previewStackedAsset) {
-        await ocrManager.getAssetOcr(previewStackedAsset.id);
-        await faceManager.getAssetFaces(previewStackedAsset.id);
+      await ocrManager.getAssetOcr(target.id);
+      if (!isCurrent()) {
+        return;
       }
-      await ocrManager.getAssetOcr(asset.id);
-      await faceManager.getAssetFaces(asset.id);
+      await faceManager.getAssetFaces(target.id);
     }
   };
 
@@ -1155,6 +1225,7 @@
       return;
     }
     const first = shownAssetId === undefined;
+    viewGeneration++;
     shownAssetId = id;
     if (first) {
       return;
@@ -1453,14 +1524,21 @@
   use:shortcuts={[
     { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
     { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },
-    {
-      shortcut: { key: 'ArrowLeft' },
-      onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
-    },
-    {
-      shortcut: { key: 'ArrowRight' },
-      onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
-    },
+    // While a slideshow runs the arrows step it through SlideshowBar's own bindings (VIEWER-P1 has no
+    // capsule buttons any more), so the viewer leaves them alone: a match here would mark the key
+    // handled and the slideshow would never see it.
+    ...($slideshowState === SlideshowState.None
+      ? [
+          {
+            shortcut: { key: 'ArrowLeft' },
+            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowLeft') ? 'next' : 'previous'),
+          },
+          {
+            shortcut: { key: 'ArrowRight' },
+            onShortcut: () => navigateAssetByKey(isForwardKey('ArrowRight') ? 'next' : 'previous'),
+          },
+        ]
+      : []),
   ]}
 />
 

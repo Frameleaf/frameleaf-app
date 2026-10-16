@@ -1,12 +1,28 @@
 import { NotFoundException, StreamableFile } from '@nestjs/common';
 import { NextFunction, Response } from 'express';
 import { access, constants } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
+import { basename, extname, parse } from 'node:path';
 import { promisify } from 'node:util';
+import sanitize from 'sanitize-filename';
 import { CacheControl } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { onRouteError } from 'src/utils/logger.js';
+
+export const nextArchiveName = (paths: Map<string, number>, originalFileName: string) => {
+  const base = sanitize(originalFileName) || 'unnamed';
+  let filename = base;
+  let count = paths.get(base) ?? 0;
+  if (paths.has(filename)) {
+    const parsedFilename = parse(base);
+    do {
+      filename = `${parsedFilename.name}+${++count}${parsedFilename.ext}`;
+    } while (paths.has(filename));
+  }
+  paths.set(base, count);
+  paths.set(filename, 0);
+  return filename;
+};
 
 export function getFileNameWithoutExtension(path: string): string {
   return basename(path, getFilenameExtension(path));
@@ -30,7 +46,7 @@ export class FileDownloadResponse {
   public readonly cacheControl!: CacheControl;
   public readonly fileName?: string;
   /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
-  public readonly release?: () => void;
+  public readonly release?: () => void | Promise<void>;
 
   constructor(response: FileDownloadResponse) {
     Object.assign(this, response);
@@ -78,7 +94,7 @@ export const sendFile = async (
       next(new NotFoundException());
     }
   } finally {
-    file?.release?.();
+    await file?.release?.();
   }
 };
 

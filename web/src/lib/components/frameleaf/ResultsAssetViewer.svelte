@@ -20,7 +20,8 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { AlbumResponseDto, AssetResponseDto } from '@frameleaf/sdk';
   import { afterNavigate, goto } from '$app/navigation';
-  import type { Snippet } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { t } from 'svelte-i18n';
 
   let {
@@ -85,17 +86,27 @@
     previousAsset: getPreviousAsset(assets, assetViewerManager.asset),
   });
 
+  let alive = true;
+  const randomSession = authManager.captureSession();
+  const active = () => alive && randomSession() && assetViewerManager.isViewing;
+  onDestroy(() => {
+    alive = false;
+  });
   const handleRandom = async (): Promise<{ id: string } | undefined> => {
-    if (assets.length === 0) {
+    if (!active() || assets.length === 0) {
       return;
     }
+    const originalId = assetViewerManager.asset?.id;
     try {
       const asset = assets[Math.floor(Math.random() * assets.length)];
       await navigateToAsset(asset);
-      return asset;
+      if (active() && assetViewerManager.asset?.id === asset.id) {
+        return asset;
+      }
     } catch (error) {
-      handleError(error, $t('errors.cannot_navigate_next_asset'));
-      return;
+      if (active() && assetViewerManager.asset?.id === originalId) {
+        handleError(error, $t('errors.cannot_navigate_next_asset'));
+      }
     }
   };
 

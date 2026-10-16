@@ -28,15 +28,6 @@
   let img: HTMLImageElement | undefined = $state();
   let showFallback = $state(true);
 
-  const tryLoadImage = async () => {
-    try {
-      await img?.decode();
-      showFallback = false;
-    } catch {
-      showFallback = true;
-    }
-  };
-
   const colorClasses: Record<UserAvatarColor, string> = {
     primary: 'bg-primary text-light dark:text-light',
     pink: 'bg-pink-400 text-light dark:text-dark',
@@ -63,9 +54,24 @@
   };
 
   $effect(() => {
-    if (img && user) {
-      tryLoadImage().catch(console.error);
+    const image = img;
+    const source = user.profileImagePath ? getProfileImageUrl(user) : undefined;
+    showFallback = true;
+    if (!image || !source) {
+      return;
     }
+    let active = true;
+    void image
+      .decode()
+      .then(() => {
+        if (active) {
+          showFallback = false;
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   });
 
   let colorClass = $derived(colorClasses[user.avatarColor]);

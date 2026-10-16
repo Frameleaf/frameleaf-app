@@ -88,10 +88,8 @@ export class ImportImmichCommand extends CommandRunner {
       );
       process.exitCode = 1;
     } finally {
-      try {
-        await source?.close();
-        await target?.close();
-      } catch {
+      const cleanup = await Promise.allSettled([source, target].map(async (connection) => connection?.close()));
+      if (cleanup.some((result) => result.status === 'rejected')) {
         console.error('Immich import connection cleanup failed.');
         process.exitCode = 1;
       }

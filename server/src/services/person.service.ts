@@ -448,6 +448,7 @@ export class PersonService extends BaseService {
 
     await this.refreshFeaturePhotos(auth.user.id, [restoreTo, face.personGroupId], face.id);
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
+    await this.noteFaceEdit(auth.user.id, [face.assetId]);
 
     const [undone] = await this.mapCorrections(auth, [{ ...entry, faceId: face.id, undoneAt: new Date() }]);
     return undone;
@@ -1586,6 +1587,7 @@ export class PersonService extends BaseService {
 
     await this.recordFaceCorrections(this.faceCorrectionEntries(auth, face, dto, target, targetIsNew, !!box));
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
+    await this.noteFaceEdit(auth.user.id, [face.assetId]);
 
     return this.mapStoredFace(auth, id);
   }

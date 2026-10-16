@@ -45,10 +45,10 @@ import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
-import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
+import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
-import { moveFileWithin } from 'src/utils/file-trash.js';
+import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import { FileDownloadResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -160,13 +160,6 @@ export class AssetMediaService extends BaseService {
 
     this.requireQuota(auth, file.size);
 
-    if (dto.livePhotoVideoId) {
-      await onBeforeLink(
-        { asset: this.assetRepository, event: this.eventRepository },
-        { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
-      );
-    }
-
     return {
       asset: {
         ownerId: auth.user.id,
@@ -239,16 +232,16 @@ export class AssetMediaService extends BaseService {
     }
 
     // universal storage: one file per content, server-wide. Content another library already holds is
-    // linked to that file and the upload released; new content becomes its own primary file.
-    const stored = await this.physicalFileRepository.linkUploadedOriginal(
-      asset.id,
-      { checksum: file.checksum, sizeInBytes: file.size },
-      {
-        exists: (path) => this.storageRepository.checkFileExists(path),
-        untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
-        ...(options.quotaCharged && { ingestion: options.ingestion }),
-      },
-    );
+    // linked to that file and the upload released; new content becomes its own primary file. FL-412: only
+    // a stored file proven to hold the same bytes replaces the upload's own copy.
+    const expected = { checksum: file.checksum, sizeInBytes: file.size };
+    const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, {
+      ...storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+        this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
+      ),
+      untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
+      ...(options.quotaCharged && { ingestion: options.ingestion }),
+    });
     if (stored?.linked) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
       asset.originalPath = stored.physicalFile.path;
@@ -288,7 +281,15 @@ export class AssetMediaService extends BaseService {
     let asset: Asset | undefined;
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
-      asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      if (prepared.asset.livePhotoVideoId) {
+        const published = await this.assetRepository.createLivePhotoUpload(prepared.asset, prepared.lock);
+        asset = published.asset;
+        if (published.lockedIds.length > 0) await this.afterAssetsLocked(published.lockedIds);
+        if (published.hiddenId)
+          await this.eventRepository.emit('AssetHide', { assetId: published.hiddenId, userId: auth.user.id });
+      } else {
+        asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      }
       await this.finishUploadAsset(auth, dto, file, asset, sidecarFile);
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
@@ -695,8 +696,8 @@ export class AssetMediaService extends BaseService {
     }
 
     return {
-      results: dto.assets.map(({ id, checksum }) => {
-        const duplicate = checksumMap[fromChecksum(checksum).toString('hex')];
+      results: dto.assets.map(({ id }, index) => {
+        const duplicate = checksumMap[checksums[index].toString('hex')];
         if (duplicate) {
           return {
             id,

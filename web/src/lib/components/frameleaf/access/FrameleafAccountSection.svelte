@@ -17,9 +17,17 @@
     type FrameleafAccountLinkResponseDto,
   } from '@frameleaf/sdk';
   import { toastManager } from '@frameleaf/ui';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { t } from 'svelte-i18n';
   import './access.css';
+
+  let alive = true;
+  const isCurrentSession = authManager.captureSession();
+  const isCurrent = () => alive && isCurrentSession();
+  onDestroy(() => {
+    alive = false;
+  });
 
   let link = $state<FrameleafAccountLinkResponseDto | null>(null);
   let loadFailed = $state(false);
@@ -27,11 +35,19 @@
   let error = $state('');
 
   const load = async () => {
+    if (!isCurrent()) {
+      return;
+    }
     loadFailed = false;
     try {
-      link = await getFrameleafAccountLink();
+      const result = await getFrameleafAccountLink();
+      if (isCurrent()) {
+        link = result;
+      }
     } catch {
-      loadFailed = true;
+      if (isCurrent()) {
+        loadFailed = true;
+      }
     }
   };
 
@@ -46,14 +62,17 @@
       prompt: $t('frameleaf_personal_link_prompt'),
       confirmText: $t('frameleaf_personal_link_continue'),
     });
-    if (!confirmed) {
+    if (!confirmed || !isCurrent()) {
       return;
     }
     working = true;
     error = '';
     try {
-      await startFrameleaf('link', location);
+      await startFrameleaf('link', location, undefined, isCurrent);
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       error = getServerErrorMessage(error_) ?? $t('frameleaf_personal_link_failed');
       working = false;
     }
@@ -67,19 +86,27 @@
       cancelText: $t('frameleaf_personal_keep_linked'),
       danger: true,
     });
-    if (!confirmed) {
+    if (!confirmed || !isCurrent()) {
       return;
     }
     working = true;
     error = '';
     try {
       await unlinkFrameleafAccount();
+      if (!isCurrent()) {
+        return;
+      }
       toastManager.primary($t('frameleaf_personal_unlinked'));
       await load();
     } catch (error_) {
+      if (!isCurrent()) {
+        return;
+      }
       error = getServerErrorMessage(error_) ?? $t('frameleaf_personal_unlink_failed');
     } finally {
-      working = false;
+      if (isCurrent()) {
+        working = false;
+      }
     }
   };
 </script>

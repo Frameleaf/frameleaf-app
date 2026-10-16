@@ -149,6 +149,16 @@ describe('studio media', () => {
       expect(decodeWaveformPeaks(encodeWaveformPeaks(silent))).toEqual(silent);
     });
 
+    it.each([
+      { field: 'channels', offset: 4, value: 9 },
+      { field: 'channels', offset: 4, value: 0xff_ff_ff_ff },
+      { field: 'samplesPerBucket', offset: 12, value: 0 },
+    ])('rejects invalid cached $field=$value before resampling', ({ offset, value }) => {
+      const encoded = encodeWaveformPeaks(new PeakAccumulator(1, 1).finish());
+      encoded.writeUInt32LE(value, offset);
+      expect(decodeWaveformPeaks(encoded)).toBeNull();
+    });
+
     it('rejects truncated or foreign bytes', () => {
       const encoded = encodeWaveformPeaks(new PeakAccumulator(1, 1).finish());
       expect(decodeWaveformPeaks(Buffer.from('not a cache'))).toBeNull();

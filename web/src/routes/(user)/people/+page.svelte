@@ -11,6 +11,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter } from '$lib/constants';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForGrid, type PeopleGridSort } from '$lib/frameleaf/people';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { toastAction, toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
@@ -56,6 +57,9 @@
   }
 
   let { data }: Props = $props();
+  let alive = true;
+  const isCurrentSession = authManager.captureSession();
+  const isCurrentView = () => alive && isCurrentSession();
 
   let people: PeopleListItemDto[] = $state(untrack(() => data.people.people));
   let nextPage: number | null = $state(untrack(() => (data.people.hasNextPage ? 2 : null)));
@@ -74,6 +78,9 @@
    * toast is a live region, so screen readers hear it once. `undo` puts the change back.
    */
   const announce = (message: string, undo?: () => unknown) => {
+    if (!isCurrentSession()) {
+      return;
+    }
     if (undo) {
       toastUndo(message, undo);
     } else {
@@ -105,11 +112,14 @@
    * the previous run, and a stale run never writes, so pages from two runs are never mixed.
    */
   const loadAllPages = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
     loadRequest?.abort();
     const request = new AbortController();
     loadRequest = request;
     const generation = ++loadGeneration;
-    const current = () => generation === loadGeneration && !request.signal.aborted;
+    const current = () => isCurrentView() && generation === loadGeneration && !request.signal.aborted;
     try {
       while (nextPage && current()) {
         if (people.length >= PEOPLE_CAP) {
@@ -140,11 +150,14 @@
   };
 
   const reloadPeople = async () => {
+    if (!isCurrentView()) {
+      return;
+    }
     loadRequest?.abort();
     const generation = ++loadGeneration;
     try {
       const result = await getAllPeople({ withHidden: true, size: PEOPLE_PAGE_SIZE });
-      if (generation !== loadGeneration) {
+      if (!isCurrentView() || generation !== loadGeneration) {
         return;
       }
       people = result.people;
@@ -152,13 +165,14 @@
       nextPage = result.hasNextPage ? 2 : null;
       await loadAllPages();
     } catch (error) {
-      if (generation === loadGeneration) {
+      if (isCurrentView() && generation === loadGeneration) {
         handleError(error, $t('errors.failed_to_load_people'));
       }
     }
   };
 
   onDestroy(() => {
+    alive = false;
     loadGeneration++;
     loadRequest?.abort();
   });
@@ -166,7 +180,9 @@
   const loadLibrarySize = async () => {
     try {
       const { images, videos } = await getAssetStatistics({ visibility: AssetVisibility.Timeline });
-      librarySize = images + videos;
+      if (isCurrentView()) {
+        librarySize = images + videos;
+      }
     } catch {
       // The summary reads fine without the library size.
     }
@@ -188,6 +204,9 @@
   });
 
   const replacePerson = (updated: PersonResponseDto) => {
+    if (!isCurrentView()) {
+      return;
+    }
     people = people.map((person) => (person.id === updated.id ? { ...person, ...updated } : person));
   };
 
@@ -202,15 +221,22 @@
   const loadMergeSuggestions = async () => {
     try {
       const { suggestions } = await getMergeSuggestions();
-      mergeSuggestions = suggestions;
+      if (isCurrentView()) {
+        mergeSuggestions = suggestions;
+      }
     } catch (error) {
       // Non-critical: the People grid works fine without suggestions.
-      handleError(error, $t('errors.failed_to_load_people'));
+      if (isCurrentView()) {
+        handleError(error, $t('errors.failed_to_load_people'));
+      }
     }
   };
 
   /** A merge is kept in the survivor's correction history, which is where it can be taken back. */
   const announceMerge = (merged: { name: string }, survivor: { id: string; name: string }) => {
+    if (!isCurrentSession()) {
+      return;
+    }
     const message = $t('frameleaf_people_merged_status', { values: { from: nameOf(merged), into: nameOf(survivor) } });
     toastAction(message, {
       label: $t('frameleaf_people_merged_open'),
@@ -221,6 +247,9 @@
   // FL-57: "Yes, merge" answers `same`: the server merges (the named person survives) and keeps
   // the merge in the survivor's correction history.
   const handleAcceptSuggestion = async (suggestion: PersonMergeSuggestionDto) => {
+    if (!isCurrentSession()) {
+      return;
+    }
     mergeSuggestionBusy = true;
     try {
       const { personId: survivorId, suggestionId: mergedId } = await setMergeVerdict({
@@ -230,6 +259,9 @@
           verdict: PersonMergeVerdict.Same,
         },
       });
+      if (!isCurrentSession()) {
+        return;
+      }
       const [survivor, merged] =
         survivorId === suggestion.person.id
           ? [suggestion.person, suggestion.suggestion]
@@ -242,13 +274,18 @@
       announceMerge(merged, survivor);
       await reloadPeople();
     } catch (error) {
-      handleError(error, $t('errors.unable_to_merge_people'));
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.unable_to_merge_people'));
+      }
     } finally {
       mergeSuggestionBusy = false;
     }
   };
 
   const recordVerdict = async (suggestion: PersonMergeSuggestionDto, verdict: PersonMergeVerdict) => {
+    if (!isCurrentSession()) {
+      return;
+    }
     // "ignore" is about the reviewed person alone: the server keeps it as that person paired with itself
     const pair =
       verdict === PersonMergeVerdict.Ignore
@@ -258,12 +295,17 @@
     try {
       await setMergeVerdict({ personMergeVerdictCreateDto: { ...pair, verdict } });
     } catch (error) {
-      handleError(error, $t('frameleaf_people_verdict_error'));
+      if (isCurrentSession()) {
+        handleError(error, $t('frameleaf_people_verdict_error'));
+      }
       return;
     } finally {
       mergeSuggestionBusy = false;
     }
 
+    if (!isCurrentSession()) {
+      return;
+    }
     const key = suggestionKey(suggestion);
     const removed =
       verdict === PersonMergeVerdict.Ignore
@@ -281,12 +323,20 @@
           : $t('frameleaf_people_merge_suggestion_later_toast');
 
     const undo = async () => {
+      if (!isCurrentSession()) {
+        return;
+      }
       try {
         await deleteMergeVerdict({ personMergeVerdictDeleteDto: pair });
+        if (!isCurrentSession()) {
+          return;
+        }
         mergeSuggestions = [...removed, ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key)];
         toastManager.primary($t('frameleaf_people_verdict_undone'));
       } catch (error) {
-        handleError(error, $t('frameleaf_people_verdict_error'));
+        if (isCurrentSession()) {
+          handleError(error, $t('frameleaf_people_verdict_error'));
+        }
       }
     };
     toastUndo(message, () => void undo());
@@ -294,6 +344,9 @@
 
   /** Hide, show and favorite are one field each, so their toast can put the old value back. */
   const setHidden = async (person: PeopleListItemDto, isHidden: boolean, undoable = true) => {
+    if (!isCurrentSession()) {
+      return;
+    }
     try {
       replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isHidden } }));
       announce(
@@ -303,12 +356,17 @@
         undoable ? () => void setHidden(person, !isHidden, false) : undefined,
       );
     } catch (error) {
-      handleError(error, $t('errors.unable_to_hide_person'));
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.unable_to_hide_person'));
+      }
     }
   };
   const handleToggleHidden = (person: PeopleListItemDto) => setHidden(person, !person.isHidden);
 
   const setFavorite = async (person: PeopleListItemDto, isFavorite: boolean, undoable = true) => {
+    if (!isCurrentSession()) {
+      return;
+    }
     try {
       replacePerson(await updatePerson({ id: person.id, personUpdateDto: { isFavorite } }));
       announce(
@@ -318,7 +376,9 @@
         undoable ? () => void setFavorite(person, !isFavorite, false) : undefined,
       );
     } catch (error) {
-      handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: !isFavorite } }));
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: !isFavorite } }));
+      }
     }
   };
   const handleToggleFavorite = (person: PeopleListItemDto) => setFavorite(person, !person.isFavorite);
@@ -339,7 +399,7 @@
   // FL-57: a rename commits immediately. If the new name matches another person, that pair
   // goes to the front of the merge-suggestion banner instead of a separate merge prompt.
   const onNameChangeSubmit = async (name: string, person: PeopleListItemDto, undoable = true) => {
-    if (name === person.name) {
+    if (!isCurrentSession() || name === person.name) {
       return;
     }
     try {
@@ -352,11 +412,11 @@
           : $t('frameleaf_people_name_removed_status'),
         undoable ? () => void onNameChangeSubmit(person.name, { ...person, name }, false) : undefined,
       );
-      if (!name) {
+      if (!isCurrentView() || !name) {
         return;
       }
       const sameName = await findPeopleWithSameName(name, person.id);
-      if (sameName) {
+      if (isCurrentView() && sameName) {
         const renamed = { ...person, name };
         // a name match, not a face match: there is no reference face to show
         const entry = {
@@ -370,7 +430,9 @@
         mergeSuggestions = [entry, ...mergeSuggestions.filter((other) => suggestionKey(other) !== key)];
       }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_save_name'));
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.unable_to_save_name'));
+      }
     }
   };
 

@@ -364,3 +364,32 @@ test("an approved row may withhold a use, with its reason, and the withheld use 
     /must give the reason hostedUse is excluded/,
   );
 });
+
+for (const use of ["redistribution", "localRuntime", "hostedUse"]) {
+  test(`an owner exclusion of ${use} overrides a reviewed allowance`, () => {
+    const resource = row("model:M", {
+      redistribution: "allowed",
+      localRuntime: "allowed",
+      hostedUse: "allowed",
+    });
+    const text = buildServerMirror(
+      minimal([resource]),
+      JSON.stringify({
+        schemaVersion: 1,
+        approvedBy: "Owner",
+        approvedOn: "2026-09-25",
+        source: "Explicit owner restriction",
+        uses: ["redistribution", "localRuntime", "hostedUse"],
+        resources: [
+          {
+            id: resource.id,
+            sha256: approvalRowDigest(resource),
+            excludedUses: { [use]: "Withheld by owner" },
+          },
+        ],
+      }),
+    );
+    assert.match(text, new RegExp(`${use}: 'blocked'`));
+    assert.match(text, new RegExp(`${use}: 'Withheld by owner'`));
+  });
+}

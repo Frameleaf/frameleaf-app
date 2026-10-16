@@ -98,9 +98,13 @@ export const startFrameleaf = async (
   purpose: FrameleafPurpose,
   location: Location,
   bounce?: { returnTo: string; nonce: string },
+  isCurrent?: () => boolean,
 ) => {
   const redirectUri = purpose === 'link' ? `${location.origin}/link` : location.href.split('?', 1)[0];
   const { url } = await startFrameleafSignIn({ oAuthConfigDto: { redirectUri } });
+  if (isCurrent && !isCurrent()) {
+    return;
+  }
   if (!recordFrameleafRequest(url, purpose, Date.now(), bounce)) {
     throw new Error('storage');
   }
@@ -180,8 +184,11 @@ export const takeHandoffCode = (location: Location): string | null => {
 };
 
 /** Back to the home address with a code for this session; the server checks the address. */
-export const handBack = async (bounce: { returnTo: string; nonce: string }) => {
+export const handBack = async (bounce: { returnTo: string; nonce: string }, isCurrent?: () => boolean) => {
   const { url } = await createFrameleafHandoff({ frameleafHandoffCreateDto: { returnTo: bounce.returnTo } });
+  if (isCurrent && !isCurrent()) {
+    return;
+  }
   if (!url) {
     throw new Error('handoff');
   }

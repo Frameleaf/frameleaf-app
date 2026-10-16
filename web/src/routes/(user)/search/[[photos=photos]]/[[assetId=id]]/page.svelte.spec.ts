@@ -1,6 +1,9 @@
 import {
   AssetVisibility,
   SearchAskMode,
+  getPerson,
+  getPet,
+  getTagById,
   askSearch,
   searchAssets,
   searchSmart,
@@ -11,10 +14,12 @@ import { flushSync, tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
 import { discoveryUrl, emptyDiscoveryQuery } from '$lib/components/discovery/query';
+import { resetFilterEntityNameCache } from '$lib/frameleaf/filter-entity-names';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { Route } from '$lib/route';
 import { handleError } from '$lib/utils/handle-error';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { personFactory } from '@test-data/factories/person-factory';
 import SearchPage from './+page.svelte';
 
 const flags = $state({ search: true, smartSearch: false, askSearch: true });
@@ -32,6 +37,9 @@ vi.mock('$app/state', () => ({
 }));
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
+  getPerson: vi.fn(),
+  getPet: vi.fn(),
+  getTagById: vi.fn(),
   searchAssets: vi.fn(),
   searchSmart: vi.fn(),
   askSearch: vi.fn(),
@@ -80,6 +88,7 @@ const setQuery = (terms: Parameters<typeof Route.search>[0]) => {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  resetFilterEntityNameCache();
   flags.smartSearch = false;
   flags.askSearch = true;
   state.url = new URL('http://localhost/search');
@@ -391,4 +400,58 @@ it.each(['live', 'unmount', 'overlap'])('restores search scroll only for the cur
   } finally {
     scroll.mockRestore();
   }
+});
+
+it.each(['hidden-person', 'hidden-pet', 'person', 'tag'])(
+  'uses one safe name lookup for a legacy %s chip and archive',
+  async (kind) => {
+    addMessages('dev', en);
+    const id = 'entity';
+    let expected: string;
+    let lookup: typeof getPerson | typeof getPet | typeof getTagById;
+    if (kind === 'hidden-person' || kind === 'person') {
+      vi.mocked(getPerson).mockResolvedValue(
+        personFactory.build({ id, name: 'Identity', isHidden: kind === 'hidden-person' }),
+      );
+      setQuery({ personIds: [id] });
+      expected = kind === 'hidden-person' ? en.no_name : 'Identity';
+      lookup = getPerson;
+    } else if (kind === 'hidden-pet') {
+      vi.mocked(getPet).mockResolvedValue({ id, name: 'Identity', isHidden: true } as Awaited<
+        ReturnType<typeof getPet>
+      >);
+      setQuery({ petIds: [id] });
+      expected = en.frameleaf_pets_unnamed;
+      lookup = getPet;
+    } else {
+      vi.mocked(getTagById).mockResolvedValue({ id, value: 'Trips/Rockies' } as Awaited<ReturnType<typeof getTagById>>);
+      setQuery({ tagIds: [id] });
+      expected = 'Trips/Rockies';
+      lookup = getTagById;
+    }
+    render(SearchPage);
+    const chips = document.querySelector('#search-chips')!;
+    await waitFor(() => expect(chips).toHaveTextContent(expected));
+    if (kind.startsWith('hidden')) {
+      expect(chips).not.toHaveTextContent('Identity');
+    }
+    expect(lookup).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('keeps a legacy tag chip readable when one tag lookup is denied', async () => {
+  addMessages('dev', en);
+  vi.mocked(getTagById)
+    .mockReset()
+    .mockImplementation(({ id }) =>
+      id === 'visible'
+        ? Promise.resolve({ id, value: 'Trips/Rockies' } as Awaited<ReturnType<typeof getTagById>>)
+        : Promise.reject(new Error('Forbidden')),
+    );
+  setQuery({ tagIds: ['visible', 'denied'] });
+  render(SearchPage);
+  const chips = document.querySelector('#search-chips')!;
+  await waitFor(() => expect(chips).toHaveTextContent(`${en.tags}: Trips/Rockies, ${en.tags}`));
+  expect(getTagById).toHaveBeenCalledTimes(2);
+  expect(handleError).not.toHaveBeenCalled();
 });

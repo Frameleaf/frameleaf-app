@@ -18,6 +18,7 @@
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Text } from '@frameleaf/ui';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
 
   interface Props {
     asset: AssetResponseDto;
@@ -32,32 +33,63 @@
   let isSaving = $state(false);
   /** The last value chosen, so a retryable failure replays that value and not the stored one. */
   let pending = $state<Rating | null>(null);
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
+  let displayedAssetId = asset.id;
+  $effect(() => {
+    if (displayedAssetId !== asset.id) {
+      displayedAssetId = asset.id;
+      failure = null;
+      pending = null;
+      isSaving = false;
+    }
+  });
+  const captureView = () => {
+    const id = asset.id;
+    const isCurrentSession = authManager.captureSession();
+    return () => !destroyed && asset.id === id && isCurrentSession();
+  };
 
   const handleChangeRating = async (next: Rating) => {
+    const isCurrent = captureView();
     isSaving = true;
     pending = next;
     try {
       await updateAsset({ id: asset.id, updateAssetDto: { rating: next } });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       pending = null;
       // The top row's Rating tool reads the viewer's asset, so hand it the stored value.
       onAssetRefresh?.({ ...asset, exifInfo: { ...asset.exifInfo, rating: next, isRejected: next === -1 } });
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       failure = classifyInlineEditError(error);
       handleError(error, $t('errors.cant_apply_changes'));
     } finally {
-      isSaving = false;
+      if (isCurrent()) {
+        isSaving = false;
+      }
     }
   };
 
   const reload = async () => {
+    const isCurrent = captureView();
     try {
       const updated = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       pending = null;
       onAssetRefresh?.(updated);
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 </script>
@@ -71,7 +103,9 @@
       {#if rating === -1}
         <Text color="muted">{$t('frameleaf_library_rating_rejected')}</Text>
       {/if}
-      <StarRating {rating} onRating={(value) => handlePromiseError(handleChangeRating(value))} />
+      {#key asset.id}
+        <StarRating {rating} onRating={(value) => handlePromiseError(handleChangeRating(value))} />
+      {/key}
       <button
         type="button"
         class="fl-stars-clear"

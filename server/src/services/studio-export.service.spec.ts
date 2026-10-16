@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs/promises';
 import { PassThrough } from 'node:stream';
 import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -34,6 +35,7 @@ import {
 } from 'src/repositories/studio-export.repository.js';
 import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
+import * as ownerPaths from 'src/utils/cloud-backup-owner-path.js';
 import { sealStudioEmbeddedSubtitles } from 'src/utils/studio-embedded-subtitles.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -47,6 +49,10 @@ vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
   spawn: vi.fn(),
 }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
 
 const OWNER = '0195e2a0-0000-4000-8000-00000000000a';
 const PARTNER = '0195e2a0-0000-4000-8000-00000000000b';
@@ -256,6 +262,9 @@ describe(StudioExportService.name, () => {
   let sut: StudioExportService;
   let repository: Record<string, ReturnType<typeof vi.fn>> & {
     publish: ReturnType<typeof vi.fn<StudioExportRepository['publish']>>;
+    saveToLibrary: ReturnType<typeof vi.fn<StudioExportRepository['saveToLibrary']>>;
+    restoreLibrarySaveFiles: ReturnType<typeof vi.fn<StudioExportRepository['restoreLibrarySaveFiles']>>;
+    getById: ReturnType<typeof vi.fn<StudioExportRepository['getById']>>;
   };
   let operations: Record<string, ReturnType<typeof vi.fn>>;
   let projects: Record<string, ReturnType<typeof vi.fn>>;
@@ -306,7 +315,9 @@ describe(StudioExportService.name, () => {
     staged = `${studioExportStagingFolder(OWNER, RENDER)}/out.mp4`;
     repository = {
       createWithRender: vi.fn(),
-      getById: vi.fn(),
+      getById: vi.fn<StudioExportRepository['getById']>(),
+      saveToLibrary: vi.fn<StudioExportRepository['saveToLibrary']>(),
+      restoreLibrarySaveFiles: vi.fn<StudioExportRepository['restoreLibrarySaveFiles']>(),
       getForOwner: vi.fn(),
       getByRenderOperation: vi.fn(),
       getSources: vi.fn().mockResolvedValue([sourceRow()]),
@@ -1258,6 +1269,38 @@ describe(StudioExportService.name, () => {
       );
     });
 
+    it('binds restored export provenance to the original asset and its source epoch', async () => {
+      await sut.onRenderClaimed(
+        operation({ snapshot: { sourceEpochs: [{ assetId: CLIP, ownerId: OWNER, epoch: '7' }] } }),
+        {
+          workerId: 'worker-1',
+          engineDigest: 'engine-1',
+          entries: [
+            entry({
+              key: `restored-version:${SHARED_CLIP}`,
+              kind: StudioResourceKind.RestoredVersion,
+              id: SHARED_CLIP,
+              assetId: CLIP,
+              checksum: null,
+            }),
+          ],
+        },
+      );
+      expect(repository.recordRenderClaim).toHaveBeenCalledWith(RENDER, {
+        workerId: 'worker-1',
+        engineDigest: 'engine-1',
+        sources: [
+          expect.objectContaining({
+            key: `restored-version:${SHARED_CLIP}`,
+            resourceId: SHARED_CLIP,
+            assetId: CLIP,
+            ownerId: OWNER,
+            sourceEpoch: '7',
+          }),
+        ],
+      });
+    });
+
     it('records provenance and a remote stop obligation when a remote worker claims', async () => {
       repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Rendering }));
 
@@ -1311,6 +1354,17 @@ describe(StudioExportService.name, () => {
       await expect(
         sut.onRenderCompleted(operation(), 'worker-1', { ...output, path: staged, contentType: 'text/html' }),
       ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.stage).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed declared contract before staging publication', async () => {
+      await expect(
+        sut.onRenderCompleted(
+          operation({ snapshot: { kind: 'studio-export', contract: { video: { minBitDepth: 12 }, audio: null } } }),
+          'worker-1',
+          { path: staged, checksum: 'ab'.repeat(32), sizeInBytes: '1024', contentType: 'video/mp4' },
+        ),
+      ).rejects.toThrow('Invalid export contract');
       expect(repository.stage).not.toHaveBeenCalled();
     });
 
@@ -2594,7 +2648,7 @@ describe(StudioExportService.name, () => {
   });
 
   describe('saveToLibrary', () => {
-    const kept = '/data/exports/o/studio-exports/versions/v.mp4';
+    const kept = `/data/exports/${OWNER}/studio-exports/versions/${VERSION}.mp4`;
     const projectResult = (overrides: Partial<StudioExportVersion> = {}) =>
       versionRow({
         state: StudioExportVersionState.Published,
@@ -2610,15 +2664,47 @@ describe(StudioExportService.name, () => {
     });
 
     beforeEach(() => {
-      repository.saveToLibrary = vi.fn();
+      repository.saveToLibrary = vi.fn<StudioExportRepository['saveToLibrary']>();
+      repository.getById.mockResolvedValue(undefined);
+      repository.restoreLibrarySaveFiles = vi.fn(async (input) => {
+        await input.files!.rollback();
+        return true;
+      });
+      storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === kept));
+      vi.spyOn(ownerPaths, 'assertOwnerRestorePath').mockResolvedValue();
+      vi.spyOn(ownerPaths, 'assertOwnerRestoreFile').mockResolvedValue();
+      vi.spyOn(ownerPaths, 'captureOwnerRestoreFile').mockResolvedValue({
+        identity: 'synthetic-inode',
+        sha256: 'ab'.repeat(32),
+        size: 1024n,
+      });
+      vi.mocked(fs.open).mockResolvedValue({
+        sync: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+      } as never);
       storage.stat = vi.fn((path: string) =>
         path === kept ? Promise.resolve({ size: 1024, isFile: () => true }) : Promise.reject(new Error('ENOENT')),
       );
     });
 
+    afterEach(() => {
+      vi.mocked(ownerPaths.assertOwnerRestorePath).mockRestore();
+      vi.mocked(ownerPaths.assertOwnerRestoreFile).mockRestore();
+      vi.mocked(ownerPaths.captureOwnerRestoreFile).mockRestore();
+      vi.mocked(fs.open).mockRestore();
+    });
+
+    const accept = () =>
+      repository.saveToLibrary.mockImplementation(async (input, scheduleMetadata) => {
+        await input.files!.move();
+        const result = saved();
+        await scheduleMetadata!({ isTransaction: true } as never, result.createdAssetId);
+        return result;
+      });
+
     it('moves the kept file into the library as a new asset of the owner, only when asked', async () => {
       repository.getForOwner.mockResolvedValue(projectResult());
-      repository.saveToLibrary.mockResolvedValue(saved());
+      accept();
 
       const result = await sut.saveToLibrary(auth(), VERSION);
 
@@ -2635,7 +2721,7 @@ describe(StudioExportService.name, () => {
       );
       expect(input.path).toContain('/upload/');
       expect(storage.rename).toHaveBeenCalledWith(kept, input.path);
-      expect(jobs.queue).toHaveBeenCalledWith({
+      expect(jobs.queueInTransaction).toHaveBeenCalledWith(expect.objectContaining({ isTransaction: true }), {
         name: JobName.AssetExtractMetadata,
         data: { id: 'asset-saved', source: 'upload' },
       });
@@ -2646,7 +2732,7 @@ describe(StudioExportService.name, () => {
 
     it('saves a retained still as an image with its still filename and canonical identity', async () => {
       repository.getForOwner.mockResolvedValue(projectResult({ outputContentType: 'image/jpeg' }));
-      repository.saveToLibrary.mockResolvedValue(saved());
+      accept();
       await sut.saveToLibrary(auth(), VERSION);
       expect(repository.saveToLibrary).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -2655,6 +2741,7 @@ describe(StudioExportService.name, () => {
           checksum: Buffer.from('ab'.repeat(32), 'hex'),
           sizeInBytes: 1024,
         }),
+        expect.any(Function),
       );
     });
 
@@ -2689,13 +2776,49 @@ describe(StudioExportService.name, () => {
 
     it('returns the file to where it was when the library refuses it', async () => {
       repository.getForOwner.mockResolvedValue(projectResult());
-      repository.saveToLibrary.mockRejectedValue(new StudioExportRefusal('quota-exceeded', 'full'));
+      repository.saveToLibrary.mockImplementation(async (input) => {
+        await input.files!.move();
+        await input.files!.rollback();
+        throw new StudioExportRefusal('quota-exceeded', 'full');
+      });
 
       await expect(sut.saveToLibrary(auth(), VERSION)).rejects.toBeInstanceOf(ConflictException);
 
       const moved = repository.saveToLibrary.mock.calls[0][0].path;
       expect(storage.rename).toHaveBeenLastCalledWith(moved, kept);
       expect(jobs.queue).not.toHaveBeenCalled();
+    });
+
+    it('keeps an accepted library file after its commit acknowledgement is lost', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      let committed = saved().version;
+      repository.saveToLibrary.mockImplementation(async (input, scheduleMetadata) => {
+        await input.files?.move();
+        await scheduleMetadata?.({ isTransaction: true } as never, 'asset-saved');
+        committed = { ...saved().version, outputPath: input.path };
+        throw new Error('commit acknowledgement lost');
+      });
+      repository.getById.mockImplementation(() => Promise.resolve(committed));
+
+      await expect(sut.saveToLibrary(auth(), VERSION)).resolves.toMatchObject({
+        scope: StudioExportScope.Library,
+        resultAssetId: 'asset-saved',
+      });
+      expect(storage.rename.mock.calls.some(([, to]) => to === kept)).toBe(false);
+      expect(jobs.queue).not.toHaveBeenCalled();
+      expect(jobs.queueInTransaction).toHaveBeenCalledOnce();
+      expect(repository.restoreLibrarySaveFiles).not.toHaveBeenCalled();
+    });
+
+    it('defers the file transfer until the repository admits it', async () => {
+      repository.getForOwner.mockResolvedValue(projectResult());
+      repository.saveToLibrary.mockImplementation(async (input) => {
+        expect(storage.rename).not.toHaveBeenCalled();
+        await input.files!.move();
+        return saved();
+      });
+
+      await expect(sut.saveToLibrary(auth(), VERSION)).resolves.toMatchObject({ resultAssetId: 'asset-saved' });
     });
   });
 

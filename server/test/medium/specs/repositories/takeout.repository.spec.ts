@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -6,7 +7,9 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { TakeoutConflict, TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { TakeoutService } from 'src/services/takeout.service.js';
 import { TAKEOUT_DEFAULT_OPTIONS, takeoutStableId } from 'src/utils/takeout.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -88,7 +91,90 @@ const newOperation = (operations: MediaOperationRepository, ownerId: string, imp
     settings: {},
   });
 
+const requestService = (repository: TakeoutRepository) =>
+  new TakeoutService(
+    { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    repository,
+    { prepare: () => Promise.resolve('/staging/admission'), freeBytes: () => Promise.try(() => 1024 ** 4) } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+const staleAuth = (ownerId: string) => ({
+  ...authStub.user1,
+  user: { ...authStub.user1.user, id: ownerId, quotaSizeInBytes: 100, quotaUsageInBytes: 0 },
+});
+
 describe(TakeoutRepository.name, () => {
+  it('admits archives using current database quota and usage rather than stale auth', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    await ctx.database
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 10, quotaUsageInBytes: 8 })
+      .where('id', '=', user.id)
+      .execute();
+    const row = await sut.create(user.id, 'Quota', { ...TAKEOUT_DEFAULT_OPTIONS });
+    await expect(
+      requestService(sut).addArchive(staleAuth(user.id), row.id, { name: 'takeout.zip', size: 6 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(await sut.sources(row.id)).toEqual([]);
+  });
+
+  it('admits only one of two concurrent archives in different imports of the same account', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    await ctx.database
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 10, quotaUsageInBytes: 0 })
+      .where('id', '=', user.id)
+      .execute();
+    const first = await sut.create(user.id, 'First', { ...TAKEOUT_DEFAULT_OPTIONS });
+    const second = await sut.create(user.id, 'Second', { ...TAKEOUT_DEFAULT_OPTIONS });
+    const service = requestService(sut);
+    const results = await Promise.allSettled([
+      service.addArchive(staleAuth(user.id), first.id, { name: 'first.zip', size: 6 }),
+      service.addArchive(staleAuth(user.id), second.id, { name: 'second.zip', size: 6 }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+    const sources = [...(await sut.sources(first.id)), ...(await sut.sources(second.id))];
+    expect(sources).toHaveLength(1);
+    expect(sources[0].size).toBe(6);
+  });
+
+  it('releases a failed admission and rolls back its staged bytes before the next attempt', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    await ctx.database
+      .updateTable('user')
+      .set({ quotaSizeInBytes: 10, quotaUsageInBytes: 0 })
+      .where('id', '=', user.id)
+      .execute();
+    const row = await sut.create(user.id, 'Rollback', { ...TAKEOUT_DEFAULT_OPTIONS });
+    await expect(
+      sut.withImport(user.id, row.id, async (tx, _row, _operation, quota) => {
+        expect(quota).toEqual({ quotaSizeInBytes: 10, quotaUsageInBytes: 0 });
+        await sut.addSource(tx, {
+          importId: row.id,
+          name: 'failed.zip',
+          kind: 'zip',
+          path: '/staging/failed.zip',
+          size: 6,
+        });
+        throw new Error('injected admission failure');
+      }),
+    ).rejects.toThrow('injected admission failure');
+    expect(await sut.sources(row.id)).toEqual([]);
+    await expect(
+      requestService(sut).addArchive(staleAuth(user.id), row.id, { name: 'retry.zip', size: 6 }),
+    ).resolves.toMatchObject({ size: 6 });
+  });
+
   it('answers only to the import’s owner', async () => {
     const { ctx, sut } = setup();
     const { user: owner } = await ctx.newUser();
@@ -98,6 +184,99 @@ describe(TakeoutRepository.name, () => {
     await expect(sut.get(owner.id, row.id)).resolves.toMatchObject({ id: row.id, phase: 'sources' });
     await expect(sut.get(other.id, row.id)).resolves.toBeUndefined();
     await expect(sut.withImport(other.id, row.id, () => Promise.resolve())).rejects.toThrow('Import not found');
+  });
+
+  it.each(['chosen', 'equal-count', 'skipped'] as const)(
+    'upgrades a %s pending rescan to Locked without replacing its decision',
+    async (mode) => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { row, source } = await seedImport(sut, user.id);
+      const id = await seedItem(sut, row.id, source.id);
+      const metadata = { title: 'IMG_1.jpg', description: 'Retained choice' };
+      const candidate = { id: randomUUID(), path: 'Trip/original.json', metadata };
+      const candidates = mode === 'equal-count' ? [candidate, { ...candidate, id: randomUUID() }] : [candidate];
+      const state = mode === 'equal-count' ? 'review' : mode === 'skipped' ? 'skipped' : 'ready';
+      await sut.recordItem({
+        id,
+        importId: row.id,
+        state,
+        metadata,
+        sidecarId: candidate.id,
+        candidates,
+        albums: ['Trip'],
+        warnings: [],
+        locked: false,
+      });
+      const privateCandidate = {
+        id: randomUUID(),
+        path: 'Trip/private.json',
+        metadata: { title: 'IMG_1.jpg', locked: true },
+      };
+      await sut.recordItem({
+        id,
+        importId: row.id,
+        state: 'review',
+        metadata: privateCandidate.metadata,
+        sidecarId: privateCandidate.id,
+        candidates: mode === 'equal-count' ? [candidate, privateCandidate] : [...candidates, privateCandidate],
+        albums: ['Trip'],
+        warnings: ['locked'],
+        locked: true,
+      });
+      expect(await sut.getItem(row.id, id)).toMatchObject({
+        state,
+        metadata,
+        sidecarId: candidate.id,
+        candidates,
+        locked: true,
+        withheld: true,
+        warnings: ['locked'],
+      });
+      expect(await sut.items(row.id, { offset: 0, limit: 50, includeLocked: false })).toEqual({ items: [], total: 0 });
+    },
+  );
+
+  it('does not relabel an already published item through a later scan record', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const id = await seedItem(sut, row.id, source.id);
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await sut.itemAsset(id, asset.id, 'created');
+    await sut.itemDone(id, 'imported');
+    await sut.recordItem({
+      id,
+      importId: row.id,
+      state: 'review',
+      metadata: { title: 'Changed' },
+      sidecarId: null,
+      candidates: [],
+      albums: ['Trip'],
+      warnings: ['locked'],
+      locked: true,
+    });
+    expect(await sut.getItem(row.id, id)).toMatchObject({ state: 'imported', assetId: asset.id, locked: false });
+  });
+
+  it('never unlocks a pending private item when a public rescan has more candidates', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const id = await seedItem(sut, row.id, source.id, { locked: true });
+    const candidate = { id: randomUUID(), path: 'Trip/public.json', metadata: { title: 'IMG_1.jpg' } };
+    await sut.recordItem({
+      id,
+      importId: row.id,
+      state: 'ready',
+      metadata: candidate.metadata,
+      sidecarId: candidate.id,
+      candidates: [candidate],
+      albums: ['Trip'],
+      warnings: [],
+      locked: false,
+    });
+    expect(await sut.getItem(row.id, id)).toMatchObject({ locked: true, withheld: true });
   });
 
   it('records a staged file once, however often the scan meets it', async () => {

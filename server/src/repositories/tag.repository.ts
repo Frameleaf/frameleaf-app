@@ -8,17 +8,24 @@ import {
   type Transaction,
   sql,
 } from 'kysely';
+import { chunk } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { PostgresError } from 'postgres';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { type Tag, columns } from 'src/database.js';
-import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
+import { Chunked, ChunkedSet, DATABASE_PARAMETER_CHUNK_SIZE, DummyValue, GenerateSql } from 'src/decorators.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
-import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets, tagIsSuppressed } from 'src/utils/database.js';
+import {
+  asUuid,
+  dummy,
+  getHiddenContentFilter,
+  tagHasVisibleAssetOrNoAssets,
+  tagIsSuppressed,
+} from 'src/utils/database.js';
 
 /**
  * `hideLocked`: the session is not unlocked, so a tag carried only by locked items is left out
@@ -463,18 +470,12 @@ export class TagRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
-  @Chunked({ paramIndex: 1 })
   async addAssetIds(tagId: string, assetIds: string[]): Promise<void> {
     if (assetIds.length === 0) {
       return;
     }
 
-    // Metadata extraction adds the asset's tags as well, so a row may already be there: it is kept.
-    await this.db
-      .insertInto('tag_asset')
-      .values(assetIds.map((assetId) => ({ tagId, assetId })))
-      .onConflict((oc) => oc.doNothing())
-      .execute();
+    await this.upsertAssetIds(assetIds.map((assetId) => ({ tagId, assetId })));
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
@@ -488,18 +489,26 @@ export class TagRepository {
   }
 
   @GenerateSql({ params: [[{ assetId: DummyValue.UUID, tagIds: DummyValue.UUID }]] })
-  @Chunked()
   upsertAssetIds(items: Insertable<TagAssetTable>[]) {
     if (items.length === 0) {
       return Promise.resolve([]);
     }
 
-    return this.db
-      .insertInto('tag_asset')
-      .values(items)
-      .onConflict((oc) => oc.doNothing())
-      .returningAll()
-      .execute();
+    const execute = async (tx: Kysely<DB>) => {
+      const results: Selectable<TagAssetTable>[] = [];
+      // Each membership can bind assetId, tagId and a supplied updateId.
+      for (const batch of chunk(items, Math.floor(DATABASE_PARAMETER_CHUNK_SIZE / 3))) {
+        const inserted = await tx
+          .insertInto('tag_asset')
+          .values(batch)
+          .onConflict((oc) => oc.doNothing())
+          .returningAll()
+          .execute();
+        results.push(...inserted);
+      }
+      return results;
+    };
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
   }
 
   /** Removes the owner's tags with these exact values from one asset, leaving every other tag on it. */
@@ -519,7 +528,6 @@ export class TagRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
-  @Chunked({ paramIndex: 1 })
   replaceAssetTags(assetId: string, tagIds: string[]) {
     const execute = async (tx: Kysely<DB>) => {
       await tx.deleteFrom('tag_asset').where('assetId', '=', assetId).execute();
@@ -530,7 +538,12 @@ export class TagRepository {
 
       return tx
         .insertInto('tag_asset')
-        .values(tagIds.map((tagId) => ({ tagId, assetId })))
+        .columns(['assetId', 'tagId'])
+        .expression((eb) =>
+          eb
+            .selectFrom(dummy)
+            .select([asUuid(assetId).as('assetId'), sql<string>`unnest(${tagIds}::uuid[])`.as('tagId')]),
+        )
         .onConflict((oc) => oc.doNothing())
         .returningAll()
         .execute();

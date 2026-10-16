@@ -246,7 +246,8 @@ describe('private studio branding', () => {
     expect(await sharp(bytes).metadata()).toMatchObject({ hasAlpha: true, format: 'png' });
     expect((await sharp(bytes).raw().toBuffer())[0]).toBe(255);
     expect(media.viewThumbnail).not.toHaveBeenCalled();
-    file.release?.();
+    await file.release?.();
+    await expect(readFile(file.path)).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('rejects mislabeled/corrupt logo pixels before saving or exposing bytes', async () => {
     const { sut, auth, brand, logo, revision, repository, search } = setup();

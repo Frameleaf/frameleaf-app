@@ -278,7 +278,7 @@ export class StudioTranscriptionService {
       if (resolved.digest !== snapshot.digest || resolved.clip.sourceKey !== snapshot.sourceKey) {
         throw new BadRequestException('The project revision or its clip changed');
       }
-      const info = await this.media.probe(resolved.path);
+      const info = await this.media.probe(resolved.path, { countFrames: false, signal: controller.signal });
       if (info.audioStreams.length === 0) {
         throw new BadRequestException('The clip has no sound to transcribe');
       }

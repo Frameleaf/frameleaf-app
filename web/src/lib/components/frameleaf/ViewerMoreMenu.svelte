@@ -220,22 +220,31 @@
   const label = (id: ViewerActionId) => $t(viewerMenuLabelKey(id, context));
   const run = (action: ActionItem) => action.onAction(action);
 
-  const setAlbumCover = (target: AlbumResponseDto) => run(getAlbumAssetActions($t, target, asset).SetCover);
+  const setAlbumCover = (target: AlbumResponseDto, source: AssetResponseDto) =>
+    run(getAlbumAssetActions($t, target, source).SetCover);
 
-  const setPersonFeatured = async (target: PersonResponseDto) => {
+  const setPersonFeatured = async (target: PersonResponseDto, source: AssetResponseDto) => {
+    const isCurrentSession = authManager.captureSession();
     try {
-      const updated = await updatePerson({ id: target.id, personUpdateDto: { featureFaceAssetId: asset.id } });
-      onAction({ type: AssetAction.SET_PERSON_FEATURED_PHOTO, asset, person: { ...target, ...updated } });
+      const updated = await updatePerson({ id: target.id, personUpdateDto: { featureFaceAssetId: source.id } });
+      if (!isCurrentSession()) {
+        return;
+      }
+      onAction({ type: AssetAction.SET_PERSON_FEATURED_PHOTO, asset: source, person: { ...target, ...updated } });
       toastManager.primary($t('feature_photo_updated'));
     } catch (error) {
-      handleError(error, $t('errors.unable_to_set_feature_photo'));
+      if (isCurrentSession()) {
+        handleError(error, $t('errors.unable_to_set_feature_photo'));
+      }
     }
   };
 
   const choose = async (id: 'set-album-cover' | 'set-person-featured') => {
+    const source = asset;
+    const isCurrentSession = authManager.captureSession();
     const kind = viewerMenuChooser(id, context);
     if (kind === null && album) {
-      await setAlbumCover(album);
+      await setAlbumCover(album, source);
       return;
     }
     const pick: ViewerChooserPick | undefined = await modalManager.show(ViewerChooserDialog, {
@@ -243,10 +252,13 @@
       albums: coverAlbums,
       people: taggedPeople,
     });
+    if (!isCurrentSession()) {
+      return;
+    }
     if (pick?.kind === 'album') {
-      await setAlbumCover(pick.album);
+      await setAlbumCover(pick.album, source);
     } else if (pick?.kind === 'person') {
-      await setPersonFeatured(pick.person);
+      await setPersonFeatured(pick.person, source);
     }
   };
 

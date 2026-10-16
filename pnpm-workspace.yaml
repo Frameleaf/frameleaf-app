@@ -109,6 +109,8 @@ minimumReleaseAgeExclude:
   - vitest@5.0.4
   - zod@4.6.7
 patchedDependencies:
+  # Remove the actual UPnP-assigned port using its original protocol and remote host.
+  '@achingbrain/nat-port-mapper@4.0.5': packages/patches/@achingbrain__nat-port-mapper@4.0.5.patch
   # Preserve registered roots, nullable unions and recursive tuple references with Zod 4.6.
   nestjs-zod@5.5.0: packages/patches/nestjs-zod@5.5.0.patch
   # Frameleaf Node ESM/CJS backport of https://github.com/porsager/postgres/pull/1168.

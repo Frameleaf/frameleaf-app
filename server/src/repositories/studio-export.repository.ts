@@ -195,7 +195,7 @@ export type StudioExportLibrarySave = Pick<
   | 'contentType'
   | 'assetType'
   | 'originalFileName'
->;
+> & { files?: NonNullable<StudioExportPublication['files']> & { sourcePath: string } };
 type StudioExportAssetInput = Pick<
   StudioExportPublication,
   'ownerId' | 'path' | 'checksum' | 'sizeInBytes' | 'assetType' | 'originalFileName'
@@ -1019,12 +1019,21 @@ export class StudioExportRepository {
    * the same bytes, restricted at least as much, is referenced. A version already in the library
    * answers with itself.
    */
-  async saveToLibrary(input: StudioExportLibrarySave): Promise<{
+  async saveToLibrary(
+    input: StudioExportLibrarySave,
+    scheduleMetadata?: ScheduleStudioMetadata,
+  ): Promise<{
     version: StudioExportVersion;
     createdAssetId: string | null;
     reusedAssetId: string | null;
   }> {
     return this.db.transaction().execute(async (tx) => {
+      for (const path of [...new Set(input.files?.paths)].sort()) await lockFilePath(tx, path);
+      await holdSourceAdmission(tx, {
+        sourceEpochs: input.sources
+          .filter((row) => row.assetId && row.ownerId && row.sourceEpoch !== null && row.sourceEpoch !== undefined)
+          .map((row) => ({ assetId: row.assetId, ownerId: row.ownerId, epoch: String(row.sourceEpoch) })),
+      });
       const version = (await tx
         .selectFrom('studio_export_version')
         .selectAll()
@@ -1044,25 +1053,71 @@ export class StudioExportRepository {
       ) {
         throw new StudioExportRefusal('not-staged', 'This export has no file to save');
       }
+      if (
+        (input.files && version.outputPath !== input.files.sourcePath) ||
+        !version.outputChecksum?.equals(input.checksum) ||
+        String(version.outputSizeInBytes) !== String(input.sizeInBytes) ||
+        version.outputContentType !== input.contentType
+      )
+        throw new StudioExportRefusal('output-rejected', 'The retained export file changed');
 
       const privacy = await this.lockSourcePrivacy(tx, input);
       if (privacy.union.scope !== StudioExportScope.Library) {
         throw new StudioExportRefusal('source-access-lost', 'A result made with shared media stays with its project');
       }
-      const { createdAssetId, reusedAssetId } = await this.adoptLibraryAsset(tx, input, privacy.union);
-      const saved = await tx
-        .updateTable('studio_export_version')
-        .set({
-          scope: StudioExportScope.Library,
-          resultAssetId: createdAssetId ?? reusedAssetId,
-          outputPath: reusedAssetId ? null : input.path,
-          privacy: privacy.union as unknown as Record<string, unknown>,
-          updatedAt: sql<Date>`now()`,
-        })
-        .where('id', '=', version.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-      return { version: saved as unknown as StudioExportVersion, createdAssetId, reusedAssetId };
+      try {
+        await input.files?.move();
+        const { createdAssetId, reusedAssetId } = await this.adoptLibraryAsset(tx, input, privacy.union);
+        const saved = await tx
+          .updateTable('studio_export_version')
+          .set({
+            scope: StudioExportScope.Library,
+            resultAssetId: createdAssetId ?? reusedAssetId,
+            outputPath: reusedAssetId ? null : input.path,
+            privacy: privacy.union as unknown as Record<string, unknown>,
+            updatedAt: sql<Date>`now()`,
+          })
+          .where('id', '=', version.id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        if (createdAssetId && scheduleMetadata) await scheduleMetadata(tx, createdAssetId);
+        return { version: saved as unknown as StudioExportVersion, createdAssetId, reusedAssetId };
+      } catch (error) {
+        try {
+          await input.files?.rollback();
+        } catch (recoveryError) {
+          throw new AggregateError([error, recoveryError], 'Library save file recovery is pending', {
+            cause: recoveryError,
+          });
+        }
+        throw error;
+      }
+    });
+  }
+
+  /** An uncertain commit permits recovery only while the original retained binding still owns the file. */
+  async restoreLibrarySaveFiles(input: StudioExportLibrarySave): Promise<boolean> {
+    if (!input.files) return false;
+    return this.db.transaction().execute(async (tx) => {
+      for (const path of [...new Set(input.files!.paths)].sort()) await lockFilePath(tx, path);
+      const version = await tx
+        .selectFrom('studio_export_version')
+        .selectAll()
+        .where('id', '=', input.versionId)
+        .where('ownerId', '=', input.ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        version?.state !== StudioExportVersionState.Published ||
+        version.scope !== StudioExportScope.Project ||
+        version.outputPath !== input.files!.sourcePath ||
+        version.outputRemovedAt ||
+        !version.outputChecksum?.equals(input.checksum) ||
+        String(version.outputSizeInBytes) !== String(input.sizeInBytes)
+      )
+        return false;
+      await input.files!.rollback();
+      return true;
     });
   }
   /**

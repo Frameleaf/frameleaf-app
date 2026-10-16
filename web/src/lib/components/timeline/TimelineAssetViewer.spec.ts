@@ -5,6 +5,7 @@ import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import { navigate } from '$lib/utils/navigation';
+import { toTimelineAsset } from '$lib/utils/timeline-util';
 import { renderWithTooltips } from '$tests/helpers';
 import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -115,3 +116,59 @@ it.each(['none', 'unmount', 'session', 'viewer'])('undo delete respects %s owner
     session.mockRestore();
   }
 });
+
+it.each(['none', 'unmount', 'session', 'replacement', 'close'] as const)(
+  'random month selection respects %s ownership',
+  async (retire) => {
+    vi.clearAllMocks();
+    const [asset, random, replacement] = assetFactory.buildList(3);
+    const pending = deferredPromise<ReturnType<typeof toTimelineAsset>>();
+    const manager = {
+      // VIEWER-P4: the filmstrip reads the open item's month (none here, so no strip).
+      months: [],
+      getTimelineMonthByAssetId: vi.fn(),
+      getEarlierAsset: vi.fn().mockResolvedValue(undefined),
+      getLaterAsset: vi.fn().mockResolvedValue(undefined),
+      getRandomAsset: vi.fn().mockReturnValue(pending.promise),
+    };
+    let current = true;
+    const session = vi.spyOn(authManager, 'captureSession').mockReturnValue(() => current);
+    assetViewerManager.setAsset(asset);
+    try {
+      const view = renderWithTooltips(TimelineAssetViewer, {
+        timelineManager: manager as unknown as TimelineManager,
+        invisible: false,
+      });
+      await fireEvent.click(await view.findByRole('button', { name: 'Random slide' }));
+      switch (retire) {
+        case 'unmount': {
+          view.unmount();
+          break;
+        }
+        case 'session': {
+          current = false;
+          break;
+        }
+        case 'replacement': {
+          assetViewerManager.setAsset(replacement);
+          break;
+        }
+        case 'close': {
+          assetViewerManager.showAssetViewer(false);
+          break;
+        }
+        // No default
+      }
+      pending.resolve(toTimelineAsset(random));
+      await pending.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (retire === 'none') {
+        expect(navigate).toHaveBeenCalledWith({ targetRoute: 'current', assetId: random.id });
+      } else {
+        expect(navigate).not.toHaveBeenCalled();
+      }
+    } finally {
+      session.mockRestore();
+    }
+  },
+);

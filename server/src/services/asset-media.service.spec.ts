@@ -31,7 +31,6 @@ import { fileStub } from 'test/fixtures/file.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { getForAsset } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
-
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
 
 const uploadFile = {
@@ -314,6 +313,103 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('Live Photo upload commit', () => {
+    const auth = authStub.user1;
+    let committed: boolean;
+    beforeEach(() => {
+      committed = false;
+      mocks.asset.getById.mockResolvedValue(
+        getForAsset(AssetFactory.from({ type: AssetType.Video }).owner(auth.user).build()),
+      );
+      mocks.asset.create.mockResolvedValue(assetEntity);
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn(() =>
+          Promise.try(() => {
+            committed = true;
+            return { asset: assetEntity, hiddenId: 'motion', lockedIds: [] };
+          }),
+        ),
+      });
+    });
+
+    it('prepares the still without hiding or announcing the motion before publication', async () => {
+      await sut.prepareUploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('does not hide or announce the motion when asset publication fails', async () => {
+      mocks.asset.create.mockRejectedValue(new Error('publication failed'));
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn().mockRejectedValue(new Error('publication failed')),
+      });
+      await expect(
+        sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill),
+      ).rejects.toThrow();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetHide', expect.anything());
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [fileStub.livePhotoStill.originalPath, undefined] },
+      });
+    });
+
+    it('emits the motion hide only after the repository commits the still and motion', async () => {
+      mocks.event.emit.mockImplementation((...[name]) =>
+        Promise.try(() => {
+          if (name === 'AssetHide') expect(committed).toBe(true);
+        }),
+      );
+      await sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: 'motion' }),
+        undefined,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', { assetId: 'motion', userId: auth.user.id });
+    });
+
+    it('preserves checksum-duplicate responses without hiding the requested motion', async () => {
+      const error = Object.assign(new Error('duplicate'), { constraint_name: 'UQ_assets_owner_checksum' });
+      mocks.asset.create.mockRejectedValue(error);
+      Object.assign(mocks.asset, { createLivePhotoUpload: vitest.fn().mockRejectedValue(error) });
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('existing');
+      await expect(
+        sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill),
+      ).resolves.toEqual({ id: 'existing', status: AssetMediaStatus.DUPLICATE });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetHide', expect.anything());
+    });
+
+    it('passes the explicit Locked decision through without requiring a PIN and follows up after commit', async () => {
+      Object.assign(mocks.asset, {
+        createLivePhotoUpload: vitest.fn(() =>
+          Promise.try(() => {
+            committed = true;
+            return { asset: assetEntity, hiddenId: 'motion', lockedIds: ['id_1', 'motion'] };
+          }),
+        ),
+      });
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(true);
+        }),
+      );
+      await sut.uploadAsset(
+        auth,
+        { ...createDto, livePhotoVideoId: 'motion', visibility: AssetVisibility.Locked },
+        fileStub.livePhotoStill,
+      );
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline }),
+        { reason: AssetLockReason.Marked, lockedBy: auth.user.id },
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetLocked', { assetIds: ['id_1', 'motion'] });
+    });
+  });
+
   describe('uploadAsset', () => {
     it('should throw an error if the quota is exceeded', async () => {
       const file = {
@@ -428,7 +524,7 @@ describe(AssetMediaService.name, () => {
         expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
           'new-asset',
           { checksum: file.checksum, sizeInBytes: file.size },
-          expect.objectContaining({ exists: expect.any(Function) }),
+          expect.objectContaining({ verify: expect.any(Function), identify: expect.any(Function) }),
         );
         // the temporary upload is released through the reference-counted FileDelete
         expect(mocks.job.queue).toHaveBeenCalledWith({
@@ -489,15 +585,65 @@ describe(AssetMediaService.name, () => {
         );
       });
 
-      it('checks that the linked file exists on disk', async () => {
-        mocks.asset.create.mockResolvedValue(assetEntity);
-        mocks.storage.checkFileExists.mockResolvedValue(true);
+      describe('proving the stored file before the upload is let go (FL-412)', () => {
+        const shared = '/data/library/other/shared.jpeg';
+        const stats = { isFile: () => true, dev: 1, ino: 2, size: file.size, mtimeMs: 3, ctimeMs: 4 };
 
-        await sut.uploadAsset(authStub.user1, createDto, file);
+        const uploadOptions = async () => {
+          mocks.asset.create.mockResolvedValue(assetEntity);
+          await sut.uploadAsset(authStub.user1, createDto, file);
+          return mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        };
 
-        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
-        await expect(options.exists('/data/library/other/shared.jpeg')).resolves.toBe(true);
-        expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/data/library/other/shared.jpeg');
+        it('proves a stored file with the same bytes, by its own checksum, and names it', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockResolvedValue(stats as never);
+          mocks.crypto.hashFileMatching.mockResolvedValue(file.checksum);
+
+          const identity = await options.verify(shared);
+
+          expect(identity).toEqual(expect.any(String));
+          expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(shared, file.checksum);
+          await expect(options.identify(shared)).resolves.toBe(identity);
+          expect(mocks.logger.warn).not.toHaveBeenCalled();
+        });
+
+        it('never trusts a stored file that holds other bytes, and says so', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockResolvedValue(stats as never);
+          mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from('rotted'));
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+          expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(shared));
+        });
+
+        it('never trusts a stored file of another size, without reading it', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockResolvedValue({ ...stats, size: file.size + 1 } as never);
+          mocks.crypto.hashFileMatching.mockClear();
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+          expect(mocks.crypto.hashFileMatching).not.toHaveBeenCalled();
+        });
+
+        it('never trusts a stored file that changed while it was read', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat
+            .mockResolvedValueOnce(stats as never)
+            .mockResolvedValueOnce({ ...stats, mtimeMs: 99 } as never);
+          mocks.crypto.hashFileMatching.mockResolvedValue(file.checksum);
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+        });
+
+        it('reports a stored file that is gone as having no identity', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+          await expect(options.identify(shared)).resolves.toBeNull();
+          expect(mocks.logger.warn).not.toHaveBeenCalled();
+        });
       });
     });
 
@@ -614,8 +760,7 @@ describe(AssetMediaService.name, () => {
         .owner(authStub.user1.user)
         .build();
       const asset = AssetFactory.create({ livePhotoVideoId: motionAsset.id });
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.asset.createLivePhotoUpload.mockResolvedValueOnce({ asset, hiddenId: undefined, lockedIds: [] });
 
       await expect(
         sut.uploadAsset(authStub.user1, { ...createDto, livePhotoVideoId: motionAsset.id }, fileStub.livePhotoStill),
@@ -624,15 +769,17 @@ describe(AssetMediaService.name, () => {
         id: asset.id,
       });
 
-      expect(mocks.asset.getById).toHaveBeenCalledWith(motionAsset.id);
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: motionAsset.id }),
+        undefined,
+      );
       expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should hide the linked motion asset', async () => {
       const motionAsset = AssetFactory.from({ type: AssetType.Video }).owner(authStub.user1.user).build();
       const asset = AssetFactory.create();
-      mocks.asset.getById.mockResolvedValueOnce(getForAsset(motionAsset));
-      mocks.asset.create.mockResolvedValueOnce(asset);
+      mocks.asset.createLivePhotoUpload.mockResolvedValueOnce({ asset, hiddenId: motionAsset.id, lockedIds: [] });
 
       await expect(
         sut.uploadAsset(authStub.user1, { ...createDto, livePhotoVideoId: motionAsset.id }, fileStub.livePhotoStill),
@@ -641,10 +788,13 @@ describe(AssetMediaService.name, () => {
         id: asset.id,
       });
 
-      expect(mocks.asset.getById).toHaveBeenCalledWith(motionAsset.id);
-      expect(mocks.asset.update).toHaveBeenCalledWith({
-        id: motionAsset.id,
-        visibility: AssetVisibility.Hidden,
+      expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ livePhotoVideoId: motionAsset.id }),
+        undefined,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetHide', {
+        assetId: motionAsset.id,
+        userId: authStub.user1.user.id,
       });
     });
 
@@ -851,7 +1001,7 @@ describe(AssetMediaService.name, () => {
           expect(mocks.job.queue).not.toHaveBeenCalled();
           expect(mocks.asset.update).not.toHaveBeenCalled();
         } finally {
-          result.release?.();
+          await result.release?.();
         }
         await vitest.waitFor(async () => expect(stat(dirname(result.path))).rejects.toMatchObject({ code: 'ENOENT' }));
       },

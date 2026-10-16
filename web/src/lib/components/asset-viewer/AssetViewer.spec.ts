@@ -5,10 +5,14 @@ import {
   getAllAlbums,
   getAssetDevelop,
   getAssetInfo,
+  getStack,
+  updatePerson,
+  removeAssetFromStack,
   getFaces,
   updateAsset,
   type AssetResponseDto,
 } from '@frameleaf/sdk';
+import { modalManager } from '@frameleaf/ui';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
@@ -24,12 +28,13 @@ import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
+import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 // The application-wide socket subscription the layout loads; the viewer only listens to its events.
 import '$lib/stores/websocket';
 import { getAssetUrls } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import { stubFocusVisible } from '@test-data/focus-visible';
@@ -79,8 +84,8 @@ vi.mock('$lib/components/asset-viewer/ImagePanoramaViewer.svelte', async () => {
 // FL-148: the guard-parity specs only need isFaceEditMode toggled and FaceTagger mounted, not its own
 // (heavier) face-loading/canvas behaviour.
 vi.mock('$lib/components/frameleaf/FaceTagger.svelte', async () => {
-  const { default: MockText } = await import('@test-data/components/MockText.svelte');
-  return { default: MockText };
+  const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
+  return { default: MockViewerControls };
 });
 
 // The information card's contents load albums, people and tags; the viewer specs only need the card's frame.
@@ -120,6 +125,10 @@ vi.mock('@frameleaf/sdk', async () => {
     getAssetInfo: vi.fn(),
     getAssetDevelop: vi.fn().mockResolvedValue({ assetId: 'asset', currentRevisionId: null, revisions: [] }),
     deleteAssets: vi.fn().mockResolvedValue(undefined),
+    deleteStacks: vi.fn().mockResolvedValue(undefined),
+    removeAssetFromStack: vi.fn(),
+    getStack: vi.fn(),
+    updatePerson: vi.fn(),
     // The More menu reads the albums that hold the item, for its "Album cover" entry.
     getAllAlbums: vi.fn().mockResolvedValue([]),
   };
@@ -149,6 +158,302 @@ describe('AssetViewer', () => {
   afterAll(() => {
     vi.restoreAllMocks();
   });
+
+  describe('slideshow continuation ownership', () => {
+    const prepare = () => {
+      const user = userAdminFactory.build();
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      assetViewerManager.setAsset(asset);
+      slideshowStore.slideshowAutoplay.set(true);
+      slideshowStore.slideshowRepeat.set(false);
+      slideshowStore.slideshowDelay.set(60);
+      onTestFinished(() => {
+        slideshowStore.slideshowDelay.set(5);
+        slideshowStore.slideshowRepeat.set(false);
+      });
+      return asset;
+    };
+    // VIEWER-P1: the slideshow keeps the viewer's chrome instead of a floating capsule. Its progress line
+    // says it is running, and the arrow keys step it (SlideshowBar), as the capsule's buttons did.
+    const slideshowStarted = (view: { findByTestId: (id: string) => Promise<HTMLElement> }) =>
+      view.findByTestId('slideshow-progress');
+    const step = (order: 'next' | 'previous') =>
+      fireEvent.keyDown(document, { key: order === 'next' ? 'ArrowRight' : 'ArrowLeft' });
+
+    it('does not stop a replacement slideshow after an old random callback finishes', async () => {
+      const asset = prepare();
+      const pending = deferred<{ id: string } | undefined>();
+      const onRandom = vi.fn().mockReturnValue(pending.promise);
+      slideshowStore.slideshowNavigation.set(SlideshowNavigation.Shuffle);
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: true, onRandom });
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await slideshowStarted(view);
+      await step('next');
+      await waitFor(() => expect(onRandom).toHaveBeenCalledOnce());
+      view.unmount();
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      pending.resolve(undefined);
+      await pending.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    });
+
+    it('does not end a new run when an old fullscreen exit completes', async () => {
+      const asset = prepare();
+      const pending = deferred<void>();
+      const exit = vi.fn().mockReturnValue(pending.promise);
+      const previousExit = document.exitFullscreen;
+      const previousElement = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+      document.exitFullscreen = exit;
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false });
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: view.container });
+      onTestFinished(() => {
+        document.exitFullscreen = previousExit;
+        if (previousElement) {
+          Object.defineProperty(document, 'fullscreenElement', previousElement);
+        } else {
+          Reflect.deleteProperty(document, 'fullscreenElement');
+        }
+      });
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
+      expect(exit).toHaveBeenCalledOnce();
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      pending.resolve(undefined);
+      await pending.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    });
+
+    it.each([
+      { kind: 'history', retired: true },
+      { kind: 'repeat', retired: true },
+      { kind: 'history', retired: false },
+      { kind: 'repeat', retired: false },
+    ] as const)('owns the $kind load completion (retired: $retired)', async ({ kind, retired }) => {
+      const asset = prepare();
+      const next = assetFactory.build({ ownerId: asset.ownerId, type: AssetTypeEnum.Image });
+      const pending = deferred<AssetResponseDto>();
+      const restart = vi.fn();
+      const unsubscribe = slideshowStore.restartProgress.subscribe((value) => {
+        if (value) {
+          restart();
+        }
+      });
+      onTestFinished(unsubscribe);
+      vi.mocked(getAssetInfo).mockReset().mockReturnValueOnce(pending.promise);
+      const onRandom = vi.fn().mockResolvedValue({ id: next.id });
+      slideshowStore.slideshowNavigation.set(
+        kind === 'history' ? SlideshowNavigation.Shuffle : SlideshowNavigation.DescendingOrder,
+      );
+      slideshowStore.slideshowRepeat.set(kind === 'repeat');
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current: asset, nextAsset: null, previousAsset: null },
+        showNavigation: true,
+        onRandom,
+      });
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await slideshowStarted(view);
+      if (kind === 'history') {
+        await step('next');
+        await waitFor(() => expect(onRandom).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await step(kind === 'history' ? 'previous' : 'next');
+      await waitFor(() => expect(getAssetInfo).toHaveBeenCalledOnce());
+      restart.mockClear();
+      if (retired) {
+        assetViewerManager.showAssetViewer(false);
+        view.unmount();
+      }
+      pending.resolve(asset);
+      await pending.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(restart).toHaveBeenCalledTimes(retired ? 0 : 1);
+    });
+    it('keeps a successful random navigation eligible after its asset ID changes', async () => {
+      const asset = prepare();
+      const target = assetFactory.build({ ownerId: asset.ownerId, type: AssetTypeEnum.Image });
+      const onRandom = vi.fn<() => Promise<{ id: string }>>();
+      slideshowStore.slideshowNavigation.set(SlideshowNavigation.Shuffle);
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: true, onRandom });
+      onRandom.mockImplementation(async () => {
+        assetViewerManager.setAsset(target);
+        await view.rerender({ componentProps: { cursor: { current: target }, showNavigation: true, onRandom } });
+        return { id: target.id };
+      });
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await slideshowStarted(view);
+      const restart = vi.fn();
+      const unsubscribe = slideshowStore.restartProgress.subscribe((value) => {
+        if (value) {
+          restart();
+        }
+      });
+      onTestFinished(unsubscribe);
+      await step('next');
+      await waitFor(() => expect(restart).toHaveBeenCalledOnce());
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    });
+  });
+
+  it.each(['remove', 'keep'])('ignores a late stack %s in a replacement viewer selection', async (kind) => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const [primary, original, other, replacement] = assetFactory.buildList(4, { ownerId: user.id });
+    original.stack = { id: 'stack', primaryAssetId: primary.id, assetCount: 3 };
+    const stack = { id: 'stack', primaryAssetId: primary.id, assets: [primary, original, other] };
+    vi.mocked(getStack).mockResolvedValue(stack);
+    const removal = deferred<void>();
+    const confirmation = deferred<boolean>();
+    vi.mocked(removeAssetFromStack).mockReturnValue(removal.promise as ReturnType<typeof removeAssetFromStack>);
+    const dialog = vi.spyOn(modalManager, 'showDialog').mockReturnValue(confirmation.promise);
+    const onClose = vi.fn();
+    const onAction = vi.fn();
+    try {
+      const props = { cursor: { current: original }, withStacked: true, showNavigation: false, onClose, onAction };
+      const view = renderWithTooltips(AssetViewer, props);
+      await screen.findByTestId('viewer-stack-strip');
+      // VIEWER-P3: both stack decisions are in the ⋯ menu; the stack card only shows the members.
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_more_actions' }));
+      await fireEvent.click(
+        screen.getByRole('menuitem', {
+          name: kind === 'keep' ? 'frameleaf_viewer_menu_keep_this' : 'frameleaf_viewer_menu_remove_from_stack',
+        }),
+      );
+      await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+      confirmation.resolve(true);
+      removal.resolve();
+      await waitFor(() => expect(onAction).toHaveBeenCalled());
+      expect(onClose).not.toHaveBeenCalled();
+      expect(document.querySelector('#immich-asset-viewer')).toHaveAttribute('data-asset-id', replacement.id);
+    } finally {
+      dialog.mockRestore();
+    }
+  });
+
+  it.each(['replace', 'close', 'session'])('ignores an editor refresh after %s', async (change) => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const [original, replacement] = assetFactory.buildList(2, { ownerId: user.id });
+    const pending = deferred<AssetResponseDto>();
+    vi.mocked(getAssetInfo).mockReturnValueOnce(pending.promise);
+    assetViewerManager.isShowEditor = true;
+    const onAssetChange = vi.fn();
+    const props = { cursor: { current: original }, showNavigation: false, onAssetChange };
+    const view = renderWithTooltips(AssetViewer, props);
+    await fireEvent.click(view.getByRole('button', { name: 'Save video edits' }));
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: original.id }));
+    if (change === 'replace') {
+      await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+    } else if (change === 'close') {
+      view.unmount();
+    } else {
+      authManager.reset();
+    }
+    pending.resolve({ ...original, isEdited: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onAssetChange).not.toHaveBeenCalled();
+  });
+
+  it('ignores a face refresh after the viewer moves to another asset', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const [original, replacement] = assetFactory.buildList(2, { ownerId: user.id });
+    const pending = deferred<AssetResponseDto>();
+    vi.mocked(getAssetInfo).mockReturnValueOnce(pending.promise);
+    assetViewerManager.openFaceEditMode();
+    const onAssetChange = vi.fn();
+    const props = { cursor: { current: original }, showNavigation: false, onAssetChange };
+    const view = renderWithTooltips(AssetViewer, props);
+    await fireEvent.click(view.getByRole('button', { name: 'Save face tags' }));
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: original.id }));
+    await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+    pending.resolve(original);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onAssetChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps the latest stack when an earlier stack lookup finishes last', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    const [original, replacement] = assetFactory.buildList(2, { ownerId: user.id });
+    original.stack = { id: 'old-stack', primaryAssetId: original.id, assetCount: 1 };
+    replacement.stack = { id: 'new-stack', primaryAssetId: replacement.id, assetCount: 1 };
+    const oldStack = deferred<Awaited<ReturnType<typeof getStack>>>();
+    vi.mocked(getStack)
+      .mockReturnValueOnce(oldStack.promise)
+      .mockResolvedValue({
+        id: 'new-stack',
+        primaryAssetId: replacement.id,
+        assets: [replacement],
+      });
+    const props = { cursor: { current: original }, withStacked: true, showNavigation: false };
+    const view = renderWithTooltips(AssetViewer, props);
+    await waitFor(() => expect(getStack).toHaveBeenCalledWith({ id: 'old-stack' }));
+    await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+    await screen.findByTestId('viewer-stack-strip');
+    oldStack.resolve({ id: 'old-stack', primaryAssetId: original.id, assets: [original] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('viewer-stack-strip')).toBeInTheDocument();
+  });
+
+  it.each(['before', 'after'])(
+    'keeps a featured-photo refresh owned when navigation occurs %s the lookup',
+    async (change) => {
+      vi.mocked(getAssetInfo).mockReset();
+      const user = userAdminFactory.build();
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const person = personFactory.build({ name: 'Person', isHidden: false });
+      const original = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, people: [person] });
+      const replacement = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image, people: [] });
+      const update = deferred<typeof person>();
+      const lookup = deferred<AssetResponseDto>();
+      vi.mocked(updatePerson).mockReturnValueOnce(update.promise);
+      if (change === 'before') {
+        vi.mocked(getAssetInfo).mockResolvedValueOnce(original);
+      } else {
+        vi.mocked(getAssetInfo).mockReturnValueOnce(lookup.promise);
+      }
+      const dialog = vi
+        .spyOn(modalManager, 'show')
+        .mockImplementation((async () => ({ kind: 'person', person })) as typeof modalManager.show);
+      const onAction = vi.fn();
+      const onAssetUpdate = vi.fn();
+      const props = { cursor: { current: original }, showNavigation: false, onAction, onAssetUpdate };
+      const view = renderWithTooltips(AssetViewer, props);
+      try {
+        await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_more_actions' }));
+        await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' }));
+        await waitFor(() => expect(updatePerson).toHaveBeenCalled());
+        if (change === 'before') {
+          await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+        }
+        update.resolve(person);
+        if (change === 'after') {
+          await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: original.id }));
+          await view.rerender({ componentProps: { ...props, cursor: { current: replacement } } });
+          lookup.resolve(original);
+        }
+        await waitFor(() => expect(onAction).toHaveBeenCalled());
+        expect(onAssetUpdate).not.toHaveBeenCalled();
+        if (change === 'before') {
+          expect(getAssetInfo).not.toHaveBeenCalled();
+        }
+      } finally {
+        update.resolve(person);
+        lookup.resolve(original);
+        dialog.mockRestore();
+      }
+    },
+  );
 
   it('notifies the parent when the current asset changes through an event', async () => {
     const user = userAdminFactory.build();

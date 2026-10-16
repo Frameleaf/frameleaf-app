@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import {
   ExpressionBuilder,
   Insertable,
@@ -14,6 +14,7 @@ import {
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
+import { randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
@@ -36,6 +37,7 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -46,6 +48,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { getLivePhotoMotion } from 'src/utils/asset.util.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
@@ -84,6 +87,7 @@ import { lockAssetRowsInOrder, onStacksJoined, otherStackMembers } from 'src/uti
 import {
   effectiveVisibility,
   isLocked,
+  isLockedRow,
   isNotLocked,
   isOnTimelineWhateverLock,
   isTimelineVisible,
@@ -436,18 +440,13 @@ export class AssetRepository {
       },
     ],
   })
-  async upsertExif({
-    exif,
-    audio,
-    video,
-    keyframes,
-    lockedPropertiesBehavior,
-    expectedUpdateId,
-    cameraEvidence,
-  }: UpsertExifOptions): Promise<void> {
-    let query = this.db;
+  async upsertExif(
+    { exif, audio, video, keyframes, lockedPropertiesBehavior, expectedUpdateId, cameraEvidence }: UpsertExifOptions,
+    kysely?: Transaction<DB>,
+  ): Promise<void> {
+    let query: Kysely<DB> = kysely ?? this.db;
     if (audio) {
-      (query as any) = this.db.with('audio', (qb) =>
+      (query as any) = query.with('audio', (qb) =>
         qb
           .insertInto('asset_audio')
           .values(audio)
@@ -1003,9 +1002,10 @@ export class AssetRepository {
                   ])
                   .as('year'),
               )
-              .select((eb) => eb.fn('make_date', [sql`year::int`, sql`${month}::int`, sql`${day}::int`]).as('date')),
+              .select(sql<Date>`make_date(year::int, ${month}::int, 1) + (${day}::int - 1)`.as('date')),
           )
           .selectFrom('today')
+          .where(sql`date_part('month', today.date)`, '=', month)
           .innerJoinLateral(
             (qb) =>
               qb
@@ -1617,6 +1617,111 @@ export class AssetRepository {
       return updated;
     });
   }
+  async createLivePhotoUpload(asset: Insertable<AssetTable>, lock?: Parameters<AssetRepository['create']>[1]) {
+    const motionId = asset.livePhotoVideoId;
+    if (!motionId || asset.type !== AssetType.Image)
+      throw new BadRequestException('A live photo must be an image paired with a video');
+    const id = asset.id ?? randomUUID();
+    return this.withLivePhotoGroup([id, motionId], async (assets) => {
+      const motion = await getLivePhotoMotion(assets, asset.ownerId, motionId);
+      if (motion.deletedAt || (isLockedRow(motion) && !lock))
+        throw new BadRequestException('Live photo video not found');
+      if (lock) {
+        const group = await assets.getByIds(await assets.findLockGroupIds([motionId]));
+        if (group.some((asset) => asset.ownerId !== motion.ownerId)) throw new BadRequestException('Asset not found');
+      }
+      const created = await assets.create({ ...asset, id });
+      const hiddenId = motion.visibility === AssetVisibility.Timeline ? motion.id : undefined;
+      if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
+      const lockedIds = lock ? await assets.lock([id], lock.reason, lock.lockedBy) : [];
+      return { asset: created, hiddenId, lockedIds };
+    });
+  }
+
+  async withMetadataUpdate<T>(
+    id: string,
+    write: (assets: AssetRepository, access: AccessRepository, tx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.inTransaction(async (tx) => {
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id.toLowerCase()})::int)`.execute(tx);
+        // Pin missing EXIF inserts through their parent FK; refuse existing writer lock inversions.
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', asUuid(id))
+          .forUpdate()
+          .noWait()
+          .executeTakeFirstOrThrow(() => new BadRequestException('Asset not found'));
+        await tx
+          .selectFrom('asset_exif')
+          .select('assetId')
+          .where('assetId', '=', asUuid(id))
+          .forUpdate()
+          .noWait()
+          .execute();
+        return write(new AssetRepository(tx), new AccessRepository(tx), tx as Transaction<DB>);
+      });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01')) {
+        throw new ConflictException('The asset metadata is changing; retry the update.');
+      }
+      throw error;
+    }
+  }
+
+  async withLivePhotoUpdate<T>(
+    id: string,
+    motionId: string | null,
+    write: (assets: AssetRepository, access: AccessRepository) => Promise<T>,
+  ): Promise<T> {
+    const initial = await this.getById(id);
+    if (!initial) throw new BadRequestException('Asset not found');
+    const roots = [id, initial.livePhotoVideoId, motionId].filter((id): id is string => !!id);
+    return this.withLivePhotoGroup(roots, async (assets, access) => {
+      const current = await assets.getById(id);
+      if (!current || current.livePhotoVideoId !== initial.livePhotoVideoId) {
+        throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+      }
+      return write(assets, access);
+    });
+  }
+
+  private async withLivePhotoGroup<T>(
+    roots: string[],
+    write: (assets: AssetRepository, access: AccessRepository) => Promise<T>,
+  ): Promise<T> {
+    const lockedSet = new Set([...roots, ...(await this.findLockGroupIds(roots))].map((id) => id.toLowerCase()));
+    const lockedIds = [...lockedSet].sort();
+    try {
+      return await this.inTransaction(async (tx) => {
+        for (const id of lockedIds) {
+          await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+        }
+        // Group writers may hold rows before metadata locks; refuse contention rather than invert their order.
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', 'in', lockedIds)
+          .orderBy('id')
+          .forUpdate()
+          .noWait()
+          .execute();
+        const assets = new AssetRepository(tx);
+        const group = await assets.findLockGroupIds(roots);
+        if (group.some((id) => !lockedSet.has(id.toLowerCase()))) {
+          throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+        }
+        return write(assets, new AccessRepository(tx));
+      });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01')) {
+        throw new ConflictException('The Live Photo or its stack is changing; retry the update.');
+      }
+      throw error;
+    }
+  }
+
   /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
   private inTransaction<T>(callback: (tx: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);
@@ -2650,7 +2755,7 @@ export class AssetRepository {
     return { fieldName: 'createdAt', items };
   }
   @GenerateSql({ params: [[DummyValue.UUID]] })
-  @ChunkedArray()
+  @ChunkedSet()
   async getNsfwAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
       return new Set();

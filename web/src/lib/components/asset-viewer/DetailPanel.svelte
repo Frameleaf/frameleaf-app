@@ -12,7 +12,7 @@
   import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
   import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
-  import { ownerLine, type DescriptionReview } from '$lib/frameleaf/info-panel';
+  import { coordinatesOf, ownerLine, type DescriptionReview } from '$lib/frameleaf/info-panel';
   import { originOwnerName } from '$lib/frameleaf/partner-sharing';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -29,6 +29,7 @@
   } from '@frameleaf/sdk';
   import { Icon, Link, LoadingSpinner, Text } from '@frameleaf/ui';
   import { mdiAccountArrowLeftOutline, mdiAccountOutline } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
@@ -56,11 +57,9 @@
   const originName = $derived(originOwnerName(asset.origin));
   let latlng = $derived(
     (() => {
-      const lat = asset.exifInfo?.latitude;
-      const lng = asset.exifInfo?.longitude;
-
-      if (lat && lng) {
-        return { lat: Number(lat.toFixed(7)), lng: Number(lng.toFixed(7)) };
+      const point = coordinatesOf(asset.exifInfo);
+      if (point) {
+        return { lat: Number(point.lat.toFixed(7)), lng: Number(point.lng.toFixed(7)) };
       }
     })(),
   );
@@ -88,7 +87,13 @@
 
   let albums = $derived(refreshAlbums());
 
-  $effect(() => {
+  let alive = true;
+  let generation = 0;
+  onDestroy(() => {
+    alive = false;
+  });
+
+  $effect.pre(() => {
     if (!previousId) {
       previousId = asset.id;
       return;
@@ -98,15 +103,22 @@
       return;
     }
 
+    generation++;
     descriptionReview = null;
     previousId = asset.id;
   });
 
   const handleRefreshPeople = async () => {
-    const updatedAsset = await getAssetInfo({ id: asset.id });
+    const id = asset.id;
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    const updatedAsset = await getAssetInfo({ id });
+    if (!alive || owner !== generation || !isCurrentSession()) {
+      return;
+    }
     onAssetUpdate?.(updatedAsset);
     faceManager.clear();
-    await faceManager.getAssetFaces(asset.id);
+    await faceManager.getAssetFaces(id);
   };
 </script>
 

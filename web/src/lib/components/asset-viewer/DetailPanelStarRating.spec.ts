@@ -1,9 +1,11 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import DetailPanelStarRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -76,5 +78,36 @@ describe('DetailPanelStarRating', () => {
   it('cannot clear what is not rated', () => {
     render(DetailPanelStarRating, { asset: owned(null), isOwner: true });
     expect(screen.getByRole('button', { name: en.clear })).toBeDisabled();
+  });
+
+  it('cancels a debounced rating when the photo changes', async () => {
+    vi.useFakeTimers();
+    const asset = owned(null);
+    const component = render(DetailPanelStarRating, { asset, isOwner: true });
+    try {
+      await fireEvent.change(screen.getAllByRole('radio')[3], { target: { checked: true } });
+      await component.rerender({ asset: owned(null), isOwner: true });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(sdkMock.updateAsset).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['replace', 'unmount'] as const)('does not publish a rating response after %s', async (change) => {
+    const asset = owned(3);
+    const response = deferredPromise<typeof asset>();
+    sdkMock.updateAsset.mockReturnValueOnce(response.promise);
+    const onAssetRefresh = vi.fn();
+    const component = render(DetailPanelStarRating, { asset, isOwner: true, onAssetRefresh });
+    await fireEvent.click(screen.getByRole('button', { name: en.clear }));
+    if (change === 'replace') {
+      await component.rerender({ asset: owned(3), isOwner: true, onAssetRefresh });
+    } else {
+      component.unmount();
+    }
+    response.resolve(asset);
+    await tick();
+    expect(onAssetRefresh).not.toHaveBeenCalled();
   });
 });

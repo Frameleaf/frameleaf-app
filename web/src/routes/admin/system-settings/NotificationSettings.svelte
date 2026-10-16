@@ -241,6 +241,7 @@
     }
     sending = true;
     const account = oneClick;
+    const testedSettings = JSON.stringify(smtp);
     try {
       await sendTestEmailAdmin({
         adminConfigSmtpDto: {
@@ -265,7 +266,8 @@
       // FL-66: a successful delivery test saves the email settings only, against the draft's
       // revision; every other pending change stays in the draft for review. A signed-in account
       // was saved by the server when it was connected.
-      if (!disabled && !account) {
+      // Edits made while the test ran still need their own review and save.
+      if (!disabled && !account && testedSettings === JSON.stringify(smtp)) {
         await settingsDraft.saveKeys(['notifications']);
       }
     } catch (error) {

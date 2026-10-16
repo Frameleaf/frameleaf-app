@@ -605,7 +605,7 @@ export const studioPresetFamilies: Readonly<Record<string, readonly string[]>> =
 };
 
 export const isKnownStudioPreset = (family: string, value: string): boolean =>
-  (studioPresetFamilies[family] ?? []).includes(value);
+  Object.hasOwn(studioPresetFamilies, family) && studioPresetFamilies[family].includes(value);
 
 /* ------------------------------------------------------------------ */
 /* Limits                                                               */

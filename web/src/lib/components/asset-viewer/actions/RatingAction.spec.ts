@@ -4,6 +4,7 @@ import { fireEvent, waitFor } from '@testing-library/svelte';
 import { AssetAction } from '$lib/constants';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
+import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -80,5 +81,24 @@ describe('RatingAction (V-3)', () => {
     authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
     const { queryByTestId } = render(3);
     expect(queryByTestId('viewer-rating-button')).not.toBeInTheDocument();
+  });
+  it.each(['navigate', 'close', 'session'])('ignores a rating response after %s', async (change) => {
+    const pending = deferredPromise<Awaited<ReturnType<typeof updateAsset>>>();
+    vi.mocked(updateAsset).mockReturnValueOnce(pending.promise);
+    const view = render(null);
+    await fireEvent.keyDown(document, { key: '4' });
+    await waitFor(() => expect(updateAsset).toHaveBeenCalledWith({ id: view.asset.id, updateAssetDto: { rating: 4 } }));
+    if (change === 'navigate') {
+      await view.rerender({
+        componentProps: { asset: assetFactory.build({ ownerId: 'owner' }), onAction: view.onAction },
+      });
+    } else if (change === 'close') {
+      view.unmount();
+    } else {
+      authManager.reset();
+    }
+    pending.resolve(view.asset);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(view.onAction).not.toHaveBeenCalled();
   });
 });

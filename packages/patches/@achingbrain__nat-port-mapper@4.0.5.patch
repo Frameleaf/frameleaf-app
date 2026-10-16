@@ -1,0 +1,65 @@
+diff --git a/dist/src/upnp/internet-gateway-service-4.js b/dist/src/upnp/internet-gateway-service-4.js
+index df72bba9119ecdf93cda300949d7ea5e9149fff3..35f77a6cff129c3fc02f5b11ee9ec76a67dcffe9 100644
+--- a/dist/src/upnp/internet-gateway-service-4.js
++++ b/dist/src/upnp/internet-gateway-service-4.js
+@@ -26,11 +26,12 @@ export class InternetGatewayService4 extends InternetGatewayService {
+         // UPnP2 will resolve port mapping conflicts for us so we need to read the
+         // mapped port from the response
+         const key = findNamespacedKey('AddAnyPortMappingResponse', response);
++        mapping.externalPort = String(response[key].NewReservedPort);
+         if (options.autoRefresh ?? this.options.autoRefresh ?? DEFAULT_AUTO_REFRESH) {
+             this.configureRefresh(localPort, mapping, options);
+         }
+         this.addMapping(localPort, mapping);
+-        return Number(response[key].NewReservedPort);
++        return Number(mapping.externalPort);
+     }
+     async refreshPort(localPort, options) {
+         const mappings = this.mappings.get(localPort) ?? [];
+@@ -61,9 +62,9 @@ export class InternetGatewayService4 extends InternetGatewayService {
+                 clearTimeout(mapping.refreshTimeout);
+                 const gateway = await this.getGateway(options);
+                 await gateway.run(DEVICE_WAN_IP_CONNECTION_2, 'DeletePortMapping', [
+-                    ['NewRemoteHost', ''],
+-                    ['NewExternalPort', localPort],
+-                    ['NewProtocol', '']
++                    ['NewRemoteHost', mapping.remoteHost],
++                    ['NewExternalPort', mapping.externalPort],
++                    ['NewProtocol', mapping.protocol]
+                 ], options);
+             }
+             catch (err) {
+diff --git a/src/upnp/internet-gateway-service-4.ts b/src/upnp/internet-gateway-service-4.ts
+index 8bc3ef81acbac2600d83dadc5dc26853d461b8a2..d8716e8147bff93c3ddbbf6591061c1bbee44ad3 100644
+--- a/src/upnp/internet-gateway-service-4.ts
++++ b/src/upnp/internet-gateway-service-4.ts
+@@ -41,6 +41,7 @@ export class InternetGatewayService4 extends InternetGatewayService<IPv4Mapping>
+     // UPnP2 will resolve port mapping conflicts for us so we need to read the
+     // mapped port from the response
+     const key = findNamespacedKey('AddAnyPortMappingResponse', response)
++    mapping.externalPort = String(response[key].NewReservedPort)
+ 
+     if (options.autoRefresh ?? this.options.autoRefresh ?? DEFAULT_AUTO_REFRESH) {
+       this.configureRefresh(localPort, mapping, options)
+@@ -48,7 +49,7 @@ export class InternetGatewayService4 extends InternetGatewayService<IPv4Mapping>
+ 
+     this.addMapping(localPort, mapping)
+ 
+-    return Number(response[key].NewReservedPort)
++    return Number(mapping.externalPort)
+   }
+ 
+   async refreshPort (localPort: number, options?: AbortOptions): Promise<void> {
+@@ -84,9 +85,9 @@ export class InternetGatewayService4 extends InternetGatewayService<IPv4Mapping>
+ 
+         const gateway = await this.getGateway(options)
+         await gateway.run(DEVICE_WAN_IP_CONNECTION_2, 'DeletePortMapping', [
+-          ['NewRemoteHost', ''],
+-          ['NewExternalPort', localPort],
+-          ['NewProtocol', '']
++          ['NewRemoteHost', mapping.remoteHost],
++          ['NewExternalPort', mapping.externalPort],
++          ['NewProtocol', mapping.protocol]
+         ], options)
+       } catch (err) {
+         this.log.error('could not unmap port %d - %e', localPort, err)

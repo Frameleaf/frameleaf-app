@@ -686,7 +686,7 @@ export function recipeJsonError(value: unknown): string | undefined {
     if (++count > RECIPE_JSON_MAX_VALUES || depth > 16) return false;
     if (item === null || typeof item === 'boolean' || typeof item === 'string') {
       if (typeof item === 'string' && item.length > RECIPE_JSON_MAX_TEXT_BYTES) return false;
-      bytes += new TextEncoder().encode(JSON.stringify(item)).length;
+      bytes += Buffer.byteLength(JSON.stringify(item) ?? '');
       return bytes <= RECIPE_JSON_MAX_TEXT_BYTES;
     }
     if (typeof item === 'number') return Number.isFinite(item);
@@ -697,7 +697,7 @@ export function recipeJsonError(value: unknown): string | undefined {
       entries.length <= 128 &&
       entries.every(
         ([key, entry]) =>
-          (bytes += new TextEncoder().encode(key).length) <= RECIPE_JSON_MAX_TEXT_BYTES &&
+          (bytes += Buffer.byteLength(key)) <= RECIPE_JSON_MAX_TEXT_BYTES &&
           key.length <= 128 &&
           !['__proto__', 'prototype', 'constructor'].includes(key) &&
           visit(entry, depth + 1),
@@ -705,7 +705,7 @@ export function recipeJsonError(value: unknown): string | undefined {
     );
   };
   if (!visit(value, 0)) return 'Recipe must be bounded plain JSON without unsafe keys';
-  if (new TextEncoder().encode(JSON.stringify(value)).length > RECIPE_JSON_MAX_BYTES) return 'Recipe exceeds 512 KiB';
+  if (Buffer.byteLength(JSON.stringify(value) ?? '') > RECIPE_JSON_MAX_BYTES) return 'Recipe exceeds 512 KiB';
 }
 
 export type KnownAssetDevelopRecipe = z.infer<typeof KnownAssetDevelopRecipeSchema>;

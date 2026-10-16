@@ -232,6 +232,7 @@ export type RateLimitCheck = {
   windowSeconds: number;
   /** `failures`: counted up front like a request, and given back unless the attempt failed with 401. */
   counts: 'requests' | 'failures';
+  windowExpiresAt?: string;
 };
 
 /**
@@ -364,7 +365,7 @@ export class RateLimitGuard implements CanActivate {
         throw tooManyRequests(http.getResponse<Response>(), hit.resetSeconds);
       }
       if (check.counts === 'failures') {
-        failures.push(check);
+        failures.push({ ...check, windowExpiresAt: hit.windowExpiresAt });
       }
     }
     if (failures.length > 0) {
@@ -409,8 +410,9 @@ export class RateLimitFailureInterceptor implements NestInterceptor {
 
   async release(checks: RateLimitCheck[]) {
     for (const check of checks) {
+      if (!check.windowExpiresAt) continue;
       try {
-        await this.rateLimitRepository.release(check.key);
+        await this.rateLimitRepository.release(check.key, check.windowExpiresAt);
       } catch (error) {
         this.logger.warn(`An attempt could not be given back to its counter: ${error}`);
       }

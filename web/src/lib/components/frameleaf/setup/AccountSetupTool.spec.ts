@@ -16,6 +16,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
       memories: { enabled: true },
     },
     load: vi.fn(),
+    // The Frameleaf account section acts only for the session that opened it; this one never changes.
+    captureSession: () => () => true,
   },
 }));
 

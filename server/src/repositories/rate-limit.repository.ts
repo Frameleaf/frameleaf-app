@@ -8,6 +8,8 @@ export type RateLimitHit = {
   count: number;
   /** Seconds until the window ends. */
   resetSeconds: number;
+  /** Exact database window identity; a request without it cannot refund a counter. */
+  windowExpiresAt?: string;
 };
 
 @Injectable()
@@ -56,14 +58,15 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
       throw new Error('Rate limit window must be a positive integer');
     }
     // A newer statement can create the window while this one waits; report time remaining after that wait.
-    const { rows } = await this.getClient().query<{ count: number; resetSeconds: number }>(
+    const { rows } = await this.getClient().query<RateLimitHit>(
       `INSERT INTO public.frameleaf_rate_limit AS counter (key, count, expires_at)
        VALUES ($1, 1, statement_timestamp() + make_interval(secs => $2))
        ON CONFLICT (key) DO UPDATE SET
          count = CASE WHEN counter.expires_at <= statement_timestamp() THEN 1 ELSE counter.count + 1 END,
          expires_at = CASE WHEN counter.expires_at <= statement_timestamp()
            THEN statement_timestamp() + make_interval(secs => $2) ELSE counter.expires_at END
-       RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM expires_at - clock_timestamp())))::integer AS "resetSeconds"`,
+       RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM expires_at - clock_timestamp())))::integer AS "resetSeconds",
+         expires_at::text AS "windowExpiresAt"`,
       [key, windowSeconds],
     );
     this.cleanExpired();
@@ -71,12 +74,12 @@ export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Row-locked decrement never recreates an expired counter; zero starts a fresh window on the next hit. */
-  async release(key: string): Promise<void> {
+  async release(key: string, windowExpiresAt: string): Promise<void> {
     await this.getClient().query(
       `UPDATE public.frameleaf_rate_limit SET count = GREATEST(0, count - 1),
        expires_at = CASE WHEN count <= 1 THEN statement_timestamp() ELSE expires_at END
-       WHERE key = $1 AND expires_at > statement_timestamp()`,
-      [key],
+       WHERE key = $1 AND expires_at = $2::timestamptz AND expires_at > statement_timestamp()`,
+      [key, windowExpiresAt],
     );
   }
 

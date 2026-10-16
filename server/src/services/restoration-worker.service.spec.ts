@@ -1,4 +1,6 @@
+import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DB } from 'src/schema/index.js';
 import {
   AssetRestorationMode,
   AssetRestorationSourceType,
@@ -7,6 +9,7 @@ import {
 import {
   AssetType,
   JobName,
+  MediaOperationCheckpointState,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -16,7 +19,11 @@ import {
 } from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  type MediaOperationCheckpoint,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
@@ -24,26 +31,28 @@ import {
   RestorationErrorCode,
   RestorationInferenceResult,
   RestorationSnapshot,
+  planRestorationChunks,
   restorationAdmissionOf,
+  restorationChunkIdentity,
 } from 'src/utils/restoration.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
-
+const DAY_MS = 24 * 60 * 60 * 1000;
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
 const CLAIM = 'claim-token';
 /** Stands in for the transaction `publishValidated` hands its callback (FL-43). */
-const TRX = { transaction: 'publish' } as never;
+const dialect = new PostgresDialect({ pool: {} as never });
+dialect.createDriver = () => new DummyDriver();
+const TRX = new Kysely<DB>({ dialect });
 
 describe(RestorationWorkerService.name, () => {
   let sut: RestorationWorkerService;
   let mocks: ServiceMocks;
-  let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn> };
+  let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn<(...args: any[]) => any>> };
   let operations: AutoMocked<MediaOperationRepository>;
   let restore: ReturnType<typeof vi.fn<MachineLearningRepository['restore']>>;
 
@@ -161,6 +170,8 @@ describe(RestorationWorkerService.name, () => {
 
   beforeEach(() => {
     mocks = getMocks();
+    vi.spyOn(TRX.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
+    mocks.database.withAssetMetadataLock.mockImplementation((_assetId, callback) => callback(TRX) as never);
     restorations = {
       create: vi.fn(),
       get: vi.fn().mockResolvedValue(row()),
@@ -180,9 +191,11 @@ describe(RestorationWorkerService.name, () => {
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
       clearExpiredResult: vi.fn().mockImplementation((id: string) => Promise.resolve(row({ id }))),
+      clearExpiredPreview: vi.fn().mockImplementation((id: string) => Promise.resolve(row({ id }))),
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
+      discard: vi.fn(),
     };
     // Automocked so newly added MediaOperationRepository methods (e.g. the FL-162/FL-163 Frameleaf
     // Cloud job queries below, which restoration never reaches) don't need a literal entry here.
@@ -263,7 +276,88 @@ describe(RestorationWorkerService.name, () => {
       mocks.storage as never,
       mocks.crypto as never,
       mocks.job as never,
+      mocks.database as never,
     );
+  });
+
+  describe('operation ownership', () => {
+    let current: AssetRestoration;
+    beforeEach(() => {
+      current = row();
+      restorations.get.mockImplementation(() => Promise.resolve({ ...current }));
+      restorations.update.mockImplementation((_id: string, patch: Partial<AssetRestoration>) =>
+        Promise.resolve((current = { ...current, ...patch })),
+      );
+      restorations.transition.mockImplementation(
+        (
+          _id: string,
+          from: AssetRestorationStatus[],
+          patch: Partial<AssetRestoration>,
+          _tx: unknown,
+          operation?: { stage: 'preview' | 'full'; id: string | null },
+        ) => {
+          if (
+            !from.includes(current.status as AssetRestorationStatus) ||
+            (operation &&
+              current[operation.stage === 'preview' ? 'previewOperationId' : 'fullOperationId'] !== operation.id)
+          )
+            return Promise.resolve();
+          return Promise.resolve((current = { ...current, ...patch }));
+        },
+      );
+    });
+
+    it('refuses an older job when another operation owns the runnable stage', async () => {
+      current.previewOperationId = 'new-operation';
+      await sut.run(operation(), CLAIM);
+      expect(restore).not.toHaveBeenCalled();
+      expect(current.previewOperationId).toBe('new-operation');
+    });
+
+    it('keeps an owner decision made after the worker reads the stage', async () => {
+      restorations.get.mockImplementationOnce(() => {
+        const read = { ...current };
+        current.status = AssetRestorationStatus.Rejected;
+        return Promise.resolve(read);
+      });
+      await sut.run(operation(), CLAIM);
+      expect(restore).not.toHaveBeenCalled();
+      expect(current.status).toBe(AssetRestorationStatus.Rejected);
+    });
+
+    it('allows a retry to replace its parent operation and publish', async () => {
+      current.previewOperationId = 'parent-operation';
+      current.status = AssetRestorationStatus.PreviewFailed;
+      await sut.run(operation({ retryOfId: 'parent-operation' }), CLAIM);
+      expect(restore).toHaveBeenCalled();
+      expect(current).toMatchObject({ status: AssetRestorationStatus.PreviewReady, previewOperationId: OPERATION_ID });
+    });
+
+    it('moves no final files after another operation takes over during rendering', async () => {
+      const render = restore.getMockImplementation()!;
+      restore.mockImplementationOnce((...args) => {
+        current.previewOperationId = 'new-operation';
+        return render(...args);
+      });
+      await sut.run(operation(), CLAIM);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(current).toMatchObject({
+        status: AssetRestorationStatus.PreviewRendering,
+        previewOperationId: 'new-operation',
+      });
+    });
+
+    it('leaves a newer operation running when an older render fails', async () => {
+      restore.mockImplementationOnce(() => {
+        current.previewOperationId = 'new-operation';
+        throw new Error('old render failed');
+      });
+      await sut.run(operation(), CLAIM);
+      expect(current).toMatchObject({
+        status: AssetRestorationStatus.PreviewRendering,
+        previewOperationId: 'new-operation',
+      });
+    });
   });
 
   describe('run: still preview', () => {
@@ -271,9 +365,12 @@ describe(RestorationWorkerService.name, () => {
       await sut.run(operation(), CLAIM);
 
       // The stage was bound to this job before any work started.
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.PreviewQueued],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, previewOperationId: OPERATION_ID }),
+        TRX,
+        { stage: 'preview', id: OPERATION_ID },
       );
       // The crop is the requested region of the decoded frame; the input is bounded to the preview edge.
       expect(mocks.media.renderDevelopGeometry).toHaveBeenCalledWith(
@@ -326,6 +423,7 @@ describe(RestorationWorkerService.name, () => {
           }),
         }),
         TRX,
+        { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.publishValidated).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.any(Function));
       expect(operations.complete).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { resultAssetId: null });
@@ -357,6 +455,8 @@ describe(RestorationWorkerService.name, () => {
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewRendering],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewFailed }),
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
       );
     });
 
@@ -426,7 +526,7 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(operation(), CLAIM);
 
-      expect(restorations.update).not.toHaveBeenCalled();
+      expect(restorations.transition).not.toHaveBeenCalled();
       expect(restore).not.toHaveBeenCalled();
       expect(operations.fail).toHaveBeenCalledWith(
         OPERATION_ID,
@@ -440,9 +540,12 @@ describe(RestorationWorkerService.name, () => {
         row({ status: AssetRestorationStatus.PreviewFailed, error: 'earlier attempt' }),
       );
       await sut.run(operation({ attempt: 2 }), CLAIM);
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.PreviewFailed],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, error: null }),
+        TRX,
+        { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.complete).toHaveBeenCalled();
     });
@@ -457,13 +560,12 @@ describe(RestorationWorkerService.name, () => {
       expect(restorations.get).not.toHaveBeenCalled();
     });
 
-    it('removes the published files again when the owner discarded the restoration mid-render', async () => {
-      restorations.transition.mockResolvedValue(undefined);
+    it('moves no final files when the owner discarded the restoration mid-render', async () => {
+      restorations.transition
+        .mockResolvedValueOnce(row({ status: AssetRestorationStatus.PreviewRendering }))
+        .mockResolvedValueOnce(undefined);
       await sut.run(operation(), CLAIM);
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: expect.arrayContaining([expect.stringMatching(/_after\.png$/)]) },
-      });
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
       expect(operations.fail).toHaveBeenCalledWith(
         OPERATION_ID,
@@ -484,13 +586,16 @@ describe(RestorationWorkerService.name, () => {
     it('takes the leftovers back from retention when a retry starts', async () => {
       await sut.run(fullOperation(), CLAIM);
 
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.RestoreFailed],
         expect.objectContaining({
           status: AssetRestorationStatus.Restoring,
           fullOperationId: OPERATION_ID,
           resultExpiresAt: null,
         }),
+        TRX,
+        { stage: 'full', id: null },
       );
     });
 
@@ -516,10 +621,16 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(fullOperation(), CLAIM);
 
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.Restoring], {
-        status: AssetRestorationStatus.RestoreCancelled,
-        resultExpiresAt: expect.any(Date),
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.Restoring],
+        {
+          status: AssetRestorationStatus.RestoreCancelled,
+          resultExpiresAt: expect.any(Date),
+        },
+        undefined,
+        { stage: 'full', id: OPERATION_ID },
+      );
     });
 
     it('refuses a full render when the destination no longer runs the reviewed model', async () => {
@@ -584,10 +695,16 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(operation(), CLAIM);
 
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
-        status: AssetRestorationStatus.PreviewFailed,
-        error: 'worker unreachable',
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        {
+          status: AssetRestorationStatus.PreviewFailed,
+          error: 'worker unreachable',
+        },
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
+      );
     });
   });
 
@@ -617,6 +734,112 @@ describe(RestorationWorkerService.name, () => {
         expect.objectContaining({ kind: 'video', path: clip }),
         expect.anything(),
       );
+    });
+  });
+
+  describe('verified video resume', () => {
+    const video = () =>
+      snapshot({
+        stage: 'full',
+        sourceType: AssetRestorationSourceType.Video,
+        sourceWidth: 1920,
+        sourceHeight: 1080,
+        sourceDurationSeconds: 45,
+        output: { width: 1920, height: 1080 },
+        model: { name: 'faithful-v1', version: '1.0' },
+      });
+    const cached = (): MediaOperationCheckpoint[] =>
+      planRestorationChunks(45).map(
+        (chunk) =>
+          ({
+            ...restorationChunkIdentity(video(), chunk),
+            startTicks: chunk.startSeconds * 1000,
+            endTicks: chunk.endSeconds * 1000,
+            state: MediaOperationCheckpointState.Complete,
+            outputPath: `/cached/chunk-${chunk.sequence}.mp4`,
+            outputChecksum: Buffer.alloc(32, chunk.sequence + 1),
+            sizeInBytes: 1024,
+          }) as MediaOperationCheckpoint,
+      );
+    const runVideo = () =>
+      sut.run(
+        operation({ kind: MediaOperationKind.Restoration, retryOfId: 'parent-operation', snapshot: video() }),
+        CLAIM,
+      );
+
+    beforeEach(() => {
+      restorations.get.mockResolvedValue(
+        row({ status: AssetRestorationStatus.RestoreFailed, fullOperationId: 'parent-operation' }),
+      );
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        type: AssetType.Video,
+        originalFileName: 'film.mp4',
+      });
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 45 },
+        videoStreams: [{ width: 1920, height: 1080 }],
+        audioStreams: [],
+      } as never);
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as never);
+      mocks.crypto.hashFile.mockImplementation((file) =>
+        Promise.resolve(
+          Buffer.alloc(
+            32,
+            typeof file === 'string' && file.startsWith('/cached/') ? Number(file.match(/chunk-(\d+)/)![1]) + 1 : 9,
+          ),
+        ),
+      );
+      operations.getCheckpoints.mockImplementation((id) => Promise.resolve(id === 'parent-operation' ? cached() : []));
+    });
+
+    it('reuses every verified checkpoint without rendering again', async () => {
+      await runVideo();
+      expect(restore).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashFile).toHaveBeenCalledWith('/cached/chunk-0.mp4', 'sha256');
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it.each(['checksum', 'size', 'missing metadata'] as const)(
+      'rerenders cached work with invalid %s',
+      async (failure) => {
+        switch (failure) {
+          case 'checksum': {
+            mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 99));
+            break;
+          }
+          case 'size': {
+            mocks.storage.stat.mockResolvedValue({ size: 512 } as never);
+            break;
+          }
+          case 'missing metadata': {
+            operations.getCheckpoints.mockImplementation((id) =>
+              Promise.resolve(
+                id === 'parent-operation'
+                  ? cached().map((checkpoint) => ({ ...checkpoint, outputChecksum: null, sizeInBytes: null }))
+                  : [],
+              ),
+            );
+            break;
+          }
+          // No default
+        }
+        await runVideo();
+        expect(restore).toHaveBeenCalledTimes(3);
+      },
+    );
+
+    it('keeps only the verified prefix when a middle checkpoint changed', async () => {
+      const hash = mocks.crypto.hashFile.getMockImplementation()!;
+      mocks.crypto.hashFile.mockImplementation((file, algorithm) =>
+        file === '/cached/chunk-1.mp4' ? Promise.resolve(Buffer.alloc(32, 99)) : hash(file, algorithm),
+      );
+      await runVideo();
+      expect(restore).toHaveBeenCalledTimes(2);
+      const list = mocks.storage.createOrOverwriteFile.mock.calls[0][1].toString();
+      expect(list).toContain('/cached/chunk-0.mp4');
+      expect(list).not.toContain('/cached/chunk-1.mp4');
+      expect(list).not.toContain('/cached/chunk-2.mp4');
     });
   });
 
@@ -696,9 +919,15 @@ describe(RestorationWorkerService.name, () => {
       await sut.run(operation(), CLAIM);
 
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
-        status: AssetRestorationStatus.PreviewCancelled,
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        {
+          status: AssetRestorationStatus.PreviewCancelled,
+        },
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
+      );
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });
@@ -714,7 +943,7 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.settlePause).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(restorations.transition).not.toHaveBeenCalled();
+      expect(restorations.transition).toHaveBeenCalledTimes(1);
     });
 
     it('requeues at once when the owner resumed before the pause landed (FL-104)', async () => {
@@ -743,11 +972,18 @@ describe(RestorationWorkerService.name, () => {
         expect.anything(),
         expect.objectContaining({ status: AssetRestorationStatus.PreviewReady }),
         expect.anything(),
+        { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
-        status: AssetRestorationStatus.PreviewCancelled,
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        {
+          status: AssetRestorationStatus.PreviewCancelled,
+        },
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
+      );
       // The rendered output stays scratch and is removed; it was never moved into place.
       expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
       expect(operations.fail).not.toHaveBeenCalled();
@@ -779,7 +1015,7 @@ describe(RestorationWorkerService.name, () => {
 
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(restorations.transition).not.toHaveBeenCalled();
+      expect(restorations.transition).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -878,13 +1114,15 @@ describe(RestorationWorkerService.name, () => {
           RESTORATION_ID,
           [AssetRestorationStatus.PreviewRendering],
           { status: AssetRestorationStatus.PreviewCancelled },
+          undefined,
+          { stage: 'preview', id: OPERATION_ID },
         );
       } else if (reason === 'pause') {
         expect(operations.settlePause).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
-        expect(restorations.transition).not.toHaveBeenCalled();
+        expect(restorations.transition).toHaveBeenCalledTimes(1);
       } else {
         expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
-        expect(restorations.transition).not.toHaveBeenCalled();
+        expect(restorations.transition).toHaveBeenCalledTimes(1);
       }
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
@@ -945,7 +1183,7 @@ describe(RestorationWorkerService.name, () => {
       void running!.then(() => (returned = true));
       await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
 
-      sut.onShutdown();
+      void sut.onShutdown();
       await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
 
       expect(signal.aborted).toBe(true);
@@ -962,6 +1200,146 @@ describe(RestorationWorkerService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
       await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
       expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('shutdown ownership', () => {
+    it.each(['routing', 'restoration binding'] as const)('stops safely while %s is still being read', async (stage) => {
+      const entered = Promise.withResolvers<void>();
+      const pending = Promise.withResolvers<void>();
+      if (stage === 'routing')
+        mocks.mlDestination.getAll.mockImplementationOnce(async () => {
+          entered.resolve();
+          await pending.promise;
+          return [];
+        });
+      else {
+        operations.claimNext.mockResolvedValueOnce({ operation: operation(), claimToken: CLAIM });
+        restorations.get.mockImplementationOnce(async () => {
+          entered.resolve();
+          await pending.promise;
+          return row();
+        });
+      }
+      const tick = sut.tick();
+      await entered.promise;
+      let returned = false;
+      const shutdown = sut.onShutdown().then(() => {
+        returned = true;
+      });
+      try {
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        pending.resolve();
+        await shutdown;
+        expect(restore).not.toHaveBeenCalled();
+        if (stage === 'routing') expect(operations.claimNext).not.toHaveBeenCalled();
+        else expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      } finally {
+        pending.resolve();
+        await tick;
+        await shutdown;
+      }
+    });
+
+    it('can start claiming again after an explicit restart', async () => {
+      sut.stop();
+      sut.start();
+      try {
+        await sut.tick();
+        expect(operations.claimNext).toHaveBeenCalledTimes(1);
+      } finally {
+        sut.stop();
+      }
+    });
+
+    it('waits for a pending claim and returns it without starting work', async () => {
+      const claim = Promise.withResolvers<Awaited<ReturnType<MediaOperationRepository['claimNext']>>>();
+      operations.claimNext.mockReturnValueOnce(claim.promise);
+      const tick = sut.tick();
+      await vi.waitFor(() => expect(operations.claimNext).toHaveBeenCalled());
+      let returned = false;
+      const shutdown = Promise.resolve(sut.onShutdown()).then(() => {
+        returned = true;
+      });
+      try {
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        claim.resolve({ operation: operation(), claimToken: CLAIM });
+        await shutdown;
+        await expect(tick).resolves.toBe(false);
+        expect(restore).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      } finally {
+        claim.resolve({ operation: operation(), claimToken: CLAIM });
+        await tick;
+        await shutdown;
+      }
+    });
+
+    it('waits for an aborted render and its cleanup before shutdown returns', async () => {
+      const started = Promise.withResolvers<Parameters<MachineLearningRepository['restore']>[2]>();
+      const rendering = Promise.withResolvers<RestorationInferenceResult>();
+      restore.mockImplementation((_selection, _input, options) => {
+        started.resolve(options);
+        return rendering.promise;
+      });
+      operations.claimNext.mockResolvedValueOnce({ operation: operation(), claimToken: CLAIM });
+      const tick = sut.tick();
+      const options = await started.promise;
+      let returned = false;
+      const shutdown = Promise.resolve(sut.onShutdown()).then(() => {
+        returned = true;
+      });
+      const finish = () =>
+        rendering.resolve({
+          outputPath: options.outputPath,
+          width: 2048,
+          height: 1536,
+          modelName: 'faithful-v1',
+          modelVersion: '1.0',
+        });
+      try {
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        expect(options.signal.aborted).toBe(true);
+        finish();
+        await shutdown;
+        expect(operations.requeue).toHaveBeenCalled();
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        finish();
+        await tick;
+        await shutdown;
+      }
+    });
+
+    it('coalesces retention sweeps and waits for the active sweep at shutdown', async () => {
+      const aligned = Promise.withResolvers<{ preview: number; full: number }>();
+      restorations.alignWithOperations.mockReturnValue(aligned.promise);
+      const first = sut.sweep();
+      const second = sut.sweep();
+      let returned = false;
+      const shutdown = Promise.resolve(sut.onShutdown()).then(() => {
+        returned = true;
+      });
+      try {
+        expect(restorations.alignWithOperations).toHaveBeenCalledTimes(1);
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        aligned.resolve({ preview: 0, full: 0 });
+        await shutdown;
+        expect(restorations.listExpiredPreviews).toHaveBeenCalledTimes(1);
+      } finally {
+        aligned.resolve({ preview: 0, full: 0 });
+        await Promise.all([first, second, shutdown]);
+      }
+    });
+
+    it('takes no new claim after stop', async () => {
+      sut.stop();
+      await expect(sut.tick()).resolves.toBe(false);
+      expect(operations.claimNext).not.toHaveBeenCalled();
     });
   });
 
@@ -1033,6 +1411,166 @@ describe(RestorationWorkerService.name, () => {
   });
 
   describe('sweep', () => {
+    it('keeps preview files when eligibility changed before cleanup', async () => {
+      restorations.listExpiredPreviews.mockResolvedValue([
+        row({
+          status: AssetRestorationStatus.PreviewReady,
+          previewBeforePath: '/b.jpg',
+          previewExpiresAt: new Date(0) as never,
+        }),
+      ]);
+      restorations.clearExpiredPreview.mockResolvedValue(undefined);
+
+      expect((await sut.sweep()).removed).toBe(0);
+
+      expect(restorations.update).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it.each(['preview', 'result', 'work folder'])('does not acknowledge failed %s deletion', async (target) => {
+      if (target === 'preview') {
+        restorations.listExpiredPreviews.mockResolvedValue([
+          row({ status: AssetRestorationStatus.PreviewReady, previewBeforePath: '/b.jpg' }),
+        ]);
+      } else {
+        restorations.listExpiredResults.mockResolvedValue([
+          row({
+            status: AssetRestorationStatus.RestoreFailed,
+            resultPath: '/result.png',
+            resultExpiresAt: new Date(0) as never,
+          }),
+        ]);
+      }
+      (target === 'work folder' ? mocks.storage.unlinkDir : mocks.storage.unlink).mockRejectedValueOnce(
+        new Error('disk unavailable'),
+      );
+
+      await expect(sut.sweep()).rejects.toThrow('disk unavailable');
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('finishes deleting the old work folder before admitting a retry', async () => {
+      const deleting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const queued = Promise.withResolvers<void>();
+      let tail = Promise.resolve();
+      mocks.database.withAssetMetadataLock.mockImplementation(async (_assetId, callback) => {
+        const previous = tail;
+        const settled = Promise.withResolvers<void>();
+        tail = previous.then(() => settled.promise);
+        if (mocks.database.withAssetMetadataLock.mock.calls.length === 2) queued.resolve();
+        await previous;
+        try {
+          return await callback(TRX);
+        } finally {
+          settled.resolve();
+        }
+      });
+      const expired = row({
+        status: AssetRestorationStatus.RestoreCancelled,
+        fullOperationId: 'parent',
+        resultExpiresAt: new Date(0) as never,
+      });
+      restorations.listExpiredResults.mockResolvedValue([expired]);
+      restorations.get.mockResolvedValue(expired);
+      mocks.storage.unlinkDir.mockImplementationOnce(async () => {
+        deleting.resolve();
+        await release.promise;
+      });
+      const sweep = sut.sweep();
+      await deleting.promise;
+      const retry = sut.run(
+        operation({ kind: MediaOperationKind.Restoration, retryOfId: 'parent', snapshot: snapshot({ stage: 'full' }) }),
+        CLAIM,
+      );
+      try {
+        await Promise.race([
+          queued.promise,
+          retry.then(() => {
+            throw new Error('Retry ran before cleanup released admission');
+          }),
+        ]);
+        expect(restorations.transition).not.toHaveBeenCalled();
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await Promise.all([sweep, retry]);
+      }
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.RestoreCancelled],
+        expect.any(Object),
+        TRX,
+        { stage: 'full', id: 'parent' },
+      );
+    });
+
+    it('waits for preview deletion before publishing and never queues deletion of a reusable path', async () => {
+      const inference = Promise.withResolvers<void>();
+      const rendering = Promise.withResolvers<void>();
+      const deleting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const publishing = Promise.withResolvers<void>();
+      let tail = Promise.resolve();
+      mocks.database.withAssetMetadataLock.mockImplementation(async (_assetId, callback) => {
+        const previous = tail;
+        const settled = Promise.withResolvers<void>();
+        tail = previous.then(() => settled.promise);
+        await previous;
+        try {
+          return await callback(TRX);
+        } finally {
+          settled.resolve();
+        }
+      });
+      vi.spyOn(TRX.getExecutor(), 'executeQuery').mockImplementation(async (query) => {
+        expect(query.sql).toBe('SELECT pg_advisory_xact_lock(-1, hashtext($1)::int)');
+        expect(query.parameters).toEqual([asset.id]);
+        publishing.resolve();
+        await tail;
+        return { rows: [] };
+      });
+      const render = restore.getMockImplementation()!;
+      restore.mockImplementationOnce(async (...args) => {
+        rendering.resolve();
+        await inference.promise;
+        return render(...args);
+      });
+      const run = sut.run(operation(), CLAIM);
+      await rendering.promise;
+      restorations.listExpiredPreviews.mockResolvedValue([
+        row({ id: 'other', status: AssetRestorationStatus.Rejected, previewBeforePath: '/old.jpg' }),
+      ]);
+      mocks.storage.unlink.mockImplementationOnce(async () => {
+        deleting.resolve();
+        await release.promise;
+      });
+      const sweep = sut.sweep();
+      try {
+        await Promise.race([
+          deleting.promise,
+          sweep.then(() => {
+            throw new Error('Cleanup finished without deleting the old preview');
+          }),
+        ]);
+        inference.resolve();
+        await Promise.race([
+          publishing.promise,
+          run.then(() => {
+            throw new Error('Publication bypassed retention lock');
+          }),
+        ]);
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        inference.resolve();
+        release.resolve();
+        await Promise.all([sweep, run]);
+      }
+      expect(mocks.storage.rename).toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('aligns rows with finished jobs and applies preview retention, leaving recovery to the one sweep', async () => {
       restorations.listExpiredPreviews.mockResolvedValue([
         row({ status: AssetRestorationStatus.PreviewReady, previewBeforePath: '/b.jpg', previewAfterPath: '/a.png' }),
@@ -1049,23 +1587,21 @@ describe(RestorationWorkerService.name, () => {
       // Lapsed claims are MediaOperationSweepService's to recover, for every kind (FL-104).
       expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
       expect(restorations.alignWithOperations).toHaveBeenCalled();
-      // An unreviewed preview expires; a decided one only loses its files.
-      expect(restorations.update).toHaveBeenCalledWith(
+      // The repository guards both unreviewed and decided rows before their files are removed.
+      expect(restorations.clearExpiredPreview).toHaveBeenCalledWith(
         RESTORATION_ID,
-        expect.objectContaining({
-          status: AssetRestorationStatus.Expired,
-          previewBeforePath: null,
-          previewAfterPath: null,
-          previewExpiresAt: null,
-        }),
+        AssetRestorationStatus.PreviewReady,
+        expect.any(Date),
+        TRX,
       );
-      expect(restorations.update).toHaveBeenCalledWith('other', {
-        previewBeforePath: null,
-        previewAfterPath: null,
-        previewExpiresAt: null,
-      });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/b.jpg', '/a.png'] } });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/rb.jpg'] } });
+      expect(restorations.clearExpiredPreview).toHaveBeenCalledWith(
+        'other',
+        AssetRestorationStatus.Rejected,
+        expect.any(Date),
+        TRX,
+      );
+      expect(mocks.storage.unlink.mock.calls).toEqual([['/b.jpg'], ['/a.png'], ['/rb.jpg']]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(result.removed).toBe(3);
     });
 
@@ -1089,6 +1625,7 @@ describe(RestorationWorkerService.name, () => {
         RESTORATION_ID,
         AssetRestorationStatus.RestoreCancelled,
         expect.any(Date),
+        TRX,
       );
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(RESTORATION_ID), {
         recursive: true,

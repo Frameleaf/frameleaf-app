@@ -94,9 +94,10 @@ export const upstreamHeaders = (
 
 /** The API's answer as the visitor gets it: without hop-by-hop headers, with HSTS. */
 export const downstreamHeaders = (headers: IncomingHttpHeaders): OutgoingHttpHeaders => {
+  const connectionNamed = new Set((headers.connection ?? '').split(',').map((name) => name.trim().toLowerCase()));
   const copy: OutgoingHttpHeaders = {};
   for (const [name, value] of Object.entries(headers)) {
-    if (value !== undefined && !HOP_BY_HOP.has(name.toLowerCase())) {
+    if (value !== undefined && !HOP_BY_HOP.has(name.toLowerCase()) && !connectionNamed.has(name.toLowerCase())) {
       copy[name] = value;
     }
   }
@@ -328,8 +329,13 @@ export class EdgeProxyService {
     });
     outgoing.on('upgrade', (answer, upstream, upstreamHead) => {
       const lines = [`HTTP/1.1 ${answer.statusCode ?? 101} ${answer.statusMessage ?? 'Switching Protocols'}`];
-      for (let index = 0; index < answer.rawHeaders.length; index += 2) {
-        lines.push(`${answer.rawHeaders[index]}: ${answer.rawHeaders[index + 1]}`);
+      const headers = {
+        ...downstreamHeaders(answer.headers),
+        connection: 'upgrade',
+        upgrade: answer.headers.upgrade ?? upgrade,
+      };
+      for (const [name, value] of Object.entries(headers)) {
+        for (const item of Array.isArray(value) ? value : [value]) lines.push(`${name}: ${String(item)}`);
       }
       socket.write(`${lines.join('\r\n')}\r\n\r\n`);
       if (upstreamHead.length > 0) {
@@ -349,7 +355,7 @@ export class EdgeProxyService {
       // the API refused the upgrade: pass its answer on and close
       const lines = [`HTTP/1.1 ${answer.statusCode ?? 502} ${answer.statusMessage ?? ''}`];
       for (const [name, value] of Object.entries(downstreamHeaders(answer.headers))) {
-        lines.push(`${name}: ${Array.isArray(value) ? value.join(', ') : String(value)}`);
+        for (const item of Array.isArray(value) ? value : [value]) lines.push(`${name}: ${String(item)}`);
       }
       lines.push('connection: close');
       socket.write(`${lines.join('\r\n')}\r\n\r\n`);

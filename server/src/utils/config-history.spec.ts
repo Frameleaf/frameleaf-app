@@ -135,4 +135,51 @@ describe('FL-71 CC-10 history titles and object changes', () => {
       ),
     ).toEqual([{ path: 'memories.enabled', before: 'true', after: 'false' }]);
   });
+
+  it('redacts saved-search query objects inside arrays without changing the saved preferences', () => {
+    const savedSearches = [
+      {
+        name: 'Service',
+        query: {
+          endpoint: 'https://user:password@service.test/search?token=private&order=new',
+          apiToken: 'private-token',
+          filters: [{ clientSecret: 'private-secret', enabled: true, url: 'https://service.test/?signature=x&page=2' }],
+          nested: { credential: 'private-credential', enabled: true },
+          names: ['https://account:password@service.test/', 'ordinary text'],
+        },
+      },
+    ];
+    const original = cloneDeep(savedSearches);
+
+    const [change] = describeObjectChanges({ savedSearches: [] }, { savedSearches });
+
+    expect(change.path).toBe('savedSearches');
+    expect(change.after).not.toContain('private');
+    expect(change.after).not.toContain('password');
+    expect(JSON.parse(change.after!)).toEqual([
+      {
+        name: 'Service',
+        query: {
+          endpoint: 'https://service.test/search?order=new',
+          filters: [{ enabled: true, url: 'https://service.test/?page=2' }],
+          nested: { enabled: true },
+          names: ['https://service.test/', 'ordinary text'],
+        },
+      },
+    ]);
+    expect(savedSearches).toEqual(original);
+  });
+
+  it('does not record an array change whose only differences are redacted credentials', () => {
+    const preferences = (secret: string) => ({
+      savedSearches: [
+        {
+          name: 'Service',
+          query: { apiToken: secret, nested: { url: `https://user:${secret}@service.test/?key=${secret}&order=new` } },
+        },
+      ],
+    });
+
+    expect(describeObjectChanges(preferences('before'), preferences('after'))).toEqual([]);
+  });
 });

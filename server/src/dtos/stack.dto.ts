@@ -42,9 +42,21 @@ export const mapStack = (stack: Stack, { auth }: { auth?: AuthDto }) => {
   // including any stack whose primary is Locked. A Locked member still never maps for anyone but its
   // owner in an elevated session.
   const lockedOwnerId = auth ? getLockedOwnerId(auth) : undefined;
-  const assets = stack.assets.filter((asset) => !isLockedAssetRow(asset) || asset.ownerId === lockedOwnerId);
-  const primary = assets.filter((asset) => asset.id === stack.primaryAssetId);
-  const others = assets.filter((asset) => asset.id !== stack.primaryAssetId);
+  const primary: Stack['assets'] = [];
+  const others: Stack['assets'] = [];
+  const assets = stack.assets;
+  const length = assets.length;
+  for (let index = 0; index < length; index++) {
+    // Match native filter's treatment of sparse arrays.
+    if (!(index in assets)) {
+      continue;
+    }
+    const asset = assets[index];
+    if (isLockedAssetRow(asset) && asset.ownerId !== lockedOwnerId) {
+      continue;
+    }
+    (asset.id === stack.primaryAssetId ? primary : others).push(asset);
+  }
 
   return {
     id: stack.id,

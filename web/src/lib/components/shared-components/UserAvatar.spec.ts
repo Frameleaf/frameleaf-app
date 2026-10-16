@@ -1,5 +1,6 @@
 import { UserAvatarColor } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
 import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -84,5 +85,23 @@ describe('UserAvatar', () => {
     expect(tile(container)).toHaveTextContent('J');
     expect(tile(container)).toHaveClass('bg-orange-600');
     expect(container.querySelector('img')).toHaveClass('hidden');
+  });
+  it('restores the tile when the profile photo is removed', async () => {
+    decodeWith(() => Promise.resolve());
+    const view = render(UserAvatar, { user: jamie });
+    await waitFor(() => expect(tile(view.container)).toBeNull());
+    await view.rerender({ user: sam });
+    expect(tile(view.container)).toHaveTextContent('S');
+    expect(view.container.querySelector('img')).toBeNull();
+  });
+
+  it('keeps the initial when a removed photo finishes decoding late', async () => {
+    let finish = () => {};
+    decodeWith(() => new Promise<void>((resolve) => (finish = resolve)));
+    const view = render(UserAvatar, { user: jamie });
+    await view.rerender({ user: sam });
+    finish();
+    await tick();
+    await waitFor(() => expect(tile(view.container)).toHaveTextContent('S'));
   });
 });

@@ -172,7 +172,7 @@ export class StudioSourceResolutionService {
             await guard();
             if (original.path !== entry.path) throw new ConflictException('studio_source_superseded');
           } finally {
-            original.release?.();
+            await original.release?.();
           }
         }
         const observed = await this.storage.stat(entry.path);
@@ -286,7 +286,7 @@ export class StudioSourceResolutionService {
           await guard();
           if (original.path !== input.path) throw new ConflictException('studio_source_superseded');
         } finally {
-          original.release?.();
+          await original.release?.();
         }
       }
       for (const input of inputs) {

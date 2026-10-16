@@ -665,7 +665,7 @@ describe(AssetDevelopService.name, () => {
           signal,
         );
         expect((await stat(file.path)).size).toBe(4);
-        file.release?.();
+        await file.release?.();
         await vi.waitFor(async () => {
           await expect(stat(file.path)).rejects.toMatchObject({ code: 'ENOENT' });
         });
@@ -762,7 +762,7 @@ describe(AssetDevelopService.name, () => {
       expect(file.fileName).toContain('_still_hdr.heic');
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(mocks.media.writeStrippedStill).not.toHaveBeenCalled();
-      file.release?.();
+      await file.release?.();
       await vi.waitFor(async () => expect(await stat(file.path).catch(() => null)).toBeNull());
       vi.unstubAllEnvs();
     });

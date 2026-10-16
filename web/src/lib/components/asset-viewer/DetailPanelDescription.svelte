@@ -20,11 +20,13 @@
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import type { DescriptionReview } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, Textarea, toastManager } from '@frameleaf/ui';
   import { mdiPencilOutline, mdiShimmer } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { fromAction } from 'svelte/attachments';
 
@@ -56,17 +58,47 @@
   let failure = $state<InlineEditFailure | null>(null);
   let isSaving = $state(false);
 
+  let alive = true;
+  let generation = 0;
+  let previousAssetId: string | undefined;
+  onDestroy(() => {
+    alive = false;
+  });
+  $effect.pre(() => {
+    if (asset.id === previousAssetId) {
+      return;
+    }
+    previousAssetId = asset.id;
+    generation++;
+    failure = null;
+    isSaving = false;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const isCurrentSession = authManager.captureSession();
+    return () => alive && owner === generation && isCurrentSession();
+  };
+
   const save = async (value: string) => {
+    const isCurrent = captureView();
     isSaving = true;
     try {
       await updateAsset({ id: asset.id, updateAssetDto: { description: value } });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       toastManager.primary($t('asset_description_updated'));
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       failure = classifyInlineEditError(error);
       handleError(error, $t('cannot_update_the_description'));
     } finally {
-      isSaving = false;
+      if (isCurrent()) {
+        isSaving = false;
+      }
     }
   };
 
@@ -80,12 +112,18 @@
 
   /** A stale asset is reloaded, never rewritten: the panel takes whatever is stored now. */
   const reload = async () => {
+    const isCurrent = captureView();
     try {
       const updated = await getAssetInfo({ id: asset.id });
+      if (!isCurrent()) {
+        return;
+      }
       failure = null;
       onAssetRefresh?.(updated);
     } catch (error) {
-      handleError(error, $t('frameleaf_info_error_reload_failed'));
+      if (isCurrent()) {
+        handleError(error, $t('frameleaf_info_error_reload_failed'));
+      }
     }
   };
 </script>

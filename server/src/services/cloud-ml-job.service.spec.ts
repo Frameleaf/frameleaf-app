@@ -1,7 +1,9 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
+import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { DB } from 'src/schema/index.js';
 import type { CloudJobView, CloudUploadTarget } from 'src/utils/frameleaf-cloud.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
@@ -42,7 +44,6 @@ import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
-
 const identitySigner = {
   kid: 'kid-1',
   publicJwk: { kty: 'OKP' as const, crv: 'Ed25519' as const, x: 'x' },
@@ -210,11 +211,15 @@ const wallet = (balanceUsd: number) => ({
   settingsUrl: null,
 });
 
+const dialect = new PostgresDialect({ pool: {} as never });
+dialect.createDriver = () => new DummyDriver();
+const TRX = new Kysely<DB>({ dialect });
+
 describe(CloudMlJobService.name, () => {
   let sut: CloudMlJobService;
   let mocks: ServiceMocks;
   let metadata: Map<string, unknown>;
-  let restorations: Record<keyof AssetRestorationRepository, ReturnType<typeof vi.fn>>;
+  let restorations: Record<keyof AssetRestorationRepository, ReturnType<typeof vi.fn<(...args: any[]) => any>>>;
   let rows: Map<string, AssetRestoration>;
   let created: MediaOperation | undefined;
 
@@ -291,6 +296,7 @@ describe(CloudMlJobService.name, () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mocks = getMocks();
+    vi.spyOn(TRX.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
     metadata = new Map();
     rows = new Map();
     created = undefined;
@@ -310,6 +316,7 @@ describe(CloudMlJobService.name, () => {
       return Promise.resolve();
     });
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+    mocks.database.withAssetMetadataLock.mockImplementation((_assetId, callback) => callback(TRX) as never);
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({
       instanceId: 'instance-1',
       kid: 'kid-1',
@@ -421,7 +428,7 @@ describe(CloudMlJobService.name, () => {
     mocks.mediaOperation.listCloudMlJobsAwaitingCost.mockResolvedValue([]);
     mocks.mediaOperation.setFinishedResult.mockResolvedValue(true);
     mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) =>
-      (await publish({} as never)) ? 'completed' : 'rejected',
+      (await publish(TRX as Transaction<DB>)) ? 'completed' : 'rejected',
     );
 
     const row = (input: Partial<AssetRestoration>): AssetRestoration =>
@@ -450,22 +457,37 @@ describe(CloudMlJobService.name, () => {
       }),
       transition: vi
         .fn()
-        .mockImplementation((id: string, from: AssetRestorationStatus[], patch: Partial<AssetRestoration>) => {
-          const current = rows.get(id);
-          if (!current || !from.includes(current.status as AssetRestorationStatus)) {
-            return Promise.resolve();
-          }
-          const updated = { ...current, ...patch } as AssetRestoration;
-          rows.set(id, updated);
-          return Promise.resolve(updated);
-        }),
+        .mockImplementation(
+          (
+            id: string,
+            from: AssetRestorationStatus[],
+            patch: Partial<AssetRestoration>,
+            _tx: unknown,
+            operation?: { stage: 'preview' | 'full'; id: string | null },
+          ) => {
+            const current = rows.get(id);
+            if (
+              !current ||
+              !from.includes(current.status as AssetRestorationStatus) ||
+              (operation &&
+                current[operation.stage === 'preview' ? 'previewOperationId' : 'fullOperationId'] !== operation.id)
+            ) {
+              return Promise.resolve();
+            }
+            const updated = { ...current, ...patch } as AssetRestoration;
+            rows.set(id, updated);
+            return Promise.resolve(updated);
+          },
+        ),
       setCurrent: vi.fn(),
       listExpiredPreviews: vi.fn(),
       listExpiredResults: vi.fn(),
       clearExpiredResult: vi.fn(),
+      clearExpiredPreview: vi.fn(),
       alignWithOperations: vi.fn(),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
+      discard: vi.fn(),
     };
 
     sut = new CloudMlJobService(
@@ -1126,6 +1148,45 @@ describe(CloudMlJobService.name, () => {
         uploads: { v1: { done: false, parts: [{ partNumber: 1, etag: '"e1"' }] } },
       });
 
+    it.each([false, true])('verifies readmission consent despite a spent budget (stale: %s)', async (stale) => {
+      mocks.mlDestination.getById.mockResolvedValue({
+        ...cloud,
+        budgetLimitUsd: 0,
+        consentVersion: stale ? 'old-consent' : cloud.consentVersion,
+      });
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      if (stale) {
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+        expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+          OPERATION_ID,
+          'claim',
+          expect.objectContaining({ errorCode: 'cloud_ml_consent_version_outdated' }),
+          { retry: false },
+        );
+      } else {
+        expect(mocks.frameleafCloudMl.uploadInput).toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.startJob).toHaveBeenCalledWith(expect.anything(), JOB_ID);
+        expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['getById', 'recordProbe'] as const)('sends nothing when readmission state fails at %s', async (stage) => {
+      mocks.mlDestination[stage].mockRejectedValue(new Error('admission database unavailable'));
+
+      await sut.step(resumedUpload(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.startJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.cancelJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.requeue).toHaveBeenCalled();
+      expect(written()).toMatchObject({ waiting: { code: 'cloud_ml_consent_unconfirmed' } });
+    });
+
     it.each([
       ['its own hold took the rest of the AI Wallet', { balanceUsd: 5, heldUsd: 5 }],
       ["today's AI Wallet limit was reached after it was created", { dailyCapUsd: 20, spentTodayUsd: 20 }],
@@ -1629,6 +1690,62 @@ describe(CloudMlJobService.name, () => {
       expect(written().cost).toMatchObject({ outcome: 'charged', totalUsd: 0.2026 });
     });
 
+    it.each(['verified', 'checksum changed', 'size changed', 'missing', 'unreadable'])(
+      'qualifies a %s cached output before resuming publication',
+      async (state) => {
+        const result = completedWithOutputs();
+        mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+          notModified: false,
+          data: result,
+          etag: null,
+          retryAfterSeconds: null,
+        });
+        rendering();
+        mocks.crypto.hashFileDigests.mockClear();
+        mocks.crypto.hashFileDigests.mockImplementation((file) =>
+          Promise.try(() => {
+            const path = file.toString();
+            const cached = path.includes('/out-');
+            const first = path.endsWith('out-v1-s0.mp4');
+            if (first && (state === 'missing' || state === 'unreadable')) {
+              throw Object.assign(new Error(state), { code: state === 'missing' ? 'ENOENT' : 'EACCES' });
+            }
+            const sha256 = Buffer.from(SHA, 'hex');
+            if (first && state === 'checksum changed') sha256[0] ^= 0xff;
+            return {
+              sha1: Buffer.alloc(20),
+              sha256,
+              sizeInBytes: cached ? 10 + Number(first && state === 'size changed') : BYTES,
+            };
+          }),
+        );
+        const resumed = claimed({
+          phase: CloudMlJobPhase.Ending,
+          job: runningRecord(),
+          downloaded: ['v1-s0', 'v1-s1'],
+        });
+
+        await sut.step(resumed, 'claim', now);
+
+        const checked = mocks.crypto.hashFileDigests.mock.calls
+          .filter(([file]) => file.toString().includes('/out-'))
+          .map(([file]) => file.toString());
+        expect(checked).toHaveLength(state === 'unreadable' ? 1 : 2);
+        if (state === 'unreadable') {
+          expect(mocks.frameleafCloudMl.downloadOutput).not.toHaveBeenCalled();
+          expect(mocks.mediaOperation.publishValidated).not.toHaveBeenCalled();
+          expect(mocks.frameleafCloudMl.deleteJob).not.toHaveBeenCalled();
+          expect(mocks.storage.unlink).not.toHaveBeenCalledWith(expect.stringContaining('out-v1-s0.mp4'));
+        } else {
+          expect(mocks.frameleafCloudMl.downloadOutput.mock.calls.map(([, output]) => output.outputId)).toEqual(
+            state === 'verified' ? [] : ['v1-s0'],
+          );
+          expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewReady);
+          expect(mocks.frameleafCloudMl.deleteJob).toHaveBeenCalled();
+        }
+      },
+    );
+
     it('keeps nothing when an output does not match its SHA-256, and downloads it again later', async () => {
       mocks.frameleafCloudMl.getJobView.mockResolvedValue({
         notModified: false,
@@ -1665,7 +1782,7 @@ describe(CloudMlJobService.name, () => {
       });
       mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
         order.push('published');
-        return (await publish({} as never)) ? 'completed' : 'rejected';
+        return (await publish(TRX as Transaction<DB>)) ? 'completed' : 'rejected';
       });
       mocks.frameleafCloudMl.deleteJob.mockImplementation(() => {
         order.push('DELETE /v2/jobs');
@@ -2016,7 +2133,11 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('puts a full render cancelled before anything was sent back to its reviewed preview', async () => {
-      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, status: AssetRestorationStatus.Accepted });
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: OPERATION_ID,
+      });
       mocks.mediaOperation.setBulkResult.mockResolvedValue({
         status: MediaOperationStatus.Cancelling,
         cancelRequestedAt: now,
@@ -2288,6 +2409,209 @@ describe(CloudMlJobService.name, () => {
         { error: expect.stringMatching(/not 2× the photo/), errorCode: 'cloud_ml_output_invalid' },
         { retry: false },
       );
+    });
+  });
+
+  describe('operation ownership', () => {
+    beforeEach(async () => {
+      await estimateAndConfirm();
+    });
+
+    it('waits for retention before cloud admission changes the restoration or sends input', async () => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      mocks.database.withAssetMetadataLock.mockImplementation(async (_assetId, callback) => {
+        entered.resolve();
+        await release.promise;
+        return callback(TRX);
+      });
+      const step = sut.step(claimed(), 'claim', now);
+      try {
+        await Promise.race([
+          entered.promise,
+          step.then(() => {
+            throw new Error('Cloud admission bypassed retention lock');
+          }),
+        ]);
+        expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewQueued);
+        expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await step;
+      }
+      expect(mocks.database.withAssetMetadataLock).toHaveBeenCalledWith(created!.assetId, expect.any(Function));
+      expect(mocks.frameleafCloudMl.createJob).toHaveBeenCalled();
+    });
+
+    it('waits for retention before cloud publication renames final output', async () => {
+      rendering();
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completedWithOutputs(),
+        etag: null,
+        retryAfterSeconds: null,
+      });
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      vi.spyOn(TRX.getExecutor(), 'executeQuery').mockImplementation(async (query) => {
+        expect(query.sql).toBe('SELECT pg_advisory_xact_lock(-1, hashtext($1)::int)');
+        expect(query.parameters).toEqual([created!.assetId]);
+        entered.resolve();
+        await release.promise;
+        return { rows: [] };
+      });
+      const step = sut.step(following(), 'claim', now);
+      try {
+        await Promise.race([
+          entered.promise,
+          step.then(() => {
+            throw new Error('Cloud publication bypassed retention lock');
+          }),
+        ]);
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await step;
+      }
+      expect(mocks.storage.rename).toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewReady);
+    });
+
+    it('sends no input when a newer operation owns the stage before admission', async () => {
+      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.PreviewQueued,
+        previewOperationId: 'new-operation',
+      });
+    });
+
+    it('leaves a newer full render unchanged when releasing an older remote job', async () => {
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'new-operation',
+      });
+      mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([
+        {
+          ...following(),
+          status: MediaOperationStatus.Cancelled,
+          claimToken: null,
+          remoteJobId: JOB_ID,
+          snapshot: { ...created!.snapshot, stage: 'full' },
+        } as MediaOperation,
+      ]);
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-completed.json', { status: 'cancelled' }),
+        etag: null,
+        retryAfterSeconds: null,
+      });
+
+      await sut.releaseUnwatched();
+
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'new-operation',
+      });
+      expect(mocks.mediaOperation.markRemoteReleased).toHaveBeenCalledWith(OPERATION_ID);
+      expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalled();
+    });
+
+    it('keeps a newer full render that replaces ownership after cancelled cleanup reads the row', async () => {
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: OPERATION_ID,
+      });
+      mocks.mediaOperation.listUnreconciledCancelledCloudMlJobs.mockResolvedValue([
+        {
+          ...claimed(),
+          status: MediaOperationStatus.Cancelled,
+          claimToken: null,
+          snapshot: { ...created!.snapshot, stage: 'full' },
+        } as MediaOperation,
+      ]);
+      restorations.get.mockImplementationOnce((id: string) => {
+        const read = rows.get(id)!;
+        rows.set(id, { ...read, fullOperationId: 'new-operation' });
+        return Promise.resolve(read);
+      });
+
+      await sut.reconcileCancelled(now);
+
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'new-operation',
+      });
+    });
+
+    it('moves no final files when another operation owns the row at publication', async () => {
+      rendering();
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completedWithOutputs(),
+        etag: null,
+        retryAfterSeconds: null,
+      });
+      mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
+        rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
+        return (await publish(TRX as Transaction<DB>)) ? 'completed' : 'rejected';
+      });
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.PreviewRendering,
+        previewOperationId: 'new-operation',
+      });
+    });
+  });
+
+  describe('estimate pruning', () => {
+    it.each(['work directory', 'input directory'])(
+      "retains an unfinished job's %s after its estimate link fails",
+      async (reference) => {
+        const estimate = await sut.estimate(owner, preview(), now);
+        const [record] = estimates();
+        mocks.systemMetadata.set.mockRejectedValueOnce(new Error('estimate link failed'));
+
+        await expect(
+          sut.create(
+            owner,
+            { estimateId: estimate.estimateId, consentVersion: estimate.consent.version, acknowledgeDataLeaves: true },
+            now,
+          ),
+        ).rejects.toThrow('estimate link failed');
+        expect(created).toBeDefined();
+        expect(estimates()[0].operationId).toBeNull();
+        mocks.mediaOperation.listUnfinishedCloudMlJobSnapshots.mockResolvedValue([
+          reference === 'work directory'
+            ? { ...created!.snapshot, inputs: [{ path: '/shared/prepared/input.mp4' }] }
+            : { ...created!.snapshot, workDir: '/another/job/work' },
+        ]);
+
+        await sut.pruneEstimates(new Date(record.expiresAt));
+
+        expect(estimates()).toEqual([]);
+        expect(mocks.storage.unlinkDir).not.toHaveBeenCalledWith(record.workDir, expect.anything());
+      },
+    );
+
+    it("removes an expired unconfirmed estimate's unused work directory", async () => {
+      await sut.estimate(owner, preview(), now);
+      const [record] = estimates();
+
+      await sut.pruneEstimates(new Date(record.expiresAt));
+
+      expect(estimates()).toEqual([]);
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(record.workDir, { recursive: true, force: true });
     });
   });
 

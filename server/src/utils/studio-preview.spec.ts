@@ -214,6 +214,14 @@ describe('planPreviewEviction', () => {
     expect(plan.cancel).toEqual([]);
   });
 
+  it('does not let evicted tombstones consume the live-frame cap', () => {
+    const plan = planPreviewEviction(
+      [candidate({ id: 'gone', status: 'evicted' }), candidate({ id: 'ready', lastAccessedAt: ago(1) })],
+      { currentRevisionDigest: 'rev-a', now, framesPerRevision: 1 },
+    );
+    expect(plan).toEqual({ evict: [], cancel: [] });
+  });
+
   it('gives up the least recently used first when the cap is exceeded', () => {
     const plan = planPreviewEviction(
       [

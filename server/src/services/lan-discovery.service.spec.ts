@@ -44,6 +44,92 @@ describe(LanDiscoveryService.name, () => {
     });
   });
 
+  afterEach(async () => {
+    await sut.onShutdown();
+  });
+
+  it('does not start from a bootstrap configuration read that disabling discovery superseded', async () => {
+    const config = await sut['getConfig']({ withCache: true });
+    const original = sut['getConfig'].bind(sut);
+    const pending = Promise.withResolvers<typeof config>();
+    sut['getConfig'] = vi.fn(original).mockReturnValueOnce(pending.promise);
+    const bootstrap = sut.onBootstrap();
+    await sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: false } } } as never);
+    pending.resolve(config);
+    await bootstrap;
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it.each(['disable', 'replacement', 'shutdown'] as const)(
+    'does not publish an old startup after %s',
+    async (action) => {
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      mocks.user.getAdmin.mockImplementationOnce(async () => {
+        entered.resolve();
+        await resume.promise;
+        return undefined;
+      });
+      const starting = sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: true } } } as never);
+      try {
+        await entered.promise;
+        if (action === 'shutdown') await sut.onShutdown();
+        else await sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: action === 'replacement' } } } as never);
+        resume.resolve();
+        await starting;
+        expect(publish).toHaveBeenCalledTimes(action === 'replacement' ? 1 : 0);
+      } finally {
+        resume.resolve();
+        await starting;
+      }
+    },
+  );
+
+  it('does not let an old setup-state refresh restart disabled discovery', async () => {
+    await sut.onBootstrap();
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    mocks.user.getAdmin.mockImplementationOnce(async () => {
+      entered.resolve();
+      await resume.promise;
+      return { id: 'admin' } as never;
+    });
+    const refreshing = sut.onUserCreate({ isAdmin: true } as never);
+    try {
+      await entered.promise;
+      await sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: false } } } as never);
+      resume.resolve();
+      await refreshing;
+      expect(publish).toHaveBeenCalledTimes(1);
+    } finally {
+      resume.resolve();
+      await refreshing;
+    }
+  });
+
+  it('closes the transport even if sending the goodbye throws', async () => {
+    await sut.onBootstrap();
+    const error = new Error('goodbye refused');
+    unpublishAll.mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(sut.onShutdown()).rejects.toBe(error);
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it('clears the refresh timer even when stopping the old advertisement throws', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    await sut.onBootstrap();
+    stop.mockImplementationOnce(() => {
+      throw new Error('stop refused');
+    });
+    await expect(sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: false } } } as never)).rejects.toThrow(
+      'stop refused',
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   describe('onBootstrap', () => {
     it('publishes _frameleaf._tcp when lanDiscovery is enabled', async () => {
       await sut.onBootstrap();

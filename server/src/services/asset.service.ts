@@ -48,32 +48,25 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
-import { requireElevatedPermission } from 'src/utils/access.js';
-import {
-  getAssetFiles,
-  getDimensions,
-  isPanorama,
-  onAfterUnlink,
-  onBeforeLink,
-  onBeforeUnlink,
-} from 'src/utils/asset.util.js';
+import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { getLockedOwnerId } from 'src/utils/locked.js';
+import { getLockedOwnerId, isLockedRow } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
-
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
   AssetEditAction.Rotate,
@@ -221,33 +214,28 @@ export class AssetService extends BaseService {
 
     const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
       dto;
-    const repos = { asset: this.assetRepository, event: this.eventRepository };
-
-    let previousMotion: { id: string } | null = null;
-    if (rest.livePhotoVideoId) {
-      await onBeforeLink(repos, { userId: auth.user.id, livePhotoVideoId: rest.livePhotoVideoId });
-    } else if (rest.livePhotoVideoId === null) {
-      const asset = await this.findOrFail(id);
-      if (asset.livePhotoVideoId) {
-        previousMotion = await onBeforeUnlink(repos, { livePhotoVideoId: asset.livePhotoVideoId });
-      }
-    }
-
-    await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country });
-
-    const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
-    const asset = await this.assetRepository.update({
-      id,
-      ...getAssetDateTimeUpdates(dateTimeOriginal),
-      ...rest,
-      ...(storedVisibility && { visibility: storedVisibility }),
-    });
-
-    if (previousMotion && asset) {
-      await onAfterUnlink(repos, {
-        userId: auth.user.id,
-        livePhotoVideoId: previousMotion.id,
-        visibility: asset.visibility,
+    let asset: Awaited<ReturnType<AssetRepository['update']>>;
+    if (rest.livePhotoVideoId !== undefined) {
+      asset = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
+    } else {
+      const sidecarIds = await this.updateExif({
+        id,
+        description,
+        dateTimeOriginal,
+        latitude,
+        longitude,
+        rating,
+        city,
+        state,
+        country,
+      });
+      for (const id of sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      const storedVisibility = await this.applyLockedVisibility(auth, [id], visibility);
+      asset = await this.assetRepository.update({
+        id,
+        ...getAssetDateTimeUpdates(dateTimeOriginal),
+        ...rest,
+        ...(storedVisibility && { visibility: storedVisibility }),
       });
     }
 
@@ -278,6 +266,143 @@ export class AssetService extends BaseService {
     }
 
     return this.get(auth, id) as Promise<AssetResponseDto>;
+  }
+
+  /** Import metadata fills are decided under the write locks, never from an earlier worker snapshot. */
+  async fillMissingMetadata(
+    auth: AuthDto,
+    id: string,
+    dto: Pick<UpdateAssetDto, 'description' | 'latitude' | 'longitude' | 'isFavorite' | 'visibility'>,
+  ): Promise<boolean> {
+    const result = await this.assetRepository.withMetadataUpdate(id, async (assets, access, tx) => {
+      const current = await assets.getById(id, { exifInfo: true });
+      if (!current || current.ownerId !== auth.user.id || current.deletedAt)
+        throw new BadRequestException('Asset not found');
+      if (isLockedRow(current)) return false;
+      await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
+      const update: UpdateAssetDto = {};
+      if (dto.description && !current.exifInfo?.description) update.description = dto.description;
+      if (
+        dto.latitude !== null &&
+        dto.latitude !== undefined &&
+        dto.longitude !== null &&
+        dto.longitude !== undefined &&
+        (current.exifInfo?.latitude === null ||
+          current.exifInfo?.latitude === undefined ||
+          current.exifInfo?.longitude === null ||
+          current.exifInfo?.longitude === undefined)
+      ) {
+        update.latitude = dto.latitude;
+        update.longitude = dto.longitude;
+      }
+      if (dto.isFavorite && !current.isFavorite) update.isFavorite = true;
+      if (dto.visibility === AssetVisibility.Archive && current.visibility === AssetVisibility.Timeline)
+        update.visibility = AssetVisibility.Archive;
+      if (Object.keys(update).length === 0) return true;
+      const { isFavorite, visibility, ...exif } = update;
+      const sidecarIds = await this.updateExif({ id, ...exif }, assets);
+      const asset = await assets.update({ id, ...omitBy({ isFavorite, visibility }, isUndefined) });
+      if (!asset) throw new BadRequestException('Asset not found');
+      const fields = getAssetEditFields(update);
+      if (fields.length > 0) {
+        await this.partnerOriginRepository.markOverridden('asset', [id], fields, auth.user.id, tx);
+        for (const sourceId of await this.partnerOriginRepository.getIdsWithFollowers('asset', [id])) {
+          await this.jobRepository.queueInTransaction(tx, {
+            name: JobName.PartnerPropagate,
+            data: { kind: 'asset', sourceId, fields },
+          });
+        }
+      }
+      for (const id of sidecarIds)
+        await this.jobRepository.queueInTransaction(tx, { name: JobName.SidecarWrite, data: { id } });
+      return { asset, update };
+    });
+    if (typeof result === 'boolean') return result;
+    if (result.update.visibility !== undefined) {
+      const siblingIds = result.asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];
+      await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
+    }
+    return true;
+  }
+
+  private async updateLivePhoto(auth: AuthDto, id: string, dto: UpdateAssetDto & { livePhotoVideoId: string | null }) {
+    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
+      dto;
+    const result = await this.assetRepository.withLivePhotoUpdate(id, dto.livePhotoVideoId, async (assets, access) => {
+      await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
+      const photo = await assets.getById(id);
+      if (!photo || photo.ownerId !== auth.user.id) throw new BadRequestException('Asset not found');
+      const locking = visibility === AssetVisibility.Locked;
+      const motion = dto.livePhotoVideoId
+        ? await getLivePhotoMotion(assets, auth.user.id, dto.livePhotoVideoId)
+        : undefined;
+      if (motion) {
+        if (photo.type !== AssetType.Image || photo.deletedAt || motion.deletedAt) {
+          throw new BadRequestException('A live photo must be an existing image paired with a video');
+        }
+        if (
+          !locking &&
+          ((isLockedRow(motion) && getLockedOwnerId(auth) !== auth.user.id) ||
+            isLockedRow(photo) !== isLockedRow(motion))
+        ) {
+          throw new BadRequestException(
+            'A Locked item can only be paired with another Locked item in an elevated session',
+          );
+        }
+      }
+      const previous = photo.livePhotoVideoId ? await assets.getById(photo.livePhotoVideoId) : undefined;
+      const ownedPrevious =
+        previous?.ownerId === auth.user.id && previous.type === AssetType.Video ? previous : undefined;
+      if (ownedPrevious && ownedPrevious.id !== dto.livePhotoVideoId) {
+        if (StorageCore.isAndroidMotionPath(ownedPrevious.originalPath))
+          throw new BadRequestException('Cannot unlink Android motion photos');
+        if (!locking && isLockedRow(ownedPrevious) && getLockedOwnerId(auth) !== auth.user.id) {
+          throw new BadRequestException('Live photo video not found');
+        }
+      }
+      const motionIds = [...new Set([ownedPrevious?.id, motion?.id].filter((id): id is string => !!id))];
+      if (locking) {
+        const group = await assets.getByIds(await assets.findLockGroupIds([id, ...motionIds]));
+        if (group.some((asset) => asset.ownerId !== auth.user.id)) throw new BadRequestException('Asset not found');
+      }
+      const sidecarIds = await this.updateExif(
+        { id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country },
+        assets,
+        motionIds,
+      );
+      const asset = await assets.update({
+        id,
+        ...getAssetDateTimeUpdates(dateTimeOriginal),
+        ...rest,
+        ...(visibility && !locking && { visibility }),
+      });
+      if (!asset) throw new BadRequestException('Asset not found');
+      const hiddenId = motion?.visibility === AssetVisibility.Timeline ? motion.id : undefined;
+      if (hiddenId) await assets.update({ id: hiddenId, visibility: AssetVisibility.Hidden });
+      let shownId: string | undefined;
+      if (
+        ownedPrevious &&
+        ownedPrevious.id !== dto.livePhotoVideoId &&
+        (await assets.getLivePhotoCount(ownedPrevious.id)) < 1
+      ) {
+        await assets.update({ id: ownedPrevious.id, visibility: asset.visibility });
+        shownId = ownedPrevious.id;
+      }
+      const locked = locking ? await assets.lock([id, ...motionIds], AssetLockReason.Marked, auth.user.id) : [];
+      return { asset, sidecarIds, hiddenId, shownId, locked };
+    });
+    for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+    if (result.locked.length > 0) {
+      await this.afterAssetsLocked(result.locked);
+      await this.notifyAssetsUpdated(
+        result.locked.filter((assetId) => assetId !== id),
+        auth.user.id,
+      );
+    }
+    if (result.hiddenId)
+      await this.eventRepository.emit('AssetHide', { assetId: result.hiddenId, userId: auth.user.id });
+    if (result.shownId) await this.eventRepository.emit('AssetShow', { assetId: result.shownId, userId: auth.user.id });
+    return result.asset;
   }
 
   async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto): Promise<void> {
@@ -390,6 +515,13 @@ export class AssetService extends BaseService {
     await this.notifyAssetsUpdated(assetIds, userId);
   }
 
+  @OnEvent({ name: 'AssetLocalEffects', priority: -1 })
+  async onAssetLocalEffects({ lockedCascade, ownerId }: ArgOf<'AssetLocalEffects'>): Promise<void> {
+    if (!lockedCascade) return;
+    await this.afterAssetsLocked(lockedCascade.assetIds, true);
+    await this.notifyAssetsUpdated(lockedCascade.assetIds, ownerId);
+  }
+
   /**
    * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
    * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.
@@ -485,7 +617,7 @@ export class AssetService extends BaseService {
       const review = (value as { nsfwDetection?: { review?: { isNsfw?: unknown } } }).nsfwDetection?.review;
       if (review?.isNsfw === true) {
         marked.push(assetId);
-      } else if (!review) {
+      } else {
         detected.push(assetId);
       }
     }
@@ -708,6 +840,8 @@ export class AssetService extends BaseService {
     // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
     // another asset references (a deduplicated original).
     let removedOriginalPath: string | undefined;
+    // FL-412: read before the row goes. A shared original's file is the other assets' too.
+    const sharedOriginal = await this.physicalFileRepository.isOriginalShared(id);
     const removedAsset = await this.assetRepository.remove(asset, {
       files: (removed) => {
         const assetFiles = getAssetFiles(removed.files);
@@ -738,7 +872,11 @@ export class AssetService extends BaseService {
         // and a copy across filesystems staged beside the new one (always Frameleaf's own)
         for (const move of removed.pendingMoves) {
           const isOwnersFile = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
-          if (ownsOriginal || !isOwnersFile) {
+          // FL-412: a shared original's unfinished move can have left the only copy at either path, and the
+          // assets that keep the file still need it: both stay on disk (Library Care's missing-file check
+          // finds the copy if it is at the new path)
+          const keepsSharedOriginal = sharedOriginal && move.pathType === AssetPathType.Original;
+          if ((ownsOriginal || !isOwnersFile) && !keepsSharedOriginal) {
             files.push(move.oldPath, move.newPath);
           }
           files.push(move.stagedPath);
@@ -852,7 +990,8 @@ export class AssetService extends BaseService {
       },
     );
     if (sequenced.length > 0) await this.trashRepository.enqueueLocalEffects();
-    const ordinary = (changed ?? []).filter((id) => !sequenced.includes(id));
+    const sequencedIds = new Set(sequenced);
+    const ordinary = (changed ?? []).filter((id) => !sequencedIds.has(id));
     if (ordinary.length > 0)
       await this.eventRepository.emit('AssetTrashAll', { assetIds: ordinary, userId: auth.user.id });
   }
@@ -987,17 +1126,22 @@ export class AssetService extends BaseService {
     return findOrFail(() => this.assetRepository.getById(id), 'Asset');
   }
 
-  private async updateExif(dto: {
-    id: string;
-    description?: string;
-    dateTimeOriginal?: string;
-    latitude?: number | null;
-    longitude?: number | null;
-    rating?: number | null;
-    city?: string | null;
-    state?: string | null;
-    country?: string | null;
-  }) {
+  private async updateExif(
+    dto: {
+      id: string;
+      description?: string;
+      dateTimeOriginal?: string;
+      latitude?: number | null;
+      longitude?: number | null;
+      rating?: number | null;
+      city?: string | null;
+      state?: string | null;
+      country?: string | null;
+    },
+    assets = this.assetRepository,
+    motionIds?: string[],
+  ) {
+    const sidecarIds: string[] = [];
     const { id, description, dateTimeOriginal, latitude, longitude, rating } = dto;
     // FL-51: null coordinates remove the location, and with it any typed place names
     const clearLocation = latitude === null && longitude === null;
@@ -1028,31 +1172,32 @@ export class AssetService extends BaseService {
 
     const moved = !clearLocation && (isNumber(latitude) || isNumber(longitude));
     if (moved && Object.keys(place).length === 0) {
-      await this.assetRepository.unlockProperties(id, [...placeProperties]);
+      await assets.unlockProperties(id, [...placeProperties]);
     }
 
     if (clearLocation) {
       // FL-51: the Live Photo's paired video loses its location with the photo
-      const videoIds = await this.getLivePhotoVideoIds([id]);
-      await this.assetRepository.clearLocation([id, ...videoIds]);
+      const videoIds = motionIds ?? (await this.getLivePhotoVideoIds([id]));
+      await assets.clearLocation([id, ...videoIds]);
       if (Object.keys(writes).length === 0) {
-        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+        sidecarIds.push(id);
       }
       for (const videoId of videoIds) {
-        await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id: videoId } });
+        sidecarIds.push(videoId);
       }
     }
 
     if (Object.keys(writes).length > 0) {
-      await this.assetRepository.upsertExif({
+      await assets.upsertExif({
         exif: updateLockedColumns({
           assetId: id,
           ...writes,
         }),
         lockedPropertiesBehavior: 'append',
       });
-      await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
+      sidecarIds.push(id);
     }
+    return sidecarIds;
   }
 
   private placeName(value: string | null | undefined): string | null | undefined {

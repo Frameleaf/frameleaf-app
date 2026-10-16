@@ -445,18 +445,27 @@ export const deleteStack = async (stackIds: string[]) => {
 
 export const keepThisDeleteOthers = async (keepAsset: AssetResponseDto, stack: StackResponseDto) => {
   const $t = get(t);
+  const isCurrentSession = authManager.captureSession();
 
   try {
     const assetsToDeleteIds = stack.assets.filter((asset) => asset.id !== keepAsset.id).map((asset) => asset.id);
     await deleteAssets({ assetBulkDeleteDto: { ids: assetsToDeleteIds } });
+    if (!isCurrentSession()) {
+      return;
+    }
     await deleteStacks({ bulkIdsDto: { ids: [stack.id] } });
 
+    if (!isCurrentSession()) {
+      return;
+    }
     toastManager.primary($t('kept_this_deleted_others', { values: { count: assetsToDeleteIds.length } }));
 
     keepAsset.stack = null;
     return keepAsset;
   } catch (error) {
-    handleError(error, $t('errors.failed_to_keep_this_delete_others'));
+    if (isCurrentSession()) {
+      handleError(error, $t('errors.failed_to_keep_this_delete_others'));
+    }
   }
 };
 

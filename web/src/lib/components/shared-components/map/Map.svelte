@@ -25,7 +25,8 @@
     type Map,
     type MapMouseEvent,
   } from 'maplibre-gl';
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { t } from 'svelte-i18n';
   import {
     AttributionControl,
@@ -95,6 +96,12 @@
 
   let map: Map | undefined = $state();
   let marker: Marker | null = null;
+  let alive = true;
+  let selectionRequest = 0;
+  const selectionSource = $derived({ map, mapMarkers });
+  onDestroy(() => {
+    alive = false;
+  });
   const mapTheme = $derived(themeManager.value);
   const styleUrl = $derived(
     mapTheme === Theme.Dark ? serverConfigManager.value.mapDarkStyleUrl : serverConfigManager.value.mapLightStyleUrl,
@@ -136,19 +143,32 @@
   }
 
   function handleAssetClick(assetId: string, map: Map | null) {
-    if (!map) {
+    if (!alive || !map || map !== selectionSource.map) {
       return;
     }
+    selectionRequest++;
     onSelect([assetId]);
   }
 
   async function handleClusterClick(clusterId: number, map: Map | null) {
-    if (!map) {
+    if (!alive || !map || map !== selectionSource.map) {
       return;
     }
 
+    const request = ++selectionRequest;
+    const owner = selectionSource;
+    const isCurrentSession = authManager.captureSession();
     const mapSource = map.getSource('geojson') as GeoJSONSource;
     const leaves = await mapSource.getClusterLeaves(clusterId, 10_000, 0);
+    if (
+      !alive ||
+      request !== selectionRequest ||
+      owner !== selectionSource ||
+      !isCurrentSession() ||
+      map.getSource('geojson') !== mapSource
+    ) {
+      return;
+    }
     const ids = leaves.map((leaf) => leaf.properties?.id as string);
     onSelect(ids);
   }

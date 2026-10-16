@@ -914,11 +914,12 @@ export class SqlQueueStore {
         const { rows } = await sql<{ id: string; runId: string | null }>`update job j set state = 'pending',
           "availableAt" = now(), "finishedAt" = null, error = null, "retryBaseAttempt" = attempt
           where id in (
-            select id from (select id, row_number() over (partition by coalesce("dedupKey", id::text) order by "createdAt", id) ordinal
+            select id from (select id, "dedupKey", row_number() over (partition by coalesce("dedupKey", id::text) order by "createdAt", id) ordinal
               from job where queue = ${queue} and state = 'failed' and "safeToRetry") candidates
-            where ordinal = 1 limit 1000
-          ) and ("dedupKey" is null or not exists (select 1 from job d where d.queue = j.queue and d."dedupKey" = j."dedupKey"
-            and d.state in ('pending','waiting','active'))) returning id, "runId"`.execute(tx);
+            where ordinal = 1 and (candidates."dedupKey" is null or not exists (
+              select 1 from job d where d.queue = ${queue} and d."dedupKey" = candidates."dedupKey"
+                and d.state in ('pending','waiting','active'))) limit 1000
+          ) returning id, "runId"`.execute(tx);
         for (const row of rows) {
           const affectedRuns = await this.syncItem(row.id, tx);
           await resumeSelections(tx, row.id);

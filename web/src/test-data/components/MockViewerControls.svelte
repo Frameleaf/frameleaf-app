@@ -8,14 +8,18 @@
     asset,
     onClose,
     onRendered,
+    onSaved,
     onAssetSuppressed,
     onUndoDelete,
+    onRandom,
   }: {
     cursor?: { current: AssetResponseDto };
     asset?: AssetResponseDto;
     onClose?: (refreshAsset: boolean) => void;
     onRendered?: (assetId: string) => void;
+    onSaved?: () => void | Promise<void>;
     onUndoDelete?: OnUndoDelete;
+    onRandom?: () => Promise<{ id: string } | undefined>;
     onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
   } = $props();
 </script>
@@ -28,4 +32,12 @@
 
 {#if onUndoDelete && cursor}
   <button type="button" onclick={() => cursor && onUndoDelete?.([toTimelineAsset(cursor.current)])}>Undo delete</button>
+{/if}
+
+{#if onSaved}
+  <button type="button" onclick={() => onSaved?.()}>Save face tags</button>
+{/if}
+
+{#if onRandom}
+  <button type="button" onclick={() => void onRandom()}>Random slide</button>
 {/if}

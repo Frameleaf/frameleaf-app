@@ -987,13 +987,20 @@ export class StudioBundleService {
       // A throw below skips `await finished`; observe it now so it cannot go unhandled.
       void finished.catch(() => {});
 
-      zip.addFile(join(staging, STUDIO_BUNDLE_MANIFEST_ENTRY), STUDIO_BUNDLE_MANIFEST_ENTRY);
-      zip.addFile(join(staging, STUDIO_BUNDLE_PROJECT_ENTRY), STUDIO_BUNDLE_PROJECT_ENTRY);
-      for (const embed of embeds) {
-        zip.addFile(embed.path, embed.entryName);
+      try {
+        zip.addFile(join(staging, STUDIO_BUNDLE_MANIFEST_ENTRY), STUDIO_BUNDLE_MANIFEST_ENTRY);
+        zip.addFile(join(staging, STUDIO_BUNDLE_PROJECT_ENTRY), STUDIO_BUNDLE_PROJECT_ENTRY);
+        for (const embed of embeds) {
+          zip.addFile(embed.path, embed.entryName);
+        }
+        await Promise.all([zip.finalize(), finished]);
+      } catch (error) {
+        zip.stream.destroy();
+        bounded.destroy();
+        output.destroy();
+        await finished.catch(() => {});
+        throw error;
       }
-      await zip.finalize();
-      await finished;
     } finally {
       await this.storage.unlinkDir(staging, { recursive: true, force: true });
     }

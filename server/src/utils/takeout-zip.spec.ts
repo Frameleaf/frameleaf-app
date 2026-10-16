@@ -16,6 +16,7 @@ type TestEntry = {
   flags?: number;
   /** Write the sizes and offset as ZIP64 extra fields. */
   zip64?: boolean;
+  zip64Disk?: number;
   /** Unix mode in the external attributes (made by Unix). */
   mode?: number;
 };
@@ -43,13 +44,15 @@ const buildZip = (entries: TestEntry[], options: { zip64Directory?: boolean; spa
     local.writeUInt16LE(0, 28);
     name.copy(local, 30);
 
-    const extra = entry.zip64 ? Buffer.alloc(4 + 24) : Buffer.alloc(0);
+    const extraSize = entry.zip64Disk === undefined ? 24 : 28;
+    const extra = entry.zip64 ? Buffer.alloc(4 + extraSize) : Buffer.alloc(0);
     if (entry.zip64) {
       extra.writeUInt16LE(0x00_01, 0);
-      extra.writeUInt16LE(24, 2);
+      extra.writeUInt16LE(extraSize, 2);
       extra.writeBigUInt64LE(BigInt(entry.data.length), 4);
       extra.writeBigUInt64LE(BigInt(payload.length), 12);
       extra.writeBigUInt64LE(BigInt(offset), 20);
+      if (entry.zip64Disk !== undefined) extra.writeUInt32LE(entry.zip64Disk, 28);
     }
 
     const central = Buffer.alloc(46 + name.length + extra.length);
@@ -67,7 +70,7 @@ const buildZip = (entries: TestEntry[], options: { zip64Directory?: boolean; spa
     central.writeUInt16LE(name.length, 28);
     central.writeUInt16LE(extra.length, 30);
     central.writeUInt16LE(0, 32);
-    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(entry.zip64Disk === undefined ? 0 : 0xff_ff, 34);
     central.writeUInt32LE(entry.mode === undefined ? 0 : (entry.mode << 16) >>> 0, 38);
     central.writeUInt32LE(entry.zip64 ? 0xff_ff_ff_ff : offset, 42);
     name.copy(central, 46);
@@ -156,6 +159,59 @@ describe('readTakeoutZipDirectory', () => {
     expect(entries[1].localHeaderOffset).toBeGreaterThan(0);
   });
 
+  it('reads an expanded ZIP64 disk number of zero', async () => {
+    const zip = buildZip([{ name: 'a.jpg', data: Buffer.from('x'), zip64: true, zip64Disk: 0 }]);
+    await expect(readTakeoutZipDirectory(sourceOf(zip))).resolves.toHaveLength(1);
+  });
+
+  it('refuses an expanded ZIP64 disk number from another disk', async () => {
+    const zip = buildZip([{ name: 'a.jpg', data: Buffer.from('x'), zip64: true, zip64Disk: 1 }]);
+    await expect(readTakeoutZipDirectory(sourceOf(zip))).rejects.toThrow(/Spanned/);
+  });
+
+  it('refuses a ZIP64 disk marker without its expanded disk field', async () => {
+    const zip = buildZip([{ name: 'a.jpg', data: Buffer.from('x'), zip64: true }]);
+    const directoryOffset = zip.readUInt32LE(zip.length - 6);
+    zip.writeUInt16LE(0xff_ff, directoryOffset + 34);
+    await expect(readTakeoutZipDirectory(sourceOf(zip))).rejects.toThrow(/ZIP64/);
+  });
+
+  it.each(['size', 'offset'])('accepts an expanded ZIP64 %s equal to the classic marker', async (field) => {
+    const original = buildZip([{ name: 'a.jpg', data: Buffer.from('x'), method: 0, zip64: true }], {
+      zip64Directory: true,
+    });
+    const trailer = Buffer.from(original.subarray(-98));
+    const directory = Buffer.from(original.subarray(Number(trailer.readBigUInt64LE(48)), -98));
+    const valuesStart = 46 + directory.readUInt16LE(28) + 4;
+    const marker = 0xff_ff_ff_ff;
+    if (field === 'size') {
+      directory.writeBigUInt64LE(BigInt(marker), valuesStart);
+      directory.writeBigUInt64LE(BigInt(marker), valuesStart + 8);
+    } else directory.writeBigUInt64LE(BigInt(marker), valuesStart + 16);
+    const directoryOffset = marker + 64;
+    trailer.writeBigUInt64LE(BigInt(directoryOffset), 48);
+    trailer.writeBigUInt64LE(BigInt(directoryOffset + directory.length), 64);
+    const segments = [
+      { offset: directoryOffset, bytes: directory },
+      { offset: directoryOffset + directory.length, bytes: trailer },
+    ];
+    const source: TakeoutZipSource = {
+      size: directoryOffset + directory.length + trailer.length,
+      read: (position, length) =>
+        Promise.try(() => {
+          const result = Buffer.alloc(length);
+          for (const segment of segments) {
+            const from = Math.max(position, segment.offset),
+              to = Math.min(position + length, segment.offset + segment.bytes.length);
+            if (to > from) segment.bytes.copy(result, from - position, from - segment.offset, to - segment.offset);
+          }
+          return result;
+        }),
+    };
+    const [entry] = await readTakeoutZipDirectory(source);
+    expect(field === 'size' ? entry.uncompressedSize : entry.localHeaderOffset).toBe(marker);
+  });
+
   it('refuses a spanned archive', async () => {
     const zip = buildZip([{ name: 'a.jpg', data: Buffer.alloc(10) }], { zip64Directory: true, spanned: true });
     await expect(readTakeoutZipDirectory(sourceOf(zip))).rejects.toBeInstanceOf(TakeoutZipError);
@@ -224,5 +280,26 @@ describe('entry bounds', () => {
 describe('zipDosDate', () => {
   it('reads an invalid date as the epoch rather than guessing', () => {
     expect(zipDosDate(0, 0)).toEqual(new Date(0));
+  });
+
+  it.each([
+    [2021, 2, 30, 10, 30, 0],
+    [2021, 4, 31, 10, 30, 0],
+    [2100, 2, 29, 10, 30, 0],
+    [2021, 6, 12, 24, 0, 0],
+    [2021, 6, 12, 10, 60, 0],
+    [2021, 6, 12, 10, 30, 60],
+  ])('returns the epoch for invalid DOS fields %j', (year, month, day, hours, minutes, seconds) => {
+    const date = ((year - 1980) << 9) | (month << 5) | day;
+    const time = (hours << 11) | (minutes << 5) | (seconds / 2);
+    expect(zipDosDate(date, time)).toEqual(new Date(0));
+  });
+
+  it.each([
+    [2000, 2, 29],
+    [2100, 2, 28],
+  ])('retains valid calendar boundaries %j', (year, month, day) => {
+    const date = ((year - 1980) << 9) | (month << 5) | day;
+    expect(zipDosDate(date, (23 << 11) | (59 << 5) | 29)).toEqual(new Date(year, month - 1, day, 23, 59, 58));
   });
 });

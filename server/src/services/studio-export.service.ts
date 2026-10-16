@@ -51,6 +51,7 @@ import { RenderWorkerRepository } from 'src/repositories/render-worker.repositor
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
   PENDING_STUDIO_EXPORT_STATES,
+  StudioExportLibrarySave,
   StudioExportPublished,
   StudioExportRefusal,
   StudioExportRefusalCode,
@@ -124,6 +125,7 @@ import {
   studioExportProjectPath,
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
+import { syncAncestors } from 'src/utils/studio-import-durability.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
@@ -181,7 +183,9 @@ const asIso = (value: Date | string | null | undefined): string | null => {
 
 /** The kinds a render may reference that name a library asset by id. */
 const isLibraryEntry = (entry: StudioAuthorizedEntry): boolean =>
-  (entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared') && !!entry.ownerId && isStudioUuid(entry.id);
+  (entry.sourceAccess === 'owner' || entry.sourceAccess === 'shared') &&
+  !!entry.ownerId &&
+  isStudioUuid(entry.assetId ?? entry.id);
 
 /** FL-90's refusal reasons that mean the source is gone rather than no longer shared. */
 const GONE_REASONS: ReadonlySet<string> = new Set([
@@ -195,7 +199,7 @@ export const studioExportSourceOf = (entry: StudioAuthorizedEntry): StudioExport
   key: entry.key,
   kind: entry.kind,
   resourceId: entry.id,
-  assetId: isLibraryEntry(entry) ? entry.id : null,
+  assetId: isLibraryEntry(entry) ? (entry.assetId ?? entry.id) : null,
   ownerId: isLibraryEntry(entry) ? entry.ownerId : null,
   checksum: entry.checksum,
   sourceAccess: entry.sourceAccess,
@@ -737,45 +741,121 @@ export class StudioExportService {
     const project = version.projectId ? await this.projects.getById(version.projectId) : undefined;
     const keptPath = version.outputPath;
     const finalPath = studioExportLibraryPath(version.ownerId, version.id, container.extension);
+    if (!isManagedStudioExportPath(version)) throw new NotFoundException('Studio export not found');
     this.storage.mkdirSync(dirname(finalPath));
-    await this.storage.rename(keptPath, finalPath);
-
+    const roots = [
+      StorageCore.getFolderLocation(StorageFolder.Exports, version.ownerId),
+      StorageCore.getFolderLocation(StorageFolder.Upload, version.ownerId),
+    ];
+    let currentPath = (await this.storage.checkFileExists(keptPath)) ? keptPath : finalPath;
+    await assertOwnerRestorePath(roots, currentPath);
+    const evidence = await captureOwnerRestoreFile(currentPath, async (path) =>
+      (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+    );
+    if (
+      !evidence.identity ||
+      evidence.sha256 !== version.outputChecksum.toString('hex') ||
+      String(evidence.size) !== String(version.outputSizeInBytes)
+    )
+      throw new ConflictException('The retained export file changed');
+    const sync = async () => {
+      for (const folder of [dirname(keptPath), dirname(finalPath)]) {
+        await syncAncestors(folder, StorageCore.getMediaLocation(), async (path) => {
+          const directory = await open(path, constants.O_RDONLY);
+          try {
+            await directory.sync();
+          } finally {
+            await directory.close();
+          }
+        });
+      }
+    };
+    const input: StudioExportLibrarySave = {
+      versionId: version.id,
+      ownerId: version.ownerId,
+      sources,
+      nsfwHiding: await this.nsfwHiding(),
+      path: finalPath,
+      checksum: Buffer.from(version.outputChecksum),
+      sizeInBytes: Number(version.outputSizeInBytes),
+      contentType: version.outputContentType!,
+      assetType: container.assetType,
+      originalFileName: studioExportFileName(
+        `${project?.name ?? ''}${container.assetType === AssetType.Image ? '_still' : ''}`,
+        container.extension,
+      ),
+      files: {
+        sourcePath: keptPath,
+        paths: [keptPath, finalPath],
+        move: async () => {
+          await assertOwnerRestorePath(roots, currentPath);
+          await assertOwnerRestoreFile(currentPath, evidence.identity, currentPath === finalPath);
+          const measured = await captureOwnerRestoreFile(currentPath, async (path) =>
+            (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+          );
+          if (measured.sha256 !== evidence.sha256 || measured.size !== evidence.size)
+            throw new StudioExportRefusal('output-rejected', 'The retained export file changed after admission');
+          await assertOwnerRestoreFile(currentPath, evidence.identity, currentPath === finalPath);
+          if (currentPath !== finalPath) {
+            await assertOwnerRestorePath(roots, finalPath);
+            await assertOwnerRestoreFile(finalPath, null);
+            await this.storage.rename(currentPath, finalPath);
+            currentPath = finalPath;
+          }
+          await sync();
+          await assertOwnerRestoreFile(finalPath, evidence.identity, true);
+        },
+        rollback: async () => {
+          if (currentPath === keptPath) return;
+          await assertOwnerRestorePath(roots, currentPath);
+          await assertOwnerRestoreFile(currentPath, evidence.identity, true);
+          await assertOwnerRestoreFile(keptPath, null);
+          await this.storage.rename(currentPath, keptPath);
+          currentPath = keptPath;
+          await sync();
+          await assertOwnerRestoreFile(keptPath, evidence.identity, true);
+        },
+      },
+    };
     let saved: Awaited<ReturnType<StudioExportRepository['saveToLibrary']>>;
     try {
-      saved = await this.repository.saveToLibrary({
-        versionId: version.id,
-        ownerId: version.ownerId,
-        sources,
-        nsfwHiding: await this.nsfwHiding(),
-        path: finalPath,
-        checksum: Buffer.from(version.outputChecksum),
-        sizeInBytes: Number(version.outputSizeInBytes),
-        contentType: version.outputContentType!,
-        assetType: container.assetType,
-        originalFileName: studioExportFileName(
-          `${project?.name ?? ''}${container.assetType === AssetType.Image ? '_still' : ''}`,
-          container.extension,
-        ),
-      });
+      saved = await this.repository.saveToLibrary(input, (tx, assetId) => this.schedulePublishedMetadata(tx, assetId));
     } catch (error) {
-      await this.storage.rename(finalPath, keptPath).catch((restoreError) => {
-        this.logger.warn(`Could not return ${finalPath} to ${keptPath}: ${errorMessage(restoreError)}`);
-      });
-      if (error instanceof StudioExportRefusal) {
-        throw new ConflictException({ message: error.message, code: errorCode(error) });
+      const committed = await this.repository.getById(version.id).catch(() => {});
+      if (
+        committed?.ownerId === version.ownerId &&
+        committed.state === StudioExportVersionState.Published &&
+        committed.scope === StudioExportScope.Library &&
+        committed.resultAssetId &&
+        committed.outputChecksum?.equals(input.checksum) &&
+        String(committed.outputSizeInBytes) === String(input.sizeInBytes) &&
+        (committed.outputPath === finalPath || committed.outputPath === null)
+      ) {
+        saved = {
+          version: committed,
+          createdAssetId: null,
+          reusedAssetId: committed.outputPath === null ? committed.resultAssetId : null,
+        };
+      } else {
+        try {
+          await this.repository.restoreLibrarySaveFiles(input);
+        } catch (recoveryError) {
+          throw new AggregateError([error, recoveryError], 'Library save file recovery is pending', {
+            cause: recoveryError,
+          });
+        }
+        if (error instanceof StudioExportRefusal) {
+          throw new ConflictException({ message: error.message, code: errorCode(error) });
+        }
+        throw error;
       }
-      throw error;
     }
 
     if (saved.reusedAssetId) {
       // The owner already had these bytes; the moved copy is referenced by nothing.
-      await this.storage.unlink(finalPath).catch(() => {});
-    }
-    if (saved.createdAssetId) {
-      await this.jobs.queue({
-        name: JobName.AssetExtractMetadata,
-        data: { id: saved.createdAssetId, source: 'upload' },
-      });
+      await assertOwnerRestoreFile(finalPath, evidence.identity, true)
+        .then(() => this.storage.unlink(finalPath))
+        .catch(() => {});
     }
     this.logger.log(`Studio export ${version.id} saved to the library as ${saved.version.resultAssetId}`);
     return this.map(saved.version, auth, sources);
@@ -888,6 +968,12 @@ export class StudioExportService {
       throw new BadRequestException('The output is missing or its size does not match');
     }
 
+    const declaredContract = (operation.snapshot as { contract?: unknown }).contract;
+    const contract = parseStudioExportContract(declaredContract);
+    if (declaredContract !== undefined && declaredContract !== null && !contract) {
+      throw new BadRequestException('Invalid export contract');
+    }
+
     const staged = await this.repository.stage(
       operation.id,
       operation.claimToken,
@@ -916,7 +1002,7 @@ export class StudioExportService {
           renderOperationId: operation.id,
           projectId: version.projectId as string,
           revision: version.revision,
-          contract: parseStudioExportContract((operation.snapshot as { contract?: unknown } | null)?.contract),
+          contract,
           smoothMotion: parseStudioExportSmoothMotion(
             (operation.snapshot as { smoothMotion?: unknown } | null)?.smoothMotion,
           ),

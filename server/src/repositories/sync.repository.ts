@@ -995,6 +995,7 @@ class AssetOcrSync extends BaseSync {
       .select(['asset_ocr_audit.id', 'asset_ocr_audit.assetId', 'asset_ocr_audit.deletedAt'])
       .leftJoin('asset', 'asset.id', 'asset_ocr_audit.assetId')
       .where('asset.ownerId', '=', userId)
+      .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
   cleanupAuditTable(daysAgo: number) {
@@ -1006,6 +1007,7 @@ class AssetOcrSync extends BaseSync {
       .select(columns.syncAssetOcr)
       .innerJoin('asset', 'asset.id', 'asset_ocr.assetId')
       .where('asset.ownerId', '=', userId)
+      .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
 }

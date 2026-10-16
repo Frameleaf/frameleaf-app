@@ -15,6 +15,7 @@ import {
   bindGrowth,
   cameraName,
   collectedSeriesFor,
+  fixedBuckets,
   groupCameras,
   historyState,
   parseAnalyticsScope,
@@ -286,5 +287,70 @@ describe('cameras', () => {
     expect(cameraName('Apple', 'iPhone 16 Pro')).toBe('Apple iPhone 16 Pro');
     expect(cameraName('Sony', ' ')).toBeNull();
     expect(cameraName(null, 'X100V')).toBe('X100V');
+  });
+});
+
+describe('fixed analytics buckets', () => {
+  it('preserves key order, duplicate keys, zero fills and per-key addition order', () => {
+    const rows = [
+      { key: '__proto__', count: 2 },
+      { key: 'photo', count: 0.1 },
+      {
+        key: 'ignored',
+        get count(): number {
+          throw new Error('Unselected count was read');
+        },
+      },
+      { key: 'photo', count: 0.2 },
+      { key: 'photo', count: -0.3 },
+      { key: '__proto__', count: 3 },
+      { key: 'nan', count: NaN },
+      { key: 'nan', count: 2 },
+    ];
+    expect(fixedBuckets(['photo', 'missing', '__proto__', 'photo', 'nan'], rows)).toEqual([
+      { key: 'photo', count: 0.1 + 0.2 - 0.3 },
+      { key: 'missing', count: 0 },
+      { key: '__proto__', count: 5 },
+      { key: 'photo', count: 0.1 + 0.2 - 0.3 },
+      { key: 'nan', count: NaN },
+    ]);
+  });
+
+  it('skips sparse rows and never reads rows for an empty key list', () => {
+    const rows: Array<{ key: string; count: number }> = [];
+    rows.length = 3;
+    rows[1] = { key: 'photo', count: -0 };
+    expect(fixedBuckets(['photo'], rows)).toEqual([{ key: 'photo', count: 0 }]);
+    const unread = [
+      {
+        get key(): string {
+          throw new Error('Unexpected row read');
+        },
+        count: 1,
+      },
+    ];
+    expect(fixedBuckets([], unread)).toEqual([]);
+    const keys: string[] = [];
+    keys.length = 3;
+    expect(fixedBuckets(keys, unread)).toEqual(keys);
+    keys[1] = 'photo';
+    const expected: Array<{ key: string; count: number }> = [];
+    expected.length = 3;
+    expected[1] = { key: 'photo', count: 0 };
+    expect(fixedBuckets(keys, rows)).toEqual(expected);
+  });
+
+  it('reads each row key only once across all requested buckets', () => {
+    const keys = ['one', 'two', 'three', 'four', 'five'];
+    let reads = 0;
+    const rows = Array.from({ length: 200 }, (_, index) => ({
+      get key() {
+        reads++;
+        return keys[index % keys.length];
+      },
+      count: 1,
+    }));
+    expect(fixedBuckets(keys, rows)).toEqual(keys.map((key) => ({ key, count: 40 })));
+    expect(reads).toBeLessThanOrEqual(rows.length);
   });
 });

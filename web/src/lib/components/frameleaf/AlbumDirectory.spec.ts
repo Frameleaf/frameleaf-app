@@ -33,7 +33,12 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$lib/utils/router-started', () => ({ hasRouterStarted: () => app.routerStarted }));
 
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' }, params: {} },
+  authManager: {
+    user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' },
+    params: {},
+    // A toast's Undo only acts for the session that showed it (toast.ts); this session never changes.
+    captureSession: () => () => true,
+  },
 }));
 vi.mock('$lib/components/assets/thumbnail/ImageThumbnail.svelte', async () => {
   const { default: TestImage } = await import('$lib/../test-data/frameleaf/TestImage.svelte');

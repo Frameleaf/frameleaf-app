@@ -105,6 +105,40 @@ describe('file delivery', () => {
     expect(f.release).toHaveBeenCalledTimes(1);
   });
 
+  it('waits for asynchronous file release before settling delivery', async () => {
+    const f = fixture();
+    const started = Promise.withResolvers<void>();
+    const cleanup = Promise.withResolvers<void>();
+    f.release.mockImplementation(() => {
+      started.resolve();
+      return cleanup.promise;
+    });
+    let settled = false;
+    const delivery = sendFile(f.res, f.next, () => f.file, f.log).finally(() => {
+      settled = true;
+    });
+    try {
+      await started.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      cleanup.resolve();
+      await delivery;
+      expect(f.release).toHaveBeenCalledOnce();
+    } finally {
+      cleanup.resolve();
+      await delivery;
+    }
+  });
+
+  it('propagates asynchronous release failure through the delivery promise', async () => {
+    const f = fixture();
+    const error = new Error('cleanup refused');
+    const failed = Promise.reject(error);
+    void failed.catch(() => {});
+    f.release.mockReturnValue(failed);
+    await expect(sendFile(f.res, f.next, () => f.file, f.log)).rejects.toBe(error);
+  });
+
   it('maps denied file access to a generic 404 and releases without sending headers', async () => {
     const f = fixture();
     accessMock.mockRejectedValueOnce(new Error('private filesystem details'));

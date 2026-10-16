@@ -7,6 +7,7 @@
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { sendCopiesWithFeedback } from '$lib/frameleaf/send-copy';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { handleDownloadAlbum } from '$lib/services/album.service';
@@ -30,7 +31,7 @@
 
   let { sharedLink }: Props = $props();
 
-  const album = sharedLink.album as AlbumResponseDto;
+  const album = $derived(sharedLink.album as AlbumResponseDto);
 
   const options = $derived({ albumId: album.id, order: album.order });
   let timelineManager = $state<TimelineManager>() as TimelineManager;
@@ -48,18 +49,57 @@
    */
   const bulkContext = $derived({ sharedLinkId: sharedLink.id, readOnly: true });
 
+  let alive = true;
+  let generation = 0;
+  let previousLinkId: string | undefined;
+  let previousAlbumId: string | undefined;
+  $effect.pre(() => {
+    if (sharedLink.id === previousLinkId && album.id === previousAlbumId) {
+      return;
+    }
+    previousLinkId = sharedLink.id;
+    previousAlbumId = album.id;
+    generation++;
+    selectMode = false;
+  });
+  const captureView = () => {
+    const owner = generation;
+    const params = { ...authManager.params };
+    const isCurrentSession = authManager.captureSession();
+    return () =>
+      alive &&
+      owner === generation &&
+      isCurrentSession() &&
+      params.key === authManager.params.key &&
+      params.slug === authManager.params.slug;
+  };
+
   const stopDropUploads = getDropUploadContext()?.register((files) => {
     if (sharedLink.allowUpload) {
-      handlePromiseError(fileUploadHandler({ files, albumId: album.id }).then(announceUploads));
+      handlePromiseError(announceUploads(fileUploadHandler({ files, albumId: album.id })));
     }
   });
-  onDestroy(() => stopDropUploads?.());
+  onDestroy(() => {
+    alive = false;
+    stopDropUploads?.();
+  });
 
   /** FL-56 (`PublicViewer.jsx` handleFiles): "N items added to this share." */
-  const announceUploads = (uploaded: (string | undefined)[]) => {
-    const count = uploaded.filter(Boolean).length;
-    if (count > 0) {
-      toastManager.success($t('frameleaf_public_added', { values: { count } }));
+  const announceUploads = async (upload: Promise<(string | undefined)[]>) => {
+    const isCurrent = captureView();
+    try {
+      const uploaded = await upload;
+      if (!isCurrent()) {
+        return;
+      }
+      const count = uploaded.filter(Boolean).length;
+      if (count > 0) {
+        toastManager.success($t('frameleaf_public_added', { values: { count } }));
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
+      }
     }
   };
 
@@ -70,16 +110,34 @@
 
   /** Everything in the album, loading the months the timeline has not loaded yet. */
   const selectAll = async () => {
-    for (const month of timelineManager.months) {
-      if (!month.isLoaded) {
-        await timelineManager.loadTimelineMonth(month.yearMonth);
+    const manager = timelineManager;
+    if (!manager) {
+      return;
+    }
+    const isCurrentView = captureView();
+    const isCurrent = () => manager === timelineManager && isCurrentView();
+    try {
+      for (const month of manager.months) {
+        if (!isCurrent()) {
+          return;
+        }
+        if (!month.isLoaded) {
+          await manager.loadTimelineMonth(month.yearMonth);
+        }
+      }
+      if (!isCurrent()) {
+        return;
+      }
+      librarySession.selectAll(
+        manager.months.flatMap((month) =>
+          month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
+        ),
+      );
+    } catch (error) {
+      if (isCurrent()) {
+        throw error;
       }
     }
-    librarySession.selectAll(
-      timelineManager.months.flatMap((month) =>
-        month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
-      ),
-    );
   };
 
   const downloadSelected = () =>
@@ -106,7 +164,7 @@
   {selecting}
   {selectedCount}
   onSelectingChange={setSelecting}
-  onUpload={() => handlePromiseError(openFileUploadDialog({ albumId: album.id }).then(announceUploads))}
+  onUpload={() => handlePromiseError(announceUploads(openFileUploadDialog({ albumId: album.id })))}
   onDownloadAll={() => handlePromiseError(handleDownloadAlbum(album))}
   onDownloadSelected={downloadSelected}
   onSendCopy={() => void sendCopiesWithFeedback([...librarySession.selection])}

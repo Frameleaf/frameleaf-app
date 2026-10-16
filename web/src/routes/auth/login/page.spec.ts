@@ -6,7 +6,9 @@ import {
   redeemFrameleafHandoff,
   startFrameleafSignIn,
 } from '@frameleaf/sdk';
+import type { LoginResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { goto } from '$app/navigation';
@@ -18,6 +20,7 @@ import {
 } from '$lib/frameleaf/auth-session-preference';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { oauth } from '$lib/utils';
+import { deferredPromise } from '@test-data/deferred';
 import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
@@ -74,6 +77,7 @@ const forced = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(goto).mockReset().mockResolvedValue();
   addMessages('dev', en);
   sessionStorage.clear();
   vi.mocked(oauth.isCallback).mockReturnValue(false);
@@ -447,4 +451,121 @@ describe('Sign in with Frameleaf from a home address (FL-167)', () => {
     await waitFor(() => expect(goto).toHaveBeenCalled());
     vi.unstubAllGlobals();
   });
+});
+
+describe('abandoned sign-in work', () => {
+  it.each(['ready', 'password change', 'onboarding'] as const)(
+    'does not navigate after a retired local %s login',
+    async (kind) => {
+      const pending = deferredPromise<LoginResponseDto>();
+      vi.mocked(login).mockReturnValue(pending.promise);
+      const view = render(Page, { data: data(false) } as never);
+      await fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'user@example.test' } });
+      await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+      view.unmount();
+      pending.resolve({
+        ...forced,
+        shouldChangePassword: kind === 'password change',
+        isOnboarded: kind !== 'onboarding',
+      } as LoginResponseDto);
+      await pending.promise;
+      await tick();
+      expect(goto).not.toHaveBeenCalled();
+      expect(eventManager.emit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not navigate after an abandoned OAuth callback', async () => {
+    const pending = deferredPromise<LoginResponseDto>();
+    vi.mocked(oauth.isCallback).mockReturnValue(true);
+    vi.mocked(oauth.login).mockReturnValue(pending.promise);
+    const view = render(Page, { data: data(true) } as never);
+    view.unmount();
+    pending.resolve({ ...forced, shouldChangePassword: false } as LoginResponseDto);
+    await pending.promise;
+    await tick();
+    expect(goto).not.toHaveBeenCalled();
+    expect(eventManager.emit).not.toHaveBeenCalled();
+  });
+
+  it('keeps AuthLogin after its successful navigation unmounts the login page', async () => {
+    const navigated = deferredPromise<void>();
+    const user = { ...forced, shouldChangePassword: false } as LoginResponseDto;
+    vi.mocked(login).mockResolvedValue(user);
+    vi.mocked(goto).mockReturnValue(navigated.promise);
+    const view = render(Page, { data: data(false) } as never);
+    await fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'user@example.test' } });
+    await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(goto).toHaveBeenCalledOnce());
+    view.unmount();
+    navigated.resolve();
+    await waitFor(() => expect(eventManager.emit).toHaveBeenCalledWith('AuthLogin', user));
+  });
+});
+
+it('does not hand back a session after the Frameleaf callback view is abandoned', async () => {
+  const pending = deferredPromise<LoginResponseDto>();
+  localStorage.setItem(
+    'frameleaf.auth.frameleafRequest.retired',
+    JSON.stringify({
+      purpose: 'sign-in',
+      expiresAt: Date.now() + 60_000,
+      returnTo: 'https://home.test',
+      nonce: 'n'.repeat(32),
+    }),
+  );
+  vi.stubGlobal('location', {
+    ...location,
+    href: 'http://localhost:3000/auth/login?code=abc&state=retired',
+    search: '?code=abc&state=retired',
+  });
+  vi.mocked(oauth.isCallback).mockReturnValue(true);
+  vi.mocked(finishFrameleafSignIn).mockReturnValue(pending.promise);
+  try {
+    const view = render(Page, { data: data(true) } as never);
+    await waitFor(() => expect(finishFrameleafSignIn).toHaveBeenCalledOnce());
+    view.unmount();
+    pending.resolve({ ...forced, shouldChangePassword: false } as LoginResponseDto);
+    await pending.promise;
+    await tick();
+    expect(createFrameleafHandoff).not.toHaveBeenCalled();
+    expect(goto).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('does not navigate after an abandoned home-address handoff redemption', async () => {
+  const pending = deferredPromise<LoginResponseDto>();
+  const nonce = 'n'.repeat(32);
+  sessionStorage.setItem('frameleaf.auth.handoffNonce', nonce);
+  vi.stubGlobal('location', { ...location, hash: '#frameleafHandoff=code&frameleafNonce=' + nonce });
+  vi.mocked(redeemFrameleafHandoff).mockReturnValue(pending.promise);
+  try {
+    const view = render(Page, { data: data(false) } as never);
+    await waitFor(() => expect(redeemFrameleafHandoff).toHaveBeenCalledOnce());
+    view.unmount();
+    pending.resolve({ ...forced, shouldChangePassword: false } as LoginResponseDto);
+    await pending.promise;
+    await tick();
+    expect(goto).not.toHaveBeenCalled();
+    expect(eventManager.emit).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('does not clear a replacement sign-in continuation when an old callback fails', async () => {
+  const pending = deferredPromise<LoginResponseDto>();
+  vi.mocked(oauth.isCallback).mockReturnValue(true);
+  vi.mocked(oauth.login).mockReturnValue(pending.promise);
+  const view = render(Page, { data: data(true) } as never);
+  view.unmount();
+  setOAuthContinue('/albums?new-sign-in');
+  pending.reject(new Error('Old callback failed'));
+  await pending.promise.catch(() => {});
+  await tick();
+  expect(String(getOAuthContinue('/photos'))).toBe(new URL('/albums?new-sign-in', location.origin).href);
 });

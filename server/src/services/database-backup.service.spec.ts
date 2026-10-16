@@ -418,6 +418,22 @@ describe(DatabaseBackupService.name, () => {
   });
 
   describe('buildPostgresLaunchArguments', () => {
+    it.each([
+      { url: 'postgresql://ops%22restore:p%40ss@localhost/frameleaf', user: 'ops"restore', password: 'p@ss' },
+      { url: 'postgresql://ops%25owner:p%25ss@localhost/frameleaf', user: 'ops%owner', password: 'p%ss' },
+      { url: 'postgresql://localhost/frameleaf?user=ops%22restore', user: 'ops"restore', password: '' },
+    ])('decodes URL credentials for role SQL and the child environment: $user', async ({ url, user, password }) => {
+      const env = mocks.config.getEnv();
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        database: { ...env.database, config: { connectionType: 'url', url } },
+      });
+      const launch = await sut.buildPostgresLaunchArguments('psql');
+      expect(launch.databaseUsername).toBe(user);
+      expect(launch.databasePassword).toBe(password);
+      expect(launch.args).toContain(url);
+    });
+
     describe('default config', () => {
       it('should generate pg_dump arguments', async () => {
         await expect(sut.buildPostgresLaunchArguments('pg_dump')).resolves.toMatchInlineSnapshot(`
@@ -1190,6 +1206,24 @@ describe(DatabaseBackupService.name, () => {
       await expect(sut.restoreDatabaseBackup('filename')).rejects.toThrowErrorMatchingInlineSnapshot(
         `[Error: Invalid backup file format!]`,
       );
+    });
+
+    it('quotes embedded double quotes in the database role used for schema grants', async () => {
+      vi.spyOn(sut, 'buildPostgresLaunchArguments').mockResolvedValue({
+        bin: 'psql',
+        args: [],
+        databaseUsername: 'ops"restore',
+        databasePassword: '',
+        databaseVersion: '19.1',
+      });
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      let sql = '';
+      mocks.process.spawnDuplexStream
+        .mockImplementationOnce(() => mockDuplex()('pg_dump', 0, 'data', ''))
+        .mockImplementationOnce(() => mockDuplex()('gzip', 0, 'data', ''))
+        .mockImplementationOnce(() => mockDuplex((chunk) => (sql += chunk))('psql', 0, 'data', ''));
+      await sut.restoreDatabaseBackup('development-filename.sql');
+      expect(sql).toContain('GRANT ALL ON SCHEMA public TO "ops""restore";');
     });
 
     it('should successfully restore a backup', async () => {

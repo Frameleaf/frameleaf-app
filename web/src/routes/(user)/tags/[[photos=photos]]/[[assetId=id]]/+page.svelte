@@ -21,6 +21,8 @@
   import { buildTagTree, tagAndDescendantIds, tagAtPath } from '$lib/frameleaf/tag-tree';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { Route } from '$lib/route';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { onDestroy } from 'svelte';
   import { getAssetInfo } from '@frameleaf/sdk';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import type { PageData } from './$types';
@@ -30,6 +32,9 @@
   }
 
   let { data }: Props = $props();
+
+  let destroyed = false;
+  onDestroy(() => (destroyed = true));
 
   const tree = $derived(buildTagTree(data.tags, data.statistics));
   const node = $derived(tagAtPath(tree, data.path));
@@ -53,12 +58,18 @@
     if (!node || !timelineManager || ids.length > 12) {
       return;
     }
+    const manager = timelineManager;
+    const tagId = node.id;
+    const isCurrentSession = authManager.captureSession();
     const carried = new Set(tagAndDescendantIds(node));
     try {
       const assets = await Promise.all(ids.map((id) => getAssetInfo({ id })));
+      if (destroyed || !isCurrentSession() || timelineManager !== manager || node?.id !== tagId) {
+        return;
+      }
       const gone = assets.filter((asset) => (asset.tags ?? []).every((tag) => !carried.has(tag.id)));
       if (gone.length > 0) {
-        timelineManager.removeAssets(gone.map((asset) => asset.id));
+        manager.removeAssets(gone.map((asset) => asset.id));
       }
     } catch {
       // The counts above are re-read either way; the grid catches up when the page is next opened.

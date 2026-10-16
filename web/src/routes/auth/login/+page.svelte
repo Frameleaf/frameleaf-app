@@ -37,7 +37,7 @@
   import { oauth } from '$lib/utils';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import { finishFrameleafSignIn, login, redeemFrameleafHandoff, type LoginResponseDto } from '@frameleaf/sdk';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { takeAuthNotice } from '../auth-notice';
   import type { PageData } from './$types';
@@ -53,6 +53,11 @@
   let rememberMe = $state(true);
   /** A rejected sign-in nudges the card once (auth.css; no movement under Reduce Motion). */
   let rejected = $state(false);
+  let alive = true;
+  const isCurrent = () => alive;
+  onDestroy(() => {
+    alive = false;
+  });
   /** Set when a forced password change just ended the session (change-password page). */
   let passwordChanged = $state(false);
 
@@ -79,6 +84,9 @@
   });
 
   const onSuccess = async (user: LoginResponseDto) => {
+    if (!alive) {
+      return;
+    }
     await goto(oauth.isCallback(location) ? getOAuthContinue(data.continueUrl) : data.continueUrl, {
       invalidateAll: true,
     });
@@ -103,6 +111,9 @@
   const onOnboarding = () => goto(Route.onboarding({ continue: setupContinue() }));
 
   const finishUser = async (user: LoginResponseDto) => {
+    if (!alive) {
+      return;
+    }
     if (!user.isOnboarded) {
       await onOnboarding();
       return;
@@ -131,6 +142,9 @@
         await finishUser(await redeemFrameleafHandoff({ frameleafHandoffRedeemDto: { code: handoff, rememberMe } }));
         return;
       } catch (error) {
+        if (!alive) {
+          return;
+        }
         frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');
         oauthLoading = false;
         return;
@@ -149,9 +163,12 @@
     if (frameleafCallback === 'sign-in') {
       try {
         const user = await finishFrameleafSignIn({ oAuthCallbackDto: { url: location.href, rememberMe } });
+        if (!alive) {
+          return;
+        }
         if (frameleafRequest?.bounce) {
           try {
-            await handBack(frameleafRequest.bounce);
+            await handBack(frameleafRequest.bounce, isCurrent);
             return;
           } catch {
             // the home address is not published any more: stay signed in here
@@ -160,6 +177,9 @@
         await finishUser(user);
         return;
       } catch (error) {
+        if (!alive) {
+          return;
+        }
         clearOAuthContinue();
         frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');
         oauthLoading = false;
@@ -175,6 +195,9 @@
     if (oauth.isCallback(location)) {
       try {
         const user = await oauth.login(location, rememberMe);
+        if (!alive) {
+          return;
+        }
         // Upstream behaviour: an OAuth user is never sent to the forced password change.
         if (!user.isOnboarded) {
           await onOnboarding();
@@ -183,6 +206,9 @@
         await onSuccess(user);
         return;
       } catch (error) {
+        if (!alive) {
+          return;
+        }
         console.error('Error [login-form] [oauth.callback]', error);
         clearOAuthContinue();
         oauthError = getServerErrorMessage(error) || $t('errors.unable_to_complete_oauth_login');
@@ -203,17 +229,22 @@
           return;
         }
         await goto(Route.login({ continue: String(continueUrl), autoLaunch: 0 }), { replaceState: true });
-        await oauth.authorize(location);
+        if (alive) {
+          await oauth.authorize(location, isCurrent);
+        }
         return;
       }
     } catch (error) {
+      if (!alive) {
+        return;
+      }
       handleError(error, $t('errors.unable_to_connect'));
     }
     oauthLoading = false;
   });
 
   const handleLogin = async () => {
-    if (loading) {
+    if (!alive || loading) {
       return;
     }
     // The server validates the address (it accepts single-label hosts such as admin@localhost).
@@ -235,6 +266,9 @@
       passwordChanged = false;
       loading = true;
       const user = await login({ loginCredentialDto: { email: address, password, rememberMe } });
+      if (!alive) {
+        return;
+      }
       if (user.isAdmin && !serverConfig.isOnboarded) {
         await onOnboarding();
         return;
@@ -249,11 +283,16 @@
       }
       await onSuccess(user);
     } catch (error) {
+      if (!alive) {
+        return;
+      }
       errorMessage = getServerErrorMessage(error) || $t('errors.incorrect_email_or_password');
       password = '';
       rejected = true;
     } finally {
-      loading = false;
+      if (alive) {
+        loading = false;
+      }
     }
   };
 
@@ -265,7 +304,10 @@
       oauthLoading = false;
       return;
     }
-    const success = await oauth.authorize(location);
+    const success = await oauth.authorize(location, isCurrent);
+    if (!alive) {
+      return;
+    }
     if (!success) {
       clearOAuthContinue();
       oauthLoading = false;
@@ -282,8 +324,11 @@
       return;
     }
     try {
-      await startFrameleaf('sign-in', location, bounce);
+      await startFrameleaf('sign-in', location, bounce, isCurrent);
     } catch (error) {
+      if (!alive) {
+        return;
+      }
       clearOAuthContinue();
       frameleafLoading = false;
       frameleafError = getServerErrorMessage(error) || $t('frameleaf_auth_frameleaf_failed');

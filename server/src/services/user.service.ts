@@ -132,7 +132,7 @@ export class UserService extends BaseService {
 
   async updateMe({ user }: AuthDto, dto: UserUpdateMeDto): Promise<UserAdminResponseDto> {
     if (dto.email) {
-      const duplicate = await this.userRepository.getByEmail(dto.email);
+      const duplicate = await this.userRepository.getByEmail(dto.email, { withDeleted: true });
       if (duplicate && duplicate.id !== user.id) {
         this.logger.warn('Email already in use by another account');
         throw new BadRequestException('Email is not available');

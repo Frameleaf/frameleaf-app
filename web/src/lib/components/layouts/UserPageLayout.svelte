@@ -11,7 +11,7 @@
   import type { HeaderButtonActionItem } from '$lib/types';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import { Button, ContextMenuButton, HStack, isMenuItemType, type MenuItemType } from '@frameleaf/ui';
-  import type { Snippet } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -86,12 +86,16 @@
     $sidebarWidth = Math.round(clampWidth(clientX - left));
   };
 
+  let stopResize: (() => void) | undefined;
+  onDestroy(() => stopResize?.());
+
   const startResize = (event: PointerEvent) => {
+    stopResize?.();
     event.preventDefault();
     sidebarStore.isResizing = true;
     const controller = new AbortController();
     const { signal } = controller;
-    const stopResize = () => {
+    stopResize = () => {
       sidebarStore.isResizing = false;
       controller.abort();
     };

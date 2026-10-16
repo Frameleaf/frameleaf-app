@@ -357,6 +357,7 @@ describe('PersonService face history (FL-57)', () => {
     it('moves the face back and marks the change undone', async () => {
       const entry = correction();
       const { auth, current } = setup(entry);
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([entry.assetId!]);
 
       await expect(sut.undoCorrection(auth, entry.id)).resolves.toEqual(
         expect.objectContaining({ id: entry.id, undoneAt: expect.any(String), undoable: false }),
@@ -366,6 +367,15 @@ describe('PersonService face history (FL-57)', () => {
         { id: current.id, expectedRevision: current.updateId },
         { personGroupId: entry.fromPersonId },
       );
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledExactlyOnceWith(
+        'asset',
+        [entry.assetId],
+        ['faces'],
+        auth.user.id,
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: entry.assetId, fields: ['faces'] } },
+      ]);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.PersonIdentityRefresh,
         data: { ownerId: entry.ownerId, assetIds: [entry.assetId] },

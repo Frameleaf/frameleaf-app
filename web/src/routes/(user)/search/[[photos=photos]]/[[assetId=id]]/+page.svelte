@@ -57,9 +57,6 @@
   import {
     type AssetResponseDto,
     isHttpError,
-    getPerson,
-    getPet,
-    getTagById,
     ImageEnrichmentFilter,
     type MetadataSearchDto,
     type SmartSearchDto,
@@ -553,45 +550,21 @@
   }
 
   async function getPersonName(personIds: string[]) {
-    const personNames = await Promise.all(
-      personIds.map(async (personId) => {
-        const person = await getPerson({ id: personId });
-
-        if (person.name === '') {
-          return $t('no_name');
-        }
-
-        return person.name;
-      }),
-    );
-
-    return personNames.join(', ');
+    const names = await resolveEntityNames('person', personIds);
+    return names.map((name) => name ?? $t('no_name')).join(', ');
   }
 
   async function getPetNames(petIds: string[]) {
-    const petNames = await Promise.all(
-      petIds.map(async (petId) => {
-        const pet = await getPet({ id: petId });
-        return pet.name || $t('frameleaf_pets_unnamed');
-      }),
-    );
-
-    return petNames.join(', ');
+    const names = await resolveEntityNames('pet', petIds);
+    return names.map((name) => name ?? $t('frameleaf_pets_unnamed')).join(', ');
   }
 
   async function getTagNames(tagIds: string[] | null) {
     if (tagIds === null) {
       return $t('untagged');
     }
-    const tagNames = await Promise.all(
-      tagIds.map(async (tagId) => {
-        const tag = await getTagById({ id: tagId });
-
-        return tag.value;
-      }),
-    );
-
-    return tagNames.join(', ');
+    const names = await resolveEntityNames('tag', tagIds);
+    return names.map((name) => name ?? $t('tags')).join(', ');
   }
 
   const refreshPersonNames = (ids: string[]) => {

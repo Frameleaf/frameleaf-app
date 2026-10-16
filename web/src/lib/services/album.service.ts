@@ -344,7 +344,10 @@ export const handleEditAlbumDetails = async (album: AlbumResponseDto, draft: Alb
   }
 
   try {
-    saved = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId: parentId } });
+    saved = await moveAlbumToCollection({
+      id: album.id,
+      moveAlbumDto: { collectionId: parentId, expectedParentId: album.parentId },
+    });
   } catch (error) {
     eventManager.emit('AlbumUpdate', saved);
     handleError(error, $t('frameleaf_albums_move_failed'));

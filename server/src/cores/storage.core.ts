@@ -177,7 +177,7 @@ export class StorageCore {
   }
 
   static isAndroidMotionPath(originalPath: string) {
-    return originalPath.startsWith(StorageCore.getBaseFolder(StorageFolder.EncodedVideo));
+    return originalPath.startsWith(StorageCore.getBaseFolder(StorageFolder.EncodedVideo) + '/');
   }
 
   static isImmichPath(path: string) {
@@ -469,9 +469,8 @@ export class StorageCore {
     newPath: string,
     assetInfo?: { sizeInBytes: number; checksum: Buffer },
   ) {
-    const oldStat = await this.storageRepository.stat(oldPath);
     const newStat = await this.storageRepository.stat(newPath);
-    const oldPathSize = assetInfo ? assetInfo.sizeInBytes : oldStat.size;
+    const oldPathSize = assetInfo ? assetInfo.sizeInBytes : (await this.storageRepository.stat(oldPath)).size;
     const newPathSize = newStat.size;
     this.logger.debug(`File size check: ${newPathSize} === ${oldPathSize}`);
     if (newPathSize !== oldPathSize) {

@@ -209,6 +209,7 @@ export const zoomImageAction = (node: HTMLElement, options?: { zoomTarget?: HTML
   );
   node.addEventListener('touchmove', interceptOverlayTouchEvent, { capture: true, signal });
   node.addEventListener('touchend', resetTouchGesture, { capture: true, signal });
+  node.addEventListener('touchcancel', resetTouchGesture, { capture: true, signal });
 
   // Wheel and dblclick interception on overlay elements.
   // Dblclick also intercepted for all touch double-taps (Safari fires synthetic dblclick

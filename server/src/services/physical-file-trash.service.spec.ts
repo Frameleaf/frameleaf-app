@@ -61,10 +61,12 @@ describe(PhysicalFileTrashService.name, () => {
   });
 
   describe('restore', () => {
+    const transaction = {} as never;
     beforeEach(() => {
       mocks.physicalFileTrash.getById.mockResolvedValue(entry);
-      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move) => {
+      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move, register) => {
         await move(entry.path, target);
+        await register?.(transaction, entry);
         return entry;
       });
       mocks.user.get.mockResolvedValue({ id: 'owner-id', name: 'Ada' } as never);
@@ -94,11 +96,14 @@ describe(PhysicalFileTrashService.name, () => {
           originalPath: target,
           originalFileName: 'IMG_0001.jpg',
         }),
+        undefined,
+        transaction,
       );
       expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
         'new-asset-id',
         { checksum, sizeInBytes: 1234 },
         expect.anything(),
+        { transaction, proof: undefined },
       );
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetExtractMetadata,
@@ -113,16 +118,69 @@ describe(PhysicalFileTrashService.name, () => {
       expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
     });
 
+    it('finishes stored-copy proof before opening the restore transaction', async () => {
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<{ path: string; identity: string }>();
+      const proof = { path: '/data/library/existing.jpg', identity: 'stable-file' };
+      mocks.physicalFile.proveStoredCopy.mockImplementationOnce(() => {
+        entered.resolve();
+        return resume.promise;
+      });
+      const restoring = sut.restore(entry.id);
+      try {
+        await entered.promise;
+        expect(mocks.physicalFileTrash.untrash).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      } finally {
+        resume.resolve(proof);
+        await restoring;
+      }
+      expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
+        'new-asset-id',
+        { checksum, sizeInBytes: entry.sizeInBytes },
+        expect.anything(),
+        { transaction, proof },
+      );
+      const plannedId = mocks.physicalFile.proveStoredCopy.mock.calls[0][0];
+      expect(mocks.asset.create.mock.calls[0][0].id).toBe(plannedId);
+    });
+
+    it('lets the restored file go only for a stored copy proven to hold its bytes (FL-412)', async () => {
+      mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
+        physicalFile: { id: 'new-physical' },
+        linked: false,
+      } as never);
+      await sut.restore('trash-id');
+      const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+      const shared = '/data/library/other/IMG_0001.jpg';
+      mocks.storage.stat.mockResolvedValue({
+        isFile: () => true,
+        dev: 1,
+        ino: 2,
+        size: 1234,
+        mtimeMs: 3,
+        ctimeMs: 4,
+      } as never);
+
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from('other bytes'));
+      await expect(options.verify(shared)).resolves.toBeNull();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(shared));
+
+      mocks.crypto.hashFileMatching.mockResolvedValue(entry.checksum);
+      await expect(options.verify(shared)).resolves.toEqual(expect.any(String));
+    });
+
     it('returns an uninspected file to its original trash entry and restores it on retry', async () => {
       const inspectionError = new Error('stat failed');
       const files = new Set([entry.path]);
       let trashed = true;
       mocks.physicalFileTrash.getById.mockImplementation(() => Promise.resolve(trashed ? entry : undefined));
-      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move) => {
+      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move, register) => {
         if (!trashed) {
           return;
         }
         await move(entry.path, target);
+        await register?.(transaction, entry);
         trashed = false;
         return entry;
       });
@@ -149,6 +207,32 @@ describe(PhysicalFileTrashService.name, () => {
       expect(trashed).toBe(false);
       expect(files).toEqual(new Set([mocks.physicalFileTrash.untrash.mock.calls[1][1]]));
       expect(mocks.physicalFileTrash.untrash.mock.calls.map(([id]) => id)).toEqual([entry.id, entry.id]);
+    });
+
+    it('keeps its trash entry until asset registration finishes', async () => {
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      let committed = false;
+      mocks.physicalFileTrash.untrash.mockImplementation(async (_id, target, move, register) => {
+        await move(entry.path, target);
+        await register?.(transaction, entry);
+        committed = true;
+        return entry;
+      });
+      mocks.asset.create.mockImplementationOnce(async () => {
+        entered.resolve();
+        await resume.promise;
+        return { id: 'new-asset-id', ownerId: 'owner-id' } as never;
+      });
+      const restoring = sut.restore(entry.id);
+      try {
+        await entered.promise;
+        expect(committed).toBe(false);
+      } finally {
+        resume.resolve();
+        await restoring;
+      }
+      expect(committed).toBe(true);
     });
 
     it('reports inspection and compensation failures while retaining the file', async () => {
@@ -193,7 +277,7 @@ describe(PhysicalFileTrashService.name, () => {
       await expect(sut.restore('trash-id')).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('puts the file back in the trash when the library already holds it', async () => {
+    it('lets the untrash transaction roll back when the library already holds it', async () => {
       const error = new Error('unique key violation');
       (error as any).constraint_name = ASSET_CHECKSUM_CONSTRAINT;
       mocks.asset.create.mockRejectedValue(error);
@@ -201,9 +285,22 @@ describe(PhysicalFileTrashService.name, () => {
       await expect(sut.restore('trash-id')).rejects.toBeInstanceOf(ConflictException);
 
       const target = mocks.physicalFileTrash.untrash.mock.calls[0][1];
-      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(target, expect.any(Function), {
-        trash: { move: expect.any(Function), original: expect.objectContaining({ checksum, ownerId: 'owner-id' }) },
-      });
+      expect(target).toMatch(/\/upload\/owner-id\//);
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('retains the registered asset when post-commit metadata scheduling fails', async () => {
+      const failure = new Error('queue admission failed');
+      mocks.job.queue.mockRejectedValueOnce(failure);
+
+      await expect(sut.restore(entry.id)).rejects.toBe(failure);
+
+      expect(mocks.asset.create).toHaveBeenCalled();
+      expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalled();
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
   });

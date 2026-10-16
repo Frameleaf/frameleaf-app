@@ -684,6 +684,7 @@ export class MachineLearningRepository implements RestorationInference {
       let pending = Buffer.alloc(0);
       let finished = false;
       const handle = (line: Buffer) => {
+        if (line.length > TRANSCRIPT_LINE_BYTES) throw new Error('A transcript line is too long');
         if (line.length === 0) {
           return;
         }

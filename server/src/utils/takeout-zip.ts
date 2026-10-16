@@ -83,7 +83,15 @@ export const zipDosDate = (date: number, time: number): Date => {
   const hours = (time >> 11) & 0x1f;
   const minutes = (time >> 5) & 0x3f;
   const seconds = (time & 0x1f) * 2;
-  if (month < 0 || month > 11 || day < 1) {
+  if (
+    month < 0 ||
+    month > 11 ||
+    day < 1 ||
+    hours > 23 ||
+    minutes > 59 ||
+    seconds > 59 ||
+    day > new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  ) {
     return new Date(0);
   }
   return new Date(year, month, day, hours, minutes, seconds);
@@ -163,8 +171,8 @@ const locateDirectory = async (source: TakeoutZipSource) => {
 /** The ZIP64 extra field's values, in the order the specification gives them, for saturated fields only. */
 const readZip64Extra = (
   extra: Buffer,
-  saturated: { uncompressed: boolean; compressed: boolean; offset: boolean },
-): { uncompressed?: number; compressed?: number; offset?: number } => {
+  saturated: { uncompressed: boolean; compressed: boolean; offset: boolean; disk: boolean },
+): { uncompressed?: number; compressed?: number; offset?: number; disk?: number } => {
   let cursor = 0;
   while (cursor + 4 <= extra.length) {
     const id = extra.readUInt16LE(cursor);
@@ -174,7 +182,7 @@ const readZip64Extra = (
       break;
     }
     if (id === ZIP64_EXTRA) {
-      const values: { uncompressed?: number; compressed?: number; offset?: number } = {};
+      const values: { uncompressed?: number; compressed?: number; offset?: number; disk?: number } = {};
       let field = start;
       const next = () => {
         if (field + 8 > start + size) {
@@ -192,6 +200,10 @@ const readZip64Extra = (
       }
       if (saturated.offset) {
         values.offset = next();
+      }
+      if (saturated.disk) {
+        if (field + 4 > start + size) refuse('An archive entry’s ZIP64 disk number is truncated');
+        values.disk = extra.readUInt32LE(field);
       }
       return values;
     }
@@ -230,7 +242,7 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
     const nameLength = directory.readUInt16LE(cursor + 28);
     const extraLength = directory.readUInt16LE(cursor + 30);
     const commentLength = directory.readUInt16LE(cursor + 32);
-    const diskStart = directory.readUInt16LE(cursor + 34);
+    let diskStart = directory.readUInt16LE(cursor + 34);
     const externalAttributes = directory.readUInt32LE(cursor + 38);
     let localHeaderOffset = directory.readUInt32LE(cursor + 42);
 
@@ -243,18 +255,26 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
     const extra = directory.subarray(extraStart, extraStart + extraLength);
     cursor = end;
 
-    const zip64 = readZip64Extra(extra, {
+    const saturated = {
       uncompressed: uncompressedSize === MARKER_32,
       compressed: compressedSize === MARKER_32,
       offset: localHeaderOffset === MARKER_32,
-    });
+      disk: diskStart === MARKER_16,
+    };
+    const zip64 = readZip64Extra(extra, saturated);
+    if (
+      (saturated.uncompressed && zip64.uncompressed === undefined) ||
+      (saturated.compressed && zip64.compressed === undefined) ||
+      (saturated.offset && zip64.offset === undefined) ||
+      (saturated.disk && zip64.disk === undefined)
+    ) {
+      refuse(`${name.slice(0, 80)} declares ZIP64 values it does not carry`);
+    }
     uncompressedSize = zip64.uncompressed ?? uncompressedSize;
     compressedSize = zip64.compressed ?? compressedSize;
     localHeaderOffset = zip64.offset ?? localHeaderOffset;
-    if ([uncompressedSize, compressedSize, localHeaderOffset].includes(MARKER_32)) {
-      refuse(`${name.slice(0, 80)} declares ZIP64 sizes it does not carry`);
-    }
-    if (diskStart !== 0 && diskStart !== MARKER_16) {
+    diskStart = zip64.disk ?? diskStart;
+    if (diskStart !== 0) {
       refuse('Spanned archives are not supported; use the separate ZIP files Google Takeout creates');
     }
 

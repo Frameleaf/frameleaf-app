@@ -27,33 +27,38 @@ export class MaintenanceHealthRepository {
       });
 
       let output = '';
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve();
+      };
+      const timer = setTimeout(() => {
+        finish(new Error('Server health check failed, took too long to start.'));
+        worker.kill('SIGTERM');
+      }, 180_000);
 
       worker.stdout?.on('data', (data) => {
-        if (worker.exitCode !== null) {
+        if (settled || worker.exitCode !== null) {
           return;
         }
 
         output += data;
 
         if (output.includes(IMMICH_SERVER_START)) {
-          resolve();
+          finish();
           worker.kill('SIGTERM');
         }
+        // Only this suffix can combine with the next chunk to complete the readiness marker.
+        output = output.slice(-(IMMICH_SERVER_START.length - 1));
       });
 
       worker.on('exit', (code, signal) =>
-        reject(new Error(`Server health check failed, server exited with ${signal ?? code}`)),
+        finish(new Error(`Server health check failed, server exited with ${signal ?? code}`)),
       );
-      worker.on('error', (error) => reject(new Error(`Server health check failed, process threw: ${error}`)));
-
-      setTimeout(() => {
-        if (worker.exitCode !== null) {
-          return;
-        }
-
-        reject(new Error('Server health check failed, took too long to start.'));
-        worker.kill('SIGTERM');
-      }, 180_000);
+      worker.on('error', (error) => finish(new Error(`Server health check failed, process threw: ${error}`)));
     });
   }
 }

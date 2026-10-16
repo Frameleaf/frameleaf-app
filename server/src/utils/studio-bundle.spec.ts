@@ -510,6 +510,15 @@ describe('checkStudioBundleManifest', () => {
     }
   });
 
+  it('refuses a prototype-named file outside the bundle entry namespace', () => {
+    const base = manifestOf(project);
+    const files = { ...base.files, ['__proto__']: { sha256: 'a'.repeat(64), bytes: 1 } };
+    expect(checkStudioBundleManifest({ ...base, files })).toMatchObject({
+      ok: false,
+      detail: expect.stringContaining('Unexpected entry __proto__'),
+    });
+  });
+
   it('refuses another format, another schema version and a manifest that digests itself', () => {
     expect(checkStudioBundleManifest({ ...manifestOf(project), format: 'zip' })).toMatchObject({ ok: false });
     expect(checkStudioBundleManifest({ ...manifestOf(project), schemaVersion: 2 })).toMatchObject({ ok: false });
@@ -721,6 +730,18 @@ describe('relinkStudioGraph', () => {
     const clips = (result.graph as { clips: Array<{ $resource: { id: string } }> }).clips;
     expect(clips[0].$resource.id).toBe(target);
     expect(clips[1].$resource.id).toBe(assetA);
+  });
+
+  it('preserves prototype-named opaque fields while relinking recognized media ids', () => {
+    const graph = JSON.parse(
+      `{"__proto__":{"keep":true},"future":{"__proto__":{"keep":"nested"}},"mediaId":"${assetA}"}`,
+    );
+    const before = JSON.stringify(graph);
+    const result = relinkStudioGraph(graph, new Map([[`library-asset:${assetA}`, assetB]]));
+    expect(JSON.stringify(result.graph)).toBe(before.replace(assetA, () => assetB));
+    expect(Object.hasOwn(result.graph as object, '__proto__')).toBe(true);
+    expect(JSON.stringify(graph)).toBe(before);
+    expect(result.replaced).toBe(1);
   });
 
   it('reports mapping keys the graph never referenced', () => {

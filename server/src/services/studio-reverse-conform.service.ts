@@ -336,7 +336,7 @@ export class StudioReverseConformService {
       const auth = await this.owner(operation.ownerId);
       const original = await this.source(auth, snapshot.projectId, snapshot.revision, snapshot.sourceKey, true);
       this.requireBinding(snapshot, original);
-      const plan = await this.inspect(original.entry);
+      const plan = await this.inspect(original.entry, controller.signal);
       total = plan.frames * 2;
       controller.signal.throwIfAborted();
       this.storage.mkdirSync(folder);
@@ -350,7 +350,7 @@ export class StudioReverseConformService {
       if (!stat.isFile() || stat.size === 0) {
         throw new Error('Missing reversed file');
       }
-      checkStudioReverseOutput(plan, await this.media.probe(path, { countFrames: true }));
+      checkStudioReverseOutput(plan, await this.media.probe(path, { countFrames: true, signal: controller.signal }));
       const checksum = (await this.crypto.hashFile(path, 'sha256')).toString('hex');
       // The preview reads the checked master; source reversal and timeline effects are not repeated.
       controller.signal.throwIfAborted();
@@ -368,11 +368,11 @@ export class StudioReverseConformService {
       if (!previewStat.isFile() || previewStat.size === 0 || previewStat.size > 64 * 1024 * 1024) {
         throw new Error('Missing or oversized reverse preview');
       }
-      const previewInfo = await this.media.probe(previewPath, { countFrames: true });
+      const previewInfo = await this.media.probe(previewPath, { countFrames: true, signal: controller.signal });
       checkStudioReversePreview(
         plan,
         previewInfo,
-        await this.renderer.probeGeometry(previewPath, previewInfo.videoStreams[0]?.index ?? 0),
+        await this.renderer.probeGeometry(previewPath, previewInfo.videoStreams[0]?.index ?? 0, controller.signal),
         await this.renderer.previewPackets(previewPath, controller.signal),
       );
       const previewChecksum = (await this.crypto.hashFile(previewPath, 'sha256')).toString('hex');
@@ -601,13 +601,13 @@ export class StudioReverseConformService {
     }
   }
 
-  private async inspect(entry: StudioAuthorizedEntry) {
+  private async inspect(entry: StudioAuthorizedEntry, signal?: AbortSignal) {
     const stat = await this.storage.stat(entry.path!);
     if (!stat.isFile() || stat.size === 0 || stat.size > 256 * 1024 * 1024) {
       throw new BadRequestException('Local source reversal accepts files up to 256 MiB');
     }
     await this.checkBytes(entry);
-    const info = await this.media.probe(entry.path!);
+    const info = await this.media.probe(entry.path!, { signal });
     if (
       !info.videoStreams[0] ||
       !Number.isFinite(info.format.duration) ||
@@ -617,8 +617,12 @@ export class StudioReverseConformService {
       throw new BadRequestException('Local source reversal accepts video up to ten seconds');
     }
     const streamIndex = info.videoStreams[0].index;
-    const geometry = await this.renderer.probeGeometry(entry.path!, streamIndex);
-    return checkStudioReverseSource(info, await this.media.probePackets(entry.path!, streamIndex), geometry);
+    const geometry = await this.renderer.probeGeometry(entry.path!, streamIndex, signal);
+    return checkStudioReverseSource(
+      info,
+      await this.media.probePackets(entry.path!, streamIndex, { signal }),
+      geometry,
+    );
   }
 
   private async owner(ownerId: string): Promise<AuthDto> {

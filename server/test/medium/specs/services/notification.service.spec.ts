@@ -25,6 +25,7 @@ import { DB } from 'src/schema/index.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { IEmailJob } from 'src/types.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
 import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
@@ -329,4 +330,69 @@ describe('queued album delivery current authority (FL-137)', () => {
       );
     },
   );
+});
+
+describe('notification detail and retention contracts', () => {
+  it('returns an active notification only to its owner', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const item = await ctx.get(NotificationRepository).create({
+      userId: user.id,
+      title: 'Active fixture',
+      description: null,
+      data: null,
+      readAt: null,
+    });
+    await expect(sut.get(AuthFactory.create({ id: user.id }), item.id)).resolves.toMatchObject({
+      id: item.id,
+      title: 'Active fixture',
+      readAt: undefined,
+    });
+    await expect(sut.get(AuthFactory.create({ id: other.id }), item.id)).rejects.toThrow();
+  });
+
+  it('does not return a soft-deleted notification through the detail or list query', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const repository = ctx.get(NotificationRepository);
+    const item = await repository.create({
+      userId: user.id,
+      title: 'Deleted fixture',
+      description: null,
+      data: null,
+      readAt: null,
+    });
+    await repository.delete(item.id);
+    await expect(repository.get(item.id)).resolves.toBeUndefined();
+    await expect(sut.search(AuthFactory.create({ id: user.id }), {})).resolves.toEqual([]);
+  });
+
+  it.each([
+    { label: 'old recently read', createdDays: 20, readDays: 1, deletedDays: null, retained: false },
+    { label: 'old previously read', createdDays: 20, readDays: 3, deletedDays: null, retained: true },
+    { label: 'old unread', createdDays: 40, readDays: null, deletedDays: null, retained: true },
+    { label: 'old soft-deleted', createdDays: 20, readDays: null, deletedDays: 4, retained: false },
+  ])('preserves SQL cleanup behavior for $label', async ({ createdDays, readDays, deletedDays, retained }) => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const repository = ctx.get(NotificationRepository);
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    const item = await repository.create({
+      userId: user.id,
+      title: 'Retention fixture',
+      description: null,
+      data: null,
+      createdAt: daysAgo(createdDays),
+      readAt: readDays === null ? null : daysAgo(readDays),
+      deletedAt: deletedDays === null ? null : daysAgo(deletedDays),
+    });
+    await repository.cleanup();
+    const row = await defaultDatabase
+      .selectFrom('notification')
+      .select('id')
+      .where('id', '=', item.id)
+      .executeTakeFirst();
+    expect(row !== undefined).toBe(retained);
+  });
 });

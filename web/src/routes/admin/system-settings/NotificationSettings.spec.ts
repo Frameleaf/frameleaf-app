@@ -19,6 +19,7 @@ import { goto } from '$app/navigation';
 import { SIGN_IN_POLL_MS } from '$lib/components/frameleaf/settings/notifications/mail-sign-in.svelte';
 import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
+import { deferredPromise } from '@test-data/deferred';
 import en from '../../../../../i18n/en.json';
 import NotificationSettings from './NotificationSettings.svelte';
 
@@ -256,6 +257,29 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
       expect(screen.queryByRole('button', { name: 'Use an app password instead' })).not.toBeInTheDocument();
       expect(store.dirty).toBe(false);
     });
+  });
+
+  it.each([false, true])('saves only the SMTP draft actually tested (changed while waiting: %s)', async (changed) => {
+    const { store, save } = open(config({ host: 'smtp.example.com', username: 'sender@example.com' }, true), answer());
+    store.draft.notifications.smtp.replyTo = 'tested@example.com';
+    save.mockImplementation(async ({ config }) => ({ config, revision: 'r2' }));
+    const pending = deferredPromise<{ messageId: string }>();
+    vi.mocked(sendTestEmailAdmin).mockReturnValueOnce(pending.promise);
+    await fireEvent.click(button(en.frameleaf_notify_test_send));
+    await waitFor(() => expect(sendTestEmailAdmin).toHaveBeenCalled());
+    if (changed) {
+      store.draft.notifications.smtp.replyTo = 'later@example.com';
+    }
+    pending.resolve({ messageId: 'm1' });
+    await screen.findByText(/^Sent to taylor@example\.com at /);
+    if (changed) {
+      expect(save).not.toHaveBeenCalled();
+      expect(store.draft.notifications.smtp.replyTo).toBe('later@example.com');
+      expect(store.dirty).toBe(true);
+    } else {
+      await waitFor(() => expect(save).toHaveBeenCalledOnce());
+      expect(save.mock.calls[0][0].config.notifications.smtp.replyTo).toBe('tested@example.com');
+    }
   });
 
   describe('signed in', () => {

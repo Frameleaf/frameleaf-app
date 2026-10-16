@@ -352,6 +352,8 @@ describe('validation input envelopes', () => {
       settled: true,
     };
     expect(validPrivateCopy({ payload: copy, seal: 'old', pending: [] })).toBe(true);
+    expect(validPrivateCopy({ payload: { ...copy, identity: null }, seal: 'old', pending: [] })).toBe(true);
+    expect(validPrivateCopy({ payload: { ...copy, identity: undefined }, seal: 'old', pending: [] })).toBe(false);
     expect(validPrivateWork({ payload: work, seal: 'old' })).toBe(true);
     expect(privateCopyScope(copy)).toBe(`icloud-scheduled-private-copy:v1:${ownerId}:${resourceId}:${generation}`);
     expect(privateWorkScope(work)).toBe(`icloud-scheduled-private-work:v1:${ownerId}:${resourceId}:${generation}`);

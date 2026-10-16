@@ -1,7 +1,10 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { access, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { PhysicalFileType } from 'src/enum.js';
+import { AssetType, AssetVisibility, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -36,6 +39,9 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
   StorageCore.setMediaLocation('/data');
 });
+
+// FL-412: a stored file is stood in for by its path: proven to hold the content, with a fixed identity
+const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
 
 describe(PhysicalFileTrashRepository.name, () => {
   describe('deleteUnreferencedPath with the file trash', () => {
@@ -108,6 +114,140 @@ describe(PhysicalFileTrashRepository.name, () => {
   });
 
   describe('trash, untrash and purge', () => {
+    it('rolls back asset, EXIF and original linking together with a failed restore registration', async () => {
+      const { ctx, sut, files } = setup();
+      const { user } = await ctx.newUser();
+      const directory = await mkdtemp(join(tmpdir(), 'frameleaf-restore-registration-'));
+      onTestFinished(() => rm(directory, { recursive: true, force: true }));
+      const source = join(directory, 'trashed.jpg');
+      const target = join(directory, 'restored.jpg');
+      const id = randomUUID();
+      const assetId = randomUUID();
+      const checksum = randomBytes(32);
+      const bytes = Buffer.from('private transactional restore control');
+      await writeFile(source, bytes);
+      await sql`INSERT INTO public.physical_file_trash
+        (id, path, checksum, "sizeInBytes", "originalFileName", "lastOwnerId")
+        VALUES (${id}::uuid, ${source}, ${checksum}, ${bytes.length}, 'photo.jpg', ${user.id}::uuid)`.execute(
+        defaultDatabase,
+      );
+      const assets = new AssetRepository(defaultDatabase);
+      const failure = new Error('registration interrupted');
+      const timestamp = new Date();
+
+      await expect(
+        sut.untrash(id, target, rename, async (trx) => {
+          await assets.create(
+            {
+              id: assetId,
+              ownerId: user.id,
+              libraryId: null,
+              checksum,
+              checksumAlgorithm: ChecksumAlgorithm.sha256File,
+              originalPath: target,
+              originalFileName: 'photo.jpg',
+              fileCreatedAt: timestamp,
+              fileModifiedAt: timestamp,
+              localDateTime: timestamp,
+              type: AssetType.Image,
+              isFavorite: false,
+              duration: null,
+              visibility: AssetVisibility.Timeline,
+              livePhotoVideoId: null,
+            },
+            undefined,
+            trx,
+          );
+          await assets.upsertExif(
+            { exif: { assetId, fileSizeInByte: bytes.length }, lockedPropertiesBehavior: 'override' },
+            trx,
+          );
+          const stored = await files.linkUploadedOriginal(
+            assetId,
+            { checksum, sizeInBytes: bytes.length },
+            { verify: onDisk, identify: onDisk },
+            { transaction: trx, proof: undefined },
+          );
+          expect(stored).toMatchObject({ linked: false });
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+
+      await expect(readFile(source)).resolves.toEqual(bytes);
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(sut.getById(id)).resolves.toMatchObject({ path: source });
+      for (const table of ['asset', 'asset_exif'] as const) {
+        const rows =
+          table === 'asset'
+            ? await defaultDatabase.selectFrom(table).select('id').where('id', '=', assetId).execute()
+            : await defaultDatabase.selectFrom(table).select('assetId').where('assetId', '=', assetId).execute();
+        expect(rows).toEqual([]);
+      }
+      const originals = await defaultDatabase
+        .selectFrom('physical_file')
+        .select('id')
+        .where('checksum', '=', checksum)
+        .execute();
+      expect(originals).toEqual([]);
+    });
+
+    it('recovers a surviving restore journal through a fresh repository', async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'frameleaf-restore-restart-'));
+      onTestFinished(() => rm(directory, { recursive: true, force: true }));
+      const source = join(directory, 'trashed.jpg');
+      const target = join(directory, 'restored.jpg');
+      const id = randomUUID();
+      const intentId = randomUUID();
+      const bytes = Buffer.from('private surviving restore journal control');
+      await writeFile(target, bytes);
+      await sql`INSERT INTO public.physical_file_trash
+        (id, path, checksum, "sizeInBytes", "originalFileName")
+        VALUES (${id}::uuid, ${source}, ${randomBytes(32)}, ${bytes.length}, 'photo.jpg')`.execute(defaultDatabase);
+      await sql`INSERT INTO public.move_history (id, "entityId", "pathType", "oldPath", "newPath")
+        VALUES (${intentId}::uuid, ${intentId}::uuid, 'file_trash', ${source}, ${target})`.execute(defaultDatabase);
+
+      await new PhysicalFileTrashRepository(defaultDatabase).recoverMoves(rename);
+
+      await expect(readFile(source)).resolves.toEqual(bytes);
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+      const remaining = await defaultDatabase
+        .selectFrom('move_history')
+        .select('id')
+        .where('id', '=', intentId)
+        .execute();
+      expect(remaining).toEqual([]);
+    });
+
+    it('recovers an untrash move that completed before its callback rejected', async () => {
+      const { sut } = setup();
+      const directory = await mkdtemp(join(tmpdir(), 'frameleaf-untrash-rollback-'));
+      onTestFinished(() => rm(directory, { recursive: true, force: true }));
+      const source = join(directory, 'trashed.jpg');
+      const target = join(directory, 'restored.jpg');
+      const id = randomUUID();
+      const checksum = randomBytes(32);
+      const bytes = Buffer.from('private untrash rollback control');
+      await writeFile(source, bytes);
+      await sql`INSERT INTO public.physical_file_trash
+        (id, path, checksum, "sizeInBytes", "originalFileName")
+        VALUES (${id}::uuid, ${source}, ${checksum}, ${bytes.length}, 'photo.jpg')`.execute(defaultDatabase);
+      const failure = new Error('move acknowledgement failed');
+      const move = vi.fn(async (from: string, to: string) => {
+        await rename(from, to);
+        if (from === source) throw failure;
+      });
+
+      await expect(sut.untrash(id, target, move)).rejects.toBe(failure);
+
+      await expect(readFile(source)).resolves.toEqual(bytes);
+      await expect(access(target)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(sut.getById(id)).resolves.toMatchObject({ path: source });
+      const journal = await sql`SELECT id FROM public.move_history
+        WHERE "pathType" = 'file_trash' AND "oldPath" = ${source}`.execute(defaultDatabase);
+      expect(journal.rows).toEqual([]);
+      expect(move).toHaveBeenLastCalledWith(target, source);
+    });
+
     const trashOne = async (
       ctx: MediumTestContext,
       sut: PhysicalFileTrashRepository,
@@ -219,7 +359,7 @@ describe(PhysicalFileTrashRepository.name, () => {
       const result = await files.linkUploadedOriginal(
         upload.id,
         { checksum, sizeInBytes: 1000 },
-        { exists: () => Promise.resolve(true), untrash },
+        { verify: onDisk, identify: onDisk, untrash },
       );
 
       expect(result).toMatchObject({ linked: true, physicalFile: { canonicalAssetId: upload.id } });

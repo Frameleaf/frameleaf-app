@@ -1,15 +1,29 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import { handleError } from '$lib/utils/handle-error';
+import { deferredPromise } from '@test-data/deferred';
 import en from '../../../../../i18n/en.json';
 import SharingSettings from './SharingSettings.svelte';
 
-const server = vi.hoisted(() => ({ publicUsers: true, isAdmin: false }));
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: vi.fn() }));
+vi.mock('$lib/utils/handle-error', async (original) => ({ ...(await original<object>()), handleError: vi.fn() }));
+
+const server = vi.hoisted(() => ({ publicUsers: true, isAdmin: false, session: 0, userId: 'me' }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
+    captureSession: () => {
+      const session = server.session;
+      return () => session === server.session;
+    },
     user: {
-      id: 'me',
+      get id() {
+        return server.userId;
+      },
       get isAdmin() {
         return server.isAdmin;
       },
@@ -60,6 +74,9 @@ describe('SharingSettings: People & sharing in plain words (FL-368)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    server.session++;
+    server.userId = 'me';
+    vi.mocked(confirmFrameleaf).mockReset().mockResolvedValue(true);
     server.publicUsers = true;
     server.isAdmin = false;
     HTMLDialogElement.prototype.showModal ??= vi.fn(function (this: HTMLDialogElement) {
@@ -206,5 +223,145 @@ describe('SharingSettings: People & sharing in plain words (FL-368)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_people_sharing.accounts_error);
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add a partner' })).toBeEnabled());
+  });
+  it.each(['leave', 'stop'] as const)(
+    'does not complete a retired %s confirmation in another session',
+    async (kind) => {
+      const pending = deferredPromise<boolean>();
+      vi.mocked(confirmFrameleaf).mockReturnValue(pending.promise);
+      sdkMock.getClusterGroupUsers.mockResolvedValue([user('me', 'Taylor'), user('sam', 'Sam')]);
+      sdkMock.getPartners.mockImplementation(({ direction }) =>
+        Promise.resolve(direction === 'shared-by' ? [user('sam', 'Sam')] : []),
+      );
+      render(SharingSettings);
+      const button = await screen.findByRole('button', {
+        name: kind === 'leave' ? 'Leave' : 'Stop sharing your library with Sam',
+      });
+      await fireEvent.click(button);
+      server.session++;
+      server.userId = 'replacement';
+      pending.resolve(true);
+      await pending.promise;
+      await tick();
+      expect(sdkMock.leaveClusterGroup).not.toHaveBeenCalled();
+      expect(sdkMock.removePartner).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['leave', 'stop'] as const)('does not complete a %s confirmation after the settings close', async (kind) => {
+    const pending = deferredPromise<boolean>();
+    vi.mocked(confirmFrameleaf).mockReturnValue(pending.promise);
+    sdkMock.getClusterGroupUsers.mockResolvedValue([user('me', 'Taylor'), user('sam', 'Sam')]);
+    sdkMock.getPartners.mockImplementation(({ direction }) =>
+      Promise.resolve(direction === 'shared-by' ? [user('sam', 'Sam')] : []),
+    );
+    const view = render(SharingSettings);
+    await fireEvent.click(
+      await screen.findByRole('button', { name: kind === 'leave' ? 'Leave' : 'Stop sharing your library with Sam' }),
+    );
+    view.unmount();
+    pending.resolve(true);
+    await pending.promise;
+    await tick();
+    expect(sdkMock.leaveClusterGroup).not.toHaveBeenCalled();
+    expect(sdkMock.removePartner).not.toHaveBeenCalled();
+  });
+
+  it('does not read group details after its account read is retired', async () => {
+    const pending = deferredPromise<Awaited<ReturnType<typeof sdkMock.getMyUser>>>();
+    sdkMock.getMyUser.mockReturnValue(pending.promise);
+    render(SharingSettings);
+    server.session++;
+    pending.resolve({ clusterGroupId: 'obsolete-group' } as Awaited<ReturnType<typeof sdkMock.getMyUser>>);
+    await pending.promise;
+    await tick();
+    expect(sdkMock.getClusterGroupUsers).not.toHaveBeenCalled();
+    expect(sdkMock.getClusterGroupRequestsForGroup).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh partner data after a save completes in a replacement session', async () => {
+    const pending = deferredPromise<Awaited<ReturnType<typeof sdkMock.createPartner>>>();
+    sdkMock.createPartner.mockReturnValue(pending.promise);
+    render(SharingSettings);
+    const add = await screen.findByRole('button', { name: 'Add a partner' });
+    await waitFor(() => expect(add).toBeEnabled());
+    await fireEvent.click(add);
+    sdkMock.getPartners.mockClear();
+    await fireEvent.click(screen.getByRole('button', { name: 'Share my library with Sam' }));
+    server.session++;
+    pending.resolve({} as Awaited<ReturnType<typeof sdkMock.createPartner>>);
+    await pending.promise;
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getPartners).not.toHaveBeenCalled();
+  });
+
+  it('keeps a replacement dialog open when an earlier save finishes', async () => {
+    const pending = deferredPromise<Awaited<ReturnType<typeof sdkMock.createPartner>>>();
+    sdkMock.createPartner.mockReturnValue(pending.promise);
+    render(SharingSettings);
+    const add = await screen.findByRole('button', { name: 'Add a partner' });
+    await waitFor(() => expect(add).toBeEnabled());
+    await fireEvent.click(add);
+    await fireEvent.click(screen.getByRole('button', { name: 'Share my library with Sam' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Invite someone' }));
+    const replacement = screen.getByRole('dialog');
+    pending.resolve({} as Awaited<ReturnType<typeof sdkMock.createPartner>>);
+    await pending.promise;
+    await waitFor(() => expect(sdkMock.getPartners).toHaveBeenCalledTimes(4));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(replacement).toBeVisible();
+    expect(screen.getByRole('dialog')).toBe(replacement);
+  });
+
+  it('announces a committed partner revocation after ordinary navigation using the original account', async () => {
+    const pending = deferredPromise<Awaited<ReturnType<typeof sdkMock.removePartner>>>();
+    sdkMock.removePartner.mockReturnValue(pending.promise);
+    sdkMock.getPartners.mockImplementation(({ direction }) =>
+      Promise.resolve(direction === 'shared-by' ? [user('sam', 'Sam')] : []),
+    );
+    const emit = vi.spyOn(eventManager, 'emit');
+    const view = render(SharingSettings);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Stop sharing your library with Sam' }));
+    await waitFor(() => expect(sdkMock.removePartner).toHaveBeenCalledWith({ id: 'sam' }));
+    view.unmount();
+    pending.resolve(undefined as Awaited<ReturnType<typeof sdkMock.removePartner>>);
+    await pending.promise;
+    await tick();
+    await waitFor(() => expect(emit).toHaveBeenCalledWith('PartnerRevoke', { sharedById: 'me', sharedWithId: 'sam' }));
+    emit.mockRestore();
+  });
+  it('keeps the newest partner read when an initial read finishes after a save', async () => {
+    const old = deferredPromise<Awaited<ReturnType<typeof sdkMock.getPartners>>>();
+    sdkMock.getPartners
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValue([user('sam', 'Sam')]);
+    render(SharingSettings);
+    const add = await screen.findByRole('button', { name: 'Add a partner' });
+    await waitFor(() => expect(add).toBeEnabled());
+    await fireEvent.click(add);
+    await fireEvent.click(screen.getByRole('button', { name: 'Share my library with Sam' }));
+    await screen.findByRole('button', { name: 'Stop sharing your library with Sam' });
+    old.resolve([]);
+    await old.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('button', { name: 'Stop sharing your library with Sam' })).toBeVisible();
+  });
+
+  it('does not report a save failure in a replacement session', async () => {
+    const pending = deferredPromise<Awaited<ReturnType<typeof sdkMock.createPartner>>>();
+    sdkMock.createPartner.mockReturnValue(pending.promise);
+    render(SharingSettings);
+    const add = await screen.findByRole('button', { name: 'Add a partner' });
+    await waitFor(() => expect(add).toBeEnabled());
+    await fireEvent.click(add);
+    await fireEvent.click(screen.getByRole('button', { name: 'Share my library with Sam' }));
+    server.session++;
+    pending.reject(new Error('Offline'));
+    await pending.promise.catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(handleError).not.toHaveBeenCalled();
   });
 });

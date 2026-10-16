@@ -1704,6 +1704,17 @@ where
   "asset_ocr_audit"."id" < $1
   and "asset_ocr_audit"."id" > $2
   and "asset"."ownerId" = $3
+  and not (
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
+  )
 order by
   "asset_ocr_audit"."id" asc
 
@@ -1731,6 +1742,17 @@ where
   "asset_ocr"."updateId" < $1
   and "asset_ocr"."updateId" > $2
   and "asset"."ownerId" = $3
+  and not (
+    exists (
+      select
+        1
+      from
+        public.asset as nsfw_asset
+      where
+        nsfw_asset.id = "asset"."id"
+        and nsfw_asset.is_nsfw = true
+    )
+  )
 order by
   "asset_ocr"."updateId" asc
 

@@ -22,6 +22,7 @@ export class ICloudRelationsService {
   async onBootstrap() {
     this.stopped = false;
     await this.enqueue();
+    if (this.stopped) return;
     this.cron?.create({
       name: 'icloud-local-relations',
       expression: '* * * * *',

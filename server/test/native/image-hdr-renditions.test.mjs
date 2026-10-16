@@ -891,3 +891,40 @@ test('failed owned-output cleanup closes admission instead of starting queued wo
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+for (const operation of ['generateHdrRenditions', 'exportPhotoStill']) {
+  test(`${operation} rolls back cancellation between staging cleanup and result acceptance`, async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'frameleaf-hdr-handoff-abort-'));
+    const pool = new SharpProcessPool({ workers: 1, pending: 0, graceMs: 100 });
+    const abort = new AbortController();
+    const finish = pool.finishOutputs.bind(pool);
+    pool.finishOutputs = async (...args) => {
+      await finish(...args);
+      abort.abort(new Error('cancel before result handoff'));
+    };
+    try {
+      const pixels = new Float32Array(16 * 8 * 4);
+      for (let i = 0; i < pixels.length; i += 4) pixels.set([8, 4, 2, 1], i);
+      const original = codec.encode(Buffer.from(pixels.buffer), 16, 8, 1, ...limits);
+      const input = join(folder, 'original.jpg');
+      const output = join(folder, 'published.jpg');
+      await writeFile(input, original);
+      await writeFile(join(folder, 'prior.jpg'), 'previous rendition');
+      const work =
+        operation === 'generateHdrRenditions'
+          ? pool.run(operation, [input, [{ path: output }]], abort.signal)
+          : pool.run(
+              operation,
+              [input, output, 'hdr-jpeg', createHash('sha256').update(original).digest()],
+              abort.signal,
+            );
+      await assert.rejects(work, /cancel before result handoff/);
+      assert.deepEqual((await readdir(folder)).sort(), ['original.jpg', 'prior.jpg']);
+      assert.deepEqual(await readFile(input), original);
+      assert.equal(await readFile(join(folder, 'prior.jpg'), 'utf8'), 'previous rendition');
+    } finally {
+      await pool.close();
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+}

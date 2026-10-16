@@ -134,14 +134,44 @@
     assetCursor.current ? positionInTimeline(timelineManager.months, assetCursor.current.id) : null,
   );
 
+  const randomAssetId = $derived(assetViewerManager.asset?.id);
+  let randomView: object | undefined;
+  $effect.pre(() => {
+    randomView = { timelineManager, id: randomAssetId };
+  });
+  const randomSession = authManager.captureSession();
   const handleRandom = async () => {
-    const randomAsset = await timelineManager.getRandomAsset();
-    if (!randomAsset) {
+    const manager = timelineManager;
+    const view = randomView;
+    const current = () =>
+      !destroyed &&
+      randomSession() &&
+      assetViewerManager.isViewing &&
+      manager === timelineManager &&
+      view === randomView;
+    if (!current()) {
       return;
     }
-
-    await navigate({ targetRoute: 'current', assetId: randomAsset.id });
-    return { id: randomAsset.id };
+    try {
+      const randomAsset = await manager.getRandomAsset();
+      if (!current() || !randomAsset) {
+        return;
+      }
+      await navigate({ targetRoute: 'current', assetId: randomAsset.id });
+      if (
+        !destroyed &&
+        randomSession() &&
+        manager === timelineManager &&
+        assetViewerManager.isViewing &&
+        assetViewerManager.asset?.id === randomAsset.id
+      ) {
+        return { id: randomAsset.id };
+      }
+    } catch (error) {
+      if (current()) {
+        throw error;
+      }
+    }
   };
 
   const handleClose = async (assetId: string) => {

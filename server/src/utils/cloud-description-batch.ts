@@ -268,16 +268,15 @@ export const groupCloudDescriptionBatches = (
   candidates: ReadonlyArray<{ assetId: string; ownerId: string }>,
   size = CLOUD_DESCRIPTION_BATCH_SIZE,
 ): Array<{ ownerId: string; assetIds: string[] }> => {
-  const perOwner = new Map<string, string[]>();
+  const perOwner = new Map<string, Set<string>>();
   for (const { assetId, ownerId } of candidates) {
-    const list = perOwner.get(ownerId) ?? [];
-    if (!list.includes(assetId)) {
-      list.push(assetId);
-    }
+    const list = perOwner.get(ownerId) ?? new Set<string>();
+    list.add(assetId);
     perOwner.set(ownerId, list);
   }
   const batches: Array<{ ownerId: string; assetIds: string[] }> = [];
-  for (const [ownerId, assetIds] of perOwner) {
+  for (const [ownerId, list] of perOwner) {
+    const assetIds = [...list];
     for (let start = 0; start < assetIds.length; start += size) {
       batches.push({ ownerId, assetIds: assetIds.slice(start, start + size) });
     }

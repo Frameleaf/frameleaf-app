@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import {
   backupKeyFile,
+  cloudBackupPersonSchema,
   compactIso,
   keyFingerprint,
   manifestKey,
   parseBackupKey,
   parseRunResult,
+  readManifestSection,
   recoveryCode,
   s3SettingsProblem,
   signingRegion,
@@ -71,4 +73,41 @@ describe('cloud backup helpers (FL-160)', () => {
       total: 10,
     });
   });
+
+  it('keeps manifest section keys as data and never resolves inherited entries', () => {
+    const person = { ownerId: 'owner-1', name: 'Ada', birthDate: null, isHidden: false, isFavorite: false };
+    const section = JSON.parse(
+      JSON.stringify(
+        Object.fromEntries([
+          ['__proto__', person],
+          ['person-1', person],
+          ['invalid', { name: 2 }],
+        ]),
+      ),
+    );
+
+    const parsed = readManifestSection(section, cloudBackupPersonSchema);
+
+    expect(Object.keys(parsed)).toEqual(['__proto__', 'person-1']);
+    expect(Object.hasOwn(parsed, '__proto__')).toBe(true);
+    expect(parsed['__proto__']).toEqual(person);
+    expect(parsed['constructor']).toBeUndefined();
+    expect(parsed['toString']).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(parsed))).toEqual(
+      Object.fromEntries([
+        ['__proto__', person],
+        ['person-1', person],
+      ]),
+    );
+  });
+
+  it.each([[undefined], [null], [[]]])(
+    'has no inherited metadata for an absent or malformed section (%j)',
+    (section) => {
+      const parsed = readManifestSection(section, cloudBackupPersonSchema);
+      expect(Object.keys(parsed)).toEqual([]);
+      expect(parsed['constructor']).toBeUndefined();
+      expect(parsed['toString']).toBeUndefined();
+    },
+  );
 });

@@ -153,8 +153,8 @@ export class DatabaseBackupService {
         // remove known bad parameters
         parsedUrl.searchParams.delete('uselibpqcompat');
 
-        databaseUsername = parsedUrl.username || parsedUrl.searchParams.get('user');
-        databasePassword = parsedUrl.password;
+        databaseUsername = decodeURIComponent(parsedUrl.username) || parsedUrl.searchParams.get('user');
+        databasePassword = decodeURIComponent(parsedUrl.password);
 
         url = parsedUrl.href;
       }
@@ -746,7 +746,7 @@ const SQL_RESET_SCHEMA = (username: string) => `
   CREATE SCHEMA public;
 
   -- restore access to schema
-  GRANT ALL ON SCHEMA public TO "${username}";
+  GRANT ALL ON SCHEMA public TO "${username.replaceAll('"', '""')}";
   GRANT ALL ON SCHEMA public TO public;
 `;
 

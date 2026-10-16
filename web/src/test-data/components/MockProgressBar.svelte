@@ -1,17 +1,24 @@
 <script lang="ts">
   import { ProgressBarStatus } from '$lib/constants';
   import { onMount } from 'svelte';
-  import { progressBarCalls } from './progress-bar-calls';
+  import { progressBarCalls, progressBarFixture } from './progress-bar-calls';
 
   type Props = {
     autoplay?: boolean;
+    onDone?: () => Promise<void>;
     status?: ProgressBarStatus;
   };
 
-  let { autoplay = false, status = $bindable() }: Props = $props();
+  let { autoplay = false, status = $bindable(), onDone }: Props = $props();
 
   onMount(() => {
     status = autoplay ? ProgressBarStatus.Playing : ProgressBarStatus.Paused;
+    progressBarFixture.done = onDone;
+    return () => {
+      if (progressBarFixture.done === onDone) {
+        progressBarFixture.done = undefined;
+      }
+    };
   });
 
   export const play = () => {
@@ -27,5 +34,6 @@
   };
   export const resetProgress = () => {
     progressBarCalls.push('reset');
+    return progressBarFixture.reset?.();
   };
 </script>

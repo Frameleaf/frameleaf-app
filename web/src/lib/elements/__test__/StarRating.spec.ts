@@ -1,4 +1,4 @@
-import { render } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import StarRating from '$lib/elements/StarRating.svelte';
 
 describe('StarRating component', () => {
@@ -72,4 +72,18 @@ describe('StarRating component', () => {
       expect(label.className).toBe(index < 2 ? 'filled' : '');
     }
   });
+});
+
+it('cancels a pending rating when the control is removed', async () => {
+  vi.useFakeTimers();
+  const onRating = vi.fn();
+  const component = render(StarRating, { rating: 2, onRating });
+  try {
+    await fireEvent.change(component.getAllByRole('radio')[3], { target: { checked: true } });
+    component.unmount();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(onRating).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

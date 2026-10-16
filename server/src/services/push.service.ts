@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { PushDeviceWithActivities } from 'src/repositories/push-device.repository.js';
+import type { PushDeviceWithActivities, PushTokenRef } from 'src/repositories/push-device.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -46,7 +46,6 @@ import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidd
 import { notificationLocaleOf } from 'src/utils/notification-locale.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { parsePushPublicKey, pushKeyFingerprint, sealPushEnvelope } from 'src/utils/push-crypto.js';
-
 /** How long a phone backup may go without a reported success before the device is woken. */
 export const PUSH_BACKUP_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 /** At most one stale-backup wake-up per device in this window (the nightly job runs once a day). */
@@ -524,9 +523,9 @@ export class PushService {
     await Promise.all(Array.from({ length: Math.min(PUSH_GATEWAY_CONCURRENCY, planned.length) }, () => worker()));
 
     const delivered = new Set<string>();
-    const goneDevices = new Set<string>();
-    const goneStartTokens = new Set<string>();
-    const goneActivities = new Set<string>();
+    const goneDevices = new Map<string, PushTokenRef>();
+    const goneStartTokens = new Map<string, PushTokenRef>();
+    const goneActivities = new Map<string, PushTokenRef>();
     const again: PlannedMessage[] = [];
     let retryAfterSec = 0;
     let rejected = 0;
@@ -536,12 +535,13 @@ export class PushService {
       } else if (result.status === 'sent') {
         delivered.add(entry.deviceId);
       } else if (result.status === 'invalid-token') {
+        const invalid = { id: entry.deviceId, token: entry.request.token, platform: entry.request.platform };
         if (entry.kind === PushTargetKind.Device) {
-          goneDevices.add(entry.deviceId);
+          goneDevices.set(entry.deviceId, invalid);
         } else if (entry.kind === PushTargetKind.ActivityStart) {
-          goneStartTokens.add(entry.deviceId);
+          goneStartTokens.set(entry.deviceId, invalid);
         } else if (entry.activityRowId) {
-          goneActivities.add(entry.activityRowId);
+          goneActivities.set(entry.activityRowId, { ...invalid, id: entry.activityRowId });
         }
       } else if (entry.request.type === 'live-activity-update') {
         // never retried: a later attempt could show an older step, and the next update replaces it anyway
@@ -551,9 +551,14 @@ export class PushService {
         retryAfterSec = Math.max(retryAfterSec, result.retryAfterSec ?? 0);
       }
     }
-    await this.devices.deleteByIds([...goneDevices]);
-    await this.devices.clearPushToStartTokens([...goneStartTokens].filter((id) => !goneDevices.has(id)));
-    await this.devices.deleteActivitiesByIds([...goneActivities]);
+    await this.devices.deleteByIds(goneDevices.values().toArray());
+    await this.devices.clearPushToStartTokens(
+      goneStartTokens
+        .values()
+        .filter(({ id }) => !goneDevices.has(id))
+        .toArray(),
+    );
+    await this.devices.deleteActivitiesByIds(goneActivities.values().toArray());
     await this.devices.markDelivered([...delivered].filter((id) => !goneDevices.has(id)));
 
     const attempt = (notice.retry?.attempt ?? 1) + 1;
@@ -578,7 +583,7 @@ export class PushService {
     }
     if (rejected > 0 || goneDevices.size > 0 || again.length > 0) {
       this.logger.warn(
-        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid token(s) removed, ${again.length} to retry${retrying || again.length === 0 ? '' : ' (given up)'}`,
+        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid device token(s) reported, ${again.length} to retry${retrying || again.length === 0 ? '' : ' (given up)'}`,
       );
     }
     return JobStatus.Success;
@@ -693,8 +698,8 @@ export class PushService {
       (!device.disabledEvents.includes(notice.type) || silentRenderEnd)
     ) {
       const id = randomUUID();
-      const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
       try {
+        const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
         planned.push({
           deviceId: device.id,
           kind: PushTargetKind.Device,
@@ -709,7 +714,7 @@ export class PushService {
           },
         });
       } catch (error) {
-        this.logger.warn(`Push device ${device.id} has an unusable key and was skipped: ${errorMessage(error)}`);
+        this.logger.warn(`Push device ${device.id} could not receive this notice: ${errorMessage(error)}`);
       }
     }
     return planned;

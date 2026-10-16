@@ -1,9 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isUndefined, omitBy } from 'lodash-es';
 import { DateTime } from 'luxon';
-import { basename, parse } from 'node:path';
+import { basename } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
 import type { JobOf } from 'src/types.js';
@@ -44,6 +43,7 @@ import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MemoryHighlightService } from 'src/services/memory-highlight.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
+import { nextArchiveName } from 'src/utils/file.js';
 import {
   type HiddenContentQueryOptions,
   getHiddenContentQueryOptions,
@@ -960,14 +960,6 @@ export class MemoryService extends BaseService {
           continue;
         }
 
-        let filename = sanitize(asset.originalFileName) || 'unnamed';
-        const seen = names.get(filename) ?? 0;
-        names.set(filename, seen + 1);
-        if (seen !== 0) {
-          const parsed = parse(filename);
-          filename = `${parsed.name}+${seen}${parsed.ext}`;
-        }
-
         let realpath = asset.originalPath;
         try {
           realpath = await this.storageRepository.realpath(realpath);
@@ -975,7 +967,7 @@ export class MemoryService extends BaseService {
           this.logger.warn('Unable to resolve realpath', { originalPath: asset.originalPath });
         }
 
-        zip.addFile(realpath, filename);
+        zip.addFile(realpath, nextArchiveName(names, asset.originalFileName));
       }
 
       await zip.finalize();

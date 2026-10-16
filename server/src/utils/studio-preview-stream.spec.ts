@@ -98,6 +98,20 @@ describe('studio preview stream rules', () => {
       expect(isValidAnswerSdp(`${answer}m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n`)).toBe(false);
     });
 
+    it.each([
+      { kind: 'offer', sdp: offer, validate: isValidOfferSdp },
+      { kind: 'answer', sdp: answer, validate: isValidAnswerSdp },
+    ])('bounds $kind SDP by UTF-8 bytes', ({ sdp, validate }) => {
+      const available = STREAM_MAX_SDP_BYTES - Buffer.byteLength(sdp) + 1;
+      const text = 'é'.repeat(Math.floor(available / 2)) + (available % 2 ? 'x' : '');
+      const exact = sdp.replace('s=-', () => `s=${text}`);
+      expect(Buffer.byteLength(exact)).toBe(STREAM_MAX_SDP_BYTES);
+      expect(validate(exact)).toBe(true);
+      const over = exact.replace('s=', 's=é');
+      expect(over.length).toBeLessThan(STREAM_MAX_SDP_BYTES);
+      expect(validate(over)).toBe(false);
+    });
+
     it('refuses oversized or non-SDP text', () => {
       expect(isValidAnswerSdp('x'.repeat(STREAM_MAX_SDP_BYTES + 1))).toBe(false);
       expect(isValidOfferSdp('hello')).toBe(false);

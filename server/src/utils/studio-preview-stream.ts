@@ -95,7 +95,10 @@ const direction = (section: Section) =>
   section.lines.find((line) => /^a=(sendonly|recvonly|sendrecv|inactive)$/.test(line))?.slice(2) ?? 'sendrecv';
 
 const looksLikeSdp = (sdp: string) =>
-  typeof sdp === 'string' && sdp.length > 0 && sdp.length <= STREAM_MAX_SDP_BYTES && sdp.startsWith('v=0');
+  typeof sdp === 'string' &&
+  sdp.length > 0 &&
+  Buffer.byteLength(sdp, 'utf8') <= STREAM_MAX_SDP_BYTES &&
+  sdp.startsWith('v=0');
 
 /**
  * The shape a preview offer must have: video the worker only sends, one data channel for control,
@@ -243,7 +246,7 @@ export const isOpenStream = (operation: Pick<StreamOperation, 'status'>) => OPEN
  * round from this claim; `offered` waits for the browser's answer; `answered` is up to the peers.
  */
 export const streamState = (operation: StreamOperation, signal: StreamSignal, now: Date): StreamState => {
-  if (!isOpenStream(operation)) {
+  if (signal.closeReason || !isOpenStream(operation)) {
     return 'closed';
   }
   if (!CLAIMED.has(operation.status) || streamWorkerLost(operation, now)) {

@@ -1,6 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { parse } from 'node:path';
-import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -13,21 +12,11 @@ import { Permission } from 'src/enum.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { DecimalSize } from 'src/utils/bytes.js';
+import { nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
-
-const nextArchiveName = (paths: Record<string, number>, originalFileName: string) => {
-  let filename = sanitize(originalFileName) || 'unnamed';
-  const count = paths[filename] || 0;
-  paths[filename] = count + 1;
-  if (count !== 0) {
-    const parsedFilename = parse(filename);
-    filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
-  }
-  return filename;
-};
 
 const archiveFileName = (asset: { originalFileName: string; editedPath?: string | null }, dto: DownloadArchiveDto) =>
   dto.edited && asset.editedPath
@@ -131,7 +120,7 @@ export class DownloadService extends BaseService {
 
     const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
     const zip = this.storageRepository.createZipStream();
-    const paths: Record<string, number> = {};
+    const paths = new Map<string, number>();
 
     for (const assetId of dto.assetIds) {
       const asset = assetMap.get(assetId);

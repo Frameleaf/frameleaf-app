@@ -21,13 +21,12 @@ import { InstanceIdentityRepository } from 'src/repositories/instance-identity.r
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PushService } from 'src/services/push.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
-import { PushNotice, PushSendRequest, PushSendResult, collapseIdOf } from 'src/utils/frameleaf-push.js';
+import { PushNotice, PushSendRequest, PushSendResult, PushTargetKind, collapseIdOf } from 'src/utils/frameleaf-push.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
 import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { factory } from 'test/small.factory.js';
-
 type DeviceKey = { publicKey: string; privateKey: KeyObject };
 
 const newDeviceKey = (): DeviceKey => {
@@ -463,6 +462,54 @@ describe(PushService.name, () => {
   });
 
   describe('delivery', () => {
+    it.each([
+      [PushTargetKind.Device, 'deleteByIds'],
+      [PushTargetKind.ActivityStart, 'clearPushToStartTokens'],
+      [PushTargetKind.ActivityUpdate, 'deleteActivitiesByIds'],
+    ] as const)('pins invalid %s cleanup to the attempted token and platform', async (kind, cleanup) => {
+      const { sut, devices, gateway } = newHarness();
+      const token = 'old-token-0123456789abcdef0123456789abcdef';
+      const replacement = 'new-token-0123456789abcdef0123456789abcdef';
+      const target = device(newDeviceKey(), {
+        pushToken: token,
+        pushToStartToken: kind === PushTargetKind.ActivityStart ? token : null,
+        activities: kind === PushTargetKind.ActivityUpdate ? [{ ...activity(), token }] : [],
+        apnsEnvironment: 'sandbox',
+      });
+      devices.getDeliveryTargets.mockResolvedValue([target]);
+      gateway.send.mockImplementationOnce((_target, request) =>
+        Promise.try(() => {
+          expect(request.token).toBe(token);
+          target.pushToken = replacement;
+          target.pushToStartToken = replacement;
+          for (const activity of target.activities) activity.token = replacement;
+          return { status: 'invalid-token' };
+        }),
+      );
+
+      await sut.handleDeliver({
+        notice: notice(kind === PushTargetKind.Device ? {} : { activation: activation('active') }),
+      });
+
+      const id = kind === PushTargetKind.ActivityUpdate ? target.activities[0].id : target.id;
+      expect(devices[cleanup]).toHaveBeenCalledWith([{ id, token, platform: 'apns-sandbox' }]);
+    });
+
+    it('skips an oversized payload and delivers the following notice', async () => {
+      const { sut, devices, gateway, sent } = newHarness();
+      const key = newDeviceKey();
+      devices.getDeliveryTargets.mockResolvedValue([device(key, { userId: 'user-1' })]);
+
+      await expect(
+        sut.handleDeliver({ notice: notice({ title: '', body: '', data: { detail: 'd'.repeat(3000) } }) }),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(gateway.send).not.toHaveBeenCalled();
+
+      await expect(sut.handleDeliver({ notice: notice() })).resolves.toBe(JobStatus.Success);
+      expect(sent).toHaveLength(1);
+      expect(decrypt(sent[0], key)).toMatchObject({ title: 'Trip', body: 'New items in Trip' });
+    });
+
     const activation = (state: 'active' | 'complete' | 'failed', step = 3) => ({
       step,
       total: 4,
@@ -618,13 +665,20 @@ describe(PushService.name, () => {
       gateway.send.mockResolvedValue({ status: 'invalid-token' });
 
       await sut.handleDeliver({ notice: notice({ admins: true, activation: activation('active') }) });
-      expect(devices.deleteActivitiesByIds).toHaveBeenCalledWith([gone.activities[0].id]);
-      expect(devices.clearPushToStartTokens).toHaveBeenCalledWith([startOnly.id]);
+      expect(devices.deleteActivitiesByIds).toHaveBeenCalledWith([
+        { id: gone.activities[0].id, token: gone.activities[0].token, platform: 'apns' },
+      ]);
+      expect(devices.clearPushToStartTokens).toHaveBeenCalledWith([
+        { id: startOnly.id, token: startOnly.pushToStartToken, platform: 'apns' },
+      ]);
       expect(devices.deleteByIds).toHaveBeenCalledWith([]);
 
       gateway.send.mockClear();
       await sut.handleDeliver({ notice: notice({ admins: true }) });
-      expect(devices.deleteByIds).toHaveBeenLastCalledWith([gone.id, startOnly.id]);
+      expect(devices.deleteByIds).toHaveBeenLastCalledWith([
+        { id: gone.id, token: gone.pushToken, platform: 'apns' },
+        { id: startOnly.id, token: startOnly.pushToken, platform: 'apns' },
+      ]);
       expect(devices.markDelivered).toHaveBeenLastCalledWith([]);
     });
 
@@ -701,7 +755,7 @@ describe(PushService.name, () => {
 
       await sut.handleDeliver({ notice: notice() });
       expect(gateway.send).not.toHaveBeenCalled();
-      expect(devices.deleteByIds).toHaveBeenCalledWith([bad.id]);
+      expect(devices.deleteByIds).toHaveBeenCalledWith([{ id: bad.id, token: bad.pushToken, platform: 'apns' }]);
 
       const auth = factory.auth({ session: {} });
       await expect(

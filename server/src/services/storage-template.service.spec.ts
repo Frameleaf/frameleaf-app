@@ -890,18 +890,12 @@ describe(StorageTemplateService.name, () => {
         oldPath,
         newPath,
       });
-      mocks.storage.stat.mockResolvedValueOnce({
-        atime: new Date(),
-        mtime: new Date(),
-      } as Stats);
-      mocks.storage.stat.mockResolvedValueOnce({
-        size: 5000,
-      } as Stats);
-      mocks.storage.stat.mockResolvedValueOnce({
-        size: 5000,
-        atime: new Date(),
-        mtime: new Date(),
-      } as Stats);
+      mocks.storage.stat.mockImplementation((path) => {
+        if (path !== oldPath && path !== `${newPath}.123.moving`) {
+          throw new Error(`Unexpected file metadata request: ${path}`);
+        }
+        return Promise.resolve({ size: 5000, atime: new Date(), mtime: new Date() } as Stats);
+      });
       mocks.crypto.hashFileMatching.mockResolvedValue(asset.checksum);
 
       await sut.handleMigration();

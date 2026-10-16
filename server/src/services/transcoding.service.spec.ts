@@ -71,6 +71,22 @@ describe(TranscodingService.name, () => {
   });
 
   describe('onSessionEnd', () => {
+    it.each(['end', 'shutdown'] as const)('does not spawn an awaiting start after %s', async (reason) => {
+      await sut.onSessionRequest({ sessionId, assetId, ownerId });
+      const pending = Promise.withResolvers<typeof eiffelTower>();
+      mocks.videoStream.getForTranscoding.mockReturnValueOnce(pending.promise);
+      mocks.process.spawn.mockReturnValue(mockSpawn(0, '', ''));
+      const start = sut.onSegmentRequest({ sessionId, assetId, variantIndex: 0, segmentIndex: 0 });
+      await vi.waitFor(() => expect(mocks.videoStream.getForTranscoding).toHaveBeenCalledOnce());
+      await (reason === 'shutdown' ? sut.onShutdown() : sut.onSessionEnd({ sessionId }));
+      pending.resolve(eiffelTower);
+      await start;
+      expect(mocks.process.spawn).not.toHaveBeenCalled();
+      expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+      expect(mocks.storage.watchDir).not.toHaveBeenCalled();
+      expect(mocks.videoStream.deleteSession).toHaveBeenCalledWith(sessionId);
+    });
+
     it('removes the session, kills the transcode, and deletes the dir + DB row', async () => {
       await sut.onSessionRequest({ sessionId, assetId, ownerId });
       const process = mockSpawn(0, '', '');
