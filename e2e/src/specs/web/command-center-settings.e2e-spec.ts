@@ -29,8 +29,11 @@ const labels = {
   // FL-368 Server & updates › Copy settings.
   exportSettings: 'Save to a file', // frameleaf_srvadv_copy_save_action
   importSettings: 'Load from a file', // frameleaf_srvadv_copy_load_action
-  emailTemplates: 'Email Templates', // admin.template_email_settings
-  preview: 'Preview', // admin.template_email_preview
+  // ADMIN-P3 "The emails themselves".
+  changeWording: 'Change the wording of emails', // frameleaf_notify_wording_change
+  editWelcome: 'Edit the wording of the Welcome email', // frameleaf_notify_wording_edit_label
+  welcome: 'Welcome email', // frameleaf_notify_wording_welcome
+  preview: 'Preview with sample names', // frameleaf_notify_wording_preview
   // FL-368 Server & updates › Updates: the switch and the frequency are one choice.
   lookForUpdates: 'Look for updates', // frameleaf_server_updates_look
   never: 'Never', // frameleaf_server_updates_look_never
@@ -285,19 +288,21 @@ test.describe('Command Center settings', () => {
       .toBe('weekly');
   });
 
-  // FL-71: an email template preview shows the rendered template and never claims an email was sent.
-  test('email template preview shows the rendered template without sending', async ({ page }) => {
+  // FL-71, ADMIN-P3: an email's wording opens with a preview in sample names and never claims an
+  // email was sent.
+  test('email wording preview shows the email with sample names without sending', async ({ page }) => {
     await page.goto(notificationsUrl);
-    await page.getByRole('button', { name: labels.emailTemplates }).click();
-    await page.getByRole('button', { name: labels.preview }).first().click();
+    await page.getByText(labels.changeWording, { exact: true }).click();
+    await page.getByRole('button', { name: labels.editWelcome }).click();
 
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('dialog', { name: labels.welcome });
     await expect(dialog).toBeVisible();
-    const frame = dialog.frameLocator(`iframe[title="${labels.preview}"]`);
-    // server/src/emails/welcome.email.tsx, the default welcome template.
-    await expect(frame.getByText('A new account has been created for you.')).toBeVisible();
+    const preview = dialog.getByRole('group', { name: labels.preview });
+    // frameleaf_notify_wording_welcome_standard, with the sample person's name
+    await expect(preview).toContainText('Hey Morgan!');
+    await expect(preview).toContainText('A new account has been created for you.');
 
-    await expect(dialog.getByText(/\bsent\b/i)).toHaveCount(0);
+    await expect(preview.getByText(/\bsent\b/i)).toHaveCount(0);
     // admin.notification_email_test_email_sent
     await expect(page.getByText(/test email has been sent/i)).toHaveCount(0);
   });
