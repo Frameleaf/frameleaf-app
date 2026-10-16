@@ -602,6 +602,22 @@ describe(PhysicalDeduplicationService.name, () => {
       return { sut, mocks };
     };
 
+    it("never moves the retained owner's sidecar into the copy's account (FL-412)", async () => {
+      const onRetainedPath = { ...item, originalPath: '/upload/master/a.jpg' };
+      const { sut, mocks } = setup([evidence(MASTER_ID), evidence(COPY_1, { originalPath: '/upload/master/a.jpg' })]);
+      // the sidecar beside the shared file is the retained owner's
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+
+      await sut.applyPlanItem({ ...snapshot, items: [onRetainedPath] }, onRetainedPath);
+
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1, {
+        id: 'pf-1',
+        path: '/upload/master/a.jpg',
+      });
+      expect(mocks.storage.copyFile).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+    });
+
     it('verifies both files on disk, links the copy, then removes only the copy', async () => {
       const { sut, mocks } = setup();
 
@@ -920,6 +936,25 @@ describe(PhysicalDeduplicationService.name, () => {
       const { sut, mocks } = setup([evidence(MASTER_ID), evidence(COPY_1, overrides)]);
       await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'skipped', reason: 'changed' });
       expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it("links a copy that already names the primary's path without taking the file or its sidecar (FL-412)", async () => {
+      const { sut, mocks } = setup([
+        evidence(MASTER_ID, { physicalOriginalFileId: 'pf-primary' }),
+        evidence(COPY_1, { originalPath: '/upload/taylor/a.jpg' }),
+      ]);
+      // the primary owner's sidecar is beside the shared file
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'linked', copyMissing: false });
+
+      expect(mocks.physicalFile.ensureOriginalPhysicalFile).not.toHaveBeenCalledWith(COPY_1);
+      expect(mocks.storage.copyFile).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1, {
+        id: 'pf-primary',
+        path: '/upload/taylor/a.jpg',
+      });
     });
 
     it('reads a copy already on the primary file as already linked (a repeated batch)', async () => {

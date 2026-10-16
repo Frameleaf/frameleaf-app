@@ -23,6 +23,8 @@ import { sweepAttemptOutputs } from 'src/utils/attempt-sweep.js';
 import { anyUuid, asUuid } from 'src/utils/database.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
+/** `linkUploadedOriginal`: the candidate is not the file that was proven; prove it and try again. */
+const RETRY_LINK = Symbol('retry-link');
 export const BUDDY_CAPTURE_LOCK = -311;
 /**
  * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
@@ -380,9 +382,15 @@ export class PhysicalFileRepository {
   /**
    * Universal storage upload linking (one file per content hash, server-wide). Under a per-checksum lock,
    * an uploaded asset is pointed at the file the server already keeps for its content when another
-   * library holds it and that file is on disk (`linked: true`; the caller releases the temporary upload).
-   * Otherwise the upload's own file is registered with the asset as its primary (`linked: false`).
-   * Returns undefined for an asset that is not an eligible upload (external, offline, trashed).
+   * library holds it and that file is proven to hold the same bytes (`linked: true`; the caller releases
+   * the temporary upload). Otherwise the upload's own file is registered with the asset as its primary
+   * (`linked: false`). Returns undefined for an asset that is not an eligible upload (external, offline,
+   * trashed).
+   *
+   * FL-412: the existing file is read and hashed (`verify`) before any lock is taken, since hashing a large
+   * file must not hold the checksum lock or a connection; under the path lock only its identity
+   * (`identify`) is checked again. A file that is gone, damaged, changed since it was proven, or that is
+   * not the one proven never takes the place of the upload's own copy: the upload keeps its file.
    *
    * `ingestion` re-checks a resumable upload's durable claim before linking, as the claim may have expired.
    */
@@ -393,7 +401,10 @@ export class PhysicalFileRepository {
       sizeInBytes: number;
     },
     options: {
-      exists: (path: string) => Promise<boolean>;
+      /** Proves the file at `path` holds these bytes; its identity, or null when it does not. */
+      verify: (path: string) => Promise<string | null>;
+      /** The identity of the file at `path` now, without reading it; null when it is gone. */
+      identify: (path: string) => Promise<string | null>;
       /** Moves a file out of the file trash; given, content found there is restored and linked. */
       untrash?: (from: string, to: string) => Promise<void>;
       ingestion?: {
@@ -409,6 +420,44 @@ export class PhysicalFileRepository {
       }
     | undefined
   > {
+    // A candidate can appear, or change, between the proof and the transaction (a concurrent upload of the
+    // same content): the proof is made once more for it, then the upload keeps its own file.
+    for (let attempt = 0; ; attempt++) {
+      const proof = await this.proveStoredCopy(assetId, file, options.verify);
+      const result = await this.linkUploadedOriginalOnce(assetId, file, options, proof, attempt > 0);
+      if (result !== RETRY_LINK) {
+        return result;
+      }
+    }
+  }
+  /**
+   * The file the content's existing candidate keeps, and its identity when it is proven to hold these
+   * bytes (FL-412); the identity is null when the file is gone or holds other bytes.
+   */
+  private async proveStoredCopy(
+    assetId: string,
+    file: { checksum: Buffer; sizeInBytes: number },
+    verify: (path: string) => Promise<string | null>,
+  ): Promise<{ path: string; identity: string | null } | undefined> {
+    const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
+      excludeAssetId: assetId,
+    });
+    if (!candidate) {
+      return;
+    }
+    const target = candidate.physicalOriginalFileId
+      ? await this.getPhysicalFile(candidate.physicalOriginalFileId)
+      : undefined;
+    const path = target?.path ?? candidate.originalPath;
+    return { path, identity: await verify(path) };
+  }
+  private linkUploadedOriginalOnce(
+    assetId: string,
+    file: { checksum: Buffer; sizeInBytes: number },
+    options: Parameters<PhysicalFileRepository['linkUploadedOriginal']>[2],
+    proof: { path: string; identity: string | null } | undefined,
+    lastAttempt: boolean,
+  ): Promise<undefined | typeof RETRY_LINK | { physicalFile: PhysicalFile; linked: boolean }> {
     return this.db.transaction().execute(async (trx) => {
       await lockChecksum(trx, file.checksum);
       const asset = await trx
@@ -439,13 +488,19 @@ export class PhysicalFileRepository {
           ? await this.getPhysicalFile(candidate.physicalOriginalFileId, trx)
           : undefined;
         const path = target?.path ?? candidate.originalPath;
+        if (proof?.path !== path && !lastAttempt) {
+          // not the file whose proof was attempted: prove this one first, nothing is written yet
+          return RETRY_LINK;
+        }
+        const proven = proof?.path === path ? proof.identity : null;
         // checked again under the path lock: a FileDelete that held it may have moved the file to the file
-        // trash meanwhile, and then the upload keeps its own file (or takes the trashed one back, below)
-        const existsUnderLock = async () => {
+        // trash meanwhile, and a file changed since it was proven is not trusted; either way the upload
+        // keeps its own file (or takes the trashed one back, below)
+        const unchangedUnderLock = async (identity: string) => {
           await this.lockPath(trx, path);
-          return options.exists(path);
+          return (await options.identify(path)) === identity;
         };
-        if (path !== asset.originalPath && (await options.exists(path)) && (await existsUnderLock())) {
+        if (path !== asset.originalPath && proven && (await unchangedUnderLock(proven))) {
           if (options.ingestion) {
             await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
           }
@@ -632,7 +687,8 @@ export class PhysicalFileRepository {
         oc.column('path').doUpdateSet((eb) => ({
           checksum: eb.ref('excluded.checksum'),
           sizeInBytes: eb.ref('excluded.sizeInBytes'),
-          canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+          // FL-412: an existing primary keeps the file; only a row without one takes this asset
+          canonicalAssetId: eb.fn.coalesce('physical_file.canonicalAssetId', 'excluded.canonicalAssetId'),
         })),
       )
       .returningAll()
@@ -679,6 +735,20 @@ export class PhysicalFileRepository {
       .where('asset.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
     return Number(count);
+  }
+  /**
+   * FL-412: whether another asset, live or in the trash, uses `assetId`'s original (the same stored file,
+   * or the same path). Read before the asset is removed.
+   */
+  async isOriginalShared(assetId: string): Promise<boolean> {
+    const { rows } = await sql`SELECT 1 FROM public.asset removed
+      JOIN public.asset other ON other.id <> removed.id AND (
+        other."originalPath" = removed."originalPath"
+        OR (removed."physicalOriginalFileId" IS NOT NULL
+          AND other."physicalOriginalFileId" = removed."physicalOriginalFileId"))
+      WHERE removed.id = ${assetId}::uuid
+      LIMIT 1`.execute(this.db);
+    return rows.length > 0;
   }
   /**
    * Physical files' reference counts, as `countOriginalReferences` counts one (FL-73). A file
@@ -752,7 +822,8 @@ export class PhysicalFileRepository {
             checksum: eb.ref('excluded.checksum'),
             sizeInBytes: eb.ref('excluded.sizeInBytes'),
             type: eb.ref('excluded.type'),
-            canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+            // FL-412: an existing primary keeps the file; only a row without one takes this asset
+            canonicalAssetId: eb.fn.coalesce('physical_file.canonicalAssetId', 'excluded.canonicalAssetId'),
           })),
         )
         .returningAll()
@@ -802,7 +873,8 @@ export class PhysicalFileRepository {
           oc.column('path').doUpdateSet((eb) => ({
             checksum: eb.ref('excluded.checksum'),
             sizeInBytes: eb.ref('excluded.sizeInBytes'),
-            canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+            // FL-412: an existing primary keeps the file; only a row without one takes this asset
+            canonicalAssetId: eb.fn.coalesce('physical_file.canonicalAssetId', 'excluded.canonicalAssetId'),
           })),
         )
         .returningAll()
@@ -901,9 +973,10 @@ export class PhysicalFileRepository {
   }
   /**
    * Point an asset back at its own original file (FL-73): the rollback a verified physical
-   * deduplication offers for a copy whose own file is still on disk. The file gets (or keeps) its
-   * own physical file row with the asset as canonical owner, under the path's lock so a concurrent
-   * removal cannot count the path unreferenced in between. Nothing on disk is written.
+   * deduplication offers for a copy whose own file is still on disk. The file gets its own physical
+   * file row with the asset as canonical owner (or, when another asset already owns that row, the
+   * asset shares it: FL-412), under the path's lock so a concurrent removal cannot count the path
+   * unreferenced in between. Nothing on disk is written.
    */
   async restoreOriginalPhysicalFile(
     assetId: string,
@@ -927,7 +1000,8 @@ export class PhysicalFileRepository {
           oc.column('path').doUpdateSet((eb) => ({
             checksum: eb.ref('excluded.checksum'),
             sizeInBytes: eb.ref('excluded.sizeInBytes'),
-            canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+            // FL-412: an existing primary keeps the file; only a row without one takes this asset
+            canonicalAssetId: eb.fn.coalesce('physical_file.canonicalAssetId', 'excluded.canonicalAssetId'),
           })),
         )
         .returningAll()

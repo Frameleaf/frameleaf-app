@@ -9,7 +9,7 @@ const { load } = createRequire(resolve(__dirname, "../server/package.json"))(
 
 test("host pnpm setup and cache run only for the LibRaw validation path", () => {
   const workflow = load(
-    readFileSync(resolve(__dirname, "workflows/fork-integration.yml"), "utf8"),
+    readFileSync(resolve(__dirname, "workflows/frameleaf-quality.yml"), "utf8"),
   );
   const steps = workflow.jobs["native-raw"].steps;
   const hostActions = ["pnpm/action-setup", "actions/setup-node"];
@@ -37,7 +37,7 @@ test("host pnpm setup and cache run only for the LibRaw validation path", () => 
 
 test("manual full RAW validation builds candidate production native runtime on both architectures", () => {
   const workflow = load(
-    readFileSync(resolve(__dirname, "workflows/fork-integration.yml"), "utf8"),
+    readFileSync(resolve(__dirname, "workflows/frameleaf-quality.yml"), "utf8"),
   );
   const job = workflow.jobs["native-raw"];
   assert.match(job.if, /workflow_dispatch.*inputs.raw_engine != 'none'/);

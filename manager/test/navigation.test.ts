@@ -75,6 +75,26 @@ test('a repeated browser error race and unrelated second error still fail', asyn
       ),
       (error) => error === sequence.at(-1),
     );
-    assert.equal(calls, sequence.length);
+    assert.equal(calls, sequence.length === 1 ? 2 : sequence.length);
   }
+});
+
+test('a first navigation replaced by Chromium error page retries once', async () => {
+  let first = true;
+  const visited: string[] = [];
+  await navigate(
+    {
+      goto: async (url: string) => {
+        visited.push(url);
+        if (first) {
+          first = false;
+          throw new Error(
+            'navigation interrupted by chrome-error://chromewebdata/',
+          );
+        }
+      },
+    },
+    'https://fixture.test',
+  );
+  assert.deepEqual(visited, ['https://fixture.test', 'https://fixture.test']);
 });

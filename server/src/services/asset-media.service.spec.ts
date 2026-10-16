@@ -428,7 +428,7 @@ describe(AssetMediaService.name, () => {
         expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
           'new-asset',
           { checksum: file.checksum, sizeInBytes: file.size },
-          expect.objectContaining({ exists: expect.any(Function) }),
+          expect.objectContaining({ verify: expect.any(Function), identify: expect.any(Function) }),
         );
         // the temporary upload is released through the reference-counted FileDelete
         expect(mocks.job.queue).toHaveBeenCalledWith({
@@ -489,15 +489,65 @@ describe(AssetMediaService.name, () => {
         );
       });
 
-      it('checks that the linked file exists on disk', async () => {
-        mocks.asset.create.mockResolvedValue(assetEntity);
-        mocks.storage.checkFileExists.mockResolvedValue(true);
+      describe('proving the stored file before the upload is let go (FL-412)', () => {
+        const shared = '/data/library/other/shared.jpeg';
+        const stats = { isFile: () => true, dev: 1, ino: 2, size: file.size, mtimeMs: 3, ctimeMs: 4 };
 
-        await sut.uploadAsset(authStub.user1, createDto, file);
+        const uploadOptions = async () => {
+          mocks.asset.create.mockResolvedValue(assetEntity);
+          await sut.uploadAsset(authStub.user1, createDto, file);
+          return mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        };
 
-        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
-        await expect(options.exists('/data/library/other/shared.jpeg')).resolves.toBe(true);
-        expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/data/library/other/shared.jpeg');
+        it('proves a stored file with the same bytes, by its own checksum, and names it', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockResolvedValue(stats as never);
+          mocks.crypto.hashFileMatching.mockResolvedValue(file.checksum);
+
+          const identity = await options.verify(shared);
+
+          expect(identity).toEqual(expect.any(String));
+          expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(shared, file.checksum);
+          await expect(options.identify(shared)).resolves.toBe(identity);
+          expect(mocks.logger.warn).not.toHaveBeenCalled();
+        });
+
+        it('never trusts a stored file that holds other bytes, and says so', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockResolvedValue(stats as never);
+          mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from('rotted'));
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+          expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(shared));
+        });
+
+        it('never trusts a stored file of another size, without reading it', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockResolvedValue({ ...stats, size: file.size + 1 } as never);
+          mocks.crypto.hashFileMatching.mockClear();
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+          expect(mocks.crypto.hashFileMatching).not.toHaveBeenCalled();
+        });
+
+        it('never trusts a stored file that changed while it was read', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat
+            .mockResolvedValueOnce(stats as never)
+            .mockResolvedValueOnce({ ...stats, mtimeMs: 99 } as never);
+          mocks.crypto.hashFileMatching.mockResolvedValue(file.checksum);
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+        });
+
+        it('reports a stored file that is gone as having no identity', async () => {
+          const options = await uploadOptions();
+          mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+
+          await expect(options.verify(shared)).resolves.toBeNull();
+          await expect(options.identify(shared)).resolves.toBeNull();
+          expect(mocks.logger.warn).not.toHaveBeenCalled();
+        });
       });
     });
 
