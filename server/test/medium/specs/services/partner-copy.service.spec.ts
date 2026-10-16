@@ -55,8 +55,10 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { BaseService } from 'src/services/base.service.js';
 import { PartnerCopyService, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
+import { TagService } from 'src/services/tag.service.js';
 import { checkAccess } from 'src/utils/access.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -862,6 +864,105 @@ describe(PartnerCopyService.name, () => {
   });
 
   describe('propagation', () => {
+    const tagEditFixture = async (removing: boolean) => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+      const { tag } = await ctx.newTag({ userId: bob.id, value: 'Choice' });
+      if (removing) {
+        const { tag: originalTag } = await ctx.newTag({ userId: alice.id, value: 'Choice' });
+        await ctx.newTagAsset({ tagIds: [originalTag.id], assetIds: [source.id] });
+        await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [copyId] });
+      }
+      return { sut, ctx, origins, bob, source, copyId, tag, tags: BaseService.create(TagService, sut) };
+    };
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'rolls %s tags and EXIF back when the override marker fails',
+      async (action) => {
+        const { ctx, origins, bob, copyId, tag, tags } = await tagEditFixture(action === 'remove');
+        const before = await db.selectFrom('tag_asset').selectAll().where('assetId', '=', copyId).execute();
+        const exif = await db
+          .selectFrom('asset_exif')
+          .select('tags')
+          .where('assetId', '=', copyId)
+          .executeTakeFirstOrThrow();
+        const marker = vi.spyOn(origins, 'markOverridden').mockRejectedValueOnce(new Error('override unavailable'));
+        ctx.getMock(EventRepository).emit.mockClear();
+        try {
+          await expect(
+            action === 'bulk-add'
+              ? tags.bulkTagAssets(factory.auth({ user: bob }), { tagIds: [tag.id], assetIds: [copyId] })
+              : action === 'add'
+                ? tags.addAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] })
+                : tags.removeAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] }),
+          ).rejects.toThrow('override unavailable');
+        } finally {
+          marker.mockRestore();
+        }
+        expect(await db.selectFrom('tag_asset').selectAll().where('assetId', '=', copyId).execute()).toEqual(before);
+        expect(
+          await db.selectFrom('asset_exif').select('tags').where('assetId', '=', copyId).executeTakeFirstOrThrow(),
+        ).toEqual(exif);
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).not.toContain(AssetOriginField.Tags);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'preserves %s tags when propagation starts before the override commits',
+      async (action) => {
+        const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(action === 'remove');
+        const markOverridden = origins.markOverridden.bind(origins);
+        const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+        const { promise: held, resolve: release } = Promise.withResolvers<void>();
+        const marker = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          ready();
+          await held;
+          return markOverridden(...args);
+        });
+        const getFollowers = origins.getFollowers.bind(origins);
+        const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+          const followers = await getFollowers(...args);
+          expect(followers.map((row) => row.id)).toContain(copyId);
+          selectedNow();
+          return followers;
+        });
+        const editing =
+          action === 'bulk-add'
+            ? tags.bulkTagAssets(factory.auth({ user: bob }), { tagIds: [tag.id], assetIds: [copyId] })
+            : action === 'add'
+              ? tags.addAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] })
+              : tags.removeAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] });
+        try {
+          await written;
+          const propagating = sut.handlePropagate({
+            kind: 'asset',
+            sourceId: source.id,
+            fields: [AssetOriginField.Tags],
+          });
+          await selected;
+          release();
+          await Promise.all([editing, propagating]);
+        } finally {
+          release();
+          await editing;
+          marker.mockRestore();
+          selection.mockRestore();
+        }
+        expect(
+          (await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId).execute()).map(
+            (row) => row.tagId,
+          ),
+        ).toEqual(action === 'remove' ? [] : [tag.id]);
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(AssetOriginField.Tags);
+      },
+    );
+
     it.each(['recipient-edit', 'stop-following'] as const)(
       'preserves the recipient description when %s completes after follower selection',
       async (change) => {

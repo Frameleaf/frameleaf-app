@@ -220,9 +220,16 @@ export class TagService extends BaseService {
       }
     }
 
-    const results = await this.tagRepository.upsertAssetIds(items);
+    const results = await this.partnerOriginRepository.withOriginEdit('asset', [...assetIds], [], async () => {
+      const results = await this.tagRepository.upsertAssetIds(items);
+      const changed = [...new Set(results.map((item) => item.assetId))];
+      for (const assetId of changed) {
+        await this.updateTags(assetId);
+      }
+      await this.partnerOriginRepository.markOverridden('asset', changed, [AssetOriginField.Tags], auth.user.id);
+      return results;
+    });
     for (const assetId of new Set(results.map((item) => item.assetId))) {
-      await this.updateTags(assetId);
       await this.eventRepository.emit('AssetTag', { assetId, userId: auth.user.id });
     }
     await this.recordTagEdit(auth, [...new Set(results.map((item) => item.assetId))]);
@@ -233,18 +240,25 @@ export class TagService extends BaseService {
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
     await this.requireTag(auth, Permission.TagAsset, id);
 
-    const results = await addAssets(
-      auth,
-      { access: this.accessRepository, bulk: this.tagRepository },
-      { parentId: id, assetIds: dto.ids, permission: Permission.AssetUpdate },
-    );
+    const results = await this.partnerOriginRepository.withOriginEdit('asset', dto.ids, [], async () => {
+      const results = await addAssets(
+        auth,
+        { access: this.accessRepository, bulk: this.tagRepository },
+        { parentId: id, assetIds: dto.ids, permission: Permission.AssetUpdate },
+      );
+      const changed = getSucceededIds(results);
+      for (const assetId of changed) {
+        await this.updateTags(assetId);
+      }
+      await this.partnerOriginRepository.markOverridden('asset', changed, [AssetOriginField.Tags], auth.user.id);
+      return results;
+    });
 
     for (const { id: assetId, success } of results) {
       if (!success) {
         continue;
       }
 
-      await this.updateTags(assetId);
       await this.eventRepository.emit('AssetTag', { assetId, userId: auth.user.id });
     }
     await this.recordTagEdit(auth, getSucceededIds(results));
@@ -255,18 +269,25 @@ export class TagService extends BaseService {
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
     await this.requireTag(auth, Permission.TagAsset, id);
 
-    const results = await removeAssets(
-      auth,
-      { access: this.accessRepository, bulk: this.tagRepository },
-      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.TagDelete },
-    );
+    const results = await this.partnerOriginRepository.withOriginEdit('asset', dto.ids, [], async () => {
+      const results = await removeAssets(
+        auth,
+        { access: this.accessRepository, bulk: this.tagRepository },
+        { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.TagDelete },
+      );
+      const changed = getSucceededIds(results);
+      for (const assetId of changed) {
+        await this.updateTags(assetId);
+      }
+      await this.partnerOriginRepository.markOverridden('asset', changed, [AssetOriginField.Tags], auth.user.id);
+      return results;
+    });
 
     for (const { id: assetId, success } of results) {
       if (!success) {
         continue;
       }
 
-      await this.updateTags(assetId);
       await this.eventRepository.emit('AssetUntag', { assetId });
     }
     await this.recordTagEdit(auth, getSucceededIds(results));

@@ -16,6 +16,7 @@ describe(TagService.name, () => {
 
     mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
     mocks.tag.getSubtreeAssetIds.mockResolvedValue([]);
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
   it('should work', () => {
@@ -528,6 +529,31 @@ describe(TagService.name, () => {
   });
 
   describe('bulkTagAssets', () => {
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'keeps %s tag writes behind origin edit admission',
+      async (action) => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+        mocks.tag.getAssetIds.mockResolvedValue(new Set(action === 'remove' ? ['asset-1'] : []));
+        mocks.tag.upsertAssetIds.mockResolvedValue([{ tagId: 'tag-1', assetId: 'asset-1', updateId: 'update-1' }]);
+        mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [] });
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+
+        await expect(
+          action === 'bulk-add'
+            ? sut.bulkTagAssets(authStub.admin, { tagIds: ['tag-1'], assetIds: ['asset-1'] })
+            : action === 'add'
+              ? sut.addAssets(authStub.admin, 'tag-1', { ids: ['asset-1'] })
+              : sut.removeAssets(authStub.admin, 'tag-1', { ids: ['asset-1'] }),
+        ).rejects.toThrow('origin busy');
+
+        expect(mocks.tag.addAssetIds).not.toHaveBeenCalled();
+        expect(mocks.tag.removeAssetIds).not.toHaveBeenCalled();
+        expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalled();
+      },
+    );
+
     it('should handle invalid requests', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.tag.upsertAssetIds.mockResolvedValue([]);
