@@ -209,6 +209,7 @@ packageExtensionsChecksum: sha256-Mofz7nyIAaEAEUKA7506+WAlCIWxW8nGtiE5KynurJ8=
 pnpmfileChecksum: sha256-Z7xhVQDEt6nNd2Xged6phL8wQvZOafNiGiMy93aNN6w=
 
 patchedDependencies:
+  '@achingbrain/nat-port-mapper@4.0.5': 4188767a630c9ab0119503acb364fc020f42354c521b87bf0914a39077de794c
   nestjs-zod@5.5.0: 07f26d2c15b8fcefe928074084f63d634e24ac7482ff17313fadcb53721181a0
   postgres@3.4.9: 11079952043a4900badfa80e4d18c38f424d64ba907147607c20d1c65fe78629
   werift@0.25.0: ed0f2926676f6a7071143cb05aaa0f039ab6af495ae26ba0e2d07d3d6c00e9ba
@@ -669,7 +670,7 @@ importers:
     dependencies:
       '@achingbrain/nat-port-mapper':
         specifier: 4.0.5
-        version: 4.0.5
+        version: 4.0.5(patch_hash=4188767a630c9ab0119503acb364fc020f42354c521b87bf0914a39077de794c)
       '@extism/extism':
         specifier: 2.0.0-rc13
         version: 2.0.0-rc13
@@ -12549,7 +12550,7 @@ snapshots:
       section-matter: 1.0.0
       strip-bom-string: 1.0.0
 
-  '@achingbrain/nat-port-mapper@4.0.5':
+  '@achingbrain/nat-port-mapper@4.0.5(patch_hash=4188767a630c9ab0119503acb364fc020f42354c521b87bf0914a39077de794c)':
     dependencies:
       '@achingbrain/ssdp': 4.2.4
       '@chainsafe/is-ip': 2.1.0
