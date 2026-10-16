@@ -549,6 +549,33 @@ describe(DuplicateDecisionService.name, () => {
       expect(outcomes.every(({ status }) => status === MediaOperationItemStatus.Ok)).toBe(true);
     });
 
+    it.each([
+      { before: { latitude: null, longitude: null }, newer: false, restores: true },
+      { before: { latitude: 0, longitude: 0 }, newer: false, restores: true },
+      { before: { latitude: null, longitude: null }, newer: true, restores: false },
+      { before: { latitude: null, longitude: 0 }, newer: false, restores: false },
+    ])(
+      'restores an original coordinate pair $before only without a newer edit=$newer',
+      async ({ before, newer, restores }) => {
+        const after = keeperState({ latitude: 51, longitude: -115 });
+        const decision = applied({
+          state: { before: { [keeper]: keeperState(before) }, after: { [keeper]: after } },
+        });
+        grantAll();
+        repository.getById.mockResolvedValue(decision);
+        repository.getAssetStates.mockImplementation((ids: string[]) =>
+          Promise.resolve(statesAfterKeepers().filter(({ id }) => ids.includes(id))),
+        );
+        repository.getKeeperStates.mockResolvedValue(
+          new Map([[keeper, newer ? { ...after, latitude: 52, longitude: -114 } : after]]),
+        );
+        const outcomes = await sut.undoGroup(owner, undoOperationId, undoGroupOf(decision));
+        expect(outcomes.every(({ status }) => status === MediaOperationItemStatus.Ok)).toBe(true);
+        if (restores) expect(assets.updateAll).toHaveBeenCalledWith(owner, { ids: [keeper], ...before });
+        else expect(assets.updateAll).not.toHaveBeenCalled();
+      },
+    );
+
     it('never overwrites a newer edit, and never changes the visibility of a Locked keeper', async () => {
       const decision = applied({
         state: {
