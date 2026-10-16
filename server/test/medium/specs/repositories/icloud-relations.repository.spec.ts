@@ -2,11 +2,21 @@ import { Kysely, RawBuilder, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudEditBaselineSchema, ICloudEditSuccessorSchema } from 'src/dtos/icloud-identity.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus, QueueName } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  JobName,
+  JobStatus,
+  QueueName,
+} from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QueueClaim } from 'src/queue/types.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -841,6 +851,118 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
       expect(await rows(sql`SELECT id FROM stack WHERE "ownerId"=${ctx.ownerId}::uuid`)).toHaveLength(1);
     },
   );
+  it.each(['still', 'motion'])('refuses mixed Live Photo lock records when the %s alone is Locked', async (part) => {
+    const ctx = await context(),
+      still = await asset(ctx.ownerId),
+      motion = await asset(ctx.ownerId, 'VIDEO');
+    const originalResource = await resource(ctx, 'original', still);
+    await resource(ctx, 'motion', motion);
+    await new AssetRepository(db).lock([part === 'still' ? still : motion], AssetLockReason.Marked, ctx.ownerId);
+    await finish(ctx);
+    expect(await first(sql`SELECT "livePhotoVideoId" FROM asset WHERE id=${still}::uuid`)).toEqual({
+      livePhotoVideoId: null,
+    });
+    expect(await first(sql`SELECT visibility FROM asset WHERE id=${motion}::uuid`)).toEqual({
+      visibility: AssetVisibility.Timeline,
+    });
+    expect(
+      await first(
+        sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM public.icloud_resource WHERE id=${originalResource}::uuid`,
+      ),
+    ).toEqual({ reason: 'motion_visibility_override' });
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('allows background pairing when both parts have real Locked records', async () => {
+    const ctx = await context(),
+      still = await asset(ctx.ownerId),
+      motion = await asset(ctx.ownerId, 'VIDEO');
+    await resource(ctx, 'original', still);
+    await resource(ctx, 'motion', motion);
+    await new AssetRepository(db).lock([still, motion], AssetLockReason.Marked, ctx.ownerId);
+    await finish(ctx);
+    expect(await first(sql`SELECT "livePhotoVideoId" FROM asset WHERE id=${still}::uuid`)).toEqual({
+      livePhotoVideoId: motion,
+    });
+    expect(
+      await rows(
+        sql`SELECT "assetId" FROM asset_lock WHERE "assetId"=ANY(${[still, motion]}::uuid[]) ORDER BY "assetId"`,
+      ),
+    ).toEqual([still, motion].sort().map((assetId) => ({ assetId })));
+    expect(emit).toHaveBeenCalledWith('AssetHide', { assetId: motion, userId: ctx.ownerId });
+  });
+
+  it('rereads a real motion lock committed while relation target acquisition waits on a separate connection', async () => {
+    const ctx = await context(),
+      still = await asset(ctx.ownerId),
+      motion = await asset(ctx.ownerId, 'VIDEO');
+    const originalResource = await resource(ctx, 'original', still);
+    await resource(ctx, 'motion', motion);
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>(),
+      connection = Promise.withResolvers<number>();
+    let locking: Promise<void> | undefined, linking: Promise<unknown> | undefined;
+    try {
+      locking = db.transaction().execute(async (tx) => {
+        await tx.selectFrom('asset').select('id').where('id', '=', motion).forUpdate().execute();
+        entered.resolve();
+        await release.promise;
+        await new AssetRepository(tx).lock([motion], AssetLockReason.Marked, ctx.ownerId);
+      });
+      await Promise.race([
+        entered.promise,
+        locking.then(() => {
+          throw new Error('Lock writer did not enter');
+        }),
+      ]);
+      linking = db
+        .connection()
+        .execute(async (db) => {
+          const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(db);
+          connection.resolve(rows[0].pid);
+          return new ICloudRelationsRepository(db).reconcile(ctx.connectionId, ctx.ownerId);
+        })
+        .then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+      const pid = await Promise.race([
+        connection.promise,
+        linking.then(() => {
+          throw new Error('Relations did not enter its connection');
+        }),
+      ]);
+      await vi.waitFor(
+        async () => {
+          const { rows } = await sql<{
+            blocked: boolean;
+          }>`SELECT cardinality(pg_blocking_pids(${pid}::int)) > 0 AS blocked`.execute(db);
+          expect(rows[0]?.blocked).toBe(true);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+      release.resolve();
+      await locking;
+      expect(await linking).toEqual({ value: true });
+      expect(await first(sql`SELECT "livePhotoVideoId" FROM asset WHERE id=${still}::uuid`)).toEqual({
+        livePhotoVideoId: null,
+      });
+      expect(
+        await first(
+          sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM public.icloud_resource WHERE id=${originalResource}::uuid`,
+        ),
+      ).toEqual({ reason: 'motion_visibility_override' });
+      expect(
+        await first(
+          sql`SELECT source#>'{_sync,relations,events}' AS events FROM public.icloud_resource WHERE id=${originalResource}::uuid`,
+        ),
+      ).toEqual({ events: [] });
+    } finally {
+      release.resolve();
+      await Promise.allSettled([locking, linking].filter((value): value is Promise<unknown> => !!value));
+    }
+  });
+
   it.each(['locked', 'archive'])('preserves existing %s motion visibility', async (visibility) => {
     const ctx = await context(),
       still = await asset(ctx.ownerId),
