@@ -128,32 +128,48 @@
     void listAlbums(key);
   });
 
+  /** Only the newest read fills the view: a slower answer for an earlier backup or query is dropped. */
+  let albumsRequest = 0;
   const listAlbums = async (key: string) => {
+    const request = ++albumsRequest;
     albums = null;
     failure = '';
     try {
-      albums = await listCloudBackupManifestAlbums({ cloudBackupManifestAlbumsDto: { manifestKey: key } });
+      const found = await listCloudBackupManifestAlbums({ cloudBackupManifestAlbumsDto: { manifestKey: key } });
+      if (request === albumsRequest) {
+        albums = found;
+      }
     } catch (error) {
-      albums = { manifestKey: key, hasDetails: true, albums: [] };
-      failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_restore_albums_failed');
+      if (request === albumsRequest) {
+        albums = { manifestKey: key, hasDetails: true, albums: [] };
+        failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_restore_albums_failed');
+      }
     }
   };
 
+  let searchRequest = 0;
   const search = async (key: string, text: string, show: CloudBackupItemFilter) => {
+    const request = ++searchRequest;
     searching = true;
     failure = '';
     try {
       const found = await searchCloudBackupManifestItems({
         cloudBackupManifestItemsDto: { manifestKey: key, query: text || undefined, filter: show },
       });
-      items = found.items;
-      total = found.total;
+      if (request === searchRequest) {
+        items = found.items;
+        total = found.total;
+      }
     } catch (error) {
-      items = [];
-      total = 0;
-      failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_restore_search_failed');
+      if (request === searchRequest) {
+        items = [];
+        total = 0;
+        failure = getServerErrorMessage(error) ?? $t('frameleaf_cloud_restore_search_failed');
+      }
     } finally {
-      searching = false;
+      if (request === searchRequest) {
+        searching = false;
+      }
     }
   };
 
