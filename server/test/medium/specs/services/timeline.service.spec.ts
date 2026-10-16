@@ -287,7 +287,8 @@ describe(TimelineService.name, () => {
     const auth = factory.auth({ sharedLink: { id: sharedLinkId, showExif: false } });
     const rawResponse = await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: '1970-02-01', isTrashed: true });
     const response = JSON.parse(rawResponse);
-    expect(response).not.toEqual(expect.objectContaining({ city: expect.any(Array), country: expect.any(Array) }));
+    expect(response).not.toHaveProperty('city');
+    expect(response).not.toHaveProperty('country');
     expect(response).not.toHaveProperty('rating');
     expect(response).not.toHaveProperty('originalFileName');
   });

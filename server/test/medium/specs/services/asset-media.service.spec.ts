@@ -635,9 +635,9 @@ describe(AssetService.name, () => {
       await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: '/owner/preview.jpg' });
       const auth = factory.auth({ user: { id: admin.id, isAdmin: true }, session: { hasElevatedPermission: true } });
 
-      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toThrow();
-      await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).rejects.toThrow();
-      await expect(sut.playbackVideo(auth, asset.id)).rejects.toThrow();
+      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toThrow('access');
+      await expect(sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.PREVIEW })).rejects.toThrow('access');
+      await expect(sut.playbackVideo(auth, asset.id)).rejects.toThrow('access');
     });
   });
 });

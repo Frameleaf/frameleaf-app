@@ -92,7 +92,8 @@ describe(MapService.name, () => {
       expect(hiddenMarkers.map(({ id }) => id)).toEqual(
         expect.arrayContaining([visible.id, markedSafe.id, tagOnly.id]),
       );
-      expect(hiddenMarkers.map(({ id }) => id)).not.toEqual(expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]));
+      expect(hiddenMarkers.map(({ id }) => id)).not.toContain(unreviewedNsfw.id);
+      expect(hiddenMarkers.map(({ id }) => id)).not.toContain(markedNsfw.id);
 
       const elevatedMarkers = await sut.getMapMarkers(auth, {});
       expect(elevatedMarkers.map(({ id }) => id)).toEqual(

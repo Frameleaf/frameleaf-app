@@ -295,7 +295,8 @@ export function toAssetResponseDto(asset: MockTimelineAsset, owner?: UserRespons
     make: null,
     model: null,
     exifImageWidth: asset.ratio > 1 ? 4000 : 3000,
-    exifImageHeight: asset.ratio > 1 ? Math.round(4000 / asset.ratio) : Math.round(3000 * asset.ratio),
+    // ratio is width / height, so a portrait item is taller than it is wide
+    exifImageHeight: Math.round((asset.ratio > 1 ? 4000 : 3000) / asset.ratio),
     fileSizeInByte: asset.fileSizeInByte,
     orientation: '1',
     dateTimeOriginal: asset.fileCreatedAt,
