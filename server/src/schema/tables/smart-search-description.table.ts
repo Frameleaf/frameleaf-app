@@ -1,4 +1,4 @@
-import { Column, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
+import { Check, Column, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 // Sibling of smart_search that stores a CLIP-text embedding of an asset's
@@ -14,10 +14,17 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
   with: `ef_construction = 300, m = 16`,
   synchronize: false,
 })
+@Check({
+  name: 'smart_search_description_producer_key_check',
+  expression: `"producerModelKey" IS NULL OR "producerModelKey" ~ '^clip:[a-f0-9]{64}$'`,
+})
 export class SmartSearchDescriptionTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', primary: true })
   assetId!: string;
 
   @Column({ type: 'vector', length: 768, storage: 'external', synchronize: false })
   embedding!: string;
+
+  @Column({ nullable: true })
+  producerModelKey!: string | null;
 }

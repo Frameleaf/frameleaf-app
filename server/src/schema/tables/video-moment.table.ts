@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
@@ -160,6 +161,10 @@ export class VideoMomentFrameTable {
   with: `ef_construction = 300, m = 16`,
   synchronize: false,
 })
+@Check({
+  name: 'video_moment_frame_embedding_producer_key_check',
+  expression: `"producerModelKey" IS NULL OR "producerModelKey" ~ '^clip:[a-f0-9]{64}$'`,
+})
 export class VideoMomentFrameEmbeddingTable {
   @ForeignKeyColumn(() => VideoMomentFrameTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true })
   frameId!: string;
@@ -169,6 +174,9 @@ export class VideoMomentFrameEmbeddingTable {
 
   @Column()
   modelName!: string;
+
+  @Column({ nullable: true })
+  producerModelKey!: string | null;
 }
 
 /**
