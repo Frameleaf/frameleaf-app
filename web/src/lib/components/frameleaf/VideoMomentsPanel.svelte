@@ -122,7 +122,11 @@
     pollTimer = undefined;
   };
 
-  const follow = (next: EnrichmentPlanResponseDto) => {
+  const follow = (next: EnrichmentPlanResponseDto, assetId = asset.id) => {
+    // A plan queued for a video the panel has since left is not followed here.
+    if (asset.id !== assetId) {
+      return;
+    }
     plan = next;
     stopPolling();
     const delay = planPollDelay(next.operation.status);
@@ -134,7 +138,7 @@
       () =>
         void (async () => {
           try {
-            follow(await getEnrichmentPlan({ id: next.operation.id }));
+            follow(await getEnrichmentPlan({ id: next.operation.id }), assetId);
           } catch (error) {
             handleError(error, $t('frameleaf_enrichment_plan_error'));
           }
@@ -144,12 +148,14 @@
   };
 
   const queue = async (stages: EnrichmentStage[], key: string) => {
+    const assetId = asset.id;
     busy = key;
     try {
       follow(
         await createEnrichmentPlan({
-          enrichmentPlanCreateDto: { assetIds: [asset.id], stages, requestKey: newRequestKey() },
+          enrichmentPlanCreateDto: { assetIds: [assetId], stages, requestKey: newRequestKey() },
         }),
+        assetId,
       );
     } catch (error) {
       handleError(error, $t('frameleaf_enrichment_plan_error'));
@@ -162,9 +168,14 @@
   const addCaptions = () => queue([EnrichmentStage.MomentCaptions], 'captions');
 
   const chooseCover = async (timestampMs: number | null) => {
+    const assetId = asset.id;
     busy = 'cover';
     try {
-      moments = await setVideoMomentCover({ id: asset.id, videoMomentCoverDto: { timestampMs } });
+      const updated = await setVideoMomentCover({ id: assetId, videoMomentCoverDto: { timestampMs } });
+      // The answer describes that video; another one may be in the panel by now.
+      if (asset.id === assetId) {
+        moments = updated;
+      }
     } catch (error) {
       handleError(error, $t('frameleaf_moments_cover_error'));
     } finally {
