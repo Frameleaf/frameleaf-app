@@ -239,30 +239,20 @@ export const onAfterUnlink = async (
 export type LivePhotoLinkRepositories = {
   asset: Pick<AssetRepository, 'update'>;
   album: Pick<AlbumRepository, 'removeAssetsFromAll'>;
-  event: Pick<EventRepository, 'emit'>;
 };
 
 /**
  * Link a still image to its motion video as a live photo: point the photo at the
- * video, hide the video from the timeline, remove it from any albums, and emit the
- * hide event. Shared by metadata extraction and the live-photo relink utility so
- * both code paths behave identically.
+ * video, hide the video from the timeline and remove it from any albums.
+ * Callers supply transaction-bound repositories and announce the link after commit.
  */
 export const linkLivePhotoAssets = async (
-  { asset: assetRepository, album: albumRepository, event: eventRepository }: LivePhotoLinkRepositories,
-  {
-    photoAssetId,
-    motionAssetId,
-    motionOwnerId,
-  }: { photoAssetId: string; motionAssetId: string; motionOwnerId: string },
+  { asset: assetRepository, album: albumRepository }: LivePhotoLinkRepositories,
+  { photoAssetId, motionAssetId }: { photoAssetId: string; motionAssetId: string },
 ): Promise<void> => {
-  await Promise.all([
-    assetRepository.update({ id: photoAssetId, livePhotoVideoId: motionAssetId }),
-    assetRepository.update({ id: motionAssetId, visibility: AssetVisibility.Hidden }),
-    albumRepository.removeAssetsFromAll([motionAssetId]),
-  ]);
-
-  await eventRepository.emit('AssetHide', { assetId: motionAssetId, userId: motionOwnerId });
+  await assetRepository.update({ id: photoAssetId, livePhotoVideoId: motionAssetId });
+  await assetRepository.update({ id: motionAssetId, visibility: AssetVisibility.Hidden });
+  await albumRepository.removeAssetsFromAll([motionAssetId]);
 };
 
 export function mapToUploadFile(file: FrameleafFile): UploadFile {

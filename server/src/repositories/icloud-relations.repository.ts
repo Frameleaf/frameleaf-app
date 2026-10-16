@@ -626,15 +626,10 @@ export class ICloudRelationsRepository {
             },
           },
           album: new AlbumRepository(db),
-          event: {
-            emit: () => {
-              state.events!.push({ name: 'AssetHide', assetId: motion.id, userId: ownerId });
-              return Promise.resolve();
-            },
-          },
         },
-        { photoAssetId: still.id, motionAssetId: motion.id, motionOwnerId: ownerId },
+        { photoAssetId: still.id, motionAssetId: motion.id },
       );
+      state.events!.push({ name: 'AssetHide', assetId: motion.id, userId: ownerId });
     }
     state.motionAssetId = motion.id;
   }
