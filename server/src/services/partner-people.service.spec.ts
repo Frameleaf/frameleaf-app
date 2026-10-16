@@ -48,6 +48,16 @@ describe(PartnerPeopleService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerPeopleService));
+    mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (ownerId, personGroupId, write) =>
+      write({
+        ownerId,
+        personGroupId,
+        sourceOwnerId: A,
+        sourcePersonGroupId: PG_A,
+        following: true,
+        overriddenFields: personGroupId === 'pg-c' ? ['name'] : [],
+      } as never),
+    );
     thumbnailSelection.where.mockReset().mockReturnValue(thumbnailSelection);
     thumbnailSelection.execute.mockReset().mockResolvedValue([]);
     mocks.person.selectionForThumbnails.mockReturnValue(thumbnailSelection as never);
@@ -530,6 +540,43 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('propagatePerson', () => {
+    it.each(['owner override', 'stopped following', 'changed source', 'source refreshed'] as const)(
+      'rechecks %s after origin admission',
+      async (change) => {
+        mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+          Promise.resolve(
+            ownerId === A ? ([{ ownerId: B, personGroupId: NEW_PG, overriddenFields: [] }] as never) : [],
+          ),
+        );
+        mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, apply) => {
+          people.set(`${A}/${PG_A}`, person(A, PG_A, { name: 'Latest name' }));
+          return apply({
+            ownerId: B,
+            personGroupId: NEW_PG,
+            sourceOwnerId: A,
+            rootOwnerId: A,
+            partnerSharedById: A,
+            sourcePersonGroupId: change === 'changed source' ? newUuid() : PG_A,
+            following: change !== 'stopped following',
+            overriddenFields: change === 'owner override' ? ['name'] : [],
+          });
+        });
+        await sut.propagatePerson(A, PG_A);
+        if (change === 'stopped following' || change === 'changed source') {
+          expect(mocks.person.update).not.toHaveBeenCalled();
+          expect(mocks.partnerOrigin.getPersonFollowers).toHaveBeenCalledOnce();
+        } else {
+          expect(mocks.person.update).toHaveBeenCalledWith({
+            ownerId: B,
+            personGroupId: NEW_PG,
+            birthDate: null,
+            isHidden: false,
+            ...(change === 'source refreshed' && { name: 'Latest name' }),
+          });
+        }
+      },
+    );
+
     it("follows the source's name and birth date into copies that left them alone", async () => {
       people.set(`${A}/${PG_A}`, person(A, PG_A, { name: 'Emma Rose', birthDate: '2015-04-01', isFavorite: true }));
       people.set(`${B}/${NEW_PG}`, person(B, NEW_PG, { name: 'Emma' }));

@@ -826,15 +826,20 @@ export class PersonService extends BaseService {
       faceId = face.id;
     }
 
-    const person = await this.personRepository.update({
-      ownerId,
-      personGroupId,
-      faceAssetId: faceId,
-      name,
-      birthDate,
-      isHidden,
-      isFavorite,
-      color,
+    const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    const person = await this.partnerOriginRepository.withPersonOrigin(ownerId, personGroupId, async () => {
+      const person = await this.personRepository.update({
+        ownerId,
+        personGroupId,
+        faceAssetId: faceId,
+        name,
+        birthDate,
+        isHidden,
+        isFavorite,
+        color,
+      });
+      await partnerPeople.noteEdit(ownerId, personGroupId, dto);
+      return person;
     });
 
     if (assetId) {
@@ -843,8 +848,6 @@ export class PersonService extends BaseService {
 
     // FL-326: an edit of a partner's person copy stops that detail following, and the person's own copies
     // follow the new name, birth date and hidden state
-    const partnerPeople = BaseService.create(PartnerPeopleService, this);
-    await partnerPeople.noteEdit(ownerId, personGroupId, dto);
     if (PartnerPeopleService.touchesFollowedFields(dto)) {
       await partnerPeople.propagatePerson(ownerId, personGroupId);
     }

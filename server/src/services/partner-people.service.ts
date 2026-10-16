@@ -129,10 +129,6 @@ export class PartnerPeopleService extends BaseService {
     ];
     while (queue.length > 0) {
       const current = queue.shift()!;
-      const source = await this.personRepository.getByGroupId(current);
-      if (!source) {
-        continue;
-      }
       const followers = await this.partnerOriginRepository.getPersonFollowers(current.ownerId, current.personGroupId);
       for (const follower of followers) {
         const key = `${follower.ownerId}/${follower.personGroupId}`;
@@ -140,20 +136,36 @@ export class PartnerPeopleService extends BaseService {
           continue;
         }
         seen.add(key);
-        const overridden = new Set(follower.overriddenFields);
-        const values = {
-          ...(!overridden.has('name') && { name: source.name }),
-          ...(!overridden.has('birthDate') && { birthDate: source.birthDate }),
-          ...(!overridden.has('hidden') && { isHidden: source.isHidden }),
-        };
-        if (Object.keys(values).length > 0) {
-          await this.personRepository.update({
-            ownerId: follower.ownerId,
-            personGroupId: follower.personGroupId,
-            ...values,
-          });
-        }
-        queue.push({ ownerId: follower.ownerId, personGroupId: follower.personGroupId });
+        const applied = await this.partnerOriginRepository.withPersonOrigin(
+          follower.ownerId,
+          follower.personGroupId,
+          async (origin) => {
+            if (
+              !origin?.following ||
+              origin.sourceOwnerId !== current.ownerId ||
+              origin.sourcePersonGroupId !== current.personGroupId
+            ) {
+              return false;
+            }
+            const source = await this.personRepository.getByGroupId(current);
+            if (!source) return false;
+            const overridden = new Set(origin.overriddenFields);
+            const values = {
+              ...(!overridden.has('name') && { name: source.name }),
+              ...(!overridden.has('birthDate') && { birthDate: source.birthDate }),
+              ...(!overridden.has('hidden') && { isHidden: source.isHidden }),
+            };
+            if (Object.keys(values).length > 0) {
+              await this.personRepository.update({
+                ownerId: follower.ownerId,
+                personGroupId: follower.personGroupId,
+                ...values,
+              });
+            }
+            return true;
+          },
+        );
+        if (applied) queue.push({ ownerId: follower.ownerId, personGroupId: follower.personGroupId });
       }
     }
   }

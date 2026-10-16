@@ -49,6 +49,7 @@ describe(PersonService.name, () => {
     // FL-326: no person copies follow anyone unless a test says so
     mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+    mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
     mocks.person.withMergeWrite.mockImplementation(async (write) => write());
@@ -638,6 +639,47 @@ describe(PersonService.name, () => {
   });
 
   describe('update', () => {
+    it('commits the person value and override before identity jobs', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ name: 'Before' });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue({ ...person, name: 'After' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      let committed = false;
+      mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => {
+        const value = await write(undefined);
+        expect(mocks.person.update).toHaveBeenCalled();
+        expect(mocks.partnerOrigin.markPersonOverridden).toHaveBeenCalledWith(
+          person.ownerId,
+          [person.personGroupId],
+          ['name'],
+        );
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        committed = true;
+        return value;
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.update(auth, person.personGroupId, { name: 'After' });
+      expect(committed).toBe(true);
+      expect(mocks.job.queue).toHaveBeenCalled();
+    });
+
+    it('admits the person origin before writing values or override markers', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create();
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.partnerOrigin.withPersonOrigin.mockRejectedValue(new Error('origin busy'));
+      await expect(sut.update(auth, person.personGroupId, { name: 'Owner choice' })).rejects.toThrow('origin busy');
+      expect(mocks.person.update).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.markPersonOverridden).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('should require person.write permission', async () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create();
@@ -683,6 +725,16 @@ describe(PersonService.name, () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create({ name: 'Emma' });
       const follower = { ownerId: newUuid(), personGroupId: newUuid(), overriddenFields: [] };
+      mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (ownerId, personGroupId, write) =>
+        write({
+          ...follower,
+          ownerId,
+          personGroupId,
+          sourceOwnerId: person.ownerId,
+          sourcePersonGroupId: person.personGroupId,
+          following: true,
+        } as never),
+      );
 
       mocks.person.getByGroupId.mockResolvedValue(person);
       mocks.person.update.mockResolvedValue({ ...person, name: 'Em' });
