@@ -133,19 +133,21 @@ export class BackupSequenceService {
   /** The schedule's tick: start a run, or remember that one is due when a run is still going. */
   @OnJob({ name: JobName.BackupSequence, queue: QueueName.BackgroundTask })
   async handleStart(): Promise<JobStatus> {
-    const state = await this.state();
-    if (state.run) {
-      await this.save({ ...state, dueAt: new Date().toISOString() });
-      this.logger.log('The backup schedule came round while a run is still going; another starts when it ends');
-      return JobStatus.Skipped;
-    }
-    await this.save({
-      ...state,
-      dueAt: null,
-      run: { startedAt: new Date().toISOString(), place: BACKUP_SEQUENCE[0], begun: false, results: {} },
+    return this.databaseRepository.withLock(DatabaseLock.BackupSequenceRun, async () => {
+      const state = await this.state();
+      if (state.run) {
+        await this.save({ ...state, dueAt: new Date().toISOString() });
+        this.logger.log('The backup schedule came round while a run is still going; another starts when it ends');
+        return JobStatus.Skipped;
+      }
+      await this.save({
+        ...state,
+        dueAt: null,
+        run: { startedAt: new Date().toISOString(), place: BACKUP_SEQUENCE[0], begun: false, results: {} },
+      });
+      await this.advance();
+      return JobStatus.Success;
     });
-    await this.move();
-    return JobStatus.Success;
   }
 
   /** Looks whether the place a run waits for has finished. One look at a time. */
@@ -215,6 +217,10 @@ export class BackupSequenceService {
    * place that is on, and stopping to wait at the first one whose backup is still being made.
    */
   async move(): Promise<void> {
+    return this.databaseRepository.withLock(DatabaseLock.BackupSequenceRun, () => this.advance());
+  }
+
+  private async advance(): Promise<void> {
     let state = await this.state();
     let run = state.run;
     while (run) {
