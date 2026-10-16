@@ -581,6 +581,70 @@ describe(CloudBackupService.name, () => {
     });
   });
 
+  describe('ordinary checkpoint claim authority', () => {
+    it.each(
+      ['run', 'task'].flatMap((mode) => ['cancelled', 'claim-lost', 'resumed'].map((state) => ({ mode, state }))),
+    )('rechecks authority after a failed pause: $mode / $state', async ({ mode, state }) => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      const operation = operationOf(mode === 'task' ? { snapshot: { task: 'verify' } } : {});
+      const result = { ...emptyRunResult(), manifestId: 'manifest-1' };
+      const written = { ...running, pauseRequestedAt: new Date() };
+      operations.setBulkResult.mockResolvedValue(written);
+      operations.settlePause.mockResolvedValue(false);
+      operations.heartbeat.mockResolvedValue(state === 'resumed');
+      operations.acknowledgeCancel.mockResolvedValue(state === 'cancelled');
+
+      const answer =
+        mode === 'run'
+          ? await sut['proceed'](operation.id, 'claim-1', written, operation, result)
+          : await sut['checkpointTask'](operation, 'claim-1', result, { processed: 1, total: 2, progress: 50 });
+
+      expect(operations.heartbeat).toHaveBeenCalledWith(operation.id, 'claim-1', expect.any(Number), {
+        requireActiveClaim: true,
+      });
+      if (state === 'resumed') {
+        expect(answer).toBe(mode === 'run' ? true : 'continue');
+        expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      } else {
+        expect(answer).toBe(mode === 'run' ? false : state === 'cancelled' ? 'cancelled' : 'stopped');
+        expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, 'claim-1', { released: false });
+      }
+      if (mode === 'run' && state === 'cancelled') {
+        expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'cancelled' });
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'cancelled' } });
+      } else {
+        expect(index.finishManifest).not.toHaveBeenCalled();
+        expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['run', 'task'].flatMap((mode) => [false, true].map((acknowledged) => ({ mode, acknowledged }))))(
+      'only records cancellation after acknowledgement: $mode / $acknowledged',
+      async ({ mode, acknowledged }) => {
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+        const operation = operationOf(mode === 'task' ? { snapshot: { task: 'verify' } } : {});
+        const result = { ...emptyRunResult(), manifestId: 'manifest-1' };
+        const written = { ...running, cancelRequestedAt: new Date() };
+        operations.setBulkResult.mockResolvedValue(written);
+        operations.acknowledgeCancel.mockResolvedValue(acknowledged);
+
+        const answer =
+          mode === 'run'
+            ? await sut['proceed'](operation.id, 'claim-1', written, operation, result)
+            : await sut['checkpointTask'](operation, 'claim-1', result, { processed: 1, total: 2, progress: 50 });
+
+        expect(answer).toBe(mode === 'run' ? false : acknowledged ? 'cancelled' : 'stopped');
+        if (mode === 'run' && acknowledged) {
+          expect(index.finishManifest).toHaveBeenCalledWith('manifest-1', { status: 'cancelled' });
+          expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ lastRun: { status: 'cancelled' } });
+        } else {
+          expect(index.finishManifest).not.toHaveBeenCalled();
+          expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+        }
+      },
+    );
+  });
+
   describe('task checkpoint progress', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());

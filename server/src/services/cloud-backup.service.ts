@@ -2686,16 +2686,28 @@ export class CloudBackupService {
       return false;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
-      await this.endManifest(result, 'cancelled');
-      await this.recordRun(operation, result, 'cancelled');
-      await this.reportManagedRun(operation, result, 'cancelled');
-      this.logger.log(`Cloud backup run ${id} cancelled`);
+      if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+        await this.endManifest(result, 'cancelled');
+        await this.recordRun(operation, result, 'cancelled');
+        await this.reportManagedRun(operation, result, 'cancelled');
+        this.logger.log(`Cloud backup run ${id} cancelled`);
+      }
       return false;
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      this.logger.log(`Cloud backup run ${id} paused`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        this.logger.log(`Cloud backup run ${id} paused`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claimToken, CLOUD_BACKUP_LEASE_MS, { requireActiveClaim: true }))) {
+        if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+          await this.endManifest(result, 'cancelled');
+          await this.recordRun(operation, result, 'cancelled');
+          await this.reportManagedRun(operation, result, 'cancelled');
+        }
+        return false;
+      }
     }
     return true;
   }
@@ -2773,13 +2785,25 @@ export class CloudBackupService {
     }
     reportExecutionProgress(`task:${taskOf(operation)}`, units.processed);
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
+      if (!(await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))) return 'stopped';
       this.logger.log(`Cloud backup operation ${operation.id} cancelled`);
       return 'cancelled';
     }
-    if (written.pauseRequestedAt && (await this.operations.settlePause(operation.id, claimToken))) {
-      this.logger.log(`Cloud backup operation ${operation.id} paused`);
-      return 'stopped';
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(operation.id, claimToken)) {
+        this.logger.log(`Cloud backup operation ${operation.id} paused`);
+        return 'stopped';
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (
+        !(await this.operations.heartbeat(operation.id, claimToken, CLOUD_BACKUP_LEASE_MS, {
+          requireActiveClaim: true,
+        }))
+      ) {
+        return (await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))
+          ? 'cancelled'
+          : 'stopped';
+      }
     }
     return 'continue';
   }
