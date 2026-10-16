@@ -8,6 +8,7 @@ export default defineConfig({
       'src/backup-fixture.spec.ts',
       'src/fixtures/owner-backup-origin.spec.ts',
       'src/ui/generators/timeline/images.spec.ts',
+      'src/ui/generators/memory/model-objects.spec.ts',
     ],
   },
   resolve: { tsconfigPaths: true },
