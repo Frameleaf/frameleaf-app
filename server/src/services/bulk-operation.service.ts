@@ -693,7 +693,14 @@ export class BulkOperationService {
     // FL-32: a transactional archive publishes, or undoes, through its operation's own item records
     if (payload.archiveOperationId && operationId && isArchiveAction(action)) {
       outcomes.push(
-        ...(await this.applyArchiveOperation(auth, payload.archiveOperationId, operationId, action, allowed)),
+        ...(await this.applyArchiveOperation(
+          auth,
+          payload.archiveOperationId,
+          operationId,
+          action,
+          allowed,
+          snapshot.elevated === true,
+        )),
       );
       return outcomes;
     }
@@ -853,11 +860,12 @@ export class BulkOperationService {
     jobId: string,
     action: MediaOperationBulkAction,
     batch: string[],
+    elevated: boolean,
   ): Promise<Outcome[]> {
     const answers =
       action === MediaOperationBulkAction.Unarchive
-        ? await this.archiveOperations.restore(auth.user.id, archiveOperationId, jobId, batch)
-        : await this.archiveOperations.publish(auth.user.id, archiveOperationId, jobId, batch);
+        ? await this.archiveOperations.restore(auth.user.id, archiveOperationId, jobId, batch, elevated)
+        : await this.archiveOperations.publish(auth.user.id, archiveOperationId, jobId, batch, elevated);
     const changed = batch.filter((id) => {
       const answer = answers.get(id);
       return answer === 'archived' || answer === 'undone';

@@ -195,6 +195,7 @@ describe(BulkOperationService.name, () => {
           archiveOperationId,
           jobId,
           snapshot.assetIds,
+          false,
         );
         expect(assets.updateAll).not.toHaveBeenCalled();
         expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([archived], authStub.user1.user.id);
@@ -224,6 +225,7 @@ describe(BulkOperationService.name, () => {
           archiveOperationId,
           jobId,
           snapshot.assetIds,
+          false,
         );
         expect(assets.notifyVisibilityChanged).toHaveBeenCalledWith([restored], authStub.user1.user.id);
         expect(outcomes).toEqual([
@@ -245,9 +247,13 @@ describe(BulkOperationService.name, () => {
 
         const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
 
-        expect(archiveOperations.publish).toHaveBeenCalledWith(authStub.user1.user.id, archiveOperationId, jobId, [
-          mine,
-        ]);
+        expect(archiveOperations.publish).toHaveBeenCalledWith(
+          authStub.user1.user.id,
+          archiveOperationId,
+          jobId,
+          [mine],
+          false,
+        );
         expect(outcomes).toContainEqual(
           expect.objectContaining({ id: theirs, reasonKey: 'frameleaf_bulk_reason_no_permission' }),
         );
@@ -273,7 +279,7 @@ describe(BulkOperationService.name, () => {
           );
           const touched =
             action === MediaOperationBulkAction.Archive ? archiveOperations.publish : archiveOperations.restore;
-          expect(touched).toHaveBeenLastCalledWith(authStub.user1.user.id, archiveOperationId, jobId, rest);
+          expect(touched).toHaveBeenLastCalledWith(authStub.user1.user.id, archiveOperationId, jobId, rest, false);
           expect(outcomes).toContainEqual({
             id: lockedSince,
             status: MediaOperationItemStatus.Skipped,
@@ -281,6 +287,35 @@ describe(BulkOperationService.name, () => {
           });
         }
       });
+
+      it.each([MediaOperationBulkAction.Archive, MediaOperationBulkAction.Unarchive])(
+        'passes recorded elevation to the final %s admission and reports a late lock',
+        async (action) => {
+          const target =
+            action === MediaOperationBulkAction.Archive ? archiveOperations.publish : archiveOperations.restore;
+          for (const elevated of [false, true]) {
+            const snapshot = snapshotOf({ action, elevated, payload: { archiveOperationId } });
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+            target.mockResolvedValue(new Map(snapshot.assetIds.map((id) => [id, 'locked'])));
+            const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, jobId);
+            expect(target).toHaveBeenLastCalledWith(
+              authStub.user1.user.id,
+              archiveOperationId,
+              jobId,
+              snapshot.assetIds,
+              elevated,
+            );
+            expect(outcomes).toEqual(
+              snapshot.assetIds.map((id) => ({
+                id,
+                status: MediaOperationItemStatus.Skipped,
+                reasonKey: 'frameleaf_bulk_reason_locked',
+              })),
+            );
+            expect(assets.notifyVisibilityChanged).not.toHaveBeenCalled();
+          }
+        },
+      );
 
       it('archives an ordinary job without an operation as before', async () => {
         const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
