@@ -665,6 +665,9 @@ export class AssetDevelopService {
     const outcome = await run.fail(message, sourceChanged ? 'source_changed' : 'edit_render_failed', {
       retry: !permanent,
     });
+    if (outcome === false) {
+      return JobStatus.Skipped;
+    }
     if (outcome === 'retrying') {
       this.logger.warn(`Develop render of revision ${id} failed, retrying once: ${message}`);
       await this.assetDevelopRepository.update(id, {
