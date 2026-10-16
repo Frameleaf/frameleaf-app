@@ -203,7 +203,7 @@ export function buildServerMirror(manifestText, approvalText = null) {
     const approved = approval?.approved.get(row.id) === true;
     const excluded = approval?.excluded.get(row.id) ?? {};
     const decide = (use) =>
-      row[use] === ALLOWED || (approved && approval.uses.includes(use) && !Object.hasOwn(excluded, use))
+      !Object.hasOwn(excluded, use) && (row[use] === ALLOWED || (approved && approval.uses.includes(use)))
         ? ALLOWED
         : 'blocked';
     const restrictions = RIGHTS_USES.filter((use) => Object.hasOwn(excluded, use)).map((use) => [use, excluded[use]]);
