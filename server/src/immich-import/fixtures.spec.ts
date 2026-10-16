@@ -13,4 +13,7 @@ it('keeps frozen SQL evidence tied to its recorded immutable source hashes', () 
   for (const [file, hash] of Object.entries(provenance.structuralSql)) {
     expect(digest(read(file))).toBe(hash);
   }
+  for (const { dump, sha256 } of Object.values(provenance.replayed)) {
+    expect(digest(gunzipSync(Buffer.from(read(dump).toString(), 'base64')))).toBe(sha256);
+  }
 });

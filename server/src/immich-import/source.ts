@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
-import { CONTENT_TABLES, PATH_COLUMNS, canonicalJson, digest, frozenSource } from 'src/immich-import/adapters.js';
+import {
+  CONTENT_TABLES,
+  PATH_COLUMNS,
+  canonicalJson,
+  digest,
+  frozenSource,
+  newestContainedRelease,
+} from 'src/immich-import/adapters.js';
 import { assertMediaPolicy, verifyMediaFile } from 'src/immich-import/media.js';
-import { readSourceStructure, verifySourceStructure } from 'src/immich-import/schema.js';
+import { readSourceStructure, verifyReadableStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
   FrozenSource,
   ImportConfig,
@@ -46,11 +53,18 @@ export class ImmichSource {
     const [frameleaf] = await this.db.query("SELECT to_regclass('public.frameleaf_migrations') IS NOT NULL AS present");
     if (frameleaf?.present) throw new ImportRefused('SOURCE_IS_FRAMELEAF');
     const migrations = await this.db.query('SELECT name FROM public.kysely_migrations ORDER BY name');
-    if (canonicalJson(migrations.map((row) => row.name)) !== canonicalJson(this.fixture.migrations)) {
-      throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
-    }
+    const names = migrations.map((row) => String(row.name));
     const structure = await readSourceStructure(this.db);
-    verifySourceStructure(structure, this.fixture.structure);
+    if (this.fixture.exact && canonicalJson(names) === canonicalJson(this.fixture.migrations)) {
+      verifySourceStructure(structure, this.fixture.structure);
+    } else {
+      // A replayed 2.x shape or a newer release: the selected frozen shape must be the newest one its ledger contains.
+      const newest = newestContainedRelease(names);
+      if (!newest || frozenSource(newest).migrations !== this.fixture.migrations) {
+        throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
+      }
+      verifyReadableStructure(structure, this.fixture);
+    }
     const identity = await this.db.query(`SELECT current_database() AS database,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,
       system_identifier::text AS system_identifier FROM pg_control_system()`);
@@ -121,7 +135,8 @@ export class ImmichSource {
       const results = await this.db.query(
         `SELECT jsonb_build_object(${fields}) AS row,
         ARRAY[${shape.key.map((column) => `${quote(column)}::text`).join(',')}] AS cursor
-        FROM public.${quote(table)} ${where} ORDER BY ${keys.join(',')} LIMIT 250`,
+        FROM ${this.fixture.views[table] ? `(${this.fixture.views[table]}) AS ${quote(table)}` : `public.${quote(table)}`}
+        ${where} ORDER BY ${keys.join(',')} LIMIT 250`,
         cursor ?? [],
       );
       if (results.length === 0) {
