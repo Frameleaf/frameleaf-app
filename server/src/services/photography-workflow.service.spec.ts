@@ -413,6 +413,36 @@ describe('photography workflow integration boundaries', () => {
     expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
     expect((await s.service.file(s.shootId, client.session, s.captureId, 'download')).path).not.toBe(s.source);
   });
+  it('keeps published pixels intact when an expired renderer resumes after its replacement commits', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
+    const oldSource = Promise.withResolvers<{ path: string }>();
+    const replacementSource = path.join(path.dirname(s.source), 'replacement.jpg');
+    await sharp({ create: { width: 800, height: 600, channels: 3, background: '#dd3322' } })
+      .jpeg()
+      .toFile(replacementSource);
+    s.repository.proofSource
+      .mockClear()
+      .mockReturnValueOnce(oldSource.promise)
+      .mockResolvedValue({ path: replacementSource });
+    const oldRender = s.service.render({ id: s.shootId });
+    let publishedPath: string;
+    let publishedBytes: Buffer;
+    try {
+      await vi.waitFor(() => expect(s.repository.proofSource).toHaveBeenCalledOnce());
+      s.row().value.publication!.updatedAt = new Date(Date.now() - 11 * 60_000).toISOString();
+      expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+      publishedPath = (await s.service.file(s.shootId, client.session, s.captureId, 'preview')).path;
+      publishedBytes = await readFile(publishedPath);
+    } finally {
+      oldSource.resolve({ path: s.source });
+      await oldRender;
+    }
+    expect(s.row().value.publication!.status).toBe('ready');
+    expect((await s.service.file(s.shootId, client.session, s.captureId, 'preview')).path).toBe(publishedPath);
+    expect((await readFile(publishedPath)).equals(publishedBytes!)).toBe(true);
+  });
   it('does not release prepared finals when the atomic publication commit fails', async () => {
     const s = await setup();
     const client = await s.invitation();

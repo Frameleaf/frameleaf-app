@@ -1697,7 +1697,8 @@ export class PhotographyWorkflowService {
     }
     row = claimed.row;
     const publication = row.value.publication!;
-    const folder = this.renditionFolder(row, publicationId);
+    // A stale claim must never overwrite pixels published by its replacement.
+    const folder = path.join(this.renditionFolder(row, publicationId), claim);
     let activeCaptureId: string | null = null;
     const preparedApprovals: {
       orderId: string;
