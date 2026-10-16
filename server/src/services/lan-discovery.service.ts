@@ -38,14 +38,16 @@ export class LanDiscoveryService extends BaseService {
   private watch: ReturnType<typeof setInterval> | null = null;
   /** FL-291: set once the worker is shutting down, so nothing is published again. */
   private closed = false;
+  private generation = 0;
 
   /** FL-292: how often the setup state is checked while the record is published. */
   static readonly REFRESH_MS = 30_000;
 
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Api] })
   async onBootstrap(): Promise<void> {
+    const generation = this.generation;
     const { server } = await this.getConfig({ withCache: true });
-    if (server.lanDiscovery) {
+    if (!this.closed && generation === this.generation && server.lanDiscovery) {
       await this.start();
     }
   }
@@ -74,10 +76,13 @@ export class LanDiscoveryService extends BaseService {
     }
     // the goodbye goes out before the multicast socket closes, so apps drop the server at once;
     // never waits more than a moment, so it cannot hold up the shutdown
-    await settle((done) => bonjour.unpublishAll(() => done()));
-    this.service = null;
-    this.published = null;
-    await settle((done) => bonjour.destroy(() => done()));
+    try {
+      await settle((done) => bonjour.unpublishAll(() => done()));
+    } finally {
+      this.service = null;
+      this.published = null;
+      await settle((done) => bonjour.destroy(() => done()));
+    }
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true, workers: [FrameleafWorker.Api] })
@@ -93,6 +98,7 @@ export class LanDiscoveryService extends BaseService {
     // ponytail: republish rather than diff - a rename is rare, and stopping+starting the one
     // service is far simpler than patching a live mdns TXT record in place.
     this.stop();
+    const generation = this.generation;
 
     const { server } = await this.getConfig({ withCache: true });
     const { port, frameleafCloud } = this.configRepository.getEnv();
@@ -107,7 +113,7 @@ export class LanDiscoveryService extends BaseService {
     });
     const name = server.name?.trim() || 'Frameleaf server';
     const txt = { id, name, ...(await this.setupRecord()) };
-    if (this.closed) {
+    if (this.closed || generation !== this.generation) {
       return;
     }
 
@@ -136,6 +142,7 @@ export class LanDiscoveryService extends BaseService {
 
   /** Publish again when what the record says has changed (a link, an unlink, the first administrator). */
   private async refresh(): Promise<void> {
+    const generation = this.generation;
     if (!this.service) {
       return;
     }
@@ -146,7 +153,7 @@ export class LanDiscoveryService extends BaseService {
         systemMetadataRepository: this.systemMetadataRepository,
       });
       const txt = { id, name: server.name?.trim() || 'Frameleaf server', ...(await this.setupRecord()) };
-      if (JSON.stringify(txt) !== this.published) {
+      if (!this.closed && generation === this.generation && JSON.stringify(txt) !== this.published) {
         await this.start();
       }
     } catch (error) {
@@ -155,12 +162,14 @@ export class LanDiscoveryService extends BaseService {
   }
 
   private stop(): void {
-    this.service?.stop();
+    this.generation++;
+    const service = this.service;
     this.service = null;
     this.published = null;
     if (this.watch) {
       clearInterval(this.watch);
       this.watch = null;
     }
+    service?.stop();
   }
 }
