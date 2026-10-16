@@ -1,12 +1,18 @@
 name: Frameleaf development validation
 'on':
+  push:
+    branches: [aj/desktop-device-enrollment]
+    paths:
+      - '.github/workflows/development-validation.yml'
+      - 'server/src/schema/**'
+      - '!server/src/schema/catalog/**'
   workflow_dispatch:
   workflow_call:
 permissions:
   contents: read
 jobs:
   development:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/FL-333-pg19') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/FL-333-pg19' || github.ref == 'refs/heads/aj/desktop-device-enrollment') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -57,7 +63,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          pnpm --dir server exec tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-types.log"
+          pnpm --dir server check 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-types.log"
       - name: Build server generators
         timeout-minutes: 10
         id: server

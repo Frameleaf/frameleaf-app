@@ -1,19 +1,14 @@
 import concurrent.futures
 import logging
 import os
-import sys
 from pathlib import Path
-from socket import socket
 from typing import Literal
 from urllib.parse import urlsplit
 
-from gunicorn.arbiter import Arbiter
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.logging import RichHandler
-from uvicorn import Server
-from uvicorn.workers import UvicornWorker
 
 from .env_aliases import apply_env_aliases
 from .schemas import ModelPrecision
@@ -228,19 +223,14 @@ log = logging.getLogger("ml.log")
 log.setLevel(LOG_LEVEL)
 
 
-# patches this issue https://github.com/encode/uvicorn/discussions/1803
-class CustomUvicornServer(Server):
-    async def shutdown(self, sockets: list[socket] | None = None) -> None:
-        for sock in sockets or []:
-            sock.close()
-        await super().shutdown()
+def __getattr__(name: str) -> type:
+    # Gunicorn resolves its configured worker by this legacy module path.
+    if name in {"CustomUvicornServer", "CustomUvicornWorker"}:
+        from . import gunicorn_worker
 
-
-class CustomUvicornWorker(UvicornWorker):
-    async def _serve(self) -> None:
-        self.config.app = self.wsgi
-        server = CustomUvicornServer(config=self.config)
-        self._install_sigquit_handler()
-        await server.serve(sockets=self.sockets)
-        if not server.started:
-            sys.exit(Arbiter.WORKER_BOOT_ERROR)
+        return (
+            gunicorn_worker.CustomUvicornServer
+            if name == "CustomUvicornServer"
+            else gunicorn_worker.CustomUvicornWorker
+        )
+    raise AttributeError(name)

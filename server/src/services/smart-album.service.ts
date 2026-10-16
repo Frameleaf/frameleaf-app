@@ -132,6 +132,7 @@ export class SmartAlbumService extends BaseService {
       return;
     }
 
+    const read = await this.machineLearningRepository.captureClipRead();
     const allBuiltInKinds = Object.keys(smartAlbums.builtIn) as BuiltInKind[];
     // When scoped to a single kind, treat the others as if disabled for this
     // call — they are neither matched nor removed.
@@ -197,11 +198,13 @@ export class SmartAlbumService extends BaseService {
       if (hasTagMatch || hasClipMatch) {
         matchedKinds.add(kind);
         const matchReason = hasTagMatch && hasClipMatch ? 'both' : hasTagMatch ? 'tag' : 'clip';
-        await publishJobResult(async () => {
-          const excluded = await this.smartAlbumRepository.getExcludedSmartAlbumIds(assetId, [smartAlbumId]);
-          if (!excluded.has(smartAlbumId))
-            await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
-        });
+        await publishJobResult(() =>
+          read.publish(async () => {
+            const excluded = await this.smartAlbumRepository.getExcludedSmartAlbumIds(assetId, [smartAlbumId]);
+            if (!excluded.has(smartAlbumId))
+              await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
+          }),
+        );
       }
     }
 
@@ -218,7 +221,9 @@ export class SmartAlbumService extends BaseService {
       if (!matchedKinds.has(kind)) {
         const smartAlbumId = albumIdByKind.get(kind as BuiltInKind);
         if (smartAlbumId) {
-          await publishJobResult(() => this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId));
+          await publishJobResult(() =>
+            read.publish(() => this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId)),
+          );
         }
       }
     }
@@ -300,7 +305,7 @@ export class SmartAlbumService extends BaseService {
         throw error;
       }
     }
-    const cacheKey = `${clip.modelName}\u{0}${query}`;
+    const cacheKey = `${clip.modelName}\u{0}${await this.machineLearningRepository.clipCacheKey(clip.modelName)}\u{0}${query}`;
     const cached = clipQueryCache.get(cacheKey);
     if (cached) {
       return cached;

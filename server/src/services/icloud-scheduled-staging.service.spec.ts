@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, open, readdir, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readdir, realpath, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetType } from 'src/enum.js';
@@ -103,7 +103,7 @@ describe('scheduled publication handle closure', () => {
 // These causal regressions remain RED until the approved Tasks 4/5 service integration.
 describe('validation input accounting baseline', () => {
   async function fixture(destinationValidation = false) {
-    const directory = await mkdtemp(join(tmpdir(), 'validation-input-'));
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'validation-input-')));
     const path = join(directory, 'complete');
     await writeFile(path, 'fresh', { mode: 0o600 });
     const destination = destinationValidation ? join(directory, 'recovery') : undefined;

@@ -35,6 +35,14 @@ import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
+import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
+import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
+import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
+import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
+import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
+import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
@@ -95,6 +103,7 @@ import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
+import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
@@ -157,6 +166,15 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  DesktopAssistanceActivationService,
+  DesktopAssistancePolicyService,
+  DesktopDeviceService,
+  PhotoSourceService,
+  DesktopMlService,
+  DesktopNasProducerService,
+  DesktopQualificationService,
+  DesktopWorkerAuthService,
+  DesktopWorkerService,
   FrameleafLibraryMoveService,
   FrameleafLibrarySetupService,
   ICloudAuditService,

@@ -1,7 +1,9 @@
 import { type Transaction, sql } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
+import z from 'zod';
 import type {
   MlCloudModelChoiceRow,
   MlDestinationRow,
@@ -9,7 +11,8 @@ import type {
 } from 'src/repositories/ml-destination.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { RepoDeps } from 'src/utils/config.js';
-import { MlDestinationHealth, MlDestinationKind, SystemMetadataKey } from 'src/enum.js';
+import { MlDestinationHealth, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { readConfig } from 'src/utils/config.js';
 import {
@@ -24,12 +27,21 @@ import {
   recoveryMlRegistrySchema,
 } from 'src/utils/recovery-ml-authority.js';
 
+const routeIntentsSchema = z.array(
+  z.strictObject({
+    workload: z.enum(MlWorkload),
+    destinationId: z.uuid().nullable(),
+    origin: z.enum(['default', 'pinned', 'legacy']),
+  }),
+);
+
 export type BuddyReplacementMl = {
   binding: RecoveryMlBinding;
   config: RecoveryMlConfig;
   epoch: number;
   destinations: MlDestinationRow[];
   routes: MlWorkloadRouteRow[];
+  routeIntents?: z.infer<typeof routeIntentsSchema>;
   modelChoices: MlCloudModelChoiceRow[];
 };
 
@@ -65,6 +77,7 @@ export async function readReplacementMl(
     const value: BuddyReplacementMl = await readPrivateMlArtifact(join(directory, 'replacement-ml.json'));
     recoveryMlBindingSchema.parse(value.binding);
     recoveryMlOverlaySchema.shape.authority.parse(value.config);
+    if (value.routeIntents !== undefined) routeIntentsSchema.parse(value.routeIntents);
     if (
       value.binding.recoveryId !== recoveryId ||
       value.binding.preparedPlanDigest !== recoveryAuthorityDigest(plan) ||
@@ -101,6 +114,7 @@ export async function captureReplacementMl(
   const rows = await tx.selectFrom('ml_destination').selectAll().orderBy('id').forShare().execute();
   const destinations = rows.filter((row) => !registry?.data?.quarantine[row.id]);
   const routes = await tx.selectFrom('ml_workload_route').selectAll().orderBy('workload').forShare().execute();
+  await tx.selectFrom('ml_workload_route_origin').selectAll().orderBy('workload').forShare().execute();
   const value: BuddyReplacementMl = {
     binding: {
       format: 1,
@@ -112,6 +126,12 @@ export async function captureReplacementMl(
     epoch: epoch?.epoch ?? 1,
     destinations,
     routes: routes.filter((route) => destinations.some((row) => row.id === route.destinationId)),
+    routeIntents: (await new MlDestinationRepository(tx).getRouteStates()).map(
+      ({ revisionId: _revision, ...intent }) =>
+        intent.destinationId && destinations.every((row) => row.id !== intent.destinationId)
+          ? { ...intent, origin: 'legacy' as const }
+          : intent,
+    ),
     modelChoices: await tx.selectFrom('ml_cloud_model_choice').selectAll().orderBy('modelGroup').forShare().execute(),
   };
   await assert();
@@ -157,6 +177,7 @@ export async function preserveHistoricalMl(
     binding: authority.binding,
     destinations: await tx.selectFrom('ml_destination').selectAll().orderBy('id').forUpdate().execute(),
     routes: await tx.selectFrom('ml_workload_route').selectAll().orderBy('workload').execute(),
+    routeOrigins: await tx.selectFrom('ml_workload_route_origin').selectAll().orderBy('workload').execute(),
     modelChoices: await tx.selectFrom('ml_cloud_model_choice').selectAll().orderBy('modelGroup').execute(),
     system: await repos.metadataRepo.get(SystemMetadataKey.SystemConfig),
     epoch,
@@ -283,6 +304,29 @@ export async function admitReplacementMl(
           .column('workload')
           .doUpdateSet({ destinationId: route.destinationId, modelId: route.modelId, updatedAt: route.updatedAt }),
       )
+      .execute();
+  }
+  // Imported provenance cannot authorize the replacement deployment or revive an old route revision.
+  await tx.deleteFrom('ml_workload_route_origin').execute();
+  for (const intent of authority.routeIntents ?? []) {
+    if (
+      intent.origin !== 'legacy' &&
+      intent.destinationId !== null &&
+      authority.routes.every(
+        (route) => !(route.workload === intent.workload && route.destinationId === intent.destinationId),
+      )
+    )
+      throw recoveryMlRefusal();
+    if (intent.origin === 'pinned' && intent.destinationId === null)
+      await tx.deleteFrom('ml_workload_route').where('workload', '=', intent.workload).execute();
+    await tx
+      .insertInto('ml_workload_route_origin')
+      .values({
+        workload: intent.workload,
+        origin: intent.origin === 'legacy' ? 'default' : intent.origin,
+        destinationId: intent.origin === 'legacy' ? null : intent.destinationId,
+        revisionId: randomUUID(),
+      })
       .execute();
   }
   await tx.deleteFrom('ml_cloud_model_choice').execute();

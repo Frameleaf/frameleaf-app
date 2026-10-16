@@ -182,6 +182,19 @@ const MlWorkloadRouteSchema = z
   .object({
     workload: MlWorkloadSchema,
     destinationId: z.uuidv4().nullable().describe('Destination the workload is routed to, or null when unrouted'),
+    origin: z
+      .enum(['default', 'pinned', 'legacy'])
+      .meta({ id: 'MlRouteOrigin' })
+      .nullable()
+      .optional()
+      .describe(
+        'Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown.',
+      ),
+    revisionId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe('Recorded intent incarnation, or null when intent is unknown'),
   })
   .meta({ id: 'MlWorkloadRouteDto' });
 

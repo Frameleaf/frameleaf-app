@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "epoch": 1,
+  "spaces": [
+    {
+      "spaceKey": "clip-space:fcbf57323b51dfc38ff89ceb12ceeb2b33e1c80d84a5afeb0717df54855e708d",
+      "visualModelKey": "clip:398f0c8fa848e0f32d68c50e6340069a60a5f7fa04e83675f0da3b43e850492e",
+      "textModelKeys": [
+        "clip:7a768d9b914e5ed32afa2c01566dc6c1dd6dcd9e01bed476d4ce5cae38a945db",
+        "clip:c8e479514fdcf9f76b63e46a1333245aba14eed444f3a9409e02d3bb33511c76"
+      ]
+    },
+    {
+      "spaceKey": "clip-space:e8f8e2a7750b1e85c9cbf71d3a52eb5b0faf8ce5009ce8c7e00c518ad389cdcd",
+      "visualModelKey": "clip:b5b9a9d4748410f5c869fe1b73a16ab8caa25f852aec6075b12403ebd2cf5956",
+      "textModelKeys": [
+        "clip:93f4dc772f817655256678095702dd151c8714e238fccbd7a49f544960fb52a6",
+        "clip:d89f5dad3c5a6d8111d881614655d55d5d4f6b1d275ff5f10cd5a3230779eb87"
+      ]
+    }
+  ]
+}

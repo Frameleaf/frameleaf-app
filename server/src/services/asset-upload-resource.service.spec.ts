@@ -123,6 +123,7 @@ describe('resumable asset byte commit boundaries', () => {
         return { deleted: true, references: 0 };
       }),
     };
+    const sources = { assertUpload: vi.fn().mockResolvedValue(undefined) };
     const service = new AssetUploadResourceService(
       uploads as never,
       media as never,
@@ -133,11 +134,13 @@ describe('resumable asset byte commit boundaries', () => {
       { warn: vi.fn() } as never,
       rateLimits as never,
       { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
+      sources as never,
     );
     vi.spyOn(service as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue('owner');
     vi.spyOn(service as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
     return {
       service,
+      sources,
       media,
       uploads,
       inserts,
@@ -153,6 +156,66 @@ describe('resumable asset byte commit boundaries', () => {
   };
   const auth = { user: { id: 'owner' } } as AuthDto;
 
+  const folderAuth = { user: { id: 'owner' }, session: { id: 'photo-session' } } as AuthDto;
+  const folderIdentity = { kind: 'folder' as const, sourceId: randomUUID(), runId: randomUUID(), itemId: randomUUID() };
+  const bindFolder = (harness: ReturnType<typeof setup>) =>
+    harness.mutate({
+      metadata: { ...harness.row().metadata, sourceIdentity: folderIdentity },
+    });
+  it('refuses folder reads and bytes without a live photo session or after source revocation', async () => {
+    const harness = setup();
+    bindFolder(harness);
+    await expect(harness.service.head(auth, harness.row().id)).rejects.toThrow();
+    expect(harness.sources.assertUpload).not.toHaveBeenCalled();
+    harness.sources.assertUpload.mockRejectedValue(new ConflictException('source revoked'));
+    await expect(harness.service.head(folderAuth, harness.row().id)).rejects.toThrow('source revoked');
+    let read = false;
+    const input = Readable.from(
+      (function* () {
+        read = true;
+        yield Buffer.from('abcd');
+      })(),
+    );
+    await expect(harness.service['receive'](folderAuth, harness.row().id, input, 0, false)).rejects.toThrow(
+      'source revoked',
+    );
+    expect(read).toBe(false);
+    expect(harness.inserts).toHaveLength(0);
+  });
+  it('rechecks source authority inside publication after media preparation', async () => {
+    const harness = setup();
+    bindFolder(harness);
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.prepareUploadAsset.mockImplementation(() => {
+      harness.sources.assertUpload.mockRejectedValue(new ConflictException('revoked during preparation'));
+      return Promise.resolve({});
+    });
+    await expect(harness.service.result(folderAuth, harness.row().id)).rejects.toThrow('revoked during preparation');
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.row().state).toBe('verified');
+  });
+  it('does not acknowledge bytes when a folder is revoked during the request body', async () => {
+    const harness = setup();
+    bindFolder(harness);
+    const input = Readable.from(
+      (function* () {
+        yield Buffer.from('ab');
+        harness.sources.assertUpload.mockRejectedValue(new ConflictException('source revoked'));
+        yield Buffer.from('cd');
+      })(),
+    );
+    await expect(harness.service['receive'](folderAuth, harness.row().id, input, 0, false)).rejects.toThrow(
+      'source revoked',
+    );
+    expect(harness.inserts).toHaveLength(0);
+    expect(harness.row().offset).toBe(0);
+  });
   it('awaits the durable local-effect wake after an edit publication before acknowledging it', async () => {
     const harness = setup();
     harness.mutate({
@@ -249,6 +312,7 @@ describe('resumable asset byte commit boundaries', () => {
       harness.physical as never,
       { warn: vi.fn() } as never,
       harness.rateLimits as never,
+      {} as never,
       {} as never,
     );
     vi.spyOn(replacement as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue(
@@ -670,6 +734,7 @@ describe('Live Photo required postcommit ingestion', () => {
       { warn: vi.fn() } as never,
       rateLimits as never,
       { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
+      {} as never,
     );
     vi.spyOn(service as unknown as { owner: () => Promise<string> }, 'owner').mockResolvedValue(ownerId);
     vi.spyOn(
@@ -707,6 +772,7 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
       logger as never,
       {} as never,
       identities as never,
+      {} as never,
     );
     const internals = service as unknown as {
       refuseClaimedItem: (owner: string, source: unknown) => Promise<void>;

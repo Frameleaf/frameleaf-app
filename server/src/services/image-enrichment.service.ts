@@ -12,6 +12,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { ImageDescriptionResult, NsfwDetectionResult } from 'src/repositories/machine-learning.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
+import type { ClipEmbedding } from 'src/utils/clip-embedding.js';
 import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -1882,7 +1883,7 @@ export class ImageEnrichmentService extends BaseService {
       modelName: string;
     },
     options: EnrichmentRunOptions = {},
-  ): Promise<string | null | undefined> {
+  ): Promise<ClipEmbedding | null | undefined> {
     const text = description?.trim();
     if (!text) {
       return null;
@@ -1894,7 +1895,7 @@ export class ImageEnrichmentService extends BaseService {
         assetId,
         options,
       );
-      const embedding = await this.machineLearningRepository.encodeText(selection, text, {
+      const embedding = await this.machineLearningRepository.encodeTextWithProvenance(selection, text, {
         modelName: clipConfig.modelName,
       });
       return embedding;

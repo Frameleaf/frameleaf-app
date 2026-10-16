@@ -1,5 +1,7 @@
+import type { QueueExecution } from 'src/queue/types.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -21,33 +23,61 @@ describe(SmartInfoService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  it('refuses a stored producer change even when postprocessing vector bytes stay equal', async () => {
+    const asset = { id: 'asset', ownerId: 'owner', visibility: AssetVisibility.Timeline };
+    mocks.assetJob.getForClipEncoding.mockResolvedValue(asset as never);
+    const stored = { assetId: asset.id, embedding: '[1]', producerModelKey: 'producer-before' };
+    mocks.search.getEmbedding.mockResolvedValueOnce(stored as never).mockResolvedValue({
+      ...stored,
+      producerModelKey: 'producer-after',
+    } as never);
+    const context = {
+      claim: { id: 'job', token: 'token' },
+      signal: new AbortController().signal,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    } as unknown as QueueExecution;
+    await queueExecution.run(context, () => sut.handlePostprocessClip({ id: asset.id }));
+    await expect(context.adoptions[0]({} as never)).rejects.toThrow('CLIP embedding changed');
+  });
+
   describe('onConfigValidateEvent', () => {
-    it('should allow a valid model', () => {
-      expect(() =>
+    it.each(['ViT-B-16__openai', 'immich-app/ViT-B-16__openai'])('allows a supported model %s', async (modelName) => {
+      await expect(
         sut.onConfigValidate({
-          newConfig: { machineLearning: { clip: { modelName: 'ViT-B-16__openai' } } } as SystemConfig,
+          newConfig: { machineLearning: { clip: { modelName } } } as SystemConfig,
           oldConfig: {} as SystemConfig,
         }),
-      ).not.toThrow();
+      ).resolves.toBeUndefined();
+      expect(mocks.machineLearning.assertClipModel).toHaveBeenCalledWith(modelName);
     });
-
-    it('should allow including organization', () => {
-      expect(() =>
-        sut.onConfigValidate({
-          newConfig: { machineLearning: { clip: { modelName: 'immich-app/ViT-B-16__openai' } } } as SystemConfig,
-          oldConfig: {} as SystemConfig,
-        }),
-      ).not.toThrow();
-    });
-
-    it('should fail for an unsupported model', () => {
-      expect(() =>
+    it('fails for an unsupported model', async () => {
+      await expect(
         sut.onConfigValidate({
           newConfig: { machineLearning: { clip: { modelName: 'test-model' } } } as SystemConfig,
           oldConfig: {} as SystemConfig,
         }),
-      ).toThrow('Unknown CLIP model: test-model');
+      ).rejects.toThrow('Unknown CLIP model: test-model');
     });
+    it('refuses changing the model of an admitted index', async () => {
+      mocks.machineLearning.assertClipModel.mockRejectedValue(new Error('desktop_clip_profile_unavailable'));
+      await expect(
+        sut.onConfigValidate({
+          newConfig: systemConfigStub.machineLearningEnabled as SystemConfig,
+          oldConfig: {} as SystemConfig,
+        }),
+      ).rejects.toThrow('desktop_clip_profile_unavailable');
+    });
+  });
+
+  it('refuses an incompatible admitted model before initialization can clear or resize vectors', async () => {
+    mocks.machineLearning.assertClipModel.mockRejectedValue(new Error('desktop_clip_profile_unavailable'));
+    await expect(
+      sut.onConfigInit({ newConfig: systemConfigStub.machineLearningEnabled as SystemConfig }),
+    ).rejects.toThrow('desktop_clip_profile_unavailable');
+    expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+    expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
   });
 
   describe('onConfigInit', () => {

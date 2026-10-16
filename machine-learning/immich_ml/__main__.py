@@ -48,7 +48,7 @@ try:
             "python",
             "-m",
             "gunicorn",
-            "immich_ml.main:app",
+            "immich_ml.nas_app:app",
             "-k",
             "immich_ml.config.CustomUvicornWorker",
             "-c",

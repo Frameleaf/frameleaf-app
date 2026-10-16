@@ -1,15 +1,34 @@
-// Chromium can invalidate its first connection when the runner's network changes. It reports that as
-// ERR_NETWORK_CHANGED or as the navigation being replaced by its own chrome-error page; retry once.
+// Chromium can invalidate its first connection when the runner's network changes.
 export async function navigate(page, origin) {
+  const target = new URL(origin).href;
+  const sameTarget = (message) =>
+    message.includes(
+      `Navigation to "${target}" is interrupted by another navigation to "${target}"`,
+    );
   try {
     await page.goto(origin);
   } catch (error) {
     const message = String(error.message);
+    const networkChanged = message.includes("net::ERR_NETWORK_CHANGED");
     if (
-      !message.includes("net::ERR_NETWORK_CHANGED") &&
-      !message.includes("chrome-error://chromewebdata/")
+      !networkChanged &&
+      !message.includes("chrome-error://chromewebdata/") &&
+      !sameTarget(message)
     )
       throw error;
-    await page.goto(origin);
+    try {
+      await page.goto(origin);
+    } catch (retryError) {
+      // The error page from the first navigation can interrupt its network-change retry.
+      if (
+        !sameTarget(String(retryError.message)) &&
+        (!networkChanged ||
+          !String(retryError.message).includes(
+            'is interrupted by another navigation to "chrome-error://chromewebdata/"',
+          ))
+      )
+        throw retryError;
+      await page.goto(origin);
+    }
   }
 }

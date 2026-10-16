@@ -32,3 +32,106 @@ test('navigation never retries other failures or hides a repeated network-change
     assert.equal(calls, message === 'net::ERR_NETWORK_CHANGED' ? 2 : 1);
   }
 });
+
+test('the Chromium error page racing a network-change retry gets one final navigation', async () => {
+  const errors = [
+    new Error('page.goto: net::ERR_NETWORK_CHANGED'),
+    new Error(
+      'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+    ),
+  ];
+  let calls = 0;
+  await navigate(
+    {
+      goto: async () => {
+        const error = errors[calls++];
+        if (error) throw error;
+      },
+    },
+    'https://fixture.test',
+  );
+  assert.equal(calls, 3);
+});
+
+test('a repeated browser error race and unrelated second error still fail', async () => {
+  const race = new Error(
+    'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+  );
+  const certificate = new Error('net::ERR_CERT_INVALID');
+  for (const sequence of [
+    [race],
+    [new Error('net::ERR_NETWORK_CHANGED'), certificate],
+    [new Error('net::ERR_NETWORK_CHANGED'), race, race],
+  ]) {
+    let calls = 0;
+    await assert.rejects(
+      navigate(
+        {
+          goto: async () => {
+            throw sequence[Math.min(calls++, sequence.length - 1)];
+          },
+        },
+        'https://fixture.test',
+      ),
+      (error) => error === sequence.at(-1),
+    );
+    assert.equal(calls, sequence.length === 1 ? 2 : sequence.length);
+  }
+});
+
+test('a first navigation replaced by Chromium error page retries once', async () => {
+  let first = true;
+  const visited: string[] = [];
+  await navigate(
+    {
+      goto: async (url: string) => {
+        visited.push(url);
+        if (first) {
+          first = false;
+          throw new Error(
+            'navigation interrupted by chrome-error://chromewebdata/',
+          );
+        }
+      },
+    },
+    'https://fixture.test',
+  );
+  assert.deepEqual(visited, ['https://fixture.test', 'https://fixture.test']);
+});
+
+test('same-target Chromium interruption retries without accepting a different target', async () => {
+  const same = new Error(
+    'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "https://fixture.test/"',
+  );
+  for (const failures of [1, 2, 3]) {
+    let calls = 0;
+    const result = navigate(
+      {
+        goto: async () => {
+          if (++calls <= failures) throw same;
+        },
+      },
+      'https://fixture.test',
+    );
+    if (failures === 3) await assert.rejects(result, (error) => error === same);
+    else await result;
+    assert.equal(calls, Math.min(failures + 1, 3));
+  }
+  let calls = 0;
+  const foreign = new Error(
+    'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "https://other.test/"',
+  );
+  await assert.rejects(
+    navigate(
+      {
+        goto: async () => {
+          calls++;
+          throw foreign;
+        },
+      },
+      'https://fixture.test',
+    ),
+    (error) => error === foreign,
+  );
+  assert.equal(calls, 1);
+});

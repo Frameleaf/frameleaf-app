@@ -1,4 +1,5 @@
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import numpy as np
@@ -19,6 +20,8 @@ from immich_ml.schemas import (
     ModelTask,
     ModelType,
 )
+from immich_ml.sessions import runtime_cache_dir
+from immich_ml.sessions.ort import OrtSession
 
 from ._ops import align_face
 
@@ -35,8 +38,21 @@ class FaceRecognizer(InferenceModel):
     def _load(self) -> ModelSession:
         session = self._make_session(self.model_path)
         if (not self.batch_size or self.batch_size > 1) and str(session.get_inputs()[0].shape[0]) != "batch":
-            self._add_batch_axis(self.model_path)
-            session = self._make_session(self.model_path)
+            if settings.model_downloads:
+                self._add_batch_axis(self.model_path)
+                session = self._make_session(self.model_path)
+            else:
+                runtime = runtime_cache_dir(self.model_path)
+                with NamedTemporaryFile(dir=runtime, prefix="batched-", suffix=".onnx", delete=False) as temporary:
+                    derived = Path(temporary.name)
+                try:
+                    self._add_batch_axis(self.model_path, derived)
+                    session = self._make_session(derived)
+                except BaseException:
+                    derived.unlink(missing_ok=True)
+                    raise
+                if isinstance(session, OrtSession):
+                    session.source_model_path = self.model_path
         return session
 
     def _predict(
@@ -70,7 +86,7 @@ class FaceRecognizer(InferenceModel):
             for (x1, y1, x2, y2), embedding, score in zip(faces["boxes"], embeddings, faces["scores"])
         ]
 
-    def _add_batch_axis(self, model_path: Path) -> None:
+    def _add_batch_axis(self, model_path: Path, destination: Path | None = None) -> None:
         log.debug(f"Adding batch axis to model {model_path}")
         proto = onnx.load(model_path)
         static_input_dims = [shape.dim_value for shape in proto.graph.input[0].type.tensor_type.shape.dim[1:]]
@@ -78,7 +94,7 @@ class FaceRecognizer(InferenceModel):
         input_dims = {proto.graph.input[0].name: ["batch"] + static_input_dims}
         output_dims = {proto.graph.output[0].name: ["batch"] + static_output_dims}
         updated_proto = update_inputs_outputs_dims(proto, input_dims, output_dims)
-        onnx.save(updated_proto, model_path)
+        onnx.save(updated_proto, destination if destination is not None else model_path)
 
     @property
     def _batch_size_default(self) -> int | None:

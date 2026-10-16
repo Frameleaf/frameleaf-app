@@ -71,6 +71,7 @@ const setup = (db?: Kysely<DB>) => {
     'selectRoutedMlDestination',
   ).mockResolvedValue({});
   ctx.getMock(EventRepository).emit.mockResolvedValue();
+  ctx.getMock(MachineLearningRepository).clipCacheKey.mockResolvedValue('legacy');
   return { sut, ctx, albums: BaseService.create(AlbumService, sut) };
 };
 

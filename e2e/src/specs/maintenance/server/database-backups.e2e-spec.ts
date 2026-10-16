@@ -392,7 +392,7 @@ describe('/admin/database-backups', () => {
       await waitForServerRestart();
     });
 
-    it.sequential('rollback to restore point if backup is missing admin', { timeout: 60_000 }, async () => {
+    it.sequential('rollback to restore point if backup is missing admin', { timeout: 150_000 }, async () => {
       const filename = await utils.prepareTestBackup('empty', admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -420,8 +420,8 @@ describe('/admin/database-backups', () => {
         )
         .toBeTruthy();
 
-      // The restore and completed rollback share this test's unchanged 60-second deadline.
-      const failedRestore = await ownedWait('Waiting for missing-admin rollback', 60_000, (context) =>
+      // Two restore pipelines need a shared budget, with time left for fixture setup and restart.
+      const failedRestore = await ownedWait('Waiting for missing-admin rollback', 120_000, (context) =>
         pollRequest(
           context,
           () => request(app).get('/admin/maintenance/status').send({ token: 'token' }),

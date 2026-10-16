@@ -184,6 +184,10 @@ describe('FL310 replacement ML authority regression', () => {
           maxUploadBytes: null,
         });
         await destinations.setRoute(MlWorkload.Enrichment, replacementRow.id);
+        await destinations.clearRoute(MlWorkload.Ocr);
+        const replacementRouteRevision = (await destinations.getRouteStates()).find(
+          (row) => row.workload === MlWorkload.Enrichment,
+        )!.revisionId;
         await destinations.setCloudModelChoice('upscale', 'replacement-synthetic-model');
         const replacementIdentity = await new InstanceIdentityRepository().loadOrCreate(
           env.frameleafCloud.identityDir,
@@ -329,6 +333,12 @@ describe('FL310 replacement ML authority regression', () => {
             cloud: mlDestinationStub.frameleafCloudConsented.lastProbeCloud,
           });
         await sourceDestinations.setRoute(MlWorkload.Enrichment, foreignRows[1].id);
+        await sourceDestinations.setRoute(MlWorkload.Ocr, foreignRows[1].id);
+        await source
+          .updateTable('ml_workload_route_origin')
+          .set({ origin: 'default', destinationId: replacementRow.id })
+          .where('workload', '=', MlWorkload.Enrichment)
+          .execute();
         const connection = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
         const { stdout: containerOutput } = await execute('docker', [
           'ps',
@@ -454,6 +464,19 @@ describe('FL310 replacement ML authority regression', () => {
           async () => {},
         );
         expect(databaseRestore).toHaveBeenCalledTimes(1);
+        const recoveredRoutes = await destinations.getRouteStates();
+        expect(recoveredRoutes.find((row) => row.workload === MlWorkload.Enrichment)).toMatchObject({
+          origin: 'pinned',
+          destinationId: replacementRow.id,
+        });
+        expect(recoveredRoutes.find((row) => row.workload === MlWorkload.Enrichment)!.revisionId).not.toBe(
+          replacementRouteRevision,
+        );
+        expect(recoveredRoutes.find((row) => row.workload === MlWorkload.Ocr)).toMatchObject({
+          origin: 'pinned',
+          destinationId: null,
+        });
+        expect(await destinations.getRoute(MlWorkload.Ocr)).toBeUndefined();
         if (mode === 'file') expect(await readFile(filename)).toEqual(historicalBytes);
         else
           expect(await metadataRepo.get(SystemMetadataKey.SystemConfig)).toMatchObject({

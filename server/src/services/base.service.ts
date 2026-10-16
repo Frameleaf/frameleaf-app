@@ -474,6 +474,8 @@ export class BaseService {
       {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
+        selectBackgroundPool: (selection) =>
+          this.machineLearningRepository.selectBackgroundPool(selection, request.jobId),
       },
       { ...request, destinationId },
     );

@@ -29,6 +29,8 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
+import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
+import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
@@ -64,6 +66,7 @@ import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
+import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
@@ -108,6 +111,9 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  DesktopDeviceController,
+  PhotoSourceController,
+  DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
   FrameleafLibraryMoveController,
   FrameleafLibrarySetupController,

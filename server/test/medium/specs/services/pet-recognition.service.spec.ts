@@ -46,6 +46,7 @@ const setup = () => {
   const pets = new PetRepository(defaultDatabase, LoggingRepository.create());
   useRealJobPublication(defaultDatabase, ctx.getMock(JobRepository));
   const machineLearning = ctx.getMock(MachineLearningRepository);
+  machineLearning.clipCacheKey.mockResolvedValue('legacy');
   const destinations = ctx.getMock(MlDestinationRepository);
   const destination = {
     ...mlDestinationStub.local,

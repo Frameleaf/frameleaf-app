@@ -734,7 +734,13 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     }
 
     case MachineLearningRepository: {
-      return automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
+      const mock = automock(MachineLearningRepository, { args: [{ setContext: () => {} }] });
+      mock.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+      mock.captureClipRead.mockResolvedValue({
+        assertCurrent: () => Promise.resolve(),
+        publish: (write) => write(),
+      });
+      return mock;
     }
 
     case MlDestinationRepository: {
