@@ -361,11 +361,10 @@ export class CloudMlBatchService extends BaseService {
       return empty;
     }
 
-    const sampleIds = batches[0].assetIds.slice(0, CLOUD_DESCRIPTION_SAMPLE_SIZE);
     const sample = await this.estimateSample(
       gateway,
       model.sku,
-      sampleIds,
+      batches[0],
       destination.lastProbeCloud?.features ?? null,
     );
     const projection = projectCloudDescriptionCost(sample.estimate, sample.photos, batches);
@@ -2079,18 +2078,17 @@ export class CloudMlBatchService extends BaseService {
   private async estimateSample(
     gateway: CloudMlGateway,
     modelSku: string,
-    assetIds: string[],
+    batch: { ownerId: string; assetIds: string[] },
     features: CloudConsentFeatures | null,
   ): Promise<{ estimate: CloudEstimate; photos: number }> {
-    const folder = join(tmpdir(), 'frameleaf-cloud-descriptions', `sample-${Date.now()}`);
+    const assetIds = batch.assetIds.slice(0, CLOUD_DESCRIPTION_SAMPLE_SIZE);
+    const locked = await this.mediaOperationRepository.getLockedAssetIds(batch.ownerId, assetIds);
+    const folder = join(tmpdir(), 'frameleaf-cloud-descriptions', `sample-${this.cryptoRepository.randomUUID()}`);
     this.storageRepository.mkdirSync(folder);
     const items: CloudDescriptionItem[] = [];
     try {
       for (const [index, assetId] of assetIds.entries()) {
-        const asset = await this.assetJobRepository.getForImageEnrichment(assetId);
-        if (asset) {
-          items.push(await this.prepareItem({ assetId, inputId: `s${index + 1}` }, asset.ownerId, new Set(), folder));
-        }
+        items.push(await this.prepareItem({ assetId, inputId: `s${index + 1}` }, batch.ownerId, locked, folder));
       }
     } finally {
       await this.storageRepository.unlinkDir(folder, { recursive: true, force: true });

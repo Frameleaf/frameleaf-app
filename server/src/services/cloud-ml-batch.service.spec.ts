@@ -445,6 +445,43 @@ describe(CloudMlBatchService.name, () => {
   });
 
   describe('estimateBackfill', () => {
+    it.each(['locked', 'reassigned'])('refuses a sample that became %s after candidate selection', async (change) => {
+      const [asset] = photos(ownerA, 1);
+      addAssets([asset]);
+      if (change === 'locked') {
+        mocks.mediaOperation.getLockedAssetIds.mockResolvedValueOnce(new Set()).mockResolvedValue(new Set([asset.id]));
+      } else {
+        mocks.mediaOperation.getLockedAssetIds.mockImplementationOnce(() => {
+          assets.set(asset.id, { ...asset, ownerId: ownerB });
+          return Promise.resolve(new Set());
+        });
+      }
+
+      await expect(sut.estimateBackfill(admin, now)).rejects.toThrow('None of the photos could be prepared');
+      expect(mocks.media.writeCloudUpload).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('isolates simultaneous estimate samples even in the same millisecond', async () => {
+      const [asset] = photos(ownerA, 1);
+      addAssets([asset]);
+      mocks.assetJob.streamForImageDescriptionJob.mockImplementation(() => makeStream([{ id: asset.id }]));
+      let nextId = 0;
+      mocks.crypto.randomUUID.mockImplementation(() => `00000000-0000-4000-8000-${String(++nextId).padStart(12, '0')}`);
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now.getTime());
+      try {
+        await Promise.all([sut.estimateBackfill(admin, now), sut.estimateBackfill(admin, now)]);
+
+        const outputs = mocks.media.writeCloudUpload.mock.calls.map(([, output]) => output);
+        const removed = mocks.storage.unlinkDir.mock.calls.map(([folder]) => folder);
+        expect(outputs).toHaveLength(2);
+        expect(new Set(outputs).size).toBe(2);
+        expect(new Set(removed).size).toBe(2);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
     it("estimates from metered GPU time per owner's batches, keeps the estimate and queues nothing", async () => {
       addAssets([...photos(ownerA, 250), ...photos(ownerB, 3)]);
 
