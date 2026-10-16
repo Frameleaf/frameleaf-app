@@ -711,6 +711,37 @@ describe(StudioResourceService.name, () => {
   });
 
   describe('audio', () => {
+    it.each(['import', 'catalog', 'generated'] as const)('redeems non-library audio from %s', async (source) => {
+      const id = source === 'catalog' ? 'approved-track' : newUuid();
+      const path = '/project/audio.wav';
+      const checksum = 'a'.repeat(64);
+      admit(`audio:${id}`);
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(
+          { $resource: { kind: StudioResourceKind.Audio, id, source } },
+          {
+            imports: [{ id, path, checksum, sizeBytes: 4, contentType: 'audio/wav' }],
+            generated: [{ id, path, checksum, producer: 'waveform', derivedFrom: [] }],
+            catalog: { fonts: {}, luts: {}, models: {}, audio: { [id]: { path, checksum } } },
+          },
+        ),
+      );
+      expect(refused).toEqual([]);
+      expect(sut.issueReadGrants(manifest, { workerId: 'worker-1' })).toEqual([
+        expect.objectContaining({ kind: StudioResourceKind.Audio, id, path }),
+      ]);
+      const payload = mocks.crypto.signJwt.mock.calls.at(-1)![0] as StudioReadGrantPayload;
+      mocks.crypto.verifyJwt.mockReturnValue(payload);
+      await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual({
+        valid: true,
+        grant: payload,
+        path: '',
+      });
+      expect(payload).toHaveProperty('source', source);
+      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
+    });
+
     it('resolves an audio clip of a library video as that video and refuses a still', async () => {
       const video = ownedVideo();
       const still = ownedVideo({ type: AssetType.Image });
@@ -2077,6 +2108,42 @@ describe(StudioResourceService.name, () => {
           path: manifest.entries[0].path,
         });
         expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(2);
+      });
+
+      it.each([undefined, 'asset'] as const)('rechecks asset-backed audio with source %s', async (source) => {
+        const grant = { ...payload(), kind: StudioResourceKind.Audio, key: `audio:${assetId}`, source };
+        mocks.crypto.verifyJwt.mockReturnValue(grant);
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual({
+          valid: true,
+          grant,
+          path: manifest.entries[0].path,
+        });
+        allowOwned();
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+          expect.objectContaining({ valid: false, reason: StudioRefusalReason.HiddenContent }),
+        );
+      });
+
+      it('still rejects revoked producer epochs for generated audio', async () => {
+        const grant = {
+          ...payload(),
+          v: 2,
+          kind: StudioResourceKind.Audio,
+          source: 'generated',
+          id: 'generated-sound',
+          key: 'audio:generated-sound',
+          sourceEpochs: [{ assetId, ownerId: auth.user.id, epoch: '0' }],
+        };
+        mocks.crypto.verifyJwt.mockReturnValue(grant);
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual({
+          valid: true,
+          grant,
+          path: '',
+        });
+        mocks.integrityReport.sourceEpochs.mockResolvedValue([{ assetId, ownerId: auth.user.id, epoch: '1' }]);
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+          expect.objectContaining({ valid: false, reason: 'invalid-token' }),
+        );
       });
 
       it('re-checks live access to every previewed source on a preview frame read (STU-203)', async () => {
