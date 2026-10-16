@@ -35,9 +35,10 @@ describe(OcrService.name, () => {
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
-      await sut.handleQueueOcr({ force: false });
+      await expect(sut.handleQueueOcr({ force: false })).resolves.toBe(JobStatus.Skipped);
 
-      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForOcrJob).not.toHaveBeenCalled();
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
 
     it('should queue the assets without ocr', async () => {
@@ -74,8 +75,9 @@ describe(OcrService.name, () => {
 
       expect(await sut.handleOcr({ id: '123' })).toEqual(JobStatus.Skipped);
 
-      expect(mocks.asset.getByIds).not.toHaveBeenCalled();
-      expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
+      expect(mocks.assetJob.getForOcr).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
+      expect(mocks.ocr.upsert).not.toHaveBeenCalled();
     });
 
     it('should skip assets without a resize path', async () => {
