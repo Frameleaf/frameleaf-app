@@ -531,6 +531,27 @@ describe(SharedSpaceService.name, () => {
       });
     });
 
+    it('looks each member up once however many albums they linked', async () => {
+      const { space, owner } = spaceWithEditor();
+      asOwner(space);
+      const link = (linkedById: string | null) => ({
+        albumId: space.id,
+        linkedAlbumId: newUuid(),
+        linkedAlbumName: 'Album',
+        linkedAlbumIcon: null,
+        linkedById,
+        createdAt: newDate(),
+      });
+      mocks.albumUser.getLinkedAlbums.mockResolvedValue([link(owner.id), link(owner.id), link(null), link(owner.id)]);
+      mocks.albumUser.getLinkedAlbumCounts.mockResolvedValue([]);
+      mocks.user.get.mockResolvedValue(owner);
+
+      const { albums } = await sut.getLinkedAlbums(AuthFactory.create(owner), space.id);
+
+      expect(albums.map(({ linkedBy }) => linkedBy?.id ?? null)).toEqual([owner.id, owner.id, null, owner.id]);
+      expect(mocks.user.get).toHaveBeenCalledTimes(1);
+    });
+
     it('refuses somebody who is not a member, even with an invitation', async () => {
       const { space } = spaceWithEditor();
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
@@ -662,6 +683,32 @@ describe(SharedSpaceService.name, () => {
       ]);
       // The person's own identity never crosses the space.
       expect(JSON.stringify(linked)).not.toContain(personGroupId);
+    });
+
+    it('looks each member up once however many people they linked, and drops removed accounts', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asOwner(space);
+      const gone = newUuid();
+      const link = (personOwnerId: string) => ({
+        id: newUuid(),
+        albumId: space.id,
+        personOwnerId,
+        personGroupId: newUuid(),
+        name: 'Someone',
+        coverAssetId: null,
+        createdAt: newDate(),
+      });
+      mocks.albumUser.getLinkedPeople.mockResolvedValue([link(editor.id), link(gone), link(editor.id), link(gone)]);
+      mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
+      mocks.albumUser.getSpacePersonCandidates.mockResolvedValue([]);
+      mocks.user.get.mockImplementation(
+        (id: string) => Promise.resolve(id === editor.id ? editor : undefined) as never,
+      );
+
+      const { linked } = await sut.getPeople(AuthFactory.create(owner), space.id);
+
+      expect(linked.map(({ linkedBy }) => linkedBy.id)).toEqual([editor.id, editor.id]);
+      expect(mocks.user.get).toHaveBeenCalledTimes(2);
     });
 
     it('offers only the caller’s own people as candidates, and not ones they already linked', async () => {
