@@ -437,6 +437,33 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('stops before applying a copy when a failed pause no longer has an active claim', async () => {
+      operations.setBulkResult.mockResolvedValue({ ...running, pauseRequestedAt: new Date() });
+      operations.settlePause.mockResolvedValue(false);
+      operations.heartbeat.mockResolvedValue(false);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(deduplication.applyPlanItem).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('operation-1', 'token', { released: false });
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('continues after a withdrawn pause only while its claim is active', async () => {
+      operations.setBulkResult
+        .mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() })
+        .mockResolvedValue(running);
+      operations.settlePause.mockResolvedValue(false);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(operations.heartbeat).toHaveBeenCalledWith('operation-1', 'token', expect.any(Number), {
+        requireActiveClaim: true,
+      });
+      expect(deduplication.applyPlanItem).toHaveBeenCalledTimes(2);
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
     it('stops and settles a cancel at a copy boundary', async () => {
       operations.setBulkResult
         .mockResolvedValueOnce(running)
