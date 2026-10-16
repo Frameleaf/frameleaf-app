@@ -201,3 +201,19 @@ test('the catalogue is serialized the way the repository formats JSON', () => {
   assert.equal(canonicalJson({ b: 1, a: [1, 2] }), '{\n  "a": [1, 2],\n  "b": 1\n}\n');
   assert.equal(canonicalJson({ a: {} }), '{\n  "a": {}\n}\n');
 });
+
+/** The CI gate must run, not silently exit 0, from a checkout path that URL-encodes (a space). */
+test('running the generator directly checks the catalogue from a path with a space', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { copyFile, mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const directory = await mkdtemp(path.join(tmpdir(), 'studio commands '));
+  try {
+    const script = path.join(directory, 'frameleaf-studio-commands.mjs');
+    await copyFile(fileURLToPath(new URL('frameleaf-studio-commands.mjs', import.meta.url)), script);
+    const output = execFileSync(process.execPath, [script, '--repository', repository], { encoding: 'utf8' });
+    assert.match(output, /Studio command catalogue verified/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
