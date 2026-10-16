@@ -50,9 +50,10 @@ export class Workers {
   private lifecycle = {};
   private maintenanceMode = false;
   private workerStopProofs = new WorkerStopProofRecorder(new ConfigRepository());
+  private exitCode = 0;
 
   private stopper = new SupervisorStop({
-    exit: (code) => process.exit(code),
+    exit: (code) => process.exit(this.exitCode || code),
     deadlineMs: new ConfigRepository().getEnv().shutdown.deadlineMs,
   });
 
@@ -80,32 +81,39 @@ export class Workers {
    * Boot all enabled workers
    */
   async bootstrap() {
-    setEdgeSecret();
-    const isMaintenanceMode = await this.isMaintenanceMode();
-    this.maintenanceMode = isMaintenanceMode;
-    const { workers } = new ConfigRepository().getEnv();
+    try {
+      setEdgeSecret();
+      const isMaintenanceMode = await this.isMaintenanceMode();
+      this.maintenanceMode = isMaintenanceMode;
+      const { workers } = new ConfigRepository().getEnv();
 
-    if (this.stopper.stopping) {
-      return;
-    }
-
-    if (isMaintenanceMode) {
-      this.startWorker(FrameleafWorker.Maintenance);
-    } else {
-      await this.waitForFreeLock();
-      if (this.stopper.stopping) {
-        return;
-      }
-      // A restore replaces system_metadata. Republish only the actual preceding worker/child
-      // stop proof, after restore has released its lock and before admitting replacement work.
-      await this.workerStopProofs.republish();
       if (this.stopper.stopping) {
         return;
       }
 
-      for (const worker of workers) {
-        this.startWorker(worker);
+      if (isMaintenanceMode) {
+        this.startWorker(FrameleafWorker.Maintenance);
+      } else {
+        await this.waitForFreeLock();
+        if (this.stopper.stopping) {
+          return;
+        }
+        // A restore replaces system_metadata. Republish only the actual preceding worker/child
+        // stop proof, after restore has released its lock and before admitting replacement work.
+        await this.workerStopProofs.republish();
+        if (this.stopper.stopping) {
+          return;
+        }
+
+        for (const worker of workers) {
+          this.startWorker(worker);
+        }
       }
+    } catch (error) {
+      if (this.stopper.stopping) return;
+      this.exitCode = 1;
+      console.error('Worker startup failed; stopping every worker', error);
+      this.stop('SIGTERM');
     }
   }
 
