@@ -266,9 +266,7 @@ export class PhotographyWorkspaceService {
         contentType: 'image/png',
         fileName: 'studio-logo',
         cacheControl: CacheControl.None,
-        release: () => {
-          void rm(directory, { recursive: true, force: true });
-        },
+        release: () => rm(directory, { recursive: true, force: true }),
       });
     } catch (error) {
       await rm(directory, { recursive: true, force: true });

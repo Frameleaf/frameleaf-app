@@ -46,7 +46,7 @@ export class FileDownloadResponse {
   public readonly cacheControl!: CacheControl;
   public readonly fileName?: string;
   /** called once the file has been sent or the send failed, e.g. to let a temporary copy go (FL-54) */
-  public readonly release?: () => void;
+  public readonly release?: () => void | Promise<void>;
 
   constructor(response: FileDownloadResponse) {
     Object.assign(this, response);
@@ -94,7 +94,7 @@ export const sendFile = async (
       next(new NotFoundException());
     }
   } finally {
-    file?.release?.();
+    await file?.release?.();
   }
 };
 

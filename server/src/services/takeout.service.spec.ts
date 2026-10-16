@@ -683,7 +683,7 @@ describe(TakeoutService.name, () => {
         file.path,
       );
       expect(file.contentType).toBe('image/webp');
-      file.release?.();
+      await file.release?.();
     });
 
     it('has none for a Locked item in a locked session, a video, or a photo already imported', async () => {

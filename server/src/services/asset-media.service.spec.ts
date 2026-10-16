@@ -944,7 +944,7 @@ describe(AssetMediaService.name, () => {
           expect(mocks.job.queue).not.toHaveBeenCalled();
           expect(mocks.asset.update).not.toHaveBeenCalled();
         } finally {
-          result.release?.();
+          await result.release?.();
         }
         await vitest.waitFor(async () => expect(stat(dirname(result.path))).rejects.toMatchObject({ code: 'ENOENT' }));
       },
