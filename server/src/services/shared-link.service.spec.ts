@@ -337,6 +337,23 @@ describe(SharedLinkService.name, () => {
   });
 
   describe('update', () => {
+    it.each([
+      { slug: undefined, expected: undefined },
+      { slug: null, expected: null },
+      { slug: '', expected: null },
+      { slug: 'new-address', expected: 'new-address' },
+    ])('only changes the custom address when supplied: $slug', async ({ slug, expected }) => {
+      const sharedLink = SharedLinkFactory.create({ slug: 'existing-address' });
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.update(authStub.user1, sharedLink.id, { description: 'Renamed', ...(slug !== undefined && { slug }) });
+
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(
+        expect.objectContaining({ id: sharedLink.id, description: 'Renamed', slug: expected }),
+      );
+    });
+
     it('should throw an error for an invalid shared link', async () => {
       mocks.sharedLink.get.mockResolvedValue(void 0);
 
@@ -366,7 +383,7 @@ describe(SharedLinkService.name, () => {
       expect(mocks.sharedLink.get).toHaveBeenCalledWith(authStub.user1.user.id, sharedLinkStub.valid.id);
       expect(mocks.sharedLink.update).toHaveBeenCalledWith({
         id: sharedLinkStub.valid.id,
-        slug: null,
+        slug: undefined,
         userId: authStub.user1.user.id,
         allowDownload: false,
       });
