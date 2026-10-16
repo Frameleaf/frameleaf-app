@@ -257,7 +257,7 @@ test("offline source-import wording is permitted only in its named context", () 
     ],
     [
       "docs/docs/developer/fork-integration.md",
-      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+      "Immich 2.0 or later is a read-only source for the one-time [offline importer](../administration/import-immich.md).",
     ],
     [
       "server/src/immich-import/types.ts",

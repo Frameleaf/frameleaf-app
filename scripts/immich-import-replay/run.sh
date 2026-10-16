@@ -33,6 +33,8 @@ done
 node "$here/generate.mjs" "$work" "$root" $tags
 
 for version in $(node -p "Object.keys(require('$fixtures/structure/2.x.json').releases).join(' ')"); do
+  # pg_dump emits psql meta-command lines (\restrict); '^\\' drops them.
+  # shellcheck disable=SC1003
   docker exec "$container" pg_dump -U postgres --schema-only --no-owner --no-privileges \
     --exclude-table=kysely_migrations --exclude-table=kysely_migrations_lock "$(database "v$version")" |
     grep -v '^\\' | grep -v "set_config('search_path'" >"$work/$version.sql"

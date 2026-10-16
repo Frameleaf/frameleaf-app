@@ -102,8 +102,7 @@ export const ALLOWLIST = [
     reason:
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/import-immich\.md$/,
-    allow:
-      "Supported sources are stable Immich 3.x through 3.2.4; prereleases and later versions are rejected.",
+    allow: "Supported sources are Immich 2.0.0 or later.",
   },
   {
     reason:
@@ -123,6 +122,26 @@ export const ALLOWLIST = [
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/backup-and-restore\.md$/,
     allow: "## Immich sources",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow:
+      "Older releases are converted as they are read, with the same data fixes later Immich upgrades apply.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow: "Upgrade Immich 1.x to 2.0 or later before importing.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/install\/upgrading\.md$/,
+    allow:
+      "The importer reads Immich 2.0 or later, preserves content and access controls, and requires verification before activation.",
   },
   {
     reason:
@@ -206,7 +225,7 @@ export const ALLOWLIST = [
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/developer\/fork-integration\.md$/,
     allow:
-      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+      "Immich 2.0 or later is a read-only source for the one-time [offline importer](../administration/import-immich.md).",
   },
   {
     reason:

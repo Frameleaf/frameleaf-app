@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import SearchEntry from './SearchEntry.svelte';
 
 const app = vi.hoisted(() => ({
