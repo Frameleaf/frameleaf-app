@@ -74,6 +74,22 @@ describe(MediaHealthOperationService.name, () => {
   });
 
   describe('scan', () => {
+    it.each([true, false])('records final cancellation only after acknowledging it: %s', async (acknowledged) => {
+      mediaHealth.scanPage.mockResolvedValue(page(5, 'asset-5'));
+      vi.mocked(operations.beginValidation).mockResolvedValue(false);
+      vi.mocked(operations.acknowledgeCancel).mockResolvedValue(acknowledged);
+
+      await sut.run(operationOf(scanSnapshot), 'token');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+      if (acknowledged) {
+        expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
+      } else {
+        expect(mediaHealth.setRunState).toHaveBeenCalledOnce();
+      }
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
     it.each(['cancelled', 'claim-lost', 'resumed'])(
       'rechecks active authority after a failed pause before scanning another batch: %s',
       async (state) => {

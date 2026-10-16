@@ -297,8 +297,9 @@ export class MediaHealthOperationService {
       return;
     }
 
-    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
-    await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
+    if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+      await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
+    }
   }
 
   /**

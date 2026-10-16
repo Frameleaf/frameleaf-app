@@ -853,6 +853,37 @@ describe(LibraryScanService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it.each(['cancelled', 'claim-lost', 'resumed'])(
+      'rechecks active authority after a failed pause before checking indexed files: %s',
+      async (state) => {
+        mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/a.jpg'], ['/mnt/photos/b.jpg']));
+        operations.setBulkResult
+          .mockResolvedValueOnce(running)
+          .mockResolvedValueOnce(running)
+          .mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+        operations.settlePause.mockResolvedValueOnce(false);
+        operations.heartbeat.mockResolvedValue(state === 'resumed');
+        operations.acknowledgeCancel.mockResolvedValue(state === 'cancelled');
+
+        await sut.run(operationOf(), 'token');
+
+        expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'token', LIBRARY_SCAN_LEASE_MS, {
+          requireActiveClaim: true,
+        });
+        if (state === 'resumed') {
+          expect(mocks.library.getAssetIdPage).toHaveBeenCalledOnce();
+          expect(operations.complete).toHaveBeenCalled();
+        } else {
+          expect(mocks.library.getAssetIdPage).not.toHaveBeenCalled();
+          expect(operations.complete).not.toHaveBeenCalled();
+          expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
+          if (state === 'claim-lost') {
+            expect(operations.setFinishedResult).not.toHaveBeenCalled();
+          }
+        }
+      },
+    );
+
     it('refuses to scan for a deleted owner', async () => {
       mocks.user.get.mockResolvedValue(UserFactory.create({ deletedAt: new Date(), status: UserStatus.Deleted }));
 

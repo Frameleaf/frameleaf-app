@@ -997,9 +997,20 @@ export class LibraryScanService {
       return false;
     }
 
-    if (written.pauseRequestedAt && (await this.operations.settlePause(operation.id, claimToken))) {
-      this.logger.log(`Scan ${operation.id} paused`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(operation.id, claimToken)) {
+        this.logger.log(`Scan ${operation.id} paused`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (
+        !(await this.operations.heartbeat(operation.id, claimToken, LIBRARY_SCAN_LEASE_MS, {
+          requireActiveClaim: true,
+        }))
+      ) {
+        await this.settleCancel(operation, claimToken, result);
+        return false;
+      }
     }
 
     return true;
