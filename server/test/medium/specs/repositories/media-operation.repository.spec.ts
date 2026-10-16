@@ -1087,9 +1087,11 @@ describe(MediaOperationRepository.name, () => {
         });
         await sut.upsertCheckpoint(operation.id, claim!.claimToken, chunk(0) as never);
         const before = await sut.getCheckpoints(operation.id);
+        // Short enough that the completion's row-lock wait outlasts the lease within the database
+        // lock timeout and the 5-second test timeout, long enough to see it waiting first.
         await defaultDatabase
           .updateTable('media_operation')
-          .set({ claimExpiresAt: sql<Date>`clock_timestamp() + interval '5 seconds'` })
+          .set({ claimExpiresAt: sql<Date>`clock_timestamp() + interval '2 seconds'` })
           .where('id', '=', operation.id)
           .execute();
         const locked = Promise.withResolvers<number>();
