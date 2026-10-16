@@ -407,7 +407,7 @@ export class PhotographyWorkflowController {
     res.header('Cache-Control', 'private, no-store');
     const archive = await this.service.archive(id, session, zipId);
     res.once('finish', () => {
-      if (res.statusCode === 200)
+      if (res.req.method === 'GET' && res.statusCode === 200)
         void this.service
           .recordDelivery(id, session, undefined, zipId)
           .catch(() => this.logger.warn('Could not record completed photography delivery'));
@@ -451,7 +451,7 @@ export class PhotographyWorkflowController {
   ) {
     res.header('Cache-Control', 'private, no-store');
     res.once('finish', () => {
-      if (res.statusCode === 200)
+      if (res.req.method === 'GET' && res.statusCode === 200)
         void this.service
           .recordDelivery(id, session, captureId, undefined, outputId)
           .catch(() => this.logger.warn('Could not record completed photography delivery'));
@@ -475,7 +475,7 @@ export class PhotographyWorkflowController {
     res.header('Cache-Control', 'private, no-store');
     if (kind === 'download')
       res.once('finish', () => {
-        if (res.statusCode === 200)
+        if (res.req.method === 'GET' && res.statusCode === 200)
           void this.service
             .recordDelivery(id, session, captureId)
             .catch(() => this.logger.warn('Could not record completed photography delivery'));
