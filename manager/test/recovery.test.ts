@@ -466,3 +466,41 @@ test('offline importer command refuses a surviving runner and never accepts arbi
     ['dist/main.js', 'frameleaf-admin', 'import-immich', 'status', '--config', '/run/frameleaf/import.json'].slice(-7),
   );
 });
+test('source recovery restores a default (empty) restart policy as "no" instead of refusing', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
+    store = new Store(directory);
+  // Containers created through the Engine API without a policy report RestartPolicy.Name "".
+  const app = container('a', true, ''),
+    database = container('c');
+  database.Mounts = [];
+  const all = [app, database];
+  const source = {
+    id: app.Id,
+    app: app.Id,
+    workers: [app.Id],
+    mounts: media,
+    platform: 'docker',
+    database: { container: database.Id },
+    fingerprint: sourceFingerprint(structuredClone(all)),
+    restart: { [app.Id]: structuredClone(app.HostConfig.RestartPolicy) },
+  } as Source;
+  const updates: string[] = [];
+  const docker = new Docker(async (_binary, args) => {
+    if (args[0] === 'update') {
+      updates.push(args[2]);
+      all.find((c) => c.Id === args[3])!.HostConfig.RestartPolicy.Name = args[2];
+    }
+    return '';
+  });
+  docker.inventory = async () => structuredClone(all);
+  docker.stop = async (id: string) => {
+    all.find((c) => c.Id === id)!.State.Running = false;
+  };
+  try {
+    await new Fencing(docker, store).recover(source, null);
+    assert.deepEqual(updates, ['no', 'no']);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true });
+  }
+});
