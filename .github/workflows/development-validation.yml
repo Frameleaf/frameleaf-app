@@ -1,5 +1,11 @@
 name: Frameleaf development validation
 'on':
+  push:
+    branches: [aj/desktop-device-enrollment]
+    paths:
+      - '.github/workflows/development-validation.yml'
+      - 'server/src/schema/**'
+      - '!server/src/schema/catalog/**'
   workflow_dispatch:
   workflow_call:
 permissions:
