@@ -37,6 +37,8 @@ describe('atomic Live Photo asset edits', () => {
     const { sut, mocks } = newTestService(AssetService, { asset: repo, access: new AccessRepository(db) });
     mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
     mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+    // the edit runs inside the partner-origin edit admission; these assets have no origins, so let it pass through
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     return { user, photo, video, old, repo, sut, mocks, auth: AuthFactory.create({ id: user.id }) };
   };
   const dispose = async (f: Awaited<ReturnType<typeof fixture>>) => {
@@ -214,10 +216,11 @@ describe('atomic Live Photo asset edits', () => {
         .execute(async (db) => {
           const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(db);
           connection.resolve(rows[0].pid);
-          const { sut } = newTestService(AssetService, {
+          const { sut, mocks } = newTestService(AssetService, {
             asset: new AssetRepository(db),
             access: new AccessRepository(db),
           });
+          mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
           return sut.update(f.auth, f.photo.id, { livePhotoVideoId: f.video.id });
         })
         .then(() => {})

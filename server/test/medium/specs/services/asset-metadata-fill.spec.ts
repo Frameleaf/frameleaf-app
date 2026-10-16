@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetLockReason, AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -24,6 +25,9 @@ describe('Matched import metadata fills', () => {
   });
 
   const setup = async (visibility = AssetVisibility.Timeline) => {
+    // unlinking a Live Photo checks whether its video is an Android motion file under the media
+    // location; nothing here reads or writes files there
+    StorageCore.setMediaLocation('/frameleaf-medium-media');
     const { sut, ctx } = newMediumService(AssetService, {
       database: db,
       real: [AssetRepository, AccessRepository, PartnerOriginRepository, DatabaseRepository],
@@ -33,6 +37,8 @@ describe('Matched import metadata fills', () => {
     const { asset } = await ctx.newAsset({ ownerId: user.id, visibility });
     const assets = ctx.get(AssetRepository);
     const jobs = ctx.getMock(JobRepository);
+    // bulk edits queue their sidecar writes after the commit
+    jobs.queueAll.mockResolvedValue();
     // Exercise real transactional job persistence; worker dispatch is a separate qualification gate.
     jobs.queueInTransaction.mockImplementation(async (tx, item) => {
       await new SqlQueueStore(tx).enqueue([
@@ -179,8 +185,13 @@ describe('Matched import metadata fills', () => {
           partnerSharedById: sharer.id,
         });
       }
-      if (action === 'direct') await sut.lock(auth, { ids: [asset.id] });
-      else await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked, description: 'Mine' });
+      if (action === 'direct') {
+        await sut.lock(auth, { ids: [asset.id] });
+      } else {
+        // a bulk edit updates the metadata row that extraction leaves on every library item
+        await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1000 });
+        await sut.updateAll(auth, { ids: [asset.id], visibility: AssetVisibility.Locked, description: 'Mine' });
+      }
       for (const id of ids) expect((await origins.getOrigin('asset', id))?.overriddenFields).toContain('visibility');
       expect((await origins.getOrigin('asset', sibling.id))?.overriddenFields).toEqual(['visibility']);
       expect((await assets.getById(sibling.id, { exifInfo: true }))?.exifInfo).toBeNull();
