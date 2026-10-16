@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "cpu-ort": {
+      "python": "3.12.13",
+      "uv": "0.11.2",
+      "extra": "cpu",
+      "provider": "CPUExecutionProvider",
+      "targets": ["macos-aarch64", "macos-x86_64", "windows-x86_64", "linux-x86_64", "linux-aarch64"]
+    }
+  }
+}

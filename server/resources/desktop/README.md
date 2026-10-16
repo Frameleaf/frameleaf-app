@@ -9,3 +9,15 @@ References were generated and passed through the production native qualifier usi
 The desktop compiles an identical copy at `runtime/model-catalogue.json`. TypeScript and Rust tests assert identical canonical challenge digests: a fresh NAS UUID changes only the fixture filename and raw-spec binding. Catalogue parsing and challenge construction do not issue worker grants or change routes. Durable challenge state, authorization/revocation checks, result admission and the automatic worker loop remain separate required integrations.
 
 To requalify a profile, decode its `fixtureBase64` into `spec.fixtureFile`, write `spec` as UTF-8 JSON, and run the existing `immich_ml.native_qualification` entrypoint with that spec and a cache matching every approved artifact. Retain successful reports privately before changing reference outputs, memory floors, snapshot revisions or runtime bindings.
+
+The NAS release trust and runtime profile files match the desktop's public
+release authority. Runtime attestation verifies the existing Ed25519 signature
+over the exact decompressed manifest, then checks epoch, approved OS/architecture,
+complete bounded inventory shape and exact catalogue source/provider identity.
+The transport accepts at most 2 MiB of canonical gzip bytes and decompresses at
+most 8 MiB. It carries no user files or release private keys.
+
+A valid signature establishes factory release identity. It does not prove that
+a computer executed that runtime, validate its qualification report, authorize
+a model grant, or resolve legacy embedding-index compatibility. Session-bound
+challenge/admission must perform those additional checks before issuing work.
