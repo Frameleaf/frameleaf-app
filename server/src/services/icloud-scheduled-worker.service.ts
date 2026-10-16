@@ -8,6 +8,7 @@ import { ICloudTransportRepository } from 'src/repositories/icloud-transport.rep
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 
 /** Source seam only. Qualification and actual scheduler registration are separate deployment gates. */
 export const scheduledAuditExecutionEnabled = () => process.env.FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION === 'true';
@@ -87,7 +88,7 @@ export class ICloudScheduledWorkerService {
         operationId: operation.id,
         operationClaimToken: claimToken,
       };
-      const holder = `icloud-sync:audit:${operation.id}`;
+      const holder = scheduledAuditClaimHolder(operation.ownerId, authority);
       let itemClaimId: string | undefined;
       let settlement: 'capacity' | 'paused' | 'cancelled' | undefined;
       const controller = new AbortController();

@@ -9,6 +9,7 @@ import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
 import { identityRoleOf } from 'src/utils/icloud-identity.js';
 import { ICloudRecord, resourcesForICloudAsset } from 'src/utils/icloud-records.js';
+import { scheduledAuditClaimHolder } from 'src/utils/icloud-weekly.js';
 import { isLocked } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
@@ -393,7 +394,7 @@ export async function guardScheduledAudit(
       (
         await sql`SELECT id FROM public.icloud_claim
     WHERE id=${request.itemClaimId}::uuid AND "ownerId"=${ownerId}::uuid AND "cplAssetRecordName"=upper(${source.sourceAssetId})
-      AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp() FOR SHARE`.execute(
+      AND holder=${scheduledAuditClaimHolder(ownerId, authority)} AND "expiresAt">clock_timestamp() FOR SHARE`.execute(
           db,
         )
       ).rows.length !== 1)
@@ -593,7 +594,7 @@ export function scheduledAuditFinalFence(
             OR audit."grantId" IS DISTINCT FROM g.id OR audit."grantGeneration" IS DISTINCT FROM g.generation))))
       AND operation."claimToken"=${authority.operationClaimToken}::uuid AND operation."claimExpiresAt">clock_timestamp()
       AND operation.status IN ('preparing','rendering','validating') AND operation."cancelRequestedAt" IS NULL AND operation."pauseRequestedAt" IS NULL
-      AND claim.holder=${`icloud-sync:audit:${authority.operationId}`} AND claim."expiresAt">clock_timestamp()
+      AND claim.holder=${scheduledAuditClaimHolder(request.ownerId, authority)} AND claim."expiresAt">clock_timestamp()
       AND claim."cplAssetRecordName"=upper(${guarded.source.sourceAssetId})
       AND r."connectionId"=q."connectionId" AND r."leaseToken"=${resource.leaseToken}::uuid AND r."leaseExpiresAt">clock_timestamp()
       AND r.library=${JSON.stringify(guarded.bindings.source.resource.library)}::text::jsonb AND r."libraryKey"=${guarded.source.libraryKey} AND r."sourceAssetId"=${guarded.source.sourceAssetId}
