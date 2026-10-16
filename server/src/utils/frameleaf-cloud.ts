@@ -222,18 +222,18 @@ export const cloudAddressProblem = (cloudUrl: string, name: string, value: strin
   try {
     configured = new URL(cloudUrl);
   } catch {
-    return `the configured Frameleaf Cloud address ${cloudUrl} is not a URL`;
+    return 'the configured Frameleaf Cloud address is not a URL';
   }
   try {
     url = new URL(value);
   } catch {
-    return `${name} ${value} is not a URL`;
+    return `${name} is not a URL`;
   }
   const host = configured.hostname.toLowerCase();
   const allowHttp = configured.protocol === 'http:';
   const effectivePort = (address: URL) => address.port || (address.protocol === 'http:' ? '80' : '443');
   if (url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) {
-    return `${name} ${value} is not https`;
+    return `${name} is not https`;
   }
   const candidate = url.hostname.toLowerCase();
   const domain = cloudDomainOf(host);
@@ -243,10 +243,10 @@ export const cloudAddressProblem = (cloudUrl: string, name: string, value: strin
     candidate.endsWith(`.${host}`) ||
     (domain !== null && (candidate === domain || candidate.endsWith(`.${domain}`)));
   if (!onCloud) {
-    return `${name} ${value} is not on ${domain ?? host}`;
+    return `${name} is not on ${domain ?? host}`;
   }
   if (effectivePort(url) !== effectivePort(configured)) {
-    return `${name} ${value} is not on port ${effectivePort(configured)}`;
+    return `${name} is not on port ${effectivePort(configured)}`;
   }
   if (url.username || url.password) {
     return `${name} carries credentials`;
@@ -317,8 +317,10 @@ const MICROS_PER_USD = 1_000_000;
  * micro-USD so binary floating point never shows as a stray fraction of a cent.
  */
 export const usdAmount = () =>
-  // zod 4 numbers are finite already
-  z.number().transform((value) => Math.round(value * MICROS_PER_USD) / MICROS_PER_USD);
+  z
+    .number()
+    .transform((value) => Math.round(value * MICROS_PER_USD) / MICROS_PER_USD)
+    .pipe(z.number());
 
 /** A gateway price or charge (FC-66 `GatewayUsd`): a `usdAmount` that is never negative and at most 1,000,000. */
 const gatewayUsd = () => usdAmount().pipe(z.number().min(0).max(1_000_000));
