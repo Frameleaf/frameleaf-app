@@ -1,5 +1,5 @@
 import { ClassificationRuleAction } from '@frameleaf/sdk';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -116,5 +116,21 @@ describe('RuleBuilder', () => {
     await rerender({ rule: normalizeRule({ tagIds: ['tag-lake'], archive: true }) });
     screen.getByRole('checkbox', { name: /archived automatically/ }).click();
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ archive: true, archiveConsent: true }));
+  });
+
+  it('shows the rule it is given again when the dialog resets the draft', async () => {
+    const lake = normalizeRule({ visualQueries: ['lake'] });
+    const onChange = vi.fn();
+    const { rerender } = render(RuleBuilder, { rule: lake, people: [], tags, onChange });
+    const field = screen.getByRole('textbox');
+    expect(field).toHaveValue('lake');
+
+    // An edit the dialog accepted, then a Cancel and a reopen that resets the draft to the saved rule.
+    await fireEvent.input(field, { target: { value: 'dog' } });
+    await fireEvent.change(field);
+    await rerender({ rule: normalizeRule({ visualQueries: ['dog'] }) });
+    await rerender({ rule: lake });
+
+    expect(field).toHaveValue('lake');
   });
 });
