@@ -117,18 +117,27 @@
   let expectingUpdate = false;
 
   onMount(async () => {
-    integrityReport = await getIntegrityReport({ $type: type });
+    try {
+      integrityReport = await getIntegrityReport({ $type: type });
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    }
     while (running) {
-      const { integrityCheck } = await getQueuesLegacy();
-      // A queued refresh is not active yet, so waiting and delayed work counts as running too.
-      const { active, waiting, delayed } = integrityCheck.jobCounts;
-      if (integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
-        expectingUpdate = true;
-      } else if (expectingUpdate) {
-        integrityReport = await getIntegrityReport({
-          $type: type,
-        });
-        expectingUpdate = false;
+      // One failed poll (a server restart, a dropped connection) is retried on the next one, not fatal.
+      try {
+        const { integrityCheck } = await getQueuesLegacy();
+        // A queued refresh is not active yet, so waiting and delayed work counts as running too.
+        const { active, waiting, delayed } = integrityCheck.jobCounts;
+        if (integrityCheck.queueStatus.isActive || active + waiting + delayed > 0) {
+          expectingUpdate = true;
+        } else if (expectingUpdate) {
+          integrityReport = await getIntegrityReport({
+            $type: type,
+          });
+          expectingUpdate = false;
+        }
+      } catch {
+        // Polled again after the pause below.
       }
 
       await asyncTimeout(pollMs);
