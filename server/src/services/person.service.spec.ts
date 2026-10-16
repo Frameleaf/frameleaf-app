@@ -218,6 +218,66 @@ describe(PersonService.name, () => {
     });
   });
 
+  describe('undo origin admission', () => {
+    it.each(['busy', 'undone', 'already-undone', 'face-changed'] as const)(
+      'handles %s undo inside origin admission',
+      async (outcome) => {
+        const face = AssetFaceFactory.create({ personGroupId: null, deletedAt: null });
+        const asset = AssetFactory.create({ id: face.assetId });
+        const auth = AuthFactory.create();
+        const id = newUuid();
+        mocks.person.getFaceCorrection.mockResolvedValue({
+          id,
+          ownerId: auth.user.id,
+          actorId: auth.user.id,
+          action: 'unassign',
+          faceId: face.id,
+          assetId: asset.id,
+          assetChecksum: asset.checksum,
+          boxX1: 0.1,
+          boxY1: 0.2,
+          boxX2: 0.3,
+          boxY2: 0.4,
+          fromPersonId: null,
+          toPersonId: null,
+          fromPersonName: null,
+          toPersonName: null,
+          createdAt: newDate(),
+          undoneAt: null,
+        });
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.person.getAllFacesOfAsset.mockResolvedValue([face]);
+        mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
+        mocks.person.undoFaceCorrection.mockResolvedValue(outcome === 'busy' ? 'undone' : outcome);
+        mocks.person.getVisibleEvidenceAssetIds.mockResolvedValue(new Set([asset.id]));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+          if (outcome === 'busy') throw new Error('origin busy');
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', [asset.id], ['faces'], auth.user.id);
+          committed = true;
+          return result;
+        });
+        mocks.job.queue.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        if (outcome === 'undone') {
+          await expect(sut.undoCorrection(auth, id)).resolves.toMatchObject({ id, undoneAt: expect.any(String) });
+          expect(committed).toBe(true);
+          expect(mocks.job.queue).toHaveBeenCalled();
+        } else {
+          if (outcome === 'busy') {
+            await expect(sut.undoCorrection(auth, id)).rejects.toThrow('origin busy');
+            expect(mocks.person.undoFaceCorrection).not.toHaveBeenCalled();
+          } else await expect(sut.undoCorrection(auth, id)).rejects.toBeInstanceOf(ConflictException);
+          expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+          expect(mocks.job.queue).not.toHaveBeenCalled();
+        }
+      },
+    );
+  });
+
   describe('getCorrectionHistory', () => {
     it('should require person.read permission', async () => {
       const auth = AuthFactory.create();
@@ -827,6 +887,28 @@ describe(PersonService.name, () => {
   });
 
   describe('reassignFaces', () => {
+    it.each(['bulk', 'single'] as const)('admits %s reassignment before face writes', async (action) => {
+      const face = AssetFaceFactory.create();
+      const person = PersonFactory.create();
+      const auth = AuthFactory.create();
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getFacesByIds.mockResolvedValue([getForAssetFace(face)]);
+      mocks.person.getFaceById.mockResolvedValue(getForAssetFace(face));
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+      const edit =
+        action === 'bulk'
+          ? sut.reassignFaces(auth, person.personGroupId, {
+              data: [{ personId: person.personGroupId, assetId: face.assetId }],
+            })
+          : sut.reassignFacesById(auth, person.personGroupId, { id: face.id });
+      await expect(edit).rejects.toThrow('origin busy');
+      expect(mocks.person.reassignFace).not.toHaveBeenCalled();
+      expect(mocks.person.recordFaceCorrections).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('should throw an error if user has no access to the person', async () => {
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set());
 

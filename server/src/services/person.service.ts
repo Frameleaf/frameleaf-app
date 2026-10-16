@@ -434,17 +434,25 @@ export class PersonService extends BaseService {
 
     // FL-38: the face is written only at the revision checked above, together with the history
     // entry, so an undo never overwrites a correction another view made meanwhile
-    const outcome = await this.personRepository.undoFaceCorrection(
-      entry.id,
-      { id: face.id, expectedRevision: face.updateId },
-      entry.action === 'remove' ? { restore: true } : { personGroupId: restoreTo },
-    );
-    if (outcome === 'already-undone') {
-      throw correctionConflict('already-undone', 'This change was already undone');
-    }
-    if (outcome === 'face-changed') {
-      throw correctionConflict('face-changed', 'This face has changed since');
-    }
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      const outcome = await this.personRepository.undoFaceCorrection(
+        entry.id,
+        { id: face.id, expectedRevision: face.updateId },
+        entry.action === 'remove' ? { restore: true } : { personGroupId: restoreTo },
+      );
+      if (outcome === 'already-undone') {
+        throw correctionConflict('already-undone', 'This change was already undone');
+      }
+      if (outcome === 'face-changed') {
+        throw correctionConflict('face-changed', 'This face has changed since');
+      }
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
+    });
 
     await this.refreshFeaturePhotos(auth.user.id, [restoreTo, face.personGroupId], face.id);
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
@@ -575,41 +583,54 @@ export class PersonService extends BaseService {
     const changeFeaturePhoto = new Map<string, PersonId>();
     const corrections: FaceCorrectionInput[] = [];
     const assetIds: string[] = [];
-    for (const data of dto.data) {
-      const faces = await this.personRepository.getFacesByIds(
-        [{ personGroupId: data.personId, assetId: data.assetId }],
-        { viewingUserId: auth.user.id },
-      );
+    await this.partnerOriginRepository.withOriginEdit(
+      'asset',
+      dto.data.map(({ assetId }) => assetId),
+      [],
+      async () => {
+        for (const data of dto.data) {
+          const faces = await this.personRepository.getFacesByIds(
+            [{ personGroupId: data.personId, assetId: data.assetId }],
+            { viewingUserId: auth.user.id },
+          );
 
-      for (const face of faces) {
-        await this.requireAccess({ auth, permission: Permission.PersonCreate, ids: [face.id] });
-        if (person.faceAssetId === null) {
-          changeFeaturePhoto.set(personKey(person), person);
+          for (const face of faces) {
+            await this.requireAccess({ auth, permission: Permission.PersonCreate, ids: [face.id] });
+            if (person.faceAssetId === null) {
+              changeFeaturePhoto.set(personKey(person), person);
+            }
+            if (face.person && face.person.faceAssetId === face.id) {
+              changeFeaturePhoto.set(personKey(face.person), face.person);
+            }
+
+            await this.personRepository.reassignFace(face.id, person.personGroupId);
+            corrections.push({
+              ownerId: auth.user.id,
+              actorId: auth.user.id,
+              action: isNew ? 'new-person' : 'reassign',
+              faceId: face.id,
+              fromPersonId: face.personGroupId,
+              toPersonId: person.personGroupId,
+              fromPersonName: face.person?.name ?? null,
+              toPersonName: person.name,
+            });
+            assetIds.push(face.assetId);
+          }
+
+          result.push(mapPerson(person));
         }
-        if (face.person && face.person.faceAssetId === face.id) {
-          changeFeaturePhoto.set(personKey(face.person), face.person);
-        }
-
-        await this.personRepository.reassignFace(face.id, person.personGroupId);
-        corrections.push({
-          ownerId: auth.user.id,
-          actorId: auth.user.id,
-          action: isNew ? 'new-person' : 'reassign',
-          faceId: face.id,
-          fromPersonId: face.personGroupId,
-          toPersonId: person.personGroupId,
-          fromPersonName: face.person?.name ?? null,
-          toPersonName: person.name,
-        });
-        assetIds.push(face.assetId);
-      }
-
-      result.push(mapPerson(person));
-    }
+        await this.recordFaceCorrections(corrections);
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          [...new Set(assetIds)],
+          [AssetOriginField.Faces],
+          auth.user.id,
+        );
+      },
+    );
     if (changeFeaturePhoto.size > 0) {
       await this.createNewFeaturePhoto(changeFeaturePhoto.values().toArray());
     }
-    await this.recordFaceCorrections(corrections);
     await this.refreshIdentities(auth.user.id, { assetIds });
     await this.noteFaceEdit(auth.user.id, assetIds);
     return result;
@@ -622,25 +643,33 @@ export class PersonService extends BaseService {
     const person = await this.findOrFail(auth, personGroupId);
     const isNew = !(await this.personRepository.hasFaces(person.personGroupId));
 
-    await this.personRepository.reassignFace(face.id, person.personGroupId);
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      await this.personRepository.reassignFace(face.id, person.personGroupId);
+      await this.recordFaceCorrections([
+        {
+          ownerId: auth.user.id,
+          actorId: auth.user.id,
+          action: isNew ? 'new-person' : 'reassign',
+          faceId: face.id,
+          fromPersonId: face.personGroupId,
+          toPersonId: person.personGroupId,
+          fromPersonName: face.person?.name ?? null,
+          toPersonName: person.name,
+        },
+      ]);
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
+    });
     if (person.faceAssetId === null) {
       await this.createNewFeaturePhoto([person]);
     }
     if (face.person && face.person.faceAssetId === face.id) {
       await this.createNewFeaturePhoto([face.person]);
     }
-    await this.recordFaceCorrections([
-      {
-        ownerId: auth.user.id,
-        actorId: auth.user.id,
-        action: isNew ? 'new-person' : 'reassign',
-        faceId: face.id,
-        fromPersonId: face.personGroupId,
-        toPersonId: person.personGroupId,
-        fromPersonName: face.person?.name ?? null,
-        toPersonName: person.name,
-      },
-    ]);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
     await this.noteFaceEdit(auth.user.id, [face.assetId]);
 
