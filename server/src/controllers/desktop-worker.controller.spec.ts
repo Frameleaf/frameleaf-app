@@ -1,5 +1,7 @@
 import express, { type Express } from 'express';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { setTimeout } from 'node:timers/promises';
 import request from 'supertest';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
@@ -167,3 +169,27 @@ it.each(['post', 'delete'] as const)(
     expect(response.status).toBe(401);
   },
 );
+
+it('treats a disconnected claim as cancellation but retains other failures', async () => {
+  for (const kind of ['reason', 'timer', 'other']) {
+    const response = Object.assign(new EventEmitter(), { setHeader: vi.fn() });
+    const failure = new Error('authority unavailable');
+    const service = {
+      claim: vi.fn((_token, _proof, _payload, signal: AbortSignal) =>
+        kind === 'timer'
+          ? setTimeout(30_000, undefined, { signal })
+          : new Promise((_, reject) => {
+              signal.addEventListener('abort', () => reject(kind === 'other' ? failure : signal.reason), {
+                once: true,
+              });
+            }),
+      ),
+    };
+    const controller = new DesktopWorkerController(service as never, {} as never);
+    const result = controller.claimDesktopTask('token', 'proof', { payload: '{}' }, response as never);
+    response.emit('close');
+    if (kind === 'other') await expect(result).rejects.toBe(failure);
+    else await expect(result).resolves.toEqual({ task: null });
+    expect(response.listenerCount('close')).toBe(0);
+  }
+});

@@ -143,6 +143,15 @@ export class DesktopWorkerController {
     response.setHeader('Cache-Control', 'no-store');
     try {
       return await this.service.claim(authorization, proof, dto.payload, controller.signal);
+    } catch (error) {
+      if (
+        controller.signal.aborted &&
+        (error === controller.signal.reason ||
+          (error instanceof Error && error.name === 'AbortError' && error.cause === controller.signal.reason))
+      ) {
+        return { task: null };
+      }
+      throw error;
     } finally {
       response.off('close', close);
     }

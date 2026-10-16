@@ -65,6 +65,8 @@ const cache = process.env.FRAMELEAF_FACTORY_MODEL_CACHE;
 const workload = process.env.FRAMELEAF_FACTORY_TEST_WORKLOAD ?? 'clip';
 const ocr = workload === 'ocr';
 const face = workload === 'face';
+const automatic = !!process.env.FRAMELEAF_FACTORY_AUTOMATIC_SETUP;
+if (automatic && !ocr) throw new Error('automatic fixture requires OCR');
 const port = async () => {
   const socket = createTcpServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
@@ -174,6 +176,7 @@ it.skipIf(!desktop || !pack || !cache)(
         ...structuredClone(defaults),
         machineLearning: { ...structuredClone(defaults.machineLearning), urls: [nasUrl] },
       };
+      if (automatic) config.machineLearning.facialRecognition.enabled = false;
       await metadata.withConfigTransaction((metadataRepo) =>
         sut.updateConfig(config, { configRepo, metadataRepo, logger: LoggingRepository.create() }),
       );
@@ -197,7 +200,7 @@ it.skipIf(!desktop || !pack || !cache)(
         maxUploadBytes: null,
       });
       await routes.setDefaultRoute(face ? MlWorkload.Face : ocr ? MlWorkload.Ocr : MlWorkload.Clip, destination.id);
-      if (ocr) await routes.setDefaultRoute(MlWorkload.Face, destination.id);
+      if (ocr && !automatic) await routes.setDefaultRoute(MlWorkload.Face, destination.id);
       const ml = new MachineLearningRepository(LoggingRepository.create(), routes, configRepo, metadata, index);
       ml.setup(config.machineLearning);
       const broker = new DesktopMlRepository(db);
@@ -491,6 +494,7 @@ it.skipIf(!desktop || !pack || !cache)(
             executed,
             prepared.then((status) => {
               expect(status).toBe(JobStatus.Success);
+              if (automatic) native!.stdin!.write('{"command":"complete"}\n');
               return executed;
             }),
           ]),
