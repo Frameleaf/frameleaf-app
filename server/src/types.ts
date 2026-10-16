@@ -1445,6 +1445,7 @@ export type FrameleafRemoteAccess = {
 };
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
+  [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;

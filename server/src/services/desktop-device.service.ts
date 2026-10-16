@@ -10,6 +10,7 @@ import {
 } from 'src/dtos/desktop.dto.js';
 import { DesktopDeviceRepository, DesktopDeviceRow } from 'src/repositories/desktop-device.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class DesktopDeviceService {
   constructor(
     private repository: DesktopDeviceRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    private policy: DesktopAssistancePolicyService,
   ) {}
 
   async capabilities(auth: AuthDto): Promise<DesktopCapabilitiesDto> {
@@ -60,6 +62,7 @@ export class DesktopDeviceService {
       state: auth.user.isAdmin ? 'preparing' : 'awaiting-approval',
     });
     if (!row) throw new ConflictException('desktop_identity_revoked_or_changed');
+    if (auth.user.isAdmin && dto.mode === 'client-worker') await this.policy.enable(auth.user.id);
     return this.map(row);
   }
 

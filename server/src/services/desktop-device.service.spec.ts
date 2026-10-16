@@ -37,11 +37,13 @@ describe('desktop enrollment authority', () => {
     });
   });
   let service: DesktopDeviceService;
+  const policy = { enable: vi.fn() };
   const repository = { enroll: vi.fn(), list: vi.fn(), revoke: vi.fn(), endSession: vi.fn() };
   const metadata = { get: vi.fn().mockResolvedValue({ id: 'server' }) };
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new DesktopDeviceService(repository as never, metadata as never);
+    policy.enable.mockResolvedValue(undefined);
+    service = new DesktopDeviceService(repository as never, metadata as never, policy as never);
   });
   it('rejects unknown protocols and unbounded or newline-bearing display names', () => {
     expect(DesktopEnrollmentSchema.safeParse({ ...request(), protocolVersion: 2 }).success).toBe(false);
@@ -58,9 +60,21 @@ describe('desktop enrollment authority', () => {
       }),
     );
     const result = await service.enroll(auth, request());
+    expect(policy.enable).toHaveBeenCalledWith(accountId);
     expect(result).toMatchObject({ id: 'device', state: 'preparing', routeEffects: { changed: [], preserved: 'all' } });
     expect(result).not.toHaveProperty('publicKey');
     expect(result).not.toHaveProperty('workerToken');
+  });
+  it('does not select NAS assistance for local-server mode', async () => {
+    repository.enroll.mockImplementation((row) =>
+      Promise.resolve({ ...row, id: 'device', revokedAt: null, createdAt: new Date() }),
+    );
+    const dto = { ...request(), mode: 'local-server' as const, signature: '' };
+    dto.signature = sign(null, Buffer.from(enrollmentMessage('server', accountId, dto)), pair.privateKey).toString(
+      'base64',
+    );
+    await service.enroll(auth, dto);
+    expect(policy.enable).not.toHaveBeenCalled();
   });
   it('records ordinary accounts as awaiting approval', async () => {
     repository.enroll.mockImplementation((row) =>
@@ -74,6 +88,7 @@ describe('desktop enrollment authority', () => {
     expect(
       await service.enroll({ user: { id: accountId, isAdmin: false }, session: { id: 'session' } } as never, request()),
     ).toMatchObject({ state: 'awaiting-approval' });
+    expect(policy.enable).not.toHaveBeenCalled();
   });
   it('refuses an enrollment replayed for another account or server', async () => {
     await expect(
