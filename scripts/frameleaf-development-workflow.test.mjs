@@ -27,8 +27,15 @@ test("development diagnostics are read-only and dispatchable through existing Te
   }
   const definition = workflow("development-validation.yml");
   assert.deepEqual(Object.keys(definition.on).sort(), [
+    "push",
     "workflow_call",
     "workflow_dispatch",
+  ]);
+  assert.deepEqual(definition.on.push.branches, ['aj/desktop-device-enrollment']);
+  assert.deepEqual(definition.on.push.paths, [
+    '.github/workflows/development-validation.yml',
+    'server/src/schema/**',
+    '!server/src/schema/catalog/**',
   ]);
   assert.deepEqual(definition.permissions, { contents: "read" });
   const job = definition.jobs.development;
@@ -114,4 +121,10 @@ test("fixture bootstrap uses the repository root even in server and e2e jobs", (
         assert.equal(step["working-directory"], ".");
     }
   }
+});
+
+test("server types prepare generated runtime modules through the canonical check", () => {
+  const step = workflow("development-validation.yml").jobs.development.steps.find(({ id }) => id === "types");
+  assert.match(step.run, /pnpm --dir server check/);
+  assert.doesNotMatch(step.run, /exec tsc/);
 });

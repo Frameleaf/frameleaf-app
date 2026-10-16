@@ -63,7 +63,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          pnpm --dir server exec tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-types.log"
+          pnpm --dir server check 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-types.log"
       - name: Build server generators
         timeout-minutes: 10
         id: server
