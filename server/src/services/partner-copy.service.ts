@@ -31,7 +31,7 @@ import {
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PartnerLockService } from 'src/services/partner-lock.service.js';
-import { PartnerPeopleService } from 'src/services/partner-people.service.js';
+import { type PartnerFaceCopyInput, PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 /** Assets copied per backfill batch before the job re-queues itself (and records its cursor). */
@@ -381,12 +381,7 @@ export class PartnerCopyService extends BaseService {
    * Spec §4.5: the source's faces (exact boxes, `face_search` embeddings, no ML re-run), mapped to the
    * target library's people: auto-merged into a matching person of theirs, or a new person that follows.
    */
-  protected async copyFaces(input: {
-    sourceAssetId: string;
-    targetAssetId: string;
-    targetOwnerId: string;
-    partnerSharedById: string;
-  }): Promise<void> {
+  protected async copyFaces(input: PartnerFaceCopyInput): Promise<void> {
     await BaseService.create(PartnerPeopleService, this).copyFaces(input);
   }
 
@@ -552,6 +547,11 @@ export class PartnerCopyService extends BaseService {
       return this.propagateAlbum(sourceId, fields);
     }
     const followers = await this.partnerOriginRepository.getFollowers('asset', sourceId);
+    const maxDistance =
+      fields.includes(AssetOriginField.Faces) &&
+      followers.some((follower) => !follower.overriddenFields.includes(AssetOriginField.Faces))
+        ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
+        : undefined;
     const onward: JobItem[] = [];
     for (const selected of followers) {
       await this.partnerOriginRepository.withFollowingOrigin('asset', sourceId, selected.id, async (follower) => {
@@ -570,6 +570,7 @@ export class PartnerCopyService extends BaseService {
             targetAssetId: follower.id,
             targetOwnerId: follower.ownerId,
             partnerSharedById: follower.partnerSharedById,
+            maxDistance,
           });
         }
         // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a

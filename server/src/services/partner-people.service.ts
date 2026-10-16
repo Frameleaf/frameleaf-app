@@ -14,6 +14,8 @@ export type PartnerFaceCopyInput = {
   targetOwnerId: string;
   /** The partner whose sharing produced the copy. */
   partnerSharedById: string;
+  /** Prepared before propagation takes its database transaction. */
+  maxDistance?: number;
 };
 
 /** What a person edit touched, as `PersonUpdateDto` carries it. */
@@ -183,6 +185,7 @@ export class PartnerPeopleService extends BaseService {
     sourceOwnerId: string;
     sourcePersonGroupId: string;
     sampleFaceId?: string;
+    maxDistance?: number;
   }): Promise<string> {
     const { targetOwnerId, partnerSharedById, sourceOwnerId, sourcePersonGroupId } = input;
     const link = await this.personRepository.getPartnerPersonLink(targetOwnerId, sourcePersonGroupId);
@@ -221,7 +224,7 @@ export class PartnerPeopleService extends BaseService {
 
     let match: { personGroupId: string; name: string } | undefined;
     if (clusterGroupId && input.sampleFaceId) {
-      match = await this.findMatch(input.sampleFaceId, clusterGroupId, targetOwnerId);
+      match = await this.findMatch(input.sampleFaceId, clusterGroupId, targetOwnerId, input.maxDistance);
     }
     if (match) {
       const sourcePerson = await this.personRepository.getByGroupId({
@@ -273,16 +276,17 @@ export class PartnerPeopleService extends BaseService {
   }
 
   /** The recipient's closest own person within the recognition threshold, if any. */
-  private async findMatch(faceId: string, clusterGroupId: string, ownerId: string) {
+  private async findMatch(faceId: string, clusterGroupId: string, ownerId: string, maxDistance?: number) {
     const embedding = await this.personRepository.getFaceEmbedding(faceId);
     if (!embedding) {
       return;
     }
-    const { machineLearning } = await this.getConfig({ withCache: true });
+    const threshold =
+      maxDistance ?? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance;
     const matches = await this.searchRepository.searchFaces({
       clusterGroupId,
       embedding,
-      maxDistance: machineLearning.facialRecognition.maxDistance,
+      maxDistance: threshold,
       numResults: 10,
       hasPerson: true,
     });

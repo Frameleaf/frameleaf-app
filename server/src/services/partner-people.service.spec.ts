@@ -1,6 +1,9 @@
 import { ConflictException } from '@nestjs/common';
 import type { FaceCorrection, PartnerPersonLink } from 'src/repositories/person.repository.js';
 import { JobName } from 'src/enum.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
@@ -102,6 +105,87 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('copyFaces', () => {
+    it.each([0, 0.25])('uses prepared face matching distance %s without loading configuration', async (maxDistance) => {
+      const config = vi.spyOn(sut, 'getConfig').mockRejectedValue(new Error('configuration read inside transaction'));
+      try {
+        await expect(sut.copyFaces({ ...copyInput, maxDistance })).resolves.toBe(2);
+        expect(mocks.search.searchFaces).toHaveBeenCalledWith(expect.objectContaining({ maxDistance }));
+        expect(config).not.toHaveBeenCalled();
+      } finally {
+        config.mockRestore();
+      }
+    });
+
+    it('loads face configuration before acquiring the propagation origin transaction', async () => {
+      const copy = BaseService.create(PartnerCopyService, sut);
+      const follower = {
+        id: TARGET_ASSET,
+        sourceId: SOURCE_ASSET,
+        ownerId: B,
+        rootOwnerId: A,
+        partnerSharedById: A,
+        overriddenFields: [],
+        following: true,
+      };
+      mocks.partnerOrigin.getFollowers.mockResolvedValue([follower]);
+      let held = false;
+      mocks.partnerOrigin.withFollowingOrigin.mockImplementation(async (_kind, _sourceId, _id, apply) => {
+        held = true;
+        try {
+          return await apply(follower);
+        } finally {
+          held = false;
+        }
+      });
+      mocks.asset.getLockReasons.mockResolvedValue([]);
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
+      mocks.user.getMetadata.mockResolvedValue([]);
+      const getConfig = BaseService.prototype.getConfig;
+      const config = vi.spyOn(BaseService.prototype, 'getConfig').mockImplementation(function (
+        this: BaseService,
+        options,
+      ) {
+        if (held) throw new Error('configuration read inside transaction');
+        return getConfig.call(this, options);
+      });
+      try {
+        await copy.handlePropagate({ kind: 'asset', sourceId: SOURCE_ASSET, fields: [AssetOriginField.Faces] });
+        expect(config).toHaveBeenCalledTimes(1);
+        expect(mocks.search.searchFaces).toHaveBeenCalledWith(expect.objectContaining({ maxDistance: 0.5 }));
+      } finally {
+        config.mockRestore();
+      }
+    });
+
+    it.each([false, true])(
+      'skips face configuration when no follower needs it (overridden follower: %s)',
+      async (hasFollower) => {
+        const copy = BaseService.create(PartnerCopyService, sut);
+        const follower = {
+          id: TARGET_ASSET,
+          sourceId: SOURCE_ASSET,
+          ownerId: B,
+          rootOwnerId: A,
+          partnerSharedById: A,
+          overriddenFields: [AssetOriginField.Faces],
+          following: true,
+        };
+        mocks.partnerOrigin.getFollowers.mockResolvedValue(hasFollower ? [follower] : []);
+        mocks.partnerOrigin.withFollowingOrigin.mockImplementation(async (_kind, _sourceId, _id, apply) =>
+          apply(follower),
+        );
+        const config = vi.spyOn(copy, 'getConfig').mockRejectedValue(new Error('unnecessary configuration load'));
+        try {
+          await copy.handlePropagate({ kind: 'asset', sourceId: SOURCE_ASSET, fields: [AssetOriginField.Faces] });
+          expect(config).not.toHaveBeenCalled();
+          expect(mocks.person.getFacesForPartnerCopy).not.toHaveBeenCalled();
+          expect(mocks.person.deleteFacesOfAsset).not.toHaveBeenCalled();
+        } finally {
+          config.mockRestore();
+        }
+      },
+    );
+
     it("auto-merges a partner's person into the recipient's matching person and logs it with undo", async () => {
       people.set(`${B}/${PG_B}`, person(B, PG_B, { name: 'Emma R.' }));
       mocks.search.searchFaces.mockResolvedValue([{ id: newUuid(), personGroupId: PG_B, distance: 0.2 }]);
