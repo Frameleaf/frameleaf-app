@@ -1165,6 +1165,75 @@ describe(PartnerCopyService.name, () => {
       return { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy, origins };
     };
 
+    it('keeps an album title edit and its override marker in the same transaction', async () => {
+      const { albums, albumCtx, bob, albumCopy } = await shareWithAlbum();
+      const marker = vi
+        .spyOn(albumCtx.get(PartnerOriginRepository), 'markOverridden')
+        .mockRejectedValueOnce(new Error('override unavailable'));
+      try {
+        await expect(
+          albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' }),
+        ).rejects.toThrow('override unavailable');
+      } finally {
+        marker.mockRestore();
+      }
+      const copy = await db
+        .selectFrom('album')
+        .select('albumName')
+        .where('id', '=', albumCopy)
+        .executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('Lake');
+      expect((await albumCtx.get(PartnerOriginRepository).getOrigin('album', albumCopy))?.overriddenFields).toEqual([]);
+    });
+
+    it('preserves an album title edit when propagation selects the follower before the edit commits', async () => {
+      const { sut, albums, albumCtx, alice, bob, album, albumCopy, origins } = await shareWithAlbum();
+      await db.updateTable('album').set({ albumName: 'new source' }).where('id', '=', album.id).execute();
+      const repository = albumCtx.get(AlbumRepository);
+      const update = repository.update.bind(repository);
+      const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const writing = vi.spyOn(repository, 'update').mockImplementationOnce(async (...args) => {
+        const result = await update(...args);
+        ready();
+        await held;
+        return result;
+      });
+      const getFollowers = origins.getFollowers.bind(origins);
+      const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+      const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+        const followers = await getFollowers(...args);
+        expect(followers.map((row) => row.id)).toContain(albumCopy);
+        selectedNow();
+        return followers;
+      });
+      const editing = albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' });
+      try {
+        await written;
+        const propagating = sut.handlePropagate({
+          kind: 'album',
+          sourceId: album.id,
+          fields: [AlbumOriginField.Title],
+        });
+        await selected;
+        release();
+        await Promise.all([editing, propagating]);
+      } finally {
+        release();
+        await editing;
+        writing.mockRestore();
+        selection.mockRestore();
+      }
+      const copy = await db
+        .selectFrom('album')
+        .select('albumName')
+        .where('id', '=', albumCopy)
+        .executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('recipient choice');
+      expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).toContain(AlbumOriginField.Title);
+      expect((await origins.getAlbumForCopy(album.id))?.ownerId).toBe(alice.id);
+    });
+
     it.each(['recipient-edit', 'stop-following'] as const)(
       'preserves the recipient album title when %s completes after follower selection',
       async (change) => {

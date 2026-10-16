@@ -412,31 +412,29 @@ export class AlbumService extends BaseService {
     // FL-83 (AL-13): picking a specific item stops the cover following the newest item. Saved before
     // the album row is written and read back, so turning it on returns the newest item as the cover.
     const coverFollowsNewest = dto.albumThumbnailAssetId ? false : dto.coverFollowsNewest;
-    if (coverFollowsNewest !== undefined) {
-      await this.albumRepository.setCoverFollowsNewest(album.id, coverFollowsNewest);
-    }
-
-    const updatedAlbum = await this.albumRepository.update(
-      album.id,
-      {
-        id: album.id,
-        albumName: dto.albumName,
-        description: dto.description,
-        albumThumbnailAssetId: dto.albumThumbnailAssetId,
-        isActivityEnabled: dto.isActivityEnabled,
-        order: dto.order,
-        icon: dto.icon,
-        sortOrder: dto.sortOrder,
-      },
-      auth.user.id,
-    );
+    const fields = getAlbumEditFields(dto);
+    const updatedAlbum = await this.partnerOriginRepository.withOriginEdit('album', [album.id], fields, async () => {
+      if (coverFollowsNewest !== undefined) {
+        await this.albumRepository.setCoverFollowsNewest(album.id, coverFollowsNewest);
+      }
+      return this.albumRepository.update(
+        album.id,
+        {
+          id: album.id,
+          albumName: dto.albumName,
+          description: dto.description,
+          albumThumbnailAssetId: dto.albumThumbnailAssetId,
+          isActivityEnabled: dto.isActivityEnabled,
+          order: dto.order,
+          icon: dto.icon,
+          sortOrder: dto.sortOrder,
+        },
+        auth.user.id,
+      );
+    });
 
     // FL-326: an album copy's edited fields are its own from now on; copies of this album follow it
-    await recordAlbumEdit(
-      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-      [album.id],
-      getAlbumEditFields(dto),
-    );
+    await recordAlbumEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [album.id], fields);
 
     // Members' open pages re-read the album (its shared order, name, cover); no email for an edit.
     await this.eventRepository.emit('AlbumUpdate', {

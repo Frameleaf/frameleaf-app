@@ -26,6 +26,7 @@ describe(AlbumService.name, () => {
       write(undefined!, mocks.album as unknown as AlbumRepository),
     );
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
   it('should work', () => {
@@ -473,6 +474,24 @@ describe(AlbumService.name, () => {
   });
 
   describe('update', () => {
+    it('keeps album writes and notifications behind origin edit admission', async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumName: 'recipient choice', coverFollowsNewest: true }),
+      ).rejects.toThrow('origin busy');
+
+      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.album.setCoverFollowsNewest).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('should prevent updating an album that does not exist', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.album.getById.mockResolvedValue(void 0);

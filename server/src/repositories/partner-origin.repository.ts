@@ -190,6 +190,23 @@ export class PartnerOriginRepository {
       return publicationTransaction.run(tx, () => apply(rows[0]));
     });
   }
+  /** The recipient's value and override marker commit together, ordered against propagation. */
+  async withOriginEdit<T>(kind: OriginKind, ids: string[], fields: string[], write: () => Promise<T>): Promise<T> {
+    if (ids.length === 0 || fields.length === 0) return write();
+    const { table, key } = TABLES[kind];
+    return this.db.transaction().execute(async (tx) => {
+      await sql`
+        SELECT origin.${sql.id(key)} FROM ${sql.raw(table)} origin
+        WHERE origin.${sql.id(key)} = ANY(${ids}::uuid[])
+        ORDER BY origin.${sql.id(key)} FOR UPDATE
+      `.execute(tx);
+      return publicationTransaction.run(tx, async () => {
+        const value = await write();
+        await this.markOverridden(kind, ids, fields);
+        return value;
+      });
+    });
+  }
   async createOrigin(kind: OriginKind, input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
     const { table, key, source } = TABLES[kind];
     await sql`
