@@ -48,6 +48,65 @@ describe('Matched import metadata fills', () => {
     return { sut, ctx, auth, user, asset, assets, jobs };
   };
 
+  it.each(['ordinary', 'unlink', 'replace'] as const)(
+    'rolls back %s pairing, metadata, locks and group overrides when recording fails',
+    async (action) => {
+      const { sut, ctx, auth, user, asset, assets, jobs } = await setup();
+      const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newStack({ ownerId: user.id }, [asset.id, sibling.id]);
+      const oldMotion =
+        action === 'ordinary'
+          ? undefined
+          : (await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, visibility: AssetVisibility.Hidden })).asset;
+      const newMotion =
+        action === 'replace' ? (await ctx.newAsset({ ownerId: user.id, type: AssetType.Video })).asset : undefined;
+      if (oldMotion) await assets.update({ id: asset.id, livePhotoVideoId: oldMotion.id });
+      const ids = [asset.id, sibling.id, ...(oldMotion ? [oldMotion.id] : []), ...(newMotion ? [newMotion.id] : [])];
+      const { user: sharer } = await ctx.newUser();
+      const origins = ctx.get(PartnerOriginRepository);
+      for (const id of ids) {
+        const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+        await origins.createAssetOrigin({
+          id,
+          sourceId: source.id,
+          ownerId: user.id,
+          rootOwnerId: sharer.id,
+          partnerSharedById: sharer.id,
+        });
+      }
+      const read = () =>
+        db
+          .selectFrom('asset')
+          .select(['id', 'visibility', 'livePhotoVideoId'])
+          .where('id', 'in', ids)
+          .orderBy('id')
+          .execute();
+      const before = await read();
+      const original = origins.markOverridden.bind(origins);
+      const recording = vi.spyOn(origins, 'markOverridden').mockImplementation(async (...args) => {
+        await original(...args);
+        if (args[1].length > 1 && args[2].includes('visibility')) throw new Error('group override failed');
+      });
+      try {
+        await expect(
+          sut.update(auth, asset.id, {
+            visibility: AssetVisibility.Locked,
+            description: 'Mine',
+            ...(action === 'ordinary' ? {} : { livePhotoVideoId: action === 'unlink' ? null : newMotion!.id }),
+          }),
+        ).rejects.toThrow('group override failed');
+      } finally {
+        recording.mockRestore();
+      }
+      expect(await read()).toEqual(before);
+      expect((await assets.getById(asset.id, { exifInfo: true }))?.exifInfo).toBeNull();
+      expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).toEqual([]);
+      for (const id of ids) expect((await origins.getOrigin('asset', id))?.overriddenFields).toEqual([]);
+      expect(jobs.queue).not.toHaveBeenCalled();
+      expect(jobs.queueAll).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['direct', 'bulk'] as const)(
     'pins every already-locked %s group member without pinning unrelated fields',
     async (action) => {

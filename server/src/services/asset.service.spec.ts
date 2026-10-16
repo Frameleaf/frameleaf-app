@@ -555,6 +555,83 @@ describe(AssetService.name, () => {
   });
 
   describe('update', () => {
+    it.each(['ordinary', 'unlink', 'replace'] as const)(
+      'pins the whole %s lock group before commit without spreading description overrides',
+      async (action) => {
+        const ownerId = authStub.admin.user.id;
+        const oldMotion = AssetFactory.create({
+          id: 'old-motion',
+          ownerId,
+          type: AssetType.Video,
+          visibility: AssetVisibility.Hidden,
+        });
+        const newMotion = AssetFactory.create({ id: 'new-motion', ownerId, type: AssetType.Video });
+        const photo = AssetFactory.create({
+          id: 'photo',
+          ownerId,
+          livePhotoVideoId: action === 'ordinary' ? null : oldMotion.id,
+        });
+        const sibling = AssetFactory.create({ id: 'sibling', ownerId });
+        const ids =
+          action === 'ordinary'
+            ? [photo.id, sibling.id]
+            : action === 'unlink'
+              ? [photo.id, oldMotion.id, sibling.id]
+              : [photo.id, oldMotion.id, newMotion.id, sibling.id];
+        const rows = new Map([photo, oldMotion, newMotion, sibling].map((asset) => [asset.id, getForAsset(asset)]));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([photo.id]));
+        mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+        mocks.asset.getById.mockImplementation((id) => Promise.resolve(rows.get(id)));
+        mocks.asset.getByIds.mockResolvedValue(rows.values().toArray());
+        mocks.asset.update.mockImplementation((update) =>
+          Promise.resolve({ ...rows.get(update.id)!, ...update } as never),
+        );
+        mocks.asset.lock.mockResolvedValue([]);
+        mocks.partnerOrigin.getIdsWithFollowers.mockImplementation((_kind, ids) => Promise.resolve(ids));
+        let committed = false;
+        mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+          expect(admitted).toEqual(ids);
+          const result = await write();
+          expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', ids, ['visibility'], ownerId);
+          expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalledWith(
+            'asset',
+            ids,
+            expect.arrayContaining(['description']),
+            ownerId,
+          );
+          committed = true;
+          return result;
+        });
+        mocks.job.queueAll.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve(undefined as never);
+        });
+        await sut.update(authStub.admin, photo.id, {
+          visibility: AssetVisibility.Locked,
+          description: 'Mine',
+          ...(action === 'ordinary' ? {} : { livePhotoVideoId: action === 'unlink' ? null : newMotion.id }),
+        });
+        expect(committed).toBe(true);
+        expect(mocks.job.queueAll).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: sibling.id, fields: ['visibility'] } },
+          ]),
+        );
+      },
+    );
+
+    it('rejects a single lock group that expands beyond origin admission', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.findLockGroupIds.mockResolvedValueOnce([asset.id]).mockResolvedValue([asset.id, 'sibling']);
+      await expect(sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Locked })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it.each([undefined, null])('admits origin edits before writing with motion id %s', async (livePhotoVideoId) => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -605,6 +682,7 @@ describe(AssetService.name, () => {
       mocks.asset.withLivePhotoUpdate.mockImplementation((_id, _motion, write) =>
         write(mocks.asset as never, mocks.access as never),
       );
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.resolve(ids));
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
     });
     it('should require asset write access for the id', async () => {
@@ -1012,7 +1090,16 @@ describe(AssetService.name, () => {
       mocks.asset.getById.mockImplementation((id) => Promise.try(() => rows.get(id)));
       mocks.asset.getByIds.mockImplementation((ids) => Promise.try(() => ids.flatMap((id) => rows.get(id) ?? [])));
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
-      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.try(() => ids));
+      mocks.asset.findLockGroupIds.mockImplementation((ids) =>
+        Promise.try(() => [
+          ...new Set(
+            ids.flatMap((id) => {
+              const motionId = rows.get(id)?.livePhotoVideoId;
+              return motionId ? [id, motionId] : [id];
+            }),
+          ),
+        ]),
+      );
       mocks.asset.update.mockImplementation((update) =>
         Promise.try(() => {
           const row = rows.get(update.id);

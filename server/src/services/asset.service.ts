@@ -214,7 +214,12 @@ export class AssetService extends BaseService {
 
     const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
       dto;
-    const result = await this.partnerOriginRepository.withOriginEdit('asset', [id], [], async () => {
+    const locking = visibility === AssetVisibility.Locked;
+    const originIds = locking
+      ? await this.assetRepository.findLockGroupIds([id, ...(rest.livePhotoVideoId ? [rest.livePhotoVideoId] : [])])
+      : [id];
+    const admitted = new Set(originIds);
+    const result = await this.partnerOriginRepository.withOriginEdit('asset', originIds, [], async () => {
       let result: Awaited<ReturnType<AssetService['updateLivePhoto']>>;
       if (rest.livePhotoVideoId !== undefined) {
         result = await this.updateLivePhoto(auth, id, { ...dto, livePhotoVideoId: rest.livePhotoVideoId });
@@ -241,10 +246,20 @@ export class AssetService extends BaseService {
           ...(visibility && visibility !== AssetVisibility.Locked && { visibility }),
         });
         if (!asset) throw new BadRequestException('Asset not found');
-        result = { asset, sidecarIds, locked, hiddenId: undefined, shownId: undefined };
+        result = { asset, sidecarIds, locked, hiddenId: undefined, shownId: undefined, lockIds: locking ? [id] : [] };
       }
+      const visibilityIds = locking ? await this.assetRepository.findLockGroupIds(result.lockIds) : [];
+      if (visibilityIds.some((id) => !admitted.has(id)))
+        throw new ConflictException('Lock group changed; retry the update');
       await this.partnerOriginRepository.markOverridden('asset', [id], getAssetEditFields(dto), auth.user.id);
-      return result;
+      if (visibilityIds.length > 0)
+        await this.partnerOriginRepository.markOverridden(
+          'asset',
+          visibilityIds,
+          [AssetOriginField.Visibility],
+          auth.user.id,
+        );
+      return { ...result, visibilityIds };
     });
     const { asset } = result;
     for (const id of result.sidecarIds) await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
@@ -265,6 +280,15 @@ export class AssetService extends BaseService {
       [id],
       getAssetEditFields(dto),
     );
+
+    const siblingVisibilityIds = result.visibilityIds.filter((assetId) => assetId !== id);
+    if (siblingVisibilityIds.length > 0)
+      await recordAssetEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        auth.user.id,
+        siblingVisibilityIds,
+        [AssetOriginField.Visibility],
+      );
 
     // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
     // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
@@ -406,7 +430,7 @@ export class AssetService extends BaseService {
         shownId = ownedPrevious.id;
       }
       const locked = locking ? await assets.lock([id, ...motionIds], AssetLockReason.Marked, auth.user.id) : [];
-      return { asset, sidecarIds, hiddenId, shownId, locked };
+      return { asset, sidecarIds, hiddenId, shownId, locked, lockIds: locking ? [id, ...motionIds] : [] };
     });
     return result;
   }
