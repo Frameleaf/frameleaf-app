@@ -185,9 +185,34 @@ where
 rollback
 
 -- TagRepository.delete
+begin
+select
+  "id"
+from
+  "tag"
+where
+  "userId" = (
+    select
+      "moved"."userId"
+    from
+      "tag" as "moved"
+    where
+      "moved"."id" = $1
+  )
+order by
+  "id"
+for update
+select distinct
+  "tag_asset"."assetId"
+from
+  "tag_asset"
+  inner join "tag_closure" on "tag_closure"."id_descendant" = "tag_asset"."tagId"
+where
+  "tag_closure"."id_ancestor" = $1
 delete from "tag"
 where
   "id" = $1
+commit
 
 -- TagRepository.addAssetIds
 begin
