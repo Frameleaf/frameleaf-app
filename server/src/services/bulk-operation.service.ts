@@ -640,6 +640,30 @@ export class BulkOperationService {
       return this.applyDuplicateBatch(auth, snapshot, batch, operationId, claimToken);
     }
 
+    if (snapshot.action === MediaOperationBulkAction.Unstack) {
+      try {
+        const result = await this.stacks.unstackSelection(
+          auth,
+          snapshot.payload.stackIds ?? [],
+          batch,
+          snapshot.elevated === true,
+        );
+        const changed = new Set(result.unstackedAssetIds);
+        const locked = new Set(result.lockedAssetIds);
+        return batch.map((id) =>
+          changed.has(id)
+            ? ok(id)
+            : {
+                id,
+                status: MediaOperationItemStatus.Skipped,
+                reasonKey: locked.has(id) ? 'frameleaf_bulk_reason_locked' : 'frameleaf_bulk_reason_not_stacked',
+              },
+        );
+      } catch (error) {
+        return batch.map((id) => refused(id, error));
+      }
+    }
+
     const { action, payload } = snapshot;
     const outcomes: Outcome[] = [];
     let allowed = batch;
@@ -789,16 +813,6 @@ export class BulkOperationService {
           outcomes.push(...ordered.map((id) => ok(id)));
         } catch (error) {
           outcomes.push(...ordered.map((id) => refused(id, error)));
-        }
-        break;
-      }
-
-      case MediaOperationBulkAction.Unstack: {
-        try {
-          await this.stacks.deleteAll(auth, { ids: payload.stackIds ?? [] });
-          outcomes.push(...allowed.map((id) => ok(id)));
-        } catch (error) {
-          outcomes.push(...allowed.map((id) => refused(id, error)));
         }
         break;
       }

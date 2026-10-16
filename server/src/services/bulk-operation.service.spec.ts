@@ -56,7 +56,7 @@ describe(BulkOperationService.name, () => {
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
   let trash: { restoreAssets: any };
-  let stacks: { create: any; deleteAll: any };
+  let stacks: { create: any; deleteAll: any; unstackSelection: any };
   let enrichment: { updateAssetEnrichment: any; unlockAssets: any };
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
@@ -97,7 +97,7 @@ describe(BulkOperationService.name, () => {
     albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
     tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
     trash = { restoreAssets: vi.fn().mockResolvedValue({ count: 0 }) };
-    stacks = { create: vi.fn(), deleteAll: vi.fn() };
+    stacks = { create: vi.fn(), deleteAll: vi.fn(), unstackSelection: vi.fn() };
     enrichment = {
       updateAssetEnrichment: vi.fn().mockResolvedValue({}),
       unlockAssets: vi.fn().mockResolvedValue(undefined),
@@ -172,6 +172,35 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('applyBatch', () => {
+    it.each([false, true])('unstack checks complete current stacks with recorded elevation=%s', async (elevated) => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.Unstack,
+        elevated,
+        payload: { stackIds: [newUuid(), newUuid()] },
+      });
+      const [changed, locked, moved] = snapshot.assetIds;
+      stacks.unstackSelection.mockResolvedValue({
+        deletedStackIds: snapshot.payload.stackIds!.slice(0, 1),
+        unstackedAssetIds: [changed],
+        lockedAssetIds: [locked],
+      });
+      vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([locked]));
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+      expect(stacks.unstackSelection).toHaveBeenCalledExactlyOnceWith(
+        authStub.user1,
+        snapshot.payload.stackIds,
+        snapshot.assetIds,
+        elevated,
+      );
+      expect(stacks.deleteAll).not.toHaveBeenCalled();
+      expect(operations.getLockedIds).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: changed, status: MediaOperationItemStatus.Ok },
+        { id: locked, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' },
+        { id: moved, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_stacked' },
+      ]);
+    });
+
     describe('a transactional archive (FL-32)', () => {
       const archiveOperationId = newUuid();
       const jobId = '0195e2a0-0000-7000-8000-0000000000b1';
@@ -593,6 +622,22 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('run', () => {
+    it('does not unstack when the submitting key no longer permits stack deletion', async () => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.Unstack,
+        apiKeyId: newUuid(),
+        payload: { stackIds: [newUuid()] },
+      });
+      apiKeys.getById.mockResolvedValue({ permissions: ['asset.update'] });
+      await sut.run(operationOf(snapshot), 'claim');
+      expect(stacks.unstackSelection).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ errorCode: 'bulk_credentials_revoked' }),
+      );
+    });
+
     it('works through the frozen set and completes', async () => {
       const snapshot = snapshotOf();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
