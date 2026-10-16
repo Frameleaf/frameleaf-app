@@ -289,7 +289,7 @@ export const parseSourcePixelLayout = (pixelFormat: string | null | undefined): 
     return null;
   }
 
-  const named = NAMED_PIXEL_LAYOUTS[name];
+  const named = Object.hasOwn(NAMED_PIXEL_LAYOUTS, name) ? NAMED_PIXEL_LAYOUTS[name] : undefined;
   if (named) {
     return { ...named, name };
   }
