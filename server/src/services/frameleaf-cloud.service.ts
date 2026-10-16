@@ -170,6 +170,22 @@ const emptyLink = (cloudUrl: string, previous?: FrameleafCloudLink | null): Fram
   usedLinkTokens: previous?.usedLinkTokens,
 });
 
+/** Fields that identify an authority or unfinished linking attempt, excluding contact and preference updates. */
+const linkAttempt = (link: FrameleafCloudLink | null | undefined) =>
+  link
+    ? {
+        status: link.status,
+        cloudUrl: link.cloudUrl,
+        instanceId: link.instanceId,
+        accountId: link.accountId,
+        linkedAt: link.linkedAt,
+        oidc: link.oidc,
+        deviceCode: link.pending?.deviceCode,
+        heldToken: link.heldLink?.linkToken,
+        usedLinkTokens: link.usedLinkTokens,
+      }
+    : null;
+
 /**
  * Linking this server to a Frameleaf account (FL-155, CLD-002; FL-154 status).
  *
@@ -323,7 +339,9 @@ export class FrameleafCloudService extends BaseService {
         startedBy: auth.user.id,
       },
     };
-    await this.saveLink(link, 'link');
+    if (!(await this.saveLink(link, 'link', { expected: current }))) {
+      throw new ConflictException('The Frameleaf Cloud link changed. Try again.');
+    }
     return this.getStatus();
   }
 
@@ -334,10 +352,12 @@ export class FrameleafCloudService extends BaseService {
   async getLink(): Promise<CloudStatusResponseDto> {
     const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
     if (cloudUrl) {
-      const link = await this.readLink(cloudUrl);
-      if (link?.status === 'pending' && link.pending) {
-        await this.pollSafely(cloudUrl, link);
-      }
+      await this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+        const link = await this.readLink(cloudUrl);
+        if (link?.status === 'pending' && link.pending) {
+          await this.pollSafely(cloudUrl, link);
+        }
+      });
     }
     return this.getStatus();
   }
@@ -350,9 +370,8 @@ export class FrameleafCloudService extends BaseService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Frameleaf Cloud link check failed: ${message}`);
       const current = await this.readLink(cloudUrl);
-      if (current?.status === 'pending' && current.pending) {
-        const approved =
-          current.pending.deviceCode === link.pending?.deviceCode && error instanceof FrameleafCloudError;
+      if (current?.status === 'pending' && current.pending && current.pending.deviceCode === link.pending?.deviceCode) {
+        const approved = error instanceof FrameleafCloudError;
         // FC-62: new links are paused. The approved code is spent, so the link ends with the cloud's own
         // message; the administrator links again once it lifts
         const paused = pausedMessageOf(error);
@@ -371,6 +390,7 @@ export class FrameleafCloudService extends BaseService {
                   pending: { ...current.pending, nextPollAt: this.after(Date.now(), current.pending.intervalSeconds) },
                 },
           'link',
+          { expected: link },
         );
       }
     }
@@ -399,7 +419,7 @@ export class FrameleafCloudService extends BaseService {
     const link = await this.readLink(cloudUrl);
     if (link?.status === 'pending' || link?.heldLink) {
       // FC-18: cancelling also drops a link token held after a region refusal
-      await this.saveLink(emptyLink(cloudUrl, link), 'link');
+      await this.saveLink(emptyLink(cloudUrl, link), 'link', { expected: link });
     }
     return this.getStatus();
   }
@@ -418,17 +438,21 @@ export class FrameleafCloudService extends BaseService {
     }
     const dataRegion = isDataRegion(held.accountRegion) ? held.accountRegion : undefined;
     try {
-      await this.completeLink(cloudUrl, { linkToken: held.linkToken, actorId: auth.user.id }, { dataRegion });
+      await this.completeLink(
+        cloudUrl,
+        { linkToken: held.linkToken, actorId: auth.user.id },
+        { dataRegion, expected: link },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Frameleaf Cloud did not link this server in its account's region: ${message}`);
       const mismatch = regionMismatchOf(error);
       const current = (await this.readLink(cloudUrl)) ?? link;
       if (mismatch) {
-        await this.holdRegionMismatch(cloudUrl, current, held.linkToken, held.startedBy, mismatch);
+        await this.holdRegionMismatch(cloudUrl, link, held.linkToken, held.startedBy, mismatch);
       } else if (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500)) {
         // not answered, or paused (FC-62): the token was not spent, so it stays held for another try
-        await this.saveLink({ ...current, lastError: pausedMessageOf(error) ?? message }, 'link');
+        await this.saveLink({ ...current, lastError: pausedMessageOf(error) ?? message }, 'link', { expected: link });
       } else {
         await this.saveLink(
           {
@@ -437,6 +461,7 @@ export class FrameleafCloudService extends BaseService {
             lastLinkRefusal: linkRefusalOf(error) ?? undefined,
           },
           'link',
+          { expected: link },
         );
       }
       const paused = pausedException(error);
@@ -473,6 +498,7 @@ export class FrameleafCloudService extends BaseService {
         },
       },
       'link',
+      { expected: current },
     );
   }
 
@@ -557,17 +583,21 @@ export class FrameleafCloudService extends BaseService {
         if (current?.usedLinkTokens?.includes(hash)) {
           throw setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
         }
-        await this.saveLink(
-          {
-            ...(current ?? emptyLink(cloudUrl)),
-            usedLinkTokens: [...(current?.usedLinkTokens ?? []), hash].slice(-20),
-          },
-          null,
-        );
+        const reserved = {
+          ...(current ?? emptyLink(cloudUrl)),
+          usedLinkTokens: [...(current?.usedLinkTokens ?? []), hash].slice(-20),
+        };
+        if (!(await this.saveLink(reserved, null, { expected: current }))) {
+          throw setupRefusal(FrameleafSetupErrorCode.LinkFailed);
+        }
         let link: FrameleafCloudLink;
         try {
           // the name the person chose: the server is linked, and shows up in the app, under it
-          link = await this.completeLink(cloudUrl, { headlessToken: dto.linkToken }, { name: dto.serverName });
+          link = await this.completeLink(
+            cloudUrl,
+            { headlessToken: dto.linkToken },
+            { name: dto.serverName, expected: reserved },
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           this.logger.warn(`The Frameleaf app's link token did not link this server: ${message}`);
@@ -579,6 +609,7 @@ export class FrameleafCloudService extends BaseService {
           await this.saveLink(
             { ...after, usedLinkTokens: after.usedLinkTokens?.filter((used) => used !== hash), lastError: message },
             'link',
+            { expected: reserved },
           );
           throw setupRefusal(FrameleafSetupErrorCode.LinkFailed, {
             message: `Frameleaf Cloud did not link this server: ${message}`,
@@ -627,7 +658,11 @@ export class FrameleafCloudService extends BaseService {
 
     if (result.ok) {
       try {
-        await this.completeLink(cloudUrl, { linkToken: result.data.access_token, actorId: pending.startedBy });
+        await this.completeLink(
+          cloudUrl,
+          { linkToken: result.data.access_token, actorId: pending.startedBy },
+          { expected: link },
+        );
       } catch (error) {
         // FC-18: the account keeps its data in another region; the unspent link token is kept for a retry
         const mismatch = regionMismatchOf(error);
@@ -644,6 +679,7 @@ export class FrameleafCloudService extends BaseService {
         await this.saveLink(
           { ...link, pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) } },
           null,
+          { expected: link },
         );
         return;
       }
@@ -652,6 +688,7 @@ export class FrameleafCloudService extends BaseService {
         await this.saveLink(
           { ...link, pending: { ...pending, intervalSeconds, nextPollAt: this.after(now, intervalSeconds) } },
           null,
+          { expected: link },
         );
         return;
       }
@@ -671,13 +708,14 @@ export class FrameleafCloudService extends BaseService {
             pending: { ...pending, nextPollAt: this.after(now, pending.intervalSeconds) },
           },
           'link',
+          { expected: link },
         );
       }
     }
   }
 
   private async endPending(cloudUrl: string, link: FrameleafCloudLink, result: 'denied' | 'expired') {
-    await this.saveLink({ ...emptyLink(cloudUrl, link), lastLinkResult: result }, 'link');
+    await this.saveLink({ ...emptyLink(cloudUrl, link), lastLinkResult: result }, 'link', { expected: link });
   }
 
   /**
@@ -698,15 +736,18 @@ export class FrameleafCloudService extends BaseService {
      * that choice yet, so it is set only when linking again in the account's region after a refusal.
      * FL-304: `name` registers the server under a name that is not saved yet (setup from the app).
      */
-    options: { dataRegion?: DataRegion; name?: string } = {},
+    options: { dataRegion?: DataRegion; name?: string; expected?: FrameleafCloudLink | null } = {},
   ): Promise<FrameleafCloudLink> {
+    const previous = options.expected === undefined ? await this.readLink(cloudUrl) : options.expected;
+    if (options.expected !== undefined && !isEqual(linkAttempt(await this.readLink(cloudUrl)), linkAttempt(previous))) {
+      throw new ConflictException('The Frameleaf Cloud link changed. Try again.');
+    }
     const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
     // one key for the proof and the registered public key, even if a rotation swapped it meanwhile
     const signer = this.instanceIdentityRepository.currentSigner();
     const identity = { instanceId, kid: signer.kid, publicJwk: signer.publicJwk };
     const document = await this.discover(cloudUrl);
     const endpoints = linkEndpoints(document);
-    const previous = await this.readLink(cloudUrl);
     const permissions = permissionsOf(previous);
     const name = options.name ?? (await this.serverIdentity()).name;
 
@@ -791,7 +832,9 @@ export class FrameleafCloudService extends BaseService {
     this.frameleafCloudRepository.forget();
     // Only fresh approved registration may replace the Cloud authority; background writes must
     // still belong to the currently linked generation.
-    await this.saveLink(link, 'link', { replaceAuthority: true });
+    if (!(await this.saveLink(link, 'link', { replaceAuthority: true, expected: previous }))) {
+      throw new ConflictException('The Frameleaf Cloud link changed. Try again.');
+    }
     await this.clearKeyRecovery();
     // FL-185: a new link starts without a cloud processing suspension; the cloud says again if it holds one
     await this.forgetMlSuspension();
@@ -843,9 +886,13 @@ export class FrameleafCloudService extends BaseService {
   /** `PUT admin/cloud/permissions`: what Frameleaf Cloud may ask this server to do. */
   async updatePermissions(auth: AuthDto, dto: CloudPermissionsUpdateDto): Promise<CloudStatusResponseDto> {
     const cloudUrl = this.requireCloudUrl();
-    const link = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
-    const permissions: FrameleafCloudPermissions = { ...permissionsOf(link), ...dto };
-    await this.saveLink({ ...link, permissions }, 'link');
+    const permissions = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const link = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
+      const permissions: FrameleafCloudPermissions = { ...permissionsOf(link), ...dto };
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, { ...link, permissions });
+      return permissions;
+    });
+    await this.broadcast('link');
     const on = Object.entries(permissions)
       .filter(([, value]) => value)
       .map(([key]) => key)
@@ -1064,9 +1111,10 @@ export class FrameleafCloudService extends BaseService {
         return;
       }
       const usedLinkTokens = [...(link?.usedLinkTokens ?? []), hash].slice(-20);
-      await this.saveLink({ ...(link ?? emptyLink(cloudUrl)), usedLinkTokens }, null);
+      const reserved = { ...(link ?? emptyLink(cloudUrl)), usedLinkTokens };
+      if (!(await this.saveLink(reserved, null, { expected: link }))) return;
       try {
-        await this.completeLink(cloudUrl, { headlessToken: token });
+        await this.completeLink(cloudUrl, { headlessToken: token }, { expected: reserved });
         this.logger.log('Linked to Frameleaf with FRAMELEAF_LINK_TOKEN. Remove it from the environment.');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1088,6 +1136,7 @@ export class FrameleafCloudService extends BaseService {
               lastRegionMismatch: { accountRegion: mismatch.accountRegion, requestedRegion: mismatch.requestedRegion },
             },
             'link',
+            { expected: reserved },
           );
           return;
         }
@@ -1106,6 +1155,7 @@ export class FrameleafCloudService extends BaseService {
                 lastLinkRefusal: linkRefusalOf(error) ?? undefined,
               },
           'link',
+          { expected: reserved },
         );
       }
     });
@@ -2269,23 +2319,19 @@ export class FrameleafCloudService extends BaseService {
   private async saveLink(
     link: FrameleafCloudLink,
     topic: FrameleafCloudTopic | null,
-    { replaceAuthority = false } = {},
+    options: { replaceAuthority?: boolean; expected?: FrameleafCloudLink | null } = {},
   ): Promise<boolean> {
     const saved = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
-      if (link.status === 'linked' && !replaceAuthority) {
-        const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLink);
-        if (
-          current?.status !== 'linked' ||
-          current.cloudUrl !== link.cloudUrl ||
-          current.instanceId !== link.instanceId ||
-          current.accountId !== link.accountId ||
-          current.linkedAt !== link.linkedAt ||
-          !isEqual(current.oidc, link.oidc)
-        ) {
-          return false;
-        }
-      }
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, link);
+      const stored = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLink);
+      const current = stored?.cloudUrl === link.cloudUrl ? stored : null;
+      if (this.configRepository.getEnv().frameleafCloud.url !== link.cloudUrl) return false;
+      if (Object.hasOwn(options, 'expected') && !isEqual(linkAttempt(current), linkAttempt(options.expected)))
+        return false;
+      if (link.status === 'linked' && !options.replaceAuthority && !isEqual(linkAttempt(current), linkAttempt(link)))
+        return false;
+      // Pending/background results must not roll back preferences changed while their request waited.
+      const permissions = current?.cloudUrl === link.cloudUrl ? permissionsOf(current) : permissionsOf(link);
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, { ...link, permissions });
       return true;
     });
     if (saved && topic) {
