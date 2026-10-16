@@ -64,6 +64,8 @@
   let initial = $state<MemoryHighlightChoice>(defaultHighlightChoice);
   let renderEvidence = $state<StudioRenderEvidence[]>([]);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Bumped when the memory changes or the control goes: an answer about an earlier run is dropped. */
+  let generation = 0;
 
   const active = $derived(!!run && isExportActive(run.status));
   const percent = $derived(run ? Math.round(exportProgress(run) * 100) : 0);
@@ -83,16 +85,24 @@
   };
 
   const poll = async () => {
-    if (!run) {
+    const current = run;
+    const asked = generation;
+    if (!current) {
       return;
     }
     try {
-      const next = await getMemoryExport({ id: run.id });
-      if (next.status === MemoryExportStatus.Ready && run.status !== MemoryExportStatus.Ready) {
+      const next = await getMemoryExport({ id: current.id });
+      if (asked !== generation) {
+        return;
+      }
+      if (next.status === MemoryExportStatus.Ready && current.status !== MemoryExportStatus.Ready) {
         onStatus?.($t('frameleaf_memories_highlight_ready'));
       }
       run = next;
     } catch (error) {
+      if (asked !== generation) {
+        return;
+      }
       // the run is gone with its memory, so there is nothing left to follow
       handleError(error, $t('frameleaf_memories_highlight_failed'));
       run = undefined;
@@ -102,6 +112,7 @@
 
   $effect(() => {
     const id = memoryId;
+    generation++;
     stopPolling();
     run = undefined;
     let stale = false;
@@ -118,6 +129,7 @@
     })();
     return () => {
       stale = true;
+      generation++;
       stopPolling();
     };
   });
@@ -134,11 +146,16 @@
       return;
     }
     busy = true;
+    const asked = generation;
     try {
-      run = await createMemoryExport({
+      const created = await createMemoryExport({
         id: memoryId,
         memoryExportCreateDto: { format: MemoryExportFormat.Highlight, highlight: choice },
       });
+      if (asked !== generation) {
+        return;
+      }
+      run = created;
       dialogOpen = false;
       onStatus?.($t('frameleaf_memories_highlight_started'));
       follow();
@@ -169,8 +186,13 @@
       return;
     }
     busy = true;
+    const asked = generation;
     try {
-      run = await cancelMemoryExport({ id: run.id });
+      const cancelled = await cancelMemoryExport({ id: run.id });
+      if (asked !== generation) {
+        return;
+      }
+      run = cancelled;
       onStatus?.($t('frameleaf_memories_highlight_cancelled'));
       follow();
     } catch (error) {
@@ -200,8 +222,13 @@
       return;
     }
     busy = true;
+    const asked = generation;
     try {
-      run = await saveMemoryExportToLibrary({ id: run.id });
+      const saved = await saveMemoryExportToLibrary({ id: run.id });
+      if (asked !== generation) {
+        return;
+      }
+      run = saved;
       onStatus?.($t('frameleaf_memories_highlight_saved'));
     } catch (error) {
       handleError(error, $t('frameleaf_memories_highlight_failed'));
