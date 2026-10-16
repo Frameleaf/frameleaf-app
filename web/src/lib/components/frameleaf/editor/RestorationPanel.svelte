@@ -293,17 +293,25 @@
     }
   };
 
+  /** Only the answer for the latest mode and upscale is shown, whatever order the answers arrive in. */
+  let optionsRequest = 0;
   const loadOptions = async (nextMode: AssetRestorationMode, nextUpscale: RestorationUpscale) => {
+    const request = ++optionsRequest;
     optionsPending = true;
     try {
       const next = await getAssetRestorationOptions({ id: asset.id, mode: nextMode, upscale: nextUpscale });
+      if (request !== optionsRequest) {
+        return;
+      }
       options = next;
       destinationId = defaultDestinationId(
         next.destinations,
         untrack(() => destinationId),
       );
     } finally {
-      optionsPending = false;
+      if (request === optionsRequest) {
+        optionsPending = false;
+      }
     }
   };
 

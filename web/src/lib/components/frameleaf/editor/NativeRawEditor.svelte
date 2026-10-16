@@ -15,6 +15,7 @@
     proposeNativeMask,
     type NativeRecipe,
     type NativeMask,
+    type NativeTone,
   } from '$lib/frameleaf/native-develop';
   import {
     getAssetDevelop,
@@ -29,6 +30,7 @@
     type DevelopPresetResponseDto,
   } from '@frameleaf/sdk';
   import { onMount, onDestroy } from 'svelte';
+  import { t, type Translations } from 'svelte-i18n';
 
   let {
     asset,
@@ -48,6 +50,8 @@
   let presetName = $state('');
   let error = $state('');
   let busy = $state(false);
+  /** A save is on its way: a second press must not store the same version twice. */
+  let saving = $state(false);
   let preview = $state<string | null>(null);
   let sensorCanvas = $state(false);
   let selectedMask = $state<string | null>(null);
@@ -81,7 +85,7 @@
       masks: recipe.masks?.map((mask) => (mask.id === selectedMask ? { ...mask, ...value } : mask)),
     });
   const failed = (failure: unknown) => {
-    error = failure instanceof Error ? failure.message : 'RAW development failed';
+    error = failure instanceof Error ? failure.message : $t('frameleaf_raw_failed');
   };
   const watch = (targetRevision?: string) => {
     stop?.();
@@ -94,7 +98,7 @@
         if (state.awaitingPublication) {
           if (++renderedBeforeCurrent >= 10) {
             stop?.();
-            error = 'Rendered version did not become current; reload versions and retry.';
+            error = $t('frameleaf_raw_not_current');
           }
           return;
         }
@@ -192,9 +196,10 @@
     };
   });
   const save = async () => {
-    if (!loaded || busy || proposalBusy) {
+    if (!loaded || busy || proposalBusy || saving) {
       return;
     }
+    saving = true;
     error = '';
     try {
       const final = clone(recipe);
@@ -216,6 +221,8 @@
       watch(result.id);
     } catch (error_) {
       failed(error_);
+    } finally {
+      saving = false;
     }
   };
   const keyDown = (event: KeyboardEvent) => {
@@ -373,26 +380,66 @@
       });
     }
   };
+
+  /** The light and colour sliders, shared by the whole photo and by a mask. */
+  const TONE_SLIDERS: [Exclude<keyof NativeTone, 'curve'>, Translations, number, number, number, number][] = [
+    ['exposureEV', 'frameleaf_raw_exposure_ev', -18, 18, 0.1, 0],
+    ['shadows', 'frameleaf_editor_param_shadows', -100, 100, 1, 0],
+    ['highlights', 'frameleaf_editor_param_highlights', -100, 100, 1, 0],
+    ['saturation', 'frameleaf_editor_param_saturation', 0, 2, 0.01, 1],
+    ['contrast', 'frameleaf_editor_param_contrast', 0.01, 1.99, 0.01, 1],
+  ];
+  const CHANNELS: ['red' | 'green' | 'blue', Translations][] = [
+    ['red', 'frameleaf_raw_gain_red'],
+    ['green', 'frameleaf_raw_gain_green'],
+    ['blue', 'frameleaf_raw_gain_blue'],
+  ];
+  const SHARPEN: ['radius' | 'amount' | 'threshold', Translations, number, number, number][] = [
+    ['radius', 'frameleaf_raw_sharpen_radius', 0, 12, 2],
+    ['amount', 'frameleaf_raw_sharpen_amount', 0, 2, 0],
+    ['threshold', 'frameleaf_raw_sharpen_threshold', 0, 10, 0.5],
+  ];
+  const CROP: ['x' | 'y' | 'w' | 'h', Translations][] = [
+    ['x', 'frameleaf_raw_crop_x'],
+    ['y', 'frameleaf_raw_crop_y'],
+    ['w', 'frameleaf_raw_crop_w'],
+    ['h', 'frameleaf_raw_crop_h'],
+  ];
+  const MASK_PLACE: Record<string, Translations> = {
+    x: 'frameleaf_raw_mask_x',
+    y: 'frameleaf_raw_mask_y',
+    radiusX: 'frameleaf_raw_mask_radius_x',
+    radiusY: 'frameleaf_raw_mask_radius_y',
+    endX: 'frameleaf_raw_mask_end_x',
+    endY: 'frameleaf_raw_mask_end_y',
+  };
+  const maskKindName = (kind: NativeMask['kind']) => $t(`frameleaf_raw_mask_kind_${kind}` as Translations);
+  const statusText = (version: AssetDevelopRevisionResponseDto) =>
+    version.status === 'rendering'
+      ? $t('frameleaf_editor_status_rendering', { values: { progress: version.progress } })
+      : $t(`frameleaf_editor_status_${version.status}` as Translations);
 </script>
 
 <svelte:window onkeydown={keyDown} />
 
 <div class="raw-editor">
   <header>
-    <strong>{asset.originalFileName} · RAW development</strong>
+    <strong>{$t('frameleaf_raw_title', { values: { name: asset.originalFileName } })}</strong>
     <button
       type="button"
       aria-pressed={before}
       onclick={() => {
         before = !before;
-      }}>Before / after</button
+      }}>{$t('frameleaf_raw_before_after')}</button
     ><label
-      >Zoom<select bind:value={zoom}
-        ><option value={1}>Fit</option><option value={2}>2×</option><option value={4}>4×</option></select
+      >{$t('frameleaf_raw_zoom')}<select bind:value={zoom}
+        ><option value={1}>{$t('frameleaf_raw_zoom_fit')}</option><option value={2}
+          >{$t('frameleaf_raw_zoom_times', { values: { factor: 2 } })}</option
+        ><option value={4}>{$t('frameleaf_raw_zoom_times', { values: { factor: 4 } })}</option></select
       ></label
     >
-    <button type="button" onclick={onLegacy}>Quick edits / external versions</button>
-    <button type="button" onclick={() => onClose()}>Close</button>
+    <button type="button" onclick={onLegacy}>{$t('frameleaf_raw_quick_edits')}</button>
+    <button type="button" onclick={() => onClose()}>{$t('close')}</button>
     <button
       type="button"
       disabled={undo.length === 0}
@@ -400,7 +447,7 @@
         redo = [...redo, clone(recipe)];
         recipe = undo.at(-1)!;
         undo = undo.slice(0, -1);
-      }}>Undo</button
+      }}>{$t('undo')}</button
     >
     <button
       type="button"
@@ -409,19 +456,21 @@
         undo = [...undo, clone(recipe)];
         recipe = redo.at(-1)!;
         redo = redo.slice(0, -1);
-      }}>Redo</button
+      }}>{$t('frameleaf_editor_redo')}</button
     >
-    <label>Version name <input maxlength="120" bind:value={label} /></label>
-    <button type="button" disabled={!loaded || busy || proposalBusy} onclick={save}>Save version</button>
+    <label>{$t('frameleaf_raw_version_name')} <input maxlength="120" bind:value={label} /></label>
+    <button type="button" disabled={!loaded || busy || proposalBusy || saving} onclick={save}
+      >{$t('frameleaf_editor_save_version')}</button
+    >
   </header>
   {#if error}<p role="alert">{error}</p>{/if}
   <main>
-    <section class="raw-stage" aria-label="RAW preview">
+    <section class="raw-stage" aria-label={$t('frameleaf_raw_stage')}>
       {#if preview && previewCanvas === sensorCanvas}
         <div
           class="raw-canvas"
           role="img"
-          aria-label={sensorCanvas ? 'Mask drawing canvas' : 'Developed RAW preview'}
+          aria-label={sensorCanvas ? $t('frameleaf_raw_canvas_masks') : $t('frameleaf_raw_canvas_preview')}
           onpointerdown={startStroke}
           onpointermove={continueStroke}
           onpointerup={finishStroke}
@@ -492,38 +541,38 @@
               /></svg
             >{/if}
         </div>
-      {:else}<p>{loaded ? 'Rendering RAW preview…' : 'Loading RAW development…'}</p>{/if}
+      {:else}<p>{loaded ? $t('frameleaf_raw_rendering_preview') : $t('frameleaf_raw_loading')}</p>{/if}
       <p aria-live="polite">
         {proposalBusy
-          ? 'Finding a mask…'
+          ? $t('frameleaf_raw_finding_mask')
           : busy
-            ? 'Rendering…'
+            ? $t('frameleaf_raw_rendering')
             : sensorCanvas
-              ? 'Draw on the full photo before lens correction, rotation and crop. Alt-drag erases brush strokes.'
-              : 'Developed preview'}
+              ? $t('frameleaf_raw_draw_help')
+              : $t('frameleaf_raw_developed_preview')}
       </p>
-      <label><input type="checkbox" bind:checked={sensorCanvas} /> Draw masks on the full photo</label>
+      <label><input type="checkbox" bind:checked={sensorCanvas} /> {$t('frameleaf_raw_draw_on_full')}</label>
     </section>
     <aside>
       <details open>
-        <summary>Light and colour</summary>
-        {#each [['exposureEV', 'Exposure EV', -18, 18, 0.1, 0], ['shadows', 'Shadows', -100, 100, 1, 0], ['highlights', 'Highlights', -100, 100, 1, 0], ['saturation', 'Saturation', 0, 2, 0.01, 1], ['contrast', 'Contrast', 0.01, 1.99, 0.01, 1]] as [key, text, min, max, step, fallback] (key)}
+        <summary>{$t('frameleaf_raw_light_colour')}</summary>
+        {#each TONE_SLIDERS as [key, text, min, max, step, fallback] (key)}
           <EditorSlider
             id={`native-${key}`}
-            label={String(text)}
-            value={Number(recipe[key as keyof NativeRecipe] ?? fallback)}
-            min={Number(min)}
-            max={Number(max)}
-            step={Number(step)}
-            defaultValue={Number(fallback)}
+            label={$t(text)}
+            value={Number(recipe[key] ?? fallback)}
+            {min}
+            {max}
+            {step}
+            defaultValue={fallback}
             onChange={(value) => patch({ [key]: value })}
           />
         {/each}
-        <p>White balance</p>
-        {#each ['red', 'green', 'blue'] as channel (channel)}<EditorSlider
+        <p>{$t('frameleaf_raw_white_balance')}</p>
+        {#each CHANNELS as [channel, text] (channel)}<EditorSlider
             id={`wb-${channel}`}
-            label={`${channel} gain`}
-            value={recipe.whiteBalance?.[channel as 'red'] ?? 1}
+            label={$t(text)}
+            value={recipe.whiteBalance?.[channel] ?? 1}
             min={0.1}
             max={3}
             step={0.01}
@@ -531,13 +580,13 @@
             onChange={(value) =>
               patch({ whiteBalance: { red: 1, green: 1, blue: 1, ...recipe.whiteBalance, [channel]: value } })}
           />{/each}
-        <p>Tone curve</p>
+        <p>{$t('frameleaf_raw_tone_curve')}</p>
         <button type="button" disabled={(recipe.curve?.length ?? 3) >= 20} onclick={addCurvePoint}
-          >Add curve point</button
-        ><button type="button" onclick={() => patch({ curve: undefined })}>Reset curve</button>
+          >{$t('frameleaf_raw_curve_add')}</button
+        ><button type="button" onclick={() => patch({ curve: undefined })}>{$t('frameleaf_raw_curve_reset')}</button>
         {#each recipe.curve ?? [{ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, { x: 1, y: 1 }] as point, index (index)}<EditorSlider
             id={`curve-${index}`}
-            label={`Output at ${Math.round(point.x * 100)}%`}
+            label={$t('frameleaf_raw_curve_output', { values: { percent: Math.round(point.x * 100) } })}
             value={point.y}
             min={0}
             max={1}
@@ -556,40 +605,41 @@
           />{/each}
       </details>
       <details>
-        <summary>Lens and detail</summary>
+        <summary>{$t('frameleaf_raw_lens_detail')}</summary>
         <label
           ><input
             type="checkbox"
             checked={recipe.lensCorrection ?? false}
             onchange={(event) => patch({ lensCorrection: event.currentTarget.checked })}
-          /> Automatic lens correction</label
+          />
+          {$t('frameleaf_raw_lens_correction')}</label
         >
         <EditorSlider
           id="noise"
-          label="RAW noise threshold"
+          label={$t('frameleaf_raw_noise')}
           value={recipe.noiseThreshold ?? 0}
           min={0}
           max={0.1}
           step={0.001}
           onChange={(value) => patch({ noiseThreshold: value })}
         />
-        {#each [['radius', 0, 12, 2], ['amount', 0, 2, 0], ['threshold', 0, 10, 0.5]] as [key, min, max, fallback] (key)}<EditorSlider
+        {#each SHARPEN as [key, text, min, max, fallback] (key)}<EditorSlider
             id={`sharp-${key}`}
-            label={`Sharpen ${key}`}
-            value={recipe.sharpen?.[key as 'radius'] ?? Number(fallback)}
-            min={Number(min)}
-            max={Number(max)}
+            label={$t(text)}
+            value={recipe.sharpen?.[key] ?? fallback}
+            {min}
+            {max}
             step={0.1}
-            defaultValue={Number(fallback)}
+            defaultValue={fallback}
             onChange={(value) =>
               patch({ sharpen: { radius: 2, amount: 0, threshold: 0.5, ...recipe.sharpen, [key]: value } })}
           />{/each}
       </details>
       <details>
-        <summary>Crop and straighten</summary>
+        <summary>{$t('frameleaf_editor_crop_heading')}</summary>
         <EditorSlider
           id="straighten-native"
-          label="Straighten degrees"
+          label={$t('frameleaf_raw_straighten_degrees')}
           value={recipe.straighten ?? 0}
           min={-45}
           max={45}
@@ -599,48 +649,51 @@
         <button
           type="button"
           onclick={() => patch({ rotation: (((recipe.rotation ?? 0) + 90) % 360) as NativeRecipe['rotation'] })}
-          >Rotate 90°</button
+          >{$t('frameleaf_editor_rotate_right')}</button
         >
-        {#each ['flipHorizontal', 'flipVertical'] as flip (flip)}<label
+        {#each [['flipHorizontal', 'editor_flip_horizontal'], ['flipVertical', 'editor_flip_vertical']] as const as [flip, text] (flip)}<label
             ><input
               type="checkbox"
-              checked={recipe[flip as 'flipHorizontal'] ?? false}
+              checked={recipe[flip] ?? false}
               onchange={(event) => patch({ [flip]: event.currentTarget.checked })}
-            />{flip === 'flipHorizontal' ? 'Flip horizontally' : 'Flip vertically'}</label
+            />{$t(text)}</label
           >{/each}
-        {#each ['x', 'y', 'w', 'h'] as key (key)}<label
-            >Crop {key}<input
+        {#each CROP as [key, text] (key)}<label
+            >{$t(text)}<input
               type="number"
               min="0"
               max="1"
               step="0.01"
-              value={recipe.crop?.[key as 'x'] ?? (key === 'w' || key === 'h' ? 1 : 0)}
+              value={recipe.crop?.[key] ?? (key === 'w' || key === 'h' ? 1 : 0)}
               onchange={(event) =>
                 patch({ crop: { x: 0, y: 0, w: 1, h: 1, ...recipe.crop, [key]: Number(event.currentTarget.value) } })}
             /></label
           >{/each}
       </details>
       <details>
-        <summary>Masks</summary>
-        {#each ['radial', 'linear', 'brush'] as kind (kind)}<button
+        <summary>{$t('frameleaf_editor_tool_masks')}</summary>
+        {#each ['radial', 'linear', 'brush'] as const as kind (kind)}<button
             type="button"
             disabled={(recipe.masks?.length ?? 0) >= 8}
-            onclick={() => addMask(kind as NativeMask['kind'])}>{kind === 'linear' ? 'Gradient' : kind}</button
+            onclick={() => addMask(kind)}>{maskKindName(kind)}</button
           >{/each}
-        <button type="button" disabled={busy || proposalBusy} onclick={() => suggest('subject')}>Suggest subject</button
-        ><button type="button" disabled={busy || proposalBusy} onclick={() => suggest('sky')}>Suggest sky</button>
+        <button type="button" disabled={busy || proposalBusy} onclick={() => suggest('subject')}
+          >{$t('frameleaf_raw_suggest_subject')}</button
+        ><button type="button" disabled={busy || proposalBusy} onclick={() => suggest('sky')}
+          >{$t('frameleaf_raw_suggest_sky')}</button
+        >
         {#each recipe.masks ?? [] as mask (mask.id)}<button
             type="button"
             aria-pressed={selectedMask === mask.id}
             onclick={() => {
               selectedMask = mask.id;
               sensorCanvas = true;
-            }}>{mask.name ?? mask.kind}</button
+            }}>{mask.name ?? maskKindName(mask.kind)}</button
           >{/each}
         {#if selected}
           {#if ['brush', 'subject', 'sky', 'background'].includes(selected.kind)}<EditorSlider
               id="native-brush-radius"
-              label="Brush radius"
+              label={$t('frameleaf_raw_brush_radius')}
               value={brushRadius}
               min={0.002}
               max={0.25}
@@ -651,7 +704,7 @@
               }}
             />{/if}
           <label
-            >Mask name<input
+            >{$t('frameleaf_raw_mask_name')}<input
               maxlength="60"
               value={selected.name ?? ''}
               onchange={(event) => maskPatch({ name: event.currentTarget.value.trim() || null })}
@@ -662,37 +715,39 @@
               type="checkbox"
               checked={selected.invert}
               onchange={(event) => maskPatch({ invert: event.currentTarget.checked })}
-            /> Invert</label
+            />
+            {$t('frameleaf_editor_mask_invert')}</label
           >
           <label
             ><input
               type="checkbox"
               checked={selected.enabled}
               onchange={(event) => maskPatch({ enabled: event.currentTarget.checked })}
-            /> Enabled</label
+            />
+            {$t('enabled')}</label
           >
           <EditorSlider
             id="native-mask-amount"
-            label="Mask amount"
+            label={$t('frameleaf_raw_mask_amount')}
             value={selected.amount}
             min={0}
             max={100}
             defaultValue={100}
             onChange={(value) => maskPatch({ amount: value })}
           />
-          {#each [['exposureEV', 'Exposure EV', -18, 18, 0.1, 0], ['shadows', 'Shadows', -100, 100, 1, 0], ['highlights', 'Highlights', -100, 100, 1, 0], ['saturation', 'Saturation', 0, 2, 0.01, 1], ['contrast', 'Contrast', 0.01, 1.99, 0.01, 1]] as [key, text, min, max, step, fallback] (key)}<EditorSlider
+          {#each TONE_SLIDERS as [key, text, min, max, step, fallback] (key)}<EditorSlider
               id={`mask-${key}`}
-              label={String(text)}
-              value={Number(selected.adjustments[key as keyof typeof selected.adjustments] ?? fallback)}
-              min={Number(min)}
-              max={Number(max)}
-              step={Number(step)}
-              defaultValue={Number(fallback)}
+              label={$t(text)}
+              value={Number(selected.adjustments[key] ?? fallback)}
+              {min}
+              {max}
+              {step}
+              defaultValue={fallback}
               onChange={(value) => maskPatch({ adjustments: { ...selected!.adjustments, [key]: value } })}
             />{/each}
           {#each selected.kind === 'radial' ? ['x', 'y', 'radiusX', 'radiusY'] : selected.kind === 'linear' ? ['x', 'y', 'endX', 'endY'] : [] as key (key)}<EditorSlider
               id={`mask-${key}`}
-              label={key}
+              label={$t(MASK_PLACE[key])}
               value={Number(selected[key as keyof NativeMask])}
               min={key.startsWith('radius') ? 0.01 : 0}
               max={1}
@@ -701,7 +756,7 @@
             />{/each}
           <EditorSlider
             id="mask-feather"
-            label="Feather"
+            label={$t('frameleaf_editor_mask_feather')}
             value={selected.feather}
             min={0}
             max={100}
@@ -713,31 +768,34 @@
             onclick={() => {
               change({ ...recipe, masks: recipe.masks?.filter((mask) => mask.id !== selectedMask) });
               selectedMask = null;
-            }}>Delete mask</button
+            }}>{$t('frameleaf_raw_delete_mask')}</button
           >
         {/if}
       </details>
       <details>
-        <summary>Presets</summary><label>Preset name<input maxlength="80" bind:value={presetName} /></label><button
-          type="button"
-          onclick={savePreset}>Save preset</button
-        >
+        <summary>{$t('frameleaf_editor_tool_presets')}</summary><label
+          >{$t('frameleaf_editor_preset_name')}<input maxlength="80" bind:value={presetName} /></label
+        ><button type="button" onclick={savePreset}>{$t('frameleaf_editor_preset_save')}</button>
         {#each presets.filter((item) => !!(item.settings as unknown as { native?: NativeRecipe }).native) as preset (preset.id)}<button
             type="button"
             onclick={() => applyPreset(preset)}>{preset.name}</button
           >{/each}
       </details>
       <details>
-        <summary>Versions</summary>
+        <summary>{$t('frameleaf_editor_tool_versions')}</summary>
         {#each revisions as version (version.id)}<div class="native-version">
-            <span>{version.label ?? `Version ${version.revision}`} · {version.status} {version.progress}%</span>
+            <span
+              >{version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } })} · {statusText(
+                version,
+              )}</span
+            >
             {#if version.error}<p>{version.error}</p>{/if}
             {#if isNativeRecipe(version.recipe)}<button
                 type="button"
                 onclick={() => {
                   change(clone(version.recipe as NativeRecipe));
                   revisionId = version.id;
-                }}>Edit settings</button
+                }}>{$t('frameleaf_editor_load_settings')}</button
               >{/if}
             {#if version.status === 'rendered'}<button
                 type="button"
@@ -748,8 +806,8 @@
                   } catch (error_) {
                     failed(error_);
                   }
-                }}>Make current</button
-              ><a href={developFileUrl(asset.id, version.id)} target="_blank" rel="noreferrer">Preview</a>{/if}
+                }}>{$t('frameleaf_editor_make_current')}</button
+              ><a href={developFileUrl(asset.id, version.id)} target="_blank" rel="noreferrer">{$t('preview')}</a>{/if}
             {#if ['failed', 'saved', 'cancelled'].includes(version.status)}<button
                 type="button"
                 onclick={async () => {
@@ -759,7 +817,7 @@
                   } catch (error_) {
                     failed(error_);
                   }
-                }}>Render / retry</button
+                }}>{$t('frameleaf_editor_render')}</button
               >{/if}
             {#if version.status === 'queued' || version.status === 'rendering'}<button
                 type="button"
@@ -770,7 +828,7 @@
                   } catch (error_) {
                     failed(error_);
                   }
-                }}>Cancel render</button
+                }}>{$t('frameleaf_editor_cancel_render')}</button
               >{/if}
           </div>{/each}
       </details>

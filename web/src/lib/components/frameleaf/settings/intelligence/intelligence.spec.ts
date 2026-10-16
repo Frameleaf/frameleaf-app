@@ -21,6 +21,7 @@ import SearchLanding from './SearchLanding.svelte';
 import SmartAlbums from './SmartAlbums.svelte';
 import TextInPhotos from './TextInPhotos.svelte';
 import VisualSearch from './VisualSearch.svelte';
+import Words from './Words.svelte';
 
 const draft = vi.hoisted(() => ({ store: undefined as unknown }));
 const flags = vi.hoisted(() => ({ configFile: false }));
@@ -333,5 +334,17 @@ describe('Categories & smart albums', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'More photos' }));
     expect(store.draft.smartAlbums?.builtIn.travel.threshold).toBe(0.24);
     expect(screen.getByText('These choices apply to photos added from now on')).toBeInTheDocument();
+  });
+});
+
+describe('Words', () => {
+  it('shows a list that holds the same word twice, and removes it', async () => {
+    const onChange = vi.fn();
+    render(Words, { label: 'Look out for', words: ['dog', 'dog', 'cat'], onChange });
+
+    const chips = within(screen.getByRole('group', { name: 'Look out for' })).getAllByRole('listitem');
+    expect(chips).toHaveLength(3);
+    await fireEvent.click(within(chips[0]).getByRole('button'));
+    expect(onChange).toHaveBeenCalledWith(['cat']);
   });
 });

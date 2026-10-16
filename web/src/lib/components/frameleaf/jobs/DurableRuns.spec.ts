@@ -63,4 +63,22 @@ describe('durable run history', () => {
       await screen.findByText(state === 'paused' ? 'Paused' : state === 'retrying' ? 'Retrying' : 'Scheduled'),
     ).toBeInTheDocument();
   });
+  it('runs a refresh asked for while a read is on its way once that read ends', async () => {
+    let finish: (value: never) => void = () => {};
+    sdkMock.listDurableJobRuns.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    const { rerender } = render(DurableRuns, { refreshToken: 0 });
+    await waitFor(() => expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(1));
+
+    await rerender({ refreshToken: 1 });
+    expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(1);
+    sdkMock.listDurableJobRuns.mockResolvedValue({
+      items: [durableRun({ state: 'completed_with_errors' })],
+      hasNextPage: false,
+    });
+    finish({ items: [], hasNextPage: false } as never);
+
+    await waitFor(() => expect(sdkMock.listDurableJobRuns).toHaveBeenCalledTimes(2));
+    expect(sdkMock.listDurableJobRuns).toHaveBeenLastCalledWith({ take: 25, skip: 0 });
+    expect(await screen.findByText('Completed with errors')).toBeInTheDocument();
+  });
 });
