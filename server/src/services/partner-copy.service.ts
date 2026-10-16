@@ -575,14 +575,16 @@ export class PartnerCopyService extends BaseService {
           await this.copyTags(sourceId, follower.id, follower.ownerId);
         }
         if (apply.includes(AssetOriginField.Faces)) {
-          await this.personRepository.deleteFacesOfAsset(follower.id);
-          await this.copyFaces({
-            sourceAssetId: sourceId,
-            targetAssetId: follower.id,
-            targetOwnerId: follower.ownerId,
-            partnerSharedById: follower.partnerSharedById,
-            maxDistance,
-          });
+          await this.personRepository.withMergeWrite(async () => {
+            await this.personRepository.deleteFacesOfAsset(follower.id);
+            await this.copyFaces({
+              sourceAssetId: sourceId,
+              targetAssetId: follower.id,
+              targetOwnerId: follower.ownerId,
+              partnerSharedById: follower.partnerSharedById,
+              maxDistance,
+            });
+          }, follower.ownerId);
         }
         // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
         // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules

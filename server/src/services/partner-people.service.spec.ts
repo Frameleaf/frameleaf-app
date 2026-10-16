@@ -48,6 +48,17 @@ describe(PartnerPeopleService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerPeopleService));
+    mocks.person.withMergeWrite.mockImplementation(async (write) => write());
+    mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (ownerId, personGroupId, write) =>
+      write({
+        ownerId,
+        personGroupId,
+        sourceOwnerId: A,
+        sourcePersonGroupId: PG_A,
+        following: true,
+        overriddenFields: personGroupId === 'pg-c' ? ['name'] : [],
+      } as never),
+    );
     thumbnailSelection.where.mockReset().mockReturnValue(thumbnailSelection);
     thumbnailSelection.execute.mockReset().mockResolvedValue([]);
     mocks.person.selectionForThumbnails.mockReturnValue(thumbnailSelection as never);
@@ -107,6 +118,33 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('copyFaces', () => {
+    it('holds recipient mapping admission through face insertion and dispatches portraits afterward', async () => {
+      let held = false;
+      const link = mocks.person.getPartnerPersonLink.getMockImplementation()!;
+      mocks.person.withMergeWrite.mockImplementation(async (write, ownerId) => {
+        expect(ownerId).toBe(B);
+        held = true;
+        try {
+          return await write();
+        } finally {
+          held = false;
+        }
+      });
+      mocks.person.getPartnerPersonLink.mockImplementation((...args) => {
+        expect(held).toBe(true);
+        return link(...args);
+      });
+      mocks.person.copyFacesToAsset.mockImplementation((_id, faces) => {
+        expect(held).toBe(true);
+        return Promise.resolve(faces.length);
+      });
+      thumbnailSelection.execute.mockImplementation(() => {
+        expect(held).toBe(false);
+        return Promise.resolve([]);
+      });
+      await sut.copyFaces(copyInput);
+    });
+
     it.each([AssetOriginField.Faces, AssetOriginField.Visibility, null])(
       'uses current replay override %s and prepares matching outside the origin transaction',
       async (field) => {
@@ -201,6 +239,19 @@ describe(PartnerPeopleService.name, () => {
       mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set());
       mocks.user.getMetadata.mockResolvedValue([]);
       const getConfig = BaseService.prototype.getConfig;
+      let mappingHeld = false;
+      mocks.person.withMergeWrite.mockImplementation(async (write) => {
+        mappingHeld = true;
+        try {
+          return await write();
+        } finally {
+          mappingHeld = false;
+        }
+      });
+      mocks.person.deleteFacesOfAsset.mockImplementation(() => {
+        expect(mappingHeld).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
       const config = vi.spyOn(BaseService.prototype, 'getConfig').mockImplementation(function (
         this: BaseService,
         options,
@@ -475,6 +526,24 @@ describe(PartnerPeopleService.name, () => {
       mocks.person.getPartnerMergedFaceIds.mockResolvedValue(mergedFaceIds);
     });
 
+    it('selects the current mapping and affected faces within recipient mapping admission', async () => {
+      let held = false;
+      mocks.person.withMergeWrite.mockImplementation(async (write, ownerId) => {
+        expect(ownerId).toBe(B);
+        held = true;
+        try {
+          return await write();
+        } finally {
+          held = false;
+        }
+      });
+      mocks.person.getPartnerMergedFaceIds.mockImplementation(() => {
+        expect(held).toBe(true);
+        return Promise.resolve(mergedFaceIds);
+      });
+      await sut.undoPartnerMerge(authStub.user1, entry);
+    });
+
     it("moves the merged faces to a new person of the partner's person, with an origin", async () => {
       const createCopy = mocks.partnerOrigin.createPersonCopy.getMockImplementation()!;
       mocks.partnerOrigin.createPersonCopy.mockImplementation((value, undo) => {
@@ -521,6 +590,14 @@ describe(PartnerPeopleService.name, () => {
       await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('keeps the already-undone reason when a queued undo observes the consumed mapping', async () => {
+      mocks.person.getPartnerPersonLinkByCorrection.mockResolvedValue(undefined);
+      mocks.person.getFaceCorrection.mockResolvedValue({ ...entry, undoneAt: new Date() });
+      await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toMatchObject({
+        response: expect.objectContaining({ reason: 'already-undone' }),
+      });
+    });
+
     it('reports a lost race as already undone', async () => {
       mocks.partnerOrigin.createPersonCopy.mockResolvedValue({ conflict: 'already-undone' });
       await expect(sut.undoPartnerMerge(authStub.user1, entry)).rejects.toBeInstanceOf(ConflictException);
@@ -530,6 +607,43 @@ describe(PartnerPeopleService.name, () => {
   });
 
   describe('propagatePerson', () => {
+    it.each(['owner override', 'stopped following', 'changed source', 'source refreshed'] as const)(
+      'rechecks %s after origin admission',
+      async (change) => {
+        mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+          Promise.resolve(
+            ownerId === A ? ([{ ownerId: B, personGroupId: NEW_PG, overriddenFields: [] }] as never) : [],
+          ),
+        );
+        mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, apply) => {
+          people.set(`${A}/${PG_A}`, person(A, PG_A, { name: 'Latest name' }));
+          return apply({
+            ownerId: B,
+            personGroupId: NEW_PG,
+            sourceOwnerId: A,
+            rootOwnerId: A,
+            partnerSharedById: A,
+            sourcePersonGroupId: change === 'changed source' ? newUuid() : PG_A,
+            following: change !== 'stopped following',
+            overriddenFields: change === 'owner override' ? ['name'] : [],
+          });
+        });
+        await sut.propagatePerson(A, PG_A);
+        if (change === 'stopped following' || change === 'changed source') {
+          expect(mocks.person.update).not.toHaveBeenCalled();
+          expect(mocks.partnerOrigin.getPersonFollowers).toHaveBeenCalledOnce();
+        } else {
+          expect(mocks.person.update).toHaveBeenCalledWith({
+            ownerId: B,
+            personGroupId: NEW_PG,
+            birthDate: null,
+            isHidden: false,
+            ...(change === 'source refreshed' && { name: 'Latest name' }),
+          });
+        }
+      },
+    );
+
     it("follows the source's name and birth date into copies that left them alone", async () => {
       people.set(`${A}/${PG_A}`, person(A, PG_A, { name: 'Emma Rose', birthDate: '2015-04-01', isFavorite: true }));
       people.set(`${B}/${NEW_PG}`, person(B, NEW_PG, { name: 'Emma' }));

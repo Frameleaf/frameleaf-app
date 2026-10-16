@@ -228,9 +228,14 @@ export class PersonRepository {
   ) {
     this.db = publicationDatabase(this.db);
   }
-  /** Face moves and partner mappings commit together; callers keep cleanup and jobs outside. */
-  async withMergeWrite<T>(write: () => Promise<T>): Promise<T> {
-    return this.db.transaction().execute((tx) => publicationTransaction.run(tx, write));
+  /** Copy, merge and undo serialize recipient mappings through their face writes; no I/O inside. */
+  async withMergeWrite<T>(write: () => Promise<T>, ownerId: string): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`partner-person-owner:v1:${ownerId.toLowerCase()}`},0))`.execute(
+        tx,
+      );
+      return publicationTransaction.run(tx, write);
+    });
   }
 
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })

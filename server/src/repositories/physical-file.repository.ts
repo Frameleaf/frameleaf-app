@@ -491,6 +491,9 @@ export class PhysicalFileRepository {
       if (asset.physicalOriginalFileId) {
         // already linked: a concurrent upload of the same content linked this one onto its file
         const physicalFile = await this.getPhysicalFile(asset.physicalOriginalFileId, trx);
+        if (physicalFile && options.ingestion) {
+          await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
+        }
         return physicalFile ? { physicalFile, linked: physicalFile.canonicalAssetId !== asset.id } : undefined;
       }
       const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
@@ -574,6 +577,9 @@ export class PhysicalFileRepository {
         }
       }
       await this.lockPath(trx, asset.originalPath);
+      if (options.ingestion) {
+        await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
+      }
       const physicalFile = await this.registerOriginal(trx, {
         canonicalAssetId: asset.id,
         checksum: file.checksum,

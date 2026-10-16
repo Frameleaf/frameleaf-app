@@ -826,15 +826,20 @@ export class PersonService extends BaseService {
       faceId = face.id;
     }
 
-    const person = await this.personRepository.update({
-      ownerId,
-      personGroupId,
-      faceAssetId: faceId,
-      name,
-      birthDate,
-      isHidden,
-      isFavorite,
-      color,
+    const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    const person = await this.partnerOriginRepository.withPersonOrigin(ownerId, personGroupId, async () => {
+      const person = await this.personRepository.update({
+        ownerId,
+        personGroupId,
+        faceAssetId: faceId,
+        name,
+        birthDate,
+        isHidden,
+        isFavorite,
+        color,
+      });
+      await partnerPeople.noteEdit(ownerId, personGroupId, dto);
+      return person;
     });
 
     if (assetId) {
@@ -843,8 +848,6 @@ export class PersonService extends BaseService {
 
     // FL-326: an edit of a partner's person copy stops that detail following, and the person's own copies
     // follow the new name, birth date and hidden state
-    const partnerPeople = BaseService.create(PartnerPeopleService, this);
-    await partnerPeople.noteEdit(ownerId, personGroupId, dto);
     if (PartnerPeopleService.touchesFollowedFields(dto)) {
       await partnerPeople.propagatePerson(ownerId, personGroupId);
     }
@@ -894,12 +897,16 @@ export class PersonService extends BaseService {
     }
 
     const people = await this.personRepository.delete(groupIds, ownerId);
+    await this.cleanupRemovedPeople(people, ownerId);
+  }
+
+  private async cleanupRemovedPeople(people: { thumbnailPath: string }[], ownerId?: string) {
     await Promise.all(people.map((person) => this.storageRepository.unlink(person.thumbnailPath)));
     await this.personRepository.deleteEmptyGroups();
     // deleting, merging away and cleaning up people all come through here: merge-suggestion answers
     // follow their anchor faces to whoever holds them now, or go (FL-57)
     await this.reanchorMergeVerdicts(ownerId);
-    this.logger.debug(`Deleted ${groupIds.length} people`);
+    this.logger.debug(`Deleted ${people.length} people`);
   }
 
   @OnJob({ name: JobName.PersonCleanup, queue: QueueName.BackgroundTask })
@@ -1443,15 +1450,25 @@ export class PersonService extends BaseService {
         this.logger.log(`Merging ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
 
         try {
-          await this.personRepository.withMergeWrite(async () => {
+          const people = await this.personRepository.withMergeWrite(async () => {
+            const survivor = await this.personRepository.getByGroupId({
+              ownerId: targetPerson.ownerId,
+              personGroupId: targetPerson.personGroupId,
+            });
+            const removed = await this.personRepository.getByGroupId({
+              ownerId: targetPerson.ownerId,
+              personGroupId: mergeId,
+            });
+            if (!survivor || !removed) throw new ConflictException('Person changed during merge');
             await this.personRepository.reassignFaces(mergeData);
             await this.personRepository.repointPartnerPersonLinks(
               targetPerson.ownerId,
               mergeId,
               targetPerson.personGroupId,
             );
-          });
-          await this.removeAllPersonGroups([mergeId], targetPerson.ownerId);
+            return this.personRepository.delete([mergeId], targetPerson.ownerId);
+          }, targetPerson.ownerId);
+          await this.cleanupRemovedPeople(people, targetPerson.ownerId);
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
           results.push({ id: mergeId, success: true });

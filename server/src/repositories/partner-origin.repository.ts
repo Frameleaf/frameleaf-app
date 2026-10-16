@@ -520,6 +520,22 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows;
   }
+  /** Owner edits and propagation share the live person's origin lock and writer transaction. */
+  async withPersonOrigin<T>(
+    ownerId: string,
+    personGroupId: string,
+    write: (origin: PersonOriginRow | undefined) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<PersonOriginRow>`
+        SELECT origin.* FROM public.person_origin origin
+        JOIN person ON person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId"
+        WHERE origin."ownerId" = ${ownerId}::uuid AND origin."personGroupId" = ${personGroupId}::uuid
+        FOR UPDATE OF origin
+      `.execute(tx);
+      return publicationTransaction.run(tx, () => write(rows[0]));
+    });
+  }
   async markPersonOverridden(ownerId: string, personGroupIds: string[], fields: string[]): Promise<void> {
     if (personGroupIds.length === 0 || fields.length === 0) {
       return;
