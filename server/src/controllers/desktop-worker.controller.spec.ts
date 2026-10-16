@@ -1,7 +1,10 @@
+import express, { type Express } from 'express';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import request from 'supertest';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
+import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
+import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { type ControllerContext, controllerSetup } from 'test/utils.js';
@@ -14,6 +17,7 @@ const grant = { deviceId: id, sessionId, authorizationEpoch: 2 };
 const repository = { session: vi.fn(), consume: vi.fn() };
 const broker = { claim: vi.fn(), input: vi.fn(), complete: vi.fn(), heartbeat: vi.fn(), fail: vi.fn() };
 let ctx: ControllerContext;
+let app: Express;
 const proof = (operation: string, payload: string) => {
   const dto = { sessionId, sequence: 1, timestamp: Date.now(), signature: '' };
   dto.signature = sign(
@@ -29,8 +33,12 @@ beforeAll(async () => {
     { get: vi.fn().mockResolvedValue({ id: 'server' }) } as never,
   );
   ctx = await controllerSetup(DesktopWorkerController, [
+    { provide: DesktopQualificationService, useValue: {} },
     { provide: DesktopWorkerService, useValue: new DesktopWorkerService(auth, broker as never, {} as never) },
   ]);
+  app = express();
+  app.use(frameleafViaMiddleware('edge-secret'));
+  app.use((req, res) => ctx.getHttpServer().emit('request', req, res));
 });
 afterAll(async () => ctx.close());
 beforeEach(() => {
@@ -46,7 +54,7 @@ it('requires worker token and signed proof; photo cookies/tokens alone cannot cl
   for (const authorization of ['', 'Bearer photo-token', 'Bearer ' + token]) {
     expect(
       (
-        await request(ctx.getHttpServer())
+        await request(app)
           .post('/desktop/worker/claim')
           .set('Authorization', authorization)
           .set('Cookie', 'immich_access_token=photo-token')
@@ -59,7 +67,7 @@ it('requires worker token and signed proof; photo cookies/tokens alone cannot cl
 });
 it('accepts exact signed payload bytes and rejects route/payload substitution', async () => {
   const payload = '{"modelKeys":["m"],"waitMs":0}';
-  const response = await request(ctx.getHttpServer())
+  const response = await request(app)
     .post('/desktop/worker/claim')
     .auth(token, { type: 'bearer' })
     .set('x-frameleaf-desktop-proof', proof('claim', payload))
@@ -68,7 +76,7 @@ it('accepts exact signed payload bytes and rejects route/payload substitution', 
   expect(response.body).toEqual({ task: null });
   expect(
     (
-      await request(ctx.getHttpServer())
+      await request(app)
         .post('/desktop/worker/claim')
         .auth(token, { type: 'bearer' })
         .set('x-frameleaf-desktop-proof', proof('claim', payload))
@@ -77,7 +85,7 @@ it('accepts exact signed payload bytes and rejects route/payload substitution', 
   ).toBe(401);
   expect(
     (
-      await request(ctx.getHttpServer())
+      await request(app)
         .post('/desktop/worker/claim')
         .auth(token, { type: 'bearer' })
         .set('x-frameleaf-desktop-proof', proof('claim', payload))
@@ -88,7 +96,7 @@ it('accepts exact signed payload bytes and rejects route/payload substitution', 
 it('returns scoped binary input without JSON conversion and binds the attempt path', async () => {
   const input = Buffer.from([0, 1, 255, 10]);
   broker.input.mockResolvedValue(input);
-  const response = await request(ctx.getHttpServer())
+  const response = await request(app)
     .get(`/desktop/tasks/${id}/input`)
     .auth(token, { type: 'bearer' })
     .set('x-frameleaf-desktop-proof', proof(`input:${id}`, ''));
@@ -97,11 +105,11 @@ it('returns scoped binary input without JSON conversion and binds the attempt pa
   expect(response.headers['cache-control']).toBe('no-store');
   expect(
     (
-      await request(ctx.getHttpServer())
+      await request(app)
         .get(`/desktop/tasks/${sessionId}/input`)
         .auth(token, { type: 'bearer' })
         .set('x-frameleaf-desktop-proof', proof(`input:${id}`, ''))
     ).status,
   ).toBe(401);
-  expect((await request(ctx.getHttpServer()).get('/desktop/tasks/not-uuid/input')).status).toBe(400);
+  expect((await request(app).get('/desktop/tasks/not-uuid/input')).status).toBe(400);
 });

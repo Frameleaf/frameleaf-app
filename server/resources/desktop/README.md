@@ -36,3 +36,21 @@ digest and runtime fingerprint are retained; database errors redact challenge
 parameters. Recording a receipt does not grant model scope. Selected NAS model/
 index authority, admission endpoints and automatic worker orchestration remain
 required before inference can be enabled.
+
+Signed qualification HTTP operations use the existing worker credential and
+installation proof, over the exact UTF-8 payload string:
+
+- POST `/desktop/worker/challenges`, operation `challenge`: request ID, compiled
+  model key/provider/source and factory manifest envelope. The NAS verifies the
+  signature and chooses a release-owned profile matching its current enabled
+  model. It returns the nonce, exact spec/fixture, manifest binding and expiry.
+- GET `/desktop/worker/challenges/:id`, operation `challenge:<id>`: recover the
+  current credential's unexpired challenge and any recorded report digest.
+- POST `/desktop/worker/challenges/:id/report`, operation
+  `qualification:<id>`: validate and record the exact qualification report.
+  An accepted acknowledgment means evidence was recorded; inference scope
+  still requires separate admission and expiring model grants.
+
+API arrival and edge forwarding preserve only the explicitly permitted desktop
+proof header; the worker authentication layer validates it. Client-supplied
+arrival claims continue to be stripped or rejected.

@@ -15,6 +15,10 @@ import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  DesktopQualificationChallengeDto,
+  DesktopQualificationIdParamDto,
+} from 'src/dtos/desktop-qualification.dto.js';
+import {
   DesktopWorkerAckDto,
   DesktopWorkerClaimDto,
   DesktopWorkerHeartbeatDto,
@@ -22,6 +26,7 @@ import {
 import { DesktopSessionDto, DesktopWorkerPayloadDto } from 'src/dtos/desktop-worker.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -35,7 +40,55 @@ const history = () => new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
 })
 @Controller('desktop')
 export class DesktopWorkerController {
-  constructor(private service: DesktopWorkerService) {}
+  constructor(
+    private service: DesktopWorkerService,
+    private qualification: DesktopQualificationService,
+  ) {}
+
+  @Post('worker/challenges')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Issue an installation-signed model qualification challenge', history: history() })
+  async createDesktopQualificationChallenge(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopQualificationChallengeDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.issue(authorization, proof, dto.payload);
+  }
+
+  @Get('worker/challenges/:id')
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read an unexpired challenge for the current desktop credential', history: history() })
+  async readDesktopQualificationChallenge(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: DesktopQualificationIdParamDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopQualificationChallengeDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.read(authorization, proof, id);
+  }
+
+  @Post('worker/challenges/:id/report')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Record exact desktop qualification evidence without granting inference scope',
+    history: history(),
+  })
+  async recordDesktopQualification(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: DesktopQualificationIdParamDto,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopWorkerAckDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.record(authorization, proof, id, dto.payload);
+  }
 
   @Post('worker/claim')
   @HttpCode(HttpStatus.OK)

@@ -5949,6 +5949,16 @@ export type DesktopWorkerPayloadDto = {
 export type DesktopWorkerAckDto = {
     accepted: boolean;
 };
+export type DesktopQualificationChallengeDto = {
+    bindingSha256: string;
+    expiresAt: string;
+    fixtureBase64: string;
+    id: string;
+    manifestSha256: string;
+    modelKey: string;
+    reportSha256: string | null;
+    specJson: string;
+};
 export type DesktopWorkerClaimDto = {
     task: {
         authorizationEpoch: number;
@@ -21104,6 +21114,62 @@ export function completeDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerP
         status: 200;
         data: DesktopWorkerAckDto;
     }>(`/desktop/tasks/${encodeURIComponent(id)}/result`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Issue an installation-signed model qualification challenge
+ */
+export function createDesktopQualificationChallenge({ xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopQualificationChallengeDto;
+    }>("/desktop/worker/challenges", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read an unexpired challenge for the current desktop credential
+ */
+export function readDesktopQualificationChallenge({ id, xFrameleafDesktopProof }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopQualificationChallengeDto;
+    }>(`/desktop/worker/challenges/${encodeURIComponent(id)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Record exact desktop qualification evidence without granting inference scope
+ */
+export function recordDesktopQualification({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/worker/challenges/${encodeURIComponent(id)}/report`, oazapfts.json({
         ...opts,
         method: "POST",
         body: desktopWorkerPayloadDto,
