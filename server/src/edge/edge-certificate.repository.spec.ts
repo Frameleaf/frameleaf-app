@@ -163,6 +163,62 @@ describe(EdgeCertificateRepository.name, () => {
     expect(set).toHaveBeenCalledTimes(1);
   });
 
+  it.each([1, 2])(
+    'removes every attempted TXT value when publication %s commits but its acknowledgement fails',
+    async (failed) => {
+      const ca = fakeCa(certificate);
+      vi.spyOn(sut, 'client').mockReturnValue(ca.client);
+      const attempted: string[] = [];
+      const removed: string[] = [];
+      await expect(
+        sut.issue(identityDir, {
+          directoryUrl: 'https://acme.test/directory',
+          names: NAMES,
+          setChallenge: async (value) => {
+            attempted.push(value);
+            if (attempted.length === failed) throw new Error('publication acknowledgement lost');
+          },
+          removeChallenge: async (value) => {
+            removed.push(value);
+          },
+        }),
+      ).rejects.toThrow('publication acknowledgement lost');
+      expect(attempted).toHaveLength(failed);
+      expect(removed).toEqual(attempted);
+      expect(ca.client.completeChallenge).not.toHaveBeenCalled();
+      expect(ca.client.getCertificate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['asynchronous', false],
+    ['synchronous', false],
+    ['asynchronous', true],
+    ['synchronous', true],
+  ] as const)(
+    'continues after %s cleanup failure without replacing the issuance result (validation failure: %s)',
+    async (mode, failValidation) => {
+      const ca = fakeCa(certificate, { failValidation });
+      vi.spyOn(sut, 'client').mockReturnValue(ca.client);
+      const removed: string[] = [];
+      const issuing = sut.issue(identityDir, {
+        directoryUrl: 'https://acme.test/directory',
+        names: NAMES,
+        setChallenge: async () => {},
+        removeChallenge: (value) => {
+          removed.push(value);
+          if (removed.length !== 1) return Promise.resolve();
+          const error = new Error('cleanup failed');
+          if (mode === 'synchronous') throw error;
+          return Promise.reject(error);
+        },
+      });
+      if (failValidation) await expect(issuing).rejects.toThrow('NXDOMAIN');
+      else await expect(issuing).resolves.toEqual({ certificate, key, accountUrl: ACCOUNT });
+      expect(removed).toHaveLength(2);
+    },
+  );
+
   it('keeps the account key, certificates and keys 0600 in a 0700 folder, and removes them', async () => {
     const accountKey = await sut.accountKey(identityDir);
     expect(accountKey).toContain('PRIVATE KEY');
