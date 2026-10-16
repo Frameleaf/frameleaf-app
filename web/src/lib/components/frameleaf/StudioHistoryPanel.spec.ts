@@ -118,4 +118,33 @@ describe('Studio review drawer', () => {
     await fireEvent.click(within(alert).getByRole('button'));
     expect(await screen.findByText('Trim the pause here')).toBeInTheDocument();
   });
+
+  it('pages older comments without skipping or repeating one after a comment is added', async () => {
+    // The server lists comments oldest first; a new one joins the end of that list.
+    const server = Array.from({ length: 21 }, (_, index) => comment({ id: `c-${index}`, text: `Note ${index}` }));
+    const session = sessionWith({
+      comments: vi.fn().mockImplementation(async (skip: number, take: number) => ({
+        items: server.slice(skip, skip + take),
+        total: server.length,
+      })),
+      addComment: vi.fn().mockImplementation(async (dto) => {
+        const created = comment({ id: 'c-new', text: dto.text, time: dto.time });
+        server.push(created);
+        return created;
+      }),
+    });
+    render(StudioHistoryPanel, props(session));
+    await screen.findByText('Note 19');
+
+    await fireEvent.input(screen.getByLabelText('frameleaf_studio_comment_at'), { target: { value: 'Newest' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_comment_post_at' }));
+    await screen.findByText('Newest');
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_history_show_more' }));
+
+    expect(await screen.findByText('Note 20')).toBeInTheDocument();
+    expect(screen.getAllByText('Newest')).toHaveLength(1);
+    const texts = screen.getAllByRole('listitem').map((item) => item.querySelector('p')?.textContent);
+    expect(texts.at(-2)).toBe('Note 20');
+    expect(texts.at(-1)).toBe('Newest');
+  });
 });

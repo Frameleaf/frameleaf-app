@@ -85,6 +85,11 @@
 
   /** Responses from before the latest reload are dropped, never merged into the fresh lists. */
   let generation = 0;
+  /**
+   * Comments posted here since the last load. The server lists comments oldest first, so these sit
+   * at the end of its list, past every page not yet read: paging counts only what came from pages.
+   */
+  let postedHere = new Set<string>();
 
   const load = async () => {
     const gen = ++generation;
@@ -99,6 +104,7 @@
       revisionTotal = history.total;
       comments = review.items;
       commentTotal = review.total;
+      postedHere = new Set();
     } catch {
       if (gen === generation) {
         failed = true;
@@ -121,11 +127,19 @@
 
   const moreComments = async () => {
     const gen = generation;
-    const page = await session.comments(comments.length, PAGE);
-    if (gen === generation) {
-      comments = [...comments, ...page.items];
-      commentTotal = page.total;
+    const paged = comments.filter(({ id }) => !postedHere.has(id));
+    const page = await session.comments(paged.length, PAGE);
+    if (gen !== generation) {
+      return;
     }
+    // A comment posted here that this page reaches takes its place in the list once.
+    const pagedIds = new Set(paged.map(({ id }) => id));
+    const arrived = page.items.filter(({ id }) => !pagedIds.has(id));
+    for (const { id } of arrived) {
+      postedHere.delete(id);
+    }
+    comments = [...paged, ...arrived, ...comments.filter(({ id }) => postedHere.has(id))];
+    commentTotal = page.total;
   };
 
   /**
@@ -165,6 +179,7 @@
       const time = playhead ?? { num: 0, den: 1 };
       const created = await session.addComment({ revision, time: { num: time.num, den: time.den }, text });
       comments = [...comments, created];
+      postedHere.add(created.id);
       commentTotal += 1;
       commentText = '';
       // The new row arrives tinted and lets the tint go, so the eye finds it at the end of the list.
