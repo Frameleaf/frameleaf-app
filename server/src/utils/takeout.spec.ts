@@ -227,6 +227,18 @@ describe('takeoutScannedItem', () => {
     expect(takeoutMostLikelySidecar('photo.jpg', [])).toBeUndefined();
   });
 
+  it('retains the first candidate when their matching title and detail scores tie', () => {
+    const first = { id: 'first', metadata: { title: 'PHOTO.jpg', description: 'first description' } };
+    const second = { id: 'second', metadata: { title: 'photo.JPG', description: 'second description' } };
+    expect(takeoutMostLikelySidecar('Photo.jpg', [first, second])).toBe(first);
+  });
+
+  it('prefers a Unicode-equivalent title over a more detailed unrelated candidate', () => {
+    const unrelated = { id: 'other', metadata: { title: 'other.jpg', description: 'details', favorite: true } };
+    const matching = { id: 'matching', metadata: { title: 'Caf\u{e9}.JPG' } };
+    expect(takeoutMostLikelySidecar('Cafe\u{301}.jpg', [unrelated, matching])).toBe(matching);
+  });
+
   it('keeps an item locked when any candidate or the folder says Locked Folder', () => {
     expect(
       takeoutScannedItem({
