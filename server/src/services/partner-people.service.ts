@@ -62,27 +62,35 @@ export class PartnerPeopleService extends BaseService {
       return 0;
     }
 
-    // a copy always comes from the sharing partner's library (their own item, or their copy: A to B to C)
-    const sourceOwnerId = input.partnerSharedById;
+    const maxDistance =
+      input.maxDistance ??
+      (faces.some((face) => face.personGroupId && face.hasEmbedding)
+        ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
+        : undefined);
     const mapped = new Map<string, string>();
-    const copies: Array<{ sourceFaceId: string; faceId: string; personGroupId: string | null }> = [];
-    for (const face of faces) {
-      let personGroupId: string | null = null;
-      if (face.personGroupId) {
-        personGroupId =
-          mapped.get(face.personGroupId) ??
-          (await this.resolvePerson({
-            ...input,
-            sourceOwnerId,
-            sourcePersonGroupId: face.personGroupId,
-            sampleFaceId: face.hasEmbedding ? face.id : undefined,
-          }));
-        mapped.set(face.personGroupId, personGroupId);
+    const count = await this.personRepository.withMergeWrite(async () => {
+      // a copy always comes from the sharing partner's library (their own item, or their copy: A to B to C)
+      const sourceOwnerId = input.partnerSharedById;
+      const copies: Array<{ sourceFaceId: string; faceId: string; personGroupId: string | null }> = [];
+      for (const face of faces) {
+        let personGroupId: string | null = null;
+        if (face.personGroupId) {
+          personGroupId =
+            mapped.get(face.personGroupId) ??
+            (await this.resolvePerson({
+              ...input,
+              maxDistance,
+              sourceOwnerId,
+              sourcePersonGroupId: face.personGroupId,
+              sampleFaceId: face.hasEmbedding ? face.id : undefined,
+            }));
+          mapped.set(face.personGroupId, personGroupId);
+        }
+        copies.push({ sourceFaceId: face.id, faceId: randomUUID(), personGroupId });
       }
-      copies.push({ sourceFaceId: face.id, faceId: randomUUID(), personGroupId });
-    }
 
-    const count = await this.personRepository.copyFacesToAsset(input.targetAssetId, copies);
+      return this.personRepository.copyFacesToAsset(input.targetAssetId, copies);
+    }, input.targetOwnerId);
     await this.queueMissingThumbnails(input.targetOwnerId, [...new Set(mapped.values())]);
     return count;
   }
@@ -95,26 +103,31 @@ export class PartnerPeopleService extends BaseService {
     if (entry.undoneAt) {
       throw conflict('already-undone', 'This change was already undone');
     }
-    const link = await this.personRepository.getPartnerPersonLinkByCorrection(auth.user.id, entry.id);
-    if (!link) {
-      throw conflict('person-gone', 'The partner person this merge came from is no longer linked');
-    }
+    const personGroupId = await this.personRepository.withMergeWrite(async () => {
+      const link = await this.personRepository.getPartnerPersonLinkByCorrection(auth.user.id, entry.id);
+      if (!link) {
+        if ((await this.personRepository.getFaceCorrection(auth.user.id, entry.id))?.undoneAt) {
+          throw conflict('already-undone', 'This change was already undone');
+        }
+        throw conflict('person-gone', 'The partner person this merge came from is no longer linked');
+      }
 
-    const faceIds = await this.personRepository.getPartnerMergedFaceIds(
-      auth.user.id,
-      link.sourcePersonGroupId,
-      link.personGroupId,
-    );
-    const personGroupId = await this.createPersonCopy(
-      {
-        targetOwnerId: auth.user.id,
-        partnerSharedById: link.partnerSharedById,
-        sourceOwnerId: link.partnerSharedById,
-        sourcePersonGroupId: link.sourcePersonGroupId,
-        fallbackName: entry.fromPersonName ?? '',
-      },
-      { correctionId: entry.id, personGroupId: link.personGroupId, faceIds },
-    );
+      const faceIds = await this.personRepository.getPartnerMergedFaceIds(
+        auth.user.id,
+        link.sourcePersonGroupId,
+        link.personGroupId,
+      );
+      return this.createPersonCopy(
+        {
+          targetOwnerId: auth.user.id,
+          partnerSharedById: link.partnerSharedById,
+          sourceOwnerId: link.partnerSharedById,
+          sourcePersonGroupId: link.sourcePersonGroupId,
+          fallbackName: entry.fromPersonName ?? '',
+        },
+        { correctionId: entry.id, personGroupId: link.personGroupId, faceIds },
+      );
+    }, auth.user.id);
     await this.queueMissingThumbnails(auth.user.id, [personGroupId]);
   }
 

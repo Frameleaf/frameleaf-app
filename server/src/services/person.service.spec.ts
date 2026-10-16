@@ -1345,6 +1345,9 @@ describe(PersonService.name, () => {
       const removed = PersonFactory.create({ ownerId: auth.user.id, name: 'Alicia' });
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([survivor.personGroupId, removed.personGroupId]));
       mocks.person.getForMergePerson.mockResolvedValue([survivor, removed]);
+      mocks.person.getByGroupId.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(personGroupId === survivor.personGroupId ? survivor : removed),
+      );
       mocks.person.delete.mockResolvedValue([removed]);
       return { auth, survivor, removed };
     };
@@ -1382,6 +1385,7 @@ describe(PersonService.name, () => {
         const result = await write();
         expect(mocks.person.reassignFaces).toHaveBeenCalled();
         expect(mocks.person.repointPartnerPersonLinks).toHaveBeenCalled();
+        expect(mocks.person.delete).toHaveBeenCalled();
         expect(mocks.storage.unlink).not.toHaveBeenCalled();
         expect(mocks.job.queue).not.toHaveBeenCalled();
         committed = true;

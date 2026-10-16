@@ -782,7 +782,7 @@ describe(PersonService.name, () => {
   });
 
   describe('mergePeople', () => {
-    it.each(['mapping failure', 'queue failure'] as const)(
+    it.each(['mapping failure', 'deletion failure', 'queue failure'] as const)(
       'preserves face-to-partner mapping authority on %s',
       async (failure) => {
         const { sut, ctx } = setup();
@@ -813,14 +813,23 @@ describe(PersonService.name, () => {
                 throw new Error('mapping failed');
               })
             : undefined;
+        const remove = people.delete.bind(people);
+        const deletion =
+          failure === 'deletion failure'
+            ? vi.spyOn(people, 'delete').mockImplementationOnce(async (...args) => {
+                await remove(...args);
+                throw new Error('deletion failed');
+              })
+            : undefined;
         if (failure === 'queue failure') jobs.queue.mockRejectedValueOnce(new Error('queue failed'));
         let results;
         try {
           results = await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
         } finally {
           mapping?.mockRestore();
+          deletion?.mockRestore();
         }
-        if (failure === 'mapping failure') {
+        if (failure !== 'queue failure') {
           expect(results).toEqual([{ id: removed.personGroupId, success: false, error: 'unknown' }]);
           expect((await people.getFaceById(face.id, { viewingUserId: user.id })).personGroupId).toBe(
             removed.personGroupId,

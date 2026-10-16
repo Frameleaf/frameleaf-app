@@ -74,6 +74,32 @@ const sharedPhoto = async (ctx: ReturnType<typeof setup>['ctx'], embedding: stri
 };
 
 describe('PartnerPeopleService (FL-326)', () => {
+  it('rolls back new person mappings when face insertion fails', async () => {
+    const { ctx, base } = setup();
+    const { alice, bob, emma, source, copy } = await sharedPhoto(ctx, newEmbedding());
+    const groups = await ctx.database.selectFrom('person_group').select('id').execute();
+    const insert = vi
+      .spyOn(ctx.get(PersonRepository), 'copyFacesToAsset')
+      .mockRejectedValueOnce(new Error('face insertion failed'));
+    try {
+      await expect(
+        BaseService.create(PartnerPeopleService, base).copyFaces({
+          sourceAssetId: source.id,
+          targetAssetId: copy.id,
+          targetOwnerId: bob.id,
+          partnerSharedById: alice.id,
+        }),
+      ).rejects.toThrow('face insertion failed');
+    } finally {
+      insert.mockRestore();
+    }
+    await expect(
+      ctx.get(PartnerOriginRepository).getPersonMapping(bob.id, emma.personGroupId),
+    ).resolves.toBeUndefined();
+    await expect(ctx.get(PersonRepository).getPartnerPersonLink(bob.id, emma.personGroupId)).resolves.toBeUndefined();
+    expect(await ctx.database.selectFrom('person_group').select('id').execute()).toHaveLength(groups.length);
+  });
+
   it('rolls back a person value when its override marker fails', async () => {
     const { ctx, base } = setup();
     const { alice, bob, emma, source, copy } = await sharedPhoto(ctx, newEmbedding());
@@ -172,18 +198,17 @@ describe('PartnerPeopleService (FL-326)', () => {
     expect(storedSource).toBeDefined();
     const groupsBefore = await ctx.database.selectFrom('person_group').select('id').execute();
     const repository = ctx.get(PersonRepository);
-    const readSource = repository.getByGroupId.bind(repository);
+    const readSource = repository.getFacesForPartnerCopy.bind(repository);
     let arrivals = 0;
     const { promise: bothCreating, resolve: release } = Promise.withResolvers<void>();
-    // Both real source SELECTs complete after each caller has chosen creation. Only scheduling is
-    // controlled: no database row, error, transaction or write is replaced.
-    const schedule = vi.spyOn(repository, 'getByGroupId').mockImplementation(async (input) => {
-      const person = await readSource(input);
-      if (input.ownerId === alice.id && input.personGroupId === emma.personGroupId && arrivals < 2) {
+    // Both source snapshots complete before recipient admission; mapping reads must serialize after it.
+    const schedule = vi.spyOn(repository, 'getFacesForPartnerCopy').mockImplementation(async (assetId) => {
+      const faces = await readSource(assetId);
+      if ((assetId === source.id || assetId === source2.id) && arrivals < 2) {
         if (++arrivals === 2) release();
         await bothCreating;
       }
-      return person;
+      return faces;
     });
     const people = BaseService.create(PartnerPeopleService, base);
     let outcomes: PromiseSettledResult<number>[];
