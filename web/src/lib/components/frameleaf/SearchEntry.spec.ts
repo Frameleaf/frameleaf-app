@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import '$lib/__mocks__/sdk.mock';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
 import SearchEntry from './SearchEntry.svelte';
 
@@ -61,5 +62,26 @@ describe('SearchEntry', () => {
     dispatchEvent(new CustomEvent(SEARCH_SHORTCUT_EVENT));
     await tick();
     expect(document.activeElement).toBe(field);
+  });
+
+  it('drops people, albums and places from the command palette when access changes', async () => {
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    Element.prototype.scrollIntoView ??= () => {};
+    localStorage.clear();
+    sdkMock.getAllPeople.mockResolvedValue({ people: [{ id: 'p1', name: 'Locked Person' }] } as never);
+    sdkMock.getAlbumTree.mockResolvedValue({ albums: [], collections: [], spaces: [] } as never);
+    sdkMock.getSearchSuggestions.mockResolvedValue([]);
+    render(SearchEntry);
+
+    await fireEvent.keyDown(document, { key: 'p', ctrlKey: true, shiftKey: true });
+    await fireEvent.input(await screen.findByRole('combobox'), { target: { value: 'Locked Person' } });
+    expect(await screen.findByRole('option', { name: /Locked Person/ })).toBeInTheDocument();
+
+    // The narrower session no longer lists that person; nothing from the earlier answer stays.
+    sdkMock.getAllPeople.mockResolvedValue({ people: [] } as never);
+    eventManager.emit('SessionLocked');
+    await waitFor(() => expect(screen.queryByRole('option', { name: /Locked Person/ })).not.toBeInTheDocument());
   });
 });

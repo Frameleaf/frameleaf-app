@@ -211,6 +211,40 @@ describe('WorkflowDesigner', () => {
     expect(await screen.findByText(t.retry_queued)).toBeInTheDocument();
   });
 
+  it('applies a history filter chosen while the first page is still loading', async () => {
+    const entry = (result: WorkflowResult, error: string) => ({
+      id: `${result}-entry`,
+      at: '2026-09-22T10:00:00.000Z',
+      result,
+      runId,
+      attempt: 0,
+      errorCode: null,
+      error,
+      triggerDataId: assetId,
+      lastStep: null,
+    });
+    let first!: (value: never) => void;
+    sdkMock.getWorkflowLogs
+      .mockReturnValueOnce(new Promise((resolve) => (first = resolve)) as never)
+      .mockResolvedValue([entry(WorkflowResult.Error, 'Only the failure')] as never);
+    setup([webhook({ url: { type: 'string', title: 'URL' } })]);
+
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_history }));
+    await fireEvent.change(screen.getByRole('combobox', { name: t.filter_all }), {
+      target: { value: WorkflowResult.Error },
+    });
+    first([entry(WorkflowResult.Completed, 'Unfiltered success')] as never);
+
+    expect(await screen.findByText('Only the failure')).toBeInTheDocument();
+    expect(screen.queryByText('Unfiltered success')).toBeNull();
+    expect(sdkMock.getWorkflowLogs).toHaveBeenLastCalledWith({
+      id,
+      limit: 50,
+      before: undefined,
+      result: WorkflowResult.Error,
+    });
+  });
+
   it('keeps the draft open with the server’s reason when saving fails', async () => {
     sdkMock.updateWorkflow.mockRejectedValue(
       Object.assign(new Error('Bad Request'), { data: { message: 'Pause this workflow before saving.' }, status: 400 }),

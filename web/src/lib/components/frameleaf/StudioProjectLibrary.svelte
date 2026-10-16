@@ -413,11 +413,15 @@
     timers.add(timer);
   };
 
+  /** A bundle job is being asked for: a second press must not start a second durable job. */
+  let startingJob = $state(false);
+
   const startExport = async () => {
     const target = exportTarget;
-    if (!target) {
+    if (!target || startingJob) {
       return;
     }
+    startingJob = true;
     try {
       const operation = await exportStudioProjectBundle({
         id: target.id,
@@ -438,11 +442,16 @@
         export: null,
         import: null,
       };
+      // An earlier export is still followed to its end, but only the newest one fills the dialog.
       follow(operation.id, (next) => {
-        exportJob = next;
+        if (exportJob?.operationId === next.operationId) {
+          exportJob = next;
+        }
       });
     } catch (error) {
       handleError(error, $t('frameleaf_studio_bundle_export_failed'));
+    } finally {
+      startingJob = false;
     }
   };
 
@@ -486,9 +495,10 @@
   };
 
   const startImport = async () => {
-    if (!upload) {
+    if (!upload || startingJob) {
       return;
     }
+    startingJob = true;
     try {
       const operation = await importStudioBundle({
         studioBundleImportCreateDto: {
@@ -513,13 +523,17 @@
         import: null,
       };
       follow(operation.id, (next) => {
-        importJob = next;
+        if (importJob?.operationId === next.operationId) {
+          importJob = next;
+        }
         if (next.status === MediaOperationStatus.Completed) {
           void load();
         }
       });
     } catch (error) {
       handleError(error, $t('frameleaf_studio_bundle_import_failed'));
+    } finally {
+      startingJob = false;
     }
   };
 
@@ -796,7 +810,7 @@
       <p class="note">{$t('frameleaf_studio_bundle_include_media_note')}</p>
       <footer>
         <Button onclick={() => (exportOpen = false)}>{$t('cancel')}</Button>
-        <Button variant="primary" onclick={() => void startExport()}>
+        <Button variant="primary" disabled={startingJob} onclick={() => void startExport()}>
           {$t('frameleaf_studio_bundle_export_start')}
         </Button>
       </footer>
@@ -864,7 +878,7 @@
         <p class="note">{$t('frameleaf_studio_bundle_import_note')}</p>
         <footer>
           <Button onclick={() => void discardUpload()}>{$t('cancel')}</Button>
-          <Button variant="primary" disabled={!importName.trim()} onclick={() => void startImport()}>
+          <Button variant="primary" disabled={!importName.trim() || startingJob} onclick={() => void startImport()}>
             {$t('frameleaf_studio_bundle_import_start')}
           </Button>
         </footer>

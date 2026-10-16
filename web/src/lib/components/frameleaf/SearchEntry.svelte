@@ -15,6 +15,7 @@
   } from '$lib/frameleaf/command-index';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import { buildCommandIndex, type CommandInput, type CommandItem } from '$lib/frameleaf/command-palette';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
   import { searchContextFor } from '$lib/frameleaf/search-context';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
@@ -258,7 +259,20 @@
     void command.run?.();
   };
 
-  onDestroy(() => catalogueController?.abort());
+  // People, albums and places were answered for the earlier access: none of them may outlive a
+  // lock or an account change, and an open palette asks again under the new access.
+  const stopAccess = onLibraryAccessChange(() => {
+    catalogueController?.abort();
+    catalogue = emptyCommandCatalogue();
+    if (showSearch || paletteQuery !== null) {
+      refreshCatalogue('');
+    }
+  });
+
+  onDestroy(() => {
+    stopAccess();
+    catalogueController?.abort();
+  });
 
   // Ctrl/Cmd+K and "/" arrive through the root layout's capture listener (search-shortcuts.ts),
   // which keeps them from the upstream command palette.

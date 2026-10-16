@@ -1,5 +1,5 @@
 import { CloudBackupKeyMode, type CloudBackupStatusResponseDto } from '@frameleaf/sdk';
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -101,5 +101,62 @@ describe('CloudBackupSection read-only storage (FL-301)', () => {
     expect(screen.getByText('Stored in')).toBeInTheDocument();
     expect(screen.queryByText('eu-central-1')).not.toBeInTheDocument();
     expect(screen.queryByText('s3.eu-central-1.backup.frameleaf.cloud')).not.toBeInTheDocument();
+  });
+});
+
+describe('CloudBackupSection key unlock', () => {
+  beforeAll(() => {
+    addMessages('dev', en);
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+  });
+
+  it('keeps no backup key once the unlock dialog is closed', async () => {
+    sdkMock.getCloudBackupStatus.mockResolvedValue({
+      ...status(false, null),
+      keyMode: CloudBackupKeyMode.OwnMemory,
+      keyLoaded: false,
+    } as CloudBackupStatusResponseDto);
+    render(CloudBackupSection);
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_cloud_backup_unlock }));
+    const field = screen.getByLabelText(en.frameleaf_cloud_backup_paste_key);
+    await fireEvent.input(field, { target: { value: 'secret-backup-key' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_cloud_cancel }));
+    await fireEvent.click(screen.getAllByRole('button', { name: en.frameleaf_cloud_backup_unlock })[0]);
+
+    expect(screen.getByLabelText(en.frameleaf_cloud_backup_paste_key)).toHaveValue('');
+  });
+});
+
+describe('CloudBackupSection setup', () => {
+  beforeAll(() => {
+    addMessages('dev', en);
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+  });
+
+  it('reads the status again however the setup dialog is closed', async () => {
+    // A bucket claimed in the dialog and then closed with Close (not Done) must not leave the page
+    // saying cloud backup is not set up.
+    sdkMock.getCloudBackupStatus.mockResolvedValue({
+      ...status(false, null),
+      configured: false,
+    } as CloudBackupStatusResponseDto);
+    render(CloudBackupSection);
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_cloud_backup_set_up }));
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('button', { name: en.close }));
+
+    await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2));
   });
 });

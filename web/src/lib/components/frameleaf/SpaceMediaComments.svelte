@@ -149,12 +149,19 @@
   };
 
   const post = async (text: string) => {
+    const shown = latestLoad;
     busy = true;
     try {
       const created = await createSharedSpaceComment({
         id: spaceId,
         sharedSpaceCommentCreateDto: { assetId, comment: text },
       });
+      // Posted about an item the viewer has since left: it belongs to that item's list, not this one,
+      // and its text must not stay in the box to be posted again here.
+      if (shown !== latestLoad) {
+        draft = '';
+        return;
+      }
       comments = [...comments, created];
       draft = '';
       status = $t('frameleaf_spaces_comments_posted');
@@ -182,6 +189,7 @@
     if (!target) {
       return;
     }
+    const shown = latestLoad;
     busy = true;
     try {
       // The server files a reply to a reply under the thread's top-level comment.
@@ -189,6 +197,9 @@
         id: spaceId,
         sharedSpaceCommentCreateDto: { assetId, comment: text, parentId: target.id },
       });
+      if (shown !== latestLoad) {
+        return;
+      }
       comments = withReply(comments, created);
       setExpanded(threadRootId(created), true);
       cancelReply();

@@ -381,14 +381,10 @@
       const restored = await restorable;
       const action = targets === null ? TrashReviewAction.RestoreAll : TrashReviewAction.Restore;
       const ids = targets ?? undefined;
+      // A newer load only fences the rows; the person's restore still goes ahead (the review token
+      // refuses it if the items changed), and what it did is always said.
       const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
-      if (run !== generation) {
-        return;
-      }
       const { count } = await applyTrashReview({ trashApplyDto: { action, ids, token: reviewed.token } });
-      if (run !== generation) {
-        return;
-      }
       notice = $t('frameleaf_trash_restored', { values: { count } });
       // Undo is offered only when the items it would move back are exactly the ones restored.
       undoIds = restored && restored.length === count && count > 0 ? restored : null;
@@ -472,14 +468,15 @@
       const { count } = await applyTrashReview({
         trashApplyDto: { action: current.action, ids: current.ids, token: current.token },
       });
-      if (run !== generation) {
-        return;
+      // The deletion happened: its review closes and is reported even when a newer load (often this
+      // deletion's own change, arriving first) has replaced the rows, which are then left to that load.
+      if (run === generation) {
+        const removed = current.ids;
+        await removeRows(removed ?? [], () => {
+          items = removed ? withoutIds(items, removed) : [];
+          selected = removed ? selected.filter((id) => !removed.includes(id)) : [];
+        });
       }
-      const removed = current.ids;
-      await removeRows(removed ?? [], () => {
-        items = removed ? withoutIds(items, removed) : [];
-        selected = removed ? selected.filter((id) => !removed.includes(id)) : [];
-      });
       reviewOpen = false;
       review = null;
       notice = $t('frameleaf_trash_deleted', { values: { count } });

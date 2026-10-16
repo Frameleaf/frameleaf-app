@@ -100,6 +100,25 @@ describe('VideoMomentsPanel', () => {
     expect(screen.getAllByRole('button', { name: 'Use as cover' })).toHaveLength(2);
   });
 
+  it('keeps a cover answered for the previous video off the next one', async () => {
+    let answer!: (value: VideoMomentsResponseDto) => void;
+    sdkMock.setVideoMomentCover.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+    const view = render(VideoMomentsPanel, { asset, isOwner: true });
+    await fireEvent.click((await screen.findAllByRole('button', { name: 'Use as cover' }))[0]);
+    await waitFor(() => expect(sdkMock.setVideoMomentCover).toHaveBeenCalled());
+
+    // The viewer moves to another video, which has no moments, before the server answers.
+    sdkMock.getVideoMoments.mockResolvedValue({ ...moments(null), assetId: OTHER_ID, frames: [], moments: [] });
+    await view.rerender({ asset: { id: OTHER_ID, type: AssetTypeEnum.Video } as AssetResponseDto, isOwner: true });
+    await waitFor(() => expect(sdkMock.getVideoMoments).toHaveBeenLastCalledWith({ id: OTHER_ID }));
+    answer(moments(1));
+    await waitFor(() => expect(screen.queryByText('Candles blown out')).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText('Candles blown out')).toBeNull();
+    expect(screen.queryAllByRole('button', { name: 'Use as cover' })).toHaveLength(0);
+  });
+
   it('returns the cover to the best frame', async () => {
     sdkMock.getVideoMoments.mockResolvedValue(moments(1));
     sdkMock.setVideoMomentCover.mockResolvedValue(moments(null));
