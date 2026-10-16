@@ -73,10 +73,24 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
         sharedLinkLoginDto: { password: 'secret' },
       }),
     );
-    if (change === 'replace' || change === 'return') await view.rerender({ data: protectedData('second') });
-    if (change === 'return') await view.rerender({ data: original });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'replace' || change === 'return') {
+      await view.rerender({ data: protectedData('second') });
+    }
+    switch (change) {
+      case 'return': {
+        await view.rerender({ data: original });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     const sharedLink = sharedLinkFactory.build();
     pending.resolve(sharedLink);
     await settle();
@@ -109,8 +123,11 @@ it.each(['same', 'replace', 'close'])('keeps unauthorized readback with its rout
   const key = change === 'replace' ? 'second' : 'first';
   const sharedLink = sharedLinkFactory.build({ key });
   route.data.sharedLink = sharedLink;
-  if (change === 'close') view.unmount();
-  else await view.rerender({ data: { ...protectedData(key), sharedLink, passwordRequired: false } });
+  if (change === 'close') {
+    view.unmount();
+  } else {
+    await view.rerender({ data: { ...protectedData(key), sharedLink, passwordRequired: false } });
+  }
   pending.resolve();
   await settle();
   expect(showError).toHaveBeenCalledTimes(change === 'same' ? 1 : 0);

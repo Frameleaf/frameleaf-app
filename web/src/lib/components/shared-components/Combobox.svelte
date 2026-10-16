@@ -261,7 +261,7 @@
     const query = searchQuery.toLowerCase();
     const _options = options.filter((option) => option.label.toLowerCase().includes(query));
 
-    if (allowCreate && searchQuery !== '' && !_options.some((option) => option.label === searchQuery)) {
+    if (allowCreate && searchQuery !== '' && _options.every((option) => option.label !== searchQuery)) {
       _options.unshift({ label: searchQuery, value: searchQuery });
     }
 

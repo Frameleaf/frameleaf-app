@@ -20,15 +20,17 @@
     timelineManager?: unknown;
   } = $props();
   $effect.pre(() => {
-    if (options && !timelineManager) timelineManager = publicViewState.timeline;
+    if (options && !timelineManager) {
+      timelineManager = publicViewState.timeline;
+    }
   });
 </script>
 
 <div data-timeline-ready={!!timelineManager}>
   {#if sharedLink}
     <output data-testid="public-title">{title}</output>
-    <button onclick={onUpload}>Upload</button>
-    <button onclick={onSelectAll}>Select all</button>
+    <button type="button" onclick={onUpload}>Upload</button>
+    <button type="button" onclick={onSelectAll}>Select all</button>
   {/if}
   {#if options}<output data-testid="album-id">{options.albumId}</output>{/if}
   {@render children?.()}

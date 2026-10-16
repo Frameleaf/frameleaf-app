@@ -4,8 +4,8 @@ import { AlbumKind } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
-import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   canonicalTestContext,

@@ -190,11 +190,15 @@ where
   "id" = $1
 
 -- TagRepository.addAssetIds
+begin
 insert into
   "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
 on conflict do nothing
+returning
+  *
+rollback
 
 -- TagRepository.removeAssetIds
 delete from "tag_asset"
@@ -203,6 +207,7 @@ where
   and "assetId" in ($2)
 
 -- TagRepository.upsertAssetIds
+begin
 insert into
   "tag_asset" ("assetId", "tagIds")
 values
@@ -210,6 +215,7 @@ values
 on conflict do nothing
 returning
   *
+rollback
 
 -- TagRepository.removeAssetTagValues
 delete from "tag_asset"
@@ -231,9 +237,15 @@ delete from "tag_asset"
 where
   "assetId" = $1
 insert into
-  "tag_asset" ("tagId", "assetId")
-values
-  ($1, $2)
+  "tag_asset" ("assetId", "tagId")
+select
+  $1::uuid as "assetId",
+  unnest($2::uuid[]) as "tagId"
+from
+  (
+    select
+      1
+  ) as "dummy"
 on conflict do nothing
 returning
   *

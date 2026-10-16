@@ -1,6 +1,6 @@
+import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { KnownPerson } from 'src/services/prompt-assembler.service.js';
-import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 
 const person = (name: string): KnownPerson => ({ name, faceConfidence: 1, boxCenter: [0.5, 0.5] });
 
@@ -12,7 +12,7 @@ describe(IdentityPostValidator.name, () => {
   });
 
   describe('known name spellings', () => {
-    it.each(['Anne-Marie', "O'Brien", 'O’Brien', 'José', 'Jose\u0301', 'Zoë', 'İpek', '李雷'])(
+    it.each(['Anne-Marie', "O'Brien", 'O’Brien', 'José', 'Jose\u{301}', 'Zoë', 'İpek', '李雷'])(
       'preserves the known name %s and does not duplicate it at a generic reference',
       (name) => {
         const text = `With ${name}, a child smiles.`;

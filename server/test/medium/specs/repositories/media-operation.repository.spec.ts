@@ -2082,6 +2082,7 @@ describe(MediaOperationRepository.name, () => {
           kind: MediaOperationKind.CloudDescriptionBatch,
           destination: MediaOperationDestination.FrameleafCloud,
           label: `Atomic description batch ${index}`,
+          settings: {},
           snapshot: { version: 1, origin: 'automatic', assetIds: [] },
         }));
       const acknowledgement = async (key: string) =>
@@ -2094,13 +2095,17 @@ describe(MediaOperationRepository.name, () => {
         const rows = drafts(user.id);
         rows[1].ownerId = 'not-a-uuid';
         const events: string[][] = [];
-        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        const stop = sut.onChange((changes) => {
+          events.push(changes.map(({ id }) => id));
+        });
         let acknowledged = false;
         try {
           await expect(
-            sut.createCloudDescriptionBatches(rows, async () => {
-              acknowledged = true;
-            }),
+            sut.createCloudDescriptionBatches(rows, () =>
+              Promise.try(() => {
+                acknowledged = true;
+              }),
+            ),
           ).rejects.toThrow();
           expect(
             await defaultDatabase.selectFrom('media_operation').select('id').where('ownerId', '=', user.id).execute(),
@@ -2117,7 +2122,9 @@ describe(MediaOperationRepository.name, () => {
         const { user } = await ctx.newUser();
         const key = `atomic-cloud-batch-${randomUUID()}`;
         const events: string[][] = [];
-        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        const stop = sut.onChange((changes) => {
+          events.push(changes.map(({ id }) => id));
+        });
         try {
           await expect(
             sut.createCloudDescriptionBatches(drafts(user.id), async (tx, rows) => {
@@ -2143,7 +2150,9 @@ describe(MediaOperationRepository.name, () => {
         const { user } = await ctx.newUser();
         const key = `atomic-cloud-batch-${randomUUID()}`;
         const events: string[][] = [];
-        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        const stop = sut.onChange((changes) => {
+          events.push(changes.map(({ id }) => id));
+        });
         try {
           const created = await sut.createCloudDescriptionBatches(drafts(user.id), async (tx, rows) => {
             expect(tx.isTransaction).toBe(true);
@@ -2170,7 +2179,9 @@ describe(MediaOperationRepository.name, () => {
         const { sut } = setup();
         const key = `atomic-cloud-batch-${randomUUID()}`;
         const events: string[][] = [];
-        const stop = sut.onChange((changes) => events.push(changes.map(({ id }) => id)));
+        const stop = sut.onChange((changes) => {
+          events.push(changes.map(({ id }) => id));
+        });
         try {
           await expect(
             sut.createCloudDescriptionBatches([], async (tx) => {

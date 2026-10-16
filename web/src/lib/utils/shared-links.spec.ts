@@ -55,7 +55,7 @@ it('does not reuse a legacy cached link whose missing slug only matches an absen
   vi.mocked(getMySharedLink).mockResolvedValueOnce(current);
   vi.mocked(getAssetInfoFromParam).mockResolvedValue(undefined);
   const data = await loadSharedLink({ url, params });
-  expect(data.sharedLink).toEqual(current);
+  expect('sharedLink' in data && data.sharedLink).toEqual(current);
   expect(getMySharedLink).toHaveBeenCalledWith({ key: 'key-1', slug: undefined });
 });
 
@@ -64,7 +64,8 @@ it('still reuses a cache entry with a matching supplied key', async () => {
   const cached = sharedLinkFactory.build({ key: 'key-1' });
   setSharedLink(cached);
   vi.mocked(getAssetInfoFromParam).mockResolvedValue(undefined);
-  expect((await loadSharedLink({ url, params })).sharedLink).toEqual(cached);
+  const data = await loadSharedLink({ url, params });
+  expect('sharedLink' in data && data.sharedLink).toEqual(cached);
   expect(getMySharedLink).not.toHaveBeenCalled();
 });
 

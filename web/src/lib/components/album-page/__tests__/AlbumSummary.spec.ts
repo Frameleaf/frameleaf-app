@@ -11,7 +11,7 @@ beforeAll(async () => {
 });
 
 it('updates the date range when the album gains or loses dated assets', async () => {
-  const album = albumFactory.build({ startDate: null, endDate: null, assetCount: 1 });
+  const album = albumFactory.build({ startDate: undefined, endDate: undefined, assetCount: 1 });
   const view = render(AlbumSummary, { album });
   const details = view.getByTestId('album-details');
   expect(details).not.toHaveTextContent('2024');

@@ -174,13 +174,15 @@ describe(EdgeCertificateRepository.name, () => {
         sut.issue(identityDir, {
           directoryUrl: 'https://acme.test/directory',
           names: NAMES,
-          setChallenge: async (value) => {
-            attempted.push(value);
-            if (attempted.length === failed) throw new Error('publication acknowledgement lost');
-          },
-          removeChallenge: async (value) => {
-            removed.push(value);
-          },
+          setChallenge: (value) =>
+            Promise.try(() => {
+              attempted.push(value);
+              if (attempted.length === failed) throw new Error('publication acknowledgement lost');
+            }),
+          removeChallenge: (value) =>
+            Promise.try(() => {
+              removed.push(value);
+            }),
         }),
       ).rejects.toThrow('publication acknowledgement lost');
       expect(attempted).toHaveLength(failed);

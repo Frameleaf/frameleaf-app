@@ -95,7 +95,7 @@ const requestService = (repository: TakeoutRepository) =>
   new TakeoutService(
     { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     repository,
-    { prepare: async () => '/staging/admission', freeBytes: async () => 1024 ** 4 } as never,
+    { prepare: async () => '/staging/admission', freeBytes: () => Promise.try(() => 1024 ** 4) } as never,
     {} as never,
     {} as never,
     {} as never,

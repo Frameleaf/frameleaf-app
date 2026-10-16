@@ -1,10 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { ZodError } from 'zod';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { PushDeviceWithActivities, PushTokenRef } from 'src/repositories/push-device.repository.js';
-import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   PushActivityTokenDto,
@@ -46,6 +41,11 @@ import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidd
 import { notificationLocaleOf } from 'src/utils/notification-locale.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { parsePushPublicKey, pushKeyFingerprint, sealPushEnvelope } from 'src/utils/push-crypto.js';
+import { ZodError } from 'zod';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { PushDeviceWithActivities, PushTokenRef } from 'src/repositories/push-device.repository.js';
+import type { JobOf } from 'src/types.js';
 
 /** How long a phone backup may go without a reported success before the device is woken. */
 export const PUSH_BACKUP_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
@@ -552,9 +552,14 @@ export class PushService {
         retryAfterSec = Math.max(retryAfterSec, result.retryAfterSec ?? 0);
       }
     }
-    await this.devices.deleteByIds([...goneDevices.values()]);
-    await this.devices.clearPushToStartTokens([...goneStartTokens.values()].filter(({ id }) => !goneDevices.has(id)));
-    await this.devices.deleteActivitiesByIds([...goneActivities.values()]);
+    await this.devices.deleteByIds(goneDevices.values().toArray());
+    await this.devices.clearPushToStartTokens(
+      goneStartTokens
+        .values()
+        .filter(({ id }) => !goneDevices.has(id))
+        .toArray(),
+    );
+    await this.devices.deleteActivitiesByIds(goneActivities.values().toArray());
     await this.devices.markDelivered([...delivered].filter((id) => !goneDevices.has(id)));
 
     const attempt = (notice.retry?.attempt ?? 1) + 1;

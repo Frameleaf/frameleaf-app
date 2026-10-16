@@ -591,7 +591,7 @@ describe('VideoNativeViewer component', () => {
 
       await waitFor(() => expect(viewerVideo()).toBeTruthy());
       expect(session.metadata).toBeNull();
-      expect([...handlers.values()].filter(Boolean)).toHaveLength(0);
+      expect(handlers.values().toArray().filter(Boolean)).toHaveLength(0);
     });
 
     it('pauses and resumes the video with the slideshow', async () => {

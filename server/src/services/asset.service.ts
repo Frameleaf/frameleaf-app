@@ -1,9 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { JobItem, JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -67,6 +64,9 @@ import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobItem, JobOf } from 'src/types.js';
 
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
@@ -284,9 +284,14 @@ export class AssetService extends BaseService {
       const update: UpdateAssetDto = {};
       if (dto.description && !current.exifInfo?.description) update.description = dto.description;
       if (
-        dto.latitude != null &&
-        dto.longitude != null &&
-        (current.exifInfo?.latitude == null || current.exifInfo?.longitude == null)
+        dto.latitude !== null &&
+        dto.latitude !== undefined &&
+        dto.longitude !== null &&
+        dto.longitude !== undefined &&
+        (current.exifInfo?.latitude === null ||
+          current.exifInfo?.latitude === undefined ||
+          current.exifInfo?.longitude === null ||
+          current.exifInfo?.longitude === undefined)
       ) {
         update.latitude = dto.latitude;
         update.longitude = dto.longitude;

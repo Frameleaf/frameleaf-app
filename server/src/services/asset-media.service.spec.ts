@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { vitest } from 'vitest';
 import { AssetFile } from 'src/database.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos/asset-media-response.dto.js';
@@ -31,6 +30,7 @@ import { fileStub } from 'test/fixtures/file.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { getForAsset } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+import { vitest } from 'vitest';
 
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
 
@@ -324,10 +324,12 @@ describe(AssetMediaService.name, () => {
       );
       mocks.asset.create.mockResolvedValue(assetEntity);
       Object.assign(mocks.asset, {
-        createLivePhotoUpload: vitest.fn(async () => {
-          committed = true;
-          return { asset: assetEntity, hiddenId: 'motion', lockedIds: [] };
-        }),
+        createLivePhotoUpload: vitest.fn(() =>
+          Promise.try(() => {
+            committed = true;
+            return { asset: assetEntity, hiddenId: 'motion', lockedIds: [] };
+          }),
+        ),
       });
     });
 
@@ -355,9 +357,11 @@ describe(AssetMediaService.name, () => {
     });
 
     it('emits the motion hide only after the repository commits the still and motion', async () => {
-      mocks.event.emit.mockImplementation(async (name) => {
-        if (name === 'AssetHide') expect(committed).toBe(true);
-      });
+      mocks.event.emit.mockImplementation((...[name]) =>
+        Promise.try(() => {
+          if (name === 'AssetHide') expect(committed).toBe(true);
+        }),
+      );
       await sut.uploadAsset(auth, { ...createDto, livePhotoVideoId: 'motion' }, fileStub.livePhotoStill);
       expect(mocks.asset.createLivePhotoUpload).toHaveBeenCalledWith(
         expect.objectContaining({ livePhotoVideoId: 'motion' }),
@@ -380,16 +384,20 @@ describe(AssetMediaService.name, () => {
 
     it('passes the explicit Locked decision through without requiring a PIN and follows up after commit', async () => {
       Object.assign(mocks.asset, {
-        createLivePhotoUpload: vitest.fn(async () => {
-          committed = true;
-          return { asset: assetEntity, hiddenId: 'motion', lockedIds: ['id_1', 'motion'] };
-        }),
+        createLivePhotoUpload: vitest.fn(() =>
+          Promise.try(() => {
+            committed = true;
+            return { asset: assetEntity, hiddenId: 'motion', lockedIds: ['id_1', 'motion'] };
+          }),
+        ),
       });
       mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
       mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
-      mocks.event.emit.mockImplementation(async () => {
-        expect(committed).toBe(true);
-      });
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(true);
+        }),
+      );
       await sut.uploadAsset(
         auth,
         { ...createDto, livePhotoVideoId: 'motion', visibility: AssetVisibility.Locked },

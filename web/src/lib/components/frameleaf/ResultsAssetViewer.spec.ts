@@ -34,10 +34,22 @@ it.each(['none', 'unmount', 'session', 'replacement'] as const)(
       const view = render(ResultsAssetViewer, { assets: [original, target] });
       await waitFor(() => expect(mock.random).toBeDefined());
       const done = mock.random!();
-      if (retire === 'unmount') view.unmount();
-      else if (retire === 'session') authManager.reset();
-      else if (retire === 'replacement') assetViewerManager.setAsset(replacement);
-      else assetViewerManager.setAsset(target);
+      switch (retire) {
+        case 'unmount': {
+          view.unmount();
+          break;
+        }
+        case 'session': {
+          authManager.reset();
+          break;
+        }
+        case 'replacement': {
+          assetViewerManager.setAsset(replacement);
+          break;
+        }
+        default:
+          assetViewerManager.setAsset(target);
+      }
       pending.resolve(true);
       await expect(done).resolves.toEqual(retire === 'none' ? target : undefined);
     } finally {

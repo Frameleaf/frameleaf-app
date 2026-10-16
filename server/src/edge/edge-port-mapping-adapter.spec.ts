@@ -3,7 +3,7 @@ import { it } from 'vitest';
 
 // Exercise the installed SDK's command construction without a router or discovery traffic.
 const { InternetGatewayService4 } = await import(
-  new URL('./upnp/internet-gateway-service-4.js', import.meta.resolve('@achingbrain/nat-port-mapper')).href
+  new URL('upnp/internet-gateway-service-4.js', import.meta.resolve('@achingbrain/nat-port-mapper')).href
 );
 
 for (const protocol of ['tcp', 'udp']) {
@@ -15,10 +15,11 @@ for (const protocol of ['tcp', 'udp']) {
         expires: Date.now() + 60_000,
         location: new URL('http://127.0.0.1:49152'),
       },
-      run: async (_service: string, action: string, args: Array<[string, string | number]>) => {
-        requests.push({ action, args });
-        return { AddAnyPortMappingResponse: { NewReservedPort: 4443 } };
-      },
+      run: (_service: string, action: string, args: Array<[string, string | number]>) =>
+        Promise.try(() => {
+          requests.push({ action, args });
+          return { AddAnyPortMappingResponse: { NewReservedPort: 4443 } };
+        }),
     };
     const gateway = new InternetGatewayService4(device, { autoRefresh: false });
     const result = await gateway.map(2443, '203.0.113.10', {

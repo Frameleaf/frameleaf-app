@@ -73,30 +73,56 @@ it.each(['current', 'replace', 'close', 'session'])(
     const view = render(AlbumViewer, { sharedLink: albumLink() });
     await fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
     await waitFor(() => expect(load).toHaveBeenCalledWith('2025-01'));
-    if (change === 'replace') await view.rerender({ sharedLink: albumLink() });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    switch (change) {
+      case 'replace': {
+        await view.rerender({ sharedLink: albumLink() });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve();
     await settle();
     expect(select).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
     expect(load).toHaveBeenCalledTimes(change === 'current' ? 2 : 1);
-    if (change === 'current') expect(select).toHaveBeenCalledWith(['original']);
+    if (change === 'current') {
+      expect(select).toHaveBeenCalledWith(['original']);
+    }
   },
 );
 
 it.each(['current', 'replace', 'close', 'session'])(
   'keeps album upload announcements with their viewer: %s',
   async (change) => {
-    const pending = deferredPromise<(string | undefined)[]>();
+    const pending = deferredPromise<string[]>();
     vi.mocked(openFileUploadDialog).mockReturnValueOnce(pending.promise);
     const toast = vi.spyOn(toastManager, 'success').mockImplementation(() => 'toast');
     const sharedLink = albumLink();
     const view = render(AlbumViewer, { sharedLink });
     await fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
     expect(openFileUploadDialog).toHaveBeenCalledWith({ albumId: sharedLink.album!.id });
-    if (change === 'replace') await view.rerender({ sharedLink: albumLink() });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    switch (change) {
+      case 'replace': {
+        await view.rerender({ sharedLink: albumLink() });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve(['uploaded']);
     await settle();
     expect(toast).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
@@ -106,21 +132,37 @@ it.each(['current', 'replace', 'close', 'session'])(
 it.each(['current', 'replace', 'close', 'session', 'credentials'])(
   'keeps individual upload readback with its original link: %s',
   async (change) => {
-    const pending = deferredPromise<(string | undefined)[]>();
+    const pending = deferredPromise<string[]>();
     vi.mocked(openFileUploadDialog).mockReturnValueOnce(pending.promise);
-    const params = vi.spyOn(authManager, 'params', 'get').mockReturnValue({ key: 'original' });
+    const params = vi.spyOn(authManager, 'params', 'get').mockReturnValue({ key: 'original', slug: undefined });
     sdkMock.getMySharedLink.mockResolvedValue(individualLink());
     const toast = vi.spyOn(toastManager, 'success').mockImplementation(() => 'toast');
     const view = render(IndividualSharedViewer, { sharedLink: individualLink(), isOwned: false });
     await fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
-    if (change === 'replace') await view.rerender({ sharedLink: individualLink() });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
-    if (change === 'credentials') params.mockReturnValue({ key: 'replacement' });
+    switch (change) {
+      case 'replace': {
+        await view.rerender({ sharedLink: individualLink() });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
+    if (change === 'credentials') {
+      params.mockReturnValue({ key: 'replacement', slug: undefined });
+    }
     pending.resolve(['uploaded']);
     await settle();
     expect(sdkMock.getMySharedLink).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
-    if (change === 'current') expect(sdkMock.getMySharedLink).toHaveBeenCalledWith({ key: 'original' });
+    if (change === 'current') {
+      expect(sdkMock.getMySharedLink).toHaveBeenCalledWith({ key: 'original', slug: undefined });
+    }
     expect(toast).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
   },
 );
@@ -136,18 +178,32 @@ it.each(['current', 'replace', 'close', 'session'])(
     const view = render(IndividualSharedViewer, { sharedLink: link, isOwned: false });
     await fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
     await waitFor(() => expect(sdkMock.getMySharedLink).toHaveBeenCalled());
-    if (change === 'replace') await view.rerender({ sharedLink: individualLink() });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    switch (change) {
+      case 'replace': {
+        await view.rerender({ sharedLink: individualLink() });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve({ ...link, description: 'Updated' });
     await settle();
     expect(toast).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
-    if (change === 'current') expect(screen.getByTestId('public-title')).toHaveTextContent('Updated');
+    if (change === 'current') {
+      expect(screen.getByTestId('public-title')).toHaveTextContent('Updated');
+    }
   },
 );
 
 it.each(['album', 'individual'])('suppresses %s upload errors after the viewer closes', async (kind) => {
-  const pending = deferredPromise<(string | undefined)[]>();
+  const pending = deferredPromise<string[]>();
   vi.mocked(openFileUploadDialog).mockReturnValueOnce(pending.promise);
   const view =
     kind === 'album'

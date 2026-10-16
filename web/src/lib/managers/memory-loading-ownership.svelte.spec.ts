@@ -97,7 +97,9 @@ describe('memory page ownership', () => {
       .mockResolvedValueOnce([memory('old')])
       .mockReturnValueOnce(currentPage.promise)
       .mockResolvedValueOnce([memory('hidden-current')]);
-    vi.mocked(getMemoryShowLess).mockResolvedValueOnce([{ kind: MemoryShowLessKind.Person, value: 'current-person' }]);
+    vi.mocked(getMemoryShowLess).mockResolvedValueOnce([
+      { kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'current-person' },
+    ]);
     vi.mocked(memoriesStatistics).mockReturnValueOnce(oldStatistics.promise).mockResolvedValueOnce({ total: 1 });
     const oldLoading = manager.refresh();
     await vi.waitFor(() => expect(memoriesStatistics).toHaveBeenCalledTimes(1));
@@ -115,7 +117,9 @@ describe('memory page ownership', () => {
     await currentLoading;
     expect(manager.total).toBe(1);
     expect(manager.hidden.map(({ id }) => id)).toEqual(['hidden-current']);
-    expect(manager.showLess).toEqual([{ kind: MemoryShowLessKind.Person, value: 'current-person' }]);
+    expect(manager.showLess).toEqual([
+      { kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'current-person' },
+    ]);
     expect(manager.memories.map(({ id }) => id)).toEqual(['current']);
     expect(manager.loading).toBeUndefined();
   });
@@ -179,7 +183,7 @@ describe('direct memory read ownership', () => {
       session.generation++;
     }
     response.resolve([memory('private')]);
-    rules.resolve([{ kind: MemoryShowLessKind.Person, value: 'private-person' }]);
+    rules.resolve([{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'private-person' }]);
     await loading;
     expect(manager.memories).toEqual([]);
     expect(manager.hidden).toEqual([]);
@@ -188,7 +192,7 @@ describe('direct memory read ownership', () => {
 
   it('clears already loaded hidden memories and show-less rules on logout', () => {
     manager.hidden = [memory('private')];
-    manager.showLess = [{ kind: MemoryShowLessKind.Person, value: 'private-person' }];
+    manager.showLess = [{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'private-person' }];
     state.events.AuthLogout();
     expect(manager.hidden).toEqual([]);
     expect(manager.showLess).toEqual([]);
@@ -197,8 +201,8 @@ describe('direct memory read ownership', () => {
 
 it('preserves auxiliary memory settings during an ordinary filter change', () => {
   manager.hidden = [memory('hidden')];
-  manager.showLess = [{ kind: MemoryShowLessKind.Person, value: 'person' }];
+  manager.showLess = [{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'person' }];
   manager.setFilters({ size: 17 });
   expect(manager.hidden.map(({ id }) => id)).toEqual(['hidden']);
-  expect(manager.showLess).toEqual([{ kind: MemoryShowLessKind.Person, value: 'person' }]);
+  expect(manager.showLess).toEqual([{ kind: MemoryShowLessKind.Person, createdAt: '', name: '', value: 'person' }]);
 });

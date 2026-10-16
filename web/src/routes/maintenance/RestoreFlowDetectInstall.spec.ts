@@ -33,8 +33,11 @@ it.each(['current', 'close', 'session'])(
     sdkMock.detectPriorInstall.mockReturnValueOnce(pending.promise);
     const view = render(RestoreFlowDetectInstall, { next: vi.fn(), end: vi.fn() });
     await waitFor(() => expect(sdkMock.detectPriorInstall).toHaveBeenCalledOnce());
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'close') {
+      view.unmount();
+    } else if (change === 'session') {
+      authManager.reset();
+    }
     pending.reject(new Error('Offline'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(handleError).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);

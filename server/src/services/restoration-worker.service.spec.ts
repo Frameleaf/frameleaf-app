@@ -1,6 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
-import type { DB } from 'src/schema/index.js';
 import {
   AssetRestorationMode,
   AssetRestorationSourceType,
@@ -9,8 +7,8 @@ import {
 import {
   AssetType,
   JobName,
-  MediaOperationDestination,
   MediaOperationCheckpointState,
+  MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
   MlDestinationKind,
@@ -31,18 +29,20 @@ import {
   RestorationErrorCode,
   RestorationInferenceResult,
   RestorationSnapshot,
-  restorationAdmissionOf,
   planRestorationChunks,
+  restorationAdmissionOf,
   restorationChunkIdentity,
 } from 'src/utils/restoration.js';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DB } from 'src/schema/index.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
 const CLAIM = 'claim-token';
@@ -54,7 +54,7 @@ const TRX = new Kysely<DB>({ dialect });
 describe(RestorationWorkerService.name, () => {
   let sut: RestorationWorkerService;
   let mocks: ServiceMocks;
-  let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn> };
+  let restorations: { [K in keyof AssetRestorationRepository]: ReturnType<typeof vi.fn<(...args: any[]) => any>> };
   let operations: AutoMocked<MediaOperationRepository>;
   let restore: ReturnType<typeof vi.fn<MachineLearningRepository['restore']>>;
 
@@ -755,12 +755,12 @@ describe(RestorationWorkerService.name, () => {
         (chunk) =>
           ({
             ...restorationChunkIdentity(video(), chunk),
-            startTicks: String(chunk.startSeconds * 1000),
-            endTicks: String(chunk.endSeconds * 1000),
+            startTicks: chunk.startSeconds * 1000,
+            endTicks: chunk.endSeconds * 1000,
             state: MediaOperationCheckpointState.Complete,
             outputPath: `/cached/chunk-${chunk.sequence}.mp4`,
             outputChecksum: Buffer.alloc(32, chunk.sequence + 1),
-            sizeInBytes: '1024',
+            sizeInBytes: 1024,
           }) as MediaOperationCheckpoint,
       );
     const runVideo = () =>
@@ -805,16 +805,27 @@ describe(RestorationWorkerService.name, () => {
     it.each(['checksum', 'size', 'missing metadata'] as const)(
       'rerenders cached work with invalid %s',
       async (failure) => {
-        if (failure === 'checksum') mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 99));
-        if (failure === 'size') mocks.storage.stat.mockResolvedValue({ size: 512 } as never);
-        if (failure === 'missing metadata')
-          operations.getCheckpoints.mockImplementation((id) =>
-            Promise.resolve(
-              id === 'parent-operation'
-                ? cached().map((checkpoint) => ({ ...checkpoint, outputChecksum: null, sizeInBytes: null }))
-                : [],
-            ),
-          );
+        switch (failure) {
+          case 'checksum': {
+            mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 99));
+            break;
+          }
+          case 'size': {
+            mocks.storage.stat.mockResolvedValue({ size: 512 } as never);
+            break;
+          }
+          case 'missing metadata': {
+            operations.getCheckpoints.mockImplementation((id) =>
+              Promise.resolve(
+                id === 'parent-operation'
+                  ? cached().map((checkpoint) => ({ ...checkpoint, outputChecksum: null, sizeInBytes: null }))
+                  : [],
+              ),
+            );
+            break;
+          }
+          // No default
+        }
         await runVideo();
         expect(restore).toHaveBeenCalledTimes(3);
       },
@@ -1174,7 +1185,7 @@ describe(RestorationWorkerService.name, () => {
       void running!.then(() => (returned = true));
       await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS / 3);
 
-      sut.onShutdown();
+      void sut.onShutdown();
       await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
 
       expect(signal.aborted).toBe(true);

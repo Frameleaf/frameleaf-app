@@ -1,6 +1,4 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -80,6 +78,8 @@ import {
   restorationWorkDir,
   workloadForMode,
 } from 'src/utils/restoration.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 
 /** Why a local Smooth motion is refused while the administrator routes interpolation to the cloud only. */
 const CLOUD_ONLY_DETAIL =
@@ -440,27 +440,28 @@ export class AssetRestorationService {
     try {
       let bound = restoration;
       const { operation } = await this.operationRepository.createWithin(
-        async () => ({
-          operation: {
-            ownerId: source.ownerId,
-            kind: MediaOperationKind.RestorationPreview,
-            destination: mediaOperationDestinationOf(destination.kind),
-            destinationDetail: destination.name,
-            label: source.originalFileName,
-            assetId,
-            resultAssetId: null,
-            retryOfId: null,
-            projectId: null,
-            revisionId: restoration.id,
-            snapshot: this.snapshotOf(restoration, source, 'preview', output),
-            settings: this.settingsOf(restoration, destination.name, true),
-            estimate:
-              estimate.previewSeconds === null
-                ? null
-                : { seconds: estimate.previewSeconds, sizeBytes: null, cloudCost: null },
-          },
-          value: null,
-        }),
+        () =>
+          Promise.resolve({
+            operation: {
+              ownerId: source.ownerId,
+              kind: MediaOperationKind.RestorationPreview,
+              destination: mediaOperationDestinationOf(destination.kind),
+              destinationDetail: destination.name,
+              label: source.originalFileName,
+              assetId,
+              resultAssetId: null,
+              retryOfId: null,
+              projectId: null,
+              revisionId: restoration.id,
+              snapshot: this.snapshotOf(restoration, source, 'preview', output),
+              settings: this.settingsOf(restoration, destination.name, true),
+              estimate:
+                estimate.previewSeconds === null
+                  ? null
+                  : { seconds: estimate.previewSeconds, sizeBytes: null, cloudCost: null },
+            },
+            value: null,
+          }),
         async (trx, operation) => {
           const updated = await this.restorationRepository.transition(
             restoration.id,
@@ -538,25 +539,28 @@ export class AssetRestorationService {
 
     let accepted = restoration;
     const { operation } = await this.operationRepository.createWithin(
-      async () => ({
-        operation: {
-          ownerId: restoration.ownerId,
-          kind: MediaOperationKind.Restoration,
-          destination: mediaOperationDestinationOf(destination.kind),
-          destinationDetail: destination.name,
-          label: source.originalFileName,
-          assetId,
-          resultAssetId: null,
-          retryOfId: null,
-          projectId: null,
-          revisionId: restoration.id,
-          snapshot: this.snapshotOf(restoration, source, 'full', output),
-          settings: this.settingsOf(restoration, destination.name, false),
-          estimate:
-            estimate.fullSeconds === null ? null : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
-        },
-        value: null,
-      }),
+      () =>
+        Promise.resolve({
+          operation: {
+            ownerId: restoration.ownerId,
+            kind: MediaOperationKind.Restoration,
+            destination: mediaOperationDestinationOf(destination.kind),
+            destinationDetail: destination.name,
+            label: source.originalFileName,
+            assetId,
+            resultAssetId: null,
+            retryOfId: null,
+            projectId: null,
+            revisionId: restoration.id,
+            snapshot: this.snapshotOf(restoration, source, 'full', output),
+            settings: this.settingsOf(restoration, destination.name, false),
+            estimate:
+              estimate.fullSeconds === null
+                ? null
+                : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
+          },
+          value: null,
+        }),
       async (trx, operation) => {
         const now = new Date();
         const updated = await this.restorationRepository.transition(

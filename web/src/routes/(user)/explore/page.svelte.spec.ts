@@ -41,6 +41,8 @@ vi.mock('$lib/utils/handle-error', async (original) => ({
 }));
 const data = (recentCaptures: AssetResponseDto[] = []) =>
   ({
+    error: undefined,
+    asset: undefined,
     peopleCards: [],
     places: [],
     things: [],
@@ -81,13 +83,19 @@ it.each(['close route', 'session', 'newer selection'] as const)('ignores a late 
   vi.mocked(getAssetInfo).mockReturnValueOnce(old.promise).mockResolvedValueOnce(current);
   const view = render(ExplorePage, { data: data() });
   const pending = callbacks.panel!.onViewAsset('old');
-  if (change === 'close route') view.unmount();
-  else if (change === 'session') authManager.reset();
-  else await callbacks.panel!.onViewAsset(current.id);
+  if (change === 'close route') {
+    view.unmount();
+  } else if (change === 'session') {
+    authManager.reset();
+  } else {
+    await callbacks.panel!.onViewAsset(current.id);
+  }
   old.resolve(assetFactory.build({ id: 'old' }));
   await pending;
   expect(assetViewerManager.isViewing).toBe(change === 'newer selection');
-  if (change === 'newer selection') expect(assetViewerManager.asset?.id).toBe(current.id);
+  if (change === 'newer selection') {
+    expect(assetViewerManager.asset?.id).toBe(current.id);
+  }
 });
 
 it.each([false, true])('handles an asset read failure only in its current route (retired: %s)', async (retired) => {
@@ -95,7 +103,9 @@ it.each([false, true])('handles an asset read failure only in its current route 
   vi.mocked(getAssetInfo).mockReturnValueOnce(old.promise);
   const view = render(ExplorePage, { data: data() });
   const pending = callbacks.panel!.onViewAsset('old');
-  if (retired) view.unmount();
+  if (retired) {
+    view.unmount();
+  }
   old.reject(new Error('Offline'));
   await pending;
   expect(handleError).toHaveBeenCalledTimes(retired ? 0 : 1);

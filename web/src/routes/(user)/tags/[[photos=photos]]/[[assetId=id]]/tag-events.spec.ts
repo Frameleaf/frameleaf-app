@@ -4,7 +4,8 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-import MockTagTimeline, { managers } from '@test-data/components/MockTagTimeline.svelte';
+import MockTagTimeline from '@test-data/components/MockTagTimeline.svelte';
+import { managers } from '@test-data/components/tag-timeline-state';
 import { deferredPromise } from '@test-data/deferred';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import TagsPage from './+page.svelte';
@@ -43,12 +44,23 @@ it.each(['current', 'navigate', 'session', 'close'])(
     sdkMock.getAssetInfo.mockReturnValueOnce(pending.promise);
     eventManager.emit('AssetsTag', [asset.id]);
     await waitFor(() => expect(sdkMock.getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
-    if (change === 'navigate') {
-      await view.rerender({ data: data('B') });
-    } else if (change === 'session') {
-      authManager.reset();
-    } else if (change === 'close') {
-      view.unmount();
+    switch (change) {
+      case 'navigate': {
+        await view.rerender({ data: data('B') });
+
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+
+        break;
+      }
+      case 'close': {
+        view.unmount();
+
+        break;
+      }
+      // No default
     }
     pending.resolve(asset);
     await new Promise((resolve) => setTimeout(resolve, 0));

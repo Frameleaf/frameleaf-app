@@ -363,7 +363,9 @@ it.each(['hidden-person', 'hidden-pet', 'person', 'tag'])(
     render(SearchPage);
     const chips = document.querySelector('#search-chips')!;
     await waitFor(() => expect(chips).toHaveTextContent(expected));
-    if (kind.startsWith('hidden')) expect(chips).not.toHaveTextContent('Identity');
+    if (kind.startsWith('hidden')) {
+      expect(chips).not.toHaveTextContent('Identity');
+    }
     expect(lookup).toHaveBeenCalledTimes(1);
   },
 );

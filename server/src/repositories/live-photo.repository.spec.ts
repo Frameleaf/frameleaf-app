@@ -1,6 +1,6 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 
 describe('Live Photo relink transaction', () => {
@@ -24,17 +24,18 @@ describe('Live Photo relink transaction', () => {
       }
       acquireConnection() {
         return Promise.resolve({
-          executeQuery: async (query: { sql: string; parameters: readonly unknown[] }) => {
-            queries.push(query.sql);
-            parameters = [...parameters, [...query.parameters]];
-            if (failure && query.sql.includes(`from "${failure}"`))
-              throw Object.assign(new Error('busy'), { code: '55P03' });
-            return {
-              rows: query.sql.includes('from "album_asset"')
-                ? (memberships.shift() ?? []).map((albumId) => ({ albumId }))
-                : [],
-            } as never;
-          },
+          executeQuery: (query: { sql: string; parameters: readonly unknown[] }) =>
+            Promise.try(() => {
+              queries.push(query.sql);
+              parameters = [...parameters, [...query.parameters]];
+              if (failure && query.sql.includes(`from "${failure}"`))
+                throw Object.assign(new Error('busy'), { code: '55P03' });
+              return {
+                rows: query.sql.includes('from "album_asset"')
+                  ? (memberships.shift() ?? []).map((albumId) => ({ albumId }))
+                  : [],
+              } as never;
+            }),
           async *streamQuery(): AsyncGenerator<never> {},
         });
       }
@@ -49,7 +50,9 @@ describe('Live Photo relink transaction', () => {
   it('locks metadata, current albums and both assets before rechecking membership and entering the callback', async () => {
     const callback = vi.fn().mockResolvedValue('linked');
     await expect(sut.withRelinkTransaction('PHOTO', 'video', callback)).resolves.toBe('linked');
-    expect(queries.slice(0, 2)).toEqual(Array(2).fill('SELECT pg_advisory_xact_lock(-1, hashtext($1)::int)'));
+    expect(queries.slice(0, 2)).toEqual(
+      Array.from({ length: 2 }, () => 'SELECT pg_advisory_xact_lock(-1, hashtext($1)::int)'),
+    );
     expect(parameters.slice(0, 2)).toEqual([['photo'], ['video']]);
     expect(queries[2]).toContain('from "album_asset"');
     expect(queries[3]).toMatch(/from "album".*order by "id" for no key update nowait/);

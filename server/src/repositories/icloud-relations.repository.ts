@@ -17,8 +17,8 @@ import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
-import { isLockedRow } from 'src/utils/locked.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { isLockedRow } from 'src/utils/locked.js';
 
 export type ICloudRelationEvent =
   | {

@@ -11,7 +11,7 @@
 </script>
 
 {#if onFacesChanged}
-  <button onclick={() => void onFacesChanged?.()}>Refresh people</button>
+  <button type="button" onclick={() => void onFacesChanged?.()}>Refresh people</button>
 {/if}
 {#if center}
   <output data-testid="map-input">{JSON.stringify({ center, mapMarkers })}</output>

@@ -86,16 +86,33 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
     const view = render(DetailPanel, { asset, onAssetUpdate });
     await fireEvent.click(screen.getByRole('button', { name: 'Refresh people' }));
     await waitFor(() => expect(sdkMock.getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
-    if (change === 'replace' || change === 'return') await view.rerender({ asset: assetFactory.build() });
-    if (change === 'return') await view.rerender({ asset });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'replace' || change === 'return') {
+      await view.rerender({ asset: assetFactory.build() });
+    }
+    switch (change) {
+      case 'return': {
+        await view.rerender({ asset });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve(asset);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onAssetUpdate).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
     expect(clear).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
-    if (change === 'current') expect(faces).toHaveBeenCalledWith(asset.id);
-    else expect(faces).not.toHaveBeenCalled();
+    if (change === 'current') {
+      expect(faces).toHaveBeenCalledWith(asset.id);
+    } else {
+      expect(faces).not.toHaveBeenCalled();
+    }
   },
 );
 
@@ -103,7 +120,7 @@ it.each([
   [0, 0],
   [undefined, 20],
   [10, null],
-  [Number.NaN, 20],
+  [NaN, 20],
   [91, 20],
 ])('omits absent or invalid coordinates %s,%s', async (latitude, longitude) => {
   render(DetailPanel, { asset: assetFactory.build({ exifInfo: { latitude, longitude } }) });

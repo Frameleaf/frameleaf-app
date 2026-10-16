@@ -88,9 +88,11 @@ describe(TakeoutStagingRepository.name, () => {
       destination = join(directory, 'copy');
     await writeFile(staged, 'data');
     await expect(
-      sut.copyToLibrary(staged, 4, destination, signal(), async () => {
-        throw new Error('recording ownership failed');
-      }),
+      sut.copyToLibrary(staged, 4, destination, signal(), () =>
+        Promise.try(() => {
+          throw new Error('recording ownership failed');
+        }),
+      ),
     ).rejects.toThrow('recording ownership failed');
     expect(createReadStream).not.toHaveBeenCalled();
     await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -164,7 +166,7 @@ describe(TakeoutStagingRepository.name, () => {
       path,
       {
         size: bytes.length,
-        read: async (position, length) => bytes.subarray(position, position + length),
+        read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
       },
       {
         name: 'photo.jpg',
@@ -221,7 +223,7 @@ describe(TakeoutStagingRepository.name, () => {
         path,
         {
           size: bytes.length,
-          read: async (position, length) => bytes.subarray(position, position + length),
+          read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
         },
         entry,
         destination,

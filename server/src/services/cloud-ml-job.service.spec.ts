@@ -1,10 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
-import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
-import type { DB } from 'src/schema/index.js';
-import type { CloudJobView, CloudUploadTarget } from 'src/utils/frameleaf-cloud.js';
+import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { CloudMlJobEstimateRequestDto } from 'src/dtos/cloud-ml-job.dto.js';
@@ -44,6 +39,11 @@ import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { DB } from 'src/schema/index.js';
+import type { CloudJobView, CloudUploadTarget } from 'src/utils/frameleaf-cloud.js';
 
 const identitySigner = {
   kid: 'kid-1',
@@ -220,7 +220,7 @@ describe(CloudMlJobService.name, () => {
   let sut: CloudMlJobService;
   let mocks: ServiceMocks;
   let metadata: Map<string, unknown>;
-  let restorations: Record<keyof AssetRestorationRepository, ReturnType<typeof vi.fn>>;
+  let restorations: Record<keyof AssetRestorationRepository, ReturnType<typeof vi.fn<(...args: any[]) => any>>>;
   let rows: Map<string, AssetRestoration>;
   let created: MediaOperation | undefined;
 
@@ -429,7 +429,7 @@ describe(CloudMlJobService.name, () => {
     mocks.mediaOperation.listCloudMlJobsAwaitingCost.mockResolvedValue([]);
     mocks.mediaOperation.setFinishedResult.mockResolvedValue(true);
     mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) =>
-      (await publish(TRX)) ? 'completed' : 'rejected',
+      (await publish(TRX as Transaction<DB>)) ? 'completed' : 'rejected',
     );
 
     const row = (input: Partial<AssetRestoration>): AssetRestoration =>
@@ -1703,21 +1703,23 @@ describe(CloudMlJobService.name, () => {
         });
         rendering();
         mocks.crypto.hashFileDigests.mockClear();
-        mocks.crypto.hashFileDigests.mockImplementation(async (file) => {
-          const path = file.toString();
-          const cached = path.includes('/out-');
-          const first = path.endsWith('out-v1-s0.mp4');
-          if (first && (state === 'missing' || state === 'unreadable')) {
-            throw Object.assign(new Error(state), { code: state === 'missing' ? 'ENOENT' : 'EACCES' });
-          }
-          const sha256 = Buffer.from(SHA, 'hex');
-          if (first && state === 'checksum changed') sha256[0] ^= 0xff;
-          return {
-            sha1: Buffer.alloc(20),
-            sha256,
-            sizeInBytes: cached ? 10 + Number(first && state === 'size changed') : BYTES,
-          };
-        });
+        mocks.crypto.hashFileDigests.mockImplementation((file) =>
+          Promise.try(() => {
+            const path = file.toString();
+            const cached = path.includes('/out-');
+            const first = path.endsWith('out-v1-s0.mp4');
+            if (first && (state === 'missing' || state === 'unreadable')) {
+              throw Object.assign(new Error(state), { code: state === 'missing' ? 'ENOENT' : 'EACCES' });
+            }
+            const sha256 = Buffer.from(SHA, 'hex');
+            if (first && state === 'checksum changed') sha256[0] ^= 0xff;
+            return {
+              sha1: Buffer.alloc(20),
+              sha256,
+              sizeInBytes: cached ? 10 + Number(first && state === 'size changed') : BYTES,
+            };
+          }),
+        );
         const resumed = claimed({
           phase: CloudMlJobPhase.Ending,
           job: runningRecord(),
@@ -1781,7 +1783,7 @@ describe(CloudMlJobService.name, () => {
       });
       mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
         order.push('published');
-        return (await publish(TRX)) ? 'completed' : 'rejected';
+        return (await publish(TRX as Transaction<DB>)) ? 'completed' : 'rejected';
       });
       mocks.frameleafCloudMl.deleteJob.mockImplementation(() => {
         order.push('DELETE /v2/jobs');
@@ -2560,7 +2562,7 @@ describe(CloudMlJobService.name, () => {
       });
       mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
         rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
-        return (await publish(TRX)) ? 'completed' : 'rejected';
+        return (await publish(TRX as Transaction<DB>)) ? 'completed' : 'rejected';
       });
 
       await sut.step(following(), 'claim', now);

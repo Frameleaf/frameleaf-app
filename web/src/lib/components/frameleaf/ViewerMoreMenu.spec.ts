@@ -109,7 +109,7 @@ it.each(['chooser', 'request', 'session'])('keeps featured-photo selection owned
   const replacement = assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image });
   const chooser = deferredPromise<{ kind: 'person'; person: typeof person }>();
   const request = deferredPromise<typeof person>();
-  const dialog = vi.spyOn(modalManager, 'show').mockReturnValue(chooser.promise);
+  const dialog = vi.spyOn(modalManager, 'show').mockImplementation((() => chooser.promise) as typeof modalManager.show);
   sdkMock.updatePerson.mockReturnValueOnce(request.promise);
   const onAction = vi.fn();
   const props = { asset: original, preAction: vi.fn(), onAction };
@@ -118,8 +118,7 @@ it.each(['chooser', 'request', 'session'])('keeps featured-photo selection owned
     await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' }));
     if (change === 'chooser') {
       await view.rerender({ ...props, asset: replacement });
-    }
-    if (change === 'session') {
+    } else if (change === 'session') {
       authManager.reset();
     }
     chooser.resolve({ kind: 'person', person });

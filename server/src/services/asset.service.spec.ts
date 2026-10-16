@@ -388,8 +388,8 @@ describe(AssetService.name, () => {
         ...getForAsset(AssetFactory.create({ id, ownerId: authStub.admin.user.id })),
         exifInfo: { description: '', latitude: null, longitude: null } as never,
       };
-      mocks.asset.getById.mockImplementation(async () => current);
-      mocks.asset.update.mockImplementation(async () => current);
+      mocks.asset.getById.mockImplementation(() => Promise.try(() => current));
+      mocks.asset.update.mockImplementation(() => Promise.try(() => current));
       mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) => {
         const result = await write(mocks.asset as never, mocks.access as never, {} as never);
         committed = true;
@@ -397,9 +397,11 @@ describe(AssetService.name, () => {
       });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([id]));
       mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
-      mocks.job.queueInTransaction.mockImplementation(async () => {
-        expect(committed).toBe(false);
-      });
+      mocks.job.queueInTransaction.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(false);
+        }),
+      );
     });
 
     it('keeps manual metadata committed after the importer snapshot and emits no no-op effects', async () => {
@@ -496,12 +498,36 @@ describe(AssetService.name, () => {
     it.each(['missing', 'owner', 'deleted', 'access', 'write', 'admission', 'provenance'])(
       'refuses %s and admits no post-commit effects',
       async (failure) => {
-        if (failure === 'missing') mocks.asset.getById.mockResolvedValue(undefined);
-        if (failure === 'owner') current.ownerId = 'other';
-        if (failure === 'deleted') current.deletedAt = new Date();
-        if (failure === 'access') mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
-        if (failure === 'write') mocks.asset.update.mockResolvedValue(undefined);
-        if (failure === 'admission') mocks.job.queueInTransaction.mockRejectedValue(new Error('admission failed'));
+        switch (failure) {
+          case 'missing': {
+            mocks.asset.getById.mockResolvedValue(undefined);
+            break;
+          }
+          case 'owner': {
+            current.ownerId = 'other';
+            break;
+          }
+          case 'deleted': {
+            current.deletedAt = new Date();
+            break;
+          }
+          // No default
+        }
+        switch (failure) {
+          case 'access': {
+            mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+            break;
+          }
+          case 'write': {
+            mocks.asset.update.mockResolvedValue(undefined);
+            break;
+          }
+          case 'admission': {
+            mocks.job.queueInTransaction.mockRejectedValue(new Error('admission failed'));
+            break;
+          }
+          // No default
+        }
         if (failure === 'provenance') mocks.partnerOrigin.markOverridden.mockRejectedValue(new Error('lineage failed'));
         await expect(sut.fillMissingMetadata(authStub.admin, id, requested)).rejects.toThrow();
         expect(committed).toBe(false);
@@ -829,8 +855,8 @@ describe(AssetService.name, () => {
       const motionAsset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Timeline });
       const stillAsset = AssetFactory.from().owner(motionAsset.owner).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([stillAsset.id]));
-      mocks.asset.getById.mockImplementation(async (id) =>
-        getForAsset(id === motionAsset.id ? motionAsset : stillAsset),
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.try(() => getForAsset(id === motionAsset.id ? motionAsset : stillAsset)),
       );
       mocks.asset.update.mockResolvedValue(getForAsset(stillAsset));
       const auth = AuthFactory.from(motionAsset.owner).build();
@@ -857,7 +883,9 @@ describe(AssetService.name, () => {
       const asset = AssetFactory.from({ livePhotoVideoId: motionAsset.id }).owner(auth.user).build();
       const unlinkedAsset = { ...asset, livePhotoVideoId: null };
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getById.mockImplementation(async (id) => getForAsset(id === motionAsset.id ? motionAsset : asset));
+      mocks.asset.getById.mockImplementation((id) =>
+        Promise.try(() => getForAsset(id === motionAsset.id ? motionAsset : asset)),
+      );
       mocks.asset.update.mockResolvedValueOnce(getForAsset(unlinkedAsset));
 
       await sut.update(auth, asset.id, { livePhotoVideoId: null });
@@ -918,35 +946,47 @@ describe(AssetService.name, () => {
       revoked = false;
       exif = undefined;
       effects = [];
-      mocks.access.asset.checkOwnerAccess.mockImplementation(async () => new Set(revoked ? [] : ['photo']));
-      mocks.asset.getById.mockImplementation(async (id) => rows.get(id));
-      mocks.asset.getByIds.mockImplementation(async (ids) => ids.flatMap((id) => rows.get(id) ?? []));
+      mocks.access.asset.checkOwnerAccess.mockImplementation(() =>
+        Promise.try(() => new Set(revoked ? [] : ['photo'])),
+      );
+      mocks.asset.getById.mockImplementation((id) => Promise.try(() => rows.get(id)));
+      mocks.asset.getByIds.mockImplementation((ids) => Promise.try(() => ids.flatMap((id) => rows.get(id) ?? [])));
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
-      mocks.asset.findLockGroupIds.mockImplementation(async (ids) => ids);
-      mocks.asset.update.mockImplementation(async (update) => {
-        const row = rows.get(update.id);
-        if (!row) return undefined;
-        Object.assign(row, update);
-        if (failing === (update.id === 'photo' ? 'photo' : 'motion')) throw new Error('write failed');
-        return row;
-      });
-      mocks.asset.upsertExif.mockImplementation(async ({ exif: update }) => {
-        exif = update.description ?? undefined;
-        if (failing === 'exif') throw new Error('write failed');
-        return undefined as never;
-      });
-      mocks.asset.lock.mockImplementation(async (ids) => {
-        for (const id of ids) rows.get(id)!.isLocked = true;
-        return ids;
-      });
+      mocks.asset.findLockGroupIds.mockImplementation((ids) => Promise.try(() => ids));
+      mocks.asset.update.mockImplementation((update) =>
+        Promise.try(() => {
+          const row = rows.get(update.id);
+          if (!row) return;
+          Object.assign(row, update);
+          if (failing === (update.id === 'photo' ? 'photo' : 'motion')) throw new Error('write failed');
+          return row;
+        }),
+      );
+      mocks.asset.upsertExif.mockImplementation(({ exif: update }) =>
+        Promise.try(() => {
+          exif = update.description ?? undefined;
+          if (failing === 'exif') throw new Error('write failed');
+          return undefined as never;
+        }),
+      );
+      mocks.asset.lock.mockImplementation((ids) =>
+        Promise.try(() => {
+          for (const id of ids) rows.get(id)!.isLocked = true;
+          return ids;
+        }),
+      );
       mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
       mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
-      mocks.job.queue.mockImplementation(async () => {
-        effects.push(committed);
-      });
-      mocks.event.emit.mockImplementation(async () => {
-        effects.push(committed);
-      });
+      mocks.job.queue.mockImplementation(() =>
+        Promise.try(() => {
+          effects.push(committed);
+        }),
+      );
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          effects.push(committed);
+        }),
+      );
       Object.assign(mocks.asset, {
         withLivePhotoUpdate: vi.fn(
           async (
@@ -1012,10 +1052,12 @@ describe(AssetService.name, () => {
     });
 
     it('rechecks photo access after acquiring the transaction locks', async () => {
-      mocks.access.asset.checkOwnerAccess.mockImplementationOnce(async () => {
-        revoked = true;
-        return new Set(['photo']);
-      });
+      mocks.access.asset.checkOwnerAccess.mockImplementationOnce(() =>
+        Promise.try(() => {
+          revoked = true;
+          return new Set(['photo']);
+        }),
+      );
       await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
         BadRequestException,
       );
@@ -1033,11 +1075,23 @@ describe(AssetService.name, () => {
     it.each(['missing', 'type', 'owner', 'deleted', 'still type'])(
       'refuses a motion link with invalid %s before any writes',
       async (invalid) => {
-        if (invalid === 'missing') rows.delete('video');
-        if (invalid === 'type') rows.get('video')!.type = AssetType.Image;
-        if (invalid === 'owner') rows.get('video')!.ownerId = 'other-owner';
+        switch (invalid) {
+          case 'missing': {
+            rows.delete('video');
+            break;
+          }
+          case 'type': {
+            rows.get('video')!.type = AssetType.Image;
+            break;
+          }
+          case 'owner': {
+            rows.get('video')!.ownerId = 'other-owner';
+            break;
+          }
+          // No default
+        }
         if (invalid === 'deleted') rows.get('video')!.deletedAt = new Date();
-        if (invalid === 'still type') rows.get('photo')!.type = AssetType.Video;
+        else if (invalid === 'still type') rows.get('photo')!.type = AssetType.Video;
         await expect(sut.update(auth, 'photo', { livePhotoVideoId: 'video' })).rejects.toBeInstanceOf(
           BadRequestException,
         );
@@ -1400,7 +1454,7 @@ describe(AssetService.name, () => {
     it('announces only ordinary changes, preserving their order and duplicates after sequenced effects', async () => {
       const ids = ['ordinary-2', 'sequenced', 'ordinary-1', 'ordinary-2'];
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
-      mocks.trash.enqueueLocalEffects.mockResolvedValue();
+      mocks.trash.enqueueLocalEffects.mockResolvedValue(0);
       mocks.trash.applyReviewed.mockImplementation((...args) => {
         args[6]?.(['sequenced', 'sequenced']);
         return Promise.resolve(ids);
@@ -1430,7 +1484,7 @@ describe(AssetService.name, () => {
         },
       });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
-      mocks.trash.enqueueLocalEffects.mockResolvedValue();
+      mocks.trash.enqueueLocalEffects.mockResolvedValue(0);
       mocks.trash.applyReviewed.mockImplementation((...args) => {
         args[6]?.(sequenced);
         return Promise.resolve(ids);
