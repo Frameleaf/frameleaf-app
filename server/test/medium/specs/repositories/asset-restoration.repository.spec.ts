@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { DB } from 'src/schema/index.js';
 import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
   MediaOperationDestination,
@@ -18,8 +19,6 @@ import { type MediaOperation, MediaOperationRepository } from 'src/repositories/
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-import type { DB } from 'src/schema/index.js';
-
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();

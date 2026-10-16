@@ -318,7 +318,22 @@ export class IntegrityRepository {
       ...tracked,
       ...(await this.getVideoDuplicateFramePathsByPaths(paths)),
       ...(await this.getDevelopRevisionPathsByPaths(paths)),
+      ...(await this.getRegisteredFilePathsByPaths(paths)),
     ];
+  }
+  /**
+   * FL-412: paths registered as stored files (`physical_file`). A registered file is tracked even while no
+   * asset names it, so the untracked-file check never reports, and never offers to delete, a stored original.
+   */
+  async getRegisteredFilePathsByPaths(paths: string[]): Promise<{ path: string }[]> {
+    if (paths.length === 0) {
+      return [];
+    }
+    return this.db
+      .selectFrom('physical_file')
+      .select('physical_file.path')
+      .where('physical_file.path', 'in', paths)
+      .execute();
   }
   @GenerateSql({ params: [] })
   getAssetCount() {

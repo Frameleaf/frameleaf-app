@@ -1,4 +1,6 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DB } from 'src/schema/index.js';
 import {
   AssetRestorationMode,
   AssetRestorationSourceType,
@@ -33,15 +35,11 @@ import {
   restorationAdmissionOf,
   restorationChunkIdentity,
 } from 'src/utils/restoration.js';
-
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DB } from 'src/schema/index.js';
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';

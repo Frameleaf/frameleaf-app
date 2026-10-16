@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssetRestorationFileKind,
   AssetRestorationMode,
@@ -23,8 +24,6 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
-import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
-
 // eslint-friendly alias: a mock whose implementation may return anything, promises included.
 type AnyMock = Mock<(...args: any[]) => any>;
 

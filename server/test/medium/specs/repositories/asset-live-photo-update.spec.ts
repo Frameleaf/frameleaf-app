@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -9,8 +10,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
-import type { DB } from 'src/schema/index.js';
-
 describe('atomic Live Photo asset edits', () => {
   let db: Kysely<DB>;
   beforeAll(async () => {

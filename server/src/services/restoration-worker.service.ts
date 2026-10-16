@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { hostname } from 'node:os';
 import path from 'node:path';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
@@ -62,9 +64,6 @@ import {
   stageOfKind,
 } from 'src/utils/restoration.js';
 import { ALL_LIBRARY_ANALYSIS_QUEUES, libraryAnalysisBacklog, readQueueBacklogs } from 'src/utils/worker-inventory.js';
-import type { SystemConfig } from 'src/dtos/config.dto.js';
-import type { RawImageInfo } from 'src/types.js';
-
 /** How often an idle worker asks for the next restoration job. */
 export const RESTORATION_POLL_MS = 2000;
 /** How often alignment and retention run. */

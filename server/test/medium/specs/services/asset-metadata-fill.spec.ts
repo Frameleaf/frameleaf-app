@@ -159,7 +159,7 @@ describe('Matched import metadata fills', () => {
       assets.withMetadataUpdate(asset.id, async (bound) => {
         writer = manual()
           .then(() => ({ status: 'fulfilled' as const, value: undefined }))
-          .catch((reason) => ({ status: 'rejected' as const, reason }));
+          .catch((error) => ({ status: 'rejected' as const, reason: error }));
         await started.promise;
         await bound.upsertExif({
           lockedPropertiesBehavior: 'override',

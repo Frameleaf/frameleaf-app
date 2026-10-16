@@ -37,6 +37,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { batched, handlePromiseError } from 'src/utils/misc.js';
 
@@ -250,7 +251,9 @@ export class IntegrityService extends BaseService {
       // the reference-counted guard: a path any row references (a shared original, the file trash) is kept
       const trackedPaths = await this.integrityRepository.getTrackedPaths([path]);
       if (trackedPaths.length === 0) {
-        await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path));
+        await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path), {
+          trash: this.originalsToFileTrash(),
+        });
       }
       await this.integrityRepository.deleteById(id);
     }
@@ -270,6 +273,14 @@ export class IntegrityService extends BaseService {
   async clearIntegrityReports(type: IntegrityReport): Promise<IntegrityReportClearResponseDto> {
     const cleared = await this.integrityRepository.deleteByType(type);
     return { cleared };
+  }
+
+  /**
+   * FL-412: universal storage never unlinks an original. A report's file that turns out to be a registered
+   * original goes to the file trash, where only an administrator empties it; any other file is deleted.
+   */
+  private originalsToFileTrash() {
+    return { move: (from: string, to: string) => moveFileWithin(this.storageRepository, from, to) };
   }
 
   private async queueRefreshAllUntrackedFiles() {
@@ -398,6 +409,13 @@ export class IntegrityService extends BaseService {
     // their version row; they are a person's work, never an orphan to clean up (FL-64).
     const developPaths = await this.integrityRepository.getDevelopRevisionPathsByPaths(paths);
     for (const { path } of developPaths) {
+      untrackedFiles.delete(path);
+    }
+
+    // FL-412: a stored file (a shared original, or one waiting to be moved to the file trash) is tracked by
+    // its `physical_file` row even while no asset names it
+    const registeredPaths = await this.integrityRepository.getRegisteredFilePathsByPaths(paths);
+    for (const { path } of registeredPaths) {
       untrackedFiles.delete(path);
     }
 
@@ -879,7 +897,9 @@ export class IntegrityService extends BaseService {
           continue;
         }
         await this.physicalFileRepository
-          .deleteUnreferencedPath(path, () => this.storageRepository.unlink(path))
+          .deleteUnreferencedPath(path, () => this.storageRepository.unlink(path), {
+            trash: this.originalsToFileTrash(),
+          })
           .catch(() => void 0);
       }
       await this.integrityRepository.deleteByIds(byPath.map(({ id }) => id));

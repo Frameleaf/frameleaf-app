@@ -1,11 +1,10 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
-import type { DB } from 'src/schema/index.js';
-
 describe('Live Photo asset-edit transaction', () => {
   let db: Kysely<DB>;
   let sut: AssetRepository;

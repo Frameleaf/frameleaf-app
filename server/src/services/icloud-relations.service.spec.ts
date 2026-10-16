@@ -1,8 +1,7 @@
+import type { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
-import type { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
-
 describe('iCloud relations service lifetime and dispatch', () => {
   const fixture = () => {
     const repository = {

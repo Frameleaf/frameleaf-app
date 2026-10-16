@@ -17,7 +17,7 @@ import {
 import { AssetVisibility, ChecksumAlgorithm, FrameleafWorker, JobName, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
-import { moveFileWithin } from 'src/utils/file-trash.js';
+import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
@@ -136,13 +136,18 @@ export class PhysicalFileTrashService extends BaseService {
         exif: { assetId: asset.id, fileSizeInByte: entry.sizeInBytes },
         lockedPropertiesBehavior: 'override',
       });
+      const expected = { checksum: entry.checksum, sizeInBytes: entry.sizeInBytes };
+      const restoredId = asset.id;
       const stored = await this.physicalFileRepository.linkUploadedOriginal(
         asset.id,
-        { checksum: entry.checksum, sizeInBytes: entry.sizeInBytes },
-        { exists: (path) => this.storageRepository.checkFileExists(path) },
+        expected,
+        storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+          this.logger.warn(`Restored ${restoredId} keeps its own file: the stored copy at ${path} holds other bytes`),
+        ),
       );
       if (stored?.linked) {
-        // the same content reached the server again meanwhile: keep that one file
+        // the same content reached the server again meanwhile, proven to hold the same bytes (FL-412):
+        // keep that one file
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [target] } });
       }
     } catch (error) {
