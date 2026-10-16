@@ -1,8 +1,9 @@
-import { type Kysely, sql } from 'kysely';
+import { type Kysely, type Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { DB } from 'src/schema/index.js';
 import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
   MediaOperationDestination,
@@ -14,12 +15,10 @@ import {
 import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import type { DB } from 'src/schema/index.js';
+import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
@@ -113,21 +112,25 @@ describe('restoration operation ownership', () => {
         sourceHeight: 100,
         previewRegion: { x: 0, y: 0, w: 1, h: 1 },
       });
-      const bind = async () => ({
-        operation: {
-          ownerId: user.id,
-          kind: stage === 'preview' ? MediaOperationKind.RestorationPreview : MediaOperationKind.Restoration,
-          destination: MediaOperationDestination.Local,
-          label: 'Atomic admission',
-          assetId: asset.id,
-          revisionId: row.id,
-          snapshot: { assetId: asset.id, sourceChecksumHex: asset.checksum.toString('hex') },
-        },
-        value: null,
-      });
+      const bind = () =>
+        Promise.try(() => ({
+          operation: {
+            ownerId: user.id,
+            kind: stage === 'preview' ? MediaOperationKind.RestorationPreview : MediaOperationKind.Restoration,
+            destination: MediaOperationDestination.Local,
+            label: 'Atomic admission',
+            assetId: asset.id,
+            revisionId: row.id,
+            settings: {},
+            snapshot: { assetId: asset.id, sourceChecksumHex: asset.checksum.toString('hex') },
+          },
+          value: null,
+        }));
       const events: string[] = [];
-      const stop = operations.onChange((changes) => events.push(...changes.map(({ id }) => id)));
-      const link: Parameters<MediaOperationRepository['createWithin']>[1] = async (tx, operation) => {
+      const stop = operations.onChange((changes) => {
+        events.push(...changes.map(({ id }) => id));
+      });
+      const link = async (tx: Transaction<DB>, operation: MediaOperation) => {
         await expect(
           sut.transition(
             row.id,
@@ -141,8 +144,8 @@ describe('restoration operation ownership', () => {
       };
       try {
         await expect(
-          operations.createWithin(bind, async (tx, operation, value) => {
-            await link(tx, operation, value);
+          operations.createWithin(bind, async (tx, operation) => {
+            await link(tx, operation);
             throw new Error('operation link failed');
           }),
         ).rejects.toThrow('operation link failed');
@@ -179,6 +182,7 @@ describe('restoration operation ownership', () => {
         kind,
         destination: MediaOperationDestination.Local,
         label: 'Old restoration',
+        settings: {},
         snapshot: {},
       });
       const next = await operations.create({
@@ -186,6 +190,7 @@ describe('restoration operation ownership', () => {
         kind,
         destination: MediaOperationDestination.Local,
         label: 'New restoration',
+        settings: {},
         snapshot: {},
       });
       const running = stage === 'preview' ? AssetRestorationStatus.PreviewRendering : AssetRestorationStatus.Restoring;
@@ -370,6 +375,7 @@ describe('restoration retention', () => {
         kind: MediaOperationKind.RestorationPreview,
         destination: MediaOperationDestination.Local,
         label: 'Retention publication',
+        settings: {},
         snapshot: {},
       });
       const before =

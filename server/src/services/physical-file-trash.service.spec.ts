@@ -103,7 +103,7 @@ describe(PhysicalFileTrashService.name, () => {
         'new-asset-id',
         { checksum, sizeInBytes: 1234 },
         expect.anything(),
-        transaction,
+        { transaction, proof: undefined },
       );
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetExtractMetadata,
@@ -116,6 +116,58 @@ describe(PhysicalFileTrashService.name, () => {
       expect(mocks.storage.stat).toHaveBeenCalledWith(target);
       expect(mocks.storage.rename).toHaveBeenCalledExactlyOnceWith(entry.path, target);
       expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+    });
+
+    it('finishes stored-copy proof before opening the restore transaction', async () => {
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<{ path: string; identity: string }>();
+      const proof = { path: '/data/library/existing.jpg', identity: 'stable-file' };
+      mocks.physicalFile.proveStoredCopy.mockImplementationOnce(() => {
+        entered.resolve();
+        return resume.promise;
+      });
+      const restoring = sut.restore(entry.id);
+      try {
+        await entered.promise;
+        expect(mocks.physicalFileTrash.untrash).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      } finally {
+        resume.resolve(proof);
+        await restoring;
+      }
+      expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
+        'new-asset-id',
+        { checksum, sizeInBytes: entry.sizeInBytes },
+        expect.anything(),
+        { transaction, proof },
+      );
+      const plannedId = mocks.physicalFile.proveStoredCopy.mock.calls[0][0];
+      expect(mocks.asset.create.mock.calls[0][0].id).toBe(plannedId);
+    });
+
+    it('lets the restored file go only for a stored copy proven to hold its bytes (FL-412)', async () => {
+      mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
+        physicalFile: { id: 'new-physical' },
+        linked: false,
+      } as never);
+      await sut.restore('trash-id');
+      const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+      const shared = '/data/library/other/IMG_0001.jpg';
+      mocks.storage.stat.mockResolvedValue({
+        isFile: () => true,
+        dev: 1,
+        ino: 2,
+        size: 1234,
+        mtimeMs: 3,
+        ctimeMs: 4,
+      } as never);
+
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from('other bytes'));
+      await expect(options.verify(shared)).resolves.toBeNull();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(shared));
+
+      mocks.crypto.hashFileMatching.mockResolvedValue(entry.checksum);
+      await expect(options.verify(shared)).resolves.toEqual(expect.any(String));
     });
 
     it('returns an uninspected file to its original trash entry and restores it on retry', async () => {

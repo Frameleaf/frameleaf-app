@@ -34,7 +34,9 @@ for (const component of [KeepThisDeleteOthers, ViewerStackStrip]) {
   describe(component === KeepThisDeleteOthers ? 'menu keep action' : 'strip keep action', () => {
     const setup = async () => {
       const pending = deferredPromise<boolean>();
-      vi.spyOn(modalManager, 'showDialog').mockReturnValue(pending.promise);
+      vi.spyOn(modalManager, 'showDialog').mockReturnValue(
+        pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>,
+      );
       const original = selection('original');
       const callbacks = { onAction: vi.fn(), onSelect: vi.fn(), onPreview: vi.fn() };
       const view = render(component, { ...original, ...callbacks });
@@ -66,7 +68,7 @@ for (const component of [KeepThisDeleteOthers, ViewerStackStrip]) {
     it('stops the second mutation after a session change during deletion', async () => {
       const { pending } = await setup();
       const deletion = deferredPromise<void>();
-      sdkMock.deleteAssets.mockReturnValueOnce(deletion.promise);
+      sdkMock.deleteAssets.mockReturnValueOnce(deletion.promise as ReturnType<typeof sdkMock.deleteAssets>);
       pending.resolve(true);
       await waitFor(() => expect(sdkMock.deleteAssets).toHaveBeenCalled());
       authManager.reset();

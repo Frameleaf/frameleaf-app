@@ -208,7 +208,7 @@ describe(TakeoutService.name, () => {
     const directories = new Set(
       media.generateThumbnail.mock.calls.map((call: unknown[]) => path.dirname(call[2] as string)),
     );
-    for (const directory of directories) await original.rm(directory, { recursive: true, force: true });
+    for (const directory of directories) await original.rm(directory as string, { recursive: true, force: true });
   });
 
   describe('list', () => {

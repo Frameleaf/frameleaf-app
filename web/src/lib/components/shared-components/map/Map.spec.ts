@@ -26,8 +26,11 @@ vi.mock('svelte-maplibre', async () => {
     MapLibre: (await import('@test-data/frameleaf/EmbeddedMapFixture.svelte')).default,
     GeoJSON: (await import('@test-data/mocks/UserPageLayout.mock.svelte')).default,
     MarkerLayer: (_anchor: unknown, props: { applyToClusters: boolean; onclick: (event: unknown) => void }) => {
-      if (props.applyToClusters) layers.cluster = props.onclick;
-      else layers.asset = props.onclick;
+      if (props.applyToClusters) {
+        layers.cluster = props.onclick;
+      } else {
+        layers.asset = props.onclick;
+      }
     },
     AttributionControl: empty,
     Control: empty,
@@ -83,22 +86,43 @@ it.each(['close', 'session', 'new cluster', 'single asset', 'markers', 'source']
     const onSelect = vi.fn();
     const view = render(MapComponent, { onSelect });
     layers.cluster!(event(1));
-    if (change === 'close') view.unmount();
-    else if (change === 'session') authManager.reset();
-    else if (change === 'new cluster') layers.cluster!(event(2));
-    else if (change === 'single asset') layers.asset!(event('single'));
-    else if (change === 'source') map.source = { getClusterLeaves: vi.fn() };
-    else
-      await view.rerender({
-        onSelect,
-        mapMarkers: [{ id: 'replacement', lat: 1, lon: 2, city: null, state: null, country: null }],
-      });
+    switch (change) {
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      case 'new cluster': {
+        layers.cluster!(event(2));
+        break;
+      }
+      case 'single asset': {
+        layers.asset!(event('single'));
+        break;
+      }
+      case 'source': {
+        map.source = { getClusterLeaves: vi.fn() };
+        break;
+      }
+      default: {
+        await view.rerender({
+          onSelect,
+          mapMarkers: [{ id: 'replacement', lat: 1, lon: 2, city: null, state: null, country: null }],
+        });
+      }
+    }
     await tick();
     pending.resolve([leaf('old')]);
     await pending.promise;
     await tick();
     expect(onSelect).not.toHaveBeenCalledWith(['old']);
-    if (change === 'new cluster') expect(onSelect).toHaveBeenCalledWith(['new']);
-    if (change === 'single asset') expect(onSelect).toHaveBeenCalledWith(['single']);
+    if (change === 'new cluster') {
+      expect(onSelect).toHaveBeenCalledWith(['new']);
+    } else if (change === 'single asset') {
+      expect(onSelect).toHaveBeenCalledWith(['single']);
+    }
   },
 );

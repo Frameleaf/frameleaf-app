@@ -76,15 +76,29 @@ it.each(['current', 'replace', 'close', 'session', 'disconnect'])(
     const view = render(TestWrapper, { component: VideoRemoteViewer, componentProps: callbacks });
     await tick();
     expect(cast.load).toHaveBeenCalled();
-    if (change === 'replace') {
-      cast.load.mockReturnValueOnce(new Promise(() => {}));
-      await view.rerender({ componentProps: { ...callbacks, assetFileUrl: '/replacement' } });
-    } else if (change === 'close') {
-      view.unmount();
-    } else if (change === 'session') {
-      authManager.reset();
-    } else if (change === 'disconnect') {
-      cast.connected = false;
+    switch (change) {
+      case 'replace': {
+        cast.load.mockReturnValueOnce(new Promise(() => {}));
+        await view.rerender({ componentProps: { ...callbacks, assetFileUrl: '/replacement' } });
+
+        break;
+      }
+      case 'close': {
+        view.unmount();
+
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+
+        break;
+      }
+      case 'disconnect': {
+        cast.connected = false;
+
+        break;
+      }
+      // No default
     }
     pending.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -98,8 +112,11 @@ it.each(['current', 'close', 'session'])('reports a cast failure only for its ow
   const callbacks = props();
   const view = renderWithTooltips(VideoRemoteViewer, callbacks);
   await tick();
-  if (change === 'close') view.unmount();
-  if (change === 'session') authManager.reset();
+  if (change === 'close') {
+    view.unmount();
+  } else if (change === 'session') {
+    authManager.reset();
+  }
   const error = new Error('Receiver disconnected');
   pending.reject(error);
   await new Promise((resolve) => setTimeout(resolve, 0));

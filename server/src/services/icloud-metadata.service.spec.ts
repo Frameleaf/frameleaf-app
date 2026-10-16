@@ -3,10 +3,12 @@ import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 describe('iCloud metadata immediate lock followup', () => {
   it('follows up an earlier committed lock even when a later connection fails', async () => {
     const repository = {
-      afterExtraction: vi.fn(async (_asset: string, _owner: string, locked?: string[]) => {
-        locked?.push('committed');
-        throw new Error('later connection failed');
-      }),
+      afterExtraction: vi.fn((_asset: string, _owner: string, locked?: string[]) =>
+        Promise.try(() => {
+          locked?.push('committed');
+          throw new Error('later connection failed');
+        }),
+      ),
     };
     const events = { emit: vi.fn().mockResolvedValue(undefined) };
     const sut = new ICloudMetadataService(repository as never, events as never);

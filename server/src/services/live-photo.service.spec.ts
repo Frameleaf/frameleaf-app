@@ -6,7 +6,6 @@ import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
-
 describe(LivePhotoService.name, () => {
   let sut: LivePhotoService;
   let mocks: ServiceMocks;
@@ -413,16 +412,20 @@ describe(LivePhotoService.name, () => {
         Promise.resolve([state.photo, state.video].filter(({ id }) => ids.includes(id)) as never),
       );
       mocks.asset.getLivePhotoCount.mockResolvedValue(0);
-      mocks.asset.update.mockImplementation(async (patch) => {
-        const role = patch.id === 'photo-1' ? 'photo' : 'video';
-        state[role] = { ...state[role], ...patch } as never;
-        if (failing === role) throw new Error('write failed');
-        return state[role] as never;
-      });
-      mocks.album.removeAssetsFromAll.mockImplementation(async () => {
-        state.inAlbum = false;
-        if (failing === 'albums') throw new Error('write failed');
-      });
+      mocks.asset.update.mockImplementation((patch) =>
+        Promise.try(() => {
+          const role = patch.id === 'photo-1' ? 'photo' : 'video';
+          state[role] = { ...state[role], ...patch } as never;
+          if (failing === role) throw new Error('write failed');
+          return state[role] as never;
+        }),
+      );
+      mocks.album.removeAssetsFromAll.mockImplementation(() =>
+        Promise.try(() => {
+          state.inAlbum = false;
+          if (failing === 'albums') throw new Error('write failed');
+        }),
+      );
       vi.mocked(livePhotoRepository.withRelinkTransaction).mockImplementation(async (_photoId, _videoId, callback) => {
         const before = { ...state, photo: { ...state.photo }, video: { ...state.video } };
         try {
@@ -460,9 +463,11 @@ describe(LivePhotoService.name, () => {
     });
 
     it('announces the link only after its writes commit', async () => {
-      mocks.event.emit.mockImplementation(async () => {
-        expect(committed).toBe(true);
-      });
+      mocks.event.emit.mockImplementation(() =>
+        Promise.try(() => {
+          expect(committed).toBe(true);
+        }),
+      );
       await expect(sut.relinkOne(auth, 'photo-1', 'video-1')).resolves.toEqual({ success: true });
       expect(state.photo.livePhotoVideoId).toBe('video-1');
       expect(state.video.visibility).toBe(AssetVisibility.Hidden);

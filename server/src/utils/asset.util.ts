@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import { AssetFile } from 'src/database.js';
 import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -7,10 +8,8 @@ import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
-import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import { FrameleafFile, IBulkAsset, UploadFile, UploadRequest } from 'src/types.js';
 import { checkAccess } from 'src/utils/access.js';
-
 export const getAssetFile = (files: AssetFile[], type: AssetFileType, { isEdited }: { isEdited: boolean }) => {
   return files.find((file) => file.type === type && file.isEdited === isEdited);
 };

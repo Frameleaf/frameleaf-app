@@ -110,17 +110,28 @@ describe('SlideshowBar (FL-36)', () => {
       await tick();
       const done = progressBarFixture.done?.();
       expect(finish).toBeDefined();
-      if (change === 'close') {
-        unmount();
-      } else if (change === 'session') {
-        authManager.reset();
-      } else if (change === 'settings') {
-        openSettingsFromFooter();
-      } else {
-        slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
-        await tick();
-        if (change === 'pause then resume') {
-          slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      switch (change) {
+        case 'close': {
+          unmount();
+
+          break;
+        }
+        case 'session': {
+          authManager.reset();
+
+          break;
+        }
+        case 'settings': {
+          openSettingsFromFooter();
+
+          break;
+        }
+        default: {
+          slideshowStore.slideshowState.set(SlideshowState.PauseSlideshow);
+          await tick();
+          if (change === 'pause then resume') {
+            slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+          }
         }
       }
       await tick();

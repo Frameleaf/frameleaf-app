@@ -34,15 +34,19 @@ describe('iCloud metadata lock effect transaction', () => {
       return { rows: [] };
     });
     vi.spyOn(AssetRepository.prototype, 'lock').mockResolvedValue(ids);
-    vi.spyOn(AssetLocalEffectRepository, 'selectLockedAdmissions').mockImplementation(async (_tx, assetIds) => ({
-      assetIds,
-      interactiveAdmissions: [],
-    }));
-    const append = vi.spyOn(AssetLocalEffectRepository.prototype, 'append').mockImplementation(async (tx) => {
-      expect(tx.isTransaction).toBe(true);
-      expect(queries.some((query) => query.sql === 'commit')).toBe(false);
-      return {} as never;
-    });
+    vi.spyOn(AssetLocalEffectRepository, 'selectLockedAdmissions').mockImplementation((_tx, assetIds) =>
+      Promise.try(() => ({
+        assetIds,
+        interactiveAdmissions: [],
+      })),
+    );
+    const append = vi.spyOn(AssetLocalEffectRepository.prototype, 'append').mockImplementation((tx) =>
+      Promise.try(() => {
+        expect(tx.isTransaction).toBe(true);
+        expect(queries.some((query) => query.sql === 'commit')).toBe(false);
+        return {} as never;
+      }),
+    );
     return { db, queries, ids, append, sut: new ICloudMetadataRepository(db) };
   };
   afterEach(() => vi.restoreAllMocks());

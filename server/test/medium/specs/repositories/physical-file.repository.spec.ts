@@ -328,7 +328,9 @@ describe(PhysicalFileRepository.name, () => {
   });
 
   describe('linkUploadedOriginal (universal storage)', () => {
-    const exists = () => Promise.resolve(true);
+    // FL-412: a stored file is stood in for by its path: proven to hold the content, with a fixed identity
+    const onDisk = (path: string) => Promise.resolve(`identity:${path}`);
+    const checks = { verify: onDisk, identify: onDisk };
     const newUpload = async (ctx: MediumTestContext, checksum: Buffer, dto: object = {}) => {
       const { user } = await ctx.newUser();
       return newAssetWithSize(ctx, user.id, { checksum, ...dto });
@@ -346,7 +348,7 @@ describe(PhysicalFileRepository.name, () => {
       const existing = await newUpload(ctx, checksum);
       const upload = await newUpload(ctx, checksum);
 
-      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists });
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, checks);
 
       expect(result).toMatchObject({
         linked: true,
@@ -367,7 +369,7 @@ describe(PhysicalFileRepository.name, () => {
       const checksum = randomBytes(32);
       const upload = await newUpload(ctx, checksum);
 
-      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists });
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, checks);
 
       expect(result).toMatchObject({
         linked: false,
@@ -388,10 +390,11 @@ describe(PhysicalFileRepository.name, () => {
       const missing = await newUpload(ctx, checksum);
       const upload = await newUpload(ctx, checksum);
 
+      const present = (path: string) => Promise.resolve(path === missing.originalPath ? null : `identity:${path}`);
       const result = await sut.linkUploadedOriginal(
         upload.id,
         { checksum, sizeInBytes: 1000 },
-        { exists: (path) => Promise.resolve(path !== missing.originalPath) },
+        { verify: present, identify: present },
       );
 
       expect(result).toMatchObject({ linked: false, physicalFile: { canonicalAssetId: upload.id } });
@@ -403,13 +406,20 @@ describe(PhysicalFileRepository.name, () => {
       const checksum = randomBytes(32);
       const existing = await newUpload(ctx, checksum);
       const upload = await newUpload(ctx, checksum);
-      // on disk when first looked at, gone (moved to the file trash) once the path lock is held
-      let checks = 0;
-      const movedAway = (path: string) => Promise.resolve(path !== existing.originalPath || checks++ === 0);
+      // proven on disk first, gone (moved to the file trash) once the path lock is held
+      let identified = 0;
+      const movedAway = (path: string) => {
+        identified++;
+        return Promise.resolve(path === existing.originalPath ? null : `identity:${path}`);
+      };
 
-      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists: movedAway });
+      const result = await sut.linkUploadedOriginal(
+        upload.id,
+        { checksum, sizeInBytes: 1000 },
+        { verify: onDisk, identify: movedAway },
+      );
 
-      expect(checks).toBe(2);
+      expect(identified).toBe(1);
       expect(result).toMatchObject({
         linked: false,
         physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath },
@@ -427,8 +437,8 @@ describe(PhysicalFileRepository.name, () => {
       const second = await newUpload(ctx, checksum);
 
       const results = await Promise.all([
-        sut.linkUploadedOriginal(first.id, { checksum, sizeInBytes: 1000 }, { exists }),
-        sut.linkUploadedOriginal(second.id, { checksum, sizeInBytes: 1000 }, { exists }),
+        sut.linkUploadedOriginal(first.id, { checksum, sizeInBytes: 1000 }, checks),
+        sut.linkUploadedOriginal(second.id, { checksum, sizeInBytes: 1000 }, checks),
       ]);
 
       const files = await defaultDatabase
@@ -445,6 +455,133 @@ describe(PhysicalFileRepository.name, () => {
         { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
         { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
       ]);
+    });
+
+    it('never lets an upload go for a stored file that holds other bytes (FL-412)', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const damaged = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+      const proofs: string[] = [];
+      const rotted = (path: string) => {
+        proofs.push(path);
+        return Promise.resolve(path === damaged.originalPath ? null : `identity:${path}`);
+      };
+
+      const result = await sut.linkUploadedOriginal(
+        upload.id,
+        { checksum, sizeInBytes: 1000 },
+        { verify: rotted, identify: onDisk },
+      );
+
+      // read once: the same damaged file is not read (or reported) again
+      expect(proofs).toEqual([damaged.originalPath]);
+      expect(result).toMatchObject({
+        linked: false,
+        physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath },
+      });
+      await expect(originalOf(damaged.id)).resolves.toMatchObject({ physicalOriginalFileId: null });
+    });
+
+    it('never lets an upload go for a stored file changed after it was proven (FL-412)', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const existing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+      const changed = (path: string) => Promise.resolve(`changed:${path}`);
+
+      const result = await sut.linkUploadedOriginal(
+        upload.id,
+        { checksum, sizeInBytes: 1000 },
+        { verify: onDisk, identify: changed },
+      );
+
+      expect(result).toMatchObject({ linked: false, physicalFile: { canonicalAssetId: upload.id } });
+      await expect(originalOf(existing.id)).resolves.toMatchObject({ physicalOriginalFileId: null });
+    });
+
+    it("proves a stored file that became the content's candidate after the first proof (FL-412)", async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+      const proven: string[] = [];
+      let earliest: { originalPath: string } | undefined;
+      const verify = async (path: string) => {
+        proven.push(path);
+        if (!earliest) {
+          // the lowest id is every upload's candidate: it arrives while the first candidate is proven
+          earliest = await newUpload(ctx, checksum, { id: '00000000-0000-4000-8000-000000000000' });
+        }
+        return `identity:${path}`;
+      };
+
+      const result = await sut.linkUploadedOriginal(
+        upload.id,
+        { checksum, sizeInBytes: 1000 },
+        { verify, identify: onDisk },
+      );
+
+      expect(proven).toHaveLength(2);
+      expect(proven[1]).toBe(earliest!.originalPath);
+      expect(result).toMatchObject({ linked: true, physicalFile: { path: earliest!.originalPath } });
+    });
+  });
+
+  describe('registering a path that already has a row (FL-412)', () => {
+    it("keeps the existing primary: an asset on another asset's file never takes it over", async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const owner = await newAssetWithSize(ctx, alice.id, { checksum });
+      const registered = await sut.ensureOriginalPhysicalFile(owner.id);
+      // an older copy that names the same path without being linked to its row
+      const sharer = await newAssetWithSize(ctx, bob.id, { checksum, originalPath: owner.originalPath });
+
+      const physicalFile = await sut.ensureOriginalPhysicalFile(sharer.id);
+
+      expect(physicalFile).toMatchObject({ id: registered!.id, canonicalAssetId: owner.id });
+      await expect(
+        defaultDatabase
+          .selectFrom('asset')
+          .select('physicalOriginalFileId')
+          .where('id', '=', sharer.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ physicalOriginalFileId: registered!.id });
+    });
+
+    it('fills in a missing primary', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const asset = await newAssetWithSize(ctx, user.id);
+      const orphan = await sut.upsertPhysicalFile({
+        canonicalAssetId: null,
+        checksum: randomBytes(32),
+        path: asset.originalPath,
+        sizeInBytes: 1000,
+        type: PhysicalFileType.Original,
+      });
+
+      await expect(sut.ensureOriginalPhysicalFile(asset.id)).resolves.toMatchObject({
+        id: orphan.id,
+        canonicalAssetId: asset.id,
+      });
+    });
+  });
+
+  describe('isOriginalShared (FL-412)', () => {
+    it('is true while another asset, even one in the trash, uses the same file or path', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const owner = await newAssetWithSize(ctx, alice.id, { checksum });
+      const alone = await newAssetWithSize(ctx, alice.id);
+      await newAssetWithSize(ctx, bob.id, { checksum, originalPath: owner.originalPath, deletedAt: new Date() });
+
+      await expect(sut.isOriginalShared(owner.id)).resolves.toBe(true);
+      await expect(sut.isOriginalShared(alone.id)).resolves.toBe(false);
     });
   });
 

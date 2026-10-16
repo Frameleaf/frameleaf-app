@@ -31,9 +31,9 @@ describe('Takeout account admission transaction', () => {
   it('locks the current owner before the import and passes fresh quota to admission', async () => {
     const f = fixture();
     try {
-      await expect(f.sut.withImport('owner', 'import', async (_tx, _row, _operation, quota) => quota)).resolves.toEqual(
-        f.quota,
-      );
+      await expect(
+        f.sut.withImport('owner', 'import', (_tx, _row, _operation, quota) => Promise.try(() => quota)),
+      ).resolves.toEqual(f.quota);
       const owner = f.queries.findIndex((query) => query.sql.includes('from "user"'));
       const imported = f.queries.findIndex((query) => query.sql.includes('from takeout_import'));
       expect(owner).toBeGreaterThanOrEqual(0);
@@ -74,9 +74,11 @@ describe('Takeout account admission transaction', () => {
     const f = fixture();
     try {
       await expect(
-        f.sut.withImport('owner', 'import', async () => {
-          throw new Error('admission failed');
-        }),
+        f.sut.withImport('owner', 'import', () =>
+          Promise.try(() => {
+            throw new Error('admission failed');
+          }),
+        ),
       ).rejects.toThrow('admission failed');
       expect(f.queries.at(-1)!.sql).toBe('rollback');
     } finally {

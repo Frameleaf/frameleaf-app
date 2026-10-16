@@ -121,9 +121,21 @@ it.each(['current', 'replace', 'close', 'session'])(
     await fireEvent.input(input, { target: { value: 'Hiking' } });
     await fireEvent.click(await screen.findByRole('option', { name: /frameleaf_info_create_tag/ }));
     await waitFor(() => expect(upsertTags).toHaveBeenCalled());
-    if (change === 'replace') await view.rerender({ asset: replacement });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    switch (change) {
+      case 'replace': {
+        await view.rerender({ asset: replacement });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve([tag('new', 'Hiking')]);
     await new Promise((resolve) => setTimeout(resolve, 0));
     if (change === 'current') {
@@ -150,15 +162,35 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
     const view = render(DetailPanelTags, { asset, isOwner: true, onAssetRefresh });
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_info_remove_tag' }));
     await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
-    if (change === 'replace' || change === 'return') await view.rerender({ asset: replacement });
-    if (change === 'return') await view.rerender({ asset });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'replace' || change === 'return') {
+      await view.rerender({ asset: replacement });
+    }
+    switch (change) {
+      case 'return': {
+        await view.rerender({ asset });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve(updated);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    if (change === 'current') expect(onAssetRefresh).toHaveBeenCalledWith(updated);
-    else expect(onAssetRefresh).not.toHaveBeenCalled();
-    if (change === 'replace') expect(screen.getByText('Replacement')).toBeInTheDocument();
-    if (change === 'return') expect(screen.getByText('Original')).toBeInTheDocument();
+    if (change === 'current') {
+      expect(onAssetRefresh).toHaveBeenCalledWith(updated);
+    } else {
+      expect(onAssetRefresh).not.toHaveBeenCalled();
+    }
+    if (change === 'replace') {
+      expect(screen.getByText('Replacement')).toBeInTheDocument();
+    } else if (change === 'return') {
+      expect(screen.getByText('Original')).toBeInTheDocument();
+    }
   },
 );

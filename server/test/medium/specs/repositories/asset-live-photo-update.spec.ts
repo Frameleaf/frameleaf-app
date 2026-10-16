@@ -1,16 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
-
 describe('atomic Live Photo asset edits', () => {
   let db: Kysely<DB>;
   beforeAll(async () => {
@@ -220,10 +219,8 @@ describe('atomic Live Photo asset edits', () => {
           });
           return sut.update(f.auth, f.photo.id, { livePhotoVideoId: f.video.id });
         })
-        .then(
-          () => undefined,
-          (error: unknown) => error,
-        );
+        .then(() => {})
+        .catch((error: unknown) => error);
       const pid = await Promise.race([
         connection.promise,
         second.then(() => {

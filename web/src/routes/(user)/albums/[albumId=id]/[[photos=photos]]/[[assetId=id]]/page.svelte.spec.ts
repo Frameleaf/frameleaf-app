@@ -188,10 +188,13 @@ it.each(['replacement', 'session', 'close'] as const)(
     const manager = albumLibraryFixture.manager as { refresh: ReturnType<typeof vi.fn> };
     const view = render(AlbumPage, { data: data(original) as never });
     const done = owners.header!.onRefresh();
-    if (change === 'replacement')
+    if (change === 'replacement') {
       await view.rerender({ data: data(albumFactory.build({ id: 'new-album', kind: AlbumKind.Album })) as never });
-    else if (change === 'session') owners.current = false;
-    else view.unmount();
+    } else if (change === 'session') {
+      owners.current = false;
+    } else {
+      view.unmount();
+    }
     pending.resolve({ ...original, assetCount: original.assetCount + 1 });
     await done;
     expect(invalidate).not.toHaveBeenCalled();
@@ -225,10 +228,13 @@ it.each(['replacement', 'session', 'close'] as const)(
       data: data(albumFactory.build({ id: 'shuffle-original', kind: AlbumKind.Album })) as never,
     });
     const done = owners.header!.onSlideshow();
-    if (change === 'replacement')
+    if (change === 'replacement') {
       await view.rerender({ data: data(albumFactory.build({ id: 'shuffle-next', kind: AlbumKind.Album })) as never });
-    else if (change === 'session') owners.current = false;
-    else view.unmount();
+    } else if (change === 'session') {
+      owners.current = false;
+    } else {
+      view.unmount();
+    }
     pending.resolve(assetFactory.build() as unknown as TimelineAsset);
     await done;
     expect(assetViewerManager.setAssetId).not.toHaveBeenCalled();
@@ -255,7 +261,9 @@ it.each(['none', 'close', 'session'] as const)(
     manager.getRandomAsset.mockResolvedValueOnce(asset);
     vi.mocked(assetViewerManager.setAssetId).mockImplementationOnce(async (_id, options) => {
       await pending.promise;
-      if (options?.isCurrent?.()) options.onSet?.();
+      if (options?.isCurrent?.()) {
+        options.onSet?.();
+      }
       return asset;
     });
     const view = render(AlbumPage, {
@@ -263,8 +271,11 @@ it.each(['none', 'close', 'session'] as const)(
     });
     const done = owners.header!.onSlideshow();
     await tick();
-    if (change === 'close') view.unmount();
-    else if (change === 'session') owners.current = false;
+    if (change === 'close') {
+      view.unmount();
+    } else if (change === 'session') {
+      owners.current = false;
+    }
     pending.resolve();
     await done;
     expect(get(slideshowStore.slideshowState)).toBe(

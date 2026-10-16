@@ -61,6 +61,8 @@ const setup = (db?: Kysely<DB>) => {
       UserRepository,
       MapRepository,
       MediaOperationRepository,
+      // FL-412: deleting an item asks whether its original is shared before its unfinished moves are released.
+      PhysicalFileRepository,
       // FL-353: reading an item asks the settings whether places are on, then the place pack.
       ConfigRepository,
       SearchRepository,

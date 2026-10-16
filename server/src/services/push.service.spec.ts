@@ -27,7 +27,6 @@ import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { factory } from 'test/small.factory.js';
-
 type DeviceKey = { publicKey: string; privateKey: KeyObject };
 
 const newDeviceKey = (): DeviceKey => {
@@ -478,13 +477,15 @@ describe(PushService.name, () => {
         apnsEnvironment: 'sandbox',
       });
       devices.getDeliveryTargets.mockResolvedValue([target]);
-      gateway.send.mockImplementationOnce(async (_target, request) => {
-        expect(request.token).toBe(token);
-        target.pushToken = replacement;
-        target.pushToStartToken = replacement;
-        for (const activity of target.activities) activity.token = replacement;
-        return { status: 'invalid-token' };
-      });
+      gateway.send.mockImplementationOnce((_target, request) =>
+        Promise.try(() => {
+          expect(request.token).toBe(token);
+          target.pushToken = replacement;
+          target.pushToStartToken = replacement;
+          for (const activity of target.activities) activity.token = replacement;
+          return { status: 'invalid-token' };
+        }),
+      );
 
       await sut.handleDeliver({
         notice: notice(kind === PushTargetKind.Device ? {} : { activation: activation('active') }),

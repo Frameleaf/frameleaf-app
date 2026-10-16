@@ -67,7 +67,6 @@ import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
-
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
   AssetEditAction.Rotate,
@@ -284,9 +283,14 @@ export class AssetService extends BaseService {
       const update: UpdateAssetDto = {};
       if (dto.description && !current.exifInfo?.description) update.description = dto.description;
       if (
-        dto.latitude != null &&
-        dto.longitude != null &&
-        (current.exifInfo?.latitude == null || current.exifInfo?.longitude == null)
+        dto.latitude !== null &&
+        dto.latitude !== undefined &&
+        dto.longitude !== null &&
+        dto.longitude !== undefined &&
+        (current.exifInfo?.latitude === null ||
+          current.exifInfo?.latitude === undefined ||
+          current.exifInfo?.longitude === null ||
+          current.exifInfo?.longitude === undefined)
       ) {
         update.latitude = dto.latitude;
         update.longitude = dto.longitude;
@@ -836,6 +840,8 @@ export class AssetService extends BaseService {
     // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
     // another asset references (a deduplicated original).
     let removedOriginalPath: string | undefined;
+    // FL-412: read before the row goes. A shared original's file is the other assets' too.
+    const sharedOriginal = await this.physicalFileRepository.isOriginalShared(id);
     const removedAsset = await this.assetRepository.remove(asset, {
       files: (removed) => {
         const assetFiles = getAssetFiles(removed.files);
@@ -866,7 +872,11 @@ export class AssetService extends BaseService {
         // and a copy across filesystems staged beside the new one (always Frameleaf's own)
         for (const move of removed.pendingMoves) {
           const isOwnersFile = move.pathType === AssetPathType.Original || move.pathType === AssetFileType.Sidecar;
-          if (ownsOriginal || !isOwnersFile) {
+          // FL-412: a shared original's unfinished move can have left the only copy at either path, and the
+          // assets that keep the file still need it: both stay on disk (Library Care's missing-file check
+          // finds the copy if it is at the new path)
+          const keepsSharedOriginal = sharedOriginal && move.pathType === AssetPathType.Original;
+          if ((ownsOriginal || !isOwnersFile) && !keepsSharedOriginal) {
             files.push(move.oldPath, move.newPath);
           }
           files.push(move.stagedPath);

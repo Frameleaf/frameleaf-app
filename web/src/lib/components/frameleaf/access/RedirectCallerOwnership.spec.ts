@@ -71,8 +71,11 @@ it.each(['account', 'provider'] as const)('does not redirect a %s result in anot
   vi.stubGlobal('location', { assign, href: location.href, origin: location.origin, search: location.search });
   sdkMock.startFrameleafSignIn.mockReturnValue(pending.promise);
   sdkMock.startOAuth.mockReturnValue(pending.promise);
-  if (kind === 'account') render(FrameleafAccountSection);
-  else render(SignInProviderSection);
+  if (kind === 'account') {
+    render(FrameleafAccountSection);
+  } else {
+    render(SignInProviderSection);
+  }
   const button = await screen.findByRole('button', {
     name: kind === 'account' ? 'frameleaf_personal_link' : 'frameleaf_access_provider_connect',
   });

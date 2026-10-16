@@ -4,10 +4,9 @@ import { mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
-import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import type { TakeoutZipEntry } from 'src/utils/takeout-zip.js';
-
+import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs')>();
   return { ...original, createReadStream: vi.fn(original.createReadStream) };
@@ -88,9 +87,11 @@ describe(TakeoutStagingRepository.name, () => {
       destination = join(directory, 'copy');
     await writeFile(staged, 'data');
     await expect(
-      sut.copyToLibrary(staged, 4, destination, signal(), async () => {
-        throw new Error('recording ownership failed');
-      }),
+      sut.copyToLibrary(staged, 4, destination, signal(), () =>
+        Promise.try(() => {
+          throw new Error('recording ownership failed');
+        }),
+      ),
     ).rejects.toThrow('recording ownership failed');
     expect(createReadStream).not.toHaveBeenCalled();
     await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -164,7 +165,7 @@ describe(TakeoutStagingRepository.name, () => {
       path,
       {
         size: bytes.length,
-        read: async (position, length) => bytes.subarray(position, position + length),
+        read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
       },
       {
         name: 'photo.jpg',
@@ -221,7 +222,7 @@ describe(TakeoutStagingRepository.name, () => {
         path,
         {
           size: bytes.length,
-          read: async (position, length) => bytes.subarray(position, position + length),
+          read: (position, length) => Promise.try(() => bytes.subarray(position, position + length)),
         },
         entry,
         destination,

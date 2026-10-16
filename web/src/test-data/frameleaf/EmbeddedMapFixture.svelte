@@ -4,7 +4,6 @@
 
   // eslint-disable-next-line no-useless-assignment
   let { map = $bindable(undefined), children }: { map?: unknown; children?: Snippet<[{ map: unknown }]> } = $props();
-  // eslint-disable-next-line no-useless-assignment
   map = getMapLibreStubMap();
 </script>
 

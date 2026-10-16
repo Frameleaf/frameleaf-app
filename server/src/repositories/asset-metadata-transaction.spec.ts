@@ -20,7 +20,10 @@ describe('Metadata fill transaction', () => {
         ]);
         expect(queries.slice(2).every(({ sql }) => sql.endsWith('for update nowait'))).toBe(true);
         expect(queries[1].parameters).toEqual(['asset']);
-        await assets.upsertExif({ exif: { assetId: 'asset', description: 'From Google' } });
+        await assets.upsertExif({
+          lockedPropertiesBehavior: 'override',
+          exif: { assetId: 'asset', description: 'From Google' },
+        });
       });
       expect(queries.at(-1)?.sql).toBe('commit');
     } finally {
@@ -47,9 +50,11 @@ describe('Metadata fill transaction', () => {
     const { db, queries } = scriptedKysely(() => ({ rows: [{ id: 'asset' }] }));
     try {
       await expect(
-        new AssetRepository(db).withMetadataUpdate('asset', async () => {
-          throw Object.assign(new Error('write failed'), { code });
-        }),
+        new AssetRepository(db).withMetadataUpdate('asset', () =>
+          Promise.try(() => {
+            throw Object.assign(new Error('write failed'), { code });
+          }),
+        ),
       ).rejects.toThrow(code ? 'retry the update' : 'write failed');
       expect(queries.at(-1)?.sql).toBe('rollback');
     } finally {

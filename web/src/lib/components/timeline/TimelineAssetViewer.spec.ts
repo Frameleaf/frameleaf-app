@@ -133,15 +133,33 @@ it.each(['none', 'unmount', 'session', 'replacement', 'close'] as const)(
         invisible: false,
       });
       await fireEvent.click(await view.findByRole('button', { name: 'Random slide' }));
-      if (retire === 'unmount') view.unmount();
-      else if (retire === 'session') current = false;
-      else if (retire === 'replacement') assetViewerManager.setAsset(replacement);
-      else if (retire === 'close') assetViewerManager.showAssetViewer(false);
+      switch (retire) {
+        case 'unmount': {
+          view.unmount();
+          break;
+        }
+        case 'session': {
+          current = false;
+          break;
+        }
+        case 'replacement': {
+          assetViewerManager.setAsset(replacement);
+          break;
+        }
+        case 'close': {
+          assetViewerManager.showAssetViewer(false);
+          break;
+        }
+        // No default
+      }
       pending.resolve(toTimelineAsset(random));
       await pending.promise;
       await new Promise((resolve) => setTimeout(resolve, 0));
-      if (retire === 'none') expect(navigate).toHaveBeenCalledWith({ targetRoute: 'current', assetId: random.id });
-      else expect(navigate).not.toHaveBeenCalled();
+      if (retire === 'none') {
+        expect(navigate).toHaveBeenCalledWith({ targetRoute: 'current', assetId: random.id });
+      } else {
+        expect(navigate).not.toHaveBeenCalled();
+      }
     } finally {
       session.mockRestore();
     }

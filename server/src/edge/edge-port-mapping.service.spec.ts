@@ -155,7 +155,7 @@ describe(EdgePortMappingService.name, () => {
       if (stage === 'discovery') expect(gateway.map).not.toHaveBeenCalled();
       else expect(gateway.unmap).toHaveBeenCalledWith(2443);
       if (stage === 'renewal') expect(gateway.unmap).toHaveBeenCalledTimes(1);
-      if (stage === 'mapping') expect(gateway.externalIp).not.toHaveBeenCalled();
+      else if (stage === 'mapping') expect(gateway.externalIp).not.toHaveBeenCalled();
     },
   );
 
@@ -262,13 +262,17 @@ describe(EdgePortMappingService.name, () => {
       const address = Promise.withResolvers<string>();
       let stopped = false;
       let removed = false;
-      gateway.stop.mockImplementation(async () => {
-        stopped = true;
-      });
-      gateway.unmap.mockImplementation(async () => {
-        if (stopped) throw new Error('socket closed');
-        removed = true;
-      });
+      gateway.stop.mockImplementation(() =>
+        Promise.try(() => {
+          stopped = true;
+        }),
+      );
+      gateway.unmap.mockImplementation(() =>
+        Promise.try(() => {
+          if (stopped) throw new Error('socket closed');
+          removed = true;
+        }),
+      );
       if (stage === 'renewal address') {
         gateway.externalIp.mockImplementation(() => {
           started.resolve();

@@ -8,7 +8,6 @@ import {
   getStack,
   updatePerson,
   removeAssetFromStack,
-  deleteStacks,
   getFaces,
   updateAsset,
   type AssetResponseDto,
@@ -206,8 +205,11 @@ describe('AssetViewer', () => {
       Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: view.container });
       onTestFinished(() => {
         document.exitFullscreen = previousExit;
-        if (previousElement) Object.defineProperty(document, 'fullscreenElement', previousElement);
-        else Reflect.deleteProperty(document, 'fullscreenElement');
+        if (previousElement) {
+          Object.defineProperty(document, 'fullscreenElement', previousElement);
+        } else {
+          Reflect.deleteProperty(document, 'fullscreenElement');
+        }
       });
       slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
       slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
@@ -230,7 +232,9 @@ describe('AssetViewer', () => {
       const pending = deferred<AssetResponseDto>();
       const restart = vi.fn();
       const unsubscribe = slideshowStore.restartProgress.subscribe((value) => {
-        if (value) restart();
+        if (value) {
+          restart();
+        }
       });
       onTestFinished(unsubscribe);
       vi.mocked(getAssetInfo).mockReset().mockReturnValueOnce(pending.promise);
@@ -280,7 +284,9 @@ describe('AssetViewer', () => {
       const controls = await view.findByTestId('slideshow-controls');
       const restart = vi.fn();
       const unsubscribe = slideshowStore.restartProgress.subscribe((value) => {
-        if (value) restart();
+        if (value) {
+          restart();
+        }
       });
       onTestFinished(unsubscribe);
       await fireEvent.click(within(controls).getByRole('button', { name: /^next$/i }));
@@ -299,7 +305,7 @@ describe('AssetViewer', () => {
     vi.mocked(getStack).mockResolvedValue(stack);
     const removal = deferred<void>();
     const confirmation = deferred<boolean>();
-    vi.mocked(removeAssetFromStack).mockReturnValue(removal.promise);
+    vi.mocked(removeAssetFromStack).mockReturnValue(removal.promise as ReturnType<typeof removeAssetFromStack>);
     const dialog = vi.spyOn(modalManager, 'showDialog').mockReturnValue(confirmation.promise);
     const onClose = vi.fn();
     const onAction = vi.fn();
@@ -411,7 +417,9 @@ describe('AssetViewer', () => {
       } else {
         vi.mocked(getAssetInfo).mockReturnValueOnce(lookup.promise);
       }
-      const dialog = vi.spyOn(modalManager, 'show').mockResolvedValue({ kind: 'person', person });
+      const dialog = vi
+        .spyOn(modalManager, 'show')
+        .mockImplementation((async () => ({ kind: 'person', person })) as typeof modalManager.show);
       const onAction = vi.fn();
       const onAssetUpdate = vi.fn();
       const props = { cursor: { current: original }, showNavigation: false, onAction, onAssetUpdate };

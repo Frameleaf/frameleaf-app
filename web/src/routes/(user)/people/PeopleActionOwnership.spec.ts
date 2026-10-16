@@ -82,8 +82,11 @@ it.each(['session', 'navigation'] as const)('does not start a rename follow-up r
   sdkMock.updatePerson.mockReturnValue(pending.promise);
   const view = render(PeoplePage, { data });
   const done = actions.rename!('New name');
-  if (change === 'session') authManager.reset();
-  else view.unmount();
+  if (change === 'session') {
+    authManager.reset();
+  } else {
+    view.unmount();
+  }
   pending.resolve({ ...person, name: 'New name' } as Awaited<ReturnType<typeof sdkMock.updatePerson>>);
   await done;
   expect(sdkMock.searchPerson).not.toHaveBeenCalled();

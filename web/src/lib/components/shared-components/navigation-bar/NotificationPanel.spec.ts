@@ -102,7 +102,7 @@ it.each(['current', 'close', 'session'])('opens a read notification only for its
     {
       ...notification('album', 'Album shared'),
       type: NotificationType.AlbumInvite,
-      data: JSON.stringify({ albumId: 'album-id' }),
+      data: JSON.stringify({ albumId: 'album-id' }) as unknown as NotificationDto['data'],
     },
   ];
   const pending = deferredPromise<void>();
@@ -110,12 +110,17 @@ it.each(['current', 'close', 'session'])('opens a read notification only for its
   const view = render(NotificationPanel);
   await fireEvent.click(screen.getByText('Album shared'));
   expect(sdkMock.updateNotification).toHaveBeenCalled();
-  if (change === 'close') view.unmount();
-  if (change === 'session') authManager.reset();
+  if (change === 'close') {
+    view.unmount();
+  } else if (change === 'session') {
+    authManager.reset();
+  }
   pending.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(goto).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
-  if (change === 'current') expect(goto).toHaveBeenCalledWith('/albums/album-id');
+  if (change === 'current') {
+    expect(goto).toHaveBeenCalledWith('/albums/album-id');
+  }
 });
 
 it.each(['current', 'close', 'session'])('announces mark-all only for its panel owner: %s', async (change) => {
@@ -125,8 +130,11 @@ it.each(['current', 'close', 'session'])('announces mark-all only for its panel 
   try {
     const view = render(NotificationPanel);
     await fireEvent.click(screen.getByRole('button', { name: en.mark_all_as_read }));
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'close') {
+      view.unmount();
+    } else if (change === 'session') {
+      authManager.reset();
+    }
     pending.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(info).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
@@ -137,7 +145,11 @@ it.each(['current', 'close', 'session'])('announces mark-all only for its panel 
 
 it('reports malformed notification data without starting navigation', async () => {
   notificationManager.notifications = [
-    { ...notification('bad', 'Malformed album'), type: NotificationType.AlbumInvite, data: '{broken' },
+    {
+      ...notification('bad', 'Malformed album'),
+      type: NotificationType.AlbumInvite,
+      data: '{broken' as unknown as NotificationDto['data'],
+    },
   ];
   sdkMock.updateNotification.mockResolvedValueOnce(undefined as never);
   render(NotificationPanel);

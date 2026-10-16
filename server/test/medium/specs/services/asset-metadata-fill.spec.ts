@@ -73,7 +73,10 @@ describe('Matched import metadata fills', () => {
   it('preserves description and coordinates committed after the earlier missing-field snapshot', async () => {
     const { sut, auth, asset, assets, jobs } = await setup();
     expect((await assets.getById(asset.id, { exifInfo: true }))?.exifInfo).toBeNull();
-    await assets.upsertExif({ exif: { assetId: asset.id, description: 'Mine', latitude: 5, longitude: 6 } });
+    await assets.upsertExif({
+      lockedPropertiesBehavior: 'override',
+      exif: { assetId: asset.id, description: 'Mine', latitude: 5, longitude: 6 },
+    });
     await sut.fillMissingMetadata(auth, asset.id, { description: 'From Google', latitude: 1, longitude: 2 });
     expect((await assets.getById(asset.id, { exifInfo: true }))?.exifInfo).toMatchObject({
       description: 'Mine',
@@ -104,7 +107,7 @@ describe('Matched import metadata fills', () => {
       state === 'Locked' ? AssetVisibility.Locked : AssetVisibility.Timeline,
     );
     if (state === 'deleted') await assets.update({ id: asset.id, deletedAt: new Date() });
-    if (state === 'foreign') auth.user.id = (await setup()).user.id;
+    else if (state === 'foreign') auth.user.id = (await setup()).user.id;
     if (state === 'Locked')
       expect(await sut.fillMissingMetadata(auth, asset.id, { description: 'From Google' })).toBe(false);
     else
@@ -117,7 +120,7 @@ describe('Matched import metadata fills', () => {
 
   it('refuses an ordinary writer holding an existing EXIF row, then preserves its committed edit', async () => {
     const { sut, auth, asset, assets } = await setup();
-    await assets.upsertExif({ exif: { assetId: asset.id, description: '' } });
+    await assets.upsertExif({ lockedPropertiesBehavior: 'override', exif: { assetId: asset.id, description: '' } });
     await db.transaction().execute(async (tx) => {
       await tx.updateTable('asset_exif').set({ description: 'Mine' }).where('assetId', '=', asset.id).execute();
       await expect(sut.fillMissingMetadata(auth, asset.id, { description: 'From Google' })).rejects.toThrow(
@@ -147,16 +150,21 @@ describe('Matched import metadata fills', () => {
     const manual = () =>
       db.transaction().execute(async (tx) => {
         started.resolve();
-        await new AssetRepository(tx).upsertExif({ exif: { assetId: asset.id, description: 'Mine' } });
+        await new AssetRepository(tx).upsertExif({
+          lockedPropertiesBehavior: 'override',
+          exif: { assetId: asset.id, description: 'Mine' },
+        });
       });
     const result = await Promise.allSettled([
       assets.withMetadataUpdate(asset.id, async (bound) => {
-        writer = manual().then(
-          () => ({ status: 'fulfilled' as const, value: undefined }),
-          (reason) => ({ status: 'rejected' as const, reason }),
-        );
+        writer = manual()
+          .then(() => ({ status: 'fulfilled' as const, value: undefined }))
+          .catch((error) => ({ status: 'rejected' as const, reason: error }));
         await started.promise;
-        await bound.upsertExif({ exif: { assetId: asset.id, description: 'From Google' } });
+        await bound.upsertExif({
+          lockedPropertiesBehavior: 'override',
+          exif: { assetId: asset.id, description: 'From Google' },
+        });
       }),
     ]);
     const written = await writer;

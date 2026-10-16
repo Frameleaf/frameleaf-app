@@ -214,10 +214,8 @@ describe('iCloud album owner and provenance reconciliation (PostgreSQL)', () => 
           connection.resolve(rows[0].pid);
           return new ICloudAlbumRepository(db).reconcile(context.connectionId, context.ownerId);
         })
-        .then(
-          (value) => ({ value }),
-          (error: unknown) => ({ error }),
-        );
+        .then((value) => ({ value }))
+        .catch((error: unknown) => ({ error }));
       const pid = await Promise.race([
         connection.promise,
         sync.then(() => {

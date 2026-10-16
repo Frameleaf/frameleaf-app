@@ -1,11 +1,10 @@
 import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { AssetLockReason, AssetType, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
-
 describe('Live Photo asset-edit transaction', () => {
   let db: Kysely<DB>;
   let sut: AssetRepository;
@@ -38,20 +37,21 @@ describe('Live Photo asset-edit transaction', () => {
       acquireConnection() {
         const connection = ++connections;
         return Promise.resolve({
-          executeQuery: async (query: { sql: string; parameters: readonly unknown[] }) => {
-            queries.push({ ...query, connection });
-            if (query.sql.includes('for update nowait') && contended)
-              throw Object.assign(new Error('busy'), { code: '55P03' });
-            if (query.sql.includes('with direct as'))
-              return { rows: (groups.shift() ?? []).map((id) => ({ id })) } as never;
-            if (query.sql.includes('from "asset"') && !query.sql.includes('for update')) {
-              reads++;
-              return {
-                rows: missing ? [] : [{ id: 'photo', livePhotoVideoId: changed && reads > 1 ? 'other' : 'old' }],
-              } as never;
-            }
-            return { rows: [] } as never;
-          },
+          executeQuery: (query: { sql: string; parameters: readonly unknown[] }) =>
+            Promise.try(() => {
+              queries.push({ ...query, connection });
+              if (query.sql.includes('for update nowait') && contended)
+                throw Object.assign(new Error('busy'), { code: '55P03' });
+              if (query.sql.includes('with direct as'))
+                return { rows: (groups.shift() ?? []).map((id) => ({ id })) } as never;
+              if (query.sql.includes('from "asset"') && !query.sql.includes('for update')) {
+                reads++;
+                return {
+                  rows: missing ? [] : [{ id: 'photo', livePhotoVideoId: changed && reads > 1 ? 'other' : 'old' }],
+                } as never;
+              }
+              return { rows: [] } as never;
+            }),
           async *streamQuery(): AsyncGenerator<never> {},
         });
       }
@@ -68,7 +68,7 @@ describe('Live Photo asset-edit transaction', () => {
       expect(assets).toBeInstanceOf(AssetRepository);
       expect(access).toBeInstanceOf(AccessRepository);
       await assets.update({ id: 'photo', livePhotoVideoId: 'video' });
-      await access.asset.checkOwnerAccess('owner', new Set(['photo']));
+      await access.asset.checkOwnerAccess('owner', new Set(['photo']), false);
     });
     const metadata = queries.filter((q) => q.sql.includes('pg_advisory_xact_lock'));
     expect(metadata.map((q) => q.parameters)).toEqual([['old'], ['photo'], ['sibling'], ['video']]);
@@ -100,9 +100,11 @@ describe('Live Photo asset-edit transaction', () => {
     async (code) => {
       const error = Object.assign(new Error('write failed'), { code });
       await expect(
-        sut.withLivePhotoUpdate('photo', null, async () => {
-          throw error;
-        }),
+        sut.withLivePhotoUpdate('photo', null, () =>
+          Promise.try(() => {
+            throw error;
+          }),
+        ),
       ).rejects.toThrow(code ? 'retry the update' : 'write failed');
       expect(rolledBack).toBe(true);
       expect(committed).toBe(false);

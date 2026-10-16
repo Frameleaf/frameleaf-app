@@ -23,15 +23,17 @@ describe('selection sharing cancellation', () => {
       const abort = new AbortController();
       let catalogueVisits = 0;
       await db.transaction().execute(async (tx) => {
-        vi.spyOn(tx.getExecutor(), 'executeQuery').mockImplementation(async (query) => {
-          if (query.sql.startsWith('select name from job_queue') && ++catalogueVisits > 1)
-            throw new Error('unexpected second sharing page');
-          if (query.sql.startsWith('with candidates as materialized')) {
-            abort.abort(new Error('sharing cancelled'));
-            return { rows: [{ runId: 'attached-run' }] };
-          }
-          return { rows: [] };
-        });
+        vi.spyOn(tx.getExecutor(), 'executeQuery').mockImplementation((query) =>
+          Promise.try(() => {
+            if (query.sql.startsWith('select name from job_queue') && ++catalogueVisits > 1)
+              throw new Error('unexpected second sharing page');
+            if (query.sql.startsWith('with candidates as materialized')) {
+              abort.abort(new Error('sharing cancelled'));
+              return { rows: [{ runId: 'attached-run' }] };
+            }
+            return { rows: [] };
+          }),
+        );
         const sharing = () => shareSelections(tx, 'producer', mode === 'explicit' ? abort.signal : undefined);
         await expect(
           mode === 'execution' ? queueExecution.run({ signal: abort.signal } as never, sharing) : sharing(),

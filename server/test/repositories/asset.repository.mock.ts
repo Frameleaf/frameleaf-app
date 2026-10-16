@@ -6,7 +6,6 @@ import {
   AssetRepository,
 } from 'src/repositories/asset.repository.js';
 import { RepositoryInterface } from 'src/types.js';
-
 export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
   return {
     create: vitest.fn(),
@@ -34,8 +33,8 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getByLibraryIdAndOriginalPath: vitest.fn(),
     deleteAll: vitest.fn(),
     update: vitest.fn(),
-    withLivePhotoUpdate: vitest.fn(),
-    withMetadataUpdate: vitest.fn(),
+    withLivePhotoUpdate: vitest.fn() as Mocked<RepositoryInterface<AssetRepository>>['withLivePhotoUpdate'],
+    withMetadataUpdate: vitest.fn() as Mocked<RepositoryInterface<AssetRepository>>['withMetadataUpdate'],
     createLivePhotoUpload: vitest.fn(),
     remove: vitest.fn(),
     // FL-179: the move runs its filesystem side in the repository's transaction, as the repository does

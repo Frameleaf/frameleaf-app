@@ -14,8 +14,8 @@ beforeEach(() => {
   vi.stubGlobal(
     'URL',
     class extends URL {
-      static createObjectURL = vi.fn(() => 'blob:preview');
-      static revokeObjectURL = vi.fn();
+      static override createObjectURL = vi.fn(() => 'blob:preview');
+      static override revokeObjectURL = vi.fn();
     },
   );
 });

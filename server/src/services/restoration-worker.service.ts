@@ -64,7 +64,6 @@ import {
   stageOfKind,
 } from 'src/utils/restoration.js';
 import { ALL_LIBRARY_ANALYSIS_QUEUES, libraryAnalysisBacklog, readQueueBacklogs } from 'src/utils/worker-inventory.js';
-
 /** How often an idle worker asks for the next restoration job. */
 export const RESTORATION_POLL_MS = 2000;
 /** How often alignment and retention run. */
@@ -355,10 +354,7 @@ export class RestorationWorkerService {
     const status = restoration.status as AssetRestorationStatus;
     const previousOperationId =
       (stage === 'preview' ? restoration.previewOperationId : restoration.fullOperationId) ?? null;
-    const ownsStage =
-      previousOperationId === null ||
-      previousOperationId === operation.id ||
-      previousOperationId === operation.retryOfId;
+    const ownsStage = [null, operation.id, operation.retryOfId].includes(previousOperationId);
     if (!canRunStage(stage, status) || !ownsStage) {
       // A retry of a preview over an accepted restoration, or of a full render over a rejected
       // one, must do nothing. The row already says what the owner decided.

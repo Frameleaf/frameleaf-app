@@ -63,10 +63,13 @@ it.each(['replacement', 'away and back', 'session'] as const)(
     const original = data();
     const view = render(PersonPage, { data: original });
     const done = hero.onFacesChanged!();
-    if (change === 'session') authManager.reset();
-    else {
+    if (change === 'session') {
+      authManager.reset();
+    } else {
       await view.rerender({ data: data('replacement') });
-      if (change === 'away and back') await view.rerender({ data: original });
+      if (change === 'away and back') {
+        await view.rerender({ data: original });
+      }
     }
     const mounts = hero.mounts;
     pending.resolve();
@@ -93,7 +96,9 @@ it.each([false, true])('reports a refresh failure only for its current view (ret
   vi.mocked(invalidateAll).mockReturnValue(pending.promise);
   const view = render(PersonPage, { data: data() });
   const done = hero.onFacesChanged!();
-  if (retired) view.unmount();
+  if (retired) {
+    view.unmount();
+  }
   pending.reject(new Error('Offline'));
   await done;
   expect(handleError).toHaveBeenCalledTimes(retired ? 0 : 1);
@@ -102,9 +107,13 @@ it.each([false, true])('reports a refresh failure only for its current view (ret
 it.each(['close', 'replacement', 'session'] as const)('ignores the retired hero callback after %s', async (change) => {
   const view = render(PersonPage, { data: data() });
   const done = hero.onFacesChanged!;
-  if (change === 'close') view.unmount();
-  else if (change === 'session') authManager.reset();
-  else await view.rerender({ data: data('replacement') });
+  if (change === 'close') {
+    view.unmount();
+  } else if (change === 'session') {
+    authManager.reset();
+  } else {
+    await view.rerender({ data: data('replacement') });
+  }
   const mounts = hero.mounts;
   await done();
   await tick();

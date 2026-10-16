@@ -13,7 +13,6 @@ import {
   restrictPreferencesUpdate,
   withoutStoredLockedRuleIds,
 } from 'src/utils/preferences.js';
-
 const stored = (value: Record<string, unknown>) =>
   [{ key: UserMetadataKey.Preferences, value }] as unknown as UserMetadataItem[];
 
@@ -25,7 +24,7 @@ describe('preferences (FL-77 admin casting permission)', () => {
     preferences.privacy.suppression.personIds = ['fixture-person'];
     Object.assign(preferences.folders, { sidebarWeb: undefined });
     Object.assign(preferences.tags, { enabled: null });
-    Object.assign(preferences.notifications, { locale: '' });
+    preferences.notifications = { locale: '' };
     Object.assign(preferences, { unknownPreference: { enabled: true } });
     const before = structuredClone(preferences);
 

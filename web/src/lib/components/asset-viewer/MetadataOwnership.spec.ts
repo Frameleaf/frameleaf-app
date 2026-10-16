@@ -28,15 +28,29 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
   async (change) => {
     const asset = owned();
     const pending = deferredPromise<typeof asset>();
-    vi.spyOn(modalManager, 'show').mockReturnValueOnce(pending.promise);
+    vi.spyOn(modalManager, 'show').mockImplementationOnce((() => pending.promise) as typeof modalManager.show);
     const onAssetRefresh = vi.fn();
     const view = render(DetailPanelLocation, { asset, isOwner: true, onAssetRefresh });
     await fireEvent.click(view.getByTitle('edit_location'));
     expect(modalManager.show).toHaveBeenCalled();
-    if (change === 'replace' || change === 'return') await view.rerender({ asset: owned() });
-    if (change === 'return') await view.rerender({ asset });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'replace' || change === 'return') {
+      await view.rerender({ asset: owned() });
+    }
+    switch (change) {
+      case 'return': {
+        await view.rerender({ asset });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.resolve(asset);
     await settle();
     expect(onAssetRefresh).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
@@ -54,10 +68,24 @@ it.each(['current', 'replace', 'return', 'close', 'session'])(
     await fireEvent.input(input, { target: { value: 'A lake' } });
     await fireEvent.focusOut(input);
     expect(sdkMock.updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { description: 'A lake' } });
-    if (change === 'replace' || change === 'return') await view.rerender({ asset: owned() });
-    if (change === 'return') await view.rerender({ asset });
-    if (change === 'close') view.unmount();
-    if (change === 'session') authManager.reset();
+    if (change === 'replace' || change === 'return') {
+      await view.rerender({ asset: owned() });
+    }
+    switch (change) {
+      case 'return': {
+        await view.rerender({ asset });
+        break;
+      }
+      case 'close': {
+        view.unmount();
+        break;
+      }
+      case 'session': {
+        authManager.reset();
+        break;
+      }
+      // No default
+    }
     pending.reject(failure);
     await settle();
     expect(handleError).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
@@ -70,13 +98,20 @@ it.each(['current', 'replace', 'return', 'session'])(
   async (change) => {
     const asset = owned();
     const pending = deferredPromise<boolean>();
-    const dialog = vi.spyOn(modalManager, 'show').mockReturnValueOnce(pending.promise);
+    const dialog = vi
+      .spyOn(modalManager, 'show')
+      .mockImplementationOnce((() => pending.promise) as typeof modalManager.show);
     const view = render(DetailPanelDate, { asset });
     await fireEvent.click(view.getByTestId('detail-panel-edit-date-button'));
-    const options = dialog.mock.calls[0][1] as { onError: (error: unknown) => void };
-    if (change === 'replace' || change === 'return') await view.rerender({ asset: owned() });
-    if (change === 'return') await view.rerender({ asset });
-    if (change === 'session') authManager.reset();
+    const options = dialog.mock.calls[0][1] as unknown as { onError: (error: unknown) => void };
+    if (change === 'replace' || change === 'return') {
+      await view.rerender({ asset: owned() });
+    }
+    if (change === 'return') {
+      await view.rerender({ asset });
+    } else if (change === 'session') {
+      authManager.reset();
+    }
     options.onError(failure);
     pending.resolve(false);
     await settle();
@@ -96,8 +131,11 @@ it.each(['current', 'replace', 'session'])('keeps description reload with its vi
   await fireEvent.focusOut(input);
   await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_info_reload' }));
   await waitFor(() => expect(sdkMock.getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
-  if (change === 'replace') await view.rerender({ asset: owned() });
-  if (change === 'session') authManager.reset();
+  if (change === 'replace') {
+    await view.rerender({ asset: owned() });
+  } else if (change === 'session') {
+    authManager.reset();
+  }
   pending.resolve(asset);
   await settle();
   expect(onAssetRefresh).toHaveBeenCalledTimes(change === 'current' ? 1 : 0);
@@ -106,20 +144,25 @@ it.each(['current', 'replace', 'session'])('keeps description reload with its vi
 it.each(['retry', 'reload'])('keeps location %s results with their view', async (action) => {
   const asset = owned();
   const pending = deferredPromise<typeof asset>();
-  const dialog = vi.spyOn(modalManager, 'show').mockResolvedValueOnce(null);
+  const dialog = vi.spyOn(modalManager, 'show').mockImplementationOnce((async () => null) as typeof modalManager.show);
   const onAssetRefresh = vi.fn();
   const view = render(DetailPanelLocation, { asset, isOwner: true, onAssetRefresh });
   await fireEvent.click(view.getByTitle('edit_location'));
-  const options = dialog.mock.calls[0][1] as {
+  const options = dialog.mock.calls[0][1] as unknown as {
     onError: (error: unknown, change: { latitude: number; longitude: number }) => void;
   };
   options.onError(action === 'retry' ? failure : { status: 404 }, { latitude: 11, longitude: 22 });
-  if (action === 'retry') sdkMock.updateAsset.mockReturnValueOnce(pending.promise);
-  else sdkMock.getAssetInfo.mockReturnValueOnce(pending.promise);
+  if (action === 'retry') {
+    sdkMock.updateAsset.mockReturnValueOnce(pending.promise);
+  } else {
+    sdkMock.getAssetInfo.mockReturnValueOnce(pending.promise);
+  }
   await fireEvent.click(await screen.findByRole('button', { name: `frameleaf_info_${action}` }));
-  if (action === 'retry')
+  if (action === 'retry') {
     expect(sdkMock.updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { latitude: 11, longitude: 22 } });
-  else expect(sdkMock.getAssetInfo).toHaveBeenCalledWith({ id: asset.id });
+  } else {
+    expect(sdkMock.getAssetInfo).toHaveBeenCalledWith({ id: asset.id });
+  }
   await view.rerender({ asset: owned() });
   pending.resolve(asset);
   await settle();
@@ -129,11 +172,11 @@ it.each(['retry', 'reload'])('keeps location %s results with their view', async 
 it('ignores a date reload after the displayed photo changes', async () => {
   const asset = owned();
   const pending = deferredPromise<typeof asset>();
-  const dialog = vi.spyOn(modalManager, 'show').mockResolvedValueOnce(false);
+  const dialog = vi.spyOn(modalManager, 'show').mockImplementationOnce((async () => false) as typeof modalManager.show);
   const onAssetRefresh = vi.fn();
   const view = render(DetailPanelDate, { asset, onAssetRefresh });
   await fireEvent.click(view.getByTestId('detail-panel-edit-date-button'));
-  const options = dialog.mock.calls[0][1] as { onError: (error: unknown) => void };
+  const options = dialog.mock.calls[0][1] as unknown as { onError: (error: unknown) => void };
   options.onError({ status: 404 });
   sdkMock.getAssetInfo.mockReturnValueOnce(pending.promise);
   await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_info_reload' }));

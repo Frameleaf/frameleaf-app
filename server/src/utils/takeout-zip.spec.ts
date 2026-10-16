@@ -197,15 +197,16 @@ describe('readTakeoutZipDirectory', () => {
     ];
     const source: TakeoutZipSource = {
       size: directoryOffset + directory.length + trailer.length,
-      read: async (position, length) => {
-        const result = Buffer.alloc(length);
-        for (const segment of segments) {
-          const from = Math.max(position, segment.offset),
-            to = Math.min(position + length, segment.offset + segment.bytes.length);
-          if (to > from) segment.bytes.copy(result, from - position, from - segment.offset, to - segment.offset);
-        }
-        return result;
-      },
+      read: (position, length) =>
+        Promise.try(() => {
+          const result = Buffer.alloc(length);
+          for (const segment of segments) {
+            const from = Math.max(position, segment.offset),
+              to = Math.min(position + length, segment.offset + segment.bytes.length);
+            if (to > from) segment.bytes.copy(result, from - position, from - segment.offset, to - segment.offset);
+          }
+          return result;
+        }),
     };
     const [entry] = await readTakeoutZipDirectory(source);
     expect(field === 'size' ? entry.uncompressedSize : entry.localHeaderOffset).toBe(marker);

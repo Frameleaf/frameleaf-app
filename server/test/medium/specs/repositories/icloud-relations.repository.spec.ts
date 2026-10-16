@@ -922,10 +922,8 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
           connection.resolve(rows[0].pid);
           return new ICloudRelationsRepository(db).reconcile(ctx.connectionId, ctx.ownerId);
         })
-        .then(
-          (value) => ({ value }),
-          (error: unknown) => ({ error }),
-        );
+        .then((value) => ({ value }))
+        .catch((error: unknown) => ({ error }));
       const pid = await Promise.race([
         connection.promise,
         linking.then(() => {

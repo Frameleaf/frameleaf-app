@@ -217,9 +217,26 @@ describe(IntegrityService.name, () => {
 
       await sut.deleteIntegrityReport('user-id', 'report-id');
 
-      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(path, expect.any(Function));
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(path, expect.any(Function), {
+        trash: { move: expect.any(Function) },
+      });
       expect(mocks.storage.unlink).toHaveBeenCalledExactlyOnceWith(path);
       expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+    });
+
+    it('moves a registered original to the file trash, never unlinking it (FL-412)', async () => {
+      const path = '/data/upload/user/stored.jpg';
+      mocks.integrityReport.getById.mockResolvedValue({ path } as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (_path, _unlink, options) => {
+        await options!.trash!.move(path, '/data/file-trash/id/stored.jpg');
+        return { deleted: true, references: 0, trashed: true };
+      });
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.storage.rename).toHaveBeenCalledWith(path, '/data/file-trash/id/stored.jpg');
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
     it('never unlinks a path something references, such as a shared original', async () => {
@@ -283,6 +300,10 @@ describe(IntegrityService.name, () => {
       });
 
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledTimes(2);
+      // FL-412: a registered original among them would go to the file trash
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(untracked, expect.any(Function), {
+        trash: { move: expect.any(Function) },
+      });
       expect(mocks.storage.unlink).toHaveBeenCalledExactlyOnceWith(untracked);
       expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['tracked-report', 'untracked-report']);
     });
@@ -401,6 +422,7 @@ describe(IntegrityService.name, () => {
       mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
       mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
       mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getRegisteredFilePathsByPaths.mockResolvedValue([]);
       mocks.systemMetadata.updateIntegrityRun.mockResolvedValue(undefined);
 
       await sut.handleUntrackedFiles({ type: 'asset', paths: [], runId: 'stale' });
@@ -408,6 +430,24 @@ describe(IntegrityService.name, () => {
 
       expect(mocks.systemMetadata.updateIntegrityRun).toHaveBeenCalledTimes(1);
       expect(mocks.systemMetadata.completeIntegrityRun).not.toHaveBeenCalled();
+    });
+
+    it('never reports a registered stored file as untracked, even while no asset names it (FL-412)', async () => {
+      const registered = '/data/upload/user/stored.jpg';
+      const orphan = '/data/upload/user/orphan.jpg';
+      mocks.integrityReport.getAssetPathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getAssetFilePathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getPersonThumbnailPathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getVideoDuplicateFramePathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getDevelopRevisionPathsByPaths.mockResolvedValue([]);
+      mocks.integrityReport.getRegisteredFilePathsByPaths.mockResolvedValue([{ path: registered }]);
+
+      await sut.handleUntrackedFiles({ type: 'asset', paths: [registered, orphan] });
+
+      expect(mocks.integrityReport.getRegisteredFilePathsByPaths).toHaveBeenCalledWith([registered, orphan]);
+      expect(mocks.integrityReport.create).toHaveBeenCalledExactlyOnceWith([
+        { type: IntegrityReport.UntrackedFile, path: orphan },
+      ]);
     });
 
     it('records a checksum pass that covered every asset, and not one stopped by its limits', async () => {

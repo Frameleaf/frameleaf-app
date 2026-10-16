@@ -17,7 +17,7 @@ import {
 import { AssetVisibility, ChecksumAlgorithm, FrameleafWorker, JobName, StorageFolder } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
-import { moveFileWithin } from 'src/utils/file-trash.js';
+import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**
@@ -85,11 +85,13 @@ export class PhysicalFileTrashService extends BaseService {
     }
 
     const extension = extname(entry.originalFileName) || extname(entry.path);
-    const target = StorageCore.getNestedPath(
-      StorageFolder.Upload,
-      owner.id,
-      `${this.cryptoRepository.randomUUID()}${extension}`,
+    const assetId = this.cryptoRepository.randomUUID();
+    const target = StorageCore.getNestedPath(StorageFolder.Upload, owner.id, `${assetId}${extension}`);
+    const expected = { checksum: entry.checksum, sizeInBytes: entry.sizeInBytes };
+    const checks = storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+      this.logger.warn(`Restored ${assetId} keeps its own file: the stored copy at ${path} holds other bytes`),
     );
+    const proof = await this.physicalFileRepository.proveStoredCopy(assetId, expected, checks.verify);
     let stat!: Awaited<ReturnType<typeof this.storageRepository.stat>>;
     let asset: Asset | undefined;
     let linked = false;
@@ -119,6 +121,7 @@ export class PhysicalFileTrashService extends BaseService {
         async (trx) => {
           asset = await this.assetRepository.create(
             {
+              id: assetId,
               ownerId: owner.id,
               libraryId: null,
               checksum: entry.checksum,
@@ -145,12 +148,10 @@ export class PhysicalFileTrashService extends BaseService {
             },
             trx,
           );
-          const stored = await this.physicalFileRepository.linkUploadedOriginal(
-            asset.id,
-            { checksum: entry.checksum, sizeInBytes: entry.sizeInBytes },
-            { exists: (path) => this.storageRepository.checkFileExists(path) },
-            trx,
-          );
+          const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, checks, {
+            transaction: trx,
+            proof,
+          });
           linked = stored?.linked === true;
         },
       );

@@ -1,4 +1,4 @@
-import { toastManager } from '@frameleaf/ui';
+import { toastManager, type ToastButton } from '@frameleaf/ui';
 import { clearPrivateBrowserState } from '$lib/frameleaf/private-browser-state';
 import { toastAction, toastUndo } from '$lib/frameleaf/toast';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -19,11 +19,25 @@ it.each(['current', 'navigation', 'reset', 'other-account', 'privacy'])(
   (change) => {
     const undo = vi.fn();
     toastUndo('Saved', undo);
-    const action = vi.mocked(toastManager.show).mock.calls[0][0].button!.onclick;
-    if (change === 'navigation') history.pushState({}, '', '/photos');
-    if (change === 'reset') authManager.reset();
-    if (change === 'other-account') authManager.setUser(userAdminFactory.build({ id: 'other' }));
-    if (change === 'privacy') clearPrivateBrowserState();
+    const action = (vi.mocked(toastManager.show).mock.calls[0][0].button as ToastButton).onclick;
+    switch (change) {
+      case 'navigation': {
+        history.pushState({}, '', '/photos');
+        break;
+      }
+      case 'reset': {
+        authManager.reset();
+        break;
+      }
+      case 'other-account': {
+        authManager.setUser(userAdminFactory.build({ id: 'other' }));
+        break;
+      }
+      // No default
+    }
+    if (change === 'privacy') {
+      clearPrivateBrowserState();
+    }
     action?.();
     expect(undo).toHaveBeenCalledTimes(change === 'current' || change === 'navigation' ? 1 : 0);
   },
@@ -36,6 +50,6 @@ it('preserves a live action label and timeout', () => {
     expect.objectContaining({ description: 'Merged', button: expect.objectContaining({ label: 'Open' }) }),
     { timeout: 4000 },
   );
-  vi.mocked(toastManager.show).mock.calls[0][0].button?.onclick?.();
+  (vi.mocked(toastManager.show).mock.calls[0][0].button as ToastButton).onclick?.();
   expect(open).toHaveBeenCalledOnce();
 });

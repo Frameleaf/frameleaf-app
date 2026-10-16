@@ -48,7 +48,7 @@ import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
-import { moveFileWithin } from 'src/utils/file-trash.js';
+import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import { FileDownloadResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -232,16 +232,16 @@ export class AssetMediaService extends BaseService {
     }
 
     // universal storage: one file per content, server-wide. Content another library already holds is
-    // linked to that file and the upload released; new content becomes its own primary file.
-    const stored = await this.physicalFileRepository.linkUploadedOriginal(
-      asset.id,
-      { checksum: file.checksum, sizeInBytes: file.size },
-      {
-        exists: (path) => this.storageRepository.checkFileExists(path),
-        untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
-        ...(options.quotaCharged && { ingestion: options.ingestion }),
-      },
-    );
+    // linked to that file and the upload released; new content becomes its own primary file. FL-412: only
+    // a stored file proven to hold the same bytes replaces the upload's own copy.
+    const expected = { checksum: file.checksum, sizeInBytes: file.size };
+    const stored = await this.physicalFileRepository.linkUploadedOriginal(asset.id, expected, {
+      ...storedCopyChecks(this.storageRepository, this.cryptoRepository, expected, (path) =>
+        this.logger.warn(`Upload ${asset.id} keeps its own file: the stored copy at ${path} holds other bytes`),
+      ),
+      untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
+      ...(options.quotaCharged && { ingestion: options.ingestion }),
+    });
     if (stored?.linked) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
       asset.originalPath = stored.physicalFile.path;

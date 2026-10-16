@@ -2,13 +2,12 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import type {
   ICloudIdentityAdoptionRepository,
   IdentityAdoptionEvidence,
 } from 'src/repositories/icloud-identity-adoption.repository.js';
+import { AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
-
 vi.mock('src/services/icloud-identity.service.js', () => ({ identityMatchingEnabled: () => true }));
 vi.mock('src/repositories/icloud-weekly-adoption-authority.js', () => ({ weeklyIdentityAdoptionActive: () => true }));
 
@@ -22,7 +21,13 @@ describe('identity adoption owned-file lifetime', () => {
     resourceId: 'resource',
     resourceLeaseToken: 'resource-token',
   };
-  const fixtures: Awaited<ReturnType<typeof fixture>>[] = [];
+  const fixtures: {
+    directory: string;
+    result: PromiseWithResolvers<{ status: 'healthy' | 'unsupported' }>;
+    settled: PromiseWithResolvers<void>;
+    tasks: Promise<unknown>[];
+    sut: ICloudIdentityAdoptionService;
+  }[] = [];
   async function fixture() {
     vi.stubEnv('FRAMELEAF_ICLOUD_IDENTITY_ADOPTION', 'true');
     const directory = await mkdtemp(join(tmpdir(), 'frameleaf-adoption-lifetime-'));

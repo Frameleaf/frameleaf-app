@@ -32,6 +32,7 @@ describe('shared-link owner authentication', () => {
       const slug = `fixture-${user.id}`;
       await ctx.get(SharedLinkRepository).create({
         userId: user.id,
+        allowUpload: false,
         key,
         slug,
         type: SharedLinkType.Individual,

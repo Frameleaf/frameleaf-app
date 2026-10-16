@@ -235,7 +235,7 @@ describe('takeoutScannedItem', () => {
 
   it('prefers a Unicode-equivalent title over a more detailed unrelated candidate', () => {
     const unrelated = { id: 'other', metadata: { title: 'other.jpg', description: 'details', favorite: true } };
-    const matching = { id: 'matching', metadata: { title: 'Caf\u{e9}.JPG' } };
+    const matching = { id: 'matching', metadata: { title: 'Caf\u{E9}.JPG' } };
     expect(takeoutMostLikelySidecar('Cafe\u{301}.jpg', [unrelated, matching])).toBe(matching);
   });
 

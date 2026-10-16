@@ -1,6 +1,6 @@
 import { ModuleRef, Reflector } from '@nestjs/core';
 import { Kysely, sql } from 'kysely';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -196,7 +196,8 @@ const exifOf = (assetId: string) =>
   db.selectFrom('asset_exif').selectAll().where('assetId', '=', assetId).executeTakeFirstOrThrow();
 
 const newSourceAsset = async (ctx: Ctx, ownerId: string, size = 1234) => {
-  const { asset } = await ctx.newAsset({ ownerId });
+  // a path of its own: assets on one path share that file, and its primary stays its first owner (FL-412)
+  const { asset } = await ctx.newAsset({ ownerId, originalPath: `/data/upload/${ownerId}/${randomUUID()}.jpg` });
   await ctx.newExif({ assetId: asset.id, fileSizeInByte: size, description: 'at the lake', city: 'Calgary' });
   return asset;
 };

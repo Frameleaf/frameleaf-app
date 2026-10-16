@@ -38,7 +38,7 @@ describe('RemoveAssetFromStack', () => {
     const stack: StackResponseDto = { id: 'original-stack', primaryAssetId: primary.id, assets: [primary, current] };
     const onAction = vi.fn();
     const pending = deferredPromise<void>();
-    sdkMock.removeAssetFromStack.mockReturnValue(pending.promise);
+    sdkMock.removeAssetFromStack.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>);
     const view = render(RemoveAssetFromStack, { asset: current, stack, onAction });
     await userEvent.click(screen.getByText(en.viewer_remove_from_stack));
     await view.rerender({
@@ -61,7 +61,7 @@ describe('RemoveAssetFromStack', () => {
     const stack: StackResponseDto = { id: 'stack', primaryAssetId: asset.id, assets: [asset] };
     const onAction = vi.fn();
     const pending = deferredPromise<void>();
-    sdkMock.removeAssetFromStack.mockReturnValue(pending.promise);
+    sdkMock.removeAssetFromStack.mockReturnValue(pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>);
     render(RemoveAssetFromStack, { asset, stack, onAction });
     await userEvent.click(screen.getByText(en.viewer_remove_from_stack));
     authManager.reset();
