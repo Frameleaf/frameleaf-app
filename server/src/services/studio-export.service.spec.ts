@@ -1314,6 +1314,17 @@ describe(StudioExportService.name, () => {
       expect(repository.stage).not.toHaveBeenCalled();
     });
 
+    it('refuses a malformed declared contract before staging publication', async () => {
+      await expect(
+        sut.onRenderCompleted(
+          operation({ snapshot: { kind: 'studio-export', contract: { video: { minBitDepth: 12 }, audio: null } } }),
+          'worker-1',
+          { path: staged, checksum: 'ab'.repeat(32), sizeInBytes: '1024', contentType: 'video/mp4' },
+        ),
+      ).rejects.toThrow('Invalid export contract');
+      expect(repository.stage).not.toHaveBeenCalled();
+    });
+
     it('stages a good output, queues its publication and keeps a remote copy on record for deletion', async () => {
       repository.stage = vi.fn(
         (_id: string, _claimToken: string, _output: unknown, publish: (version: StudioExportVersion) => object) => {

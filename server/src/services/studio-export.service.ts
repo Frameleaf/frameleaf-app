@@ -888,6 +888,12 @@ export class StudioExportService {
       throw new BadRequestException('The output is missing or its size does not match');
     }
 
+    const declaredContract = (operation.snapshot as { contract?: unknown }).contract;
+    const contract = parseStudioExportContract(declaredContract);
+    if (declaredContract !== undefined && declaredContract !== null && !contract) {
+      throw new BadRequestException('Invalid export contract');
+    }
+
     const staged = await this.repository.stage(
       operation.id,
       operation.claimToken,
@@ -916,7 +922,7 @@ export class StudioExportService {
           renderOperationId: operation.id,
           projectId: version.projectId as string,
           revision: version.revision,
-          contract: parseStudioExportContract((operation.snapshot as { contract?: unknown } | null)?.contract),
+          contract,
           smoothMotion: parseStudioExportSmoothMotion(
             (operation.snapshot as { smoothMotion?: unknown } | null)?.smoothMotion,
           ),
