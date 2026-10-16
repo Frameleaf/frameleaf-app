@@ -10,6 +10,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newTestService } from 'test/utils.js';
+
 describe('atomic Live Photo asset edits', () => {
   let db: Kysely<DB>;
   beforeAll(async () => {

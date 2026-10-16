@@ -99,7 +99,9 @@ if (input === 'hang') {
       if (pid) {
         try {
           process.kill(pid, 'SIGKILL');
-        } catch {}
+        } catch {
+          // the worker may already have exited; the wait below checks it is gone either way
+        }
         await vi.waitFor(() => expect(() => process.kill(pid!, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' })));
       }
       await outcome;

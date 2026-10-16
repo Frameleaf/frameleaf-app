@@ -27,6 +27,7 @@ import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { factory } from 'test/small.factory.js';
+
 type DeviceKey = { publicKey: string; privateKey: KeyObject };
 
 const newDeviceKey = (): DeviceKey => {

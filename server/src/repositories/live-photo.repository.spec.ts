@@ -2,6 +2,7 @@ import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+
 describe('Live Photo relink transaction', () => {
   let db: Kysely<DB>;
   let sut: LivePhotoRepository;

@@ -9,6 +9,7 @@ import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AssetVisibility, MediaOperationKind, PushPlatform } from 'src/enum.js';
 import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
+
 export type PushDevice = Selectable<PushDeviceTable>;
 export type PushDeviceActivity = Selectable<PushDeviceActivityTable>;
 export type PushDeviceWithActivities = PushDevice & {

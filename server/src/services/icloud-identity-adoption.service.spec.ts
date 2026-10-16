@@ -8,6 +8,7 @@ import type {
 } from 'src/repositories/icloud-identity-adoption.repository.js';
 import { AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
+
 vi.mock('src/services/icloud-identity.service.js', () => ({ identityMatchingEnabled: () => true }));
 vi.mock('src/repositories/icloud-weekly-adoption-authority.js', () => ({ weeklyIdentityAdoptionActive: () => true }));
 

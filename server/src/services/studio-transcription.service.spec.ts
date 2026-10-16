@@ -290,7 +290,9 @@ if (process.argv.at(-1) === 'ordinary') {
         if (pid) {
           try {
             process.kill(pid, 'SIGKILL');
-          } catch {}
+          } catch {
+            // the worker may already have exited
+          }
         }
         await running;
         vi.unstubAllEnvs();

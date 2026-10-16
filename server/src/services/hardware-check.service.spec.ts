@@ -93,26 +93,42 @@ describe(HardwareCheckService.name, () => {
         .mockResolvedValue(config);
       await sut.runBenchmark();
       const replacement = { ...mlDestinationStub.local };
-      if (change === 'destination') replacement.id = 'replacement-worker';
-      if (change === 'url') replacement.url = 'http://replacement-worker:3003';
-      if (change === 'credential') replacement.authToken = 'replacement-test-credential';
-      if (change === 'clip-model') {
-        readConfig.mockResolvedValue({
-          ...config,
-          machineLearning: {
-            ...config.machineLearning,
-            clip: { ...config.machineLearning.clip, modelName: 'replacement-clip' },
-          },
-        } as never);
-      }
-      if (change === 'description-model') {
-        readConfig.mockResolvedValue({
-          ...config,
-          machineLearning: {
-            ...config.machineLearning,
-            imageDescription: { ...config.machineLearning.imageDescription, modelName: 'replacement-description' },
-          },
-        } as never);
+      switch (change) {
+        case 'destination': {
+          replacement.id = 'replacement-worker';
+          break;
+        }
+        case 'url': {
+          replacement.url = 'http://replacement-worker:3003';
+          break;
+        }
+        case 'credential': {
+          replacement.authToken = 'replacement-test-credential';
+          break;
+        }
+        case 'clip-model': {
+          readConfig.mockResolvedValue({
+            ...config,
+            machineLearning: {
+              ...config.machineLearning,
+              clip: { ...config.machineLearning.clip, modelName: 'replacement-clip' },
+            },
+          } as never);
+
+          break;
+        }
+        case 'description-model': {
+          readConfig.mockResolvedValue({
+            ...config,
+            machineLearning: {
+              ...config.machineLearning,
+              imageDescription: { ...config.machineLearning.imageDescription, modelName: 'replacement-description' },
+            },
+          } as never);
+
+          break;
+        }
+        // No default
       }
       mocks.mlDestination.getAll.mockResolvedValue([replacement]);
 
@@ -211,7 +227,7 @@ describe(HardwareCheckService.name, () => {
       const destination = change === 'other-worker' ? mlDestinationStub.libraryLan : mlDestinationStub.local;
       const selection = mlSelectionStub(MlWorkload.Clip, destination);
       if (change === 'changed-url') selection.endpoint.url = 'http://replacement-worker:3003';
-      if (change === 'changed-credential') selection.endpoint.authToken = 'replacement-test-credential';
+      else if (change === 'changed-credential') selection.endpoint.authToken = 'replacement-test-credential';
       vi.spyOn(
         sut as unknown as { selectRoutedMlDestination: () => Promise<MlSelection> },
         'selectRoutedMlDestination',
@@ -269,8 +285,13 @@ describe(HardwareCheckService.name, () => {
     vi.spyOn(
       sut as unknown as { selectMlDestination: (input: { destinationId: string }) => Promise<MlSelection> },
       'selectMlDestination',
-    ).mockImplementation(async ({ destinationId }) =>
-      mlSelectionStub(MlWorkload.Enrichment, destinationId === replacement.id ? replacement : mlDestinationStub.local),
+    ).mockImplementation(({ destinationId }) =>
+      Promise.resolve(
+        mlSelectionStub(
+          MlWorkload.Enrichment,
+          destinationId === replacement.id ? replacement : mlDestinationStub.local,
+        ),
+      ),
     );
     mocks.machineLearning.describeImage.mockResolvedValue({} as never);
 

@@ -32,7 +32,7 @@ it('never overwrites the original partner Locked notice or its dismissal on a la
   const value = { flaggedAt: '2026-10-01T00:00:00.000Z', dismissedAt: '2026-10-02T00:00:00.000Z' };
   await repository.upsertMetadata(user.id, { key: UserMetadataKey.PartnerLockedNotice, value });
   const results = await Promise.all(Array.from({ length: 10 }, () => repository.insertPartnerLockedNotice(user.id)));
-  expect(results).toEqual(Array(10).fill(false));
+  expect(results).toEqual(Array.from({ length: 10 }, () => false));
   expect(
     (await repository.getMetadata(user.id)).find(({ key }) => key === UserMetadataKey.PartnerLockedNotice)?.value,
   ).toEqual(value);
@@ -53,7 +53,7 @@ it('keeps the first cloud tour ending independently of partner notice metadata',
       }),
     ),
   );
-  expect(results).toEqual(Array(10).fill(false));
+  expect(results).toEqual(Array.from({ length: 10 }, () => false));
   expect(
     (await repository.getMetadata(user.id)).find(({ key }) => key === UserMetadataKey.FrameleafCloudTour)?.value,
   ).toEqual(value);
