@@ -2,6 +2,9 @@ import { AssetMediaResponseDto, LoginResponseDto } from '@frameleaf/sdk';
 import { expect, type Page, test } from '@playwright/test';
 import { utils } from 'src/utils.js';
 
+const footerPause = (page: Page) => page.getByTestId('viewer-footer').getByRole('button', { name: 'Pause slideshow' });
+const footerPlay = (page: Page) => page.getByTestId('viewer-footer').getByRole('button', { name: 'Play slideshow' });
+
 test.describe('Slideshow', () => {
   let admin: LoginResponseDto;
   let asset: AssetMediaResponseDto;
@@ -25,38 +28,37 @@ test.describe('Slideshow', () => {
     await page.getByRole('menuitem', { name: 'Play slideshow' }).click();
   };
 
+  // VIEWER-P1 (MediaViewer.jsx:1008-1298, 1704-1720): the slideshow keeps the viewer's header and
+  // footer; Play turns into Pause.
   test('open slideshow', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
-    await expect(page.getByRole('button', { name: 'Exit slideshow' })).toBeVisible();
+    await expect(footerPause(page)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Close viewer' })).toBeVisible();
+    await expect(page.getByTestId('slideshow-controls')).toHaveCount(0);
   });
 
-  test('exit slideshow with button', async ({ context, page }) => {
+  test('Pause and Play toggle the slideshow', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    const exitButton = page.getByRole('button', { name: 'Exit slideshow' });
-    await exitButton.click();
-    await expect(exitButton).not.toBeVisible();
+    await footerPause(page).click();
+    await expect(footerPlay(page)).toBeVisible();
+    await footerPlay(page).click();
+    await expect(footerPause(page)).toBeVisible();
   });
 
-  test('exit slideshow with shortcut', async ({ context, page }) => {
+  // MediaViewer.jsx:744-757: Escape closes the viewer, and the slideshow with it.
+  test('Escape closes the viewer and ends the slideshow', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    const exitButton = page.getByRole('button', { name: 'Exit slideshow' });
-    await expect(exitButton).toBeVisible();
+    await expect(footerPause(page)).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(exitButton).not.toBeVisible();
-  });
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
 
-  test('favorite shortcut is disabled', async ({ context, page }) => {
-    await utils.setAuthCookies(context, admin.accessToken);
-    await openSlideshow(page);
-
-    await expect(page.getByRole('button', { name: 'Exit slideshow' })).toBeVisible();
-    await page.keyboard.press('f');
-    await expect(page.getByText('Added to favorites')).not.toBeVisible();
+    await page.goto(`/photos/${asset.id}`);
+    await expect(footerPlay(page)).toBeVisible();
   });
 
   // FL-36: the settings are the prototype's non-modal panel with the five transitions, Fade by default.
@@ -64,15 +66,16 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    await page.mouse.move(200, 200);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     const panel = page.getByRole('region', { name: 'Slideshow' });
     await expect(panel).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // MediaViewer.jsx:499-502: focus starts on Photo duration
+    // MediaViewer.jsx:510-513: focus starts on Photo duration
     await expect(panel.getByLabel('Photo duration')).toBeFocused();
-    // source behaviour retained: the Autoplay preference stays reachable
-    await expect(panel.getByRole('switch', { name: 'Autoplay slideshow' })).toBeVisible();
+    // VIEWER-P2: Repeat and the progress bar are checkboxes; there is no Autoplay switch
+    await expect(panel.getByRole('checkbox', { name: 'Repeat collection' })).toBeVisible();
+    await expect(panel.getByRole('checkbox', { name: 'Show progress bar' })).toBeChecked();
+    await expect(panel.getByRole('switch')).toHaveCount(0);
     const transition = panel.getByLabel('Transition');
     await expect(transition).toHaveValue('fade');
     await expect(transition.locator('option')).toHaveText(['None', 'Fade (default)', 'Slide', 'Ken Burns', 'Memories']);
@@ -83,7 +86,7 @@ test.describe('Slideshow', () => {
     await panel.getByRole('button', { name: 'Close slideshow settings' }).click();
     await expect(panel).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Slideshow settings' })).toBeFocused();
-    await expect(page.getByRole('button', { name: 'Exit slideshow' })).toBeVisible();
+    await expect(footerPause(page)).toBeVisible();
   });
 
   // FL-36: the old on/off switch reads back as the transition it meant.
@@ -92,7 +95,6 @@ test.describe('Slideshow', () => {
     await context.addInitScript(() => localStorage.setItem('slideshow-transition', 'false'));
     await openSlideshow(page);
 
-    await page.mouse.move(200, 200);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     await expect(page.getByRole('region', { name: 'Slideshow' }).getByLabel('Transition')).toHaveValue('none');
   });
@@ -102,38 +104,33 @@ test.describe('Slideshow', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    await expect(page.getByRole('toolbar', { name: 'Slideshow' })).toBeVisible();
+    await expect(footerPause(page)).toBeVisible();
     expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
     await expect(page.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
   });
 
-  // MediaViewer.jsx:733-747: Escape closes the settings first, then ends the slideshow.
-  test('Escape closes the settings before it ends the slideshow', async ({ context, page }) => {
+  // MediaViewer.jsx:733-747: Escape closes the settings first; the slideshow keeps playing.
+  test('Escape closes the settings before anything else', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    await page.mouse.move(200, 200);
     await page.getByRole('button', { name: 'Slideshow settings' }).click();
     const panel = page.getByRole('region', { name: 'Slideshow' });
     await expect(panel).toBeVisible();
 
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
-    const exitButton = page.getByRole('button', { name: 'Exit slideshow' });
-    await expect(exitButton).toBeVisible();
-
-    await page.keyboard.press('Escape');
-    await expect(exitButton).not.toBeVisible();
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+    await expect(footerPause(page)).toBeVisible();
   });
 
-  // Source behaviour: the controls and the pointer hide after 2.5 s idle; moving the pointer shows them.
-  test('hides the controls when idle and shows them on movement', async ({ context, page }) => {
+  // VIEWER-P1: no idle hide (the template has none); the chrome stays until a tap on the photo.
+  test('keeps the chrome on screen while it plays', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
 
-    const controls = page.getByRole('toolbar', { name: 'Slideshow' });
-    await expect(controls).toHaveClass(/chrome-hidden/, { timeout: 5000 });
-    await page.mouse.move(300, 300);
-    await expect(controls).not.toHaveClass(/chrome-hidden/);
+    await page.waitForTimeout(3500);
+    await expect(page.locator('#immich-asset-viewer')).not.toHaveClass(/chrome-hidden/);
+    await expect(footerPause(page)).toBeVisible();
   });
 });

@@ -52,14 +52,15 @@ test.describe('Shared spaces', () => {
     const space = await newSpace('Downgrade space');
     await utils.setAuthCookies(context, editor.accessToken);
     await page.goto(`/sharing/${space.id}`);
-    await expect(page.getByRole('heading', { name: 'Add everything matching' })).toBeVisible();
+    // SHARING-P5: "Add everything matching" waits behind the Photos tab's button.
+    await expect(page.getByRole('button', { name: 'Add matching…' })).toBeVisible();
 
     await updateAlbumUser(
       { id: space.id, userId: editor.userId, updateAlbumUserDto: { role: AlbumUserRole.Viewer } },
       { headers: asBearerAuth(owner.accessToken) },
     );
 
-    await expect(page.getByRole('heading', { name: 'Add everything matching' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Add matching…' })).toHaveCount(0);
   });
 
   test('takes a removed contributor out of the space at once', async ({ context, page }) => {
@@ -89,12 +90,18 @@ test.describe('Shared spaces', () => {
 
     await utils.setAuthCookies(context, editor.accessToken);
     await page.goto(`/sharing/${space.id}`);
-    const section = page.getByRole('region', { name: 'Add everything matching' });
-    // The count is asked for once the page is interactive; a click before hydration does nothing.
-    // The whole library is the source, so the count includes the editor's items from earlier cases.
-    const counted = section.getByText(/^\d+ items will be added\.$/);
+    // SHARING-P5: the choice is a dialog the Photos tab's button opens; progress stays on the tab.
+    const dialog = page.getByRole('dialog', { name: 'Add everything matching' });
+    const section = page.getByRole('region', { name: 'Bulk operations' });
+    // The button works once the page is interactive; a click before hydration does nothing.
     await expect(async () => {
-      await section.getByRole('button', { name: 'Check the count' }).click();
+      await page.getByRole('button', { name: 'Add matching…' }).click();
+      await expect(dialog).toBeVisible({ timeout: 2000 });
+    }).toPass();
+    // The whole library is the source, so the count includes the editor's items from earlier cases.
+    const counted = dialog.getByText(/^\d+ items will be added\.$/);
+    await expect(async () => {
+      await dialog.getByRole('button', { name: 'Check the count' }).click();
       await expect(counted).toBeVisible({ timeout: 2000 });
     }).toPass();
     const countText = await counted.textContent();
@@ -109,7 +116,8 @@ test.describe('Shared spaces', () => {
       await route.fallback();
     });
 
-    await section.getByRole('button', { name: `Add ${total} items` }).click();
+    await dialog.getByRole('button', { name: `Add ${total} items` }).click();
+    await expect(dialog).toBeHidden();
     await expect(section.getByText(/Working out what matches/)).toBeVisible();
     await section.getByRole('button', { name: 'Cancel' }).click();
     gate.release?.();

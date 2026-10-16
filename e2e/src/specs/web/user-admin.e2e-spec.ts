@@ -184,7 +184,8 @@ test.describe('User Administration', () => {
           );
           return { quotaSizeInBytes, storageLabel };
         })
-        .toEqual({ quotaSizeInBytes: 10 * 1024 ** 3, storageLabel: 'quota-user' });
+        // D5: the quota field is decimal GB
+        .toEqual({ quotaSizeInBytes: 10 * 1000 ** 3, storageLabel: 'quota-user' });
     });
 
     // FL-76: delete keeps the account for the recovery delay (typed email to confirm); it is then
