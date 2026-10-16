@@ -862,6 +862,44 @@ describe(PartnerCopyService.name, () => {
   });
 
   describe('propagation', () => {
+    it.each(['recipient-edit', 'stop-following'] as const)(
+      'preserves the recipient description when %s completes after follower selection',
+      async (change) => {
+        const { sut, ctx, origins } = setup();
+        const { assets } = assetService();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+        await db
+          .updateTable('asset_exif')
+          .set({ description: 'new source' })
+          .where('assetId', '=', source.id)
+          .execute();
+        const getFollowers = origins.getFollowers.bind(origins);
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (kind, id) => {
+          const followers = await getFollowers(kind, id);
+          expect(followers.map((row) => row.id)).toContain(copyId);
+          if (change === 'recipient-edit') {
+            await assets.update(factory.auth({ user: bob }), copyId, { description: 'recipient choice' });
+          } else {
+            await origins.stopFollowing(alice.id, bob.id);
+          }
+          return followers;
+        });
+        try {
+          await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Description] });
+        } finally {
+          selection.mockRestore();
+        }
+        expect((await exifOf(copyId)).description).toBe(
+          change === 'recipient-edit' ? 'recipient choice' : 'at the lake',
+        );
+        expect((await exifOf(source.id)).description).toBe('new source');
+      },
+    );
+
     it("pushes the source's edits to every following copy, onward through the partner's partners", async () => {
       const { sut, ctx } = setup();
       const { assets, assetCtx } = assetService();
@@ -1126,6 +1164,40 @@ describe(PartnerCopyService.name, () => {
       const albumCopy = (await origins.getCopyId('album', album.id, bob.id))!;
       return { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy, origins };
     };
+
+    it.each(['recipient-edit', 'stop-following'] as const)(
+      'preserves the recipient album title when %s completes after follower selection',
+      async (change) => {
+        const { sut, albums, alice, bob, album, albumCopy, origins } = await shareWithAlbum();
+        await db.updateTable('album').set({ albumName: 'new source' }).where('id', '=', album.id).execute();
+        const getFollowers = origins.getFollowers.bind(origins);
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (kind, id) => {
+          const followers = await getFollowers(kind, id);
+          expect(followers.map((row) => row.id)).toContain(albumCopy);
+          if (change === 'recipient-edit') {
+            await albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' });
+          } else {
+            await origins.stopFollowing(alice.id, bob.id);
+          }
+          return followers;
+        });
+        try {
+          await sut.handlePropagate({ kind: 'album', sourceId: album.id, fields: [AlbumOriginField.Title] });
+        } finally {
+          selection.mockRestore();
+        }
+        const copy = await db
+          .selectFrom('album')
+          .select('albumName')
+          .where('id', '=', albumCopy)
+          .executeTakeFirstOrThrow();
+        expect(copy.albumName).toBe(change === 'recipient-edit' ? 'recipient choice' : 'Lake');
+        expect(
+          (await db.selectFrom('album').select('albumName').where('id', '=', album.id).executeTakeFirstOrThrow())
+            .albumName,
+        ).toBe('new source');
+      },
+    );
 
     it("copies an album the partner owns, holding the recipient's copies, and mirrors its membership", async () => {
       const { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy } =

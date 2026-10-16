@@ -3,6 +3,7 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder, AssetStatus, AssetType } from 'src/enum.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -165,7 +166,30 @@ export class PartnerOriginRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(this.db);
+  }
+  /** Recheck following and overrides under the row lock held until all propagation writes commit. */
+  async withFollowingOrigin<T>(
+    kind: OriginKind,
+    sourceId: string,
+    id: string,
+    apply: (origin: OriginRow) => Promise<T>,
+  ): Promise<T | undefined> {
+    const { table, key, source, copy } = TABLES[kind];
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<OriginRow>`
+        SELECT ${selectOrigin(kind)} FROM ${sql.raw(table)} origin
+        JOIN ${sql.raw(copy)} copy ON copy.id = origin.${sql.id(key)}
+        WHERE origin.${sql.id(key)} = ${id}::uuid
+          AND origin.${sql.id(source)} = ${sourceId}::uuid AND origin.following
+        FOR UPDATE OF origin
+      `.execute(tx);
+      if (!rows[0]) return;
+      // shortcut: in-flight recipient edits still need their value and override marker committed together.
+      return publicationTransaction.run(tx, () => apply(rows[0]));
+    });
+  }
   async createOrigin(kind: OriginKind, input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
     const { table, key, source } = TABLES[kind];
     await sql`

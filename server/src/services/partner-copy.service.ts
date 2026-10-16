@@ -553,38 +553,40 @@ export class PartnerCopyService extends BaseService {
     }
     const followers = await this.partnerOriginRepository.getFollowers('asset', sourceId);
     const onward: JobItem[] = [];
-    for (const follower of followers) {
-      const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
-      if (apply.length === 0) {
-        continue;
-      }
-      await this.partnerOriginRepository.applyAssetFields(sourceId, follower.id, apply);
-      if (apply.includes(AssetOriginField.Tags)) {
-        await this.copyTags(sourceId, follower.id, follower.ownerId);
-      }
-      if (apply.includes(AssetOriginField.Faces)) {
-        await this.personRepository.deleteFacesOfAsset(follower.id);
-        await this.copyFaces({
-          sourceAssetId: sourceId,
-          targetAssetId: follower.id,
-          targetOwnerId: follower.ownerId,
-          partnerSharedById: follower.partnerSharedById,
-        });
-      }
-      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
-      // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules
-      if (
-        !follower.overriddenFields.includes(AssetOriginField.Visibility) &&
-        LOCK_RELEVANT_FIELDS.some((field) => apply.includes(field))
-      ) {
-        await BaseService.create(PartnerLockService, this).mirrorLockedState({
-          sourceAssetId: sourceId,
-          sourceOwnerId: follower.partnerSharedById,
-          targetAssetId: follower.id,
-          targetOwnerId: follower.ownerId,
-        });
-      }
-      onward.push({ name: JobName.PartnerPropagate, data: { kind, sourceId: follower.id, fields: apply } });
+    for (const selected of followers) {
+      await this.partnerOriginRepository.withFollowingOrigin('asset', sourceId, selected.id, async (follower) => {
+        const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+        if (apply.length === 0) {
+          return;
+        }
+        await this.partnerOriginRepository.applyAssetFields(sourceId, follower.id, apply);
+        if (apply.includes(AssetOriginField.Tags)) {
+          await this.copyTags(sourceId, follower.id, follower.ownerId);
+        }
+        if (apply.includes(AssetOriginField.Faces)) {
+          await this.personRepository.deleteFacesOfAsset(follower.id);
+          await this.copyFaces({
+            sourceAssetId: sourceId,
+            targetAssetId: follower.id,
+            targetOwnerId: follower.ownerId,
+            partnerSharedById: follower.partnerSharedById,
+          });
+        }
+        // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
+        // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules
+        if (
+          !follower.overriddenFields.includes(AssetOriginField.Visibility) &&
+          LOCK_RELEVANT_FIELDS.some((field) => apply.includes(field))
+        ) {
+          await BaseService.create(PartnerLockService, this).mirrorLockedState({
+            sourceAssetId: sourceId,
+            sourceOwnerId: follower.partnerSharedById,
+            targetAssetId: follower.id,
+            targetOwnerId: follower.ownerId,
+          });
+        }
+        onward.push({ name: JobName.PartnerPropagate, data: { kind, sourceId: follower.id, fields: apply } });
+      });
     }
     if (onward.length > 0) {
       await this.jobRepository.queueAll(onward);
@@ -603,27 +605,29 @@ export class PartnerCopyService extends BaseService {
       return JobStatus.Skipped;
     }
     const onward: JobItem[] = [];
-    for (const follower of followers) {
-      const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
-      if (apply.length === 0) {
-        continue;
-      }
-      if (apply.includes(AlbumOriginField.Membership)) {
-        await this.syncAlbumMembership(sourceId, follower.id, follower.ownerId);
-      }
-      const cover =
-        apply.includes(AlbumOriginField.Cover) && source.albumThumbnailAssetId
-          ? await this.partnerOriginRepository.getCopyId('asset', source.albumThumbnailAssetId, follower.ownerId)
-          : undefined;
-      const update = {
-        ...(apply.includes(AlbumOriginField.Title) && { albumName: source.albumName }),
-        ...(apply.includes(AlbumOriginField.Description) && { description: source.description }),
-        ...(cover && { albumThumbnailAssetId: cover }),
-      };
-      if (Object.keys(update).length > 0) {
-        await this.albumRepository.update(follower.id, { id: follower.id, ...update }, follower.ownerId);
-      }
-      onward.push({ name: JobName.PartnerPropagate, data: { kind: 'album', sourceId: follower.id, fields: apply } });
+    for (const selected of followers) {
+      await this.partnerOriginRepository.withFollowingOrigin('album', sourceId, selected.id, async (follower) => {
+        const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+        if (apply.length === 0) {
+          return;
+        }
+        if (apply.includes(AlbumOriginField.Membership)) {
+          await this.syncAlbumMembership(sourceId, follower.id, follower.ownerId);
+        }
+        const cover =
+          apply.includes(AlbumOriginField.Cover) && source.albumThumbnailAssetId
+            ? await this.partnerOriginRepository.getCopyId('asset', source.albumThumbnailAssetId, follower.ownerId)
+            : undefined;
+        const update = {
+          ...(apply.includes(AlbumOriginField.Title) && { albumName: source.albumName }),
+          ...(apply.includes(AlbumOriginField.Description) && { description: source.description }),
+          ...(cover && { albumThumbnailAssetId: cover }),
+        };
+        if (Object.keys(update).length > 0) {
+          await this.albumRepository.update(follower.id, { id: follower.id, ...update }, follower.ownerId);
+        }
+        onward.push({ name: JobName.PartnerPropagate, data: { kind: 'album', sourceId: follower.id, fields: apply } });
+      });
     }
     if (onward.length > 0) {
       await this.jobRepository.queueAll(onward);

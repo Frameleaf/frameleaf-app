@@ -30,6 +30,80 @@ it('installs feature tables in the real canonical baseline', async () => {
 });
 
 describe(PartnerOriginRepository.name, () => {
+  it('rolls propagation writes back with the held origin when the callback fails', async () => {
+    const { ctx, sut } = setup();
+    const { user: alice } = await ctx.newUser();
+    const { user: bob } = await ctx.newUser();
+    const { asset: source } = await ctx.newAsset({ ownerId: alice.id });
+    const { asset: copy } = await ctx.newAsset({ ownerId: bob.id });
+    await ctx.newExif({ assetId: source.id, description: 'source' });
+    await ctx.newExif({ assetId: copy.id, description: 'recipient' });
+    await sut.createAssetOrigin({
+      id: copy.id,
+      sourceId: source.id,
+      ownerId: bob.id,
+      rootOwnerId: alice.id,
+      partnerSharedById: alice.id,
+    });
+
+    await expect(
+      sut.withFollowingOrigin('asset', source.id, copy.id, async () => {
+        await sut.applyAssetFields(source.id, copy.id, [AssetOriginField.Description]);
+        throw new Error('propagation interrupted');
+      }),
+    ).rejects.toThrow('propagation interrupted');
+
+    const exif = await db
+      .selectFrom('asset_exif')
+      .select('description')
+      .where('assetId', '=', copy.id)
+      .executeTakeFirstOrThrow();
+    expect(exif.description).toBe('recipient');
+  });
+
+  it('keeps stop-following behind the propagation commit', async () => {
+    const { ctx, sut } = setup();
+    const { user: alice } = await ctx.newUser();
+    const { user: bob } = await ctx.newUser();
+    const { asset: source } = await ctx.newAsset({ ownerId: alice.id });
+    const { asset: copy } = await ctx.newAsset({ ownerId: bob.id });
+    await ctx.newExif({ assetId: source.id, description: 'source' });
+    await ctx.newExif({ assetId: copy.id, description: 'recipient' });
+    await sut.createAssetOrigin({
+      id: copy.id,
+      sourceId: source.id,
+      ownerId: bob.id,
+      rootOwnerId: alice.id,
+      partnerSharedById: alice.id,
+    });
+    const { promise: entered, resolve: ready } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const propagation = sut.withFollowingOrigin('asset', source.id, copy.id, async () => {
+      await sut.applyAssetFields(source.id, copy.id, [AssetOriginField.Description]);
+      ready();
+      await held;
+    });
+    await entered;
+    let stopped = false;
+    const stopping = sut.stopFollowing(alice.id, bob.id).then(() => {
+      stopped = true;
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(stopped).toBe(false);
+    } finally {
+      release();
+      await Promise.all([propagation, stopping]);
+    }
+    expect((await sut.getOrigin('asset', copy.id))?.following).toBe(false);
+    const exif = await db
+      .selectFrom('asset_exif')
+      .select('description')
+      .where('assetId', '=', copy.id)
+      .executeTakeFirstOrThrow();
+    expect(exif.description).toBe('source');
+  });
+
   it('records a copy, finds its followers and marks overridden fields', async () => {
     const { ctx, sut } = setup();
     const { user: alice } = await ctx.newUser();
