@@ -54,9 +54,7 @@ describe('Studio bundle export dialog', () => {
       onConfirm: vi.fn(),
     });
     expect(includeMedia()).not.toBeChecked();
-    expect(
-      screen.getByText(/historical processing and source labels, including in reference-only bundles/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/These labels grant no access to the original source/)).toBeInTheDocument();
+    // The disclosure comes from the catalogue (the test locale prints its key).
+    expect(screen.getByText('frameleaf_studio_bundle_historical_labels')).toBeInTheDocument();
   });
 });

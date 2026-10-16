@@ -45,10 +45,7 @@
     </label>
     <p class="note">{$t('frameleaf_studio_bundle_include_media_note')}</p>
     {#if historicalLabels}
-      <p class="note">
-        Included generated imports carry historical processing and source labels, including in reference-only bundles.
-        These labels grant no access to the original source.
-      </p>
+      <p class="note">{$t('frameleaf_studio_bundle_historical_labels')}</p>
     {/if}
     <footer>
       <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
