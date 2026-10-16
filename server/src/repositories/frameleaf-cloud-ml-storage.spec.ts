@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { type FileHandle, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloudTransferError, FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -89,9 +89,17 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await fake.close();
     await rm(folder, { recursive: true, force: true });
   });
+
+  const fileHandlePrototype = async (): Promise<FileHandle> => {
+    const handle = await open(join(folder, 'handle-probe'), 'wx');
+    const prototype = Object.getPrototypeOf(handle) as FileHandle;
+    await handle.close();
+    return prototype;
+  };
 
   describe('long-polled job reads', () => {
     it('sends If-None-Match, answers a 304 as not modified and hands back ETag and Retry-After', async () => {
@@ -236,6 +244,64 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
       });
     });
 
+    it.each(['partial read', 'early EOF', 'cancelled read'])(
+      'handles a %s without sending an incomplete part',
+      async (read) => {
+        const bytes = CLOUD_UPLOAD_PART_BYTES + 5;
+        const data = Buffer.alloc(bytes, 7);
+        const file = join(folder, 'partial.mp4');
+        await writeFile(file, data);
+        const multipart = target({
+          method: 'multipart',
+          bytes,
+          inline: null,
+          multipart: {
+            partBytes: CLOUD_UPLOAD_PART_BYTES,
+            parts: [
+              { partNumber: 1, url: `${fake.url}/in/v1?partNumber=1`, bytes: CLOUD_UPLOAD_PART_BYTES },
+              { partNumber: 2, url: `${fake.url}/in/v1?partNumber=2`, bytes: 5 },
+            ],
+            completeUrl: `${fake.url}/in/v1?uploadId=u1`,
+          },
+        });
+        fake.handle = (_request, response) => response.writeHead(200, { etag: '"part"' }).end();
+        const prototype = await fileHandlePrototype();
+        const originalRead = prototype.read;
+        const controller = new AbortController();
+        const reads = vi.spyOn(prototype, 'read').mockImplementationOnce(function (
+          this: FileHandle,
+          buffer: Uint8Array,
+          offset: number,
+          length: number,
+          position: number,
+        ) {
+          if (read === 'cancelled read') controller.abort();
+          return Reflect.apply(originalRead, this, [
+            buffer,
+            offset,
+            read === 'early EOF' ? 0 : Math.floor(length / 2),
+            position,
+          ]);
+        } as FileHandle['read']);
+
+        if (read !== 'partial read') {
+          await expect(
+            sut.uploadInput({ url: fake.url }, multipart, file, { signal: controller.signal }),
+          ).rejects.toMatchObject({
+            failure: read === 'early EOF' ? 'input-changed' : 'stopped',
+          });
+          expect(fake.seen).toHaveLength(0);
+          expect(reads).toHaveBeenCalledTimes(1);
+        } else {
+          await sut.uploadInput({ url: fake.url }, multipart, file);
+          const sent = Buffer.concat(fake.seen.filter(({ method }) => method === 'PUT').map(({ body }) => body));
+          expect(sent.length).toBe(data.length);
+          expect(sha256(sent)).toBe(sha256(data));
+          expect(fake.seen.map(({ method }) => method)).toEqual(['PUT', 'PUT', 'POST']);
+        }
+      },
+    );
+
     it('never sends an input to an address that is not Frameleaf Cloud storage', async () => {
       const file = join(folder, 'small.mp4');
       await writeFile(file, Buffer.from('0123456789'));
@@ -275,6 +341,31 @@ describe('Frameleaf Cloud job storage and job reads (FL-162, FC-39, FC-42)', () 
       expect(await readFile(destination)).toEqual(body);
       const key = 'x-amz-server-side-encryption-customer-key';
       expect(fake.seen[0].headers[key]).toBe(HEADERS[key]);
+    });
+
+    it('keeps every downloaded byte when a filesystem write can make partial progress', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(body.subarray(0, 5));
+              controller.enqueue(body.subarray(5, 12));
+              controller.enqueue(body.subarray(12));
+              controller.close();
+            },
+          }),
+        ),
+      );
+      const destination = join(folder, 'partial-write.mp4');
+      const prototype = await fileHandlePrototype();
+      const originalWrite = prototype.write;
+      vi.spyOn(prototype, 'write').mockImplementation(function (this: FileHandle, bytes: Uint8Array) {
+        return Reflect.apply(originalWrite, this, [bytes, 0, Math.max(1, Math.floor(bytes.byteLength / 2))]);
+      } as FileHandle['write']);
+
+      await sut.downloadOutput({ url: fake.url }, output(), HEADERS, destination);
+
+      expect(await readFile(destination)).toEqual(body);
     });
 
     it('removes an output that does not match its SHA-256 and refuses it', async () => {
