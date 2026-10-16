@@ -11,7 +11,7 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(3);
+  expect(catalogue.profiles).toHaveLength(6);
   for (const profile of catalogue.profiles) {
     expect(profile.modelName).toBe('ViT-B-16-SigLIP-384__webli');
     expect(profile.embeddingDimensions).toBe(768);
@@ -98,10 +98,14 @@ it('refuses changed artifact/config identity, reference shape, fixture bytes and
 it('binds a fresh canonical NAS nonce with the same digest as the native contract', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   const expected = [
+    '667244e2f6254b58c290a62f4b82cc5f82f5957f394813e015e1f8cf4454527a',
+    '209293bc2f54fbcdc0524b1cec7eb81e5bfb4f045432885b037947288b42b03d',
+    '839b7ff60758640ad3644dd7761bea5e8e26bfde32355c8371d9c50042ecc838',
     'c53ede795fb9a86ecba813f1e4f279ee4fa16e9109ed245db5ae8f1d144cd2c5',
     'a14a99cad4f9e208fd8729680a37211dd09ed13b9e34462559c13f9dd35826a3',
     '4756b97c88cdafaf134d234d96f49b64c9ec16294e6966c3eb9d94d4a60b66fa',
   ];
+  expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
     const first = createDesktopModelChallenge(profile, 'd621bd72-ad35-4199-95ab-76300756a38e');
     const second = createDesktopModelChallenge(profile, 'c39d4385-84f8-4c37-a643-1b98fc12df93');
