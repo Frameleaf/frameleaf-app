@@ -39765,6 +39765,15 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "qualificationId",
+          "tableName": "desktop_ml_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -40267,6 +40276,241 @@
           "name": "desktop_worker_challenge_sessionId_fkey",
           "definition": "FOREIGN KEY (\"sessionId\") REFERENCES desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE",
           "tableName": "desktop_worker_challenge",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "desktop_worker_session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_worker_qualification",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "authorizationEpoch",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "modelKey",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileSha256",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "configSha256",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "inputKind",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "runtime",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "runtimeFingerprint",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "reportSha256",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "desktop_worker_qualification",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "desktop_worker_qualification_deviceId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_qualification_deviceId_expiresAt_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_deviceId_expiresAt_idx\" ON public.desktop_worker_qualification USING btree (\"deviceId\", \"expiresAt\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId",
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "desktop_worker_qualification_sessionId_idx",
+          "definition": "CREATE INDEX \"desktop_worker_qualification_sessionId_idx\" ON public.desktop_worker_qualification USING btree (\"sessionId\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "desktop_worker_qualification_lifetime_check",
+          "definition": "CHECK (((\"expiresAt\" > \"createdAt\") AND (\"expiresAt\" <= (\"createdAt\" + '01:00:00'::interval))))",
+          "tableName": "desktop_worker_qualification",
+          "expression": "(((\"expiresAt\" > \"createdAt\") AND (\"expiresAt\" <= (\"createdAt\" + '01:00:00'::interval))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_worker_qualification_kind_check",
+          "definition": "CHECK (((\"inputKind\")::text = ANY ((ARRAY['image'::character varying, 'text'::character varying])::text[])))",
+          "tableName": "desktop_worker_qualification",
+          "expression": "(((\"inputKind\")::text = ANY ((ARRAY['image'::character varying, 'text'::character varying])::text[])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_worker_qualification_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "desktop_worker_qualification_sessionId_modelKey_uq",
+          "definition": "UNIQUE (\"sessionId\", \"modelKey\")",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "sessionId",
+            "modelKey"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_qualification_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_qualification",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "desktop_worker_qualification_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES desktop_worker_session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "desktop_worker_qualification",
           "columnNames": [
             "sessionId"
           ],
