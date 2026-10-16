@@ -40524,6 +40524,108 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "ml_workload_route_origin",
+      "columns": [
+        {
+          "type": "text",
+          "primary": false,
+          "name": "workload",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "origin",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "revisionId",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "destinationId",
+          "tableName": "ml_workload_route_origin",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "ml_workload_route_origin",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ml_workload_route_origin_destinationId_idx",
+          "definition": "CREATE INDEX \"ml_workload_route_origin_destinationId_idx\" ON public.ml_workload_route_origin USING btree (\"destinationId\")",
+          "tableName": "ml_workload_route_origin",
+          "columnNames": [
+            "destinationId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "ml_workload_route_origin_kind_check",
+          "definition": "CHECK ((origin = ANY (ARRAY['default'::text, 'pinned'::text])))",
+          "tableName": "ml_workload_route_origin",
+          "expression": "((origin = ANY (ARRAY['default'::text, 'pinned'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "ml_workload_route_origin_pkey",
+          "definition": "PRIMARY KEY (workload)",
+          "tableName": "ml_workload_route_origin",
+          "columnNames": [
+            "workload"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "ml_workload_route_origin_destinationId_fkey",
+          "definition": "FOREIGN KEY (\"destinationId\") REFERENCES ml_destination(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "ml_workload_route_origin",
+          "columnNames": [
+            "destinationId"
+          ],
+          "referenceTableName": "ml_destination",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
