@@ -3071,5 +3071,27 @@ describe(StudioExportService.name, () => {
       expect(repository.markFailed).toHaveBeenCalledWith('v2', expect.anything());
       expect(repository.cancel).toHaveBeenCalledWith('v3', expect.anything());
     });
+
+    it('keeps sweeping past one version that cannot be settled', async () => {
+      repository.listOrphanedWork.mockResolvedValue([
+        { ...versionRow({ id: 'o1', state: StudioExportVersionState.Rendering }), orphanReason: 'owner-unavailable' },
+        { ...versionRow({ id: 'o2', state: StudioExportVersionState.Rendering }), orphanReason: 'owner-unavailable' },
+      ]);
+      repository.listSettledWork.mockResolvedValue([
+        { ...versionRow({ id: 's1' }), jobStatus: MediaOperationStatus.Failed },
+        { ...versionRow({ id: 's2' }), jobStatus: MediaOperationStatus.Failed },
+      ]);
+      repository.listRemovableOutputs.mockResolvedValue([{ ...versionRow({ id: 'r1' }), role: 'media' }]);
+      // the first of each list fails; the rest of the sweep still runs
+      repository.cancel.mockRejectedValueOnce(new Error('database busy')).mockResolvedValue(undefined);
+      repository.markFailed.mockRejectedValueOnce(new Error('database busy')).mockResolvedValue(undefined);
+      repository.markOutputRemoved.mockResolvedValue(undefined);
+
+      await expect(sut.sweep(new Date())).resolves.toBeUndefined();
+
+      expect(repository.cancel.mock.calls.map(([id]) => id)).toEqual(['o1', 'o2']);
+      expect(repository.markFailed.mock.calls.map(([id]) => id)).toEqual(['s1', 's2']);
+      expect(repository.markOutputRemoved).toHaveBeenCalledWith('r1', expect.any(Function), 'media');
+    });
   });
 });

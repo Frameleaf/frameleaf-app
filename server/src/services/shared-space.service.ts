@@ -399,15 +399,16 @@ export class SharedSpaceService extends BaseService {
     );
     const countById = new Map(counts.map((count) => [count.albumId, count]));
 
+    // a member who linked several albums is looked up once
+    const users = this.userMemo();
     const albums: SharedSpaceAlbumResponseDto[] = [];
     for (const link of links) {
       const count = countById.get(link.linkedAlbumId);
-      const linkedBy = link.linkedById ? ((await this.userRepository.get(link.linkedById, {})) ?? null) : null;
       albums.push({
         id: link.linkedAlbumId,
         albumName: link.linkedAlbumName,
         icon: link.linkedAlbumIcon,
-        linkedBy: linkedBy ? mapUser(linkedBy) : null,
+        linkedBy: await users.get(link.linkedById),
         linkedAt: asDateTimeString(link.createdAt),
         assetCount: count?.assetCount ?? 0,
         thumbnailAssetId: count?.thumbnailAssetId ?? null,
@@ -492,9 +493,11 @@ export class SharedSpaceService extends BaseService {
     );
     const countByGroup = new Map(counts.map(({ personGroupId, assetCount }) => [personGroupId, assetCount]));
 
+    // a member who linked several people is looked up once
+    const users = this.userMemo();
     const linked: SharedSpacePersonResponseDto[] = [];
     for (const link of links) {
-      const linkedBy = await this.userRepository.get(link.personOwnerId, {});
+      const linkedBy = await users.get(link.personOwnerId);
       if (!linkedBy) {
         continue;
       }
@@ -503,7 +506,7 @@ export class SharedSpaceService extends BaseService {
         name: link.name,
         coverAssetId: link.coverAssetId,
         assetCount: countByGroup.get(link.personGroupId) ?? 0,
-        linkedBy: mapUser(linkedBy),
+        linkedBy,
         linkedAt: asDateTimeString(link.createdAt),
         canUnlink: canUnlink(space, auth.user.id, link.personOwnerId),
       });
