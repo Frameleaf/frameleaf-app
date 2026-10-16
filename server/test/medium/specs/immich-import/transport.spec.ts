@@ -259,6 +259,18 @@ describe('offline Immich import over PostgreSQL source and destination connectio
     120_000,
   );
 
+  it('admits a later release whose ledger adds migrations and whose read columns are unchanged', async () => {
+    const f = await start();
+    await f.mutateSource((db) =>
+      db.query(`INSERT INTO public.kysely_migrations(name,"timestamp") VALUES ('9999999999999-FutureRelease','future');
+        ALTER TABLE public."user" ADD COLUMN "futureColumn" text`),
+    );
+    await expect(f.importer({ ...f.config, version: '3.3.3' }).preflight()).resolves.toMatchObject({
+      status: 'fresh',
+    });
+    await expectFresh(f);
+  }, 120_000);
+
   it.each([
     ['column', 'ALTER TABLE public."user" ADD COLUMN unexpected text', 'UNKNOWN_SOURCE_SCHEMA'],
     [
@@ -267,8 +279,8 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       'UNKNOWN_SOURCE_SCHEMA',
     ],
     [
-      'migration',
-      `INSERT INTO public.kysely_migrations(name,"timestamp") VALUES ('future-release','future')`,
+      'missing migration',
+      'DELETE FROM public.kysely_migrations WHERE name=(SELECT max(name) FROM public.kysely_migrations)',
       'UNKNOWN_SOURCE_MIGRATIONS',
     ],
     ['Frameleaf source', 'CREATE TABLE public.frameleaf_migrations(name text)', 'SOURCE_IS_FRAMELEAF'],

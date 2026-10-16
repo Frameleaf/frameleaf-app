@@ -27,6 +27,10 @@ export type FrozenSource = {
   structure: SourceStructure;
   tables: Record<string, TableShape>;
   migrations: string[];
+  /** Read-only SELECTs that present older releases' rows in the 3.0.0 shape, by table. */
+  views: Record<string, string>;
+  /** Pinned catalogs are compared exactly; replayed 2.x catalogs only by the columns the importer reads. */
+  exact: boolean;
 };
 export const quote = (identifier: string): string => `"${identifier.replaceAll('"', '""')}"`;
 export class ImportRefused extends Error {
