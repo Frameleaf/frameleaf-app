@@ -1491,12 +1491,15 @@ export class PersonService extends BaseService {
     await this.requireFaceSource(asset, dto.assetId, dto.expectedSourceRevision);
 
     const id = this.cryptoRepository.randomUUID();
-    await this.personRepository.createAssetFace({
-      id,
-      personGroupId: person.personGroupId,
-      assetId: dto.assetId,
-      ...this.toStoredFaceBox(asset, dto),
-      sourceType: SourceType.Manual,
+    await this.partnerOriginRepository.withOriginEdit('asset', [asset.id], [], async () => {
+      await this.personRepository.createAssetFace({
+        id,
+        personGroupId: person.personGroupId,
+        assetId: dto.assetId,
+        ...this.toStoredFaceBox(asset, dto),
+        sourceType: SourceType.Manual,
+      });
+      await this.partnerOriginRepository.markOverridden('asset', [asset.id], [AssetOriginField.Faces], auth.user.id);
     });
 
     if (!person.faceAssetId) {
@@ -1556,14 +1559,23 @@ export class PersonService extends BaseService {
       box = this.toStoredFaceBox(asset, dto.box);
     }
 
-    const changed = await this.personRepository.correctFace(id, dto.expectedRevision, {
-      personGroupId: dto.personId === undefined ? undefined : (target?.personGroupId ?? null),
-      box,
-      hidden: dto.hidden,
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      const changed = await this.personRepository.correctFace(id, dto.expectedRevision, {
+        personGroupId: dto.personId === undefined ? undefined : (target?.personGroupId ?? null),
+        box,
+        hidden: dto.hidden,
+      });
+      if (changed === 0) {
+        throw staleFace();
+      }
+      await this.recordFaceCorrections(this.faceCorrectionEntries(auth, face, dto, target, targetIsNew, !!box));
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
     });
-    if (changed === 0) {
-      throw staleFace();
-    }
 
     const previous = face.person;
     const leavesPrevious = (dto.personId !== undefined && dto.personId !== face.personGroupId) || dto.hidden === true;
@@ -1585,7 +1597,6 @@ export class PersonService extends BaseService {
       });
     }
 
-    await this.recordFaceCorrections(this.faceCorrectionEntries(auth, face, dto, target, targetIsNew, !!box));
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
     await this.noteFaceEdit(auth.user.id, [face.assetId]);
 
@@ -1663,31 +1674,43 @@ export class PersonService extends BaseService {
       fromPersonName: face.person?.name ?? null,
     };
 
-    if (dto.force) {
-      // recorded first: the face row is gone afterwards; a refused delete withdraws it again
-      const [recorded] =
-        (await this.duringForkWrites('record face corrections', () =>
-          this.personRepository.recordFaceCorrections([correction]),
-        )) ?? [];
-      if (dto.expectedRevision === undefined) {
-        await this.personRepository.deleteAssetFace(id);
-      } else if ((await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: true })) === 0) {
-        if (recorded) {
-          await this.duringForkWrites('withdraw a face correction', () =>
-            this.personRepository.deleteFaceCorrection(recorded.id),
-          );
+    await this.partnerOriginRepository.withOriginEdit('asset', [face.assetId], [], async () => {
+      if (dto.force) {
+        // recorded first: the face row is gone afterwards; a refused delete withdraws it again
+        const [recorded] =
+          (await this.duringForkWrites('record face corrections', () =>
+            this.personRepository.recordFaceCorrections([correction]),
+          )) ?? [];
+        if (dto.expectedRevision === undefined) {
+          await this.personRepository.deleteAssetFace(id);
+        } else if (
+          (await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: true })) === 0
+        ) {
+          if (recorded) {
+            await this.duringForkWrites('withdraw a face correction', () =>
+              this.personRepository.deleteFaceCorrection(recorded.id),
+            );
+          }
+          throw staleFaceRemoval();
         }
-        throw staleFaceRemoval();
+      } else {
+        if (dto.expectedRevision === undefined) {
+          await this.personRepository.softDeleteAssetFaces(id);
+        } else if (
+          (await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: false })) === 0
+        ) {
+          // FL-38: refuse to remove a face someone changed since this client read it
+          throw staleFaceRemoval();
+        }
+        await this.recordFaceCorrections([correction]);
       }
-    } else {
-      if (dto.expectedRevision === undefined) {
-        await this.personRepository.softDeleteAssetFaces(id);
-      } else if ((await this.personRepository.deleteFaceAtRevision(id, dto.expectedRevision, { force: false })) === 0) {
-        // FL-38: refuse to remove a face someone changed since this client read it
-        throw staleFaceRemoval();
-      }
-      await this.recordFaceCorrections([correction]);
-    }
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        [face.assetId],
+        [AssetOriginField.Faces],
+        auth.user.id,
+      );
+    });
     await this.refreshFeaturePhotos(auth.user.id, [face.personGroupId], id);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
     await this.noteFaceEdit(auth.user.id, [face.assetId]);

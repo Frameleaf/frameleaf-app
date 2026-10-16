@@ -48,6 +48,7 @@ describe(PersonService.name, () => {
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
     // FL-326: no person copies follow anyone unless a test says so
     mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
@@ -280,6 +281,84 @@ describe(PersonService.name, () => {
       );
       expect(result.corrections[1]).toEqual(expect.objectContaining({ evidence: null, evidenceRevoked: true }));
     });
+  });
+
+  describe('face origin admission', () => {
+    it('commits a correction and its override before dispatching follow-ups', async () => {
+      const face = AssetFaceFactory.create();
+      const auth = AuthFactory.create();
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
+      mocks.person.getFaceForCorrection.mockResolvedValue(getForAssetFace(face));
+      mocks.person.correctFace.mockResolvedValue(1);
+      mocks.asset.getForFaces.mockResolvedValue({
+        edits: [],
+        exifImageWidth: 100,
+        exifImageHeight: 100,
+        orientation: '1',
+      });
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => {
+        const result = await write();
+        expect(mocks.person.correctFace).toHaveBeenCalled();
+        expect(mocks.person.recordFaceCorrections).toHaveBeenCalled();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          [face.assetId],
+          ['faces'],
+          auth.user.id,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden: true });
+      expect(committed).toBe(true);
+      expect(mocks.job.queue).toHaveBeenCalled();
+    });
+
+    it.each(['create', 'correct', 'soft delete', 'force delete'] as const)(
+      'admits %s before face mutations',
+      async (action) => {
+        const face = AssetFaceFactory.create();
+        const asset = AssetFactory.create({ id: face.assetId });
+        const person = PersonFactory.create();
+        const auth = AuthFactory.create();
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+        mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
+        mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+        mocks.person.getByGroupId.mockResolvedValue(person);
+        mocks.person.getFaceById.mockResolvedValue(getForAssetFace(face));
+        mocks.person.getFaceForCorrection.mockResolvedValue(getForAssetFace(face));
+        mocks.person.correctFace.mockResolvedValue(1);
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        const edit =
+          action === 'create'
+            ? sut.createFace(auth, {
+                assetId: asset.id,
+                personId: person.personGroupId,
+                imageWidth: 100,
+                imageHeight: 100,
+                x: 10,
+                y: 10,
+                width: 10,
+                height: 10,
+              })
+            : action === 'correct'
+              ? sut.correctFace(auth, face.id, { expectedRevision: face.updateId, hidden: true })
+              : sut.deleteFace(auth, face.id, { force: action === 'force delete' });
+        await expect(edit).rejects.toThrow('origin busy');
+        expect(mocks.person.createAssetFace).not.toHaveBeenCalled();
+        expect(mocks.person.correctFace).not.toHaveBeenCalled();
+        expect(mocks.person.softDeleteAssetFaces).not.toHaveBeenCalled();
+        expect(mocks.person.deleteAssetFace).not.toHaveBeenCalled();
+        expect(mocks.person.recordFaceCorrections).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('deleteFace', () => {

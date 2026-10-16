@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { SourceType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -13,6 +13,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -75,6 +76,63 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
     const [face] = await sut.getFacesById(auth, { id: asset.id });
     return { sut, ctx, auth, user, person, other, asset, face, faceId: assetFace.id };
   };
+
+  it.each(['create', 'correct', 'soft delete', 'force delete'] as const)(
+    'rolls back %s and its history when origin recording fails',
+    async (action) => {
+      const { sut, ctx, auth, user, asset, person, face } = await newOwnedFace();
+      const { user: sharer } = await ctx.newUser();
+      const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+      const origins = ctx.get(PartnerOriginRepository);
+      await origins.createAssetOrigin({
+        id: asset.id,
+        sourceId: source.id,
+        ownerId: user.id,
+        rootOwnerId: sharer.id,
+        partnerSharedById: sharer.id,
+      });
+      const before = await defaultDatabase
+        .selectFrom('asset_face')
+        .selectAll()
+        .where('assetId', '=', asset.id)
+        .execute();
+      const original = origins.markOverridden.bind(origins);
+      const recording = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw new Error('override failed');
+      });
+      try {
+        const edit =
+          action === 'create'
+            ? sut.createFace(auth, {
+                assetId: asset.id,
+                personId: person.personGroupId,
+                imageWidth: 400,
+                imageHeight: 300,
+                x: 150,
+                y: 150,
+                width: 50,
+                height: 50,
+              })
+            : action === 'correct'
+              ? sut.correctFace(auth, face.id, { expectedRevision: face.revision!, hidden: true })
+              : sut.deleteFace(auth, face.id, { force: action === 'force delete', expectedRevision: face.revision! });
+        await expect(edit).rejects.toThrow('override failed');
+      } finally {
+        recording.mockRestore();
+      }
+      expect(
+        await defaultDatabase.selectFrom('asset_face').selectAll().where('assetId', '=', asset.id).execute(),
+      ).toEqual(before);
+      expect((await origins.getOrigin('asset', asset.id))?.overriddenFields).toEqual([]);
+      expect(
+        (await sql`SELECT id FROM public.face_correction WHERE "ownerId" = ${user.id}::uuid`.execute(defaultDatabase))
+          .rows,
+      ).toEqual([]);
+      expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+    },
+  );
 
   it('renews the revision on every correction and refuses a correction made against an older one', async () => {
     const { sut, auth, asset, other, face, person } = await newOwnedFace();
