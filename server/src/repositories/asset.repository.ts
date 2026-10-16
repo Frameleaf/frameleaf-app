@@ -410,18 +410,13 @@ export class AssetRepository {
       },
     ],
   })
-  async upsertExif({
-    exif,
-    audio,
-    video,
-    keyframes,
-    lockedPropertiesBehavior,
-    expectedUpdateId,
-    cameraEvidence,
-  }: UpsertExifOptions): Promise<void> {
-    let query = this.db;
+  async upsertExif(
+    { exif, audio, video, keyframes, lockedPropertiesBehavior, expectedUpdateId, cameraEvidence }: UpsertExifOptions,
+    kysely?: Transaction<DB>,
+  ): Promise<void> {
+    let query: Kysely<DB> = kysely ?? this.db;
     if (audio) {
-      (query as any) = this.db.with('audio', (qb) =>
+      (query as any) = query.with('audio', (qb) =>
         qb
           .insertInto('asset_audio')
           .values(audio)

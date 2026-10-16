@@ -159,6 +159,7 @@ export class PhysicalFileTrashRepository {
     id: string,
     targetPath: string,
     move: PhysicalFileTrashMove,
+    register?: (trx: Transaction<DB>, entry: PhysicalFileTrashEntry) => Promise<void>,
   ): Promise<PhysicalFileTrashEntry | undefined> {
     const original = await this.getById(id);
     if (!original) return;
@@ -173,10 +174,11 @@ export class PhysicalFileTrashRepository {
           return;
         }
         await move(entry.path, targetPath);
+        await register?.(trx, entry);
         await sql`DELETE FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
         return entry;
       },
-      targetPath,
+      { targetPath, checksum: original.checksum },
     );
   }
   /** Permanently deletes a trashed file: `unlink` runs under the path lock, then the row goes. */

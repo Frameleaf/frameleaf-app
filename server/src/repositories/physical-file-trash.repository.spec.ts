@@ -1,3 +1,4 @@
+import { DatabaseLock } from 'src/enum.js';
 import * as fs from 'node:fs/promises';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
@@ -7,10 +8,15 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, lstat: vi.fn(actual.lstat) };
 });
 
-it.each(['delete', 'move-acknowledgement'])(
+it.each(['delete', 'move-acknowledgement', 'registration'])(
   'returns a moved original to its trash path after %s failure',
   async (failureAt) => {
-    const entry = { id: 'trash-id', path: '/data/file-trash/trash-id/photo.jpg', originalFileName: 'photo.jpg' };
+    const entry = {
+      id: 'trash-id',
+      path: '/data/file-trash/trash-id/photo.jpg',
+      originalFileName: 'photo.jpg',
+      checksum: Buffer.alloc(32, 7),
+    };
     const target = '/data/upload/owner/restored.jpg';
     const files = new Set([entry.path]);
     const failure = new Error('trash entry deletion failed');
@@ -46,10 +52,24 @@ it.each(['delete', 'move-acknowledgement'])(
     });
     onTestFinished(() => inspection.mockReset());
 
-    await expect(new PhysicalFileTrashRepository(db).untrash(entry.id, target, move)).rejects.toBe(failure);
+    await expect(
+      new PhysicalFileTrashRepository(db).untrash(entry.id, target, move, async () => {
+        expect(
+          queries.some(({ sql }) => sql.includes('DELETE FROM public.physical_file_trash') || sql === 'commit'),
+        ).toBe(false);
+        if (failureAt === 'registration') throw failure;
+      }),
+    ).rejects.toBe(failure);
 
     expect(queries.some(({ sql }) => sql === 'rollback')).toBe(true);
     expect(intent).toBeUndefined();
+    const checksumLock = queries.findIndex(
+      ({ sql, parameters }) =>
+        sql.includes('pg_advisory_xact_lock(') && parameters[0] === DatabaseLock.UniversalStorageChecksum,
+    );
+    const pathLock = queries.findIndex(({ sql }) => sql.includes('pg_advisory_xact_lock_shared'));
+    expect(checksumLock).toBeGreaterThanOrEqual(0);
+    expect(checksumLock).toBeLessThan(pathLock);
     expect(queries.findIndex(({ sql }) => sql.includes('INSERT INTO public.move_history'))).toBeLessThan(
       queries.findIndex(({ sql }) => sql === 'begin'),
     );

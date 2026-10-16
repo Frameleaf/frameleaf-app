@@ -213,17 +213,18 @@ export const withFileTrashMove = async <T>(
   originalFileName: string,
   move: PhysicalFileTrashMove,
   callback: (trx: Transaction<DB>, id: string) => Promise<T>,
-  targetPath?: string,
+  options: { targetPath?: string; checksum?: Buffer } = {},
 ): Promise<T> => {
   if (await recoverFileTrashMoves(db, move, path)) {
     throw new ConflictException('An interrupted file trash move needs recovery');
   }
   const id = randomUUID();
-  const target = targetPath ?? StorageCore.getFileTrashPath(id, originalFileName);
+  const target = options.targetPath ?? StorageCore.getFileTrashPath(id, originalFileName);
   await sql`INSERT INTO public.move_history (id, "entityId", "pathType", "oldPath", "newPath")
     VALUES (${id}::uuid, ${id}::uuid, 'file_trash', ${path}, ${target})`.execute(db);
   try {
     return await db.transaction().execute(async (trx) => {
+      if (options.checksum) await lockChecksum(trx, options.checksum);
       for (const lockedPath of [path, target].toSorted()) await lockFilePath(trx, lockedPath);
       const { rows } = await sql`SELECT id FROM public.move_history
         WHERE id = ${id}::uuid AND "pathType" = 'file_trash'
@@ -403,6 +404,7 @@ export class PhysicalFileRepository {
         ownerId: string;
       };
     },
+    kysely?: Transaction<DB>,
   ): Promise<
     | {
         physicalFile: PhysicalFile;
@@ -410,7 +412,7 @@ export class PhysicalFileRepository {
       }
     | undefined
   > {
-    return this.db.transaction().execute(async (trx) => {
+    const execute = async (trx: Transaction<DB>) => {
       await lockChecksum(trx, file.checksum);
       const asset = await trx
         .selectFrom('asset')
@@ -518,7 +520,8 @@ export class PhysicalFileRepository {
         .where('id', '=', asUuid(asset.id))
         .execute();
       return { physicalFile, linked: false };
-    });
+    };
+    return kysely ? execute(kysely) : this.db.transaction().execute(execute);
   }
   /**
    * For a generated file with no `physical_file` row (made before universal storage, and inherited by a
