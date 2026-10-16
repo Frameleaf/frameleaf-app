@@ -640,10 +640,10 @@ describe('Mark Safe on a stack', () => {
 
 // FL-34: an owner unlock and the reviews it implies commit together, in one transaction
 describe('unlocking assets', () => {
-  it.each(['unlock', 'safe'] as const)(
-    'rolls back the %s, group reviews and overrides when recording fails',
+  it.each([AssetImageEnrichmentAction.MarkNsfw, AssetImageEnrichmentAction.AcceptNsfwResult])(
+    'rolls back a manual %s review, group lock and overrides when recording fails',
     async (action) => {
-      const { sut, ctx, auth, user, asset, mark } = await setup();
+      const { sut, ctx, auth, user, asset } = await setup();
       const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newStack({ ownerId: user.id }, [asset.id, sibling.id]);
       const { user: sharer } = await ctx.newUser();
@@ -659,7 +659,63 @@ describe('unlocking assets', () => {
           partnerSharedById: sharer.id,
         });
       }
+      await ctx.get(AssetRepository).upsertMetadata(asset.id, [
+        {
+          key: AssetMetadataKey.MlEnrichment,
+          value: {
+            nsfwDetection: {
+              status: 'success',
+              modelName: 'manual',
+              updatedAt: new Date().toISOString(),
+              result: { isNsfw: true, score: 1, labels: { explicit: 1 } },
+            },
+          },
+        },
+      ]);
+      const before = await Promise.all(ids.map((id) => readPrivacy(id)));
+      const metadata = await readEnrichment(asset.id);
+      const original = origins.markOverridden.bind(origins);
+      const recording = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw new Error('override failed');
+      });
+      try {
+        await expect(sut.updateAssetEnrichment(auth, asset.id, { action })).rejects.toThrow('override failed');
+      } finally {
+        recording.mockRestore();
+      }
+      expect(await Promise.all(ids.map((id) => readPrivacy(id)))).toEqual(before);
+      expect(await readEnrichment(asset.id)).toEqual(metadata);
+      expect(await database.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).toEqual(
+        [],
+      );
+      for (const id of ids) expect((await origins.getOrigin('asset', id))?.overriddenFields).toEqual([]);
+      expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+      expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['unlock', 'safe'] as const)(
+    'rolls back the %s, group reviews and overrides when recording fails',
+    async (action) => {
+      const { sut, ctx, auth, user, asset, mark } = await setup();
+      const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newStack({ ownerId: user.id }, [asset.id, sibling.id]);
       await mark(AssetImageEnrichmentAction.MarkNsfw);
+      const { user: sharer } = await ctx.newUser();
+      const origins = ctx.get(PartnerOriginRepository);
+      const ids = [asset.id, sibling.id];
+      for (const id of ids) {
+        const { asset: source } = await ctx.newAsset({ ownerId: sharer.id });
+        await origins.createAssetOrigin({
+          id,
+          sourceId: source.id,
+          ownerId: user.id,
+          rootOwnerId: sharer.id,
+          partnerSharedById: sharer.id,
+        });
+      }
       const before = await Promise.all(ids.map((id) => readPrivacy(id)));
       const original = origins.markOverridden.bind(origins);
       const recording = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {

@@ -811,6 +811,57 @@ describe(ImageEnrichmentService.name, () => {
   });
 
   describe('the sensitive mark is the lock (FL-34)', () => {
+    it.each([AssetImageEnrichmentAction.MarkNsfw, AssetImageEnrichmentAction.AcceptNsfwResult])(
+      'admits manual %s before metadata writes',
+      async (action) => {
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+        await expect(sut.updateAssetEnrichment(authStub.admin, assetId, { action })).rejects.toThrow('origin busy');
+        expect(mocks.database.withAssetMetadataLock).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('pins the whole sensitive group before commit even when it is already locked', async () => {
+      const ids = [assetId, newUuid()];
+      const trx = { isTransaction: true } as never;
+      mocks.asset.findLockGroupIds.mockResolvedValue(ids);
+      mocks.asset.lock.mockResolvedValue([]);
+      mocks.database.withAssetMetadataLock.mockImplementation((_id, write) => write(trx));
+      let committed = false;
+      mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, admitted, _fields, write) => {
+        expect(admitted).toEqual(ids);
+        const result = await write();
+        expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+          'asset',
+          ids,
+          ['visibility'],
+          authStub.admin.user.id,
+          trx,
+        );
+        committed = true;
+        return result;
+      });
+      mocks.job.queue.mockImplementation(() => {
+        expect(committed).toBe(true);
+        return Promise.resolve(undefined as never);
+      });
+      await sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw });
+      expect(committed).toBe(true);
+    });
+
+    it('refuses a sensitive group that expanded beyond origin admission', async () => {
+      const trx = { isTransaction: true } as never;
+      mocks.database.withAssetMetadataLock.mockImplementation((_id, write) => write(trx));
+      mocks.asset.findLockGroupIds.mockResolvedValueOnce([assetId]).mockResolvedValue([assetId, newUuid()]);
+      await expect(
+        sut.updateAssetEnrichment(authStub.admin, assetId, { action: AssetImageEnrichmentAction.MarkNsfw }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+    });
+
     it.each(['unlock', 'safe'] as const)('admits the %s origin edit before metadata locking', async (action) => {
       mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
       const auth = authStub.adminWithElevatedPermission;
