@@ -25,6 +25,7 @@ export class DesktopMlTaskTable {
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) ownerId!: string;
   @Column() modelKey!: string;
   @Column() authorityKey!: string;
+  @Column({ type: 'jsonb', nullable: true }) disclosure!: Generated<unknown | null>;
   @Column({ type: 'jsonb' }) config!: Record<string, unknown>;
   @Column() configSha256!: string;
   @Column() inputSha256!: string;
