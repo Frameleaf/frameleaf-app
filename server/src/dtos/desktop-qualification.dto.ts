@@ -39,3 +39,21 @@ export class DesktopQualificationChallengeDto extends createZodDto(
     reportSha256: digest.nullable(),
   }),
 ) {}
+
+export class DesktopAcceptedQualificationDto extends createZodDto(
+  z.strictObject({
+    id: z.uuidv4(),
+    deviceId: z.uuidv4(),
+    sessionId: z.uuidv4(),
+    authorizationEpoch: z.number().int().positive(),
+    modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
+    configSha256: digest,
+    inputKind: z.enum(['text', 'image']).meta({ id: 'DesktopInputKind' }),
+    bindingSha256: digest,
+    manifestSha256: digest,
+    runtimeFingerprint: digest,
+    reportSha256: digest,
+    qualifiedAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
+  }),
+) {}

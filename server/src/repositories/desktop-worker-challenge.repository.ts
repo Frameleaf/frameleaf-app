@@ -129,6 +129,24 @@ export class DesktopWorkerChallengeRepository {
     });
   }
 
+  readAccepted(grant: DesktopWorkerGrant, id: string) {
+    z.uuidv4()
+      .refine((value) => value === value.toLowerCase())
+      .parse(id);
+    return this.db.transaction().execute(async (db) => {
+      if (!(await lockDesktopWorker(db, grant))) return;
+      return db
+        .selectFrom('desktop_worker_qualification')
+        .selectAll()
+        .where('id', '=', id)
+        .where('deviceId', '=', grant.deviceId)
+        .where('sessionId', '=', grant.sessionId)
+        .where('authorizationEpoch', '=', grant.authorizationEpoch)
+        .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+        .executeTakeFirst();
+    });
+  }
+
   record(grant: DesktopWorkerGrant, id: string, receipt: DesktopQualificationReceipt): Promise<boolean> {
     z.uuidv4().parse(id);
     if (!(receipt instanceof DesktopQualificationReceipt) || !Object.isFrozen(receipt)) return Promise.resolve(false);

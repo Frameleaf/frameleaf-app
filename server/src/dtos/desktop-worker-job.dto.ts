@@ -22,6 +22,8 @@ export class DesktopWorkerTaskDto extends createZodDto(
     sessionId: z.uuid(),
     authorizationEpoch: z.number().int().positive(),
     generation: z.number().int().positive(),
+    qualificationId: z.uuidv4(),
+    qualificationExpiresAt: z.iso.datetime(),
     modelKey: z.string().min(1).max(256),
     configJson: z.string().max(64 * 1024),
     configSha256: digest,

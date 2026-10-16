@@ -23,7 +23,13 @@ it('authenticates the exact claim bytes and returns only immutable task/lease me
       input: Buffer.from('private'),
       ownerId: 'private-owner',
     },
-    attempt: { id: 'attempt', generation: 3, expiresAt: new Date('2026-10-15T20:59:00Z') },
+    attempt: {
+      id: 'attempt',
+      qualificationId: 'qualification',
+      generation: 3,
+      expiresAt: new Date('2026-10-15T20:59:00Z'),
+    },
+    qualificationExpiresAt: new Date('2026-10-15T20:59:30Z'),
   });
   const payload = '{"modelKeys":["model"],"waitMs":0}';
   const result = await service.claim('token', 'proof', payload, new AbortController().signal);
@@ -37,6 +43,8 @@ it('authenticates the exact claim bytes and returns only immutable task/lease me
     configJson: '{"a":2,"z":1}',
     generation: 3,
     maxInputBytes: 16_777_216,
+    qualificationId: 'qualification',
+    qualificationExpiresAt: '2026-10-15T20:59:30.000Z',
   });
   expect(result.task).not.toHaveProperty('input');
   expect(result.task).not.toHaveProperty('ownerId');

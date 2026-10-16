@@ -41,7 +41,7 @@ const taskColumns = [
   'createdAt',
   'deadlineAt',
 ] as const;
-export type DesktopMlClaim = { task: Omit<Task, 'input'>; attempt: Attempt };
+export type DesktopMlClaim = { task: Omit<Task, 'input'>; attempt: Attempt; qualificationExpiresAt: Date };
 export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey' | 'config' | 'inputKind'> & {
   input: Buffer;
   deadlineAt: Date;
@@ -140,8 +140,9 @@ export class DesktopMlRepository {
           .select(taskColumns)
           .where('id', '=', attempt.taskId)
           .executeTakeFirstOrThrow();
-        if (!(await this.qualification(db, grant, task, attempt.qualificationId))) return;
-        return { task, attempt };
+        const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
+        if (!qualification) return;
+        return { task, attempt, qualificationExpiresAt: new Date(qualification.expiresAt) };
       }
 
       const task = await db
@@ -215,6 +216,7 @@ export class DesktopMlRepository {
       return {
         task: { ...metadata, state: 'running', generation: attempt.generation, attemptId: attempt.id },
         attempt,
+        qualificationExpiresAt: new Date(qualification.expiresAt),
       };
     });
   }

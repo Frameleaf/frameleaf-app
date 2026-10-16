@@ -5973,6 +5973,8 @@ export type DesktopWorkerClaimDto = {
         inputSha256: string;
         maxInputBytes: number;
         modelKey: string;
+        qualificationExpiresAt: string;
+        qualificationId: string;
         sessionId: string;
         taskId: string;
     } | null;
@@ -5980,6 +5982,21 @@ export type DesktopWorkerClaimDto = {
 export type DesktopWorkerHeartbeatDto = {
     accepted: boolean;
     expiresAt: string | null;
+};
+export type DesktopAcceptedQualificationDto = {
+    authorizationEpoch: number;
+    bindingSha256: string;
+    configSha256: string;
+    deviceId: string;
+    expiresAt: string;
+    id: string;
+    inputKind: DesktopInputKind;
+    manifestSha256: string;
+    modelKey: string;
+    qualifiedAt: string;
+    reportSha256: string;
+    runtimeFingerprint: string;
+    sessionId: string;
 };
 export type AssetDevelopMaskAdjustments = {
     /** Black point inside the mask */
@@ -21215,6 +21232,23 @@ export function heartbeatDesktopTask({ xFrameleafDesktopProof, desktopWorkerPayl
             "x-frameleaf-desktop-proof": xFrameleafDesktopProof
         })
     })));
+}
+/**
+ * Read accepted runtime evidence without granting processing scope
+ */
+export function readDesktopAcceptedQualification({ id, xFrameleafDesktopProof }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopAcceptedQualificationDto;
+    }>(`/desktop/worker/qualifications/${encodeURIComponent(id)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
 }
 /**
  * Revoke this desktop worker grant

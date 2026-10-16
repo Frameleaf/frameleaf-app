@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import z from 'zod';
 import {
+  DesktopAcceptedQualificationDto,
   DesktopQualificationChallengeDto,
   DesktopQualificationReportSchema,
   DesktopQualificationRequestSchema,
@@ -20,7 +22,8 @@ import {
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
-import { verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
+import { desktopRuntimeMinimumEpoch, verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 type Challenge = NonNullable<Awaited<ReturnType<DesktopWorkerChallengeRepository['read']>>>;
 const parse = <T>(schema: z.ZodType<T>, payload: string): T => {
@@ -118,6 +121,40 @@ export class DesktopQualificationService {
       throw new BadRequestException('desktop_qualification_report_invalid');
     }
     return { accepted: await this.challenges.record(grant, id, receipt) };
+  }
+
+  async accepted(
+    authorization: string | undefined,
+    proof: string | undefined,
+    id: string,
+  ): Promise<DesktopAcceptedQualificationDto> {
+    const grant = await this.auth.authenticate(authorization, proof, `accepted-qualification:${id}`, '');
+    const row = await this.challenges.readAccepted(grant, id);
+    if (!row) throw new UnauthorizedException('desktop_qualification_invalid');
+    const profile = await this.selected(row.modelKey, row.runtime.provider, row.runtime.sourceRevision);
+    const digest = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+    if (
+      row.profileSha256 !== digest(profile) ||
+      row.configSha256 !== digest(profile.spec.entries) ||
+      row.inputKind !== profile.spec.fixtureKind ||
+      row.runtime.epoch < desktopRuntimeMinimumEpoch()
+    )
+      throw new ConflictException('desktop_model_profile_changed');
+    return {
+      id: row.id,
+      deviceId: row.deviceId,
+      sessionId: row.sessionId,
+      authorizationEpoch: row.authorizationEpoch,
+      modelKey: row.modelKey,
+      configSha256: row.configSha256,
+      inputKind: row.inputKind,
+      bindingSha256: createDesktopModelChallenge(profile, row.id).bindingSha256,
+      manifestSha256: row.runtime.manifestSha256,
+      runtimeFingerprint: row.runtimeFingerprint,
+      reportSha256: row.reportSha256,
+      qualifiedAt: new Date(row.createdAt).toISOString(),
+      expiresAt: new Date(row.expiresAt).toISOString(),
+    };
   }
 
   private async selected(modelKey: string, provider: string, source: string): Promise<DesktopModelProfile> {

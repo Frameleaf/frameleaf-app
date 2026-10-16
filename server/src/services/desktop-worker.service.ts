@@ -58,6 +58,8 @@ export class DesktopWorkerService {
             sessionId: grant.sessionId,
             authorizationEpoch: grant.authorizationEpoch,
             generation: claim.attempt.generation,
+            qualificationId: claim.attempt.qualificationId!,
+            qualificationExpiresAt: claim.qualificationExpiresAt.toISOString(),
             modelKey: claim.task.modelKey,
             configJson: canonicalJson(claim.task.config),
             configSha256: claim.task.configSha256,

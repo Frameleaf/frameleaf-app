@@ -130,7 +130,7 @@ const report = () => {
   };
 };
 const repository = { session: vi.fn(), consume: vi.fn() };
-const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn() };
+const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
 const proof = (operation: string, raw: string) => {
@@ -283,3 +283,74 @@ it.skipIf(!process.env.FRAMELEAF_FACTORY_ATTESTATION)(
     }
   },
 );
+
+it('reads only safe current accepted evidence using a distinct signed operation', async () => {
+  const accepted = {
+    ...row(),
+    deviceId: id,
+    sessionId,
+    authorizationEpoch: 2,
+    configSha256: createHash('sha256').update(canonicalJson(profile.spec.entries)).digest('hex'),
+    inputKind: 'text',
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 3_600_000),
+    runtimeFingerprint: report().runtimeFingerprint,
+    reportSha256: createHash('sha256').update(canonicalJson(report())).digest('hex'),
+  };
+  challenges.readAccepted.mockResolvedValue(accepted);
+  const path = `/desktop/worker/qualifications/${id}`;
+  const response = await request(app)
+    .get(path)
+    .auth(token, { type: 'bearer' })
+    .set('x-frameleaf-desktop-proof', proof(`accepted-qualification:${id}`, ''));
+  expect(response.status).toBe(200);
+  expect(response.headers['cache-control']).toBe('no-store');
+  expect(response.body).toEqual({
+    id,
+    deviceId: id,
+    sessionId,
+    authorizationEpoch: 2,
+    modelKey: profile.modelKey,
+    configSha256: accepted.configSha256,
+    inputKind: 'text',
+    bindingSha256: challenge.bindingSha256,
+    manifestSha256: identity.manifestSha256,
+    runtimeFingerprint: accepted.runtimeFingerprint,
+    reportSha256: accepted.reportSha256,
+    qualifiedAt: accepted.createdAt.toISOString(),
+    expiresAt: accepted.expiresAt.toISOString(),
+  });
+  expect(
+    (
+      await request(app)
+        .get(path)
+        .auth(token, { type: 'bearer' })
+        .set('x-frameleaf-desktop-proof', proof(`challenge:${id}`, ''))
+    ).status,
+  ).toBe(401);
+  for (const changed of [
+    { ...accepted, profileSha256: 'f'.repeat(64) },
+    { ...accepted, configSha256: 'f'.repeat(64) },
+    { ...accepted, inputKind: 'image' },
+    { ...accepted, runtime: { ...identity, epoch: 1 } },
+  ]) {
+    challenges.readAccepted.mockResolvedValue(changed);
+    expect(
+      (
+        await request(app)
+          .get(path)
+          .auth(token, { type: 'bearer' })
+          .set('x-frameleaf-desktop-proof', proof(`accepted-qualification:${id}`, ''))
+      ).status,
+    ).toBe(409);
+  }
+  challenges.readAccepted.mockResolvedValue(undefined);
+  expect(
+    (
+      await request(app)
+        .get(path)
+        .auth(token, { type: 'bearer' })
+        .set('x-frameleaf-desktop-proof', proof(`accepted-qualification:${id}`, ''))
+    ).status,
+  ).toBe(401);
+});

@@ -253,6 +253,7 @@ it('accepted runtime evidence has an absolute lifetime across retries and renewa
   const first = (await sut.issue(grant, randomUUID(), profile, runtime))!;
   const validated = receipt(first);
   expect(await sut.record(grant, first.id, validated)).toBe(true);
+  expect(await sut.readAccepted(grant, first.id)).toMatchObject({ id: first.id });
   const accepted = await proofDb
     .selectFrom('desktop_worker_qualification')
     .selectAll()
@@ -302,6 +303,8 @@ it('accepted runtime evidence has an absolute lifetime across retries and renewa
   expect(await workers.rotate(grant, grant.credentialHash, nextHash)).toBeDefined();
   const current = (await workers.consume(grant.sessionId, nextHash, 1))!;
   await expect(broker.assertAdoption(task.id, task)).resolves.toBeUndefined();
+  expect(await sut.readAccepted(grant, first.id)).toBeUndefined();
+  expect(await sut.readAccepted(current, first.id)).toMatchObject({ id: first.id });
   const second = (await sut.issue(current, randomUUID(), profile, runtime))!;
   expect(
     await proofDb
@@ -312,10 +315,17 @@ it('accepted runtime evidence has an absolute lifetime across retries and renewa
   ).toEqual(accepted);
   expect(await sut.record(current, second.id, receipt(second))).toBe(true);
   await expect(broker.assertAdoption(task.id, task)).rejects.toThrow('desktop_result_authority_lost');
+  expect(await sut.readAccepted(current, first.id)).toBeUndefined();
   expect(
     await proofDb.selectFrom('desktop_worker_qualification').select('id').where('id', '=', first.id).executeTakeFirst(),
   ).toBeUndefined();
   expect(await sut.record(grant, first.id, validated)).toBe(false);
+  await proofDb
+    .updateTable('desktop_worker_qualification')
+    .set({ createdAt: sql`now() - interval '2 hours'`, expiresAt: sql`now() - interval '1 hour'` })
+    .where('id', '=', second.id)
+    .execute();
+  expect(await sut.readAccepted(current, second.id)).toBeUndefined();
   const replacement = await workers.issue({
     deviceId: grant.deviceId,
     authorizationEpoch: grant.authorizationEpoch,
@@ -331,4 +341,13 @@ it('accepted runtime evidence has an absolute lifetime across retries and renewa
       .where('deviceId', '=', grant.deviceId)
       .execute(),
   ).toHaveLength(0);
+});
+
+it('accepted evidence cannot be read by a different authenticated worker', async () => {
+  const { sut, grant } = await setup();
+  const other = await setup();
+  const row = (await sut.issue(grant, randomUUID(), profile, runtime))!;
+  expect(await sut.record(grant, row.id, receipt(row))).toBe(true);
+  expect(await sut.readAccepted(grant, row.id)).toMatchObject({ id: row.id });
+  expect(await sut.readAccepted(other.grant, row.id)).toBeUndefined();
 });

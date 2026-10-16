@@ -128,3 +128,5 @@ export const verifyDesktopRuntimeAttestation = (input: unknown, profile: Desktop
     architecture: manifest.architecture,
   };
 };
+
+export const desktopRuntimeMinimumEpoch = () => policySchema.parse(resource('release-trust.json')).minimumRuntimeEpoch;

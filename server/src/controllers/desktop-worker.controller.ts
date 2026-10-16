@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiHeader, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  DesktopAcceptedQualificationDto,
   DesktopQualificationChallengeDto,
   DesktopQualificationIdParamDto,
 } from 'src/dtos/desktop-qualification.dto.js';
@@ -88,6 +89,19 @@ export class DesktopWorkerController {
   ): Promise<DesktopWorkerAckDto> {
     response.setHeader('Cache-Control', 'no-store');
     return this.qualification.record(authorization, proof, id, dto.payload);
+  }
+
+  @Get('worker/qualifications/:id')
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Read accepted runtime evidence without granting processing scope', history: history() })
+  async readDesktopAcceptedQualification(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: DesktopQualificationIdParamDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopAcceptedQualificationDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.qualification.accepted(authorization, proof, id);
   }
 
   @Post('worker/claim')
