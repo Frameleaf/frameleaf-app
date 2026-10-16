@@ -469,11 +469,14 @@ export class FrameleafAuthService extends BaseService {
   /** `POST oauth/frameleaf/handoff/redeem`: exchange a handoff code for a new, tagged session. */
   async redeemHandoff(dto: FrameleafHandoffRedeemDto, loginDetails: LoginDetails) {
     const parent = await this.frameleafAccountRepository.takeHandoff(this.hashCode(dto.code));
-    if (!parent || !parent.handoffExpiresAt || new Date(parent.handoffExpiresAt).getTime() < Date.now()) {
+    if (!parent || !parent.handoffExpiresAt || new Date(parent.handoffExpiresAt).getTime() <= Date.now()) {
       throw new UnauthorizedException('This sign-in code is not valid any more');
     }
     const parentSession = await this.sessionRepository.get(parent.sessionId);
-    const user = parentSession ? await this.userRepository.get(parent.userId, { withDeleted: false }) : undefined;
+    const user =
+      parentSession && (!parentSession.expiresAt || new Date(parentSession.expiresAt).getTime() > Date.now())
+        ? await this.userRepository.get(parent.userId, { withDeleted: false })
+        : undefined;
     if (!user) {
       throw new UnauthorizedException('This sign-in code is not valid any more');
     }
@@ -483,13 +486,43 @@ export class FrameleafAuthService extends BaseService {
       loginDetails,
       { sid: parent.sid ?? undefined },
     );
-    await this.frameleafAccountRepository.tagSession({
-      sessionId: session.id,
-      userId: user.id,
-      sid: parent.sid,
-      sub: parent.sub,
-      authTime: parent.authTime,
-    });
+    try {
+      await this.frameleafAccountRepository.tagSession({
+        sessionId: session.id,
+        userId: user.id,
+        sid: parent.sid,
+        sub: parent.sub,
+        authTime: parent.authTime,
+      });
+      const [sourceSession, sourceTag, link, currentUser] = await Promise.all([
+        this.sessionRepository.get(parent.sessionId),
+        this.frameleafAccountRepository.getSession(parent.sessionId),
+        this.frameleafAccountRepository.getLinkByUser(parent.userId),
+        this.userRepository.get(parent.userId, { withDeleted: false }),
+      ]);
+      // Logout records revocation before collecting tagged sessions, including a child it could miss.
+      const revoked = await this.frameleafAccountRepository.isSignInRevoked({
+        sub: parent.sub,
+        sid: parent.sid,
+        issuedAt: parent.createdAt,
+      });
+      if (
+        !sourceSession ||
+        (sourceSession.expiresAt && new Date(sourceSession.expiresAt).getTime() <= Date.now()) ||
+        sourceTag?.sub !== parent.sub ||
+        sourceTag.userId !== parent.userId ||
+        sourceTag.sid !== parent.sid ||
+        link?.sub !== parent.sub ||
+        !currentUser ||
+        revoked ||
+        new Date(parent.handoffExpiresAt).getTime() <= Date.now()
+      ) {
+        throw new UnauthorizedException('This sign-in code is not valid any more');
+      }
+    } catch (error) {
+      await this.endSessions([session.id]);
+      throw error;
+    }
     return response;
   }
 

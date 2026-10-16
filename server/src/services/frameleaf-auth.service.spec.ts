@@ -955,11 +955,19 @@ describe(FrameleafAuthService.name, () => {
         sid: 'fl-sid',
         sub: 'fl-sub',
         authTime: null,
+        createdAt: new Date(),
         handoffExpiresAt: new Date(Date.now() + 30_000),
       } as never);
       mocks.session.get.mockResolvedValue({ id: 'session-1' } as never);
       mocks.user.get.mockResolvedValue(user as never);
       mocks.crypto.randomBytesAsText.mockReturnValue('new-token');
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: 'session-1',
+        userId: user.id,
+        sub: 'fl-sub',
+        sid: 'fl-sid',
+      } as never);
+      mocks.frameleafAccount.isSignInRevoked.mockResolvedValue(false);
 
       await expect(sut.redeemHandoff({ code }, loginDetails)).resolves.toMatchObject({ userId: user.id });
       expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith(
