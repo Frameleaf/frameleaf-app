@@ -1,6 +1,7 @@
 <script lang="ts">
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import AppCard from '$lib/components/frameleaf/AppCard.svelte';
   import UploadCover from '$lib/components/frameleaf/DragDropUploadOverlay.svelte';
   import { arrivedFromSetup, offerNextSteps } from '$lib/components/timeline/next-steps.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -49,6 +50,8 @@
   {@render children?.()}
 </div>
 <UploadCover />
+<!-- The phone "Get the app" sheet: it opens only on the Photos library (rules in app-card.ts). -->
+<AppCard />
 
 <style>
   :root {
