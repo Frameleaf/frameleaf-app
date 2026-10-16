@@ -63,6 +63,7 @@ const apiMiddleware = [
   { provide: APP_GUARD, useClass: AuthGuard },
   // FL-360: refuses library writes while a Frameleaf Manager library move holds the pause
   { provide: APP_GUARD, useClass: LibraryMoveFenceGuard },
+  { provide: APP_INTERCEPTOR, useClass: LibraryMoveFenceGuard },
   // FL-161: counts a failed password (401) against the email or shared link it was tried for
   { provide: APP_INTERCEPTOR, useClass: RateLimitFailureInterceptor },
 ];
