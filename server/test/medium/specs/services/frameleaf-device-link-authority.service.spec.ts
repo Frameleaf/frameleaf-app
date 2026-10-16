@@ -118,6 +118,7 @@ it('retains a committed permission change while publishing progress for the same
 });
 
 const setup = async () => {
+  const env = mockEnvData({});
   const options = {
     database: db,
     real: [DatabaseRepository, SystemMetadataRepository],
@@ -126,9 +127,7 @@ const setup = async () => {
   const publisher = newMediumService(FrameleafCloudService, options),
     writer = newMediumService(FrameleafCloudService, options);
   for (const { sut, ctx } of [publisher, writer]) {
-    ctx
-      .getMock(ConfigRepository)
-      .getEnv.mockReturnValue({ ...mockEnvData, frameleafCloud: { ...mockEnvData.frameleafCloud, url } });
+    ctx.getMock(ConfigRepository).getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url } });
     ctx.getMock(UserRepository).getAdmins.mockResolvedValue([]);
     vi.spyOn(sut, 'getStatus').mockResolvedValue({} as never);
   }

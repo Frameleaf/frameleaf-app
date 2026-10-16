@@ -150,6 +150,7 @@ const tryLicenceLock = (lock = DatabaseLock.FrameleafLicenseRefresh) =>
   });
 
 const setup = async () => {
+  const env = mockEnvData({});
   const options = {
     database: db,
     real: [DatabaseRepository, SystemMetadataRepository],
@@ -166,8 +167,8 @@ const setup = async () => {
   const { sut: cloud, ctx: cloudCtx } = newMediumService(FrameleafCloudService, options);
   for (const context of [ctx, cloudCtx]) {
     context.getMock(ConfigRepository).getEnv.mockReturnValue({
-      ...mockEnvData,
-      frameleafCloud: { ...mockEnvData.frameleafCloud, url: 'https://cloud.test' },
+      ...env,
+      frameleafCloud: { ...env.frameleafCloud, url: 'https://cloud.test' },
     });
     context.getMock(UserRepository).getAdmins.mockResolvedValue([]);
     context.getMock(EventRepository).emit.mockResolvedValue();

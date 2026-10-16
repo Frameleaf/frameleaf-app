@@ -80,14 +80,15 @@ it('holds the PostgreSQL authority fence through registration account writes, th
 });
 
 const setup = async () => {
+  const env = mockEnvData({});
   const { sut, ctx } = newMediumService(FrameleafCloudService, {
     database: db,
     real: [DatabaseRepository, FrameleafAccountRepository, SessionRepository, SystemMetadataRepository, UserRepository],
     mock: [AdminAuditRepository, ConfigRepository, EventRepository, FrameleafCloudRepository, LoggingRepository],
   });
   ctx.getMock(ConfigRepository).getEnv.mockReturnValue({
-    ...mockEnvData,
-    frameleafCloud: { ...mockEnvData.frameleafCloud, url: 'https://cloud.test' },
+    ...env,
+    frameleafCloud: { ...env.frameleafCloud, url: 'https://cloud.test' },
   });
   ctx.getMock(EventRepository).emit.mockResolvedValue();
   const audit = ctx.getMock(AdminAuditRepository);

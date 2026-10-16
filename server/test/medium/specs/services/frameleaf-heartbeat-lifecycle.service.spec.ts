@@ -94,6 +94,7 @@ it.each(['unlink', 'permissions', 'sign-in', 'remote-access'] as const)(
 );
 
 const setup = async () => {
+  const env = mockEnvData({});
   const options = {
     database: db,
     real: [DatabaseRepository, SystemMetadataRepository],
@@ -105,7 +106,7 @@ const setup = async () => {
   for (const context of [ctx, owner.ctx]) {
     context
       .getMock(ConfigRepository)
-      .getEnv.mockReturnValue({ ...mockEnvData, frameleafCloud: { ...mockEnvData.frameleafCloud, url } });
+      .getEnv.mockReturnValue({ ...env, frameleafCloud: { ...env.frameleafCloud, url } });
     context.getMock(UserRepository).getAdmins.mockResolvedValue([]);
     context.getMock(FrameleafAccountRepository).deleteAllSessions.mockResolvedValue([]);
     context.getMock(FrameleafCloudRepository).requestJson.mockResolvedValue({} as never);

@@ -151,6 +151,7 @@ it.each(['callback', 'exchange'] as const)(
 );
 
 const setup = async (flow: 'callback' | 'exchange') => {
+  const env = mockEnvData({});
   const { sut, ctx } = newMediumService(FrameleafAuthService, {
     database: db,
     real: [
@@ -164,8 +165,8 @@ const setup = async (flow: 'callback' | 'exchange') => {
     mock: [ConfigRepository, EventRepository, LoggingRepository, OAuthRepository],
   });
   ctx.getMock(ConfigRepository).getEnv.mockReturnValue({
-    ...mockEnvData,
-    frameleafCloud: { ...mockEnvData.frameleafCloud, url: 'https://cloud.test' },
+    ...env,
+    frameleafCloud: { ...env.frameleafCloud, url: 'https://cloud.test' },
   });
   ctx.getMock(EventRepository).emit.mockResolvedValue();
   await ctx.newUser({ isAdmin: true });
