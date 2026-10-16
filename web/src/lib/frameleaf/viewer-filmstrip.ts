@@ -94,18 +94,18 @@ export const filmstripWindow = <M extends FilmstripMonth>(
   }
 
   const toLoad: M[] = [];
-  let before = own.slice(0, at);
+  let before = own.slice(Math.max(0, at - reach), at);
   for (let index = monthIndex - 1, steps = 0; index >= 0 && before.length < reach && steps < monthReach; index--) {
     const earlier = months[index];
     if (!earlier.isLoaded) {
       toLoad.push(earlier);
       break;
     }
-    before = [...earlier.getAssets(), ...before];
+    before = [...earlier.getAssets().slice(-(reach - before.length)), ...before];
     steps++;
   }
 
-  let after = own.slice(at + 1);
+  let after = own.slice(at + 1, at + 1 + reach);
   for (
     let index = monthIndex + 1, steps = 0;
     index < months.length && after.length < reach && steps < monthReach;
@@ -116,9 +116,9 @@ export const filmstripWindow = <M extends FilmstripMonth>(
       toLoad.push(later);
       break;
     }
-    after = [...after, ...later.getAssets()];
+    after = [...after, ...later.getAssets().slice(0, reach - after.length)];
     steps++;
   }
 
-  return { assets: [...before.slice(-reach), own[at], ...after.slice(0, reach)], toLoad };
+  return { assets: [...before, own[at], ...after], toLoad };
 };
