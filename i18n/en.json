@@ -12398,6 +12398,7 @@
   "frameleaf_studio_bundle_export_failed": "The project could not be saved as a file.",
   "frameleaf_studio_bundle_export_start": "Create file",
   "frameleaf_studio_bundle_export_title": "Save project as a file",
+  "frameleaf_studio_bundle_historical_labels": "Included generated imports carry historical processing and source labels, including in reference-only bundles. These labels grant no access to the original source.",
   "frameleaf_studio_bundle_import": "Open a project file",
   "frameleaf_studio_bundle_import_done": "{relinked, plural, one {# item} other {# items}} matched to yours, {kept, plural, one {# item} other {# items}} already here, {missing, plural, one {# item} other {# items}} missing.",
   "frameleaf_studio_bundle_import_failed": "The import could not be started.",
