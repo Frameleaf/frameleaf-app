@@ -47,12 +47,12 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
-const probe = (input: string, options: string[]): Promise<FfprobeData> => {
-  executionSignal()?.throwIfAborted();
+const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
+  signal?.throwIfAborted();
   const child = spawn('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', ...options, input], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const lifetime = superviseMediaProcess(child, { signal: executionSignal() });
+  const lifetime = superviseMediaProcess(child, { signal });
   const chunks: Buffer[] = [];
   let bytes = 0;
   let stderr = '';
@@ -360,7 +360,7 @@ export class MediaRepository {
   }
 
   async probe(input: string, options?: ProbeOptions): Promise<VideoInfo> {
-    const results = await probe(input, options?.countFrames ? ['-count_packets'] : []); // gets frame count quickly: https://stackoverflow.com/a/28376817
+    const results = await probe(input, options?.countFrames ? ['-count_packets'] : [], options?.signal); // gets frame count quickly: https://stackoverflow.com/a/28376817
     return {
       format: {
         formatName: results.format.format_name,
