@@ -9,12 +9,14 @@ import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import { defaults } from 'src/config.js';
 import { AssetType, JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository, type DesktopMlTables } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
@@ -584,3 +586,100 @@ it('publishes a synthetic pool result only with the real index and broker transa
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it('durably waits for an unclaimed helper, restarts, and completes the same pinned job without retry-credit loss', async () => {
+  const { sut: broker, second: helper, grants, request } = await setup();
+  const queue = `desktop-wait-${randomUUID()}`;
+  let worker = randomUUID();
+  let store = new SqlQueueStore(db);
+  await store.initialize([queue], worker);
+  const pinned = randomUUID();
+  const runId = await store.createRun('desktop-helper-wait', {});
+  await store.enqueue([
+    {
+      queue,
+      name: JobName.SmartSearch,
+      data: { id: randomUUID(), _queueDestinations: { clip: pinned } },
+      safeToRetry: true,
+      sensitive: false,
+      deadlineMs: 120_000,
+      runId,
+      itemKey: request.ownerId,
+      rootItemKey: request.ownerId,
+    },
+  ]);
+  await store.finishEnumeration(runId);
+  const executor = (repository: DesktopMlRepository) => {
+    const service = new DesktopMlService(repository, new DesktopClipIndexRepository(db));
+    const jobs = new JobRepository(
+      {} as never,
+      {} as never,
+      {
+        emit: async () => {
+          expect(await jobs.pinDestination(MlWorkload.Clip, randomUUID())).toBe(pinned);
+          await service.dispatch({
+            request: { ...request, deadlineAt: new Date(Date.now() + 120_000) },
+            assertAuthority: async () => {},
+            decodeResult: (value) => value,
+          });
+        },
+      } as never,
+      LoggingRepository.create(),
+      db,
+    );
+    return jobs;
+  };
+  const [first] = await store.claim(queue, worker);
+  await executor(broker)['execute'](first, new AbortController());
+  const blocked = await db
+    .selectFrom('job')
+    .select(['state', 'dependencyReason', 'retryBaseAttempt', 'data'])
+    .where('id', '=', first.id)
+    .executeTakeFirstOrThrow();
+  expect(blocked).toMatchObject({ state: 'pending', dependencyReason: 'destination-unavailable', retryBaseAttempt: 1 });
+  expect(blocked.data).toMatchObject({ _queueDestinations: { clip: pinned } });
+  expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+    state: 'blocked',
+    blocked: 1,
+    failed: 0,
+    completed: 0,
+  });
+  expect(
+    await brokerDb.selectFrom('desktop_ml_task').selectAll().where('ownerId', '=', request.ownerId).execute(),
+  ).toEqual([]);
+
+  // New queue and broker facades use only persisted state, as after a NAS process restart.
+  worker = randomUUID();
+  store = new SqlQueueStore(db);
+  await store.initialize([queue], worker);
+  await sql`update job set "availableAt" = now() where id = ${first.id}::uuid`.execute(db);
+  const [resumed] = await store.claim(queue, worker);
+  expect(resumed.id).toBe(first.id);
+  const reloaded = new DesktopMlRepository(db);
+  const ready = Promise.withResolvers<Awaited<ReturnType<typeof reloaded.create>>>();
+  const create = reloaded.create.bind(reloaded);
+  vi.spyOn(reloaded, 'create').mockImplementation(async (input) => {
+    const task = await create(input);
+    ready.resolve(task);
+    return task;
+  });
+  const executing = executor(reloaded)['execute'](resumed, new AbortController());
+  const task = await ready.promise;
+  const assigned = (await helper.claim(grants[0], [request.modelKey]))!;
+  expect(assigned.task.id).toBe(task.id);
+  expect(await helper.complete(grants[0], assigned.attempt.id, { clip: [1, 2] })).toBe(true);
+  await executing;
+  expect((await store.listRuns(100, 0)).find((run) => run.id === runId)).toMatchObject({
+    state: 'completed',
+    failed: 0,
+    completed: 1,
+  });
+  expect(
+    await db
+      .selectFrom('job')
+      .select(['state', 'attempt', 'retryBaseAttempt'])
+      .where('id', '=', first.id)
+      .executeTakeFirstOrThrow(),
+  ).toMatchObject({ state: 'completed', attempt: 2, retryBaseAttempt: 1 });
+  expect(await reloaded.result(task.id)).toBeUndefined();
+}, 20_000);

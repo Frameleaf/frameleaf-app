@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { QueueExecution } from 'src/queue/types.js';
 import * as context from 'src/queue/context.js';
+import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 
 const repository = { create: vi.fn(), result: vi.fn(), cancel: vi.fn(), assertAdoption: vi.fn(), discard: vi.fn() };
@@ -113,4 +115,103 @@ it('rechecks selected NAS authority inside deferred publication before adopting 
   input.assertAuthority.mockRejectedValue(new Error('policy revoked before publication'));
   await expect(adoption!('transaction' as never)).rejects.toThrow('policy revoked before publication');
   expect(repository.assertAdoption).not.toHaveBeenCalled();
+});
+
+const queued = (signal = new AbortController().signal): QueueExecution => ({
+  claim: { data: {}, safeToRetry: true } as never,
+  signal,
+  progress: vi.fn(),
+  progressUnits: 0,
+  buffering: false,
+  adoptions: [],
+  followups: [],
+});
+it('defers an unclaimed helper task and cleans private input before returning to the NAS queue', async () => {
+  const controller = new AbortController();
+  const execution = queued(controller.signal);
+  const began = performance.now();
+  repository.result.mockImplementation(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(began + 6000);
+    return Promise.resolve({ state: 'pending', generation: 0 });
+  });
+  const fallback = setTimeout(() => controller.abort(new Error('test cleanup')), 30);
+  try {
+    await expect(context.queueExecution.run(execution, () => service.dispatch(options()))).rejects.toBeInstanceOf(
+      JobDependencyUnavailable,
+    );
+    expect(execution.dependencyReason).toBe('destination-unavailable');
+    expect(repository.cancel).toHaveBeenCalledWith('task');
+    expect(repository.discard).toHaveBeenCalledWith('task');
+  } finally {
+    clearTimeout(fallback);
+    controller.abort();
+  }
+});
+it('treats bounded broker saturation as queue capacity, without inventing a task to clean', async () => {
+  const execution = queued();
+  repository.create.mockRejectedValue(new Error('desktop_broker_busy'));
+  await expect(context.queueExecution.run(execution, () => service.dispatch(options()))).rejects.toBeInstanceOf(
+    JobDependencyUnavailable,
+  );
+  expect(execution.dependencyReason).toBe('destination-unavailable');
+  expect(repository.cancel).not.toHaveBeenCalled();
+});
+it('leaves cleanup time in a nearly exhausted NAS claim instead of starting more private work', async () => {
+  const execution = queued();
+  const input = options();
+  input.request.deadlineAt = new Date(Date.now() + 1000);
+  await expect(context.queueExecution.run(execution, () => service.dispatch(input))).rejects.toBeInstanceOf(
+    JobDependencyUnavailable,
+  );
+  expect(repository.create).not.toHaveBeenCalled();
+});
+it('does not turn an actual terminal worker failure into a dependency wait', async () => {
+  const execution = queued();
+  repository.result.mockResolvedValue({ state: 'failed', generation: 3 });
+  await expect(context.queueExecution.run(execution, () => service.dispatch(options()))).rejects.toThrow(
+    'desktop_inference_failed',
+  );
+  expect(execution.dependencyReason).toBeUndefined();
+});
+
+it('lets a claimed worker finish after the unclaimed-helper window', async () => {
+  const execution = queued();
+  const began = performance.now();
+  repository.result
+    .mockImplementationOnce(() => {
+      vi.spyOn(performance, 'now').mockReturnValue(began + 6000);
+      return Promise.resolve({ state: 'running', generation: 1 });
+    })
+    .mockResolvedValueOnce({
+      state: 'completed',
+      result: { clip: [1, 2] },
+      authorityKey: 'authority',
+      modelKey: 'model',
+    });
+  await expect(context.queueExecution.run(execution, () => service.dispatch(options()))).resolves.toEqual({
+    clip: [1, 2],
+  });
+  expect(execution.dependencyReason).toBeUndefined();
+  expect(repository.cancel).not.toHaveBeenCalled();
+});
+
+it('preserves operation-owned execution instead of inventing a library dependency wait', async () => {
+  const execution = queued();
+  execution.claim.data.operationId = 'synthetic-operation';
+  const began = performance.now();
+  repository.result
+    .mockImplementationOnce(() => {
+      vi.spyOn(performance, 'now').mockReturnValue(began + 6000);
+      return Promise.resolve({ state: 'pending', generation: 0 });
+    })
+    .mockResolvedValueOnce({
+      state: 'completed',
+      result: { clip: [1, 2] },
+      authorityKey: 'authority',
+      modelKey: 'model',
+    });
+  await expect(context.queueExecution.run(execution, () => service.dispatch(options()))).resolves.toEqual({
+    clip: [1, 2],
+  });
+  expect(execution.dependencyReason).toBeUndefined();
 });

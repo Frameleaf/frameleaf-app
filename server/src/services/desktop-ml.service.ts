@@ -9,6 +9,7 @@ import { OnEvent } from 'src/decorators.js';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { QUEUE_TIMING } from 'src/queue/types.js';
 import {
   type DesktopClipIndexBinding,
   DesktopClipIndexRepository,
@@ -23,6 +24,7 @@ import {
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { DATABASE_ACQUIRE_TIMEOUT_MS } from 'src/utils/execution-database.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 @Injectable()
@@ -182,6 +184,15 @@ export class DesktopMlService {
     const remaining = options.request.deadlineAt.getTime() - Date.now();
     if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 600_000)
       throw new Error('desktop_deadline_invalid');
+    const context = queueExecution.getStore();
+    const canDefer = !!context && !context.claim.data.operationId;
+    // Leave the live NAS claim time to cancel private work, discard it and persist its dependency wait.
+    const cleanupReserve = 3 * DATABASE_ACQUIRE_TIMEOUT_MS;
+    if (canDefer && remaining <= cleanupReserve) {
+      deferJobUntilDependency('destination-unavailable');
+      throw new Error('desktop_helper_unavailable');
+    }
+    const pendingUntil = performance.now() + Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
     const parent = jobSignal();
     const signal = AbortSignal.any([
       AbortSignal.timeout(remaining),
@@ -191,7 +202,14 @@ export class DesktopMlService {
     signal.throwIfAborted();
     await options.assertAuthority();
     signal.throwIfAborted();
-    const task = await this.repository.create(options.request);
+    let task: Awaited<ReturnType<DesktopMlRepository['create']>>;
+    try {
+      task = await this.repository.create(options.request);
+    } catch (error) {
+      if (canDefer && error instanceof Error && error.message === 'desktop_broker_busy')
+        deferJobUntilDependency('destination-unavailable');
+      throw error;
+    }
     let deferred = false;
     try {
       while (true) {
@@ -200,6 +218,10 @@ export class DesktopMlService {
         signal.throwIfAborted();
         if (!row || row.state === 'cancelled') throw new Error('desktop_inference_cancelled');
         if (row.state === 'failed') throw new Error('desktop_inference_failed');
+        if (canDefer && row.state === 'pending' && row.generation === 0 && performance.now() >= pendingUntil) {
+          deferJobUntilDependency('destination-unavailable');
+          throw new Error('desktop_helper_unavailable');
+        }
         if (row.state === 'completed') {
           if (row.authorityKey !== options.request.authorityKey || row.modelKey !== options.request.modelKey)
             throw new Error('desktop_result_identity_changed');
