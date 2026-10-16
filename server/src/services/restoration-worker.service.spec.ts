@@ -8,6 +8,7 @@ import {
   AssetType,
   JobName,
   MediaOperationDestination,
+  MediaOperationCheckpointState,
   MediaOperationKind,
   MediaOperationStatus,
   MlDestinationKind,
@@ -16,7 +17,11 @@ import {
 } from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  type MediaOperationCheckpoint,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { RESTORATION_LEASE_MS, RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import {
@@ -25,6 +30,8 @@ import {
   RestorationInferenceResult,
   RestorationSnapshot,
   restorationAdmissionOf,
+  planRestorationChunks,
+  restorationChunkIdentity,
 } from 'src/utils/restoration.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -724,6 +731,101 @@ describe(RestorationWorkerService.name, () => {
     });
   });
 
+  describe('verified video resume', () => {
+    const video = () =>
+      snapshot({
+        stage: 'full',
+        sourceType: AssetRestorationSourceType.Video,
+        sourceWidth: 1920,
+        sourceHeight: 1080,
+        sourceDurationSeconds: 45,
+        output: { width: 1920, height: 1080 },
+        model: { name: 'faithful-v1', version: '1.0' },
+      });
+    const cached = (): MediaOperationCheckpoint[] =>
+      planRestorationChunks(45).map(
+        (chunk) =>
+          ({
+            ...restorationChunkIdentity(video(), chunk),
+            startTicks: String(chunk.startSeconds * 1000),
+            endTicks: String(chunk.endSeconds * 1000),
+            state: MediaOperationCheckpointState.Complete,
+            outputPath: `/cached/chunk-${chunk.sequence}.mp4`,
+            outputChecksum: Buffer.alloc(32, chunk.sequence + 1),
+            sizeInBytes: '1024',
+          }) as MediaOperationCheckpoint,
+      );
+    const runVideo = () =>
+      sut.run(
+        operation({ kind: MediaOperationKind.Restoration, retryOfId: 'parent-operation', snapshot: video() }),
+        CLAIM,
+      );
+
+    beforeEach(() => {
+      restorations.get.mockResolvedValue(
+        row({ status: AssetRestorationStatus.RestoreFailed, fullOperationId: 'parent-operation' }),
+      );
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        type: AssetType.Video,
+        originalFileName: 'film.mp4',
+      });
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 45 },
+        videoStreams: [{ width: 1920, height: 1080 }],
+        audioStreams: [],
+      } as never);
+      mocks.storage.stat.mockResolvedValue({ size: 1024 } as never);
+      mocks.crypto.hashFile.mockImplementation((file) =>
+        Promise.resolve(
+          Buffer.alloc(
+            32,
+            typeof file === 'string' && file.startsWith('/cached/') ? Number(file.match(/chunk-(\d+)/)![1]) + 1 : 9,
+          ),
+        ),
+      );
+      operations.getCheckpoints.mockImplementation((id) => Promise.resolve(id === 'parent-operation' ? cached() : []));
+    });
+
+    it('reuses every verified checkpoint without rendering again', async () => {
+      await runVideo();
+      expect(restore).not.toHaveBeenCalled();
+      expect(mocks.crypto.hashFile).toHaveBeenCalledWith('/cached/chunk-0.mp4', 'sha256');
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it.each(['checksum', 'size', 'missing metadata'] as const)(
+      'rerenders cached work with invalid %s',
+      async (failure) => {
+        if (failure === 'checksum') mocks.crypto.hashFile.mockResolvedValue(Buffer.alloc(32, 99));
+        if (failure === 'size') mocks.storage.stat.mockResolvedValue({ size: 512 } as never);
+        if (failure === 'missing metadata')
+          operations.getCheckpoints.mockImplementation((id) =>
+            Promise.resolve(
+              id === 'parent-operation'
+                ? cached().map((checkpoint) => ({ ...checkpoint, outputChecksum: null, sizeInBytes: null }))
+                : [],
+            ),
+          );
+        await runVideo();
+        expect(restore).toHaveBeenCalledTimes(3);
+      },
+    );
+
+    it('keeps only the verified prefix when a middle checkpoint changed', async () => {
+      const hash = mocks.crypto.hashFile.getMockImplementation()!;
+      mocks.crypto.hashFile.mockImplementation((file, algorithm) =>
+        file === '/cached/chunk-1.mp4' ? Promise.resolve(Buffer.alloc(32, 99)) : hash(file, algorithm),
+      );
+      await runVideo();
+      expect(restore).toHaveBeenCalledTimes(2);
+      const list = mocks.storage.createOrOverwriteFile.mock.calls[0][1].toString();
+      expect(list).toContain('/cached/chunk-0.mp4');
+      expect(list).not.toContain('/cached/chunk-1.mp4');
+      expect(list).not.toContain('/cached/chunk-2.mp4');
+    });
+  });
+
   describe('run: local Smooth motion (FL-162)', () => {
     const smooth = (stage: 'preview' | 'full') =>
       snapshot({
@@ -1081,6 +1183,146 @@ describe(RestorationWorkerService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
       await vi.advanceTimersByTimeAsync(RESTORATION_LEASE_MS);
       expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('shutdown ownership', () => {
+    it.each(['routing', 'restoration binding'] as const)('stops safely while %s is still being read', async (stage) => {
+      const entered = Promise.withResolvers<void>();
+      const pending = Promise.withResolvers<void>();
+      if (stage === 'routing')
+        mocks.mlDestination.getAll.mockImplementationOnce(async () => {
+          entered.resolve();
+          await pending.promise;
+          return [];
+        });
+      else {
+        operations.claimNext.mockResolvedValueOnce({ operation: operation(), claimToken: CLAIM });
+        restorations.get.mockImplementationOnce(async () => {
+          entered.resolve();
+          await pending.promise;
+          return row();
+        });
+      }
+      const tick = sut.tick();
+      await entered.promise;
+      let returned = false;
+      const shutdown = sut.onShutdown().then(() => {
+        returned = true;
+      });
+      try {
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        pending.resolve();
+        await shutdown;
+        expect(restore).not.toHaveBeenCalled();
+        if (stage === 'routing') expect(operations.claimNext).not.toHaveBeenCalled();
+        else expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      } finally {
+        pending.resolve();
+        await tick;
+        await shutdown;
+      }
+    });
+
+    it('can start claiming again after an explicit restart', async () => {
+      sut.stop();
+      sut.start();
+      try {
+        await sut.tick();
+        expect(operations.claimNext).toHaveBeenCalledTimes(1);
+      } finally {
+        sut.stop();
+      }
+    });
+
+    it('waits for a pending claim and returns it without starting work', async () => {
+      const claim = Promise.withResolvers<Awaited<ReturnType<MediaOperationRepository['claimNext']>>>();
+      operations.claimNext.mockReturnValueOnce(claim.promise);
+      const tick = sut.tick();
+      await vi.waitFor(() => expect(operations.claimNext).toHaveBeenCalled());
+      let returned = false;
+      const shutdown = Promise.resolve(sut.onShutdown()).then(() => {
+        returned = true;
+      });
+      try {
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        claim.resolve({ operation: operation(), claimToken: CLAIM });
+        await shutdown;
+        await expect(tick).resolves.toBe(false);
+        expect(restore).not.toHaveBeenCalled();
+        expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
+      } finally {
+        claim.resolve({ operation: operation(), claimToken: CLAIM });
+        await tick;
+        await shutdown;
+      }
+    });
+
+    it('waits for an aborted render and its cleanup before shutdown returns', async () => {
+      const started = Promise.withResolvers<Parameters<MachineLearningRepository['restore']>[2]>();
+      const rendering = Promise.withResolvers<RestorationInferenceResult>();
+      restore.mockImplementation((_selection, _input, options) => {
+        started.resolve(options);
+        return rendering.promise;
+      });
+      operations.claimNext.mockResolvedValueOnce({ operation: operation(), claimToken: CLAIM });
+      const tick = sut.tick();
+      const options = await started.promise;
+      let returned = false;
+      const shutdown = Promise.resolve(sut.onShutdown()).then(() => {
+        returned = true;
+      });
+      const finish = () =>
+        rendering.resolve({
+          outputPath: options.outputPath,
+          width: 2048,
+          height: 1536,
+          modelName: 'faithful-v1',
+          modelVersion: '1.0',
+        });
+      try {
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        expect(options.signal.aborted).toBe(true);
+        finish();
+        await shutdown;
+        expect(operations.requeue).toHaveBeenCalled();
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        finish();
+        await tick;
+        await shutdown;
+      }
+    });
+
+    it('coalesces retention sweeps and waits for the active sweep at shutdown', async () => {
+      const aligned = Promise.withResolvers<{ preview: number; full: number }>();
+      restorations.alignWithOperations.mockReturnValue(aligned.promise);
+      const first = sut.sweep();
+      const second = sut.sweep();
+      let returned = false;
+      const shutdown = Promise.resolve(sut.onShutdown()).then(() => {
+        returned = true;
+      });
+      try {
+        expect(restorations.alignWithOperations).toHaveBeenCalledTimes(1);
+        await Promise.resolve();
+        expect(returned).toBe(false);
+        aligned.resolve({ preview: 0, full: 0 });
+        await shutdown;
+        expect(restorations.listExpiredPreviews).toHaveBeenCalledTimes(1);
+      } finally {
+        aligned.resolve({ preview: 0, full: 0 });
+        await Promise.all([first, second, shutdown]);
+      }
+    });
+
+    it('takes no new claim after stop', async () => {
+      sut.stop();
+      await expect(sut.tick()).resolves.toBe(false);
+      expect(operations.claimNext).not.toHaveBeenCalled();
     });
   });
 

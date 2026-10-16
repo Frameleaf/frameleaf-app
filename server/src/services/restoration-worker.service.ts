@@ -22,7 +22,11 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
-import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  type MediaOperationCheckpoint,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -148,7 +152,9 @@ export class RestorationWorkerService {
   private pollTimer?: ReturnType<typeof setInterval>;
   private sweepTimer?: ReturnType<typeof setInterval>;
   private activeController?: AbortController;
-  private busy = false;
+  private active?: Promise<boolean>;
+  private sweeping?: Promise<{ aligned: { preview: number; full: number }; removed: number }>;
+  private stopping = false;
   private readonly workerId = `restoration:${hostname()}:${process.pid}`;
   private backlogReading?: { at: number; value: number };
 
@@ -175,12 +181,14 @@ export class RestorationWorkerService {
   }
 
   @OnEvent({ name: 'AppShutdown' })
-  onShutdown() {
+  async onShutdown() {
     this.stop();
+    await Promise.all([this.active, this.sweeping]);
   }
 
   start() {
     this.stop();
+    this.stopping = false;
     this.pollTimer = setInterval(() => {
       void this.tick().catch((error) => this.logger.warn(`Restoration poll failed: ${error}`));
     }, RESTORATION_POLL_MS);
@@ -191,6 +199,7 @@ export class RestorationWorkerService {
   }
 
   stop() {
+    this.stopping = true;
     this.activeController?.abort(new RestorationInterrupted());
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
@@ -203,27 +212,32 @@ export class RestorationWorkerService {
   }
 
   /** Claim and run at most one job. One at a time per process: restoration is heavy work. */
-  async tick(): Promise<boolean> {
-    if (this.busy) {
+  tick(): Promise<boolean> {
+    if (this.active || this.stopping) return Promise.resolve(false);
+    this.active = this.takeNext().finally(() => {
+      this.active = undefined;
+    });
+    return this.active;
+  }
+
+  private async takeNext(): Promise<boolean> {
+    const holdBack = await this.destinationsWaitingForLibraryAnalysis();
+    if (this.stopping) return false;
+    const claim = await this.operationRepository.claimNext({
+      kinds: RESTORATION_OPERATION_KINDS,
+      workerId: this.workerId,
+      leaseMs: RESTORATION_LEASE_MS,
+      ...(holdBack.length > 0 && { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }),
+    });
+    if (!claim) {
       return false;
     }
-    this.busy = true;
-    try {
-      const holdBack = await this.destinationsWaitingForLibraryAnalysis();
-      const claim = await this.operationRepository.claimNext({
-        kinds: RESTORATION_OPERATION_KINDS,
-        workerId: this.workerId,
-        leaseMs: RESTORATION_LEASE_MS,
-        ...(holdBack.length > 0 && { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }),
-      });
-      if (!claim) {
-        return false;
-      }
-      await this.run(claim.operation, claim.claimToken);
-      return true;
-    } finally {
-      this.busy = false;
+    if (this.stopping) {
+      await this.operationRepository.requeue(claim.operation.id, claim.claimToken, { delayMs: 0, returnAttempt: true });
+      return false;
     }
+    await this.run(claim.operation, claim.claimToken);
+    return true;
   }
 
   /**
@@ -256,7 +270,13 @@ export class RestorationWorkerService {
    * retry. Retention removes preview files past their date and marks a never-reviewed preview
    * expired; the row itself stays as history.
    */
-  async sweep() {
+  sweep() {
+    return (this.sweeping ??= this.sweepExpired().finally(() => {
+      this.sweeping = undefined;
+    }));
+  }
+
+  private async sweepExpired() {
     const now = new Date();
     const aligned = await this.restorationRepository.alignWithOperations(resultExpiryAfterAbandon(now));
     if (aligned.preview || aligned.full) {
@@ -376,6 +396,7 @@ export class RestorationWorkerService {
     }
 
     const controller = new AbortController();
+    if (this.stopping) controller.abort(new RestorationInterrupted());
     this.activeController = controller;
     let renewing: Promise<void> | undefined;
     const watch = setInterval(() => {
@@ -714,14 +735,16 @@ export class RestorationWorkerService {
     // Checkpoints of this job and of the job it retries: a retry is a new row with the same
     // snapshot, so its predecessor's completed chunks describe exactly this work.
     const stored: StoredChunk[] = [];
+    const checkpoints = new Map<number, MediaOperationCheckpoint>();
     for (const id of [operation.id, operation.retryOfId]) {
       if (!id) {
         continue;
       }
       for (const checkpoint of await this.operationRepository.getCheckpoints(id)) {
-        if (stored.some((existing) => existing.sequence === checkpoint.sequence)) {
+        if (checkpoints.has(checkpoint.sequence)) {
           continue;
         }
+        checkpoints.set(checkpoint.sequence, checkpoint);
         stored.push({
           sequence: checkpoint.sequence,
           state: checkpoint.state,
@@ -741,10 +764,23 @@ export class RestorationWorkerService {
     const resume = planChunkResume(stored, planned);
     const reusable = new Map<number, string>();
     for (const chunk of resume.reusable) {
-      const outputPath = stored.find((existing) => existing.sequence === chunk.sequence)?.outputPath;
-      if (outputPath && (await this.storageRepository.checkFileExists(outputPath))) {
-        reusable.set(chunk.sequence, outputPath);
-      }
+      const checkpoint = checkpoints.get(chunk.sequence)!;
+      const size = Number(checkpoint.sizeInBytes);
+      if (
+        !checkpoint.outputPath ||
+        !Buffer.isBuffer(checkpoint.outputChecksum) ||
+        checkpoint.outputChecksum.length !== 32 ||
+        !Number.isSafeInteger(size) ||
+        size <= 0
+      )
+        break;
+      const stat = await this.storageRepository.stat(checkpoint.outputPath).catch(() => null);
+      this.check(ctx);
+      if (stat?.size !== size) break;
+      const digest = await this.cryptoRepository.hashFile(checkpoint.outputPath, 'sha256').catch(() => null);
+      this.check(ctx);
+      if (!digest?.equals(checkpoint.outputChecksum)) break;
+      reusable.set(chunk.sequence, checkpoint.outputPath);
     }
     // A chunk after a missing one cannot be reused either; the resume plan already ends at the
     // first break, and a missing file is such a break.
