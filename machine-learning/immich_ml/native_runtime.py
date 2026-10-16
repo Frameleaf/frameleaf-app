@@ -114,7 +114,7 @@ def create_native_app(binding: "NativeBinding | None") -> FastAPI:
             value = orjson.loads(entries)
             kind = "image" if image is not None else "text"
             selected = await main.run(binding.check, value, kind)
-            response = await main.predict(entries=selected, image=image, text=text, mask=None)
+            response: JSONResponse = await main.predict(entries=selected, image=image, text=text, mask=None)
             # Recheck before publishing; changed bytes or drivers invalidate the whole result.
             await main.run(binding.check, value, kind)
             if len(response.body) > 4 * 1024 * 1024:

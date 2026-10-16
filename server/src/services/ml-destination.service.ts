@@ -220,9 +220,10 @@ export class MlDestinationService extends BaseService {
       return;
     }
 
+    const recorded = new Set((await this.mlDestinationRepository.getRouteStates()).map((row) => row.workload));
     for (const workload of LIBRARY_ML_WORKLOADS) {
       const route = await this.mlDestinationRepository.getRoute(workload);
-      if (route) {
+      if (route || recorded.has(workload)) {
         continue;
       }
       // FL-58: a library workload added after this destination was created (pet recognition) is
@@ -236,8 +237,8 @@ export class MlDestinationService extends BaseService {
         }
         first = await this.mlDestinationRepository.update(first.id, { workloads });
       }
-      await this.mlDestinationRepository.setRoute(workload, first.id);
-      this.logger.log(`Routed ${workload} to local destination ${first.name}`);
+      if (await this.mlDestinationRepository.setDefaultRoute(workload, first.id))
+        this.logger.log(`Routed ${workload} to local destination ${first.name}`);
     }
   }
 
@@ -583,12 +584,14 @@ export class MlDestinationService extends BaseService {
   }
 
   async getRoutes(): Promise<MlWorkloadRoutesResponseDto> {
-    const routes = await this.mlDestinationRepository.getRoutes();
+    const routes = await this.mlDestinationRepository.getRouteStates();
     const byWorkload = new Map(routes.map((route) => [route.workload, route]));
     return {
       routes: Object.values(MlWorkload).map((workload) => ({
         workload,
         destinationId: byWorkload.get(workload)?.destinationId ?? null,
+        origin: byWorkload.get(workload)?.origin ?? null,
+        revisionId: byWorkload.get(workload)?.revisionId ?? null,
       })),
     };
   }

@@ -110,6 +110,7 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { MlWorkloadRouteOriginTable } from 'src/schema/tables/ml-workload-route-origin.table.js';
 import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
@@ -218,6 +219,7 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    MlWorkloadRouteOriginTable,
     DesktopDeviceTable,
     DesktopWorkerSessionTable,
     DesktopWorkerChallengeTable,
@@ -513,6 +515,7 @@ export interface DB extends QueueDatabase {
 
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
+  ml_workload_route_origin: MlWorkloadRouteOriginTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
   ml_cloud_model_choice: MlCloudModelChoiceTable;
   operational_metric_sample: OperationalMetricSampleTable;

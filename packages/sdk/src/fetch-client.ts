@@ -8376,6 +8376,10 @@ export type MlCapabilitiesResponseDto = {
 export type MlWorkloadRouteDto = {
     /** Destination the workload is routed to, or null when unrouted */
     destinationId: string | null;
+    /** Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown. */
+    origin?: (MlRouteOrigin) | null;
+    /** Recorded intent incarnation, or null when intent is unknown */
+    revisionId?: string | null;
     workload: MlWorkload;
 };
 export type MlWorkloadRoutesResponseDto = {
@@ -31642,6 +31646,11 @@ export enum StudioExportFormat {
     SdrJpeg = "sdr-jpeg",
     HdrJpeg = "hdr-jpeg",
     HdrHeic = "hdr-heic"
+}
+export enum MlRouteOrigin {
+    Default = "default",
+    Pinned = "pinned",
+    Legacy = "legacy"
 }
 export enum MlStudioFeature {
     SpeechToText = "speech-to-text",

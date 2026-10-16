@@ -87285,6 +87285,14 @@
         ],
         "type": "object"
       },
+      "MlRouteOrigin": {
+        "enum": [
+          "default",
+          "pinned",
+          "legacy"
+        ],
+        "type": "string"
+      },
       "MlStudioFeature": {
         "description": "Studio AI only: the Studio feature, which decides the Frameleaf Cloud model the job uses (speech to text and captions, or speech)",
         "enum": [
@@ -87405,6 +87413,22 @@
         "properties": {
           "destinationId": {
             "description": "Destination the workload is routed to, or null when unrouted",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "origin": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlRouteOrigin"
+              }
+            ],
+            "description": "Recorded route intent; null means no route or recorded intent. Missing on older servers means unknown.",
+            "nullable": true
+          },
+          "revisionId": {
+            "description": "Recorded intent incarnation, or null when intent is unknown",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
