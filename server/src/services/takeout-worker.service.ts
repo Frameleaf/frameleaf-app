@@ -763,7 +763,7 @@ export class TakeoutWorkerService {
     // A photo that is Locked in the library, or goes into Locked from Google's Locked Folder, is not
     // changed further and joins no album: Google keeps Locked Folder photos out of albums, and an
     // album shared with others must never gain one.
-    const skipAlbums = item.locked || asset.locked;
+    let skipAlbums = item.locked || asset.locked;
     const patch: TakeoutAssetPatch =
       resultKind === 'created'
         ? takeoutCreatedPatch(item.metadata, options)
@@ -782,7 +782,11 @@ export class TakeoutWorkerService {
             );
     const update = this.toUpdate(patch, asset.visibility);
     if (Object.keys(update).length > 0) {
-      await this.assets.update(auth, asset.id, update);
+      if (resultKind === 'created') {
+        await this.assets.update(auth, asset.id, update);
+      } else if (!(await this.assets.fillMissingMetadata(auth, asset.id, update))) {
+        skipAlbums = true;
+      }
     }
 
     for (const folder of skipAlbums ? [] : item.albums) {

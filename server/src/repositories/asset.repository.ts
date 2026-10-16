@@ -1613,6 +1613,38 @@ export class AssetRepository {
     });
   }
 
+  async withMetadataUpdate<T>(
+    id: string,
+    write: (assets: AssetRepository, access: AccessRepository, tx: Transaction<DB>) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.inTransaction(async (tx) => {
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id.toLowerCase()})::int)`.execute(tx);
+        // Pin missing EXIF inserts through their parent FK; refuse existing writer lock inversions.
+        await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('id', '=', asUuid(id))
+          .forUpdate()
+          .noWait()
+          .executeTakeFirstOrThrow(() => new BadRequestException('Asset not found'));
+        await tx
+          .selectFrom('asset_exif')
+          .select('assetId')
+          .where('assetId', '=', asUuid(id))
+          .forUpdate()
+          .noWait()
+          .execute();
+        return write(new AssetRepository(tx), new AccessRepository(tx), tx as Transaction<DB>);
+      });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === '55P03' || error.code === '40P01')) {
+        throw new ConflictException('The asset metadata is changing; retry the update.');
+      }
+      throw error;
+    }
+  }
+
   async withLivePhotoUpdate<T>(
     id: string,
     motionId: string | null,

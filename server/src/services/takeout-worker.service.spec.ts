@@ -178,7 +178,7 @@ describe(TakeoutWorkerService.name, () => {
       bulkUploadCheck: vi.fn().mockResolvedValue({ results: [{ id: 'sha256' }, { id: 'sha1' }] }),
       uploadAsset: vi.fn().mockResolvedValue({ id: assetId, status: AssetMediaStatus.CREATED }),
     };
-    assets = { lock: vi.fn(), update: vi.fn() };
+    assets = { lock: vi.fn(), update: vi.fn(), fillMissingMetadata: vi.fn().mockResolvedValue(true) };
     albums = {
       create: vi.fn().mockResolvedValue({ id: 'album-1' }),
       addAssets: vi.fn().mockResolvedValue([{ id: assetId, success: true }]),
@@ -582,7 +582,27 @@ describe(TakeoutWorkerService.name, () => {
 
       await sut.run(operationOf('import'), claimToken);
 
-      expect(assets.update).toHaveBeenCalledWith(expect.anything(), assetId, { isFavorite: true });
+      expect(assets.fillMissingMetadata).toHaveBeenCalledWith(expect.anything(), assetId, { isFavorite: true });
+      expect(assets.update).not.toHaveBeenCalled();
+    });
+
+    it('withholds albums when the guarded metadata read finds the matched photo newly Locked', async () => {
+      repository.getById.mockResolvedValue(rowOf('importing', { updateMatchedMetadata: true }));
+      pending = [[itemOf()]];
+      assetMedia.bulkUploadCheck.mockResolvedValue({ results: [{ id: 'sha256', assetId }] });
+      assets.fillMissingMetadata.mockResolvedValue(false);
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(assets.fillMissingMetadata).toHaveBeenCalledWith(expect.anything(), assetId, {
+        description: 'From Google',
+        latitude: 1,
+        longitude: 2,
+        isFavorite: true,
+      });
+      expect(assets.update).not.toHaveBeenCalled();
+      expect(albums.addAssets).not.toHaveBeenCalled();
+      expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'matched');
     });
 
     it('finishes an interrupted creation as the import’s own, without a second copy', async () => {

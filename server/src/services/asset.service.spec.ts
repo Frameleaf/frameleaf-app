@@ -371,6 +371,149 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('fillMissingMetadata', () => {
+    const id = 'asset-1';
+    const requested = {
+      description: 'From Google',
+      latitude: 1,
+      longitude: 2,
+      isFavorite: true,
+      visibility: AssetVisibility.Archive,
+    };
+    let current: ReturnType<typeof getForAsset>;
+    let committed: boolean;
+    beforeEach(() => {
+      committed = false;
+      current = {
+        ...getForAsset(AssetFactory.create({ id, ownerId: authStub.admin.user.id })),
+        exifInfo: { description: '', latitude: null, longitude: null } as never,
+      };
+      mocks.asset.getById.mockImplementation(async () => current);
+      mocks.asset.update.mockImplementation(async () => current);
+      mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) => {
+        const result = await write(mocks.asset as never, mocks.access as never, {} as never);
+        committed = true;
+        return result;
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([id]));
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
+      mocks.job.queueInTransaction.mockImplementation(async () => {
+        expect(committed).toBe(false);
+      });
+    });
+
+    it('keeps manual metadata committed after the importer snapshot and emits no no-op effects', async () => {
+      current.exifInfo = { description: 'Edited by hand', latitude: 5, longitude: 6 } as never;
+      current.isFavorite = true;
+      current.visibility = AssetVisibility.Archive;
+
+      expect(await sut.fillMissingMetadata(authStub.admin, id, requested)).toBe(true);
+
+      expect(mocks.asset.getById).toHaveBeenCalledWith(id, { exifInfo: true });
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.unlockProperties).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueInTransaction).not.toHaveBeenCalled();
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+    });
+
+    it('fills missing fields under the guard, retaining metadata locks and transactional effects', async () => {
+      current.stackId = 'stack';
+      mocks.asset.getStackSiblingIds.mockResolvedValue(['sibling']);
+      await sut.fillMissingMetadata(authStub.admin, id, requested);
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+        exif: {
+          assetId: id,
+          description: 'From Google',
+          latitude: 1,
+          longitude: 2,
+          lockedProperties: ['description', 'latitude', 'longitude'],
+        },
+        lockedPropertiesBehavior: 'append',
+      });
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(id, ['city', 'state', 'country']);
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id, isFavorite: true, visibility: AssetVisibility.Archive });
+      expect(mocks.job.queueInTransaction).toHaveBeenCalledWith(expect.anything(), {
+        name: JobName.SidecarWrite,
+        data: { id },
+      });
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+        'asset',
+        [id],
+        ['description', 'location', 'visibility'],
+        authStub.admin.user.id,
+        expect.anything(),
+      );
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith(
+        [id, 'sibling'],
+        authStub.admin.user.id,
+      );
+    });
+
+    it('admits partner propagation before the sidecar in the metadata transaction', async () => {
+      mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([id]);
+      await sut.fillMissingMetadata(authStub.admin, id, { description: 'From Google' });
+      expect(mocks.job.queueInTransaction.mock.calls.map(([, item]) => item)).toEqual([
+        { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: id, fields: ['description'] } },
+        { name: JobName.SidecarWrite, data: { id } },
+      ]);
+    });
+
+    it('retains a complete zero-valued coordinate pair and Hidden visibility', async () => {
+      current.exifInfo = { description: 'Mine', latitude: 0, longitude: 0 } as never;
+      current.visibility = AssetVisibility.Hidden;
+      await sut.fillMissingMetadata(authStub.admin, id, requested);
+
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id, isFavorite: true });
+      expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+      expect(mocks.asset.getStackSiblingIds).not.toHaveBeenCalled();
+    });
+
+    it.each([null, { description: '', latitude: 0, longitude: null }])(
+      'fills an absent or incomplete EXIF coordinate pair: %s',
+      async (exifInfo) => {
+        current.exifInfo = exifInfo as never;
+        await sut.fillMissingMetadata(authStub.admin, id, requested);
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({ description: 'From Google', latitude: 1, longitude: 2 }),
+          }),
+        );
+      },
+    );
+
+    it('leaves freshly Locked media alone even for an elevated owner', async () => {
+      current.isLocked = true;
+      expect(await sut.fillMissingMetadata(authStub.adminWithElevatedPermission, id, requested)).toBe(false);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'owner', 'deleted', 'access', 'write', 'admission', 'provenance'])(
+      'refuses %s and admits no post-commit effects',
+      async (failure) => {
+        if (failure === 'missing') mocks.asset.getById.mockResolvedValue(undefined);
+        if (failure === 'owner') current.ownerId = 'other';
+        if (failure === 'deleted') current.deletedAt = new Date();
+        if (failure === 'access') mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+        if (failure === 'write') mocks.asset.update.mockResolvedValue(undefined);
+        if (failure === 'admission') mocks.job.queueInTransaction.mockRejectedValue(new Error('admission failed'));
+        if (failure === 'provenance') mocks.partnerOrigin.markOverridden.mockRejectedValue(new Error('lineage failed'));
+        await expect(sut.fillMissingMetadata(authStub.admin, id, requested)).rejects.toThrow();
+        expect(committed).toBe(false);
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        if (!['admission', 'provenance'].includes(failure))
+          expect(mocks.partnerOrigin.markOverridden).not.toHaveBeenCalled();
+        if (!['write', 'admission', 'provenance'].includes(failure))
+          expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('update', () => {
     beforeEach(() => {
       mocks.asset.withLivePhotoUpdate.mockImplementation((_id, _motion, write) =>
