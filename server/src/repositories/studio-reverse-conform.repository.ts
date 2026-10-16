@@ -2,28 +2,32 @@ import { Injectable } from '@nestjs/common';
 import ffmpeg from 'fluent-ffmpeg';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { StudioReverseGeometry, StudioReverseSource } from 'src/utils/studio-reverse-conform.js';
 
 /** Local ffmpeg only. The service supplies authorized paths and a bounded, probed source. */
 @Injectable()
 export class StudioReverseConformRepository {
   /** Coded dimensions bound decoder memory; MediaRepository's width describes display geometry. */
-  probeGeometry(input: string, streamIndex: number): Promise<StudioReverseGeometry> {
-    return new Promise((resolve, reject) => {
-      // eslint-disable-next-line import-x/no-named-as-default-member
-      ffmpeg.ffprobe(input, ['-protocol_whitelist', 'file,pipe'], (error, data) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        const stream = data.streams.find((entry) => entry.index === streamIndex && entry.codec_type === 'video');
-        resolve({
-          width: Number(stream?.width),
-          height: Number(stream?.height),
-          sampleAspectRatio: stream?.sample_aspect_ratio,
-        });
-      });
-    });
+  async probeGeometry(input: string, streamIndex: number, signal?: AbortSignal): Promise<StudioReverseGeometry> {
+    const data = await this.probeJson(
+      input,
+      [
+        '-select_streams',
+        String(streamIndex),
+        '-show_entries',
+        'stream=index,codec_type,width,height,sample_aspect_ratio',
+      ],
+      signal,
+    );
+    if (!Array.isArray(data.streams)) throw new Error('Invalid reverse geometry probe');
+    const stream = data.streams.find((entry) => entry.index === streamIndex && entry.codec_type === 'video');
+    return {
+      width: Number(stream?.width),
+      height: Number(stream?.height),
+      sampleAspectRatio: stream?.sample_aspect_ratio,
+    };
   }
 
   reverse(
@@ -150,24 +154,36 @@ export class StudioReverseConformRepository {
 
   /** Bounded packet evidence; validation checks every presentation/decode timestamp. */
   async previewPackets(input: string, signal: AbortSignal): Promise<unknown> {
-    const { stdout } = await promisify(execFile)(
-      'ffprobe',
-      [
-        '-v',
-        'error',
-        '-protocol_whitelist',
-        'file,pipe',
-        '-select_streams',
-        'v:0',
-        '-show_entries',
-        'packet=pts,dts,duration',
-        '-of',
-        'json',
-        input,
-      ],
-      { signal, timeout: 30_000, maxBuffer: 256 * 1024 },
+    const data = await this.probeJson(
+      input,
+      ['-select_streams', 'v:0', '-show_entries', 'packet=pts,dts,duration'],
+      signal,
     );
-    return JSON.parse(stdout).packets;
+    return data.packets;
+  }
+
+  private async probeJson(
+    input: string,
+    options: string[],
+    signal = executionSignal(),
+  ): Promise<{ streams?: ffmpeg.FfprobeStream[]; packets?: unknown }> {
+    signal?.throwIfAborted();
+    const probing = promisify(execFile)(
+      'ffprobe',
+      ['-v', 'error', '-protocol_whitelist', 'file,pipe', ...options, '-of', 'json', input],
+      { maxBuffer: 256 * 1024 },
+    );
+    const closed = new Promise<void>((resolve) => probing.child.once('close', () => resolve()));
+    const lifetime = superviseMediaProcess(probing.child, { signal, deadlineMs: 30_000 });
+    try {
+      const { stdout } = await probing;
+      if (lifetime.error()) throw lifetime.error();
+      return JSON.parse(stdout);
+    } catch (error) {
+      throw lifetime.error() ?? error;
+    } finally {
+      await closed;
+    }
   }
 
   private execute(
