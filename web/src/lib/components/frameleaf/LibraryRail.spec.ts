@@ -262,6 +262,15 @@ describe('LibraryRail', () => {
     expect(list.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('thanks a supporter in place of "Support Frameleaf" once the server or the person has a key', () => {
+    authManager.isPurchased = true;
+    const { container } = render(LibraryRail);
+    const footer = container.querySelector<HTMLElement>('.fl-rail-footer')!;
+
+    expect(within(footer).getByRole('link', { name: 'Thanks for supporting' })).toHaveAttribute('href', Route.buy());
+    expect(within(footer).queryByRole('link', { name: 'Support Frameleaf' })).toBeNull();
+  });
+
   it('lists each partner library under Shared spaces, and no "All shared spaces" entry', async () => {
     sdkMock.getPartners.mockResolvedValue([
       { id: 'jamie', name: 'Jamie', email: 'jamie@example.test', profileImagePath: '', avatarColor: 'primary' },

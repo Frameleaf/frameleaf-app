@@ -5,15 +5,13 @@
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import AvatarEditorDialog from '$lib/components/frameleaf/AvatarEditorDialog.svelte';
-  import AboutDialog from '$lib/components/frameleaf/AboutDialog.svelte';
-  import HelpFeedbackDialog from '$lib/components/frameleaf/HelpFeedbackDialog.svelte';
   import { Route } from '$lib/route';
-  import { userInteraction } from '$lib/stores/user.svelte';
   import { formatUsd } from '$lib/frameleaf/cloud';
   import { canAnimate, leave } from '$lib/frameleaf/motion';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import { openAboutDialog, openSupportDialog } from '$lib/frameleaf/system-dialogs';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { getAboutInfo, getCloudMlStatus, getCloudStatus, getVersionHistory } from '@frameleaf/sdk';
+  import { getCloudMlStatus, getCloudStatus } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
   import {
     mdiAccountCheckOutline,
@@ -95,9 +93,12 @@
   });
 
   // S-5 (SystemPanels.jsx:677-686): the Supporter badge shows for a supporter who has not hidden it.
+  // The same rule draws the small mark on the trigger avatar (owner 2026-10-16, option a).
   const showSupporter = $derived(
     authManager.isPurchased && authManager.authenticated && authManager.preferences.purchase.showSupportBadge,
   );
+  // Option c: once the server or the person has a key, the support entry thanks them instead of asking.
+  const supported = $derived(authManager.isPurchased);
 
   const close = () => {
     if (!open) {
@@ -165,19 +166,12 @@
 
   const openSupport = async () => {
     close();
-    const info = userInteraction.aboutInfo ?? (await getAboutInfo());
-    await modalManager.show(HelpFeedbackDialog, { info });
+    await openSupportDialog();
   };
 
   const openAbout = async () => {
     close();
-    const [info, versions] = await Promise.all([
-      userInteraction.aboutInfo ?? getAboutInfo(),
-      userInteraction.versions ?? getVersionHistory(),
-    ]);
-    userInteraction.aboutInfo = info;
-    userInteraction.versions = versions;
-    await modalManager.show(AboutDialog, { info, versions });
+    await openAboutDialog();
   };
 </script>
 
@@ -187,13 +181,23 @@
     class="fl-account-button"
     aria-haspopup="menu"
     aria-expanded={open}
-    aria-label={$t('frameleaf_account_menu_for', { values: { name: authManager.user.name } })}
+    aria-label={$t(showSupporter ? 'frameleaf_account_menu_for_supporter' : 'frameleaf_account_menu_for', {
+      values: { name: authManager.user.name },
+    })}
     onclick={toggle}
   >
-    {#key authManager.user}
-      <!-- 28px, as the prototype's `.profile img` (styles.css). -->
-      <UserAvatar user={authManager.user} size="sm" noTitle />
-    {/key}
+    <span class="fl-account-avatar">
+      {#key authManager.user}
+        <!-- 28px, as the prototype's `.profile img` (styles.css). -->
+        <UserAvatar user={authManager.user} size="sm" noTitle />
+      {/key}
+      {#if showSupporter}
+        <!-- The supporter mark: the menu's Supporter badge, small, on the avatar's corner. -->
+        <span class="fl-supporter-mark" data-testid="supporter-mark" aria-hidden="true">
+          <Icon icon={mdiHandHeartOutline} size="10" aria-hidden={true} />
+        </span>
+      {/if}
+    </span>
     <span class="fl-account-name">{authManager.user.name}</span>
     <Icon icon={mdiChevronDown} size="1em" aria-hidden={true} />
   </button>
@@ -291,8 +295,12 @@
       <a href={Route.buy()} role="menuitem" class="fl-item" onclick={close}>
         <Icon icon={mdiHandHeartOutline} size="1.125em" aria-hidden={true} />
         <span>
-          {$t('buy')}
-          <small>{$t('frameleaf_account_menu_support_hint')}</small>
+          {supported ? $t('frameleaf_support_thanks') : $t('buy')}
+          <small
+            >{supported
+              ? $t('frameleaf_account_menu_support_hint_supporter')
+              : $t('frameleaf_account_menu_support_hint')}</small
+          >
         </span>
       </a>
 
@@ -321,11 +329,14 @@
         <span>{$t('edit_avatar')}</span>
       </button>
 
-      <!-- FL-176: the one-time "Set up your account" page can be reopened from here. -->
-      <a href={Route.onboarding()} role="menuitem" class="fl-item" onclick={close}>
-        <Icon icon={mdiAccountCheckOutline} size="1.125em" aria-hidden={true} />
-        <span>{$t('frameleaf_setup_tool_title')}</span>
-      </a>
+      <!-- FL-176: the one-time "Set up your account" page can be reopened from here. As in App.jsx,
+           administrators go through first-run setup instead, so they don't get it (SHELL-P5). -->
+      {#if !authManager.user.isAdmin}
+        <a href={Route.onboarding()} role="menuitem" class="fl-item" onclick={close}>
+          <Icon icon={mdiAccountCheckOutline} size="1.125em" aria-hidden={true} />
+          <span>{$t('frameleaf_setup_tool_title')}</span>
+        </a>
+      {/if}
 
       <hr />
 
@@ -376,6 +387,26 @@
   }
   .fl-account-button:hover {
     background: var(--fl-raised);
+  }
+  .fl-account-avatar {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  /* A 14px disc on the avatar's lower corner, ringed in the bar's surface so it reads on any photo. */
+  .fl-supporter-mark {
+    position: absolute;
+    inset-inline-end: -3px;
+    bottom: -3px;
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    box-shadow: 0 0 0 2px var(--fl-panel);
+    pointer-events: none;
   }
   .fl-account-name {
     display: none;

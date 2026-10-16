@@ -13,7 +13,6 @@
   import TabBar from '$lib/components/frameleaf/TabBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
-  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import '$lib/frameleaf/tokens.css';
@@ -29,14 +28,13 @@
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
     mdiBellOutline,
-    mdiChevronRight,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiMenu,
     mdiMoonWaningCrescent,
     mdiWhiteBalanceSunny,
   } from '@mdi/js';
-  import { onMount, untrack } from 'svelte';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { MediaQuery } from 'svelte/reactivity';
 
@@ -101,7 +99,7 @@
   const unreadCount = $derived(notificationManager.notifications.length);
   // The bell is for notifications only ("Notifications, 3 unread"). Work in progress has one
   // indicator in the bar, the activity ring beside it, so the two can never show different counts.
-  // The panel still lists what is running (FL-104), which is why the session is watched below.
+  // The panel lists notifications only (SHELL-P1); running work is on the Activity page.
   const bellLabel = $derived(
     unreadCount > 0
       ? $t('frameleaf_notifications_bell_unread', { values: { count: unreadCount } })
@@ -130,8 +128,6 @@
       void refreshAuthStatus();
     }
 
-    // One poll for everything running; fast only while the panel is open or something runs.
-    const stopRunningJobs = runningJobsSession.watch();
     const stopEvents = eventManager.on({
       SessionLocked: () => (isElevated = false),
       SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated && !sessionAccess.lockPending),
@@ -151,17 +147,10 @@
     addEventListener('online', onVisibilityChange);
 
     return () => {
-      stopRunningJobs();
       stopEvents();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       removeEventListener('online', onVisibilityChange);
     };
-  });
-
-  // Open panel: poll at the fast pace so its bars keep up; closed: back to following the work.
-  $effect(() => {
-    const open = showNotifications;
-    untrack(() => runningJobsSession.setPanelOpen(open));
   });
 
   const refreshNotifications = async () => {
@@ -312,7 +301,7 @@
     -->
     <div class="fl-topbar-search">
       {#if featureFlagsManager.value.search}
-        <SearchEntry />
+        <SearchEntry onToggleLocked={toggleSession} />
       {/if}
     </div>
 
@@ -368,16 +357,8 @@
             >{isElevated ? $t('frameleaf_locked_revealed_short') : $t('frameleaf_locked')}</span
           >
         </button>
-        {#if isElevated}
-          <a
-            class="fl-locked-open"
-            href={Route.locked()}
-            title={$t('frameleaf_open_locked')}
-            aria-label={$t('frameleaf_open_locked')}
-          >
-            <Icon icon={mdiChevronRight} size="17" aria-hidden="true" />
-          </a>
-        {/if}
+        <!-- SHELL-P6 (styles.css "Topbar: Locked becomes an icon-only control"): no "Open Locked"
+             chevron here; the account menu and the rail carry it. -->
       </div>
 
       <!-- The prototype's theme Button (App.jsx): a bordered `.button`, 36px square in the bar. -->
@@ -660,44 +641,35 @@
     color: var(--fl-accent);
     border-color: var(--fl-accent);
   }
-  .fl-locked-toggle,
-  .fl-locked-open {
+  .fl-locked-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 7px;
     height: 100%;
+    padding: 0 11px;
     border: 0;
+    border-radius: inherit;
     background: none;
     color: inherit;
     font: inherit;
-  }
-  .fl-locked-toggle {
-    gap: 7px;
-    padding: 0 11px;
     font-size: 12px;
     font-weight: 600;
   }
   .fl-locked-toggle:disabled {
     opacity: 0.6;
   }
-  .fl-locked-open {
-    width: 29px;
-    border-inline-start: 1px solid var(--fl-border);
-  }
-  .fl-locked-control.is-revealed .fl-locked-open {
-    border-color: var(--fl-accent);
-  }
-  .fl-locked-toggle:hover:not(:disabled),
-  .fl-locked-open:hover {
+  .fl-locked-toggle:hover:not(:disabled) {
     background: var(--fl-raised);
   }
   /* styles.css "Topbar: Locked becomes an icon-only control; the account menu carries the
-     labelled version." The state stays in the button's name. */
+     labelled version." The state stays in the button's name, and there is no "Open Locked"
+     chevron (SHELL-P6). */
   .fl-locked-state {
     display: none;
   }
   .fl-locked-toggle {
-    min-width: 34px;
+    min-width: 36px;
     padding: 0 8px;
   }
   /* styles.css `.topbar > .button`: bordered, on the raised surface. The drawn box is the
@@ -730,16 +702,6 @@
     .fl-topbar-button {
       min-width: 44px;
       min-height: 44px;
-    }
-  }
-  @media (max-width: 700px) {
-    /*
-     * The phone row has no room for the second half of the control: with it the brand mark was
-     * squeezed to a few pixels while Locked content was revealed. Locked stays one tap away in the
-     * menu drawer and the account menu.
-     */
-    .fl-locked-open {
-      display: none;
     }
   }
   .fl-notif-bell {

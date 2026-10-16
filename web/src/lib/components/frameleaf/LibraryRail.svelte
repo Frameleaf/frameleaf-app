@@ -141,7 +141,15 @@
 
   /** The list scrolls; the footer's entries stay at the foot of the rail (`sidebar-bottom`). */
   const listSections = $derived(sections.filter(({ id }) => id !== 'footer'));
-  const footerDestinations = $derived(sections.find(({ id }) => id === 'footer')?.destinations ?? []);
+  // Once the server or the person has a supporter key, "Support Frameleaf" thanks them instead
+  // (owner 2026-10-16, option c). It still opens the same page.
+  const footerDestinations = $derived(
+    (sections.find(({ id }) => id === 'footer')?.destinations ?? []).map((destination) =>
+      destination.id === 'support' && authManager.isPurchased
+        ? { ...destination, labelKey: 'frameleaf_support_thanks' as Translations }
+        : destination,
+    ),
+  );
 
   const pathname = $derived(page.url.pathname);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');

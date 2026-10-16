@@ -25,7 +25,6 @@
   import { dock } from '$lib/frameleaf/motion';
   import { EXIT_DURATION } from '$lib/frameleaf/tokens';
   import { Route } from '$lib/route';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 
   /**
    * Upload panel (FL-45), ported from the prototype's `UploadPanel` in
@@ -36,8 +35,9 @@
    *
    * The overall bar keeps its colour when a file fails: the failed share is a danger segment at
    * its end and the count is in the header, so one bad file in five hundred does not read as a
-   * failed upload. The parallel-uploads tuning sits behind Options. On phones the panel starts as
-   * its pill so it never opens over the photos uninvited.
+   * failed upload. As in the prototype (SHELL-P7), "Parallel uploads" sits in the footer, and the
+   * panel opens expanded at every width, phones included, so people see each file arrive; the
+   * chevron puts it away as the pill.
    */
 
   const { stats, isUploading, remainingUploads } = uploadAssetsStore;
@@ -53,9 +53,10 @@
       .length,
   );
 
+  // A new batch opens the panel expanded, whatever the last one was left as.
   $effect(() => {
     if ($isUploading) {
-      minimized = mediaQueryManager.maxMd;
+      minimized = false;
     }
   });
 
@@ -320,22 +321,19 @@
         </ul>
 
         <footer class="fl-panel-foot">
-          <!-- Tuning, not something an upload should ask about: it waits behind Options. -->
-          <details class="fl-options">
-            <summary>{$t('frameleaf_transfer_options')}</summary>
-            <label class="fl-concurrency">
-              {$t('frameleaf_transfer_parallel_uploads')}
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                bind:value={concurrency}
-                onchange={() => (uploadExecutionQueue.concurrency = concurrency)}
-              />
-              <output>{concurrency}</output>
-            </label>
-          </details>
+          <!-- UploadPanel.jsx `upload-concurrency`: the slider sits in the footer, not behind Options. -->
+          <label class="fl-concurrency">
+            {$t('frameleaf_transfer_parallel_uploads')}
+            <input
+              type="range"
+              min="1"
+              max="10"
+              step="1"
+              bind:value={concurrency}
+              onchange={() => (uploadExecutionQueue.concurrency = concurrency)}
+            />
+            <output>{concurrency}</output>
+          </label>
           <div class="fl-panel-actions">
             {#if $stats.errors > 0}
               <button type="button" class="fl-button" onclick={() => void retryFailedUploads()}>
@@ -460,20 +458,6 @@
   }
   .fl-progress .fl-progress-failed {
     background: var(--fl-danger);
-  }
-  .fl-options {
-    flex: 1 1 100%;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .fl-options summary {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--fl-control-compact);
-    cursor: pointer;
-  }
-  .fl-options summary:hover {
-    color: var(--fl-text);
   }
   a.fl-button {
     text-decoration: none;
@@ -601,15 +585,25 @@
     padding: 0.625rem 0.75rem;
     border-top: 1px solid var(--fl-border);
   }
+  /* upload.css `.panel-foot .upload-concurrency`: label, slider, value. */
   .fl-concurrency {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.625rem;
     color: var(--fl-muted);
-    font-size: 0.75rem;
+    font-size: var(--fl-font-small);
   }
   .fl-concurrency input {
-    flex: 1;
+    width: 100%;
+    min-height: 24px;
+    accent-color: var(--fl-accent);
+  }
+  .fl-concurrency output {
+    min-width: 18px;
+    color: var(--fl-text);
+    text-align: end;
+    font-variant-numeric: tabular-nums;
   }
   .fl-panel-actions {
     display: flex;
