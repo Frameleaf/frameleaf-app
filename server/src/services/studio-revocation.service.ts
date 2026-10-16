@@ -50,23 +50,27 @@ export class StudioRevocationService {
 
   @OnEvent({ name: 'AssetLocalEffects', priority: -1 })
   async onAssetLocalEffects(bundle: ArgOf<'AssetLocalEffects'>): Promise<void> {
-    const removed = await this.operations.listRevokedSourceAdmissions(bundle.revocations);
-    const admissions = new Map(
-      [...removed, ...(bundle.lockedCascade?.interactiveAdmissions ?? [])].map((row) => [row.id, row]),
-    )
-      .values()
-      .toArray();
-    if (bundle.lockedCascade)
-      this.projects.forgetInteractiveAdmissions(
-        bundle.ownerId,
-        bundle.streamEpoch,
-        bundle.sequence,
-        bundle.lockedCascade.assetIds,
-      );
-    this.projects.forgetSourceAdmissions(bundle.revocations);
-    await this.previews.revokeAdmissions(admissions.map((row) => row.id));
-    await this.streams.revokeAdmissions(admissions);
-    for (const admission of admissions) await this.operations.requestCancel(admission.id, admission.ownerId);
+    const known = bundle.lockedCascade?.interactiveAdmissions ?? [];
+    let admissions: Array<{ id: string; ownerId: string; kind: string }> = [...known];
+    await this.completeRevocation([
+      async () => {
+        const removed = await this.operations.listRevokedSourceAdmissions(bundle.revocations);
+        admissions = new Map([...removed, ...known].map((row) => [row.id, row])).values().toArray();
+      },
+      () => {
+        if (bundle.lockedCascade)
+          this.projects.forgetInteractiveAdmissions(
+            bundle.ownerId,
+            bundle.streamEpoch,
+            bundle.sequence,
+            bundle.lockedCascade.assetIds,
+          );
+      },
+      () => this.projects.forgetSourceAdmissions(bundle.revocations),
+      () => this.previews.revokeAdmissions(admissions.map((row) => row.id)),
+      () => this.streams.revokeAdmissions(admissions),
+      () => this.completeRevocation(admissions.map((row) => () => this.operations.requestCancel(row.id, row.ownerId))),
+    ]);
   }
 
   @OnEvent({ name: 'AssetTrash' })
@@ -97,9 +101,17 @@ export class StudioRevocationService {
     if (projectIds.length === 0) {
       return;
     }
-    this.projects.forgetResolutions(projectIds);
-    const frames = await this.previews.revokeForProjects(projectIds);
-    const streams = await this.streams.revokeForProjects(projectIds);
+    let frames = 0,
+      streams = 0;
+    await this.completeRevocation([
+      () => this.projects.forgetResolutions(projectIds),
+      async () => {
+        frames = await this.previews.revokeForProjects(projectIds);
+      },
+      async () => {
+        streams = await this.streams.revokeForProjects(projectIds);
+      },
+    ]);
     this.logger.log(
       `Locked sources stopped ${frames} preview frame(s) and ${streams} preview stream(s) in ${projectIds.length} Studio project(s)`,
     );
@@ -109,27 +121,43 @@ export class StudioRevocationService {
   async onAlbumUserRemove({ albumId, userId }: ArgOf<'AlbumUserRemove'>): Promise<void> {
     // Owner decision (FL-146, 2026-09-25): the departing member's own projects are kept, as their
     // private projects. Space sharing ends, so every other member's frames and resolutions go.
-    const detached = await this.projectRepository.detachOwnerFromSpace(albumId, userId);
-    if (detached.length > 0) {
-      this.projects.forgetResolutions(detached);
-      const frames = await this.previews.revokeForProjects(detached);
-      await this.streams.revokeForProjects(detached);
-      this.logger.log(
-        `A member left space ${albumId}: kept ${detached.length} of their Studio project(s) as private; stopped ${frames} shared preview frame(s)`,
-      );
-    }
-
-    const projectIds = await this.projectRepository.getIdsInSpace(albumId);
-    if (projectIds.length === 0) {
-      return;
-    }
-    this.projects.forgetResolutions(projectIds);
-    const frames = await this.previews.revokeForProjects(projectIds, userId);
-    await this.streams.revokeForProjects(projectIds, userId);
-    const jobs = await this.cancelJobs(projectIds, userId);
-    if (frames > 0 || jobs > 0) {
-      this.logger.log(`A member left space ${albumId}: stopped ${frames} preview frame(s) and ${jobs} Studio job(s)`);
-    }
+    await this.completeRevocation([
+      async () => {
+        const detached = await this.projectRepository.detachOwnerFromSpace(albumId, userId);
+        if (detached.length === 0) return;
+        let frames = 0;
+        await this.completeRevocation([
+          () => this.projects.forgetResolutions(detached),
+          async () => {
+            frames = await this.previews.revokeForProjects(detached);
+          },
+          () => this.streams.revokeForProjects(detached),
+        ]);
+        this.logger.log(
+          `A member left space ${albumId}: kept ${detached.length} of their Studio project(s) as private; stopped ${frames} shared preview frame(s)`,
+        );
+      },
+      async () => {
+        const projectIds = await this.projectRepository.getIdsInSpace(albumId);
+        if (projectIds.length === 0) return;
+        let frames = 0,
+          jobs = 0;
+        await this.completeRevocation([
+          () => this.projects.forgetResolutions(projectIds),
+          async () => {
+            frames = await this.previews.revokeForProjects(projectIds, userId);
+          },
+          () => this.streams.revokeForProjects(projectIds, userId),
+          async () => {
+            jobs = await this.cancelJobs(projectIds, userId);
+          },
+        ]);
+        if (frames > 0 || jobs > 0)
+          this.logger.log(
+            `A member left space ${albumId}: stopped ${frames} preview frame(s) and ${jobs} Studio job(s)`,
+          );
+      },
+    ]);
   }
 
   private async sourcesRemoved(assetIds: readonly string[]): Promise<void> {
@@ -137,14 +165,35 @@ export class StudioRevocationService {
     if (projectIds.length === 0) {
       return;
     }
-    this.projects.forgetResolutions(projectIds);
-    const frames = await this.previews.revokeForProjects(projectIds);
-    // Streams first, so each records why it closed; the job pass then finds nothing of theirs left.
-    await this.streams.revokeForProjects(projectIds);
-    const jobs = await this.cancelJobs(projectIds);
+    let frames = 0,
+      jobs = 0;
+    await this.completeRevocation([
+      () => this.projects.forgetResolutions(projectIds),
+      async () => {
+        frames = await this.previews.revokeForProjects(projectIds);
+      },
+      // Streams first, so each records why it closed; the job pass then finds nothing of theirs left.
+      () => this.streams.revokeForProjects(projectIds),
+      async () => {
+        jobs = await this.cancelJobs(projectIds);
+      },
+    ]);
     this.logger.log(
       `Removed sources stopped ${frames} preview frame(s) and ${jobs} Studio job(s) in ${projectIds.length} project(s)`,
     );
+  }
+
+  private async completeRevocation(steps: Array<() => unknown>): Promise<void> {
+    const failures: unknown[] = [];
+    for (const step of steps) {
+      try {
+        await step();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'Studio revocation failed');
   }
 
   /** Cancel unfinished exports and previews; a claimed one waits for its worker to acknowledge. */

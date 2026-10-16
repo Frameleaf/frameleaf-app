@@ -16,10 +16,18 @@ describe(StudioRevocationService.name, () => {
     getIdsInSpace: ReturnType<typeof vi.fn>;
     detachOwnerFromSpace: ReturnType<typeof vi.fn>;
   };
-  let projects: { forgetResolutions: ReturnType<typeof vi.fn> };
-  let previews: { revokeForProjects: ReturnType<typeof vi.fn> };
-  let streams: { revokeForProjects: ReturnType<typeof vi.fn> };
-  let operations: { listUnfinishedForProjects: ReturnType<typeof vi.fn>; requestCancel: ReturnType<typeof vi.fn> };
+  let projects: {
+    forgetResolutions: ReturnType<typeof vi.fn>;
+    forgetSourceAdmissions: ReturnType<typeof vi.fn>;
+    forgetInteractiveAdmissions: ReturnType<typeof vi.fn>;
+  };
+  let previews: { revokeForProjects: ReturnType<typeof vi.fn>; revokeAdmissions: ReturnType<typeof vi.fn> };
+  let streams: { revokeForProjects: ReturnType<typeof vi.fn>; revokeAdmissions: ReturnType<typeof vi.fn> };
+  let operations: {
+    listUnfinishedForProjects: ReturnType<typeof vi.fn>;
+    requestCancel: ReturnType<typeof vi.fn>;
+    listRevokedSourceAdmissions: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     projectRepository = {
@@ -27,15 +35,22 @@ describe(StudioRevocationService.name, () => {
       getIdsInSpace: vi.fn().mockResolvedValue(['project-3']),
       detachOwnerFromSpace: vi.fn().mockResolvedValue([]),
     };
-    projects = { forgetResolutions: vi.fn() };
-    previews = { revokeForProjects: vi.fn().mockResolvedValue(2) };
-    streams = { revokeForProjects: vi.fn().mockResolvedValue(1) };
+    projects = { forgetResolutions: vi.fn(), forgetSourceAdmissions: vi.fn(), forgetInteractiveAdmissions: vi.fn() };
+    previews = { revokeForProjects: vi.fn().mockResolvedValue(2), revokeAdmissions: vi.fn().mockResolvedValue(2) };
+    streams = {
+      revokeForProjects: vi.fn().mockResolvedValue(1),
+      revokeAdmissions: vi.fn().mockResolvedValue(undefined),
+    };
     operations = {
       listUnfinishedForProjects: vi.fn().mockResolvedValue([
         { id: 'export-1', ownerId: 'owner-1', kind: MediaOperationKind.StudioExport, projectId: 'project-1' },
         { id: 'preview-1', ownerId: 'reviewer-1', kind: MediaOperationKind.StudioPreview, projectId: 'project-2' },
       ]),
       requestCancel: vi.fn().mockResolvedValue({ id: 'any' }),
+      listRevokedSourceAdmissions: vi.fn().mockResolvedValue([
+        { id: 'admission-1', ownerId: 'owner-1', kind: MediaOperationKind.StudioPreview },
+        { id: 'admission-2', ownerId: 'owner-2', kind: MediaOperationKind.StudioPreviewStream },
+      ]),
     };
     sut = new StudioRevocationService(
       getMocks().logger as never,
@@ -121,5 +136,83 @@ describe(StudioRevocationService.name, () => {
     operations.requestCancel.mockRejectedValueOnce(new Error('db down'));
     await expect(sut.onAssetDelete({ assetId: ASSET, userId: 'owner-1' })).resolves.toBeUndefined();
     expect(operations.requestCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['preview', 'stream'])('still cancels source-bound work after %s revocation fails', async (failed) => {
+    const error = new Error('revocation refused');
+    (failed === 'preview' ? previews : streams).revokeForProjects.mockRejectedValueOnce(error);
+    await expect(sut.onAssetDelete({ assetId: ASSET, userId: 'owner-1' })).rejects.toBe(error);
+    expect(streams.revokeForProjects).toHaveBeenCalled();
+    expect(operations.requestCancel).toHaveBeenCalledWith('export-1', 'owner-1');
+    expect(operations.requestCancel).toHaveBeenCalledWith('preview-1', 'reviewer-1');
+    expect(streams.revokeForProjects.mock.invocationCallOrder[0]).toBeLessThan(
+      operations.requestCancel.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('still revokes both Locked preview paths after synchronous cache invalidation failure', async () => {
+    const error = new Error('cache invalidation failed');
+    projects.forgetResolutions.mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(sut.onAssetLocked({ assetIds: [ASSET] })).rejects.toBe(error);
+    expect(previews.revokeForProjects).toHaveBeenCalled();
+    expect(streams.revokeForProjects).toHaveBeenCalled();
+    expect(operations.requestCancel).not.toHaveBeenCalled();
+  });
+
+  it('continues departing-member revocation after detached-project preview failure', async () => {
+    const error = new Error('preview cleanup failed');
+    projectRepository.detachOwnerFromSpace.mockResolvedValue(['project-9']);
+    previews.revokeForProjects.mockRejectedValueOnce(error);
+    await expect(sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'owner-9', removedById: 'owner-9' })).rejects.toBe(
+      error,
+    );
+    expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-9']);
+    expect(projectRepository.getIdsInSpace).toHaveBeenCalledWith('space-1');
+    expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-3'], 'owner-9');
+    expect(operations.requestCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['preview', 'cancel'])('drains all admission revocation after one %s failure', async (failed) => {
+    const error = new Error('admission revocation failed');
+    if (failed === 'preview') previews.revokeAdmissions.mockRejectedValueOnce(error);
+    else operations.requestCancel.mockRejectedValueOnce(error);
+    await expect(sut.onAssetLocalEffects({ revocations: [] } as never)).rejects.toBe(error);
+    expect(projects.forgetSourceAdmissions).toHaveBeenCalledWith([]);
+    expect(streams.revokeAdmissions).toHaveBeenCalled();
+    expect(operations.requestCancel).toHaveBeenCalledWith('admission-1', 'owner-1');
+    expect(operations.requestCancel).toHaveBeenCalledWith('admission-2', 'owner-2');
+  });
+
+  it('retains every independent failure after attempting streams and cancellation', async () => {
+    const first = new Error('preview failed');
+    const second = new Error('streams failed');
+    previews.revokeForProjects.mockRejectedValueOnce(first);
+    streams.revokeForProjects.mockRejectedValueOnce(second);
+    await expect(sut.onAssetDelete({ assetId: ASSET, userId: 'owner-1' })).rejects.toMatchObject({
+      errors: [first, second],
+    });
+    expect(operations.requestCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('revokes known Locked admissions even if removed-source lookup fails', async () => {
+    const error = new Error('lookup failed');
+    operations.listRevokedSourceAdmissions.mockRejectedValueOnce(error);
+    const admission = { id: 'locked-preview', ownerId: 'owner-1', kind: MediaOperationKind.StudioPreview };
+    await expect(
+      sut.onAssetLocalEffects({
+        ownerId: 'owner-1',
+        streamEpoch: 'epoch',
+        sequence: '3',
+        revocations: [],
+        lockedCascade: { assetIds: [ASSET], interactiveAdmissions: [admission] },
+      } as never),
+    ).rejects.toBe(error);
+    expect(projects.forgetSourceAdmissions).toHaveBeenCalled();
+    expect(projects.forgetInteractiveAdmissions).toHaveBeenCalled();
+    expect(previews.revokeAdmissions).toHaveBeenCalledWith(['locked-preview']);
+    expect(streams.revokeAdmissions).toHaveBeenCalledWith([admission]);
+    expect(operations.requestCancel).toHaveBeenCalledWith('locked-preview', 'owner-1');
   });
 });
