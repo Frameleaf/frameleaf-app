@@ -16,13 +16,17 @@ import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js'
 import { canonicalJson } from 'src/utils/object.js';
 import { type ControllerContext, controllerSetup } from 'test/utils.js';
 
-const authority = vi.hoisted(() => ({ policy: '' }));
+const authority = vi.hoisted(() => ({ policy: '', spaces: undefined as string | undefined }));
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>();
   return {
     ...fs,
     readFileSync: (...args: Parameters<typeof fs.readFileSync>) =>
-      String(args[0]).endsWith('release-trust.json') ? authority.policy : fs.readFileSync(...args),
+      String(args[0]).endsWith('release-trust.json')
+        ? authority.policy
+        : String(args[0]).endsWith('model-spaces.json') && authority.spaces !== undefined
+          ? authority.spaces
+          : fs.readFileSync(...args),
   };
 });
 vi.mock('src/utils/config.js', async (original) => ({
@@ -353,4 +357,25 @@ it('reads only safe current accepted evidence using a distinct signed operation'
         .set('x-frameleaf-desktop-proof', proof(`accepted-qualification:${id}`, ''))
     ).status,
   ).toBe(401);
+});
+
+it('refuses a catalogue-approved profile without a release-owned paired embedding space', async () => {
+  const spaces = JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-spaces.json'), 'utf8'));
+  spaces.spaces = spaces.spaces.filter(
+    (space: { visualModelKey: string; textModelKeys: string[] }) =>
+      space.visualModelKey !== profile.modelKey && !space.textModelKeys.includes(profile.modelKey),
+  );
+  authority.spaces = JSON.stringify(spaces);
+  try {
+    const service = new DesktopQualificationService(
+      { authenticate: vi.fn().mockResolvedValue(grant) } as never,
+      challenges as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
+    expect(challenges.issue).not.toHaveBeenCalled();
+  } finally {
+    authority.spaces = undefined;
+  }
 });

@@ -16,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
+import { findDesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import {
   type DesktopModelProfile,
   createDesktopModelChallenge,
@@ -39,6 +40,10 @@ export class DesktopQualificationService {
   private logger = LoggingRepository.create(DesktopQualificationService.name);
   private catalogue = parseDesktopModelCatalogue(
     JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8')),
+  );
+  private spaces = parseDesktopClipSpaces(
+    JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-spaces.json'), 'utf8')),
+    this.catalogue,
   );
   constructor(
     private auth: DesktopWorkerAuthService,
@@ -173,6 +178,7 @@ export class DesktopQualificationService {
       !config.machineLearning.enabled ||
       !config.machineLearning.clip.enabled ||
       !profile ||
+      !findDesktopClipSpace(this.spaces, profile.modelKey) ||
       config.machineLearning.clip.modelName !== profile.modelName ||
       Buffer.from(profile.fixtureBase64, 'base64').length > 2 * 1024 * 1024
     )
