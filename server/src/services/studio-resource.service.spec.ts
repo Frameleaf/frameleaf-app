@@ -1599,6 +1599,24 @@ describe(StudioResourceService.name, () => {
       expect(replaced.manifest.entries[0]).not.toHaveProperty('files');
     });
 
+    it.each(['__proto__', 'constructor', 'toString'])(
+      'refuses inherited preset family %s through resolution',
+      async (family) => {
+        const result = await sut.resolveProjectResources(
+          auth,
+          context(sequenceWith({ $resource: { kind: 'preset', id: 'alpine', family } })),
+        );
+        expect(result.refused).toEqual([
+          expect.objectContaining({
+            kind: StudioResourceKind.Preset,
+            id: 'alpine',
+            reason: StudioRefusalReason.UnknownPreset,
+          }),
+        ]);
+        expect(result.manifest.entries).toEqual([]);
+      },
+    );
+
     it('resolves fonts and models only from the catalogue and presets only from the registry', async () => {
       const graph = sequenceWith(
         { kind: 'title', fontFamily: 'Inter', style: 'Minimal', animation: 'Wiggle' },
