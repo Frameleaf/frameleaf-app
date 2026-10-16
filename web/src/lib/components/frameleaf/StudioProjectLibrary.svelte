@@ -438,8 +438,11 @@
         export: null,
         import: null,
       };
+      // An earlier export is still followed to its end, but only the newest one fills the dialog.
       follow(operation.id, (next) => {
-        exportJob = next;
+        if (exportJob?.operationId === next.operationId) {
+          exportJob = next;
+        }
       });
     } catch (error) {
       handleError(error, $t('frameleaf_studio_bundle_export_failed'));
@@ -513,7 +516,9 @@
         import: null,
       };
       follow(operation.id, (next) => {
-        importJob = next;
+        if (importJob?.operationId === next.operationId) {
+          importJob = next;
+        }
         if (next.status === MediaOperationStatus.Completed) {
           void load();
         }

@@ -182,4 +182,57 @@ describe('StudioProjectLibrary states and cards', () => {
     expect(sdkMock.searchStudioProjects).toHaveBeenLastCalledWith(expect.objectContaining({ skip: 1 }));
     expect(screen.queryByRole('button', { name: 'Show more projects' })).not.toBeInTheDocument();
   });
+
+  it("follows only the newest file export, never an earlier project's job", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const winter = { ...project(null), id: 'p-2', name: 'Winter cut' };
+      sdkMock.searchStudioProjects.mockResolvedValue({ items: [project(null), winter], total: 2 });
+      const operation = (id: string) =>
+        ({ id, kind: 'studio-bundle-export', status: 'queued', progress: null, attempt: 0, maxAttempts: 3 }) as never;
+      sdkMock.exportStudioProjectBundle.mockImplementation(async ({ id }) => operation(id === 'p-1' ? 'op-1' : 'op-2'));
+      let lakePolls = 0;
+      sdkMock.getStudioBundleOperation.mockImplementation(async ({ id }) => {
+        const lakeDone = id === 'op-1' && ++lakePolls > 1;
+        return {
+          operationId: id,
+          kind: 'studio-bundle-export',
+          status: lakeDone ? 'completed' : 'running',
+          progress: null,
+          attempt: 0,
+          maxAttempts: 3,
+          autoRetries: 0,
+          retryAt: null,
+          error: null,
+          errorCode: null,
+          projectId: id === 'op-1' ? 'p-1' : 'p-2',
+          export: lakeDone ? { downloadable: true, fileName: 'lake-trip.zip', embedded: 0, referenced: 1 } : null,
+          import: null,
+        } as never;
+      });
+      render(StudioProjectLibrary);
+
+      const exportFrom = async (name: string) => {
+        await fireEvent.click(await screen.findByRole('button', { name: `Actions for ${name}` }));
+        await fireEvent.click(screen.getByRole('menuitem', { name: 'Save as a file…' }));
+        await fireEvent.click(await screen.findByRole('button', { name: 'Create file' }));
+      };
+      await exportFrom('Lake trip');
+      await waitFor(() => expect(sdkMock.exportStudioProjectBundle).toHaveBeenCalledTimes(1));
+      // The first poll of the Lake trip export answers "running"; its next one comes two seconds later.
+      await vi.advanceTimersByTimeAsync(1500);
+      await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      await exportFrom('Winter cut');
+      await waitFor(() => expect(sdkMock.exportStudioProjectBundle).toHaveBeenCalledTimes(2));
+
+      // The Lake trip export finishes while the Winter cut one is still being made.
+      await vi.advanceTimersByTimeAsync(2000);
+      await waitFor(() => expect(lakePolls).toBe(2));
+
+      // The Lake trip file is not offered as the Winter cut export.
+      expect(screen.queryByRole('button', { name: 'Download file' })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
