@@ -1375,10 +1375,11 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'storageTemplate.template',
   },
   {
+    // ADMIN-P3: "The emails themselves", each email's wording in plain words (EmailWordingDialog).
     pattern: 'templates.email.*',
     kind: 'control',
-    file: 'src/routes/admin/system-settings/TemplateSettings.svelte',
-    evidence: 'config.templates.email[templateKey]',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'templates.email[wording.key]',
   },
   {
     pattern: 'theme.customCss',
@@ -1445,10 +1446,22 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'download.archiveSize',
   },
   {
+    pattern: 'download.edited',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
+    evidence: 'download.edited',
+  },
+  {
     pattern: 'download.includeEmbeddedVideos',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
     evidence: 'download.includeEmbeddedVideos',
+  },
+  {
+    pattern: 'download.includeSidecar',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
+    evidence: 'download.includeSidecar',
   },
   {
     pattern: 'emailNotifications.albumInvite',
@@ -1536,6 +1549,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'people.sidebarWeb',
   },
   {
+    pattern: 'people.suggestInSpaces',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/SharingSettings.svelte',
+    evidence: 'people.suggestInSpaces',
+  },
+  {
     pattern: 'privacy.suppression.personIds',
     kind: 'control',
     file: 'src/lib/components/frameleaf/access/LockedRulesPanel.svelte',
@@ -1588,6 +1607,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/lib/components/frameleaf/RailSavedSearches.svelte',
     evidence: 'savedSearches',
+  },
+  {
+    pattern: 'search.includeArchived',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: 'search.includeArchived',
   },
   {
     pattern: 'sharedLinks.enabled',

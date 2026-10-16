@@ -64,6 +64,23 @@ describe('Editing & playback landing (FL-366)', () => {
     );
   });
 
+  it('lists the Editing group, each row opening the page where that work is decided (ADMIN-P5)', () => {
+    draft.store = baseline();
+    render(EditingLanding, { sections });
+
+    const editing = screen.getByRole('heading', { name: 'Editing' }).closest('section')!;
+    expect(within(editing).getByRole('link', { name: /AI restoration/ })).toHaveAttribute(
+      'href',
+      '/user-settings?area=processing&section=routing',
+    );
+    expect(within(editing).getByRole('link', { name: /Studio & Dolby Vision/ })).toHaveAttribute(
+      'href',
+      '/user-settings?area=processing&section=hardware',
+    );
+    // Nothing in the app sets how edited masters are saved yet, so the row is not offered.
+    expect(screen.queryByRole('link', { name: /Edited masters/ })).toBeNull();
+  });
+
   it('says copies are being made while work is waiting', async () => {
     sdkMock.getQueue.mockImplementation(({ name }) =>
       Promise.resolve(queue(name, name === QueueName.VideoConversion ? 3 : 2)),

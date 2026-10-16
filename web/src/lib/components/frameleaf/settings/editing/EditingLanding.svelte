@@ -3,8 +3,12 @@
    * Editing & playback (FL-366, after the approved prototype `settings-v2/care/playback.jsx`,
    * `EditingLanding`): opens on whether photos and videos are ready to view, with the two choices
    * that decide how (preview quality and which videos get a playback copy), then one row for each
-   * page. The app has no editing pages in this area (edited masters, restoration, Studio), so only
-   * the two viewing rows are shown.
+   * page.
+   *
+   * ADMIN-P5: the prototype's Editing group. The app has no settings of its own for these yet, so
+   * each row opens the page where that work is decided today: AI restoration opens Where work runs,
+   * and Studio & Dolby Vision opens Graphics card check, which says whether Studio exports can be
+   * made. Edited masters has nothing in the app to set, so it is left out.
    *
    * "Ready" is read from the preview and video conversion work still waiting. Left for later (server
    * work): the space the copies take beside the originals, how many videos have a copy, and the
@@ -19,7 +23,13 @@
   import { commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { getQueue, QueueName, TranscodePolicy } from '@frameleaf/sdk';
-  import { mdiImageMultipleOutline, mdiPlayBoxMultipleOutline, mdiSync } from '@mdi/js';
+  import {
+    mdiAutoFix,
+    mdiImageMultipleOutline,
+    mdiMovieEditOutline,
+    mdiPlayBoxMultipleOutline,
+    mdiSync,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
@@ -104,6 +114,21 @@
       };
     }),
   );
+
+  const editingRows = $derived<LinkRow[]>([
+    {
+      icon: mdiAutoFix,
+      title: $t('frameleaf_play_editing_restoration'),
+      body: $t('frameleaf_play_editing_restoration_row'),
+      href: commandCenterUrl('processing', 'routing'),
+    },
+    {
+      icon: mdiMovieEditOutline,
+      title: $t('frameleaf_play_editing_studio'),
+      body: $t('frameleaf_play_editing_studio_row'),
+      href: commandCenterUrl('processing', 'hardware'),
+    },
+  ]);
 </script>
 
 <KitPage>
@@ -123,5 +148,9 @@
   <Section title={$t('frameleaf_play_landing_viewing')}>
     <!-- Side by side, as the prototype's Viewing group (settings-v2/care/playback.jsx). -->
     <Links {rows} />
+  </Section>
+
+  <Section title={$t('frameleaf_play_landing_editing')}>
+    <Links rows={editingRows} />
   </Section>
 </KitPage>

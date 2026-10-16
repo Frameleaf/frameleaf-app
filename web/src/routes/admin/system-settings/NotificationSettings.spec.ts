@@ -433,6 +433,64 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
     });
   });
 
+  describe('who emails come from, and the emails themselves (ADMIN-P3)', () => {
+    const from = (saved: AdminConfigDto, sender: string) => {
+      saved.notifications.smtp.from = sender;
+      return saved;
+    };
+    const inboxRow = () => screen.getByText(en.frameleaf_notify_inbox).closest('.kit-row') as HTMLElement;
+
+    it('shows the sender as an inbox will, and changes only its name under Advanced', async () => {
+      const { store } = open(
+        from(
+          config({ host: 'mail.example.com', username: 'photos@example.com' }, true),
+          'Rivera photos <photos@example.com>',
+        ),
+        answer(),
+      );
+      await waitFor(() => expect(within(inboxRow()).getByText('Rivera photos')).toBeInTheDocument());
+      expect(within(inboxRow()).getByText('photos@example.com')).toBeInTheDocument();
+
+      await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_notify_delivery_sender_name }), {
+        target: { value: 'Home archive' },
+      });
+      expect(store.draft.notifications.smtp.from).toBe('Home archive <photos@example.com>');
+      expect(within(inboxRow()).getByText('Home archive')).toBeInTheDocument();
+    });
+
+    it('shows the signed-in account’s own address when the saved sender names another', async () => {
+      open(
+        from(config({ type: MailTransportType.Gmail }, true), 'Rivera photos <photos@example.com>'),
+        answer({ connection: connected() }),
+      );
+      await screen.findByText('Signed in as');
+      expect(within(inboxRow()).getByText('rivera@gmail.com')).toBeInTheDocument();
+      expect(within(inboxRow()).queryByText('Rivera photos')).not.toBeInTheDocument();
+    });
+
+    it('changes the wording of one email in plain words and keeps it as the template the server renders', async () => {
+      const { store } = open(config({ host: 'mail.example.com' }, true), answer());
+      // The old template editor is gone.
+      expect(screen.queryByText('Email Templates')).not.toBeInTheDocument();
+
+      await fireEvent.click(
+        await screen.findByRole('button', { name: 'Edit the wording of the Welcome email', hidden: true }),
+      );
+      const dialog = await screen.findByRole('dialog', { name: 'Welcome email' });
+      const box = within(dialog).getByRole('textbox', { name: 'Welcome email wording' });
+      await fireEvent.input(box, { target: { value: 'Hello ' } });
+      await fireEvent.click(within(dialog).getByRole('button', { name: /Person’s name/ }));
+      expect(box).toHaveValue('Hello [Person’s name]');
+      expect(within(dialog).getByText('Hello Morgan')).toBeInTheDocument();
+
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Use this wording' }));
+      expect(store.draft.templates.email.welcomeTemplate).toBe('Hello {displayName}');
+      expect(
+        screen.getByText('Welcome email: your wording is ready. Save your changes to keep it.'),
+      ).toBeInTheDocument();
+    });
+  });
+
   it('changes nothing on a server whose settings come from a configuration file', async () => {
     flags.configFile = true;
     open(config({ type: MailTransportType.Gmail }, true), answer({ connection: connected() }));

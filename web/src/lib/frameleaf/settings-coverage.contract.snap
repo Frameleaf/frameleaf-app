@@ -1057,7 +1057,13 @@
     "minimum": 1,
     "maximum": 9007199254740991
   },
+  "preferences.download.edited": {
+    "type": "boolean"
+  },
   "preferences.download.includeEmbeddedVideos": {
+    "type": "boolean"
+  },
+  "preferences.download.includeSidecar": {
     "type": "boolean"
   },
   "preferences.emailNotifications.albumInvite": {
@@ -1106,6 +1112,9 @@
   "preferences.people.sidebarWeb": {
     "type": "boolean"
   },
+  "preferences.people.suggestInSpaces": {
+    "type": "boolean"
+  },
   "preferences.privacy.suppression.personIds": {
     "type": "array"
   },
@@ -1136,6 +1145,9 @@
   },
   "preferences.savedSearches": {
     "type": "array"
+  },
+  "preferences.search.includeArchived": {
+    "type": "boolean"
   },
   "preferences.sharedLinks.enabled": {
     "type": "boolean"

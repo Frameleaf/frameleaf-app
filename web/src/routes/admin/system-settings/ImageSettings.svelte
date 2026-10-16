@@ -150,6 +150,7 @@
     <Row
       label={$t('frameleaf_play_img_quality')}
       help={quality ? $t(`frameleaf_play_img_${quality}_help` as Translations) : $t('frameleaf_play_img_custom_help')}
+      lead={quality ? $t(QUALITY_NAME[quality]) : $t('frameleaf_play_custom')}
     >
       <SegmentedControl
         label={$t('frameleaf_play_img_quality')}

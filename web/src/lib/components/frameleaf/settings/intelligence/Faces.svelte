@@ -88,6 +88,11 @@
       ? $t('frameleaf_intel_faces_grouping_custom_help', { values: { count: faces.minFaces } })
       : $t(`frameleaf_intel_faces_grouping_${grouping}_help` as Translations),
   );
+  const groupingLead = $derived(
+    grouping === 'custom'
+      ? $t('frameleaf_intel_custom')
+      : $t(`frameleaf_intel_faces_grouping_${grouping}` as Translations),
+  );
 
   const modelOptions = $derived([
     ...FACE_MODELS.map((model) => ({
@@ -130,7 +135,7 @@
       />
     </Row>
     {#if faces.enabled}
-      <Row label={$t('frameleaf_intel_faces_grouping')} help={groupingHelp}>
+      <Row label={$t('frameleaf_intel_faces_grouping')} help={groupingHelp} lead={groupingLead}>
         <SegmentedControl
           label={$t('frameleaf_intel_faces_grouping_label')}
           value={grouping}
