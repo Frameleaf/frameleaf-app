@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .native_binding import NativeBinding
+    from .native_binding import NativeBinding, NativeBindingSet
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,7 +89,7 @@ class NativeScope:
         await self.app(scope, receive, send)
 
 
-def create_native_app(binding: "NativeBinding | None") -> FastAPI:
+def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> FastAPI:
     from . import main
 
     app = FastAPI(lifespan=main.lifespan)
@@ -130,12 +130,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--spec", type=Path)
-    parser.add_argument("--qualification-report", type=Path)
+    parser.add_argument("--spec", type=Path, action="append", default=[])
+    parser.add_argument("--qualification-report", type=Path, action="append", default=[])
+    parser.add_argument("--binding-set", action="store_true")
     from .native_ort import PROVIDERS
 
     parser.add_argument("--provider", choices=PROVIDERS, default="CPUExecutionProvider")
     options = parser.parse_args()
+    if len(options.spec) != len(options.qualification_report) or (options.binding_set and not options.spec):
+        parser.error("native_binding_pair_required")
+    if len(options.spec) > 1 and not options.binding_set:
+        parser.error("native_binding_set_flag_required")
     configured = configure_runtime(NativeRuntimeOptions(options.cache_dir, options.port, options.provider), os.environ)
     # Settings are module-level singletons: this entry point must configure them before any model import.
     if "immich_ml.config" in sys.modules:
@@ -148,12 +153,10 @@ def main() -> None:
     from .native_ort import configure
 
     configure(options.provider)
-    from .native_binding import NativeBinding
+    from .native_binding import NativeBindingSet
 
-    if bool(options.spec) != bool(options.qualification_report):
-        parser.error("native_binding_pair_required")
     binding = (
-        NativeBinding.load(options.spec, options.qualification_report, options.cache_dir, options.provider)
+        NativeBindingSet.load(options.spec, options.qualification_report, options.cache_dir, options.provider)
         if options.spec
         else None
     )

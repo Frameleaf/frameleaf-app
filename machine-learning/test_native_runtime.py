@@ -180,3 +180,24 @@ def test_bound_native_app_refuses_changed_request_and_changed_runtime(monkeypatc
         assert response.status_code == 409
         assert "clip" not in response.json()
         assert binding.calls == 3
+
+
+def test_binding_set_cli_is_explicit_and_checks_pair_counts_before_imports(tmp_path):
+    for args, reason in [
+        (
+            ["--spec", "a", "--qualification-report", "b", "--spec", "c", "--qualification-report", "d"],
+            "native_binding_set_flag_required",
+        ),
+        (["--binding-set", "--spec", "a"], "native_binding_pair_required"),
+        (["--binding-set"], "native_binding_pair_required"),
+    ]:
+        result = subprocess.run(
+            [sys.executable, "-m", "immich_ml.native_runtime", "--cache-dir", str(tmp_path), "--port", "19999", *args],
+            cwd=Path(__file__).parent,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env={},
+        )
+        assert result.returncode == 2
+        assert reason in result.stderr

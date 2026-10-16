@@ -50,8 +50,16 @@ class NativeBinding:
         binding.check(spec.entries, spec.fixture_kind)
         return binding
 
+    def matches(self, entries: Any, kind: str) -> bool:
+        return (
+            kind == self.spec.fixture_kind
+            and isinstance(entries, dict)
+            and orjson.dumps(entries, option=orjson.OPT_SORT_KEYS)
+            == orjson.dumps(self.spec.entries, option=orjson.OPT_SORT_KEYS)
+        )
+
     def check(self, entries: Any, kind: str) -> InferenceEntries:
-        if entries != self.spec.entries or kind != self.spec.fixture_kind:
+        if not self.matches(entries, kind):
             raise ValueError("native_request_binding_mismatch")
         facts = snapshot()
         if facts["fingerprint"] != self.fingerprint:
@@ -66,3 +74,34 @@ class NativeBinding:
             return verify_models(self.spec, self.cache)[0]
         except (ModelUnavailableError, OSError) as error:
             raise ValueError("native_staged_model_unavailable") from error
+
+
+class NativeBindingSet:
+    """One owned runtime, with an exact, independently qualified binding for every admitted role."""
+
+    def __init__(self, bindings: list[NativeBinding]) -> None:
+        if not 1 <= len(bindings) <= 64:
+            raise ValueError("native_binding_set_invalid")
+        keys = {binding.spec.model_key for binding in bindings}
+        requests = {
+            (binding.spec.fixture_kind, orjson.dumps(binding.spec.entries, option=orjson.OPT_SORT_KEYS))
+            for binding in bindings
+        }
+        runtimes = {(binding.spec.provider, binding.fingerprint, binding.cache.resolve()) for binding in bindings}
+        if len(keys) != len(bindings) or len(requests) != len(bindings) or len(runtimes) != 1:
+            raise ValueError("native_binding_set_invalid")
+        self.bindings = tuple(bindings)
+
+    @classmethod
+    def load(cls, specs: list[Path], reports: list[Path], cache: Path, provider: str) -> "NativeBindingSet":
+        if not 1 <= len(specs) <= 64 or len(specs) != len(reports):
+            raise ValueError("native_binding_set_invalid")
+        return cls(
+            [NativeBinding.load(spec, report, cache, provider) for spec, report in zip(specs, reports, strict=True)]
+        )
+
+    def check(self, entries: Any, kind: str) -> InferenceEntries:
+        for binding in self.bindings:
+            if binding.matches(entries, kind):
+                return binding.check(entries, kind)
+        raise ValueError("native_request_binding_mismatch")
