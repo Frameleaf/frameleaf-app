@@ -132,3 +132,31 @@ describe('CloudBackupSection key unlock', () => {
     expect(screen.getByLabelText(en.frameleaf_cloud_backup_paste_key)).toHaveValue('');
   });
 });
+
+describe('CloudBackupSection setup', () => {
+  beforeAll(() => {
+    addMessages('dev', en);
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.open = false;
+    };
+  });
+
+  it('reads the status again however the setup dialog is closed', async () => {
+    // A bucket claimed in the dialog and then closed with Close (not Done) must not leave the page
+    // saying cloud backup is not set up.
+    sdkMock.getCloudBackupStatus.mockResolvedValue({
+      ...status(false, null),
+      configured: false,
+    } as CloudBackupStatusResponseDto);
+    render(CloudBackupSection);
+
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_cloud_backup_set_up }));
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('button', { name: en.close }));
+
+    await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2));
+  });
+});
