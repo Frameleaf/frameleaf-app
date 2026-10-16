@@ -318,16 +318,26 @@ export class MediaHealthOperationService {
     }
 
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
-      await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
-      this.logger.log(`Library Care job ${id} cancelled by its owner`);
+      if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+        await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
+        this.logger.log(`Library Care job ${id} cancelled by its owner`);
+      }
       return false;
     }
 
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      await this.mediaHealth.setRunState(snapshot, 'paused', counts);
-      this.logger.log(`Library Care job ${id} paused by its owner`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        await this.mediaHealth.setRunState(snapshot, 'paused', counts);
+        this.logger.log(`Library Care job ${id} paused by its owner`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claimToken, MEDIA_HEALTH_LEASE_MS, { requireActiveClaim: true }))) {
+        if (await this.operations.acknowledgeCancel(id, claimToken, { released: false })) {
+          await this.mediaHealth.setRunState(snapshot, 'cancelled', counts);
+        }
+        return false;
+      }
     }
 
     return true;

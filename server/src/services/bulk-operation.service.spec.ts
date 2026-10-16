@@ -83,6 +83,7 @@ describe(BulkOperationService.name, () => {
       requeue: vi.fn().mockResolvedValue(true),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
+      heartbeat: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
       getLockedIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
@@ -735,8 +736,25 @@ describe(BulkOperationService.name, () => {
 
       await sut.run(operationOf(snapshot), 'claim');
 
+      expect(operations.heartbeat).toHaveBeenCalledWith(expect.any(String), 'claim', expect.any(Number), {
+        requireActiveClaim: true,
+      });
       expect(assets.updateAll).toHaveBeenCalledTimes(1);
       expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('stops before a batch when a failed pause cannot renew its active claim', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.setBulkResult).mockResolvedValueOnce({ ...running, pauseRequestedAt: new Date() });
+      vi.mocked(operations.settlePause).mockResolvedValueOnce(false);
+      vi.mocked(operations.heartbeat).mockResolvedValue(false);
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'claim', { released: false });
+      expect(operations.complete).not.toHaveBeenCalled();
     });
 
     it('stops writing the moment its claim is taken away', async () => {

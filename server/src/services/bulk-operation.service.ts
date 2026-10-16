@@ -523,9 +523,16 @@ export class BulkOperationService {
       return false;
     }
 
-    if (written.pauseRequestedAt && (await this.operations.settlePause(id, claimToken))) {
-      this.logger.log(`Bulk operation ${id} paused by its owner`);
-      return false;
+    if (written.pauseRequestedAt) {
+      if (await this.operations.settlePause(id, claimToken)) {
+        this.logger.log(`Bulk operation ${id} paused by its owner`);
+        return false;
+      }
+      // A withdrawn pause can continue; cancellation or claim loss cannot.
+      if (!(await this.operations.heartbeat(id, claimToken, BULK_LEASE_MS, { requireActiveClaim: true }))) {
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
+        return false;
+      }
     }
 
     return true;
