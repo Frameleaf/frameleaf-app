@@ -168,12 +168,19 @@
     key: AssetImageEnrichmentAction | 'accept-description' | 'clear-description',
     run: () => Promise<void>,
   ) => {
+    // A result that lands after the viewer moved to another photo belongs to that earlier photo.
+    const assetId = asset.id;
     activeAction = key;
     failure = null;
     try {
       await run();
-      toastManager.primary($t('image_enrichment_updated'));
+      if (asset.id === assetId) {
+        toastManager.primary($t('image_enrichment_updated'));
+      }
     } catch (error) {
+      if (asset.id !== assetId) {
+        return;
+      }
       failure = { kind: classifyInlineEditError(error), run: () => perform(key, run) };
       handleError(error, $t('errors.unable_to_update_image_enrichment'));
     } finally {
@@ -183,10 +190,15 @@
 
   const runAction = (action: AssetImageEnrichmentAction) =>
     perform(action, async () => {
-      enrichment = await updateAssetImageEnrichment({
-        id: asset.id,
+      const assetId = asset.id;
+      const result = await updateAssetImageEnrichment({
+        id: assetId,
         assetImageEnrichmentActionRequestDto: { action },
       });
+      if (asset.id !== assetId) {
+        return;
+      }
+      enrichment = result;
 
       const refreshActions: AssetImageEnrichmentAction[] = [
         AssetImageEnrichmentAction.ClearGeneratedDescription,
@@ -209,8 +221,11 @@
     }
 
     return perform('accept-description', async () => {
-      await updateAsset({ id: asset.id, updateAssetDto: { description: suggestion } });
-      await refreshAsset();
+      const assetId = asset.id;
+      await updateAsset({ id: assetId, updateAssetDto: { description: suggestion } });
+      if (asset.id === assetId) {
+        await refreshAsset();
+      }
     });
   };
 
@@ -224,8 +239,11 @@
       return runAction(AssetImageEnrichmentAction.ClearGeneratedDescription);
     }
     return perform('clear-description', async () => {
-      await updateAsset({ id: asset.id, updateAssetDto: { description: '' } });
-      await refreshAsset();
+      const assetId = asset.id;
+      await updateAsset({ id: assetId, updateAssetDto: { description: '' } });
+      if (asset.id === assetId) {
+        await refreshAsset();
+      }
     });
   };
 

@@ -82,6 +82,21 @@ describe('DetailPanelDescription', () => {
     await user.tab();
   };
 
+  it('hands the saved description to the viewer', async () => {
+    vi.mocked(updateAsset).mockResolvedValue(undefined as never);
+    const onAssetRefresh = vi.fn();
+    const asset = assetFactory.build({ exifInfo: { description: '' } });
+    render(DetailPanelDescription, { props: { asset, isOwner: true, onAssetRefresh } });
+
+    await typeAndBlur('a lake at dusk');
+
+    await waitFor(() =>
+      expect(onAssetRefresh).toHaveBeenCalledWith(
+        expect.objectContaining({ id: asset.id, exifInfo: expect.objectContaining({ description: 'a lake at dusk' }) }),
+      ),
+    );
+  });
+
   it('offers a retry when the save never reached a verdict', async () => {
     vi.mocked(updateAsset).mockRejectedValue({ status: 503, data: { statusCode: 503, message: 'unavailable' } });
 
