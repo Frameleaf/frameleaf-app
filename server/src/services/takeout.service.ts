@@ -129,17 +129,15 @@ export class TakeoutService {
       auth.user.id,
       imports.map(({ id }) => id),
     );
+    const operations = new Map<string, TakeoutOperation[]>();
+    for (const { importId, operation } of latest) {
+      const group = operations.get(importId);
+      if (group) group.push(operation);
+      else operations.set(importId, [operation]);
+    }
     return Promise.all(
       imports.map((row) =>
-        this.present(
-          auth,
-          row,
-          takeoutOperationFor(
-            row.phase,
-            latest.filter(({ importId }) => importId === row.id).map(({ operation }) => operation),
-          ),
-          false,
-        ),
+        this.present(auth, row, takeoutOperationFor(row.phase, operations.get(row.id) ?? []), false),
       ),
     );
   }
@@ -195,7 +193,7 @@ export class TakeoutService {
     this.requireSession(auth);
     const name = path.basename(dto.name);
     const source = await this.mapErrors(() =>
-      this.repository.withImport(auth.user.id, id, async (tx, row, operation) => {
+      this.repository.withImport(auth.user.id, id, async (tx, row, operation, ownerQuota) => {
         await this.reopenSources(tx, row, operation, 'Archives can only be added before the scan starts');
         const sources = await this.repository.sourcesIn(tx, id);
         const existing = sources.find((item) => item.kind === 'zip' && item.name === name && item.size === dto.size);
@@ -207,11 +205,11 @@ export class TakeoutService {
         }
 
         const outstanding = sources.reduce((total, item) => total + (item.size - item.received), 0) + dto.size;
-        const quota = auth.user.quotaSizeInBytes;
-        if (quota !== null && quota !== undefined) {
+        const quota = ownerQuota.quotaSizeInBytes;
+        if (quota !== null) {
           // Every unfinished import of the account counts, not only this one.
           const staged = (await this.repository.stagedArchiveBytes(tx, auth.user.id)) + dto.size;
-          if (auth.user.quotaUsageInBytes + staged > quota) {
+          if (ownerQuota.quotaUsageInBytes + staged > quota) {
             throw new TakeoutConflict('These archives are larger than the storage left on your account');
           }
         }
@@ -483,7 +481,10 @@ export class TakeoutService {
       throw new NotFoundException('No preview for this item');
     }
     const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-takeout-preview-'));
-    const release = () => void rm(directory, { recursive: true, force: true });
+    const release = () =>
+      rm(directory, { recursive: true, force: true }).catch((error) => {
+        this.logger.warn(`Could not remove Google Photos import preview: ${String(error)}`);
+      });
     try {
       const output = path.join(directory, 'preview.webp');
       await this.media.generateThumbnail(
@@ -498,7 +499,7 @@ export class TakeoutService {
         release,
       });
     } catch (error) {
-      release();
+      await release();
       this.logger.warn(`No preview for Google Photos import item ${itemId}: ${error}`);
       throw new NotFoundException('No preview for this item');
     }

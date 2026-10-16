@@ -1,4 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { TakeoutStagingError } from 'src/repositories/takeout-staging.repository.js';
@@ -7,6 +9,11 @@ import { TAKEOUT_MAX_ATTEMPTS, TakeoutService } from 'src/services/takeout.servi
 import { TAKEOUT_DEFAULT_OPTIONS, TakeoutPhase } from 'src/utils/takeout.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...original, rm: vi.fn(original.rm) };
+});
 
 const importId = '0195e2a0-0000-7000-8000-000000000001';
 const itemId = '6f1c1a0e-1111-4111-8111-111111111111';
@@ -112,9 +119,14 @@ describe(TakeoutService.name, () => {
   let media: Record<string, any>;
   let access: ReturnType<typeof newAccessRepositoryMock>;
   let importRoots: string[];
+  let ownerQuota: { quotaSizeInBytes: number | null; quotaUsageInBytes: number };
+  let logger: Record<string, any>;
   const tx = {};
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(rm).mockReset().mockImplementation(original.rm);
+    ownerQuota = { quotaSizeInBytes: null, quotaUsageInBytes: 0 };
     row = rowOf('sources');
     operations = [];
     sources = [archive()];
@@ -132,6 +144,7 @@ describe(TakeoutService.name, () => {
               ? operation.snapshot.action === 'scan'
               : operation.snapshot.action === 'import',
           ),
+          ownerQuota,
         ),
       ),
       latestOperations: vi.fn(() => Promise.resolve(operations.map((operation) => ({ importId, operation })))),
@@ -176,7 +189,7 @@ describe(TakeoutService.name, () => {
     mediaOperations = { pause: vi.fn(), resume: vi.fn(), cancel: vi.fn() };
     access = newAccessRepositoryMock();
     const config = { getEnv: () => ({ storage: { importRoots } }) };
-    const logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
     media = { generateThumbnail: vi.fn() };
 
     sut = new TakeoutService(
@@ -188,6 +201,37 @@ describe(TakeoutService.name, () => {
       config as never,
       media as never,
     );
+  });
+
+  afterEach(async () => {
+    const original = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    const directories = new Set(
+      media.generateThumbnail.mock.calls.map((call: unknown[]) => path.dirname(call[2] as string)),
+    );
+    for (const directory of directories) await original.rm(directory, { recursive: true, force: true });
+  });
+
+  describe('list', () => {
+    it('keeps each import’s latest action and preserves import order for interleaved jobs', async () => {
+      const review = rowOf('review', { id: 'review' });
+      const importing = rowOf('importing', { id: 'importing' });
+      const untouched = rowOf('sources', { id: 'untouched' });
+      const scan = { ...operationOf('scan', MediaOperationStatus.Completed), id: 'scan' };
+      const running = { ...operationOf('import', MediaOperationStatus.Rendering), id: 'running' };
+      repository.list.mockResolvedValue([review, importing, untouched]);
+      repository.latestOperations.mockResolvedValue([
+        { importId: importing.id, operation: scan },
+        { importId: review.id, operation: running },
+        { importId: importing.id, operation: running },
+        { importId: review.id, operation: scan },
+      ]);
+      const result = await sut.list(authStub.user1);
+      expect(result.map(({ id, state, operationId }) => ({ id, state, operationId }))).toEqual([
+        { id: 'review', state: 'review', operationId: 'scan' },
+        { id: 'importing', state: 'importing', operationId: 'running' },
+        { id: 'untouched', state: 'sources', operationId: null },
+      ]);
+    });
   });
 
   describe('get', () => {
@@ -288,6 +332,7 @@ describe(TakeoutService.name, () => {
     });
 
     it('refuses an archive the account’s storage quota cannot hold', async () => {
+      ownerQuota = { quotaSizeInBytes: 250, quotaUsageInBytes: 100 };
       const auth = {
         ...authStub.user1,
         user: { ...authStub.user1.user, quotaSizeInBytes: 250, quotaUsageInBytes: 100 },
@@ -295,6 +340,25 @@ describe(TakeoutService.name, () => {
       await expect(sut.addArchive(auth, importId, { name: 'takeout-002.zip', size: 200 })).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it('uses current quota and usage even when the auth snapshot would admit the archive', async () => {
+      sources = [];
+      ownerQuota = { quotaSizeInBytes: 10, quotaUsageInBytes: 8 };
+      const auth = { ...authStub.user1, user: { ...authStub.user1.user, quotaSizeInBytes: 100, quotaUsageInBytes: 0 } };
+      await expect(sut.addArchive(auth, importId, { name: 'takeout-new.zip', size: 6 })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(repository.addSource).not.toHaveBeenCalled();
+    });
+
+    it('honours a current unlimited quota despite an older restricted auth snapshot', async () => {
+      sources = [];
+      ownerQuota = { quotaSizeInBytes: null, quotaUsageInBytes: 8 };
+      const auth = { ...authStub.user1, user: { ...authStub.user1.user, quotaSizeInBytes: 1, quotaUsageInBytes: 1 } };
+      await expect(sut.addArchive(auth, importId, { name: 'takeout-new.zip', size: 6 })).resolves.toMatchObject({
+        size: 6,
+      });
     });
 
     it('refuses an archive the staging volume cannot hold', async () => {
@@ -574,6 +638,41 @@ describe(TakeoutService.name, () => {
   });
 
   describe('preview', () => {
+    it('handles failed preview release without leaving a rejected cleanup promise', async () => {
+      repository.getItem.mockResolvedValue(itemOf({ kind: 'image' }));
+      const file = await sut.preview(authStub.user1, importId, itemId);
+      const failed = Promise.reject(new Error('cleanup failed'));
+      void failed.catch(() => {});
+      vi.mocked(rm).mockReturnValueOnce(failed);
+      const released = file.release?.();
+      expect(released).toBeInstanceOf(Promise);
+      await released;
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Could not remove Google Photos import preview'),
+      );
+    });
+
+    it('finishes cleanup before answering a failed thumbnail request', async () => {
+      repository.getItem.mockResolvedValue(itemOf({ kind: 'image' }));
+      media.generateThumbnail.mockRejectedValue(new Error('unsupported'));
+      const cleaned = Promise.withResolvers<void>();
+      vi.mocked(rm).mockReturnValueOnce(cleaned.promise);
+      let finished = false;
+      const result = sut.preview(authStub.user1, importId, itemId).catch((error) => {
+        finished = true;
+        return error;
+      });
+      try {
+        await vi.waitFor(() => expect(rm).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(finished).toBe(false);
+        cleaned.resolve();
+        expect(await result).toBeInstanceOf(NotFoundException);
+      } finally {
+        cleaned.resolve();
+        await result;
+      }
+    });
     it('makes a small WebP of a staged photo, removed once it has been sent', async () => {
       repository.getItem.mockResolvedValue(itemOf({ kind: 'image', path: '/staging/photo' }));
       const file = await sut.preview(authStub.user1, importId, itemId);
