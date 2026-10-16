@@ -78,6 +78,18 @@ describe(ZeroShotTaggingService.name, () => {
     expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
   });
 
+  it('does not reuse legacy vocabulary after an index is admitted with the same model name', async () => {
+    const { sut, mocks } = newTestService(ZeroShotTaggingService);
+    withConfig(mocks, { clip: { modelName: 'admission-model' } });
+    mocks.machineLearning.clipCacheKey.mockResolvedValue('legacy');
+    mocks.machineLearning.encodeText.mockResolvedValue(EMBEDDING);
+    mockTagUpserts(mocks);
+    await sut.tagAsset(ASSET_ID, OWNER_ID, EMBEDDING);
+    mocks.machineLearning.clipCacheKey.mockResolvedValue('admitted:exact-producer');
+    await sut.tagAsset('asset-after-admission', OWNER_ID, EMBEDDING);
+    expect(mocks.machineLearning.encodeText).toHaveBeenCalledTimes(2 * CLIP_ZERO_SHOT_LABELS.length);
+  });
+
   it('memoizes the vocabulary: one ML round-trip per model across calls', async () => {
     const { sut, mocks } = newTestService(ZeroShotTaggingService);
     withConfig(mocks, { clip: { modelName: 'memo-model' } });

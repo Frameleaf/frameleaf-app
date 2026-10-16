@@ -64,6 +64,21 @@ export class DesktopClipIndexRepository {
     }
   }
 
+  async selectProfile(modelName: string, kind: 'image' | 'text', language?: string) {
+    const binding = await this.getActive();
+    if (!binding) return;
+    const allowed = kind === 'image' ? [binding.space.visualModelKey] : binding.space.textModelKeys;
+    const entries =
+      kind === 'image'
+        ? { clip: { visual: { modelName } } }
+        : { clip: { textual: { modelName, options: language === undefined ? {} : { language } } } };
+    const profile = this.models.profiles.find(
+      (p) => allowed.includes(p.modelKey) && canonicalJson(p.spec.entries) === canonicalJson(entries),
+    );
+    if (!profile) throw new Error('desktop_clip_profile_unavailable');
+    return { binding, profile };
+  }
+
   /** Call only after selected NAS producer/config verification; this does not grant worker scope. */
   async admit(spaceKey: string): Promise<DesktopClipIndexBinding> {
     const space = this.spaces.spaces.find((space) => space.spaceKey === spaceKey);

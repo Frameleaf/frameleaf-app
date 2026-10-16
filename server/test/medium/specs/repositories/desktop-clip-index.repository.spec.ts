@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import type { DB } from 'src/schema/index.js';
 import { AssetType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -178,4 +180,24 @@ it('refuses to discard an admitted index during downgrade', async () => {
   const active = await repository.admit(space.spaceKey);
   await expect(db.transaction().execute((tx) => down(tx))).rejects.toThrow('Cannot discard an admitted CLIP index');
   expect(await repository.getActive()).toEqual(active);
+});
+
+it('refuses destructive dimension changes and index clearing after admission', async () => {
+  await repository.admit(space.spaceKey);
+  await write('smart_search', space.visualModelKey);
+  const database = new DatabaseRepository(db, LoggingRepository.create(), undefined as never);
+  await expect(database.setDimensionSize(512)).rejects.toThrow('desktop_clip_index_admitted');
+  await expect(database.deleteAllSearchEmbeddings()).rejects.toThrow('desktop_clip_index_admitted');
+  expect(await db.selectFrom('smart_search').select('embedding').execute()).toEqual([{ embedding: vector }]);
+  await repository.getActive();
+});
+
+it('retains explicit legacy reset behavior while the index is unadmitted', async () => {
+  await write('smart_search', null);
+  const database = new DatabaseRepository(db, LoggingRepository.create(), undefined as never);
+  await database.deleteAllSearchEmbeddings();
+  expect(await db.selectFrom('smart_search').selectAll().execute()).toEqual([]);
+  await database.setDimensionSize(512);
+  expect(await database.getDimensionSize('smart_search')).toBe(512);
+  expect(await repository.getActive()).toBeUndefined();
 });

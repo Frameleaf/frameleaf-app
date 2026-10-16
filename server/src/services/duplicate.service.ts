@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
+import type { ClipEmbedding } from 'src/utils/clip-embedding.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -580,8 +581,13 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const frames: Array<{ assetId: string; frameIndex: number; timestampMs: number; path: string; embedding: string }> =
-      [];
+    const frames: Array<{
+      assetId: string;
+      frameIndex: number;
+      timestampMs: number;
+      path: string;
+      embedding: ClipEmbedding;
+    }> = [];
     for (const [frameIndex, timestamp] of timestamps.entries()) {
       const path = attemptOutputPath(
         StorageCore.getNestedPath(

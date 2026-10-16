@@ -4,6 +4,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
+import type { ClipEmbedding } from 'src/utils/clip-embedding.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -191,7 +192,7 @@ export class VideoMomentIndexService {
 
     try {
       const selection = await this.select(MlWorkload.Clip, options.destinationId, options.jobId ?? assetId);
-      const embeddings: { frameId: string; embedding: string }[] = [];
+      const embeddings: { frameId: string; embedding: ClipEmbedding }[] = [];
       // One frame at a time: the frames are small, and a video must not monopolise the destination.
       for (const frame of pending) {
         if (options.heartbeat && !(await options.heartbeat())) {

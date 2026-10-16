@@ -300,7 +300,7 @@ export class SmartAlbumService extends BaseService {
         throw error;
       }
     }
-    const cacheKey = `${clip.modelName}\u{0}${query}`;
+    const cacheKey = `${clip.modelName}\u{0}${await this.machineLearningRepository.clipCacheKey(clip.modelName)}\u{0}${query}`;
     const cached = clipQueryCache.get(cacheKey);
     if (cached) {
       return cached;

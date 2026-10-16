@@ -35,6 +35,7 @@ import {
 } from 'src/enum.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -472,6 +473,7 @@ export class MachineLearningRepository implements RestorationInference {
     private authority?: MlDestinationRepository,
     private configRepo?: ConfigRepository,
     private metadataRepo?: SystemMetadataRepository,
+    private clipIndex?: DesktopClipIndexRepository,
   ) {
     this.logger.setContext(MachineLearningRepository.name);
   }
@@ -1024,7 +1026,22 @@ export class MachineLearningRepository implements RestorationInference {
     };
   }
 
+  async clipCacheKey(modelName: string, language?: string): Promise<string> {
+    const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
+    return selected ? `${selected.binding.revisionId}:${selected.profile.modelKey}` : 'legacy';
+  }
+
+  async assertClipModel(modelName: string): Promise<void> {
+    await this.clipIndex?.selectProfile(modelName, 'image');
+  }
+
   async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {
+    const selected = await this.clipIndex?.selectProfile(modelName, 'image');
+    if (selected) {
+      const result = await this.encodeBoundClip(selection, { imagePath }, selected.profile);
+      await this.clipIndex!.assertCurrent(selected.binding);
+      return result;
+    }
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
     const response = await this.predict<ClipVisualResponse>(selection, { imagePath }, request);
     return response[ModelTask.SEARCH];
@@ -1069,7 +1086,18 @@ export class MachineLearningRepository implements RestorationInference {
     });
   }
 
-  async encodeText(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
+  async encodeText(selection: MlSelection, text: string, options: TextEncodingOptions) {
+    const result = await this.encodeTextWithProvenance(selection, text, options);
+    return typeof result === 'string' ? result : result.embedding;
+  }
+
+  async encodeTextWithProvenance(selection: MlSelection, text: string, { language, modelName }: TextEncodingOptions) {
+    const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
+    if (selected) {
+      const result = await this.encodeBoundClip(selection, { text }, selected.profile);
+      await this.clipIndex!.assertCurrent(selected.binding);
+      return result;
+    }
     const request = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: { modelName, options: { language } } } };
     const response = await this.predict<ClipTextualResponse>(selection, { text }, request);
     return response[ModelTask.SEARCH];

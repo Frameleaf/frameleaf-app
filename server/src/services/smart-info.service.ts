@@ -39,7 +39,7 @@ export class SmartInfoService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigValidate' })
-  onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
+  async onConfigValidate({ newConfig }: ArgOf<'ConfigValidate'>) {
     try {
       getCLIPModelInfo(newConfig.machineLearning.clip.modelName);
     } catch {
@@ -47,12 +47,14 @@ export class SmartInfoService extends BaseService {
         `Unknown CLIP model: ${newConfig.machineLearning.clip.modelName}. Please check the model name for typos and confirm this is a supported model.`,
       );
     }
+    await this.machineLearningRepository.assertClipModel(newConfig.machineLearning.clip.modelName);
   }
 
   private async init(newConfig: SystemConfig, oldConfig?: SystemConfig) {
     if (!isSmartSearchEnabled(newConfig.machineLearning)) {
       return;
     }
+    await this.machineLearningRepository.assertClipModel(newConfig.machineLearning.clip.modelName);
 
     await this.databaseRepository.withLock(DatabaseLock.CLIPDimSize, async () => {
       const { dimSize } = getCLIPModelInfo(newConfig.machineLearning.clip.modelName);

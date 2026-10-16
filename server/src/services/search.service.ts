@@ -610,7 +610,8 @@ export class SearchService extends BaseService {
     machineLearning: SystemConfig['machineLearning'],
   ): Promise<string> {
     if (dto.query) {
-      const key = machineLearning.clip.modelName + dto.query + dto.language;
+      const producer = await this.machineLearningRepository.clipCacheKey(machineLearning.clip.modelName, dto.language);
+      const key = JSON.stringify([machineLearning.clip.modelName, producer, dto.query, dto.language]);
       let embedding = this.embeddingCache.get(key);
       if (!embedding) {
         const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });

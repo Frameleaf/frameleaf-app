@@ -402,17 +402,18 @@ export class PetRecognitionService {
     return byPet.values().toArray();
   }
 
-  private getPromptEmbeddings(selection: MlSelection, modelName: string): Promise<PromptEmbeddings> {
+  private async getPromptEmbeddings(selection: MlSelection, modelName: string): Promise<PromptEmbeddings> {
     if (queueExecution.getStore()) return this.encodePrompts(selection, modelName);
-    const cached = PROMPT_CACHE.get(modelName);
+    const key = `${modelName}/${await this.machineLearningRepository.clipCacheKey(modelName)}`;
+    const cached = PROMPT_CACHE.get(key);
     if (cached) {
       return cached;
     }
     const promise = this.encodePrompts(selection, modelName).catch((error) => {
-      PROMPT_CACHE.delete(modelName);
+      PROMPT_CACHE.delete(key);
       throw error;
     });
-    PROMPT_CACHE.set(modelName, promise);
+    PROMPT_CACHE.set(key, promise);
     return promise;
   }
 

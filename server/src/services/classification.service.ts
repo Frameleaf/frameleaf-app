@@ -477,13 +477,13 @@ export class ClassificationService extends BaseService {
     }
   }
 
-  private encodePhrase(modelName: string, phrase: string): Promise<string> {
+  private async encodePhrase(modelName: string, phrase: string): Promise<string> {
     if (queueExecution.getStore()) {
       return this.selectRoutedMlDestination({ workload: MlWorkload.Clip }).then((selection) =>
         this.machineLearningRepository.encodeText(selection, phrase, { modelName }),
       );
     }
-    const key = `${modelName}\u{0}${phrase}`;
+    const key = `${modelName}\u{0}${await this.machineLearningRepository.clipCacheKey(modelName)}\u{0}${phrase}`;
     const cached = phraseCache.get(key);
     if (cached) {
       return cached;
