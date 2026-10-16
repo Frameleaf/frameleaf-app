@@ -797,7 +797,7 @@
     const isCurrent = () => viewerAlive && generation === slideshowGeneration && isCurrentSession();
     try {
       if (document.fullscreenElement) {
-        await document.exitFullscreen();
+        await exitFullscreenOurselves();
       }
     } catch (error) {
       if (isCurrent()) {
@@ -1333,9 +1333,59 @@
   /** V-13: the footer's full-screen toggle (MediaViewer.jsx:1799-1806). */
   const toggleFullscreen = async () => {
     try {
-      await (document.fullscreenElement ? document.exitFullscreen() : assetViewerHtmlElement?.requestFullscreen());
+      await (document.fullscreenElement ? exitFullscreenOurselves() : assetViewerHtmlElement?.requestFullscreen());
     } catch (error) {
       handleError(error, $t('errors.unable_to_enter_fullscreen'));
+    }
+  };
+
+  /*
+   * Escape in full screen (owner, 2026-10-16): it leaves full screen and ends a slideshow, back to the
+   * viewer; the next Escape closes the viewer. Outside full screen Escape closes the viewer at once.
+   * Chromium leaves full screen by itself on Escape and keeps the key from the page, so that exit only
+   * shows as `fullscreenchange`. When the key does reach the page, still in full screen or just after
+   * the browser left it, it must not close the viewer as well.
+   */
+  const FULLSCREEN_ESCAPE_GRACE_MS = 500;
+  let fullscreenLeftAt = -Infinity;
+  /** The viewer itself is leaving full screen (the footer toggle, a slideshow ending), not Escape. */
+  let leavingFullscreenOurselves = false;
+
+  const exitFullscreenOurselves = async () => {
+    leavingFullscreenOurselves = true;
+    try {
+      await document.exitFullscreen();
+    } finally {
+      leavingFullscreenOurselves = false;
+    }
+  };
+
+  const onFullscreenChange = () => {
+    if (document.fullscreenElement) {
+      return;
+    }
+    fullscreenLeftAt = performance.now();
+    // The browser left full screen (Escape, or its own exit control): a slideshow ends with it.
+    if (!leavingFullscreenOurselves && $slideshowState !== SlideshowState.None) {
+      $stopSlideshowProgress = true;
+      $slideshowState = SlideshowState.None;
+    }
+  };
+
+  const leaveFullscreenOnEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) {
+      return;
+    }
+    const inFullscreen = !!document.fullscreenElement;
+    if (!inFullscreen && performance.now() - fullscreenLeftAt > FULLSCREEN_ESCAPE_GRACE_MS) {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (inFullscreen) {
+      // The page saw the key before the browser did: leave full screen as Escape would, which ends a
+      // slideshow through `onFullscreenChange`.
+      document.exitFullscreen().catch((error: unknown) => handleError(error, $t('errors.unable_to_exit_fullscreen')));
     }
   };
 
@@ -1500,7 +1550,10 @@
 <OnEvents {onAssetUpdate} {onAssetsUndoArchive} {onAssetsDelete} />
 
 <svelte:window
-  onkeydowncapture={closeSettingsOnEscape}
+  onkeydowncapture={(event) => {
+    closeSettingsOnEscape(event);
+    leaveFullscreenOnEscape(event);
+  }}
   onkeydown={revealChrome}
   onpointerdowncapture={(event) => activePointers.add(event.pointerId)}
   onpointerupcapture={releasePointer}
@@ -1521,6 +1574,7 @@
 
 <svelte:document
   bind:fullscreenElement
+  onfullscreenchange={onFullscreenChange}
   use:shortcuts={[
     { shortcut: { key: 'ArrowUp' }, onShortcut: () => navigateStack('previous') },
     { shortcut: { key: 'ArrowDown' }, onShortcut: () => navigateStack('next') },

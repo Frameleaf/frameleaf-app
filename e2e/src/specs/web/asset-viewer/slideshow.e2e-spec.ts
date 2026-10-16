@@ -48,7 +48,7 @@ test.describe('Slideshow', () => {
     await expect(footerPause(page)).toBeVisible();
   });
 
-  // MediaViewer.jsx:744-757: Escape closes the viewer, and the slideshow with it.
+  // MediaViewer.jsx:744-757: outside full screen, Escape closes the viewer, and the slideshow with it.
   test('Escape closes the viewer and ends the slideshow', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await openSlideshow(page);
@@ -59,6 +59,32 @@ test.describe('Slideshow', () => {
 
     await page.goto(`/photos/${asset.id}`);
     await expect(footerPlay(page)).toBeVisible();
+  });
+
+  // Owner, 2026-10-16: in a full-screen slideshow Escape leaves full screen and ends the slideshow, back
+  // in the viewer; the next Escape closes the viewer. One press never does both, whether the browser
+  // leaves full screen itself or the page hears the key first.
+  test('Escape in full screen leaves full screen and ends the slideshow; the next Escape closes', async ({
+    context,
+    page,
+  }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await openSlideshow(page);
+    const inFullscreen = () => page.evaluate(() => !!document.fullscreenElement);
+
+    await page.getByRole('button', { name: 'Enter full screen' }).click();
+    await expect.poll(inFullscreen).toBe(true);
+    await expect(footerPause(page)).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect.poll(inFullscreen).toBe(false);
+    await expect(footerPlay(page)).toBeVisible();
+    await expect(page.locator('#immich-asset-viewer')).toBeVisible();
+
+    // past the moment a key from the exit could still arrive
+    await page.waitForTimeout(600);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
   });
 
   // FL-36: the settings are the prototype's non-modal panel with the five transitions, Fade by default.

@@ -1415,6 +1415,118 @@ describe('AssetViewer', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  // Owner, 2026-10-16: Escape in a full-screen slideshow leaves full screen and ends the slideshow; the
+  // next Escape closes the viewer. Chromium leaves full screen itself and keeps that key from the page.
+  describe('Escape and full screen', () => {
+    const previousElement = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    const previousExit = document.exitFullscreen;
+    const setFullscreen = (element: Element | null) => {
+      Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: element });
+      document.dispatchEvent(new Event('fullscreenchange'));
+    };
+    const open = () => {
+      const user = userAdminFactory.build();
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const onClose = vi.fn();
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, onClose });
+      return { onClose, view };
+    };
+    /**
+     * Escape closes the viewer through the header's Close shortcut, which the app's shortcut layer runs
+     * from a window listener (not mounted here). Whether the key gets there untouched is what decides.
+     */
+    const escapeReachesClose = async () => {
+      let reached = false;
+      const listen = (event: KeyboardEvent) => {
+        reached = event.key === 'Escape' && !event.defaultPrevented;
+      };
+      addEventListener('keydown', listen);
+      try {
+        await fireEvent.keyDown(document.body, { key: 'Escape' });
+      } finally {
+        removeEventListener('keydown', listen);
+      }
+      return reached;
+    };
+    afterEach(() => {
+      document.exitFullscreen = previousExit;
+      if (previousElement) {
+        Object.defineProperty(document, 'fullscreenElement', previousElement);
+      } else {
+        Reflect.deleteProperty(document, 'fullscreenElement');
+      }
+    });
+
+    it('ends the slideshow when the browser leaves full screen on Escape, and only the next Escape closes', async () => {
+      const { onClose, view } = open();
+      setFullscreen(view.container);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      // The browser took the key and left full screen: the page only hears `fullscreenchange`.
+      setFullscreen(null);
+      await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None));
+      expect(onClose).not.toHaveBeenCalled();
+
+      // The same press reaching the page just after the exit does not close the viewer as well.
+      expect(await escapeReachesClose()).toBe(false);
+
+      // A second press, a moment later, closes the viewer.
+      const later = performance.now() + 1000;
+      const now = vi.spyOn(performance, 'now').mockReturnValue(later);
+      onTestFinished(() => now.mockRestore());
+      expect(await escapeReachesClose()).toBe(true);
+    });
+
+    it('leaves full screen, without closing, when the page hears Escape while still in full screen', async () => {
+      const { onClose, view } = open();
+      const exit = vi.fn().mockImplementation(() => {
+        setFullscreen(null);
+        return Promise.resolve();
+      });
+      document.exitFullscreen = exit;
+      setFullscreen(view.container);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      expect(await escapeReachesClose()).toBe(false);
+
+      expect(exit).toHaveBeenCalledOnce();
+      await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None));
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('keeps the slideshow playing when full screen is left from the footer', async () => {
+      const { view } = open();
+      document.exitFullscreen = vi.fn().mockImplementation(() => {
+        setFullscreen(null);
+        return Promise.resolve();
+      });
+      setFullscreen(view.container);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_exit_fullscreen'));
+
+      expect(document.exitFullscreen).toHaveBeenCalledOnce();
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    });
+
+    it('leaves Escape to Close viewer outside full screen, which ends a slideshow on the way', async () => {
+      const { onClose, view } = open();
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      expect(await escapeReachesClose()).toBe(true);
+      // Close viewer (the header's back arrow, and the Escape shortcut) ends the slideshow and closes.
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_close_label'));
+      expect(onClose).toHaveBeenCalledOnce();
+      await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None));
+    });
+  });
+
   // VIEWER-P1: Play always plays, even for someone who once turned the old Autoplay preference off.
   it('plays at once when Play is pressed, whatever the old Autoplay preference says', async () => {
     const user = userAdminFactory.build();
