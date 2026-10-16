@@ -934,7 +934,9 @@ export class TimelineManager extends VirtualScrollManager {
     if (this.#isLockedRuleMatch(asset)) {
       return false;
     }
-    if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId) {
+    // Only the server knows an album's, a person's or Best Photos' members (LIB-P3: a new upload has
+    // no quality score yet); the next load brings them in.
+    if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId || this.#options.bestPhotos) {
       return false;
     }
     if (this.#options.userId && asset.ownerId !== this.#options.userId) {

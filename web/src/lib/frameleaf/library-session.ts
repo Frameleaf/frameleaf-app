@@ -33,7 +33,12 @@ import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
  */
 export type LibraryLayout = 'timeline' | 'browse' | 'work';
 export type LibraryView = 'grid' | 'list' | 'detail' | 'compare' | 'map' | 'moments';
-export type LibrarySort = 'captured-desc' | 'captured-asc' | 'imported-desc' | 'modified-desc' | 'filename' | 'rating';
+/**
+ * `quality` (LIB-P3) is Best Photos' own ranking: the page offers and keeps it itself, so it is not
+ * one of the portable `LIBRARY_SORTS` a link or the session carries.
+ */
+export type LibrarySort =
+  'captured-desc' | 'captured-asc' | 'imported-desc' | 'modified-desc' | 'filename' | 'rating' | 'quality';
 export type LibraryGrouping = 'all' | 'days' | 'months' | 'years';
 export type LibraryScope = { kind: 'library' | 'album' | 'space'; id?: string };
 

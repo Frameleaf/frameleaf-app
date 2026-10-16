@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, invalidate } from '$app/navigation';
   import { page } from '$app/state';
   import Albums from '$lib/components/album-page/AlbumsList.svelte';
+  import LibraryLockedGate from '$lib/components/frameleaf/LibraryLockedGate.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
@@ -94,63 +96,77 @@
   </div>
 {/snippet}
 
-<UserPageLayout title={data.meta.title} scrollbar={false}>
-  {#snippet buttons()}
-    <!-- Beside the title from tablet width up; on phones it heads the page, so the title shows whole. -->
-    <div class="hidden md:flex">{@render tabSwitch()}</div>
-  {/snippet}
+<!-- LIB-P2: locked, the page opens inside the app and asks for the PIN in a dialog. -->
+{#if !data.unlocked}
+  <UserPageLayout scrollbar={false}>
+    <LibraryLockedGate
+      title={data.meta.title}
+      icon={mdiEyeOffOutline}
+      heading={$t('frameleaf_suppressed_gate_title')}
+      message={$t('frameleaf_suppressed_gate_body')}
+      actionLabel={$t('frameleaf_locked_dialog_unlock')}
+    />
+  </UserPageLayout>
+{:else}
+  <OnEvents onSessionLocked={() => void invalidate('suppressed:access')} />
+  <UserPageLayout title={data.meta.title} scrollbar={false}>
+    {#snippet buttons()}
+      <!-- Beside the title from tablet width up; on phones it heads the page, so the title shows whole. -->
+      <div class="hidden md:flex">{@render tabSwitch()}</div>
+    {/snippet}
 
-  <div class="flex h-full flex-col">
-    <div class="flex px-(--fl-space-2) pt-(--fl-space-1) pb-(--fl-space-3) md:hidden">{@render tabSwitch()}</div>
-    <div class="min-h-0 grow">
-      {#if activeTab === 'timeline'}
-        <LibraryView
-          bind:timelineManager
-          {options}
-          destination={{ kind: 'library' }}
-          {beforeAction}
-          downloadFileName={brandedArchiveName($t('frameleaf_archive_name_suppressed'))}
-          enableRouting
-          selectAll="loaded"
-          onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-        >
-          {#snippet empty()}
-            <LibraryEmptyState
-              icon={mdiEyeOffOutline}
-              title={$t('nothing_here_yet')}
-              message={$t('no_suppressed_content_message')}
-            />
-          {/snippet}
-
-          {#snippet viewer()}
-            <Portal target="body">
-              {#if assetViewerManager.isViewing}
-                <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} withStacked />
-              {/if}
-            </Portal>
-          {/snippet}
-        </LibraryView>
-      {:else}
-        <div class="h-full overflow-y-auto p-4 max-md:px-(--fl-space-2) md:px-6">
-          <Albums
-            ownedAlbums={data.ownedAlbums}
-            sharedAlbums={data.sharedAlbums}
-            userSettings={$albumViewSettings}
-            showOwner
-            {searchQuery}
-            getAlbumHref={Route.suppressedAlbum}
-            bind:albumGroupIds={albumGroups}
+    <div class="flex h-full flex-col">
+      <div class="flex px-(--fl-space-2) pt-(--fl-space-1) pb-(--fl-space-3) md:hidden">{@render tabSwitch()}</div>
+      <div class="min-h-0 grow">
+        {#if activeTab === 'timeline'}
+          <LibraryView
+            bind:timelineManager
+            {options}
+            destination={{ kind: 'library' }}
+            {beforeAction}
+            downloadFileName={brandedArchiveName($t('frameleaf_archive_name_suppressed'))}
+            enableRouting
+            selectAll="loaded"
+            onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
           >
             {#snippet empty()}
               <LibraryEmptyState
                 icon={mdiEyeOffOutline}
                 title={$t('nothing_here_yet')}
-                message={$t('no_suppressed_albums_message')}
+                message={$t('no_suppressed_content_message')}
               />
             {/snippet}
-          </Albums>
-        </div>
-      {/if}
+
+            {#snippet viewer()}
+              <Portal target="body">
+                {#if assetViewerManager.isViewing}
+                  <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} withStacked />
+                {/if}
+              </Portal>
+            {/snippet}
+          </LibraryView>
+        {:else}
+          <div class="h-full overflow-y-auto p-4 max-md:px-(--fl-space-2) md:px-6">
+            <Albums
+              ownedAlbums={data.ownedAlbums}
+              sharedAlbums={data.sharedAlbums}
+              userSettings={$albumViewSettings}
+              showOwner
+              {searchQuery}
+              getAlbumHref={Route.suppressedAlbum}
+              bind:albumGroupIds={albumGroups}
+            >
+              {#snippet empty()}
+                <LibraryEmptyState
+                  icon={mdiEyeOffOutline}
+                  title={$t('nothing_here_yet')}
+                  message={$t('no_suppressed_albums_message')}
+                />
+              {/snippet}
+            </Albums>
+          </div>
+        {/if}
+      </div>
     </div>
-  </div>
-</UserPageLayout>
+  </UserPageLayout>
+{/if}

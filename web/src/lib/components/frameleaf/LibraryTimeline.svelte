@@ -114,6 +114,12 @@
     /** Rendered above the timeline; the results toolbar and any page header go here. */
     header?: Snippet;
     empty?: Snippet;
+    /**
+     * The page gutter in pixels, kept inside the scroll area on both sides (LIB-P4). The scroll area
+     * then reaches the page's edges, so the frosted toolbar band in `header` can span them, while
+     * the header, the rows and the scrubber keep this much room from them.
+     */
+    gutter?: number;
   };
 
   let {
@@ -139,6 +145,7 @@
     timelineCaptions = false,
     header,
     empty,
+    gutter = 0,
   }: Props = $props();
 
   let scrollable = $state<HTMLElement>();
@@ -212,6 +219,8 @@
     // A header's height includes `groupHeaderLead` above its title, the room between one group's
     // last row and the next group (template `.tl-group` margin-bottom; 24px between sections, 16px
     // on phones).
+    // With day headers every day starts its own full-width row (template `.tl-group`), so a day of
+    // one or two photos never sits beside another one and its heading has the whole width.
     timelineManager.setLayoutOptions(
       maxMd
         ? {
@@ -220,6 +229,7 @@
             gap: 8,
             fillRowWidth: true,
             captionHeight: rowCaptionHeight,
+            dayRows: showDayHeaders,
           }
         : {
             rowHeight: timelineRowHeight(235, thumbnailSize),
@@ -227,6 +237,7 @@
             gap: 12,
             fillRowWidth: true,
             captionHeight: rowCaptionHeight,
+            dayRows: showDayHeaders,
           },
     );
   });
@@ -334,12 +345,29 @@
       mutations.disconnect();
     };
   });
+  /**
+   * The year labels sit beside the track, towards the photos (YearScrubber `.fl-scrub-year`): the
+   * column keeps room for them, as the scroll area's margin and the scrubber's own column did before.
+   */
+  const SCRUBBER_LABEL_ROOM = 34;
+  /** The scrubber is drawn: a flat order (filename, rating) has no dates to scrub through. */
+  const showScrubber = $derived(timelineManager.months.length > 0 && !timelineManager.ordered);
+  /**
+   * The column the rows leave at their end for the scrubber (LIB-P4). The header block above them
+   * (page header, toolbar, grouping) spans it, as the template's does; the scrubber keeps below
+   * that block while it is on screen. On touch and narrow screens the scrubber floats over the rows.
+   */
+  const scrubberSpace = $derived(
+    overlayScrubber || !showScrubber || !scrubberWidth ? 0 : scrubberWidth + SCRUBBER_LABEL_ROOM,
+  );
+  /** The width the rows are laid out in: the scroll area less the gutters and the scrubber column. */
+  const layoutWidth = $derived(Math.max(0, measuredWidth - 2 * gutter - scrubberSpace));
   $effect(() => {
-    if (measuredWidth === 0 || measuredHeight === 0) {
+    if (measuredWidth === 0 || measuredHeight === 0 || layoutWidth === 0) {
       return;
     }
-    if (timelineManager.viewportWidth !== measuredWidth) {
-      timelineManager.viewportWidth = measuredWidth;
+    if (timelineManager.viewportWidth !== layoutWidth) {
+      timelineManager.viewportWidth = layoutWidth;
     }
     if (timelineManager.viewportHeight !== measuredHeight) {
       timelineManager.viewportHeight = measuredHeight;
@@ -347,12 +375,38 @@
     timelineManager.topSectionHeight = measuredTop;
   });
   /**
-   * How much of the header above the photos is still on screen. The overlay scrubber starts below
-   * that: lying over the header it took the taps meant for the toolbar's last control.
+   * How much of the header above the photos is still on screen. The scrubber starts below that
+   * (LIB-P4): the header block spans its column, and lying over the header the scrubber took the
+   * clicks and taps meant for the toolbar's last control. While the track is dragged it keeps its
+   * place, so the header scrolling away does not move the track under the pointer.
    */
-  let headOnScreen = $derived(
-    overlayScrubber ? Math.max(0, measuredTop - untrack(() => scrollable?.scrollTop ?? 0)) : 0,
-  );
+  let headOnScreen = $derived(Math.max(0, measuredTop - untrack(() => scrollable?.scrollTop ?? 0)));
+  $effect(() => {
+    if (!scrubbing && scrollable) {
+      headOnScreen = Math.max(0, measuredTop - untrack(() => scrollable?.scrollTop ?? 0));
+    }
+  });
+
+  /**
+   * The Years and Months cards draw the header block in their own scroller: where its grouping row
+   * ends on screen, measured as the cards scroll, is where the scrubber beside them starts.
+   */
+  let cardsHost = $state<HTMLElement>();
+  let cardsClear = $state(0);
+  const measureCardsClear = () => {
+    const end = cardsHost?.querySelector('.fl-grouping');
+    if (!root || !end) {
+      cardsClear = 0;
+      return;
+    }
+    cardsClear = Math.max(0, Math.round(end.getBoundingClientRect().bottom - root.getBoundingClientRect().top));
+  };
+  $effect(() => {
+    if (!cardsHost) {
+      return;
+    }
+    void tick().then(measureCardsClear);
+  });
 
   /* ------------------------------------------------------------------ */
   /* Grouping                                                            */
@@ -1102,7 +1156,7 @@
     timelineManager.updateSlidingWindow();
     timelineManager.scrolling = true;
     noteScroll();
-    if (overlayScrubber) {
+    if (!scrubbing) {
       headOnScreen = Math.max(0, measuredTop - scrollable.scrollTop);
     }
     if (!assetViewerManager.isViewing) {
@@ -1250,20 +1304,28 @@
   {/if}
 {/snippet}
 
+<!--
+  LIB-P4: the scroll area spans the page; the gutter is its padding, the rows leave the scrubber's
+  column (`--fl-tl-scrubber-space`), and the header block above them spans it.
+-->
 <div
   class="fl-timeline"
   class:is-groupable={onGroupingChange && showDayHeaders}
   class:is-zoomable={tileLayout !== 'timeline' && tileLayout !== 'list' && !!onThumbnailSizeChange}
   data-testid="frameleaf-timeline"
   style:--fl-group-header-lead="{groupHeaderLead}px"
+  style:--fl-library-gutter-start="{gutter}px"
+  style:--fl-library-gutter-end="{gutter}px"
+  style:--fl-tl-scrubber-space="{scrubberSpace}px"
   bind:this={root}
 >
   {#if curated && (grouping === 'years' || grouping === 'months')}
     <div
       class="fl-timeline-cards"
+      bind:this={cardsHost}
       bind:clientHeight={measuredHeight}
       bind:clientWidth={measuredWidth}
-      style:margin-inline-end="{overlayScrubber ? 0 : scrubberWidth}px"
+      onscrollcapture={measureCardsClear}
     >
       <TimelineCards
         bind:this={cards}
@@ -1277,8 +1339,7 @@
       />
     </div>
     <!-- Template TimelineLibrary.jsx:460: the scrubber stays beside the cards. -->
-    <!-- A flat order (filename, rating) has no dates to scrub through. -->
-    {#if timelineManager.months.length > 0 && !timelineManager.ordered}
+    {#if showScrubber}
       <YearScrubber
         {timelineManager}
         height={measuredHeight}
@@ -1287,6 +1348,7 @@
         onJump={onCardJump}
         overlay={overlayScrubber}
         active={scrolledRecently}
+        clear={cardsClear}
         bind:scrubberWidth
       />
     {/if}
@@ -1297,7 +1359,6 @@
       bind:this={scrollable}
       bind:clientHeight={measuredHeight}
       bind:clientWidth={measuredWidth}
-      style:margin-inline-end="{overlayScrubber ? 0 : scrubberWidth}px"
       onscroll={handleScroll}
       aria-busy={rangePending || groupPending}
     >
@@ -1354,7 +1415,7 @@
           {/if}
           {#if !month.isLoaded}
             <div class="fl-month" style:height="{month.height}px" style:transform={`translate3d(0,${month.top}px,0)`}>
-              <Skeleton height={month.height} title={month.title} headerHeight={month.groupHeaderHeight} />
+              <Skeleton height={month.height} title={month.heading} headerHeight={month.groupHeaderHeight} />
             </div>
           {:else if month.isInOrNearViewport}
             <div
@@ -1415,6 +1476,7 @@
                   showHeader={showDayHeaders}
                   grouped={effectiveGrouping !== 'days' || !!cells}
                   headerHeight={month.groupHeaderHeight}
+                  headerWidth={timelineManager.dayRows ? timelineManager.viewportWidth : undefined}
                   onOpen={handleOpen}
                   {onToggleSelect}
                   onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
@@ -1436,8 +1498,7 @@
       </div>
     </section>
 
-    <!-- A flat order (filename, rating) has no dates to scrub through. -->
-    {#if timelineManager.months.length > 0 && !timelineManager.ordered}
+    {#if showScrubber}
       <YearScrubber
         {timelineManager}
         height={timelineManager.viewportHeight}
@@ -1473,6 +1534,8 @@
   .fl-timeline-scroll {
     flex: 1 1 auto;
     height: 100%;
+    /* The page gutter (LIB-P4): what is drawn in it, the toolbar band, is not clipped. */
+    padding-inline: var(--fl-library-gutter-start) var(--fl-library-gutter-end);
     overflow-y: auto;
     outline: none;
     contain: strict;
@@ -1496,6 +1559,13 @@
     flex: 1 1 auto;
     min-width: 0;
     height: 100%;
+  }
+  /* As the rows' scroll area: the gutter inside, the cards clear of the scrubber's column. */
+  .fl-timeline-cards > :global(.fl-tl-cards-scroll) {
+    padding-inline: var(--fl-library-gutter-start) var(--fl-library-gutter-end);
+  }
+  .fl-timeline-cards :global(.fl-tl-cards) {
+    margin-inline-end: var(--fl-tl-scrubber-space);
   }
   .fl-timeline-top,
   .fl-timeline-bottom {
@@ -1547,8 +1617,7 @@
     margin-block-end: 0;
   }
   .fl-grouping-hint {
-    /* On the line of the toolbar's count. */
-    margin-inline-start: var(--fl-space-3);
+    /* On the line of the toolbar's count and the photos' edge. */
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
   }

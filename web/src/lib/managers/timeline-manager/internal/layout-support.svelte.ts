@@ -51,12 +51,15 @@ export function layoutTimelineMonth(timelineManager: TimelineManager, month: Tim
   let timelineDayCol = 0;
 
   const options = timelineManager.justifiedLayoutOptions;
+  // The Frameleaf Timeline gives every day a row of its own, so a short day never shares one.
+  const dayRows = timelineManager.dayRows;
   for (const timelineDay of month.timelineDays) {
     timelineDay.layout(options, noDefer);
 
     // Calculate space needed for this item (including gap if not first in row)
     const spaceNeeded = timelineDay.width + (timelineDayCol > 0 ? timelineManager.gap : 0);
-    const fitsInCurrentRow = cumulativeWidth + spaceNeeded <= timelineManager.viewportWidth;
+    const fitsInCurrentRow =
+      (!dayRows || timelineDayCol === 0) && cumulativeWidth + spaceNeeded <= timelineManager.viewportWidth;
 
     if (fitsInCurrentRow) {
       timelineDay.row = timelineDayRow;

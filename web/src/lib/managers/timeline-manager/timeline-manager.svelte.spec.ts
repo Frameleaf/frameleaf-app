@@ -890,6 +890,15 @@ describe('TimelineManager', () => {
       expect(timelineManager.assetCount).toEqual(1);
     });
 
+    // LIB-P3: a new upload has no quality score yet, so only the server can say it is a best photo.
+    it('does not insert live event assets into the Best Photos timeline', async () => {
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline, bestPhotos: true });
+
+      timelineManager.upsertAssetsFromLiveEvent([deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build())]);
+
+      expect(timelineManager.assetCount).toEqual(0);
+    });
+
     it('does not insert unknown live event assets into album timelines', async () => {
       await timelineManager.updateOptions({ albumId: 'album-id' });
 
@@ -1593,6 +1602,42 @@ describe('TimelineManager', () => {
       timelineManager.grouping = 'months';
       timelineManager.grouping = 'days';
       expect(timelineManager.months.map((month) => month.height)).toEqual(dayHeights);
+    });
+  });
+
+  describe('day rows (the Frameleaf Timeline)', () => {
+    let timelineManager: TimelineManager;
+    // One photo a day: short enough that several days fit side by side in one row.
+    const singles = [20, 18, 12, 3].map((day) =>
+      deriveLocalDateTimeFromFileCreatedAt({
+        ...timelineAssetFactory.build({ ratio: 1 }),
+        fileCreatedAt: fromISODateTimeUTCToObject(`2024-03-${String(day).padStart(2, '0')}T12:00:00.000Z`),
+      }),
+    );
+
+    beforeEach(async () => {
+      timelineManager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue([{ timeBucket: '2024-03-01', count: singles.length }]);
+      sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(...singles));
+      timelineManager.setLayoutOptions({ rowHeight: 100, headerHeight: 40, gap: 8, fillRowWidth: true });
+      await timelineManager.updateViewport({ width: 1200, height: 5000 });
+      await tick();
+    });
+
+    it('packs short days side by side by default', () => {
+      const [march] = timelineManager.months;
+      expect(march.timelineDays.some((day) => day.start > 0)).toBe(true);
+    });
+
+    it('gives every day a row of its own with dayRows', () => {
+      timelineManager.setLayoutOptions({ rowHeight: 100, headerHeight: 40, gap: 8, fillRowWidth: true, dayRows: true });
+      expect(timelineManager.dayRows).toBe(true);
+      const [march] = timelineManager.months;
+      expect(march.timelineDays.every((day) => day.start === 0)).toBe(true);
+      const tops = march.timelineDays.map((day) => day.top);
+      expect(new Set(tops).size).toBe(singles.length);
+      const last = march.timelineDays.at(-1)!;
+      expect(march.height).toBe(last.top + last.height + timelineManager.headerHeight);
     });
   });
 

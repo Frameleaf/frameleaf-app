@@ -12,8 +12,9 @@
    * shown under. A chip's label opens the panel at its own section, and "Clear all" clears the
    * search text and every filter.
    *
-   * The panel itself is not rebuilt here. Since September 24 it is the search palette's Advanced
-   * view, so `onOpenFilterPanel` (or, without one, `requestFilterPanel`) hands it the chosen section.
+   * The panel itself is not drawn here. A library page docks the template's Filters panel beside its
+   * photos (LIB-P1, `LibraryFilterPanel`) through `onOpenFilterPanel`; without a host panel the
+   * search palette's Advanced view opens at the chosen section (`requestFilterPanel`).
    */
   import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -40,7 +41,6 @@
     mdiChevronDown,
     mdiDotsHorizontal,
     mdiFormatListBulleted,
-    mdiInformationOutline,
     mdiMagnify,
     mdiMapMarker,
     mdiPlayBoxOutline,
@@ -82,13 +82,18 @@
      * chip and no count here: a library page shows only what narrows its grid (review M3).
      */
     unappliedFields?: readonly string[];
-    /** Grid or List (prototype "Grid view" / "List view"); undefined draws neither, as in the Timeline. */
+    /** Grid or List (prototype "Grid view" / "List view"), in every layout (LIB-P7); undefined draws neither. */
     view?: 'grid' | 'list';
     onViewChange?: (view: 'grid' | 'list') => void;
     /** Open the "More library actions" dialog. */
     onMoreActions?: () => void;
     /** Extra controls (Work's file-name toggle, a page's own) supplied by the host. */
     children?: import('svelte').Snippet;
+    /**
+     * A page's own choices that narrow what is shown, drawn after the count at the start of the row
+     * (the Locked view's reasons, LIB-P2).
+     */
+    leading?: import('svelte').Snippet;
   };
 
   let {
@@ -108,6 +113,7 @@
     onViewChange,
     onMoreActions,
     children,
+    leading,
   }: Props = $props();
 
   /** The prototype's "Choose a filter" menu, in its order (`App.jsx`); Pets live under All filters. */
@@ -344,11 +350,16 @@
       </span>
     {/if}
 
+    {#if leading}
+      <div class="fl-toolbar-leading">{@render leading()}</div>
+    {/if}
+
     <div class="fl-filter" bind:this={filterControl}>
       <button
         type="button"
         class="fl-filter-button"
         class:is-active={filterCount > 0}
+        class:is-open={filterOpen}
         aria-expanded={filterOpen}
         onclick={toggleFilters}
       >
@@ -405,14 +416,16 @@
     {/if}
 
     {#if inspectorOpen !== undefined && onToggleInspector}
-      <IconButton
-        label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
-        pressed={inspectorOpen}
-        onclick={onToggleInspector}
-      >
-        <!-- Its own glyph: the Filter control beside it already uses the sliders. -->
-        <Icon icon={mdiInformationOutline} size="18" aria-hidden />
-      </IconButton>
+      <span class="fl-slot fl-slot-info">
+        <IconButton
+          label={$t(inspectorOpen ? 'frameleaf_work_inspector_hide' : 'frameleaf_work_inspector_show')}
+          pressed={inspectorOpen}
+          onclick={onToggleInspector}
+        >
+          <!-- LIB-P7: the template's tune glyph (App.jsx "Show information panel"), in every layout. -->
+          <Icon icon={mdiTuneVariant} size="18" aria-hidden />
+        </IconButton>
+      </span>
     {/if}
 
     {#if sorts}
@@ -430,7 +443,7 @@
             }
           }}
         >
-          {#each SORT_OPTIONS as option (option.value)}
+          {#each SORT_OPTIONS.filter((item) => item.value !== 'quality' || sorts.includes('quality')) as option (option.value)}
             <!-- A sort this view's source cannot apply is listed, not offered. -->
             <option value={option.value} disabled={!sorts.includes(option.value)}>{$t(option.label)}</option>
           {/each}
@@ -439,28 +452,34 @@
     {/if}
 
     {#if view && onViewChange}
-      <IconButton
-        label={$t('frameleaf_library_grid_view')}
-        pressed={view === 'grid'}
-        onclick={() => onViewChange('grid')}
-      >
-        <Icon icon={mdiViewGridOutline} size="18" aria-hidden />
-      </IconButton>
-      <IconButton
-        label={$t('frameleaf_library_list_view')}
-        pressed={view === 'list'}
-        onclick={() => onViewChange('list')}
-      >
-        <Icon icon={mdiFormatListBulleted} size="18" aria-hidden />
-      </IconButton>
+      <span class="fl-slot fl-slot-view">
+        <IconButton
+          label={$t('frameleaf_library_grid_view')}
+          pressed={view === 'grid'}
+          onclick={() => onViewChange('grid')}
+        >
+          <Icon icon={mdiViewGridOutline} size="18" aria-hidden />
+        </IconButton>
+        <IconButton
+          label={$t('frameleaf_library_list_view')}
+          pressed={view === 'list'}
+          onclick={() => onViewChange('list')}
+        >
+          <Icon icon={mdiFormatListBulleted} size="18" aria-hidden />
+        </IconButton>
+      </span>
     {/if}
 
-    {@render children?.()}
+    {#if children}
+      <span class="fl-slot fl-slot-extra">{@render children()}</span>
+    {/if}
 
     {#if onMoreActions}
-      <IconButton label={$t('frameleaf_library_more_actions')} onclick={onMoreActions}>
-        <Icon icon={mdiDotsHorizontal} size="18" aria-hidden />
-      </IconButton>
+      <span class="fl-slot fl-slot-more">
+        <IconButton label={$t('frameleaf_library_more_actions')} onclick={onMoreActions}>
+          <Icon icon={mdiDotsHorizontal} size="18" aria-hidden />
+        </IconButton>
+      </span>
     {/if}
   </div>
 </div>
@@ -469,9 +488,8 @@
   .fl-toolbar {
     display: grid;
     gap: var(--fl-space-3);
+    /* The band spans the page (LIB-P4); its content sits in the page gutter, on the photos' edges. */
     padding: var(--fl-space-3) 0;
-    /* The count and the chips start clear of the band's edge; the icon at the far end already does. */
-    padding-inline-start: var(--fl-space-3);
   }
   .fl-toolbar-row {
     display: flex;
@@ -522,6 +540,10 @@
   }
   .fl-filter-button.is-active {
     border-color: var(--fl-accent);
+  }
+  /* Template `<Button active={panel === "filters"}>`: pressed while its panel is open. */
+  .fl-filter-button.is-open {
+    background: var(--fl-raised);
   }
   .fl-tool:disabled {
     opacity: 0.45;
@@ -657,29 +679,110 @@
       gap: 0;
     }
   }
-  /* Phones (prototype `@media (max-width: 700px)`): the Filter control is its icon and badge. */
-  @media (max-width: 767px) {
-    /* The host insets the band's content to the page gutter. */
-    .fl-toolbar {
-      padding-inline-start: 0;
-    }
+  /* A page's own choices follow the count; the toolbar's controls stay at the end of the row. */
+  .fl-result-count:has(+ .fl-toolbar-leading) {
+    margin-inline-end: 0;
   }
+  .fl-toolbar-leading {
+    display: flex;
+    min-width: 0;
+    margin-inline-end: auto;
+  }
+  /* A slot only groups a control for the phone layout below; elsewhere its controls sit in the row. */
+  .fl-slot {
+    display: contents;
+  }
+  /*
+   * Phones (LIB-P5, template `styles.css` `@media (max-width: 700px)` `.app .results-toolbar`): two
+   * rows on a grid. The count, Filter, Slideshow and More on the first; Sort across the width with
+   * Grid and List at its end on the second. Filter and Slideshow are their icons.
+   */
   @media (max-width: 700px) {
-    .fl-filter-button {
+    .fl-toolbar-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) repeat(3, var(--fl-control-height-touch, 44px));
+      gap: var(--fl-space-3) var(--fl-space-2);
+      align-items: center;
+    }
+    .fl-result-count {
+      grid-row: 1;
+      grid-column: 1;
+      margin: 0;
+    }
+    .fl-filter {
+      grid-row: 1;
+      grid-column: 2;
+    }
+    .fl-tool {
+      grid-row: 1;
+      grid-column: 3;
+    }
+    .fl-slot-info {
+      display: none;
+    }
+    .fl-slot-more {
+      display: flex;
+      grid-row: 1;
+      grid-column: 4;
+    }
+    .fl-sort {
+      grid-row: 2;
+      grid-column: 1 / 3;
+      min-width: 0;
+    }
+    .fl-sort select {
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+    }
+    .fl-slot-view {
+      display: flex;
+      grid-row: 2;
+      grid-column: 3 / 5;
+      gap: var(--fl-space-2);
+    }
+    .fl-toolbar-leading {
+      grid-row: 3;
+      grid-column: 1 / -1;
+      margin: 0;
+    }
+    /* A page's own controls (Locked's Lock): beside Sort where Grid and List are not offered. */
+    .fl-slot-extra {
+      display: flex;
+      grid-row: 4;
+      grid-column: 1 / -1;
+      justify-content: flex-end;
+      gap: var(--fl-space-2);
+    }
+    .fl-toolbar-row:not(:has(.fl-slot-view)) .fl-slot-extra {
+      grid-row: 2;
+      grid-column: 3 / 5;
+    }
+    /* Nothing of its own to show (Work's file-name toggle is not offered on phones): no empty row. */
+    .fl-slot-extra:not(:has(> :global(:not(.fl-file-names-toggle)))) {
+      display: none;
+    }
+    .fl-filter-button,
+    .fl-tool {
+      justify-content: center;
+      min-width: var(--fl-control-height-touch, 44px);
+      padding: 0;
       font-size: 0;
       gap: 0;
+    }
+    .fl-filter-button {
+      position: relative;
       border-radius: var(--fl-radius);
       border-inline-end: 1px solid var(--fl-border);
     }
     .fl-filter-button .fl-filter-badge {
+      position: absolute;
+      top: 2px;
+      inset-inline-end: 2px;
       font-size: var(--fl-font-micro, 11px);
     }
     .fl-filter-more {
       display: none;
-    }
-    .fl-tool {
-      font-size: 0;
-      gap: 0;
     }
   }
 </style>
