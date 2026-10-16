@@ -35,7 +35,7 @@ const redactUrlQuery = (url: string) => {
 
 /** CLD-004: routes whose query string is never recorded, whatever its parameters are called. */
 const DIRECT_UPLOAD_ROUTE = /^\/(?:api\/)?assets\/uploads\/[^/]+\/direct\/?(?:[?#]|$)/i;
-const QUERYLESS_ROUTES = /^\/(?:link|api\/(?:admin\/license|license|users\/me\/license))(?:[/?#]|$)/;
+const QUERYLESS_ROUTES = /^\/(?:api\/)?(?:link|admin\/license|license|users\/me\/license)(?:[/?#]|$)/i;
 
 // Secret routes can carry numeric key maps, opaque recovery packages or a credential named `value`.
 const BODYLESS_ROUTES =
