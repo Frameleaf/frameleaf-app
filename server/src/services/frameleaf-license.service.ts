@@ -417,7 +417,7 @@ export class FrameleafLicenseService extends BaseService {
    */
   private async refresh(force: boolean, now = Date.now()) {
     const store = await this.readStore();
-    const { cloudUrl, link } = await readCloudLink(this.gatewayDeps());
+    const { cloudUrl, link, linked } = await readCloudLink(this.gatewayDeps());
     // FC-62: the staff-set interval in the discovery document this process holds (read again within the hour)
     const interval = cloudUrl
       ? this.frameleafCloudRepository.peekDiscovery(cloudUrl)?.intervals?.entitlementRefreshSec
@@ -431,9 +431,10 @@ export class FrameleafLicenseService extends BaseService {
     ) {
       return;
     }
-    if (!cloudUrl || !link?.instanceId) {
+    if (!linked || !cloudUrl || !link?.instanceId) {
       return;
     }
+    let nextStore: FrameleafLicenseStore;
     try {
       const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
       const response = await this.frameleafCloudRepository.requestJson(refreshResponseSchema, {
@@ -493,7 +494,7 @@ export class FrameleafLicenseService extends BaseService {
           lastRefreshError: undefined,
           nextRefreshAt: nextRefreshAt(license.claims, Math.random, refreshEvery, Math.floor(now / 1000)).toISOString(),
         };
-      await this.writeStore({ ...store, key: stamp(key), plan: stamp(plan) });
+      nextStore = { ...store, key: stamp(key), plan: stamp(plan) };
     } catch (error) {
       const message =
         error instanceof FrameleafCloudError || error instanceof BadRequestException ? error.message : String(error);
@@ -501,8 +502,22 @@ export class FrameleafLicenseService extends BaseService {
       const retry = new Date(now + 60 * 60 * 1000).toISOString();
       const fail = (license: FrameleafLicense | null) =>
         license ? { ...license, lastRefreshError: message, nextRefreshAt: retry } : license;
-      await this.writeStore({ ...store, key: fail(store.key), plan: fail(store.plan) });
+      nextStore = { ...store, key: fail(store.key), plan: fail(store.plan) };
     }
+    // Issuer work finishes before locking publication; a replacement link cannot inherit this answer.
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const current = await readCloudLink(this.gatewayDeps());
+      if (
+        !current.linked ||
+        current.cloudUrl !== cloudUrl ||
+        current.link?.instanceId !== link.instanceId ||
+        current.link.accountId !== link.accountId ||
+        current.link.linkedAt !== link.linkedAt
+      ) {
+        return;
+      }
+      await this.writeStore(nextStore);
+    });
   }
 
   /** Tell administrators once when the licence enters grace and once when it expires. */

@@ -909,48 +909,65 @@ export class FrameleafCloudService extends BaseService {
     status: 'unlinked' | 'revoked',
     reason?: string,
   ): Promise<void> {
-    this.frameleafCloudRepository.forget();
-    const next: FrameleafCloudLink = {
-      ...emptyLink(cloudUrl, link),
-      status,
-      desired: { remoteAccess: false, cloudBackup: false },
-      ...(status === 'revoked' && {
-        instanceId: link.instanceId,
-        revoked: { at: new Date().toISOString(), reason: reason ?? '' },
-      }),
-    };
-    // Fence authority removal together with account/session cleanup. Confirmation uses this same
-    // lock through link, role, audit and notification writes, so none can arrive after cleanup.
-    await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, next);
-      await this.endFrameleafSignIns();
+    // Drain licence refresh and notice writes before removing the plan, preserving the current key.
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+      this.frameleafCloudRepository.forget();
+      const next: FrameleafCloudLink = {
+        ...emptyLink(cloudUrl, link),
+        status,
+        desired: { remoteAccess: false, cloudBackup: false },
+        ...(status === 'revoked' && {
+          instanceId: link.instanceId,
+          revoked: { at: new Date().toISOString(), reason: reason ?? '' },
+        }),
+      };
+      // Fence authority removal together with account/session cleanup. Confirmation uses this same
+      // lock through link, role, audit and notification writes, so none can arrive after cleanup.
+      const { oldConfig, newConfig } = await this.databaseRepository.withLock(
+        DatabaseLock.FrameleafLinkAuthority,
+        async () => {
+          const current = await this.readLink(cloudUrl);
+          if (
+            this.configRepository.getEnv().frameleafCloud.url !== cloudUrl ||
+            current?.status !== link.status ||
+            current.instanceId !== link.instanceId ||
+            current.accountId !== link.accountId ||
+            current.linkedAt !== link.linkedAt ||
+            !isEqual(current.oidc, link.oidc)
+          ) {
+            throw new ConflictException('The Frameleaf Cloud link changed. Try again.');
+          }
+          await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, next);
+          await this.endFrameleafSignIns();
+          await this.broadcast('link');
+          await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
+          // FL-185: an ML suspension belongs to the link that ended
+          await this.forgetMlSuspension();
+          await this.removePlanCertificate();
+          return this.updateConfigExclusively(
+            (config) => {
+              config.frameleafCloud.cloudMl.enabled = false;
+              // FL-161: what remote access may carry goes back to the safe defaults with the link. FL-165: remote
+              // access switches off (the edge worker then closes its listener and removes the certificates),
+              // and the custom hostname goes too (Frameleaf Cloud releases it with the link); the connection
+              // mode and ports stay for a later link
+              config.frameleafCloud.remoteAccess = {
+                ...config.frameleafCloud.remoteAccess,
+                enabled: false,
+                allowOriginalsOverRelay: false,
+                allowPasswordOverRelay: false,
+                publicUrl: 'frameleaf',
+                customHostname: { host: '', status: 'pending', checkedAt: null },
+              };
+            },
+            { source: 'frameleaf-cloud' },
+          );
+        },
+      );
+      if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
+        await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      }
     });
-    await this.broadcast('link');
-    await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
-    // FL-185: an ML suspension belongs to the link that ended
-    await this.forgetMlSuspension();
-    await this.removePlanCertificate();
-    const { oldConfig, newConfig } = await this.updateConfigExclusively(
-      (config) => {
-        config.frameleafCloud.cloudMl.enabled = false;
-        // FL-161: what remote access may carry goes back to the safe defaults with the link. FL-165: remote
-        // access switches off (the edge worker then closes its listener and removes the certificates),
-        // and the custom hostname goes too (Frameleaf Cloud releases it with the link); the connection
-        // mode and ports stay for a later link
-        config.frameleafCloud.remoteAccess = {
-          ...config.frameleafCloud.remoteAccess,
-          enabled: false,
-          allowOriginalsOverRelay: false,
-          allowPasswordOverRelay: false,
-          publicUrl: 'frameleaf',
-          customHostname: { host: '', status: 'pending', checkedAt: null },
-        };
-      },
-      { source: 'frameleaf-cloud' },
-    );
-    if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
-      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-    }
   }
 
   /**
