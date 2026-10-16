@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { TakeoutNotFound, TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { scriptedKysely } from 'test/scripted-kysely.js';
 
@@ -80,6 +81,38 @@ describe('Takeout account admission transaction', () => {
       expect(f.queries.at(-1)!.sql).toBe('rollback');
     } finally {
       await f.db.destroy();
+    }
+  });
+});
+
+describe('Takeout rescan privacy transaction', () => {
+  it.each([true, false])('keeps a required privacy upgrade atomic when incoming locked=%s', async (locked) => {
+    const { db, queries } = scriptedKysely((query) => {
+      if (query.sql.includes('update takeout_item') && query.sql.includes('locked = true'))
+        throw new Error('privacy write failed');
+      return { rows: [] };
+    });
+    try {
+      const recorded = new TakeoutRepository(db).recordItem({
+        id: randomUUID(),
+        importId: randomUUID(),
+        state: 'ready',
+        metadata: { title: 'photo.jpg' },
+        sidecarId: null,
+        candidates: [],
+        albums: [],
+        warnings: [],
+        locked,
+      });
+      if (locked) {
+        await expect(recorded).rejects.toThrow('privacy write failed');
+        expect(queries.at(-1)!.sql).toBe('rollback');
+      } else {
+        await expect(recorded).resolves.toBeUndefined();
+        expect(queries.at(-1)!.sql).toBe('commit');
+      }
+    } finally {
+      await db.destroy();
     }
   });
 });

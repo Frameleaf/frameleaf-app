@@ -186,6 +186,99 @@ describe(TakeoutRepository.name, () => {
     await expect(sut.withImport(other.id, row.id, () => Promise.resolve())).rejects.toThrow('Import not found');
   });
 
+  it.each(['chosen', 'equal-count', 'skipped'] as const)(
+    'upgrades a %s pending rescan to Locked without replacing its decision',
+    async (mode) => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { row, source } = await seedImport(sut, user.id);
+      const id = await seedItem(sut, row.id, source.id);
+      const metadata = { title: 'IMG_1.jpg', description: 'Retained choice' };
+      const candidate = { id: randomUUID(), path: 'Trip/original.json', metadata };
+      const candidates = mode === 'equal-count' ? [candidate, { ...candidate, id: randomUUID() }] : [candidate];
+      const state = mode === 'equal-count' ? 'review' : mode === 'skipped' ? 'skipped' : 'ready';
+      await sut.recordItem({
+        id,
+        importId: row.id,
+        state,
+        metadata,
+        sidecarId: candidate.id,
+        candidates,
+        albums: ['Trip'],
+        warnings: [],
+        locked: false,
+      });
+      const privateCandidate = {
+        id: randomUUID(),
+        path: 'Trip/private.json',
+        metadata: { title: 'IMG_1.jpg', locked: true },
+      };
+      await sut.recordItem({
+        id,
+        importId: row.id,
+        state: 'review',
+        metadata: privateCandidate.metadata,
+        sidecarId: privateCandidate.id,
+        candidates: mode === 'equal-count' ? [candidate, privateCandidate] : [...candidates, privateCandidate],
+        albums: ['Trip'],
+        warnings: ['locked'],
+        locked: true,
+      });
+      expect(await sut.getItem(row.id, id)).toMatchObject({
+        state,
+        metadata,
+        sidecarId: candidate.id,
+        candidates,
+        locked: true,
+        withheld: true,
+        warnings: ['locked'],
+      });
+      expect(await sut.items(row.id, { offset: 0, limit: 50, includeLocked: false })).toEqual({ items: [], total: 0 });
+    },
+  );
+
+  it('does not relabel an already published item through a later scan record', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const id = await seedItem(sut, row.id, source.id);
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await sut.itemAsset(id, asset.id, 'created');
+    await sut.itemDone(id, 'imported');
+    await sut.recordItem({
+      id,
+      importId: row.id,
+      state: 'review',
+      metadata: { title: 'Changed' },
+      sidecarId: null,
+      candidates: [],
+      albums: ['Trip'],
+      warnings: ['locked'],
+      locked: true,
+    });
+    expect(await sut.getItem(row.id, id)).toMatchObject({ state: 'imported', assetId: asset.id, locked: false });
+  });
+
+  it('never unlocks a pending private item when a public rescan has more candidates', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { row, source } = await seedImport(sut, user.id);
+    const id = await seedItem(sut, row.id, source.id, { locked: true });
+    const candidate = { id: randomUUID(), path: 'Trip/public.json', metadata: { title: 'IMG_1.jpg' } };
+    await sut.recordItem({
+      id,
+      importId: row.id,
+      state: 'ready',
+      metadata: candidate.metadata,
+      sidecarId: candidate.id,
+      candidates: [candidate],
+      albums: ['Trip'],
+      warnings: [],
+      locked: false,
+    });
+    expect(await sut.getItem(row.id, id)).toMatchObject({ locked: true, withheld: true });
+  });
+
   it('records a staged file once, however often the scan meets it', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();
