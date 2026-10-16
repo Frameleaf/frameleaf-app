@@ -190,18 +190,23 @@ export class StudioReverseConformRepository {
         }
       };
       signal.addEventListener('abort', abort, { once: true });
-      command
-        .on('start', () => {
-          if (signal.aborted) {
-            abort();
-          }
-        })
-        .on('progress', ({ frames: completed }: { frames: number }) =>
-          progress(Math.min(frames, Math.max(0, completed))),
-        )
-        .on('error', (error: Error) => finish(error))
-        .on('end', () => finish())
-        .run();
+      try {
+        command
+          .on('start', () => {
+            if (signal.aborted) {
+              abort();
+            }
+          })
+          .on('progress', ({ frames: completed }: { frames: number }) =>
+            progress(Math.min(frames, Math.max(0, completed))),
+          )
+          .on('error', (error: Error) => finish(error))
+          .on('end', () => finish())
+          .run();
+      } catch (error) {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      }
     });
   }
 }
