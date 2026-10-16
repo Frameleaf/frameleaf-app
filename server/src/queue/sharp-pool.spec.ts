@@ -1,6 +1,9 @@
 import { type ChildProcess, fork } from 'node:child_process';
 import { channel } from 'node:diagnostics_channel';
 import { once } from 'node:events';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import sharp from 'sharp';
 import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
@@ -79,6 +82,37 @@ describe('bounded native image process pool', () => {
     }
   });
 
+  it.each(['generateHdrRenditions', 'exportPhotoStill'] as const)(
+    '%s rolls back cancellation after staging cleanup but before result handoff',
+    async (operation) => {
+      const folder = await mkdtemp(join(tmpdir(), 'frameleaf-sharp-handoff-'));
+      const value = pool();
+      const abort = new AbortController();
+      const finish = value['finishOutputs'].bind(value);
+      value['finishOutputs'] = async (...args) => {
+        await finish(...args);
+        abort.abort(new Error('cancel before result handoff'));
+      };
+      try {
+        const input = join(folder, 'original.jpg');
+        const output = join(folder, 'published.jpg');
+        await writeFile(input, 'original fixture');
+        await writeFile(join(folder, 'prior.jpg'), 'previous rendition');
+        const work =
+          operation === 'generateHdrRenditions'
+            ? value.run(operation, [input, [{ path: output }]], abort.signal)
+            : value.run(operation, [input, output, 'sdr-jpeg', Buffer.alloc(32)], abort.signal);
+        await expect(work).rejects.toThrow('cancel before result handoff');
+        expect((await readdir(folder)).sort()).toEqual(['original.jpg', 'prior.jpg']);
+        expect(await readFile(input, 'utf8')).toBe('original fixture');
+        expect(await readFile(join(folder, 'prior.jpg'), 'utf8')).toBe('previous rendition');
+      } finally {
+        await value.close();
+        await rm(folder, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('records only known fallback classifications from inspection results', async () => {
     const observations: unknown[] = [];
     const diagnostics = channel('frameleaf.image-worker');
@@ -133,6 +167,28 @@ describe('bounded native image process pool', () => {
     expect(children).toHaveLength(2);
     expect((await value.run('getImageMetadata', ['reuse'])).width).toBe(result.width);
     expect(children).toHaveLength(2);
+  });
+
+  it('keeps a queued operation deadline independent of a wall-clock jump', async () => {
+    const value = pool();
+    await value.run('getImageMetadata', ['warm']);
+    const abort = new AbortController();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    try {
+      const active = value.run('getImageMetadata', ['hang'], abort.signal);
+      const queued = value.run('getImageMetadata', ['queued']);
+      const finished = Promise.all([
+        expect(active).rejects.toThrow('release active slot'),
+        expect(queued).resolves.toMatchObject({ height: 1 }),
+      ]);
+      clock.mockReturnValue(86_401_000);
+      abort.abort(new Error('release active slot'));
+      await finished;
+      expect(children).toHaveLength(2);
+    } finally {
+      clock.mockRestore();
+      abort.abort(new Error('fixture cleanup'));
+    }
   });
 
   it('cancels queued admission without starting a child or spending a worker slot', async () => {
