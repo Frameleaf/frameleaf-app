@@ -241,3 +241,67 @@ describe('RestorationPanel Enhance & upscale (VIEWER-P6)', () => {
     });
   });
 });
+
+describe('RestorationPanel options for the chosen mode', () => {
+  const photo = assetFactory.build({ type: AssetTypeEnum.Image, id: 'photo-2' });
+  const destination = (name: string) => ({
+    id: name,
+    kind: MlDestinationKind.Local,
+    name,
+    health: 'healthy',
+    available: true,
+    leavesNetwork: false,
+    consentRequired: false,
+    consentGranted: true,
+    refusal: null,
+    refusalDetail: null,
+    estimate: { sampleCount: 0, windowDays: 30, previewSeconds: null, fullSeconds: null },
+    gpu: null,
+  });
+  const optionsWith = (name: string, mode: AssetRestorationMode) =>
+    ({
+      assetId: photo.id,
+      sourceType: AssetRestorationSourceType.Image,
+      sourceWidth: 1800,
+      sourceHeight: 1200,
+      durationSeconds: null,
+      mode,
+      workload: 'restoration-faithful',
+      upscale: 2,
+      outputWidth: 3600,
+      outputHeight: 2400,
+      previewSeconds: null,
+      adapterInstalled: true,
+      route: AssetRestorationRoute.Local,
+      destinations: [destination(name)],
+    }) as never;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [] });
+  });
+
+  it('keeps the options of the latest choice when an earlier answer arrives last', async () => {
+    let resolveStale: (value: never) => void = () => {};
+    let calls = 0;
+    sdkMock.getAssetRestorationOptions.mockImplementation(({ mode }: { mode?: AssetRestorationMode }) => {
+      calls++;
+      if (calls === 2) {
+        return new Promise((resolve) => (resolveStale = resolve));
+      }
+      return Promise.resolve(optionsWith(calls === 1 ? 'Initial' : 'Current', mode!));
+    });
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn() });
+    await screen.findByRole('option', { name: /Initial/ });
+
+    const modes = screen.getByRole('radiogroup', { name: 'frameleaf_restoration_mode' });
+    await fireEvent.click(within(modes).getAllByRole('radio')[1]);
+    await fireEvent.click(within(modes).getAllByRole('radio')[0]);
+    await screen.findByRole('option', { name: /Current/ });
+
+    resolveStale(optionsWith('Stale', AssetRestorationMode.Creative));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('option', { name: /Stale/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Current/ })).toBeInTheDocument();
+  });
+});
