@@ -871,15 +871,9 @@ describe('/admin/integrity', () => {
         .send();
 
       expect(listStatus2).toBe(200);
-      expect(listBody2).not.toBe(
-        expect.objectContaining({
-          items: expect.arrayContaining([
-            expect.objectContaining({
-              id: report.id,
-            }),
-          ]),
-        }),
-      );
+      // toBe compares by identity, so the old not.toBe(objectContaining(...)) could never fail
+      const paths = (listBody2 as IntegrityReportResponseDto).items.map((item) => item.path);
+      expect(paths).not.toContain(`/data/upload/${admin.userId}/untracked1.png`);
     });
 
     it('delete assets missing files', { concurrent: false }, async () => {

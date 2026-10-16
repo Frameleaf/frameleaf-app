@@ -79,6 +79,9 @@ class StudioWorkerSupervisor:
             except OSError as error:
                 log.warning(f"Studio worker could not start: {error}")
                 return
+            # stop() may have run before this process was recorded, when it had nothing to terminate.
+            if self.stopping.is_set():
+                self.process.terminate()
             code = self.process.wait()
             if self.stopping.is_set():
                 return

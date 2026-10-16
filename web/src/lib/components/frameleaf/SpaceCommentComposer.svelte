@@ -60,6 +60,16 @@
     dismissed = false;
   };
 
+  /**
+   * A key's release only matters when it moved the caret (Home, End, the arrows in plain text). The
+   * list's own keys leave the caret where it is, so they keep the highlighted member and a dismissal.
+   */
+  const onKeyup = () => {
+    if ((textarea?.selectionStart ?? value.length) !== caret) {
+      syncCaret();
+    }
+  };
+
   const pick = (userId: string) => {
     if (!query) {
       return;
@@ -82,6 +92,10 @@
   };
 
   const onKeydown = (event: KeyboardEvent) => {
+    // Enter and the arrows belong to an input method while it is composing text.
+    if (event.isComposing) {
+      return;
+    }
     if (open) {
       switch (event.key) {
         case 'ArrowDown': {
@@ -152,7 +166,7 @@
     aria-controls={open ? listId : undefined}
     oninput={syncCaret}
     onclick={syncCaret}
-    onkeyup={syncCaret}
+    onkeyup={onKeyup}
     onkeydown={onKeydown}></textarea>
   {#if open}
     <ul class="mentions" role="listbox" id={listId} aria-label={$t('frameleaf_spaces_comments_mentions')}>

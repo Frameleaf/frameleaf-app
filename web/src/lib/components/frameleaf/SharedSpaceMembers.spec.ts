@@ -149,6 +149,20 @@ describe('SharedSpaceMembers', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it('shows the role the member still has when a role change is refused', async () => {
+    vi.mocked(updateAlbumUser).mockRejectedValue(new Error('403'));
+    const onChanged = vi.fn();
+    render(SharedSpaceMembers, { space, members, onChanged });
+    const select = screen.getByRole('combobox', { name: 'Role for Bo' });
+
+    await fireEvent.change(select, { target: { value: AlbumUserRole.Viewer } });
+
+    await waitFor(() => expect(updateAlbumUser).toHaveBeenCalled());
+    await waitFor(() => expect(select).not.toBeDisabled());
+    expect(select).toHaveValue(AlbumUserRole.Editor);
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it('withdraws an invitation through its own endpoint, never the remove-member one', async () => {
     render(SharedSpaceMembers, { space, members, onChanged: vi.fn() });
 

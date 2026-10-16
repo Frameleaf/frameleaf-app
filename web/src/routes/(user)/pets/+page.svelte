@@ -130,9 +130,11 @@
 
   // FL-58: while a run is going the page follows it; a reload picks the same run up from the
   // server, because the run is durable there, not state of this page.
+  let destroyed = false;
   const schedulePoll = () => {
     clearTimeout(pollTimer);
-    if (!isRecognitionRunActive(recognition.run)) {
+    // A poll still in flight when the page closes must not start another one.
+    if (destroyed || !isRecognitionRunActive(recognition.run)) {
       return;
     }
     pollTimer = setTimeout(() => {
@@ -148,7 +150,10 @@
     schedulePoll();
   });
 
-  onDestroy(() => clearTimeout(pollTimer));
+  onDestroy(() => {
+    destroyed = true;
+    clearTimeout(pollTimer);
+  });
 
   const handleStartRecognition = async () => {
     recognitionBusy = true;

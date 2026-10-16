@@ -285,20 +285,30 @@
   let notice = $state('');
   const LOG_PAGE = 50;
 
+  /** Only the newest request fills the list: a filter chosen while a page loads replaces that page. */
+  let logsRequest = 0;
   const loadLogs = async (reset: boolean) => {
-    if (!workflow || logsLoading) {
+    if (!workflow || (logsLoading && !reset)) {
       return;
     }
+    const request = ++logsRequest;
     logsLoading = true;
     try {
       const before = reset ? undefined : logs.at(-1)?.at;
       const page = await getWorkflowLogs({ id: workflow.id, limit: LOG_PAGE, before, result: logFilter || undefined });
+      if (request !== logsRequest) {
+        return;
+      }
       logs = reset ? page : [...logs, ...page];
       logsMore = page.length === LOG_PAGE;
     } catch (error_) {
-      error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+      if (request === logsRequest) {
+        error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+      }
     } finally {
-      logsLoading = false;
+      if (request === logsRequest) {
+        logsLoading = false;
+      }
     }
   };
 

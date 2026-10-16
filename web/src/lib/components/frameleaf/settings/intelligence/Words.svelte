@@ -35,7 +35,8 @@
 <div class="words" role="group" aria-label={label}>
   {#if words.length > 0}
     <ul>
-      {#each words as word (word)}
+      <!-- By position: a list saved elsewhere (the Advanced boxes, an older setting) can repeat a word. -->
+      {#each words as word, index (index)}
         <li>
           <span>{word}</span>
           <button

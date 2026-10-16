@@ -1248,9 +1248,13 @@ async function releaseFlags(
   assert(!record.draft, "The release is still a draft");
   const dryRun = env.DRY_RUN === "true";
   if (env.ACTION === "rollout") {
-    const body = releaseFlagsBody(record.body, {
-      rolloutPercent: parsePercent(env.ROLLOUT_PERCENT),
-    });
+    // A blank percentage would drop the rollout line and offer the release to every server.
+    const rolloutPercent = parsePercent(env.ROLLOUT_PERCENT);
+    assert(
+      rolloutPercent !== undefined,
+      "Rollout must be a whole percentage from 0 to 100",
+    );
+    const body = releaseFlagsBody(record.body, { rolloutPercent });
     console.log(
       `${dryRun ? "Would set" : "Setting"} ${tag} rollout to ${env.ROLLOUT_PERCENT}%`,
     );

@@ -316,7 +316,9 @@ describe(ClusterGroupService.name, () => {
 
   describe('joining a cluster group', () => {
     it('should take the groups of the user along', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
+      const database = await getKyselyDB();
+      onTestFinished(() => database.destroy());
+      const { sut, ctx } = setup(database);
       const personRepo = ctx.get(PersonRepository);
       const { user: owner } = await ctx.newUser();
       const { user } = await ctx.newUser();
@@ -355,7 +357,9 @@ describe(ClusterGroupService.name, () => {
 
   describe('leaving a shared cluster group', () => {
     it('should recreate the shared groups and take the rest of its own along', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
+      const database = await getKyselyDB();
+      onTestFinished(() => database.destroy());
+      const { sut, ctx } = setup(database);
       const personRepo = ctx.get(PersonRepository);
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser();
@@ -452,7 +456,9 @@ describe(ClusterGroupService.name, () => {
     });
 
     it('should give each shared group its own new group when a user leaves the group', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
+      const database = await getKyselyDB();
+      onTestFinished(() => database.destroy());
+      const { sut, ctx } = setup(database);
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser();
       const clusterGroupId = await getClusterGroupId(ctx, user1.id);

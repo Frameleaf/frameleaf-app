@@ -109,6 +109,18 @@
     return () => clearInterval(timer);
   });
 
+  // However the setup dialog closes (Done, Close, Escape), read the status again: a bucket claimed in it
+  // and then closed without Done must not leave this page saying backup is not set up.
+  let setupWasOpen = false;
+  $effect(() => {
+    if (setupOpen) {
+      setupWasOpen = true;
+    } else if (setupWasOpen) {
+      setupWasOpen = false;
+      void load();
+    }
+  });
+
   // What a backup includes is an ordinary setting, saved with the settings bar like the other pages.
   const settingsDraft = getSystemConfigDraft();
   const include = $derived(settingsDraft?.draft.frameleafCloud?.cloudBackup?.include);
@@ -254,6 +266,16 @@
       turnOffOpen = false;
     }
   };
+
+  // The backup key never outlives its dialog: closing it (Cancel, Close, Escape) forgets what was typed or read.
+  $effect(() => {
+    if (unlockOpen) {
+      return;
+    }
+    unlockValue = '';
+    unlockError = null;
+    unlockFailure = '';
+  });
 
   const readKeyFile = async (file: File | undefined) => {
     if (!file) {

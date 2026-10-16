@@ -94,6 +94,8 @@
 
   const request = new LatestRequest();
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A poll whose read was on its way when the section went must not schedule another. */
+  let destroyed = false;
 
   const lines = $derived(shown?.lines ?? []);
   const readable = $derived(documentPlainText(shown));
@@ -179,6 +181,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     request.cancel();
     stopPolling();
     clearEvidence();
@@ -375,6 +378,9 @@
 
   /** Waits for the new reading: the photo's text changes when the recognition job finishes. */
   const pollForReading = (assetId: string, before: string | null, attempt: number) => {
+    if (destroyed) {
+      return;
+    }
     rereadPending = true;
     pollTimer = setTimeout(
       () =>
@@ -385,6 +391,9 @@
             return;
           }
           const next = await load(assetId);
+          if (destroyed) {
+            return;
+          }
           if (next && next.recognizedAt !== before) {
             rereadPending = false;
             // the boxes drawn over the photo come from the recognized text, which was just replaced

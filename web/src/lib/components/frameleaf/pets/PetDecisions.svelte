@@ -79,14 +79,18 @@
       await deletePetObservation({ id: observation.id, expectedChecksum: expectedOf(observation) });
       observations = observations.filter((entry) => entry.id !== observation.id);
       onChanged?.();
+      // Only a confirmation can be written back: a "not this pet" answer belongs to a suggestion
+      // that is gone, so its removal is said without an Undo that would do nothing.
+      if (observation.state !== PetObservationState.Confirmed) {
+        toastManager.primary($t('frameleaf_pet_decision_removed'));
+        return;
+      }
       toastPetDecision($t('frameleaf_pet_decision_removed'), async () => {
         try {
-          if (observation.state === PetObservationState.Confirmed) {
-            await createPetObservation({
-              id: observation.petId,
-              petObservationCreateDto: observationToCreate(observation, expectedOf(observation)),
-            });
-          }
+          await createPetObservation({
+            id: observation.petId,
+            petObservationCreateDto: observationToCreate(observation, expectedOf(observation)),
+          });
           await load(petId);
           onChanged?.();
           toastManager.primary($t('frameleaf_pets_undone'));

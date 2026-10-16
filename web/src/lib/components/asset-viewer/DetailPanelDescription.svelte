@@ -89,6 +89,8 @@
       }
       failure = null;
       toastManager.primary($t('asset_description_updated'));
+      // The viewer holds the saved text at once, as rating and tags do, not only once the socket echo lands.
+      onAssetRefresh?.({ ...asset, exifInfo: { ...asset.exifInfo, description: value } });
     } catch (error) {
       if (!isCurrent()) {
         return;

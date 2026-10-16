@@ -111,6 +111,29 @@ describe('SpaceMediaComments', () => {
     expect(await screen.findByText('Posted')).toBeInTheDocument();
   });
 
+  it('never shows a comment posted about one item under the next', async () => {
+    vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: [] });
+    let finishPost!: (created: SharedSpaceCommentResponseDto) => void;
+    vi.mocked(createSharedSpaceComment).mockReturnValue(
+      new Promise((resolve) => (finishPost = resolve)) as ReturnType<typeof createSharedSpaceComment>,
+    );
+
+    const view = render(SpaceMediaComments, { spaceId: 'space-1', assetId: 'asset-1' });
+    await screen.findByText(en.frameleaf_spaces_comments_empty);
+    const box = screen.getByRole('textbox', { name: en.frameleaf_spaces_comments_placeholder });
+    await fireEvent.input(box, { target: { value: 'About the first' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_comments_send }));
+    await waitFor(() => expect(createSharedSpaceComment).toHaveBeenCalled());
+
+    // The viewer moves on before the server answers.
+    await view.rerender({ spaceId: 'space-1', assetId: 'asset-2' });
+    await waitFor(() => expect(getSharedSpaceComments).toHaveBeenCalledWith({ id: 'space-1', assetId: 'asset-2' }));
+    finishPost(comment({ id: 'late', user: ada, assetId: 'asset-1', comment: 'About the first' }));
+    await screen.findByText(en.frameleaf_spaces_comments_empty);
+
+    expect(screen.queryByText('About the first', { selector: 'p.text, p.text *' })).toBeNull();
+  });
+
   it('removes a comment through the space endpoint', async () => {
     vi.mocked(getSharedSpaceComments).mockResolvedValue({
       comments: [comment({ id: 'gone', user: bo, comment: 'Gone soon', canDelete: true })],

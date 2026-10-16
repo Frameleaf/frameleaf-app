@@ -707,16 +707,21 @@ describe(PersonRepository.name, () => {
     it('should not suggest a hidden person', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
-      const { person: hidden } = await ctx.newPerson({ ownerId: user.id, isHidden: true });
-      const { person: visible } = await ctx.newPerson({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      // every feature face shares one embedding, so only the hidden filter can keep a pair out
+      const embedding = newEmbedding();
+      const newPersonWithFace = async (isHidden: boolean) => {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        await ctx.database.insertInto('face_search').values({ faceId: assetFace.id, embedding }).execute();
+        const { person } = await ctx.newPerson({ ownerId: user.id, faceAssetId: assetFace.id, isHidden });
+        return person.personGroupId!;
+      };
+      const hidden = await newPersonWithFace(true);
+      const [a, b] = [await newPersonWithFace(false), await newPersonWithFace(false)].toSorted();
 
-      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 1, limit: 20 });
-      expect(
-        suggestions.some((row) => row.personId === hidden.personGroupId || row.suggestionId === hidden.personGroupId),
-      ).toBe(false);
-      // Without face_search embeddings for either person's feature face, no pair can be
-      // formed at all — this only asserts the hidden-person filter shape, not distance math.
-      expect(suggestions.some((row) => row.personId === visible.personGroupId)).toBe(false);
+      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 0.5, limit: 20 });
+      expect(suggestions.map(({ personId, suggestionId }) => `${personId}:${suggestionId}`)).toEqual([`${a}:${b}`]);
+      expect(suggestions.some((row) => row.personId === hidden || row.suggestionId === hidden)).toBe(false);
     });
 
     it('should leave out pairs answered "different", and "later" ones for 30 days (FL-57)', async () => {

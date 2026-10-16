@@ -1,26 +1,72 @@
-import { CONTENT_TABLES, clusterId, frozenSource, transformRow, vectorCompatible } from 'src/immich-import/adapters.js';
+import {
+  CONTENT_TABLES,
+  clusterId,
+  frozenSource,
+  newestContainedRelease,
+  transformRow,
+  vectorCompatible,
+} from 'src/immich-import/adapters.js';
 import { EmbeddingTransferEvidence } from 'src/immich-import/embeddings.js';
 
 describe('frozen Immich adapters', () => {
-  it.each(['3.0.0', '3.0.1', '3.0.2', '3.0.3', '3.1.0', '3.2.0', '3.2.1', '3.2.2', '3.2.3', '3.2.4'])(
-    'pins %s to a complete immutable snapshot',
-    (version) => {
-      const source = frozenSource(version);
-      expect(source.commit).toMatch(/^[a-f\d]{40}$/u);
-      expect(source.migrations.length).toBeGreaterThan(50);
-      for (const table of CONTENT_TABLES) {
-        const shape = source.tables[table];
-        if (shape) {
-          expect(shape.key.length).toBeGreaterThan(0);
-          expect(new Set(shape.columns).size).toBe(shape.columns.length);
-          expect(Object.keys(shape.types)).toEqual(shape.columns);
-        }
+  it.each([
+    '2.0.0',
+    '2.2.3',
+    '2.3.1',
+    '2.4.1',
+    '2.5.6',
+    '2.6.3',
+    '2.7.5',
+    '3.0.0',
+    '3.0.1',
+    '3.0.2',
+    '3.0.3',
+    '3.1.0',
+    '3.2.0',
+    '3.2.1',
+    '3.2.2',
+    '3.2.3',
+    '3.2.4',
+  ])('pins %s to a complete immutable snapshot', (version) => {
+    const source = frozenSource(version);
+    expect(source.commit).toMatch(/^[a-f\d]{40}$/u);
+    expect(source.migrations.length).toBeGreaterThan(30);
+    for (const table of CONTENT_TABLES) {
+      const shape = source.tables[table];
+      if (shape) {
+        expect(shape.key.length).toBeGreaterThan(0);
+        expect(new Set(shape.columns).size).toBe(shape.columns.length);
+        expect(Object.keys(shape.types)).toEqual(shape.columns);
       }
-    },
-  );
+    }
+  });
 
-  it.each(['3.2.5', '3.3.0', '3.2.0-rc.0', '2.9.0', '__proto__'])('rejects unsupported %s', (version) => {
-    expect(() => frozenSource(version)).toThrow();
+  it.each(['2.0.0-rc.1', '1.144.1', 'latest', '__proto__'])('rejects unsupported %s', (version) => {
+    expect(() => frozenSource(version)).toThrow('UNSUPPORTED_SOURCE_VERSION');
+  });
+
+  it.each([
+    ['2.9.0', '2.7.5'],
+    ['3.2.0-rc.0', '3.1.0'],
+    ['3.2.5', '3.2.4'],
+    ['3.3.3', '3.2.4'],
+    ['4.0.0', '3.2.4'],
+  ])('reads %s through the newest frozen shape at or below it (%s)', (version, frozen) => {
+    expect(frozenSource(version)).toEqual(frozenSource(frozen));
+  });
+
+  it('finds the newest frozen release a source ledger fully contains', () => {
+    expect(newestContainedRelease([...frozenSource('3.2.4').migrations, 'future-migration'])).toBe('3.2.4');
+    expect(newestContainedRelease(frozenSource('3.1.0').migrations)).toBe('3.1.0');
+    expect(newestContainedRelease(['unrelated'])).toBeUndefined();
+  });
+
+  it('maps Immich 3.3 GeoNames country names back to the names Frameleaf geocodes', () => {
+    const country = (value: string | null) => transformRow('asset_exif', { country: value }, false).country;
+    expect(country('United States')).toBe('United States of America');
+    expect(country('Ivory Coast')).toBe("Cote d'Ivoire");
+    expect(country('Germany')).toBe('Germany');
+    expect(country(null)).toBeNull();
   });
 
   it('converts legacy people into deterministic per-owner groups without changing identities or credentials', () => {

@@ -60,11 +60,13 @@ describe('/trash', () => {
       expect(body).toEqual({ count: 1 });
 
       await utils.waitForWebsocketEvent({ event: 'assetDelete', id: assetId });
+      await utils.waitForQueueFinish(admin.accessToken, 'backgroundTask');
 
       const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
       expect(after.total).toBe(0);
 
-      expect(existsSync(before.originalPath)).toBe(false);
+      // originalPath is a server-container path, so the host's existsSync would always say false
+      expect(await onDisk(before.originalPath)).toBe(false);
     });
 
     it(
@@ -92,7 +94,7 @@ describe('/trash', () => {
         const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
         expect(after.total).toBe(0);
 
-        expect(existsSync(before.originalPath)).toBe(false);
+        expect(await onDisk(before.originalPath)).toBe(false);
       },
     );
 

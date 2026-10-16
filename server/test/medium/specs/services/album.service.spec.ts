@@ -268,7 +268,9 @@ describe(AlbumService.name, () => {
       expect(hiddenMarkers.map(({ id }) => id)).toEqual(
         expect.arrayContaining([visible.id, markedSafe.id, tagOnly.id]),
       );
-      expect(hiddenMarkers.map(({ id }) => id)).not.toEqual(expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]));
+      // each hidden item on its own: not.arrayContaining([a, b]) would pass with one of them shown
+      expect(hiddenMarkers.map(({ id }) => id)).not.toContain(unreviewedNsfw.id);
+      expect(hiddenMarkers.map(({ id }) => id)).not.toContain(markedNsfw.id);
 
       const elevatedMarkers = await sut.getMapMarkers(factory.auth({ user: { id: user.id } }), album.id);
       expect(elevatedMarkers.map(({ id }) => id)).toEqual(

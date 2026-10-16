@@ -95,6 +95,8 @@ export async function createEngineRenderer({
       browser = await chromium.launch({ headless: true, args: chromeLaunchArgs(), ...(executablePath && { executablePath }) });
       const abort = () => void browser.close().catch(() => {});
       signal?.addEventListener('abort', abort, { once: true });
+      // A lease lost while the browser launched fired no event; close now rather than render for hours.
+      if (signal?.aborted) abort();
       const page = await browser.newPage({ acceptDownloads: true });
       const origin = new URL(server.harnessUrl).origin;
       await page.route('**/*', (route) =>
@@ -119,7 +121,7 @@ export async function createEngineRenderer({
     } catch (error) {
       await browser?.close().catch(() => {});
       await server.close();
-      throw error;
+      throw signal?.aborted ? signal.reason : error;
     }
   };
 

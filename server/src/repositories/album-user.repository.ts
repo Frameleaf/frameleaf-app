@@ -704,10 +704,13 @@ export class AlbumUserRepository {
     {
       before,
       since,
+      from,
       take,
     }: {
       before?: Date;
       since?: Date;
+      /** Inclusive lower bound, for reading one whole millisecond of events. */
+      from?: Date;
       take: number;
     },
   ): Promise<SharedSpaceEvent[]> {
@@ -730,6 +733,7 @@ export class AlbumUserRepository {
       .where('event.albumId', '=', spaceId)
       .$if(before !== undefined, (qb) => qb.where('event.createdAt', '<', before!))
       .$if(since !== undefined, (qb) => qb.where('event.createdAt', '>', since!))
+      .$if(from !== undefined, (qb) => qb.where('event.createdAt', '>=', from!))
       .orderBy('event.createdAt', 'desc')
       .orderBy('event.id', 'desc')
       .limit(take)

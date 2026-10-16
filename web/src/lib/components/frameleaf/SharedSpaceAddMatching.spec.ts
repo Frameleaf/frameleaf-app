@@ -118,4 +118,21 @@ describe('SharedSpaceAddMatching', () => {
     await waitFor(() => expect(controller.runMatching).toHaveBeenCalled());
     await waitFor(() => expect(dialog.open).toBe(false));
   });
+
+  it('never shows a count that arrives for a source no longer chosen', async () => {
+    const controller = controllerStub();
+    let resolveLibrary!: (count: number) => void;
+    controller.count.mockReturnValueOnce(new Promise<number>((resolve) => (resolveLibrary = resolve)));
+    render(SharedSpaceAddMatching, { space, albums: [album], controller, open: true });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
+    await waitFor(() => expect(controller.count).toHaveBeenCalledOnce());
+    await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'album-1' } });
+    resolveLibrary(900);
+    // The count has settled once Preview is offered again.
+    await screen.findByRole('button', { name: en.frameleaf_spaces_add_matching_preview });
+
+    expect(screen.queryByText('900 items will be added.')).toBeNull();
+    expect(screen.getByRole('button', { name: /Add/ })).toBeDisabled();
+  });
 });

@@ -98,3 +98,17 @@ class TestSupervisor:
         supervisor.popen = mock.Mock(side_effect=exit_after_stop)
         supervisor.run()
         assert supervisor.popen.call_count == 1
+
+    def test_stop_during_spawn_terminates_the_new_worker(self) -> None:
+        # stop() can run after the loop's check but before the new process is recorded; it then sees no
+        # process to terminate, so the loop itself must not leave the fresh worker running.
+        process = mock.Mock(wait=mock.Mock(return_value=-15))
+        supervisor = StudioWorkerSupervisor(["node", "worker.mjs"], popen=mock.Mock())
+
+        def stopped_while_spawning(*_args: object, **_kwargs: object) -> mock.Mock:
+            supervisor.stop()
+            return process
+
+        supervisor.popen = mock.Mock(side_effect=stopped_while_spawning)
+        supervisor.run()
+        process.terminate.assert_called_once()

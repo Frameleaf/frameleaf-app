@@ -58,13 +58,27 @@
 
   const source: SpaceAddSource = $derived(sourceId ? { kind: 'album', id: sourceId } : { kind: 'library' });
 
+  /** Bumped whenever the source changes: a count asked for an earlier source is never shown. */
+  let countRequest = 0;
   const preview = async () => {
+    const request = ++countRequest;
     counting = true;
     try {
-      total = await bulk.count(spaceAddScope(source));
+      const counted = await bulk.count(spaceAddScope(source));
+      if (request === countRequest) {
+        total = counted;
+      }
     } finally {
-      counting = false;
+      if (request === countRequest) {
+        counting = false;
+      }
     }
+  };
+
+  const changeSource = () => {
+    countRequest++;
+    counting = false;
+    total = null;
   };
 
   const start = async () => {
@@ -89,7 +103,7 @@
     <div class="controls">
       <label>
         <span>{$t('frameleaf_spaces_add_matching_source')}</span>
-        <select bind:value={sourceId} onchange={() => (total = null)}>
+        <select bind:value={sourceId} onchange={changeSource}>
           <option value="">{$t('frameleaf_spaces_add_matching_source_library')}</option>
           {#each sources as album (album.id)}
             <option value={album.id}>{album.albumName}</option>

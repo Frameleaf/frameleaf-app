@@ -721,6 +721,37 @@ describe('photography workflow integration boundaries', () => {
     s.setVisible(false);
     await expect(s.service.publicPhoto(s.ownerId, s.shootId, s.captureId)).rejects.toBeInstanceOf(ForbiddenException);
   });
+  it('reads each portfolio gallery once per public site load, and still skips a gallery that is gone', async () => {
+    const s = await setup();
+    await s.published();
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.published();
+    const item = { shootId: s.shootId, captureId: s.captureId, consent: true as const };
+    const gone = { shootId: randomUUID(), captureId: s.captureId, consent: true as const };
+    const value = {
+      enabled: true,
+      title: 'Studio',
+      about: '',
+      services: '',
+      contact: '',
+      portfolio: [item, gone, item, gone, item],
+    } as unknown as PhotographySite;
+    s.repository.site.mockResolvedValue({ revision: randomUUID(), value });
+    s.repository.get.mockClear();
+    s.repository.live.mockClear();
+
+    const site = await s.service.publicSite(s.ownerId);
+
+    expect(site.portfolio).toHaveLength(3);
+    expect(s.repository.get).toHaveBeenCalledTimes(2);
+    expect(s.repository.live).toHaveBeenCalledTimes(1);
+  });
   it('verifies provider amount/currency, applies payment once, and keeps snapshots after refund', async () => {
     const s = await setup();
     const client = await s.invitation();

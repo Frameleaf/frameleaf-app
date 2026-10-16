@@ -89,4 +89,19 @@ describe('PetDecisions', () => {
       }),
     );
   });
+
+  it('removes a "not this pet" decision without offering an Undo it cannot keep', async () => {
+    const toast = vi.spyOn(toastManager, 'primary');
+    sdkMock.getPetObservations.mockResolvedValue([observation({ state: PetObservationState.Rejected })]);
+    render(PetDecisions, { petId: 'pet-biscuit' });
+
+    await screen.findAllByTestId('pet-decision');
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_pet_decision_remove }));
+
+    await waitFor(() => expect(sdkMock.deletePetObservation).toHaveBeenCalled());
+    expect(toast).toHaveBeenCalledWith(en.frameleaf_pet_decision_removed);
+    expect(toast.mock.calls.some(([item]) => typeof item === 'object' && item !== null && 'button' in item)).toBe(
+      false,
+    );
+  });
 });

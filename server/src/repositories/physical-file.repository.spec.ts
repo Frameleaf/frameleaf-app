@@ -109,3 +109,52 @@ it('reserves before a transaction and refuses a reservation that recovery alread
   expect(journal).toBeGreaterThanOrEqual(0);
   expect(journal).toBeLessThan(transaction);
 });
+
+describe('universal storage upload linking from the file trash', () => {
+  const checksum = Buffer.alloc(32, 9);
+  const upload = '/data/upload/owner/aa/bb/upload.jpg';
+  const trashed = { id: '00000000-0000-4000-8000-000000000009', path: '/data/file-trash/trash-id/photo.jpg' };
+  const script = (failAt?: string) =>
+    scriptedKysely(({ sql }) => {
+      if (failAt && sql.includes(failAt)) {
+        throw new Error('registration failed');
+      }
+      if (sql.startsWith('select "asset"."id", "asset"."originalPath"') && sql.endsWith('for update')) {
+        return { rows: [{ id: 'asset-id', originalPath: upload, physicalOriginalFileId: null }] };
+      }
+      if (sql.includes('FROM public.physical_file_trash')) {
+        return { rows: [trashed] };
+      }
+      if (sql.startsWith('insert into "physical_file"')) {
+        return { rows: [{ id: 'physical-id', path: '/data/upload/owner/aa/bb/upload-restored.jpg' }] };
+      }
+    });
+  const options = (untrash: (from: string, to: string) => Promise<void>) => ({
+    verify: vi.fn(),
+    identify: vi.fn(),
+    untrash,
+  });
+
+  it('takes the trashed copy back and links the upload to it', async () => {
+    const { db, queries } = script();
+    const untrash = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      new PhysicalFileRepository(db).linkUploadedOriginal('asset-id', { checksum, sizeInBytes: 10 }, options(untrash)),
+    ).resolves.toMatchObject({ linked: true });
+    expect(untrash).toHaveBeenCalledExactlyOnceWith(trashed.path, '/data/upload/owner/aa/bb/upload-restored.jpg');
+    expect(queries.at(-1)?.sql).toBe('commit');
+  });
+
+  it('puts the file back in the trash when the link cannot be recorded', async () => {
+    const { db, queries } = script('insert into "physical_file"');
+    const untrash = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      new PhysicalFileRepository(db).linkUploadedOriginal('asset-id', { checksum, sizeInBytes: 10 }, options(untrash)),
+    ).rejects.toThrow('registration failed');
+    expect(untrash.mock.calls).toEqual([
+      [trashed.path, '/data/upload/owner/aa/bb/upload-restored.jpg'],
+      ['/data/upload/owner/aa/bb/upload-restored.jpg', trashed.path],
+    ]);
+    expect(queries.at(-1)?.sql).toBe('rollback');
+  });
+});

@@ -190,11 +190,17 @@
     query = '';
   };
 
-  const changeRole = (member: SharedSpaceMemberResponseDto, role: AlbumUserRole) =>
-    run(
+  const changeRole = async (member: SharedSpaceMemberResponseDto, select: HTMLSelectElement) => {
+    const role = select.value as AlbumUserRole;
+    const changed = await run(
       () => updateAlbumUser({ id: space.id, userId: member.user.id, updateAlbumUserDto: { role } }).then(() => {}),
       $t('frameleaf_spaces_role_changed', { values: { name: member.user.name, role: roleLabel(role) } }),
     );
+    // A refused change leaves the member's role as it was, so the menu must not show the new one.
+    if (!changed) {
+      select.value = member.role;
+    }
+  };
 
   /**
    * Removing a member or leaving asks first in the Frameleaf dialog (AL-43); withdrawing an
@@ -276,7 +282,7 @@
             <select
               value={member.role}
               disabled={busy}
-              onchange={(event) => changeRole(member, event.currentTarget.value as AlbumUserRole)}
+              onchange={(event) => void changeRole(member, event.currentTarget)}
             >
               {#each SPACE_ROLE_OPTIONS as role (role)}
                 <option value={role}>{roleLabel(role)}</option>

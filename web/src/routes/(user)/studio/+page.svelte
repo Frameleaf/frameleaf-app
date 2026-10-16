@@ -1265,6 +1265,8 @@
     detachImports();
     sourceController.abort();
     clearTimeout(exportTimer);
+    // A status read still in flight checks exportJob before following again, so the poll ends here.
+    exportJob = null;
     capabilityRefresh.dispose();
     settleExportChoice(null);
     releaseCommandEngine();

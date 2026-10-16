@@ -105,9 +105,16 @@ def compatibility_value(root, path_text, parser):
         active = strip_line_comments(text)
         sections = {}
         section = ""
+        tables = Counter()
         for line in active.splitlines():
             line = line.strip()
             if not line:
+                continue
+            # Each [[name]] array-of-tables entry is its own table; its keys may repeat across entries.
+            match = re.fullmatch(r"\[\[([^]]+)\]\]", line)
+            if match:
+                tables[match.group(1)] += 1
+                section = f"{match.group(1)}[{tables[match.group(1)]}]"
                 continue
             match = re.fullmatch(r"\[([^]]+)\]", line)
             if match:

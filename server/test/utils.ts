@@ -462,6 +462,21 @@ export const getMocks = () => {
   mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
+  // Write wrappers run their callback by default so a test cannot pass while silently skipping the write.
+  mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_owner, write) => write());
+  mocks.person.withMergeWrite.mockImplementation(async (write) => write());
+  mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
+    write(undefined as never, mocks.album as never),
+  );
+  mocks.asset.withMetadataUpdate.mockImplementation(async (_id, write) =>
+    write(mocks.asset as never, mocks.access as never, undefined as never),
+  );
+  mocks.asset.withLivePhotoUpdate.mockImplementation(async (_id, _motion, write) =>
+    write(mocks.asset as never, mocks.access as never),
+  );
+  mocks.itemShare.withTransaction.mockImplementation(async (callback) =>
+    callback(mocks.itemShare as never, mocks.user as never, mocks.asset as never, mocks.access as never),
+  );
   mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
   mocks.classification.recordAlbumRemovals.mockResolvedValue({
     added: 0,

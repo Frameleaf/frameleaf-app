@@ -287,15 +287,18 @@ export const getProfileImageUrl = (user: UserResponseDto) =>
 export const getPeopleThumbnailUrl = (person: PersonResponseDto, updatedAt?: string) =>
   createUrl(getPeopleThumbnailPath(person.id), { updatedAt: updatedAt ?? person.updatedAt });
 
-export const copyToClipboard = async (secret: string | unknown) => {
+/** Copies and says so; resolves false (after reporting the failure) when nothing reached the clipboard. */
+export const copyToClipboard = async (secret: string | unknown): Promise<boolean> => {
   const $t = get(t);
 
   try {
     const value = typeof secret === 'string' ? secret : JSON.stringify(secret, jsonReplacer, 2);
     await navigator.clipboard.writeText(value);
     toastManager.info($t('copied_to_clipboard'));
+    return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_copy_to_clipboard'));
+    return false;
   }
 };
 

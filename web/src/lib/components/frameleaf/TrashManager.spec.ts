@@ -162,6 +162,41 @@ describe('TrashManager (FL-47)', () => {
     );
   });
 
+  it('finishes a permanent delete whose own change reaches the page before the answer', async () => {
+    serve([item('lake'), item('camp')]);
+    vi.mocked(reviewTrash).mockResolvedValue({
+      action: TrashReviewAction.Delete,
+      count: 1,
+      bytes: 2048,
+      retainedOriginals: 0,
+      retainedBytes: 0,
+      names: ['lake.jpg'],
+      token: 'reviewed-token',
+    });
+    const applied = deferred<Awaited<ReturnType<typeof applyTrashReview>>>();
+    vi.mocked(applyTrashReview).mockReturnValue(applied.promise);
+
+    render(TrashManager);
+    await fireEvent.click(await screen.findByLabelText('Select lake.jpg'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete selected (1)' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Permanently delete 1 item' }));
+    await waitFor(() => expect(applyTrashReview).toHaveBeenCalled());
+
+    // The server's account-local effect for this very deletion arrives over the socket first.
+    serve([item('camp')]);
+    bus.socket.get('AssetLocalEffectsV1')?.({
+      streamEpoch: 'actual-stream',
+      sequence: '7',
+      effectId: 'effect-7',
+      assetIds: ['lake'],
+      revokedOperationIds: [],
+    } as never);
+    applied.resolve({ count: 1 });
+
+    expect(await screen.findByText('Permanently deleted 1 item from your trash.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Permanently delete 1 item' })).toBeNull());
+  });
+
   it('says so when the trash changed after the review, and changes nothing', async () => {
     serve([item('lake')]);
     vi.mocked(reviewTrash).mockResolvedValue({
@@ -259,6 +294,29 @@ describe('TrashManager (FL-47)', () => {
       expect(await screen.findByText(en.frameleaf_trash_error_changed)).toBeInTheDocument();
       expect(screen.getByText('lake.jpg')).toBeInTheDocument();
       expect(screen.getByText('pier.jpg')).toBeInTheDocument();
+    });
+
+    it('says what was restored even when its own change reaches the page first', async () => {
+      serve([item('lake')]);
+      vi.mocked(reviewTrash).mockResolvedValue(review(TrashReviewAction.Restore, 1));
+      const applied = deferred<Awaited<ReturnType<typeof applyTrashReview>>>();
+      vi.mocked(applyTrashReview).mockReturnValue(applied.promise);
+
+      render(TrashManager);
+      await screen.findByText('lake.jpg');
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_trash_restore }));
+      await waitFor(() => expect(applyTrashReview).toHaveBeenCalled());
+      serve([]);
+      bus.socket.get('AssetLocalEffectsV1')?.({
+        streamEpoch: 'actual-stream',
+        sequence: '9',
+        effectId: 'effect-9',
+        assetIds: ['lake'],
+        revokedOperationIds: [],
+      } as never);
+      applied.resolve({ count: 1 });
+
+      expect(await screen.findByText('Restored 1 item to your library.')).toBeInTheDocument();
     });
 
     it('offers Undo, which moves the same items back to the trash', async () => {

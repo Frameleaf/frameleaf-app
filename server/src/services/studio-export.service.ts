@@ -2106,8 +2106,13 @@ export class StudioExportService {
     }
     this.lastSweepAt = now.getTime();
 
+    // one version that cannot be settled now is retried next sweep; it never holds up the others
     for (const version of await this.repository.listOrphanedWork()) {
-      await this.cancelVersion(version, version.orphanReason, 'The owner, project or a source went away');
+      try {
+        await this.cancelVersion(version, version.orphanReason, 'The owner, project or a source went away');
+      } catch (error) {
+        this.logger.warn(`Could not cancel orphaned Studio export ${version.id}; the sweep will retry: ${error}`);
+      }
     }
 
     for (const version of await this.repository.listSettledWork()) {
@@ -2115,9 +2120,13 @@ export class StudioExportService {
         errorCode: version.errorCode ?? 'studio_export_job_ended',
         error: version.error ?? 'The job working on this export stopped',
       };
-      await (version.jobStatus === MediaOperationStatus.Failed
-        ? this.repository.markFailed(version.id, failure)
-        : this.repository.cancel(version.id, failure));
+      try {
+        await (version.jobStatus === MediaOperationStatus.Failed
+          ? this.repository.markFailed(version.id, failure)
+          : this.repository.cancel(version.id, failure));
+      } catch (error) {
+        this.logger.warn(`Could not settle Studio export ${version.id}; the sweep will retry: ${error}`);
+      }
     }
 
     for (const version of await this.repository.listRemovableOutputs()) {

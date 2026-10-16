@@ -393,3 +393,20 @@ for (const use of ["redistribution", "localRuntime", "hostedUse"]) {
     assert.match(text, new RegExp(`${use}: 'Withheld by owner'`));
   });
 }
+
+/** The CI gate must run, not silently exit 0, from a checkout path that URL-encodes (a space). */
+test("running the generator directly checks the mirror from a path with a space", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { copyFile, mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const directory = await mkdtemp(path.join(tmpdir(), "studio rights "));
+  try {
+    const script = path.join(directory, "frameleaf-studio-rights.mjs");
+    await copyFile(fileURLToPath(new URL("frameleaf-studio-rights.mjs", import.meta.url)), script);
+    // An empty working directory has no bill of materials: a check that really runs must fail.
+    const result = spawnSync(process.execPath, [script], { cwd: directory, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -299,7 +299,7 @@ describe('/shared-links', () => {
       const asset = body.assets[0];
       expect(asset).not.toHaveProperty('exifInfo');
       expect(asset).not.toHaveProperty('fileCreatedAt');
-      expect(asset).not.toHaveProperty('originalFilename');
+      expect(asset).not.toHaveProperty('originalFileName');
       expect(asset).not.toHaveProperty('originalPath');
     });
   });
