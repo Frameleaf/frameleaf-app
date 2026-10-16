@@ -79,6 +79,30 @@ describe('ProfileSection avatar (FL-67)', () => {
     expect(authManager.user.id).toBe(next.id);
   });
 
+  it('ACCOUNT-P9: puts Save and Undo under the name and email fields, and saves from there', async () => {
+    sdkMock.updateMyUser.mockResolvedValue({ ...authManager.user, name: 'Morgan' });
+    renderWithTooltips(ProfileSection, {});
+
+    const save = screen.getByRole('button', { name: 'save' });
+    const undo = screen.getByRole('button', { name: 'frameleaf_prefs_profile_undo' });
+    const email = screen.getByRole('textbox', { name: 'frameleaf_prefs_profile_email' });
+    // after the fields in reading order, Save first as in the prototype
+    expect(email.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(save.compareDocumentPosition(undo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(save).toBeDisabled();
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'frameleaf_prefs_profile_name' }), {
+      target: { value: 'Morgan' },
+    });
+    expect(save).toBeEnabled();
+    await fireEvent.click(save);
+    await waitFor(() =>
+      expect(sdkMock.updateMyUser).toHaveBeenCalledWith({
+        userUpdateMeDto: { name: 'Morgan', email: 'taylor@example.com' },
+      }),
+    );
+  });
+
   it('does not show a previous account upload failure', async () => {
     let fail!: (error: Error) => void;
     sdkMock.createProfileImage.mockReturnValueOnce(

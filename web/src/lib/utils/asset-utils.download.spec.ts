@@ -66,8 +66,9 @@ describe('downloadArchive', () => {
     const [, row] = rows()[0];
     expect(row).toMatchObject({ status: 'ready', count: 1, total: 20, buffered: true });
     expect(row.name).toMatch(/^trip-\d{8}_\d{6}\.zip$/);
+    // ACCOUNT-P5: `edited` is left out, so the server follows the account's Downloads choice
     expect(requestArchive).toHaveBeenCalledWith(
-      { downloadArchiveDto: { assetIds: ['asset-0'], archiveName: row.archiveName, edited: true } },
+      { downloadArchiveDto: { assetIds: ['asset-0'], archiveName: row.archiveName, edited: undefined } },
       expect.objectContaining({ signal: expect.any(AbortSignal), fetch: expect.any(Function) }),
     );
   });
@@ -83,10 +84,12 @@ describe('downloadArchive', () => {
     expect(downloadManager.hasUnsavedFiles).toBe(false);
 
     downloadManager.save(key, vi.fn());
+    // ACCOUNT-P5: no `edited`, so the server follows the account's Downloads choice
     expect(downloadUrlPost).toHaveBeenCalledWith(
       expect.stringMatching(/\/download\/archive$/),
       ['asset-0'],
       row.archiveName,
+      undefined,
     );
     expect(rows()).toHaveLength(0);
   });
@@ -192,8 +195,13 @@ describe('downloadArchive', () => {
       expect.objectContaining({ key: 'share-key', slug: 'share-slug' }),
       expect.anything(),
     );
+    // a shared link keeps asking for the edited copies, as before ACCOUNT-P5
     expect(requestArchive).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'share-key', slug: 'share-slug' }),
+      expect.objectContaining({
+        key: 'share-key',
+        slug: 'share-slug',
+        downloadArchiveDto: expect.objectContaining({ edited: true }),
+      }),
       expect.anything(),
     );
     expect(rows().every(([, row]) => row.group === 'share')).toBe(true);
@@ -204,6 +212,7 @@ describe('downloadArchive', () => {
       expect.stringContaining('key=share-key'),
       ['asset-0'],
       expect.any(String),
+      true,
     );
   });
 });

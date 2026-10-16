@@ -2,21 +2,24 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { libraryGridPreferences } from '$lib/frameleaf/library-grid-preferences.svelte';
 import {
   alwaysLoadOriginalFile,
   alwaysLoadOriginalVideo,
   autoPlayVideo,
+  libraryStartLayout,
   locale,
   loopVideo,
   playVideoThumbnailOnHover,
   showDeleteModal,
 } from '$lib/stores/preferences.store';
+import { reduceMotion } from '$lib/stores/reduce-motion.store';
 import en from '../../../../../i18n/en.json';
 import AppSettings from './AppSettings.svelte';
 
 const albums = vi.hoisted(() => ({
-  draft: { 'albums.defaultAssetOrder': 'desc' },
-  baseline: { 'albums.defaultAssetOrder': 'desc' },
+  draft: { 'albums.defaultAssetOrder': 'desc', 'search.includeArchived': false },
+  baseline: { 'albums.defaultAssetOrder': 'desc', 'search.includeArchived': false },
   dirty: false,
   stale: false,
   loading: false,
@@ -82,11 +85,42 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     ['Start videos by themselves', autoPlayVideo],
     ['Repeat videos', loopVideo],
     ['Ask before deleting forever', showDeleteModal],
+    ['Use less movement', reduceMotion],
   ] as const)('keeps "%s" as a switch that writes this browser', async (name, store) => {
     render(AppSettings);
     const before = get(store);
     await fireEvent.click(screen.getByRole('switch', { name }));
     expect(get(store)).toBe(!before);
     store.set(before);
+  });
+
+  it('ACCOUNT-P3: adds the four rows, with "Dates and numbers" and "Use less movement" under Appearance', async () => {
+    render(AppSettings);
+
+    const appearance = screen.getByRole('heading', { name: 'Appearance' }).closest('section')!;
+    expect(within(appearance).getByRole('group', { name: 'Dates and numbers' })).toBeInTheDocument();
+    expect(within(appearance).getByRole('switch', { name: 'Use less movement' })).toBeInTheDocument();
+
+    // "Use less movement" also tells the page's CSS, on the root element
+    await fireEvent.click(screen.getByRole('switch', { name: 'Use less movement' }));
+    expect(document.documentElement).toHaveAttribute('data-reduce-motion');
+    reduceMotion.set(false);
+    expect(document.documentElement).not.toHaveAttribute('data-reduce-motion');
+
+    await fireEvent.click(
+      within(screen.getByRole('group', { name: 'Open the library in' })).getByRole('button', { name: 'Work' }),
+    );
+    expect(get(libraryStartLayout)).toBe('work');
+    libraryStartLayout.set(null);
+
+    const names = screen.getByRole('switch', { name: 'Show file names in Work view' });
+    const before = libraryGridPreferences.showFileNames;
+    await fireEvent.click(names);
+    expect(libraryGridPreferences.showFileNames).toBe(!before);
+    libraryGridPreferences.showFileNames = before;
+
+    // an account preference: it waits for the Save bar
+    await fireEvent.click(screen.getByRole('switch', { name: 'Show archived photos in search' }));
+    expect(albums.set).toHaveBeenCalledWith('search.includeArchived', true);
   });
 });

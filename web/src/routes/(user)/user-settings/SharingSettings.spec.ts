@@ -24,6 +24,25 @@ vi.mock('$lib/managers/server-config-manager.svelte', () => ({
   },
 }));
 
+// ACCOUNT-P2: the page's two account switches go through the account's own preferences draft.
+const sharingPrefs = vi.hoisted(() => ({
+  draft: { 'people.suggestInSpaces': false },
+  baseline: { 'people.suggestInSpaces': false },
+  dirty: false,
+  stale: false,
+  loading: false,
+  saving: false,
+  error: null,
+  notice: null,
+  set: vi.fn(),
+  follow: vi.fn(),
+  cancel: vi.fn(),
+  save: vi.fn(),
+  loadLatest: vi.fn(),
+}));
+vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
+vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDraft: () => sharingPrefs }));
+
 const user = (id: string, name: string) =>
   ({
     id,
@@ -70,8 +89,27 @@ describe('SharingSettings: People & sharing in plain words (FL-368)', () => {
     expect(await screen.findByText(/^Nobody yet\./)).toBeInTheDocument();
     expect(await screen.findByText(/^No groups yet\./, { selector: '.hint' })).toBeInTheDocument();
     // Alone in the group there is nothing to leave, and only an administrator sees the server block.
+    // The one account switch is the Spaces suggestion; partners have no timeline switch (FL-326).
     expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
-    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.getAllByRole('switch').map((item) => item.getAttribute('aria-label'))).toEqual([
+      'Suggest matching people in shared Spaces',
+    ]);
+    expect(screen.queryByText(/arrives in your library as your own copies/)).toBeNull();
+  });
+
+  it('ACCOUNT-P2: says where a partner’s photos go once one shares, and saves the Spaces suggestion', async () => {
+    sdkMock.getPartners.mockImplementation(({ direction }) =>
+      Promise.resolve(direction === 'shared-with' ? [user('sam', 'Sam')] : []),
+    );
+    render(SharingSettings);
+
+    expect(await screen.findByText(/arrives in your library as your own copies, places included/)).toBeVisible();
+    expect(screen.queryByRole('switch', { name: /timeline/ })).toBeNull();
+
+    const suggest = screen.getByRole('switch', { name: 'Suggest matching people in shared Spaces' });
+    expect(suggest).not.toBeChecked();
+    await fireEvent.click(suggest);
+    expect(sharingPrefs.set).toHaveBeenCalledWith('people.suggestInSpaces', true);
   });
 
   it('says each way of a partner library in a sentence, with how far the first copy has come (FL-326)', async () => {

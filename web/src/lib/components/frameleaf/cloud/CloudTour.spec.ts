@@ -102,7 +102,10 @@ describe('CloudTour (FL-196)', () => {
   it('shows the plan step in US dollars with Done instead of Skip', async () => {
     const { dialog, onClose } = setup({ initialStep: 5 });
     expect(dialog).toHaveTextContent('from $6 a month');
-    expect(dialog).toHaveTextContent('A server licence saves 7% on plans, an individual licence 5%.');
+    // D1: a licence comes first, and what each takes off plans
+    expect(dialog).toHaveTextContent(
+      'A plan or AI credit needs a licence first. A Server licence takes 7% off plans, an Individual licence 5%.',
+    );
     expect(within(dialog).getByTestId('cloud-tour-status')).toHaveTextContent('No plan');
     expect(within(dialog).queryByRole('button', { name: 'Skip tour' })).toBeNull();
     for (const name of ['Open Plan', 'Open Licence', 'Open Frameleaf Cloud']) {

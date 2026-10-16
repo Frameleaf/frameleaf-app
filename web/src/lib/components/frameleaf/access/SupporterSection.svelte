@@ -113,6 +113,14 @@
 </script>
 
 <div class="buy-screen supporter-section">
+  <!-- D1: what a licence gives this person, from the owner's licence facts -->
+  <p class="auth-note supporter-status">
+    {personal
+      ? $t('frameleaf_prefs_supporter_status_mine')
+      : featureFlagsManager.value.supporter
+        ? $t('frameleaf_prefs_supporter_status_server')
+        : $t('frameleaf_prefs_supporter_status_none')}
+  </p>
   {#if notice}
     <p class="auth-success" role="status"><span>{notice}</span></p>
   {/if}

@@ -158,10 +158,14 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
     return mine;
   };
 
+  // ACCOUNT-P5: the server fills in the account's Downloads choices (the original or the edited
+  // version, details files) when the request leaves them out. A shared link keeps its edited copies.
+  const edited = authManager.isSharedLink ? true : undefined;
+
   const fetchArchive =
     (archive: DownloadArchiveInfo, archiveName: string): DownloadTask =>
     (context) => {
-      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName));
+      const stream = new StreamedDownload(() => downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited));
       // A part that could never be held is ready at once; it does not wait for the parts before it.
       if (archive.size > bufferLimit()) {
         return Promise.resolve(stream);
@@ -172,7 +176,7 @@ export const downloadArchive = (fileName: string, options: Omit<DownloadInfoDto,
           size: archive.size,
           request: (fetch) =>
             requestArchive(
-              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited: true } },
+              { ...params, downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited } },
               { signal: context.signal, fetch },
             ),
           stream,

@@ -117,7 +117,8 @@ describe('AccountPreferencesDraftStore (FL-77)', () => {
     expect(store.dirty).toBe(false);
 
     store.resetSection('preferences');
-    expect(store.draft['download.archiveSize']).toBe(4 * 1024 ** 3);
+    // D5: the default split size is a decimal 4 GB.
+    expect(store.draft['download.archiveSize']).toBe(4 * 1000 ** 3);
     expect(store.notice).toBe('defaults_restored');
     expect(store.dirty).toBe(true);
   });

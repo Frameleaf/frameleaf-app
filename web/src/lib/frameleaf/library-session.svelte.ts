@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import {
   activeFilterCount,
   activeFilterSections,
@@ -16,6 +17,7 @@ import {
 import {
   createLibrarySession,
   fromStoredLibrarySession,
+  LIBRARY_LAYOUTS,
   libraryPreferenceKey,
   libraryTransientKey,
   parseLibraryView,
@@ -29,6 +31,7 @@ import {
   type LibraryViewProblem,
   type LibraryViewState,
 } from '$lib/frameleaf/library-session';
+import { libraryStartLayout } from '$lib/stores/preferences.store';
 
 /**
  * The live library session: one reactive holder around the pure reducer FL-31 landed, so Timeline,
@@ -185,6 +188,12 @@ export class LibrarySessionStore {
       }
     }
     this.#session = fromStoredLibrarySession(stored, incoming, transient, context, contextualTransient);
+    // ACCOUNT-P3: the first library view in a tab opens in the layout chosen under Look & playback
+    // ("Open the library in"). Later views in the tab keep the layout the person switched to.
+    const start = get(libraryStartLayout);
+    if (currentUserId && transient === null && start && LIBRARY_LAYOUTS.includes(start)) {
+      this.#session = { ...this.#session, layout: start };
+    }
     this.#total = null;
     this.#totalRevision = -1;
     this.#refusedView = parsed && !parsed.ok ? parsed.problem : null;

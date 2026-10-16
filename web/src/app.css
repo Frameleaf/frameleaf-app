@@ -518,6 +518,25 @@ body:not(.asset-viewer-open) {
     scroll-behavior: auto !important;
   }
 }
+/*
+ * ACCOUNT-P3: the same clamp when the person chose "Use less movement" on this device
+ * (reduce-motion.store.ts sets the attribute). `:where()` keeps it at no specificity, as above.
+ */
+:root[data-reduce-motion]::view-transition-group(fl-hero) {
+  animation: none;
+}
+:where(:root[data-reduce-motion]) [data-dialog-overlay],
+:where(:root[data-reduce-motion]) [data-dialog-content] [class~='shadow-primary/20'] {
+  animation: fl-fade-in var(--fl-duration-reduced) var(--fl-ease) both !important;
+}
+:where(:root[data-reduce-motion]) *,
+:where(:root[data-reduce-motion]) *::before,
+:where(:root[data-reduce-motion]) *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
 
 /*
  * The shared Memories pan and zoom (apple-style.css:414-421): the Memories engine

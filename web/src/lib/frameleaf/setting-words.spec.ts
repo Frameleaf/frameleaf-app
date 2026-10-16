@@ -30,9 +30,10 @@ describe('setting words (FL-368)', () => {
       'How much to record: Normal activity → Detail for finding a fault',
     );
     expect(
-      describeChange($t(), 'preference', { path: 'download.archiveSize', before: 4 * 1024 ** 3, after: 10 * 1024 ** 3 })
+      // D5: decimal GB; a size saved in binary bytes before D5 reads as what it is
+      describeChange($t(), 'preference', { path: 'download.archiveSize', before: 4 * 1024 ** 3, after: 10 * 1000 ** 3 })
         .said,
-    ).toBe('Split big downloads into files of: 4 GB → 10 GB');
+    ).toBe('Split big downloads into files of: 4.29 GB → 10 GB');
     expect(describeChange($t(), 'preference', { path: 'memories.duration', before: 5, after: 8 }).after).toBe(
       '8 seconds',
     );

@@ -13,8 +13,10 @@
  */
 import { AssetOrder, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@frameleaf/sdk';
 
-/** One GiB is 1,073,741,824 bytes. Archive sizes are stored as exact byte counts. */
-export const GIB = 1024 ** 3;
+/** D5: one GB is 1,000,000,000 bytes. Archive sizes are stored as exact byte counts. */
+export const GB = 1000 ** 3;
+/** The binary GB the split sizes were saved in before D5 (1,073,741,824 bytes). */
+export const LEGACY_GIB = 1024 ** 3;
 
 /** The server stores "show the support reminder now" as the epoch. */
 export const REMINDER_ALLOWED_NOW = new Date(0).toISOString();
@@ -46,6 +48,14 @@ export type AccountPreferencesDraft = {
   /** Exact bytes; `null` while the field is empty or does not resolve to a byte count. */
   'download.archiveSize': number | null;
   'download.includeEmbeddedVideos': boolean;
+  /** ACCOUNT-P5: downloads hold the edited version when there is one. */
+  'download.edited': boolean;
+  /** ACCOUNT-P5: archives put each photo's details file (XMP) beside it. */
+  'download.includeSidecar': boolean;
+  /** ACCOUNT-P3: searches that name no visibility include archived photos. */
+  'search.includeArchived': boolean;
+  /** ACCOUNT-P2: a shared Space suggests which of my named people appear in it. */
+  'people.suggestInSpaces': boolean;
   'purchase.showSupportBadge': boolean;
   'purchase.hideBuyButtonUntil': string;
 };
@@ -135,15 +145,20 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'sharedLinks.sidebarWeb': true,
   'tags.enabled': true,
   'tags.sidebarWeb': true,
-  'ratings.enabled': false,
+  // D6 (owner, 2026-10-16): star ratings are on by default.
+  'ratings.enabled': true,
   'cast.gCastEnabled': false,
   'cast.adminDisabled': false,
   'recentlyAdded.sidebarWeb': true,
   'emailNotifications.enabled': true,
   'emailNotifications.albumInvite': true,
   'emailNotifications.albumUpdate': true,
-  'download.archiveSize': 4 * GIB,
+  'download.archiveSize': 4 * GB,
   'download.includeEmbeddedVideos': false,
+  'download.edited': false,
+  'download.includeSidecar': true,
+  'search.includeArchived': false,
+  'people.suggestInSpaces': false,
   'purchase.showSupportBadge': true,
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
 });
@@ -171,6 +186,10 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'emailNotifications.albumUpdate': preferences.emailNotifications.albumUpdate,
   'download.archiveSize': preferences.download.archiveSize,
   'download.includeEmbeddedVideos': preferences.download.includeEmbeddedVideos,
+  'download.edited': preferences.download.edited,
+  'download.includeSidecar': preferences.download.includeSidecar,
+  'search.includeArchived': preferences.search.includeArchived,
+  'people.suggestInSpaces': preferences.people.suggestInSpaces,
   'purchase.showSupportBadge': preferences.purchase.showSupportBadge,
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,
 });
@@ -264,12 +283,19 @@ export const resetSection = (
   return next;
 };
 
-/** Bytes shown as GiB in the size field. GiB is a power of two, so this is exact. */
-export const archiveSizeToGib = (bytes: number | null): number | null => (bytes === null ? null : bytes / GIB);
+/** Bytes shown as decimal GB in the size field (D5). */
+export const archiveSizeToGb = (bytes: number | null): number | null => (bytes === null ? null : bytes / GB);
 
-/** A GiB value from the size field, rounded to a whole number of bytes (`null` when empty). */
-export const gibToArchiveSize = (gib: number | null | undefined): number | null =>
-  typeof gib === 'number' && Number.isFinite(gib) ? Math.round(gib * GIB) : null;
+/** A GB value from the size field, rounded to a whole number of bytes (`null` when empty). */
+export const gbToArchiveSize = (gb: number | null | undefined): number | null =>
+  typeof gb === 'number' && Number.isFinite(gb) ? Math.round(gb * GB) : null;
+
+/**
+ * D5: whether a stored split size is the `gb` preset, either as decimal bytes or as the binary bytes
+ * saved before D5, so a legacy "4 GB" still reads as 4 GB until it is next changed.
+ */
+export const isArchiveSizePreset = (bytes: number | null, gb: number): boolean =>
+  bytes !== null && (bytes === gb * GB || bytes === gb * LEGACY_GIB);
 
 /** The support reminder date field: blank means "allow it now". */
 export const reminderDateInput = (value: string): string =>

@@ -337,7 +337,9 @@
   const download = () => {
     open = false;
     if (single?.originalFileName) {
-      downloadAssetFile({ id: single.id, filename: single.originalFileName, edited: true, size: single.size });
+      // ACCOUNT-P5: the original or the edited version, as chosen under Your preferences › Downloads
+      const edited = authManager.authenticated ? authManager.preferences.download.edited : true;
+      downloadAssetFile({ id: single.id, filename: single.originalFileName, edited, size: single.size });
       return;
     }
     void downloadArchive('frameleaf', { assetIds }).catch(ignoreCancelledDownload);

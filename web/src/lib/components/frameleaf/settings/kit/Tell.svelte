@@ -20,11 +20,14 @@
     columns,
     rows,
     cell,
+    detail,
   }: {
     heading: string;
     columns: string[];
     rows: TellRow[];
     cell: Snippet<[TellRow, number]>;
+    /** More about one row under its help, such as a closed "options" disclosure (Tools & sidebar). */
+    detail?: Snippet<[TellRow]>;
   } = $props();
 </script>
 
@@ -41,6 +44,7 @@
         <strong>{row.label}</strong>
         {#if row.help}<p>{row.help}</p>{/if}
         {#if row.link}<a href={row.link.href}>{row.link.text}</a>{/if}
+        {@render detail?.(row)}
       </div>
       {#each columns as column, index (column)}
         <div class="cell" role="cell">
