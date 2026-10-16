@@ -57,3 +57,17 @@ it('captures producer identity with the vector before deferred claim adoption', 
   await context.adoptions[0](db as never);
   expect(queries[0].parameters).toEqual([assetId, '[1,2]', modelKey]);
 });
+
+it('publishes and clears description producer identity in the same upsert as its vector', async () => {
+  await repository.upsertDescriptionEmbedding(assetId, { embedding: '[1,2]', modelKey });
+  expect(queries[0].parameters).toEqual([assetId, '[1,2]', modelKey]);
+  expect(queries[0].sql).toContain('"producerModelKey" = "excluded"."producerModelKey"');
+  await repository.upsertDescriptionEmbedding(assetId, '[3,4]');
+  expect(queries[1].parameters).toEqual([assetId, '[3,4]', null]);
+});
+it('refuses malformed description producer identity before writing a vector', async () => {
+  await expect(
+    repository.upsertDescriptionEmbedding(assetId, { embedding: '[1,2]', modelKey: 'unknown' }),
+  ).rejects.toThrow();
+  expect(queries).toHaveLength(0);
+});

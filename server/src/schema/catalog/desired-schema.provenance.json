@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "38fb14ca1d68437795fd11f7341e30a541b8517e",
+  "sourceCommit": "6d3d10782979b0ca5c9089c24cea4a7573be829b",
   "sourceHashes": {
     "src/enum.ts": "0407d6c7792379d5e1355e6a971d89bbaeda62e3cf078c93084daecdeb48c864",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -40,7 +40,7 @@
     "src/schema/tables/asset-ocr.table.ts": "758a063b9864bdf63407454c2741b01ea36aef8fb2e3f2f2aefb61db04d60662",
     "src/schema/tables/asset-restoration.table.ts": "46e87861f5610b0354eeb3739e2aad4264e2dd764e527a248668b859194a456f",
     "src/schema/tables/asset-upload-resource.table.ts": "74a352d564053c96c4502d8fc77e1d5c0870ef0c662033235be65f52d07e426a",
-    "src/schema/tables/asset-video-duplicate-frame.table.ts": "cb1f50c5b31accc548569235d45298ad94935ce4e0afe298aa48924b0f739cf5",
+    "src/schema/tables/asset-video-duplicate-frame.table.ts": "af71b69bd3453de16cd3e062b26525d90bca3d4ffc35601d5e5b931ca677b3e6",
     "src/schema/tables/asset.table.ts": "55b79ffa0eb6dcb67d66dabd0bfd621735c2616a2aba851293613a52a51990ad",
     "src/schema/tables/backup-device.table.ts": "c51e7f2c189ab3484f53f85bb7210638963b8c08c16867a5a4b1481e36bc3698",
     "src/schema/tables/classification-match.table.ts": "6e00d228ae79c90805e2806ae3209bf34734da217dc821bb4eb493a448dff20a",
@@ -103,7 +103,7 @@
     "src/schema/tables/smart-album-asset.table.ts": "eaf7b1353fec55e47fc71a27c723457a0e8f7938bf3c75776b53724dc22fd2cf",
     "src/schema/tables/smart-album-exclusion.table.ts": "921885e9bdcff1608f487d63513fa798203686d912cf1602e988290f415fb5cd",
     "src/schema/tables/smart-album.table.ts": "cf05f0f1d4bdc60cd581f7c6f90cc3bbcdcc822ef5e9bf986b378bd15088d8e1",
-    "src/schema/tables/smart-search-description.table.ts": "d5a8f4d566f4d89f7365534da9f129cd73e4902c6797a2f3588ffe9f875e4eba",
+    "src/schema/tables/smart-search-description.table.ts": "5b4613419c89dd1aad3b4a1d7f7e9e1f6a266f8869507de2a8171ca0cea66707",
     "src/schema/tables/smart-search.table.ts": "df69985c36c4ae3386574c3b991b273ca1890b71f396b753c8f8199d9aaa8ebe",
     "src/schema/tables/stack-audit.table.ts": "c0f1a2202dabba97fc270ac95c0510dad8f18597abe94a488ba248454076aff1",
     "src/schema/tables/stack.table.ts": "d4aaadc5c5bcd1b25d49172c7e4d77fb03ed96b558709d3257863e86e0a3c1d5",
@@ -124,7 +124,7 @@
     "src/schema/tables/user-metadata.table.ts": "fc46a9e43c9bf85e49a9e030082770ea76775add99343917389fce833910f910",
     "src/schema/tables/user.table.ts": "d54eb28bab6fe0dca1ec7249927fafab9d46046fce2351eb033dbc880d611591",
     "src/schema/tables/version-history.table.ts": "b290931697aea4e4e917927e1e547d894d40a1b768dc0e51c8d9325704bdc91f",
-    "src/schema/tables/video-moment.table.ts": "a0f12763e87420ae89a7b2e49ba82bad805ccdcdcf264d795da34efa0a6a23f3",
+    "src/schema/tables/video-moment.table.ts": "ff818b4d21adf1b27a17d832396ed035acebca733e849c27cc1e6b3e5838e0cc",
     "src/schema/tables/video-stream.table.ts": "9b737a5664583eac3d8c657111c7e9a2bbc9f9fd7691e8f70aac841eaa59f254",
     "src/schema/tables/workflow-definition.table.ts": "1dcc0867aa8af475a735e81d09fbd69ee77b8c8cc87e9bc3e9da86e6b7d750e4",
     "src/schema/tables/workflow-log-detail.table.ts": "afb7b1a8dbb79d5ac66f93a74d67a83e2835ef8cd89f91bf470c5406e4989a76",
@@ -135,6 +135,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "f73cd17872961af64842fe2f300a3ede5bd6742e8ada8b555dac3c3b0c48685f",
-  "dumpSha256": "447cb98123e395c65a694496a88f8926582f13f15fc29abb81449c7619859833",
-  "rawMetadataSha256": "6522157aca55f3000fd20f8dda8069b0cb3f52f9738816d84ab85e678a8c29a3"
+  "dumpSha256": "71b57da927cf0e5ac63e6e50630ae32170ad2ca36e35299870e8c736b2ca6e0e",
+  "rawMetadataSha256": "dd7fb63f80f23a1236c9686aa28224b76fb4a4505bb6b2aa87c0549b84bad228"
 }

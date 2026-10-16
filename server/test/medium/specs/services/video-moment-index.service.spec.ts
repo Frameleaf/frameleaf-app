@@ -654,3 +654,46 @@ describe(VideoMomentIndexService.name, () => {
     });
   });
 });
+
+it('publishes a video moment vector with exact producer identity and clears it on legacy replacement', async () => {
+  const { sut, moments, newOwner, newVideo, framesOf } = setup();
+  const { user } = await newOwner();
+  const video = await newVideo(user.id);
+  await sut.runFramesStage(video.id);
+  const [frame] = await framesOf(video.id);
+  const embedding = newEmbedding();
+  const modelKey = `clip:${'a'.repeat(64)}`;
+  const patch = { embeddingModel: defaults.machineLearning.clip.modelName, embeddingDestinationId: null };
+  const bound = { embedding, modelKey };
+  const expectedModel = patch.embeddingModel;
+  const publishing = moments.publishIndex(video.id, [{ frameId: frame.id, embedding: bound }], patch);
+  bound.modelKey = `clip:${'b'.repeat(64)}`;
+  bound.embedding = newEmbedding();
+  patch.embeddingModel = 'changed while publishing';
+  await publishing;
+  patch.embeddingModel = expectedModel;
+  const read = () =>
+    database
+      .selectFrom('video_moment_frame_embedding')
+      .selectAll()
+      .where('frameId', '=', frame.id)
+      .executeTakeFirstOrThrow();
+  const persisted = await read();
+  expect(persisted).toMatchObject({ modelName: expectedModel, producerModelKey: modelKey });
+  expect(JSON.parse(persisted.embedding).map((v: number) => Math.fround(v))).toEqual(
+    JSON.parse(embedding).map((v: number) => Math.fround(v)),
+  );
+  await expect(
+    moments.publishIndex(
+      video.id,
+      [{ frameId: frame.id, embedding: { embedding, modelKey: 'unknown' } } as never],
+      patch,
+    ),
+  ).rejects.toThrow();
+  expect(await read()).toEqual(persisted);
+  await moments.publishIndex(video.id, [{ frameId: frame.id, embedding }], patch);
+  expect(await read()).toMatchObject({ producerModelKey: null });
+  expect(JSON.parse((await read()).embedding).map((v: number) => Math.fround(v))).toEqual(
+    JSON.parse(embedding).map((v: number) => Math.fround(v)),
+  );
+});

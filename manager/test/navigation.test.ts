@@ -32,3 +32,49 @@ test('navigation never retries other failures or hides a repeated network-change
     assert.equal(calls, message === 'net::ERR_NETWORK_CHANGED' ? 2 : 1);
   }
 });
+
+test('the Chromium error page racing a network-change retry gets one final navigation', async () => {
+  const errors = [
+    new Error('page.goto: net::ERR_NETWORK_CHANGED'),
+    new Error(
+      'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+    ),
+  ];
+  let calls = 0;
+  await navigate(
+    {
+      goto: async () => {
+        const error = errors[calls++];
+        if (error) throw error;
+      },
+    },
+    'https://fixture.test',
+  );
+  assert.equal(calls, 3);
+});
+
+test('a repeated browser error race and unrelated second error still fail', async () => {
+  const race = new Error(
+    'page.goto: Navigation to "https://fixture.test/" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+  );
+  const certificate = new Error('net::ERR_CERT_INVALID');
+  for (const sequence of [
+    [race],
+    [new Error('net::ERR_NETWORK_CHANGED'), certificate],
+    [new Error('net::ERR_NETWORK_CHANGED'), race, race],
+  ]) {
+    let calls = 0;
+    await assert.rejects(
+      navigate(
+        {
+          goto: async () => {
+            throw sequence[Math.min(calls++, sequence.length - 1)];
+          },
+        },
+        'https://fixture.test',
+      ),
+      (error) => error === sequence.at(-1),
+    );
+    assert.equal(calls, sequence.length);
+  }
+});

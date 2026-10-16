@@ -29,6 +29,7 @@ import { deferJobAdoption } from 'src/queue/context.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { type ClipEmbedding, clipEmbeddingForStorage } from 'src/utils/clip-embedding.js';
 import {
   anyUuid,
   searchAssetBuilder,
@@ -772,19 +773,8 @@ export class SearchRepository {
       .execute();
   }
 
-  async upsert(assetId: string, value: string | { embedding: string; modelKey: string }): Promise<void> {
-    const { embedding, modelKey: producerModelKey } =
-      typeof value === 'string'
-        ? { embedding: value, modelKey: null }
-        : z
-            .strictObject({
-              embedding: z
-                .string()
-                .min(1)
-                .max(4 * 1024 * 1024),
-              modelKey: z.string().regex(/^clip:[a-f0-9]{64}$/),
-            })
-            .parse(value);
+  async upsert(assetId: string, value: ClipEmbedding): Promise<void> {
+    const { embedding, producerModelKey } = clipEmbeddingForStorage(value);
     const adopt = async (db: Kysely<DB>) => {
       await db
         .insertInto('smart_search')
@@ -802,11 +792,17 @@ export class SearchRepository {
     }
   }
 
-  async upsertDescriptionEmbedding(assetId: string, embedding: string): Promise<void> {
+  async upsertDescriptionEmbedding(assetId: string, value: ClipEmbedding): Promise<void> {
+    const { embedding, producerModelKey } = clipEmbeddingForStorage(value);
     await this.db
       .insertInto('smart_search_description')
-      .values({ assetId, embedding })
-      .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') })))
+      .values({ assetId, embedding, producerModelKey })
+      .onConflict((oc) =>
+        oc.column('assetId').doUpdateSet((eb) => ({
+          embedding: eb.ref('excluded.embedding'),
+          producerModelKey: eb.ref('excluded.producerModelKey'),
+        })),
+      )
       .execute();
   }
 

@@ -93,6 +93,33 @@ describe(DuplicateRepository.name, () => {
   });
 
   describe('replaceVideoDuplicateFrames', () => {
+    it('replaces duplicate frame vectors with their exact producer identity and clears legacy provenance', async () => {
+      const { assetRepository, sut, userRepository } = setup();
+      const user = await createUser(userRepository);
+      const asset = await createAsset(assetRepository, user.id);
+      const modelKey = `clip:${'a'.repeat(64)}`;
+      const frame = { assetId: asset.id, frameIndex: 0, timestampMs: 1000, path: 'fixture.jpeg' };
+      const bound = { embedding: vector(0), modelKey };
+      const publishing = sut.replaceVideoDuplicateFrames(asset.id, [{ ...frame, embedding: bound }]);
+      bound.modelKey = `clip:${'b'.repeat(64)}`;
+      bound.embedding = vector(1);
+      await publishing;
+      expect(await sut.getVideoDuplicateFrames([asset.id])).toEqual([
+        expect.objectContaining({ embedding: vector(0), producerModelKey: modelKey }),
+      ]);
+      await expect(
+        sut.replaceVideoDuplicateFrames(asset.id, [
+          { ...frame, embedding: { embedding: vector(1), modelKey: 'unknown' } } as never,
+        ]),
+      ).rejects.toThrow();
+      expect(await sut.getVideoDuplicateFrames([asset.id])).toEqual([
+        expect.objectContaining({ embedding: vector(0), producerModelKey: modelKey }),
+      ]);
+      await sut.replaceVideoDuplicateFrames(asset.id, [{ ...frame, embedding: vector(1) }]);
+      expect(await sut.getVideoDuplicateFrames([asset.id])).toEqual([
+        expect.objectContaining({ embedding: vector(1), producerModelKey: null }),
+      ]);
+    });
     it('should replace rows and return stale file paths', async () => {
       const { assetRepository, sut, userRepository } = setup();
       const user = await createUser(userRepository);

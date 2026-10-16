@@ -10590,6 +10590,15 @@
           "isArray": false,
           "default": "now()",
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "producerModelKey",
+          "tableName": "asset_video_duplicate_frame",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -10646,6 +10655,14 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_video_duplicate_frame_producer_key_check",
+          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "tableName": "asset_video_duplicate_frame",
+          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "synchronize": true
         }
       ],
@@ -29343,6 +29360,15 @@
           "isArray": false,
           "length": 768,
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "producerModelKey",
+          "tableName": "smart_search_description",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -29384,6 +29410,14 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "smart_search_description_producer_key_check",
+          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "tableName": "smart_search_description",
+          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "synchronize": true
         }
       ],
@@ -31366,6 +31400,15 @@
           "nullable": false,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "producerModelKey",
+          "tableName": "video_moment_frame_embedding",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -31407,6 +31450,14 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "video_moment_frame_embedding_producer_key_check",
+          "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "tableName": "video_moment_frame_embedding",
+          "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "synchronize": true
         }
       ],

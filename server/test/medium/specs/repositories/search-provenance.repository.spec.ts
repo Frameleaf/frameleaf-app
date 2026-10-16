@@ -102,3 +102,52 @@ it.skipIf(!process.env.FRAMELEAF_TEST_BOUND_ML_URL)(
   },
   60_000,
 );
+
+it('adds unknown provenance to the remaining vector stores and refuses to lose any recorded identity', async () => {
+  const { up: add, down: remove } = await import('src/schema/migrations/2100000002978-AllClipProducerIdentity.js');
+  const tables = ['asset_video_duplicate_frame', 'smart_search_description', 'video_moment_frame_embedding'];
+  await db.transaction().execute(async (tx) => {
+    const assetId = 'd621bd72-ad35-4199-95ab-76300756a38e';
+    for (const table of tables) {
+      await sql`CREATE TEMP TABLE ${sql.table(table)} ("assetId" uuid PRIMARY KEY, embedding vector(2)) ON COMMIT DROP`.execute(
+        tx,
+      );
+      await sql`INSERT INTO ${sql.table(table)} VALUES (${assetId}::uuid, '[1,0]')`.execute(tx);
+    }
+    await add(tx);
+    for (const table of tables) {
+      const { rows } = await sql<{
+        embedding: string;
+        producerModelKey: string | null;
+      }>`SELECT embedding, "producerModelKey" FROM ${sql.table(table)}`.execute(tx);
+      expect(rows).toEqual([{ embedding: '[1,0]', producerModelKey: null }]);
+    }
+    const repository = new SearchRepository(tx);
+    const bound = { embedding: '[0,1]', modelKey: `clip:${'a'.repeat(64)}` };
+    const publishing = repository.upsertDescriptionEmbedding(assetId, bound);
+    bound.modelKey = `clip:${'b'.repeat(64)}`;
+    bound.embedding = '[1,0]';
+    await publishing;
+    const description = () =>
+      tx.selectFrom('smart_search_description').selectAll().where('assetId', '=', assetId).executeTakeFirstOrThrow();
+    expect(await description()).toMatchObject({ embedding: '[0,1]', producerModelKey: `clip:${'a'.repeat(64)}` });
+    await expect(
+      repository.upsertDescriptionEmbedding(assetId, { embedding: '[1,0]', modelKey: 'unknown' }),
+    ).rejects.toThrow();
+    expect(await description()).toMatchObject({ embedding: '[0,1]', producerModelKey: `clip:${'a'.repeat(64)}` });
+    await repository.upsertDescriptionEmbedding(assetId, '[0,1]');
+    expect(await description()).toMatchObject({ embedding: '[0,1]', producerModelKey: null });
+    // The last table must be checked before dropping metadata from either earlier table.
+    for (const recorded of tables) {
+      await sql`UPDATE ${sql.table(recorded)} SET "producerModelKey" = ${`clip:${'a'.repeat(64)}`}`.execute(tx);
+      await expect(remove(tx)).rejects.toThrow('Cannot discard recorded CLIP producer identity');
+      for (const table of tables) await sql`SELECT "producerModelKey" FROM ${sql.table(table)}`.execute(tx);
+      await sql`UPDATE ${sql.table(recorded)} SET "producerModelKey" = NULL`.execute(tx);
+    }
+    await remove(tx);
+    for (const table of tables) {
+      const { rows } = await sql<{ embedding: string }>`SELECT embedding FROM ${sql.table(table)}`.execute(tx);
+      expect(rows).toEqual([{ embedding: table === 'smart_search_description' ? '[0,1]' : '[1,0]' }]);
+    }
+  });
+});
