@@ -37,6 +37,46 @@ const month = (ids: string[], isLoaded = true): FilmstripMonth & { ids: string[]
 const ids = (assets: TimelineAsset[]) => assets.map(({ id }) => id);
 
 describe('filmstripWindow (VIEWER-P4)', () => {
+  it('reads only the requested neighbours after finding an item in a large month', () => {
+    let reads = 0;
+    const items = new Proxy(
+      Array.from({ length: 1000 }, (_, index) => ({ id: String(index) }) as TimelineAsset),
+      {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) {
+            reads++;
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    const { assets } = filmstripWindow([{ isLoaded: true, getAssets: () => items }], 0, '500', 40);
+    expect(ids(assets)).toEqual(Array.from({ length: 81 }, (_, index) => String(index + 460)));
+    expect(reads).toBeLessThanOrEqual(582);
+  });
+
+  it('reads only the needed edge of each neighbouring month', () => {
+    let reads = 0;
+    const large = (prefix: string): FilmstripMonth => ({
+      isLoaded: true,
+      getAssets: () =>
+        new Proxy(
+          Array.from({ length: 1000 }, (_, index) => ({ id: `${prefix}${index}` }) as TimelineAsset),
+          {
+            get(target, key, receiver) {
+              if (typeof key === 'string' && /^\d+$/.test(key)) {
+                reads++;
+              }
+              return Reflect.get(target, key, receiver);
+            },
+          },
+        ),
+    });
+    const { assets } = filmstripWindow([large('before'), month(['current']), large('after')], 1, 'current', 2);
+    expect(ids(assets)).toEqual(['before998', 'before999', 'current', 'after0', 'after1']);
+    expect(reads).toBeLessThanOrEqual(4);
+  });
+
   it('runs across month edges, so a month of one item still has neighbours', () => {
     const months = [month(['a', 'b']), month(['c']), month(['d', 'e'])];
     const { assets, toLoad } = filmstripWindow(months, 1, 'c');

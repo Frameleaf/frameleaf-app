@@ -88,6 +88,14 @@ describe('trash (FL-47)', () => {
   });
 
   describe('pages', () => {
+    it.each([true, false])('keeps the first occurrence of a repeated incoming row (replace=%s)', (replace) => {
+      const shown = [item('a')];
+      const page = [item('b', { originalFileName: 'first.jpg' }), item('b', { originalFileName: 'duplicate.jpg' })];
+      expect(mergeTrashPage(shown, page, replace)).toEqual(replace ? [page[0]] : [shown[0], page[0]]);
+      expect(shown).toHaveLength(1);
+      expect(page).toHaveLength(2);
+    });
+
     it('should replace the list on a first page and append later pages without repeats', () => {
       const shown = [item('a'), item('b')];
       expect(mergeTrashPage(shown, [item('c')], true).map(({ id }) => id)).toEqual(['c']);

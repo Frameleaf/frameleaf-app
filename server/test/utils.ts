@@ -460,6 +460,8 @@ export const getMocks = () => {
   mocks.partner.getAll.mockResolvedValue([]);
   mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+  mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
   mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
   mocks.classification.recordAlbumRemovals.mockResolvedValue({
     added: 0,

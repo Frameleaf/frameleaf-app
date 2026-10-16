@@ -23,8 +23,10 @@ const syncTabStop = (root: HTMLElement) => {
       (item) => item.getAttribute('aria-checked') === 'true' || item.getAttribute('aria-selected') === 'true',
     ) ??
     list[0];
-  for (const item of list) {
-    item.tabIndex = item === stop ? 0 : -1;
+  for (const item of root.querySelectorAll<HTMLElement>(ITEM)) {
+    if (item.closest(GROUP) === root) {
+      item.tabIndex = item === stop ? 0 : -1;
+    }
   }
 };
 
