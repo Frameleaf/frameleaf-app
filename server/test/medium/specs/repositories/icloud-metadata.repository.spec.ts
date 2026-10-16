@@ -1,9 +1,11 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AlbumKind } from 'src/enum.js';
+import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
+import { AssetService } from 'src/services/asset.service.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   canonicalTestContext,
@@ -11,7 +13,7 @@ import {
   seedCanonicalAsset,
   seedCanonicalUser,
 } from 'test/fixtures/canonical-database.js';
-import { getKyselyDB } from 'test/utils.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
   let db: Kysely<DB>;
@@ -380,6 +382,122 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     await service.reconcile(ctx.connectionId, ctx.ownerId);
     expect(await target(ctx.assetId)).toMatchObject({ isFavorite: false });
     expect(await target(second)).toMatchObject({ isFavorite: true });
+  });
+
+  it('keeps a durable lock effect when immediate followup fails and can replay the profile/thumbnail handler', async () => {
+    const ctx = await setup({ isHidden: true });
+    events.emit.mockRejectedValueOnce(new Error('immediate followup failed'));
+    await expect(service.reconcile(ctx.connectionId, ctx.ownerId)).rejects.toThrow('immediate followup failed');
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    const effects = await db
+      .selectFrom('asset_local_effect')
+      .select('bundle')
+      .where('ownerId', '=', ctx.ownerId)
+      .execute();
+    expect(effects).toHaveLength(1);
+    expect(effects[0].bundle).toMatchObject({
+      origin: { kind: 'lock' },
+      lockedCascade: { assetIds: [ctx.assetId] },
+      assets: [],
+      stacks: [],
+    });
+    const { sut, mocks } = newTestService(AssetService);
+    mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+    mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+    await sut.onAssetLocalEffects(effects[0].bundle as never);
+    expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([ctx.assetId]);
+    expect(mocks.user.getLockedProfileImageSources).toHaveBeenCalled();
+    expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetLocked', expect.anything());
+  });
+
+  it('rolls back actual locks and outbox rows together without leaking caller ids', async () => {
+    const ctx = await setup({ isHidden: true });
+    const append = AssetLocalEffectRepository.prototype.append;
+    const injected = vi.spyOn(AssetLocalEffectRepository.prototype, 'append').mockImplementation(async function (
+      this: AssetLocalEffectRepository,
+      ...args
+    ) {
+      await append.apply(this, args);
+      throw new Error('injected effect failure');
+    });
+    const locked: string[] = [];
+    try {
+      await expect(repository.reconcile(ctx.connectionId, ctx.ownerId, undefined, locked)).rejects.toThrow(
+        'injected effect failure',
+      );
+    } finally {
+      injected.mockRestore();
+    }
+    expect(locked).toEqual([]);
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', ctx.assetId).execute()).toEqual(
+      [],
+    );
+    expect(
+      await db.selectFrom('asset_local_effect').select('effectId').where('ownerId', '=', ctx.ownerId).execute(),
+    ).toEqual([]);
+    expect(
+      await db.selectFrom('asset_local_effect_stream').select('ownerId').where('ownerId', '=', ctx.ownerId).execute(),
+    ).toEqual([]);
+  });
+
+  it('follows up the first committed connection when a later extraction reconciliation fails', async () => {
+    const ctx = await setup({ isHidden: true });
+    const secondConnection = randomUUID();
+    await sql`INSERT INTO public.icloud_connection(id,"ownerId",label,state) VALUES(${secondConnection}::uuid,${ctx.ownerId}::uuid,'Second','connected')`.execute(
+      db,
+    );
+    await sql`INSERT INTO public.icloud_resource(id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId")
+      SELECT ${randomUUID()}::uuid,${secondConnection}::uuid,"ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId"
+      FROM public.icloud_resource WHERE id=${ctx.resourceId}::uuid`.execute(db);
+    const reconcile = repository.reconcile.bind(repository);
+    let calls = 0;
+    const injected = vi.spyOn(repository, 'reconcile').mockImplementation(async (...args) => {
+      if (++calls === 2) throw new Error('later connection failed');
+      return reconcile(...args);
+    });
+    events.emit.mockClear();
+    try {
+      await expect(
+        service.onAssetMetadataExtracted({ assetId: ctx.assetId, userId: ctx.ownerId } as never),
+      ).rejects.toThrow('later connection failed');
+    } finally {
+      injected.mockRestore();
+    }
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    expect(events.emit).toHaveBeenCalledExactlyOnceWith('AssetLockAll', {
+      assetIds: [ctx.assetId],
+      userId: ctx.ownerId,
+    });
+    expect(
+      await db.selectFrom('asset_local_effect').select('effectId').where('ownerId', '=', ctx.ownerId).execute(),
+    ).toHaveLength(1);
+  });
+
+  it('retains every member of a large stack across bounded durable lock bundles', async () => {
+    const ctx = await setup({ isHidden: true });
+    const ids = [ctx.assetId, ...Array.from({ length: 204 }, () => randomUUID())];
+    for (const id of ids.slice(1)) await seedCanonicalAsset(db, { id, ownerId: ctx.ownerId });
+    const { id: stackId } = await first(
+      sql<{
+        id: string;
+      }>`INSERT INTO stack("ownerId","primaryAssetId") VALUES(${ctx.ownerId}::uuid,${ctx.assetId}::uuid) RETURNING id`,
+    );
+    await sql`UPDATE asset SET "stackId"=${stackId}::uuid WHERE id=ANY(${ids}::uuid[])`.execute(db);
+    const locked: string[] = [];
+    await repository.reconcile(ctx.connectionId, ctx.ownerId, undefined, locked);
+    expect(locked.toSorted()).toEqual(ids.toSorted());
+    const effects = await db
+      .selectFrom('asset_local_effect')
+      .select('bundle')
+      .where('ownerId', '=', ctx.ownerId)
+      .orderBy('sequence')
+      .execute();
+    const cascades = effects.map(
+      (row) => (row.bundle as { lockedCascade: { assetIds: string[] } }).lockedCascade.assetIds,
+    );
+    expect(cascades.map((ids) => ids.length)).toEqual([100, 100, 5]);
+    expect(cascades.flat().toSorted()).toEqual(ids.toSorted());
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).toHaveLength(205);
   });
 
   it('preserves timezone interpretation while changing an unlocked capture instant', async () => {

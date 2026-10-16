@@ -459,6 +459,13 @@ export class AssetService extends BaseService {
     await this.notifyAssetsUpdated(assetIds, userId);
   }
 
+  @OnEvent({ name: 'AssetLocalEffects', priority: -1 })
+  async onAssetLocalEffects({ lockedCascade, ownerId }: ArgOf<'AssetLocalEffects'>): Promise<void> {
+    if (!lockedCascade) return;
+    await this.afterAssetsLocked(lockedCascade.assetIds, true);
+    await this.notifyAssetsUpdated(lockedCascade.assetIds, ownerId);
+  }
+
   /**
    * Push assets whose visibility a transactional archive changed outside `updateAll` (FL-32), with
    * their stack siblings, to the owner's open sessions, the same real-time update `updateAll` sends.

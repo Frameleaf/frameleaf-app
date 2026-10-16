@@ -80,6 +80,52 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('durable metadata lock effects', () => {
+    it('retries profile/thumbnail followup and owner updates without a stale blanket lock event', async () => {
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      await sut.onAssetLocalEffects({
+        origin: { kind: 'lock' },
+        ownerId: 'owner',
+        lockedCascade: { assetIds: ['asset'], interactiveAdmissions: [] },
+      } as never);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset']);
+      expect(mocks.user.getLockedProfileImageSources).toHaveBeenCalled();
+      expect(mocks.asset.getByIdsWithAllRelationsButStacks).toHaveBeenCalledWith(['asset'], 'owner');
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetLocked', expect.anything());
+    });
+
+    it('propagates a failed followup so the durable dispatcher cannot acknowledge it', async () => {
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([{ ownerId: 'owner', personGroupId: 'person' }]);
+      mocks.job.queueAll.mockRejectedValueOnce(new Error('thumbnail admission failed'));
+      await expect(
+        sut.onAssetLocalEffects({
+          origin: { kind: 'lock' },
+          ownerId: 'owner',
+          lockedCascade: { assetIds: ['asset'], interactiveAdmissions: [] },
+        } as never),
+      ).rejects.toThrow('thumbnail admission failed');
+    });
+
+    it('ignores effects that contain no lock cascade', async () => {
+      await sut.onAssetLocalEffects({ origin: { kind: 'publication' }, ownerId: 'owner' } as never);
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.user.getLockedProfileImageSources).not.toHaveBeenCalled();
+    });
+
+    it('also follows up real lock cascades produced by existing publication effects', async () => {
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+      mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+      await sut.onAssetLocalEffects({
+        origin: { kind: 'publication' },
+        ownerId: 'owner',
+        lockedCascade: { assetIds: ['asset'], interactiveAdmissions: [] },
+      } as never);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset']);
+      expect(mocks.user.getLockedProfileImageSources).toHaveBeenCalled();
+    });
+  });
+
   describe('getStatistics', () => {
     it('should get the statistics for a user, excluding archived assets', async () => {
       const auth = AuthFactory.create();
