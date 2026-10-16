@@ -224,7 +224,7 @@
               : 'frameleaf_analytics_growth_items_title',
           )}
           {labels}
-          unit={metric === 'storage' ? 'GiB' : $t('frameleaf_analytics_unit_items')}
+          unit={metric === 'storage' ? 'GB' : $t('frameleaf_analytics_unit_items')}
           height={260}
           datasets={metric === 'storage'
             ? [

@@ -451,10 +451,10 @@ describe('Frameleaf physical deduplication helpers', () => {
   });
 
   describe(formatBytes.name, () => {
-    it('formats with binary units', () => {
-      expect(formatBytes(14_850_240, 'en-US')).toBe('14.2 MiB');
-      expect(formatBytes(428_600_320 * 4, 'en-US')).toBe('1.60 GiB');
-      expect(formatBytes(2048, 'en-US')).toBe('2 KiB');
+    it('formats with decimal units (D5)', () => {
+      expect(formatBytes(14_850_240, 'en-US')).toBe('15 MB');
+      expect(formatBytes(428_600_320 * 4, 'en-US')).toBe('1.7 GB');
+      expect(formatBytes(2048, 'en-US')).toBe('2 KB');
       expect(formatBytes(12, 'en-US')).toBe('12 B');
     });
   });

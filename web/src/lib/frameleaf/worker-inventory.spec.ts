@@ -228,7 +228,8 @@ describe('labels (FL-72)', () => {
   });
 
   it('formats GPU memory and says nothing when it is unknown', () => {
-    expect(formatGpuMemory(17_179_869_184, 'en')).toBe('16 GiB');
+    // Labelled GB, counted as the card is sold (D5).
+    expect(formatGpuMemory(17_179_869_184, 'en')).toBe('16 GB');
     expect(formatGpuMemory(null, 'en')).toBeNull();
     expect(formatGpuMemory(0, 'en')).toBeNull();
   });

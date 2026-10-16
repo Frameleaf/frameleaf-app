@@ -26,6 +26,7 @@
     onRequestClose,
     onkeydown,
     wide = false,
+    size = 'default',
     compactControls = false,
     onClosed,
     children,
@@ -40,8 +41,13 @@
     onRequestClose?: () => void;
     /** Lets a modal keep its keys from underlying viewer shortcuts. */
     onkeydown?: (event: KeyboardEvent) => void;
-    /** A workflow with side-by-side evidence (FL-59), like the design's wide dialogs. */
+    /** A workflow with side-by-side evidence (FL-59), like the design's wide dialogs. Same as `size="wide"`. */
     wide?: boolean;
+    /**
+     * The sheet's width: `default` is the prototype's 510px dialog, `medium` about 720px (the
+     * prototype's import flow, e.g. Google Photos), `wide` about 1120px (side-by-side evidence).
+     */
+    size?: 'default' | 'medium' | 'wide';
     /** Opt in to the prototype's compact desktop controls while retaining touch targets. */
     compactControls?: boolean;
     /** Runs once the exit has finished and the dialog is closed. Not called if the dialog is unmounted first. */
@@ -134,7 +140,8 @@
 <dialog
   bind:this={dialog}
   class="frameleaf dialog fl-continuous-corners"
-  class:wide
+  class:wide={wide || size === 'wide'}
+  class:medium={size === 'medium' && !wide}
   class:compact-controls={compactControls}
   class:with-actions={!!actions}
   data-theme={appTheme}
@@ -174,6 +181,8 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-sheet);
     padding: 22px;
+    /* Centred in the viewport on both axes, at any height (the prototype's share sheet). */
+    inset: 0;
     margin: auto;
     width: 100%;
     max-width: min(510px, calc(100vw - 32px));
@@ -183,6 +192,9 @@
     animation:
       fl-fade-in var(--fl-duration-fade) var(--fl-ease) both,
       fl-sheet-in var(--fl-duration-sheet) var(--fl-spring) both;
+  }
+  .dialog.medium {
+    max-width: min(720px, calc(100vw - 32px));
   }
   .dialog.wide {
     max-width: min(1120px, calc(100vw - 32px));
@@ -279,7 +291,8 @@
       padding: 17px;
       max-height: calc(100dvh - 24px);
     }
-    .dialog.wide {
+    .dialog.wide,
+    .dialog.medium {
       max-width: calc(100vw - 16px);
     }
     h2 {

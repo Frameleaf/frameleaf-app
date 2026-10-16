@@ -21,7 +21,8 @@
 
   const handleKeepThisDeleteOthers = async () => {
     const isConfirmed = await modalManager.showDialog({
-      title: $t('keep_this_delete_others'),
+      // The template's wording (media-viewer.mjs "Keep this, remove the rest"); the rest go to the trash.
+      title: $t('frameleaf_viewer_menu_keep_this'),
       prompt: $t('confirm_keep_this_delete_others'),
       confirmText: $t('delete_others'),
     });
@@ -37,4 +38,8 @@
   };
 </script>
 
-<MenuOption icon={mdiPinOutline} onClick={handleKeepThisDeleteOthers} text={text ?? $t('keep_this_delete_others')} />
+<MenuOption
+  icon={mdiPinOutline}
+  onClick={handleKeepThisDeleteOthers}
+  text={text ?? $t('frameleaf_viewer_menu_keep_this')}
+/>

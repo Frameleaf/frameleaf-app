@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
- * FL-29: "verify logo contrast in both themes". The brand-kit artwork is used as supplied (never
- * recoloured), so this measures it against the theme canvases (tokens.css `--fl-canvas`) and pins the
- * placement rules `Logo.svelte` follows: the near-white wordmark only on the dark surface (text,
- * 4.5:1), the gradient symbol as a graphic (3:1) on the dark surface, and on the light surface the
- * product name carried by real text in `--fl-text`, because the symbol's lightest stop is below 3:1
- * there and the kit has no dark-ink wordmark.
+ * FL-29: "verify logo contrast in both themes". This measures the lockups the app swaps by theme
+ * (D7, 2026-10-16) against the theme canvases (tokens.css `--fl-canvas`): on the dark surface the
+ * whole wordmark is the kit's near-white (text, 4.5:1; no green "leaf"), the gradient symbol is a
+ * graphic (3:1), and on the light surface "Frame" is the dark-ink derivative's #111d26. The light
+ * lockup keeps the brand's green "leaf" lettering, which is below 3:1 there, so the name is always
+ * in the image's accessible name as well.
  */
 const assets = resolve(import.meta.dirname, '../../assets/frameleaf');
 const colours = (file: string, attribute: 'fill' | 'stop-color') =>
@@ -38,12 +38,20 @@ const canvas = (theme: 'dark' | 'light') => {
 };
 
 describe('Frameleaf logo contrast (FL-29)', () => {
-  it('reads the wordmark at 4.5:1 or more on the dark canvas', () => {
-    const fills = colours('frameleaf-logo-dark.svg', 'fill');
-    expect(fills.length).toBeGreaterThan(0);
+  it('reads the whole dark wordmark at 4.5:1 or more on the dark canvas, with no green leaf (D7)', () => {
+    const fills = colours('frameleaf-logo-on-dark.svg', 'fill');
+    // "Frame" and "leaf", both the near-white; no gradient fill is left in the wordmark.
+    expect(fills).toEqual(['#f7f9fc', '#f7f9fc']);
+    expect(readFileSync(resolve(assets, 'frameleaf-logo-on-dark.svg'), 'utf8')).not.toContain('wordmark-leaf');
     for (const fill of fills) {
       expect(contrast(fill, canvas('dark'))).toBeGreaterThanOrEqual(4.5);
     }
+  });
+
+  it('reads "Frame" at 4.5:1 or more on the light canvas', () => {
+    const fills = colours('frameleaf-logo-on-light.svg', 'fill');
+    expect(fills).toEqual(['#111d26']);
+    expect(contrast(fills[0], canvas('light'))).toBeGreaterThanOrEqual(4.5);
   });
 
   it('keeps every symbol colour at 3:1 or more on the dark canvas', () => {
@@ -54,14 +62,14 @@ describe('Frameleaf logo contrast (FL-29)', () => {
     }
   });
 
-  it('never relies on the symbol alone for the name on the light canvas', () => {
+  it('never relies on the green lettering alone for the name on the light canvas', () => {
     const weakest = Math.min(
-      ...colours('frameleaf-symbol.svg', 'stop-color').map((stop) => contrast(stop, canvas('light'))),
+      ...colours('frameleaf-logo-on-light.svg', 'stop-color').map((stop) => contrast(stop, canvas('light'))),
     );
-    // Measured below 3:1: which is why the light lockup pairs the symbol with the name as text
+    // Measured below 3:1: which is why the lockup always carries the name as its accessible name.
     expect(weakest).toBeLessThan(3);
     const logo = readFileSync(resolve(import.meta.dirname, 'Logo.svelte'), 'utf8');
-    expect(logo).toMatch(/<span aria-hidden=\{decorative \|\| undefined\}>\{name\}<\/span>/);
-    expect(logo).toMatch(/\.fl-logo-inline[^}]*color: var\(--fl-text/s);
+    expect(logo).toMatch(/src=\{onDark \? \(white \? logoWhiteUrl : logoOnDarkUrl\) : logoOnLightUrl\}/);
+    expect(logo).toMatch(/alt=\{decorative \? '' : name\}/);
   });
 });

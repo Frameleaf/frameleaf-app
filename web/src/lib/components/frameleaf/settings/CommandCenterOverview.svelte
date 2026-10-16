@@ -279,10 +279,10 @@
       >
       <a href={href('storage')} style:--i={1}
         ><span>{$t('frameleaf_cc_filesystem')}</span><strong
-          >{storage ? storage.diskUse : $t('frameleaf_cc_unmeasured')}</strong
+          >{storage ? formatBytes(storage.diskUseRaw) : $t('frameleaf_cc_unmeasured')}</strong
         ><small
           >{storage
-            ? $t('frameleaf_cc_available', { values: { size: storage.diskAvailable } })
+            ? $t('frameleaf_cc_available', { values: { size: formatBytes(storage.diskAvailableRaw) } })
             : $t('frameleaf_cc_unmeasured')}<Icon icon={mdiChevronRight} size="16" /></small
         ></a
       >
@@ -378,14 +378,17 @@
         </header>
         {#if storage}<div class="storage-value">
             <strong><CountUp value={storage.diskUsagePercentage} format={percent} /></strong><span
-              >{$t('frameleaf_cc_storage_of_used', { values: { size: storage.diskSize } })}</span
+              >{$t('frameleaf_cc_storage_of_used', { values: { size: formatBytes(storage.diskSizeRaw) } })}</span
             >
           </div>
+          <!-- The server's preformatted disk strings use binary units; Frameleaf shows decimal (D5). -->
           <meter
             min="0"
             max={storage.diskSizeRaw}
             value={storage.diskUseRaw}
-            aria-label={$t('frameleaf_cc_storage_meter', { values: { used: storage.diskUse, size: storage.diskSize } })}
+            aria-label={$t('frameleaf_cc_storage_meter', {
+              values: { used: formatBytes(storage.diskUseRaw), size: formatBytes(storage.diskSizeRaw) },
+            })}
           ></meter>{/if}
         <dl>
           <div>

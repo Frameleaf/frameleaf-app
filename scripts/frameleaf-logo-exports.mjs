@@ -14,6 +14,9 @@
 // design/frameleaf/derivatives/frameleaf-logo-light.svg, the tracked dark-ink derivative of
 // frameleaf-logo-dark.svg ("Frame" lettering filled with the kit's #111D26 canvas colour) that
 // light surfaces (README, docs, email) need because the kit ships no light-background wordmark.
+// The second is design/frameleaf/derivatives/frameleaf-logo-dark-app.svg, the kit's dark logo with
+// its "leaf" lettering in the same #F7F9FC as "Frame": the app's dark-theme lockup, with no green
+// leaf in the wordmark (owner decision D7, 2026-10-16).
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -27,6 +30,7 @@ const src = {
   appIcon: `${kit}/frameleaf-app-icon.svg`,
   logoDark: `${kit}/frameleaf-logo-dark.svg`,
   logoLight: "design/frameleaf/derivatives/frameleaf-logo-light.svg",
+  logoDarkApp: "design/frameleaf/derivatives/frameleaf-logo-dark-app.svg",
 };
 const sha = (buffer) => createHash("sha256").update(buffer).digest("hex");
 const read = (path) => readFileSync(join(root, path));
@@ -151,6 +155,9 @@ for (const name of [
 ]) {
   copy(`${kit}/${name}`, `web/src/lib/assets/frameleaf/${name}`);
 }
+// Web: the lockups the sign-in screens and the top bar swap by theme (Logo.svelte, D7).
+copy(src.logoLight, "web/src/lib/assets/frameleaf/frameleaf-logo-on-light.svg");
+copy(src.logoDarkApp, "web/src/lib/assets/frameleaf/frameleaf-logo-on-dark.svg");
 copy(src.symbol, "web/static/favicon.svg");
 // Email header, served by the Frameleaf server itself (server/src/emails/components/frameleaf-logo.tsx).
 await png(

@@ -56,7 +56,8 @@
   const saveButtonText = () => save(() => cloudManager.setButtonText(buttonText.trim()));
   const buttonTextId = $props.id();
 
-  // FL-235: the quota (GiB) new invited accounts start with; empty means unlimited.
+  // FL-235: the quota (decimal GB, D5; the server multiplies by 1,000,000,000) new invited accounts
+  // start with; empty means unlimited.
   const savedQuota = $derived(status?.signInInvitedStorageQuota ?? null);
   let quotaText = $derived(savedQuota === null ? '' : String(savedQuota));
   const quotaValue = $derived(quotaText.trim() === '' ? null : Number(quotaText.trim()));

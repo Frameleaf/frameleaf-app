@@ -48,7 +48,7 @@
   let storageLabel = $state(user?.storageLabel ?? '');
   // `bind:value` on a number input hands back a number, or null once the field is emptied.
   let quota = $state<string | number | null>(
-    typeof user?.quotaSizeInBytes === 'number' ? convertFromBytes(user.quotaSizeInBytes, ByteUnit.GiB) : '',
+    typeof user?.quotaSizeInBytes === 'number' ? convertFromBytes(user.quotaSizeInBytes, ByteUnit.GB) : '',
   );
   let shouldChangePassword = $state(user?.shouldChangePassword ?? true);
   let notify = $state(true);
@@ -66,13 +66,14 @@
   const editing = $derived(!!user);
   const withPassword = $derived(!editing && authentication === 'password');
 
-  // The DTO takes whole bytes (a safe integer), so a fractional GiB is rounded rather than rejected by
-  // the server. The largest quota is capped: a huge value would round to Infinity, and an Infinity
-  // must never reach the request, where it would serialize to null and mean "unlimited".
+  // The field is in decimal GB (D5). The DTO takes whole bytes (a safe integer), so a fractional GB is
+  // rounded rather than rejected by the server. The largest quota is capped: a huge value would round
+  // to Infinity, and an Infinity must never reach the request, where it would serialize to null and
+  // mean "unlimited".
   const maxQuotaBytes = Number.MAX_SAFE_INTEGER;
-  const maxQuotaGiB = Math.floor(convertFromBytes(maxQuotaBytes, ByteUnit.GiB));
+  const maxQuotaGB = Math.floor(convertFromBytes(maxQuotaBytes, ByteUnit.GB));
   const quotaEmpty = $derived(String(quota ?? '').trim() === '');
-  const quotaBytesRaw = $derived(quotaEmpty ? null : Math.round(convertToBytes(Number(quota), ByteUnit.GiB)));
+  const quotaBytesRaw = $derived(quotaEmpty ? null : Math.round(convertToBytes(Number(quota), ByteUnit.GB)));
   const quotaInvalid = $derived(
     quotaBytesRaw !== null && (!Number.isFinite(quotaBytesRaw) || quotaBytesRaw < 0 || quotaBytesRaw > maxQuotaBytes),
   );
@@ -214,11 +215,11 @@
       </label>
       <label>
         <span>{$t('frameleaf_users_field_quota')}</span>
-        <!-- `step="any"`: a fractional GiB (or an existing quota that is not whole GiB) must not block the form. -->
+        <!-- `step="any"`: a fractional GB (or an existing quota that is not whole GB) must not block the form. -->
         <input
           type="number"
           min="0"
-          max={maxQuotaGiB}
+          max={maxQuotaGB}
           step="any"
           placeholder={$t('unlimited')}
           bind:value={quota}
@@ -259,7 +260,7 @@
       <p class="notice">{$t('frameleaf_users_storage_label_notice')}</p>
     {/if}
     {#if quotaInvalid}
-      <p class="error" role="alert">{$t('frameleaf_users_quota_invalid', { values: { max: maxQuotaGiB } })}</p>
+      <p class="error" role="alert">{$t('frameleaf_users_quota_invalid', { values: { max: maxQuotaGB } })}</p>
     {/if}
     {#if quotaOverCapacity}
       <p class="notice">{$t('frameleaf_users_quota_over_capacity')}</p>

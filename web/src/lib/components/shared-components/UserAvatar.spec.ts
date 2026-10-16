@@ -1,5 +1,6 @@
 import { UserAvatarColor } from '@frameleaf/sdk';
 import { render, waitFor } from '@testing-library/svelte';
+import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
 import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
@@ -32,6 +33,16 @@ describe('UserAvatar', () => {
     ...container.querySelectorAll('[class*="bg-"], [class*="border"]'),
     ...[...container.querySelectorAll('span')].filter((span) => span.textContent?.trim()),
   ];
+
+  it('has an 18px xs size for avatar stacks, with a 10px initial', () => {
+    const { container } = render(UserAvatar, { user: sam, size: 'xs', noTitle: true });
+
+    expect(container.querySelector('figure')).toHaveClass('w-4.5', 'h-4.5');
+    expect(tile(container)).toHaveClass('text-[0.625rem]');
+
+    const stack = render(AlbumAvatarStack, { users: [sam] });
+    expect(stack.container.querySelector(':scope .avatar figure')).toHaveClass('w-4.5');
+  });
 
   it('is the tile, in the account colour with the initial, when there is no photo', () => {
     const { container } = render(UserAvatar, { user: sam, size: 'md', noTitle: true });

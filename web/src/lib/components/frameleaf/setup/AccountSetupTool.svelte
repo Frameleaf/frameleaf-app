@@ -7,7 +7,8 @@
    * done in any order. Done marks the account onboarded; the account menu reopens it.
    */
   import { goto } from '$app/navigation';
-  import logoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-dark.svg?url';
+  // The setup screens are always dark: the dark lockup with no green "leaf" in the wordmark (D7).
+  import logoDarkUrl from '$lib/assets/frameleaf/frameleaf-logo-on-dark.svg?url';
   import symbolUrl from '$lib/assets/frameleaf/frameleaf-symbol.svg?url';
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
   import AvatarEditorDialog from '$lib/components/frameleaf/AvatarEditorDialog.svelte';

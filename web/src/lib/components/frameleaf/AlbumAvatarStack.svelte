@@ -22,7 +22,9 @@
     aria-label={$t('frameleaf_albums_shared_with', { values: { names } })}
   >
     {#each shown as user (user.id)}
-      <span class="avatar fl-squircle"><span class="face"><UserAvatar {user} size="full" noTitle /></span></span>
+      <span class="avatar fl-squircle"
+        ><span class="face"><UserAvatar {user} size={size === 'sm' ? 'xs' : 'full'} noTitle /></span></span
+      >
     {/each}
     {#if more > 0}
       <span class="more">+{more}</span>

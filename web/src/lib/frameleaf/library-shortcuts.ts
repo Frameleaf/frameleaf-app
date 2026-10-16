@@ -38,6 +38,8 @@ export type LibraryShortcut = {
   value?: number;
   /** Matched, but folded into a sibling row in the help (for example the second arrow key). */
   helpHidden?: boolean;
+  /** The display keys are alternatives ("← or →"), not a chord pressed together ("⇧ + A"). */
+  alternatives?: boolean;
   /**
    * The timeline's own wording where a shared key does something else there (prototype
    * `shortcuts.mjs`: ← → move focus in the timeline and step photos in the viewer). `info: null`
@@ -64,6 +66,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'navigate-previous',
     key: 'ArrowLeft',
     keys: ['←', '→'],
+    alternatives: true,
     label: 'previous_or_next_photo',
     group: 'general',
     surfaces: BOTH,
@@ -82,6 +85,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'focus-up',
     key: 'ArrowUp',
     keys: ['↑', '↓'],
+    alternatives: true,
     label: 'frameleaf_library_shortcut_move_focus_row',
     group: 'general',
     surfaces: TIMELINE,
@@ -186,7 +190,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'rate-1',
     key: '1',
     keys: ['1-5'],
-    label: 'rate_asset',
+    label: 'frameleaf_library_shortcut_rate',
     info: 'zero_to_clear_rating',
     group: 'actions',
     surfaces: BOTH,
@@ -196,7 +200,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'rate-2',
     key: '2',
     keys: ['2'],
-    label: 'rate_asset',
+    label: 'frameleaf_library_shortcut_rate',
     group: 'actions',
     surfaces: BOTH,
     value: 2,
@@ -206,7 +210,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'rate-3',
     key: '3',
     keys: ['3'],
-    label: 'rate_asset',
+    label: 'frameleaf_library_shortcut_rate',
     group: 'actions',
     surfaces: BOTH,
     value: 3,
@@ -216,7 +220,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'rate-4',
     key: '4',
     keys: ['4'],
-    label: 'rate_asset',
+    label: 'frameleaf_library_shortcut_rate',
     group: 'actions',
     surfaces: BOTH,
     value: 4,
@@ -226,7 +230,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'rate-5',
     key: '5',
     keys: ['5'],
-    label: 'rate_asset',
+    label: 'frameleaf_library_shortcut_rate',
     group: 'actions',
     surfaces: BOTH,
     value: 5,
@@ -236,7 +240,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     id: 'rate-clear',
     key: '0',
     keys: ['0'],
-    label: 'rate_asset',
+    label: 'frameleaf_library_shortcut_rate',
     group: 'actions',
     surfaces: BOTH,
     value: 0,
@@ -245,10 +249,24 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
   { id: 'favorite', key: 'f', keys: ['F'], label: 'favorite_or_unfavorite_photo', group: 'actions', surfaces: BOTH },
   { id: 'info', key: 'i', keys: ['I'], label: 'show_or_hide_info', group: 'actions', surfaces: BOTH },
   { id: 'edit', key: 'e', keys: ['E'], label: 'edit', group: 'actions', surfaces: BOTH },
-  { id: 'stack', key: 's', keys: ['S'], label: 'stack_selected_photos', group: 'actions', surfaces: BOTH },
+  {
+    id: 'stack',
+    key: 's',
+    keys: ['S'],
+    label: 'frameleaf_library_shortcut_stack_selected',
+    group: 'actions',
+    surfaces: BOTH,
+  },
   { id: 'add-to-album', key: 'l', keys: ['L'], label: 'add_to_album', group: 'actions', surfaces: BOTH },
-  { id: 'tag', key: 't', keys: ['T'], label: 'tag_assets', group: 'actions', surfaces: BOTH },
-  { id: 'tag-people', key: 'p', keys: ['P'], label: 'tag_people', group: 'actions', surfaces: BOTH },
+  { id: 'tag', key: 't', keys: ['T'], label: 'frameleaf_library_shortcut_tag', group: 'actions', surfaces: BOTH },
+  {
+    id: 'tag-people',
+    key: 'p',
+    keys: ['P'],
+    label: 'frameleaf_library_shortcut_tag_people',
+    group: 'actions',
+    surfaces: BOTH,
+  },
   {
     id: 'archive',
     key: 'a',
@@ -265,7 +283,7 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     key: ['Delete', 'Backspace'],
     shift: 'any',
     keys: ['Del'],
-    label: 'trash_delete_asset',
+    label: 'frameleaf_library_shortcut_move_to_trash',
     info: 'shift_to_permanent_delete',
     group: 'actions',
     surfaces: BOTH,
@@ -353,7 +371,14 @@ export const isMacPlatform = (nav: { platform?: string; userAgent?: string } | n
 export const formatShortcutKeys = (entry: LibraryShortcut, { mac = isMacPlatform() }: { mac?: boolean } = {}) =>
   entry.keys.map((key) => (key === 'Mod' ? (mac ? '⌘' : 'Ctrl') : key));
 
-export type ShortcutHelpEntry = { id: string; key: string[]; action: string; info?: string };
+export type ShortcutHelpEntry = {
+  id: string;
+  key: string[];
+  action: string;
+  info?: string;
+  /** The keys are read "← or →", not as a chord. */
+  alternatives?: true;
+};
 export type ShortcutHelpGroups = { general: ShortcutHelpEntry[]; actions: ShortcutHelpEntry[] };
 
 /**
@@ -381,6 +406,7 @@ export const libraryShortcutGroups = (
       key: formatShortcutKeys(entry, { mac }),
       action: translate(label),
       ...(info && { info: translate(info) }),
+      ...(entry.alternatives && { alternatives: true as const }),
     });
   }
   return groups;

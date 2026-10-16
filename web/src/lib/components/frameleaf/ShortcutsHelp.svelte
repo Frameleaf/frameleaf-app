@@ -60,8 +60,10 @@
                   {/if}
                 </dt>
                 <dd>
+                  <!-- Alternatives read "← or →"; a "+" would read as a chord. -->
                   {#each item.key as key, index (`${key}-${index}`)}
-                    {#if index > 0}<span aria-hidden="true">+</span>{/if}
+                    {#if index > 0}{#if item.alternatives}<span>{$t('or')}</span>{:else}<span aria-hidden="true">+</span
+                        >{/if}{/if}
                     <kbd>{key}</kbd>
                   {/each}
                 </dd>

@@ -15,8 +15,9 @@
   import {
     ACCOUNT_FEATURES,
     ACCOUNT_PREFERENCES_SECTIONS,
-    archiveSizeToGib,
-    gibToArchiveSize,
+    archiveSizeToGb,
+    GB,
+    gbToArchiveSize,
     reminderDateFromInput,
     reminderDateInput,
     type AccountFeatureId,
@@ -83,15 +84,15 @@
   const draft = $derived(store.draft);
   const dirty = $derived(store.dirty);
 
-  // The size field shows GiB while the draft holds exact bytes. It keeps what was typed, so a
-  // value that rounds to a whole number of bytes is never rewritten mid-entry; it only follows
+  // The size field shows decimal GB (D5) while the draft holds exact bytes. It keeps what was typed,
+  // so a value that rounds to a whole number of bytes is never rewritten mid-entry; it only follows
   // the draft when the draft changes some other way (cancel, reset, save, load latest).
-  let archiveGib = $state<number | null>(untrack(() => archiveSizeToGib(store.draft['download.archiveSize'])));
+  let archiveGb = $state<number | null>(untrack(() => archiveSizeToGb(store.draft['download.archiveSize'])));
   $effect(() => {
     const bytes = store.draft['download.archiveSize'];
     untrack(() => {
-      if (gibToArchiveSize(archiveGib) !== bytes) {
-        archiveGib = archiveSizeToGib(bytes);
+      if (gbToArchiveSize(archiveGb) !== bytes) {
+        archiveGb = archiveSizeToGb(bytes);
       }
     });
   });
@@ -405,14 +406,14 @@
             <span>{$t('frameleaf_account_prefs_archive_size')}</span>
             <input
               type="number"
-              min={1 / 1024 ** 3}
+              min={1 / GB}
               step="any"
               required
               aria-describedby="ap-archive-size-help"
-              bind:value={archiveGib}
+              bind:value={archiveGb}
               oninput={(event) => {
                 const value = (event.currentTarget as HTMLInputElement).value;
-                change('download.archiveSize', value === '' ? null : gibToArchiveSize(Number(value)));
+                change('download.archiveSize', value === '' ? null : gbToArchiveSize(Number(value)));
               }}
             />
             <small id="ap-archive-size-help">{$t('frameleaf_account_prefs_archive_size_help')}</small>

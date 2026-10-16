@@ -56,11 +56,13 @@ describe('Command Center measured Overview', () => {
     sdk.getAnalyticsReport.mockReset().mockResolvedValue(analyticsReportFixture());
     sdk.getAboutInfo.mockResolvedValue({ version: '3.2.0', licensed: false });
     sdk.getStorage.mockResolvedValue({
-      diskUse: '60 GiB',
-      diskSize: '100 GiB',
-      diskAvailable: '40 GiB',
-      diskUseRaw: 60,
-      diskSizeRaw: 100,
+      // The server's strings are binary; the page formats the raw bytes in decimal units (D5).
+      diskUse: '55.9 GiB',
+      diskSize: '93.1 GiB',
+      diskAvailable: '37.3 GiB',
+      diskUseRaw: 60e9,
+      diskSizeRaw: 100e9,
+      diskAvailableRaw: 40e9,
       diskUsagePercentage: 60,
     });
     sdk.getQueues.mockResolvedValue([
@@ -80,7 +82,9 @@ describe('Command Center measured Overview', () => {
   it('renders real inventory and storage, sorts backup dates independently of filename prefixes, and labels absent telemetry', async () => {
     render(CommandCenterOverview);
     await screen.findByRole('link', { name: /All accounts.*100/ });
-    expect(screen.getByText('60 GiB')).toBeInTheDocument();
+    expect(screen.getByText('60 GB')).toBeInTheDocument();
+    expect(screen.getByText(/40 GB/)).toBeInTheDocument();
+    expect(screen.queryByText(/GiB/)).not.toBeInTheDocument();
     expect(screen.getByText('3.2.0')).toBeInTheDocument();
     // The latest backup reads as a time and a date; its file name is the tooltip (design review finding 77).
     const latest = screen.getByTitle('immich-db-backup-20260923T120000-v3.sql.gz');
