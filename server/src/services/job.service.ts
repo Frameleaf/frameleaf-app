@@ -5,7 +5,7 @@ import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName } from 'src/enum.js';
-import { afterJobCommit } from 'src/queue/context.js';
+import { afterJobCommit, queueExecution } from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
@@ -178,7 +178,10 @@ export class JobService extends BaseService {
       }
       await this.jobRepository.collectFollowups(() => this.onSuccess(job, response));
     } catch (error: unknown) {
-      await this.reportJobError(job, error);
+      // A dependency refusal defers the job rather than failing it; the queue warns about it once.
+      if (!queueExecution.getStore()?.dependencyReason) {
+        await this.reportJobError(job, error);
+      }
       throw error;
     } finally {
       try {

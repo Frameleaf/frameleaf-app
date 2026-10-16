@@ -262,6 +262,22 @@ describe(JobRepository.name, () => {
       expect(attemptEvidence.recordStoppedAttempt).toHaveBeenCalledWith(sut['store'].db, late.id, late.token);
     });
 
+    it('warns once per queue and reason when dependency refusals defer jobs, instead of logging each as a failure', async () => {
+      sut['eventRepository'].emit = vi.fn().mockImplementation(() => {
+        queueExecution.getStore()!.dependencyReason = 'destination-unavailable';
+        return Promise.reject(new Error('Machine learning destination refused'));
+      });
+      for (let index = 0; index < 3; index++) {
+        await sut['execute'](claim(index), new AbortController());
+      }
+      expect(sut['store'].defer).toHaveBeenCalledTimes(3);
+      expect(sut['store'].fail).not.toHaveBeenCalled();
+      expect(sut['logger'].error).not.toHaveBeenCalled();
+      expect(sut['logger'].warn).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(`${QueueName.BackgroundTask} queue are waiting (destination-unavailable)`),
+      );
+    });
+
     it('backpressures 128 claimed handlers before they can exhaust the ten-session execution pool', async () => {
       const work = Promise.withResolvers<void>();
       let active = 0;

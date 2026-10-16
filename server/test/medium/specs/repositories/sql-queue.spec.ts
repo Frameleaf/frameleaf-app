@@ -611,10 +611,22 @@ describe('PostgreSQL queue', () => {
       const [claim] = await store.claim(queue, workerA);
       await executor['execute'](claim, new AbortController());
       const {
-        rows: [job],
-      } = await sql<{ state: string; attempt: number; base: number; reason: string }>`select state, attempt,
-        "retryBaseAttempt" base, "dependencyReason" reason from job where id = ${claim.id}::uuid`.execute(db);
+        rows: [{ wait, ...job }],
+      } = await sql<{
+        state: string;
+        attempt: number;
+        base: number;
+        reason: string;
+        wait: number;
+      }>`select state, attempt,
+        "retryBaseAttempt" base, "dependencyReason" reason,
+        extract(epoch from "availableAt" - clock_timestamp())::float8 wait from job where id = ${claim.id}::uuid`.execute(
+        db,
+      );
       expect(job).toEqual({ state: 'pending', attempt: index + 1, base: index + 1, reason: 'destination-unavailable' });
+      // An unavailable destination backs off (30s, 1m, 2m) instead of re-running every 30 seconds forever.
+      expect(wait).toBeGreaterThan(30 * 2 ** index - 5);
+      expect(wait).toBeLessThanOrEqual(30 * 2 ** index);
       expect(await store.defer(claim, 'destination-unavailable')).toBe(false); // stale credit cannot be refunded twice
       await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
     }

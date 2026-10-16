@@ -53,6 +53,16 @@ const stoppedJobAttempts = sql`((j.attempt = 0 or exists (
     and not exists (select 1 from system_metadata m where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
       and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt')))`;
 
+/**
+ * Local capacity frees up within seconds. Any other dependency (machine learning off or unreachable,
+ * consent, budget, a missing preview) can stay down for hours, so its jobs wait longer on each claim
+ * (30s, 1m, 2m, 4m, 8m, then every 10m) instead of re-running every 30 seconds forever.
+ */
+const deferralDelay = (reason: JobDependencyReason) =>
+  reason === 'local-capacity'
+    ? sql`interval '30 seconds'`
+    : sql`least(interval '30 seconds' * power(2, least(attempt - 1, 5)), interval '10 minutes')`;
+
 /** Shared with the plan gate so the complete entitlement predicate remains measured even when
  * an admitted-live preflight can avoid executing it during ordinary publication.
  */
@@ -504,7 +514,7 @@ export class SqlQueueStore {
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
         "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
-        "availableAt" = clock_timestamp() + interval '30 seconds'
+        "availableAt" = clock_timestamp() + ${deferralDelay(reason)}
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
           and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null returning id`.execute(tx);
       if (rows.length === 0) return false;
