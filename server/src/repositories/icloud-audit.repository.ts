@@ -735,7 +735,7 @@ export class ICloudAuditRepository {
         AND (r."nextAttemptAt" IS NULL OR r."nextAttemptAt"<=clock_timestamp())
       ORDER BY r.id LIMIT 10`.execute(this.db);
     for (const candidate of candidates.rows) {
-      await this.db.transaction().execute(async (db) => {
+      const cleanReceipt = async (db: Transaction<DB>) => {
         await lockAuditOwner(db, candidate.ownerId, undefined, true);
         const binding = await sql<{
           connectionId: string;
@@ -823,7 +823,8 @@ export class ICloudAuditRepository {
           await sql`UPDATE public.icloud_resource SET "lastError"='audit_cleanup_retry',"nextAttemptAt"=clock_timestamp()+interval '5 minutes'
             WHERE id=${resource.id}::uuid`.execute(db);
         }
-      });
+      };
+      await this.staging.withCryptography(() => this.db.transaction().execute(cleanReceipt));
     }
   }
 }

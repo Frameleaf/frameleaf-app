@@ -182,13 +182,29 @@ export async function scheduledPrivatePathReferences(
   return false;
 }
 
-/** Short database-only transactions. No callback may perform transport, filesystem or decoder work. */
+/** Short admission transactions; custody disposal keeps bounded unlink operations under its path locks. */
 @Injectable()
 export class ICloudScheduledStagingRepository {
   constructor(
     @InjectKysely() private db: Kysely<DB>,
     private transport: ICloudTransportRepository,
   ) {}
+
+  withCryptography<T>(action: () => Promise<T>): Promise<T> {
+    return this.transport.withSessionCrypto(action);
+  }
+
+  private cryptoTransaction<T>(write: (db: Transaction<DB>) => Promise<T>): Promise<T> {
+    return this.withCryptography(() => this.db.transaction().execute(write));
+  }
+
+  private admittedWithCryptography<T>(
+    input: ScheduledStagingInput,
+    action: (db: Transaction<DB>, admission: ScheduledStagingAdmission) => Promise<T>,
+    managedPaths: string[] = [],
+  ): Promise<T | undefined> {
+    return this.withCryptography(() => this.admitted(input, action, managedPaths));
+  }
 
   private async admitted<T>(
     input: ScheduledStagingInput,
@@ -832,7 +848,7 @@ export class ICloudScheduledStagingRepository {
       resource.expectedSize <= 0
     )
       return false;
-    const disposed = await this.db.transaction().execute(async (db) => {
+    const disposed = await this.cryptoTransaction(async (db) => {
       await lockICloudItemClaims(db, payload.ownerId, [payload.sourceAssetId]);
       await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(db);
       if (!(await this.lockValidationSettlement(db, input, payload))) return false;
@@ -991,7 +1007,7 @@ export class ICloudScheduledStagingRepository {
     ) {
       throw new Error('scheduled_private_copy_unowned');
     }
-    const result = await this.admitted(
+    const result = await this.admittedWithCryptography(
       input,
       async (db, { resource }) => {
         if (canonicalJson(resource.verification?.auditPrivateCopy) !== canonicalJson(record)) {
@@ -1012,7 +1028,7 @@ export class ICloudScheduledStagingRepository {
 
   /** Advance a successful restart sweep only after current disposed custody authenticates. */
   async deferDisposedValidationInput(input: ScheduledStagingInput): Promise<boolean> {
-    return this.db.transaction().execute(async (db) => {
+    return this.cryptoTransaction(async (db) => {
       const resource = (
         await sql<ICloudResource>`SELECT * FROM public.icloud_resource
         WHERE id=${input.resource.id}::uuid AND "ownerId"=${input.ownerId}::uuid
@@ -1152,7 +1168,7 @@ export class ICloudScheduledStagingRepository {
 
   async beginPrivateWork(input: ScheduledStagingInput) {
     const token = randomUUID();
-    const created = await this.admitted(input, async (db, { guarded, resource }) => {
+    const created = await this.admittedWithCryptography(input, async (db, { guarded, resource }) => {
       if (!guarded.request.itemClaimId) {
         return false;
       }
@@ -1387,7 +1403,7 @@ export class ICloudScheduledStagingRepository {
       return false;
     }
     const copy = record.payload;
-    return this.db.transaction().execute(async (db) => {
+    return this.cryptoTransaction(async (db) => {
       await lockICloudItemClaims(db, copy.ownerId, [copy.sourceAssetId]);
       await db.selectFrom('user').select('id').where('id', '=', input.ownerId).forUpdate().executeTakeFirst();
       const request = (
@@ -1542,7 +1558,7 @@ export class ICloudScheduledStagingRepository {
     } catch {
       return false;
     }
-    return this.db.transaction().execute(async (db) => {
+    return this.cryptoTransaction(async (db) => {
       await lockICloudItemClaims(db, input.ownerId, [resource.sourceAssetId]);
       await db.selectFrom('user').select('id').where('id', '=', input.ownerId).forUpdate().executeTakeFirst();
       const current = (
@@ -1618,7 +1634,7 @@ export class ICloudScheduledStagingRepository {
   }
 
   releaseRefusedBytes(input: ScheduledStagingInput) {
-    return this.db.transaction().execute(async (db) => {
+    return this.cryptoTransaction(async (db) => {
       const resource = (
         await sql<ICloudResource>`SELECT * FROM public.icloud_resource
         WHERE id=${input.resource.id}::uuid AND "ownerId"=${input.ownerId}::uuid FOR UPDATE`.execute(db)

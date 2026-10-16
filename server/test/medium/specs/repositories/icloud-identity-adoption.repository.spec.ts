@@ -2660,6 +2660,9 @@ describe('iCloud exact identity adoption', () => {
           await probe.close();
           let completed = false;
           const transport = {
+            withSessionCrypto<T>(action: () => Promise<T>) {
+              return action();
+            },
             decodeSession: vi.fn((scope: string, encrypted: string) => {
               try {
                 return Promise.resolve(

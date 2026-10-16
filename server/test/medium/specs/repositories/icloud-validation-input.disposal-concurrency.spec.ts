@@ -87,6 +87,9 @@ describe('validation input SQL disposal concurrency', () => {
     // Scoped reversible seals stand in for transport cryptography, never repository admission.
     const seals = new Map<string, { scope: string; payload: string }>();
     const transport = {
+      withSessionCrypto<T>(action: () => Promise<T>) {
+        return action();
+      },
       encodeSession(scope: string, payload: unknown) {
         const seal = randomUUID();
         seals.set(seal, { scope, payload: canonicalJson(payload) });
