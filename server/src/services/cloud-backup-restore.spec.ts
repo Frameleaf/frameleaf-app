@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { lstat } from 'node:fs/promises';
+import { link, lstat } from 'node:fs/promises';
 
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),
   lstat: vi.fn(),
+  link: vi.fn(),
 }));
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
@@ -147,6 +148,11 @@ describe('cloud backup restore (FL-164)', () => {
 
     beforeEach(() => {
       present = new Map();
+      vi.mocked(link).mockImplementation((from, to) => {
+        if (present.has(String(to))) return Promise.reject(Object.assign(new Error('exists'), { code: 'EEXIST' }));
+        present.set(String(to), present.get(String(from))!);
+        return Promise.resolve();
+      });
       vi.mocked(lstat).mockImplementation((path) => {
         const value = present.get(String(path));
         if (!value) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
@@ -512,9 +518,11 @@ describe('cloud backup restore (FL-164)', () => {
 
       expect(storage.rename).toHaveBeenCalledWith(
         '/data/library/owner-1/2026/IMG_1.jpg',
-        '/data/frameleaf/restore/replaced/op-1/library/owner-1/2026/IMG_1.jpg',
+        expect.stringMatching(
+          /^\/data\/frameleaf\/restore\/replaced\/op-1\/[^/]+\/library\/owner-1\/2026\/IMG_1\.jpg$/,
+        ),
       );
-      expect(storage.unlink).not.toHaveBeenCalled();
+      expect(storage.unlink).not.toHaveBeenCalledWith('/data/library/owner-1/2026/IMG_1.jpg');
       expect(present.get('/data/library/owner-1/2026/IMG_1.jpg')).toBe(hex('one'));
       expect(result).toMatchObject({ files: 2, skipped: 1, replaced: 1, restoredAssetIds: ['asset-1'] });
     });
