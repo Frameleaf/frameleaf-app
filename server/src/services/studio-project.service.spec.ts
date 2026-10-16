@@ -424,7 +424,7 @@ describe(StudioProjectService.name, () => {
           },
         ],
         // A client cannot inflate catalogue counts; its own non-catalogue entries are kept.
-        summary: { counts: { 'track.add': 40, 'editor.save': 1 }, total: 41 },
+        summary: { counts: JSON.parse('{"track.add":40,"editor.save":1,"__proto__":2}'), total: 43 },
       });
       const digest = studioEnvelopeDigest(saved.envelope);
       repository.appendRevision.mockResolvedValue({
@@ -436,7 +436,7 @@ describe(StudioProjectService.name, () => {
 
       expect(repository.appendRevision).toHaveBeenCalledWith(
         expect.objectContaining({
-          summary: { counts: { 'track.add': 1, 'title.add': 1, 'editor.save': 1 }, total: 3 },
+          summary: { counts: JSON.parse('{"track.add":1,"title.add":1,"editor.save":1,"__proto__":2}'), total: 5 },
         }),
       );
     });

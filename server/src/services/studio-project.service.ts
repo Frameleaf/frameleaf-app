@@ -155,7 +155,7 @@ const summaryWithCommands = (
   reported: { counts: Record<string, number>; total: number },
   commands: { counts: Record<string, number>; total: number },
 ) => {
-  const counts: Record<string, number> = { ...commands.counts };
+  const counts = Object.assign(Object.create(null), commands.counts) as Record<string, number>;
   let total = commands.total;
   for (const [id, count] of Object.entries(reported.counts)) {
     if (Object.hasOwn(studioCommandMirror, id)) {
