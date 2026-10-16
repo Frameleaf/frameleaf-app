@@ -25,7 +25,7 @@ describe('NativeRawEditor Save version', () => {
     sdkMock.saveAssetDevelop.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
     render(NativeRawEditor, { asset, onClose: vi.fn(), onLegacy: vi.fn() });
 
-    const save = screen.getByRole('button', { name: 'Save version' });
+    const save = screen.getByRole('button', { name: 'frameleaf_editor_save_version' });
     await waitFor(() => expect(save).toBeEnabled());
     await fireEvent.click(save);
     await fireEvent.click(save);
