@@ -14,7 +14,14 @@
   import type { OnUndoDelete } from '$lib/utils/actions';
   import { AssetTypeEnum, type AlbumResponseDto, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, IconButton, Tooltip, type ActionItem } from '@frameleaf/ui';
-  import { mdiArrowLeft, mdiDotsHorizontal, mdiInformationOutline, mdiVideoOutline } from '@mdi/js';
+  import {
+    mdiArrowLeft,
+    mdiDotsHorizontal,
+    mdiHeart,
+    mdiInformationOutline,
+    mdiPencilOutline,
+    mdiVideoOutline,
+  } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -73,7 +80,8 @@
     ...Actions.Unfavorite,
     title: $t('frameleaf_viewer_remove_from_favorites'),
   });
-  const Edit: ActionItem = $derived({ ...Actions.Edit, title: $t('frameleaf_viewer_edit') });
+  // The top row's Edit is the template's pencil (MediaViewer.jsx:1137-1147).
+  const Edit: ActionItem = $derived({ ...Actions.Edit, title: $t('frameleaf_viewer_edit'), icon: mdiPencilOutline });
   const CopyImage: ActionItem = $derived({ ...Actions.Copy, title: $t('frameleaf_viewer_menu_copy_image') });
   const sharedLink = getSharedLink();
 
@@ -193,7 +201,18 @@
       {/if}
       {#if !asset.isTrashed}
         <ActionButton action={Favorite} />
-        <ActionButton action={Unfavorite} />
+        <!-- A favourite shows as pressed, in the accent, like the template's tool (MediaViewer.jsx:1077-1085). -->
+        {#if isEnabled(Unfavorite)}
+          <IconButton
+            color="secondary"
+            shape="round"
+            variant="ghost"
+            icon={Unfavorite.icon ?? mdiHeart}
+            aria-label={Unfavorite.title}
+            aria-pressed="true"
+            onclick={() => Unfavorite.onAction(Unfavorite)}
+          />
+        {/if}
       {/if}
 
       {#if isOwner && !asset.isTrashed}
@@ -255,7 +274,8 @@
     justify-content: space-between;
     gap: 12px;
     min-height: 64px;
-    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px
+    /* media-viewer.css:47-56: 16px on the trailing side, 12px before Close. */
+    padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 8px
       max(12px, env(safe-area-inset-left));
     border-bottom: 1px solid var(--fl-viewer-border);
     color: var(--fl-viewer-text);
@@ -294,6 +314,24 @@
 
   .fl-viewer-actions > :global(*) {
     flex-shrink: 0;
+  }
+
+  /*
+   * The header tools match the footer's (.mv-tool, media-viewer.css:97-125): a rounded square with a
+   * 21px glyph, and a pressed tool (Information open, a favourite) in the accent. The Rating
+   * popover's stars keep their own look.
+   */
+  .fl-viewer-header :global(button:not(:where(.fl-rating-popover *))) {
+    border-radius: var(--fl-radius-control);
+  }
+
+  .fl-viewer-header :global(button:not(:where(.fl-rating-popover *)) > svg) {
+    width: 21px;
+    height: 21px;
+  }
+
+  .fl-viewer-header :global(button[aria-pressed='true']:not(:where(.fl-rating-popover *))) {
+    color: var(--fl-accent);
   }
 
   .fl-wide-only {

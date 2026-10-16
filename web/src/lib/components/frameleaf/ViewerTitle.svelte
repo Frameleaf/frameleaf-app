@@ -4,8 +4,8 @@
    *
    * The data is the metadata the detail panel already receives on `AssetResponseDto`;
    * this is layout only, matching `mv-title` in the approved template. The line collapses
-   * to nothing when the asset carries no metadata, and is hidden below `md` so the narrow
-   * navbar keeps room for the actions.
+   * to nothing when the asset carries no metadata. It shows at every width, as in the template:
+   * on phones the actions move to the bottom toolbar, so the header has room for it.
    */
   import { viewerHeadlineText } from '$lib/frameleaf/viewer-headline';
   import { isLivePhoto, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
@@ -33,9 +33,9 @@
   });
 </script>
 
-<div class="dark hidden min-w-0 flex-col justify-center ps-1 text-white md:flex" data-testid="viewer-title">
+<div class="dark flex min-w-0 flex-col justify-center ps-1 text-white" data-testid="viewer-title">
   <div class="flex min-w-0 items-baseline gap-2">
-    <strong class="truncate text-sm font-medium" title={asset.originalFileName}>
+    <strong class="truncate text-sm font-semibold" title={asset.originalFileName}>
       {asset.originalFileName}
     </strong>
     {#if kind}

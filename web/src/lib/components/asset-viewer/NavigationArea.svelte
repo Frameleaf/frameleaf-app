@@ -15,7 +15,7 @@
 </button>
 
 <style>
-  /* media-viewer.css:377-399: a small frosted pill that stays quiet until it is pointed at or focused. */
+  /* media-viewer.css:377-399: a small frosted rounded square that stays quiet until it is pointed at or focused. */
   .fl-viewer-arrow {
     display: inline-flex;
     align-items: center;
@@ -24,7 +24,7 @@
     height: var(--fl-control-height);
     margin: auto var(--fl-space-4);
     border: 1px solid var(--fl-viewer-border);
-    border-radius: var(--fl-radius-pill);
+    border-radius: var(--fl-radius-control);
     background: color-mix(in srgb, var(--fl-viewer-panel) 78%, transparent);
     backdrop-filter: var(--fl-material-blur);
     color: var(--fl-viewer-text);
