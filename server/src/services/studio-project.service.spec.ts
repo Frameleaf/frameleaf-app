@@ -1054,6 +1054,38 @@ describe(StudioProjectService.name, () => {
       });
     });
 
+    it('duplicates an empty project with its lineage in one creation transaction', async () => {
+      project = projectStub({ currentRevision: 0, spaceId: newUuid() });
+      const copy = projectStub({ id: newUuidV7(), currentRevision: 0, duplicatedFromId: project.id });
+      repository.create.mockResolvedValue(copy);
+      repository.update.mockResolvedValue(copy);
+      repository.createWithRevision.mockResolvedValue({ project: copy, created: true });
+
+      await expect(sut.duplicate(owner, project.id, {})).resolves.toMatchObject({
+        id: copy.id,
+        revision: 0,
+        duplicatedFromId: project.id,
+      });
+      expect(repository.createWithRevision).toHaveBeenCalledExactlyOnceWith({
+        ownerId: owner.user.id,
+        name: project.name,
+        duplicatedFromId: project.id,
+      });
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('does not fall back to a standalone empty copy when transactional creation fails', async () => {
+      project = projectStub({ currentRevision: 0 });
+      const failure = new Error('source project unavailable');
+      repository.createWithRevision.mockRejectedValue(failure);
+      repository.create.mockResolvedValue(projectStub({ id: newUuidV7(), currentRevision: 0 }));
+
+      await expect(sut.duplicate(owner, project.id, {})).rejects.toBe(failure);
+      expect(repository.create).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
     it('duplicates the head byte for byte into a new project of the owner, unshared', async () => {
       project = projectStub({ spaceId: newUuid() });
       const copy = projectStub({ id: newUuidV7(), duplicatedFromId: project.id, currentRevision: 1 } as never);
