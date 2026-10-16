@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility, JobName, QueueName } from 'src/enum.js';
+import { AssetType, AssetVisibility, JobName, QueueName } from 'src/enum.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -82,6 +82,42 @@ describe('Matched import metadata fills', () => {
     expect((await origins.getOrigin('asset', asset.id))?.overriddenFields).toContain('description');
   });
 
+  it.each([false, true])(
+    'rolls back an ordinary edit and its Live Photo change %s when override recording fails',
+    async (livePhoto) => {
+      const { sut, ctx, auth, asset, assets, jobs } = await setup();
+      const motion = livePhoto
+        ? (await ctx.newAsset({ ownerId: auth.user.id, type: AssetType.Video, visibility: AssetVisibility.Hidden }))
+            .asset
+        : undefined;
+      if (motion) await assets.update({ id: asset.id, livePhotoVideoId: motion.id });
+      vi.spyOn(ctx.get(PartnerOriginRepository), 'markOverridden').mockRejectedValueOnce(new Error('marker failed'));
+      await expect(
+        sut.update(auth, asset.id, {
+          description: 'Mine',
+          isFavorite: true,
+          ...(livePhoto && { livePhotoVideoId: null }),
+        }),
+      ).rejects.toThrow('marker failed');
+      expect(await assets.getById(asset.id, { exifInfo: true })).toMatchObject({
+        isFavorite: false,
+        exifInfo: null,
+        livePhotoVideoId: motion?.id ?? null,
+      });
+      if (motion) expect((await assets.getById(motion.id))?.visibility).toBe(AssetVisibility.Hidden);
+      expect(jobs.queue).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rolls back a direct lock when override recording fails without publishing effects', async () => {
+    const { sut, ctx, auth, asset, jobs } = await setup();
+    vi.spyOn(ctx.get(PartnerOriginRepository), 'markOverridden').mockRejectedValueOnce(new Error('marker failed'));
+    await expect(sut.lock(auth, { ids: [asset.id] })).rejects.toThrow('marker failed');
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', asset.id).execute()).toEqual([]);
+    expect(jobs.queueAll).not.toHaveBeenCalled();
+    expect(jobs.queue).not.toHaveBeenCalled();
+  });
+
   it('fills an absent EXIF row and commits metadata locks with its sidecar job', async () => {
     const { sut, auth, asset, assets } = await setup();
     await sut.fillMissingMetadata(auth, asset.id, {
@@ -102,6 +138,28 @@ describe('Matched import metadata fills', () => {
     const jobs = await db.selectFrom('job').select(['name', 'data']).execute();
     expect(jobs).toContainEqual({ name: JobName.SidecarWrite, data: { id: asset.id } });
   });
+
+  it.each([AssetVisibility.Archive, AssetVisibility.Locked])(
+    'rolls back bulk metadata and %s when override recording fails',
+    async (visibility) => {
+      const { sut, ctx, auth, asset, assets, jobs } = await setup();
+      const { asset: second } = await ctx.newAsset({ ownerId: auth.user.id });
+      const ids = [asset.id, second.id];
+      vi.spyOn(ctx.get(PartnerOriginRepository), 'markOverridden').mockRejectedValueOnce(new Error('marker failed'));
+      await expect(sut.updateAll(auth, { ids, description: 'Mine', isFavorite: true, visibility })).rejects.toThrow(
+        'marker failed',
+      );
+      for (const id of ids) {
+        expect(await assets.getById(id, { exifInfo: true })).toMatchObject({
+          isFavorite: false,
+          visibility: AssetVisibility.Timeline,
+          exifInfo: null,
+        });
+      }
+      expect(await db.selectFrom('asset_lock').select('assetId').where('assetId', 'in', ids).execute()).toEqual([]);
+      expect(jobs.queueAll).not.toHaveBeenCalled();
+    },
+  );
 
   it('preserves description and coordinates committed after the earlier missing-field snapshot', async () => {
     const { sut, auth, asset, assets, jobs } = await setup();
