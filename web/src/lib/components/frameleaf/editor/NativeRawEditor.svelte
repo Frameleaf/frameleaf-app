@@ -48,6 +48,8 @@
   let presetName = $state('');
   let error = $state('');
   let busy = $state(false);
+  /** A save is on its way: a second press must not store the same version twice. */
+  let saving = $state(false);
   let preview = $state<string | null>(null);
   let sensorCanvas = $state(false);
   let selectedMask = $state<string | null>(null);
@@ -192,9 +194,10 @@
     };
   });
   const save = async () => {
-    if (!loaded || busy || proposalBusy) {
+    if (!loaded || busy || proposalBusy || saving) {
       return;
     }
+    saving = true;
     error = '';
     try {
       const final = clone(recipe);
@@ -216,6 +219,8 @@
       watch(result.id);
     } catch (error_) {
       failed(error_);
+    } finally {
+      saving = false;
     }
   };
   const keyDown = (event: KeyboardEvent) => {
@@ -412,7 +417,7 @@
       }}>Redo</button
     >
     <label>Version name <input maxlength="120" bind:value={label} /></label>
-    <button type="button" disabled={!loaded || busy || proposalBusy} onclick={save}>Save version</button>
+    <button type="button" disabled={!loaded || busy || proposalBusy || saving} onclick={save}>Save version</button>
   </header>
   {#if error}<p role="alert">{error}</p>{/if}
   <main>
