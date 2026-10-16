@@ -505,7 +505,8 @@
     max-width: 1440px;
     min-width: 0;
     margin: 0 auto;
-    padding: clamp(16px, 3vw, 36px);
+    /* Hosted only in the settings pane, which already insets it (command-center.css `.cc-main > .settings-analytics`). */
+    padding: 0;
     color: var(--fl-text);
     background: var(--fl-canvas);
     font-size: 13px;

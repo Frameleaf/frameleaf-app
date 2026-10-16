@@ -121,6 +121,7 @@
   </Hero>
 
   <Section title={$t('frameleaf_play_landing_viewing')}>
-    <Links stacked {rows} />
+    <!-- Side by side, as the prototype's Viewing group (settings-v2/care/playback.jsx). -->
+    <Links {rows} />
   </Section>
 </KitPage>

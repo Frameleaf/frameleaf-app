@@ -365,6 +365,9 @@
   // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
   const titled = $derived(area === 'backups' || area === 'sharing' ? undefined : selected);
   const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
+  // Pages opened from a landing page (FL-364) or a plain-words landing page (FL-361) go back with
+  // "‹ Area" under the heading and name only the area in the overline, as `settings-v2/kit.jsx` Page does.
+  const backToArea = $derived(hasLandingPage(area) || (isPlainArea(area) && breadcrumb));
   // As in the template, the Users manager carries its own heading.
   // Background work's first page takes the area's heading; one kind of work (`?queue=`) carries its own.
   const ownHeading = $derived(
@@ -885,7 +888,7 @@
               {#if !ownHeading}
                 <header class="cc-page-heading">
                   <SettingsOverline>
-                    {#if titled && breadcrumb && hasLandingPage(area)}
+                    {#if titled && breadcrumb && backToArea}
                       <!-- The way back is the link under the heading, as in the prototype. -->
                       {areaCopy[area].title}
                     {:else if titled && breadcrumb}
@@ -938,7 +941,7 @@
                 <KitPage><ComputersLanding /></KitPage>
               {:else if selected}
                 <div class="cc-settings-content">
-                  {#if hasLandingPage(area) && !ownHeading}
+                  {#if backToArea && !ownHeading}
                     <div class="cc-back-to-area">
                       <BackLink href={commandCenterUrl(area)} label={areaCopy[area].title} />
                     </div>
