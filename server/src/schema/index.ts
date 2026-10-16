@@ -127,6 +127,11 @@ import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
+import {
+  PhotoSourceResourceTable,
+  PhotoSourceRunTable,
+  PhotoSourceTable,
+} from 'src/schema/tables/photo-source.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
@@ -225,6 +230,9 @@ export class ImmichDatabase {
     DesktopClipProducerTable,
     MlWorkloadRouteOriginTable,
     DesktopDeviceTable,
+    PhotoSourceTable,
+    PhotoSourceRunTable,
+    PhotoSourceResourceTable,
     DesktopWorkerSessionTable,
     DesktopWorkerChallengeTable,
     DesktopWorkerQualificationTable,
@@ -435,6 +443,9 @@ export interface DB extends QueueDatabase {
   desktop_clip_index: DesktopClipIndexTable;
   desktop_clip_producer: DesktopClipProducerTable;
   desktop_device: DesktopDeviceTable;
+  photo_source: PhotoSourceTable;
+  photo_source_run: PhotoSourceRunTable;
+  photo_source_resource: PhotoSourceResourceTable;
   asset_local_effect_stream: AssetLocalEffectStreamTable;
   asset_local_effect: AssetLocalEffectTable;
   asset_local_effect_cursor: AssetLocalEffectCursorTable;

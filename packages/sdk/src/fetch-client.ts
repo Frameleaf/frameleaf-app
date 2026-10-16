@@ -9052,6 +9052,95 @@ export type PetObservationCreateDto = {
     /** Width of the image the region was drawn on */
     imageWidth?: number;
 };
+export type PhotoSourceCreateDto = {
+    deviceId: string;
+    id: string;
+    kind: PhotoSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    scopeFingerprint: string;
+};
+export type PhotoSourceResponseDto = {
+    createdAt: string;
+    deviceId: string;
+    id: string;
+    kind: PhotoSourceKind;
+    mode: PhotoSourceCopyMode;
+    name: string;
+    revokedAt: string | null;
+    scopeFingerprint: string;
+};
+export type PhotoSourceRunDto = {
+    id: string;
+    maxBytes: number;
+    maxItems: number;
+};
+export type PhotoSourceRunResponseDto = {
+    createdAt: string;
+    id: string;
+    inventoryComplete: boolean;
+    maxBytes: number;
+    maxItems: number;
+    sourceId: string;
+    state: PhotoSourceRunState;
+};
+export type PhotoSourceSnapshotDto = {
+    items: {
+        bytes: number;
+        id: string;
+        resourceKey: string;
+        state: PhotoSourceItemState;
+        verifiedAt: string | null;
+        version: string;
+    }[];
+    nextCursor: string | null;
+    run: {
+        createdAt: string;
+        id: string;
+        inventoryComplete: boolean;
+        maxBytes: number;
+        maxItems: number;
+        sourceId: string;
+        state: PhotoSourceRunState;
+    };
+};
+export type PhotoSourceRunStateDto = {
+    inventoryComplete: boolean;
+    state: PhotoSourceRunState;
+};
+export type PhotoSourceItemDto = {
+    bytes: number;
+    id: string;
+    resourceKey: string;
+    sha256: string;
+    version: string;
+};
+export type PhotoSourceItemResponseDto = {
+    bytes: number;
+    id: string;
+    resourceKey: string;
+    runId: string;
+    sha256: string;
+    state: PhotoSourceItemState;
+    verifiedAt: string | null;
+    version: string;
+};
+export type PhotoSourceVerifyDto = {
+    uploadResourceId: string;
+};
+export type PhotoSourceReceiptDto = {
+    assetId: string;
+    bytes: number;
+    itemId: string;
+    ownerId: string;
+    runId: string;
+    serverId: string;
+    sha256: string;
+    sourceId: string;
+    storage: PhotoSourceStorage;
+    uploadResourceId: string;
+    verifiedAt: string;
+};
 export type PhotographyGalleryDto = {
     brand: {
         background: string;
@@ -24218,6 +24307,117 @@ export function createPetObservation({ id, petObservationCreateDto }: {
         body: petObservationCreateDto
     })));
 }
+/**
+ * Approve an owner-scoped desktop folder-copy source
+ */
+export function createPhotoSource({ photoSourceCreateDto }: {
+    photoSourceCreateDto: PhotoSourceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotoSourceResponseDto;
+    }>("/photo-sources", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceCreateDto
+    })));
+}
+/**
+ * Revoke a photo source while retaining its managed copies and associations
+ */
+export function revokePhotoSource({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photo-sources/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Start or recover a bounded photo-copy run
+ */
+export function createPhotoSourceRun({ id, photoSourceRunDto }: {
+    id: string;
+    photoSourceRunDto: PhotoSourceRunDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotoSourceRunResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceRunDto
+    })));
+}
+/**
+ * Read paginated copy-run dispositions without source paths or asset IDs
+ */
+export function getPhotoSourceRun({ after, id, runId }: {
+    after?: string;
+    id: string;
+    runId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceSnapshotDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}${QS.query(QS.explode({
+        after
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Pause, resume, cancel or finish a copy run; incomplete inventory never removes originals
+ */
+export function setPhotoSourceRunState({ id, runId, photoSourceRunStateDto }: {
+    id: string;
+    runId: string;
+    photoSourceRunStateDto: PhotoSourceRunStateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceRunResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: photoSourceRunStateDto
+    })));
+}
+/**
+ * Reserve an immutable source resource and its whole-run byte/item budget
+ */
+export function planPhotoSourceCopy({ id, runId, photoSourceItemDto }: {
+    id: string;
+    runId: string;
+    photoSourceItemDto: PhotoSourceItemDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotoSourceItemResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceItemDto
+    })));
+}
+/**
+ * Verify healthy owned original bytes and record the source association
+ */
+export function verifyPhotoSourceCopy({ id, itemId, runId, photoSourceVerifyDto }: {
+    id: string;
+    itemId: string;
+    runId: string;
+    photoSourceVerifyDto: PhotoSourceVerifyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceReceiptDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items/${encodeURIComponent(itemId)}/verify`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceVerifyDto
+    })));
+}
 export function photographyGallery({ xPhotographySession, id }: {
     xPhotographySession: string;
     id: string;
@@ -31863,6 +32063,25 @@ export enum PetObservationSource {
 export enum PetObservationState {
     Confirmed = "confirmed",
     Rejected = "rejected"
+}
+export enum PhotoSourceKind {
+    Folder = "folder"
+}
+export enum PhotoSourceCopyMode {
+    Copy = "copy"
+}
+export enum PhotoSourceRunState {
+    Open = "open",
+    Paused = "paused",
+    Cancelled = "cancelled",
+    Complete = "complete"
+}
+export enum PhotoSourceItemState {
+    Planned = "planned",
+    Verified = "verified"
+}
+export enum PhotoSourceStorage {
+    Managed = "managed"
 }
 export enum Mode2 {
     EditedDelivery = "edited-delivery",
