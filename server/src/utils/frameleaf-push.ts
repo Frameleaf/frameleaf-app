@@ -350,14 +350,19 @@ export type PushPayload = {
   activation?: CloudBackupActivationProgress;
 };
 
-const truncate = (value: string, max: number) =>
-  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value;
+const truncate = (value: string, max: number) => {
+  if (max <= 0) {
+    return '';
+  }
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+};
 
 /**
  * The payload for one notice. Privacy (FL-137, FL-212/FL-213): an item that is not in `safeAssetIds`
  * (Locked, sensitive, hidden or gone) is never named; data values naming it are dropped as well, so a
  * Locked item's event carries no preview and no trace of the item. (A Live Activity carries no payload
- * at all, only its fixed state.) The result always fits `PUSH_PLAINTEXT_MAX_BYTES`.
+ * at all, only its fixed state.) Oversized fixed fields are refused; every returned result fits
+ * `PUSH_PLAINTEXT_MAX_BYTES`.
  */
 export const buildPushPayload = (
   notice: Pick<PushNotice, 'type' | 'title' | 'body' | 'data' | 'assetIds' | 'activation' | 'systemTemplate'>,
@@ -382,12 +387,15 @@ export const buildPushPayload = (
     preview: assetIds.length > 0 ? { assetId: assetIds[0] } : null,
     ...(notice.activation && { activation: notice.activation }),
   };
-  // text is the only open-ended part; shorten it until the payload fits
+  // Shorten display text while preserving job data and item references.
   while (Buffer.byteLength(JSON.stringify(payload)) > PUSH_PLAINTEXT_MAX_BYTES && payload.body.length > 0) {
     payload.body = truncate(payload.body, Math.floor(payload.body.length / 2));
   }
   while (Buffer.byteLength(JSON.stringify(payload)) > PUSH_PLAINTEXT_MAX_BYTES && payload.title.length > 0) {
     payload.title = truncate(payload.title, Math.floor(payload.title.length / 2));
+  }
+  if (Buffer.byteLength(JSON.stringify(payload)) > PUSH_PLAINTEXT_MAX_BYTES) {
+    throw new Error('The push payload exceeds its size limit');
   }
   return payload;
 };

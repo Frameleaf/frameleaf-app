@@ -152,6 +152,19 @@ describe('frameleaf-license (FL-156)', () => {
       expect(verifyLicenseCertificate('not a certificate', context)).toEqual({ ok: false, reason: 'malformed' });
     });
 
+    it.each([
+      ['null', null],
+      ['an array', []],
+      ['a string', 'EdDSA'],
+      ['a number', 42],
+      ['a boolean', false],
+    ] as const)('refuses a non-object JSON header: %s', (_name, header) => {
+      expect(verifyLicenseCertificate(`${b64(header)}.${b64({})}.c2ln`, context)).toEqual({
+        ok: false,
+        reason: 'malformed',
+      });
+    });
+
     it('checks the account only when this server knows it', () => {
       const certificate = signCertificate(active.privateKey, active.key.kid, { sub: 'account-9' });
       expect(verifyLicenseCertificate(certificate, { ...context, accountId: null })).toMatchObject({ ok: true });

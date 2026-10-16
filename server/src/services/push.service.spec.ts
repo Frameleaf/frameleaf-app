@@ -463,6 +463,21 @@ describe(PushService.name, () => {
   });
 
   describe('delivery', () => {
+    it('skips an oversized payload and delivers the following notice', async () => {
+      const { sut, devices, gateway, sent } = newHarness();
+      const key = newDeviceKey();
+      devices.getDeliveryTargets.mockResolvedValue([device(key, { userId: 'user-1' })]);
+
+      await expect(
+        sut.handleDeliver({ notice: notice({ title: '', body: '', data: { detail: 'd'.repeat(3000) } }) }),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(gateway.send).not.toHaveBeenCalled();
+
+      await expect(sut.handleDeliver({ notice: notice() })).resolves.toBe(JobStatus.Success);
+      expect(sent).toHaveLength(1);
+      expect(decrypt(sent[0], key)).toMatchObject({ title: 'Trip', body: 'New items in Trip' });
+    });
+
     const activation = (state: 'active' | 'complete' | 'failed', step = 3) => ({
       step,
       total: 4,

@@ -120,6 +120,9 @@ export const verifyLicenseCertificate = (
   } catch {
     return { ok: false, reason: 'malformed' };
   }
+  if (!header || typeof header !== 'object' || Array.isArray(header)) {
+    return { ok: false, reason: 'malformed' };
+  }
   if (header.alg !== 'EdDSA') {
     return { ok: false, reason: 'algorithm' };
   }

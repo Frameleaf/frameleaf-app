@@ -125,6 +125,43 @@ describe('push payloads (FL-228)', () => {
     );
     expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThanOrEqual(PUSH_PLAINTEXT_MAX_BYTES);
   });
+
+  it.each(['body', 'title'] as const)('refuses oversized fixed data after exhausting the %s', (field) => {
+    const byteLength = Buffer.byteLength;
+    let checks = 0;
+    // Bound the synchronous regression so an endless reduction cannot freeze the test worker.
+    const guard = vi.spyOn(Buffer, 'byteLength').mockImplementation((value, encoding) => {
+      if (++checks > 64) {
+        throw new Error('Push payload size reduction did not terminate');
+      }
+      return byteLength(value, encoding);
+    });
+    try {
+      expect(() =>
+        buildPushPayload(
+          { type: PushEventType.Memories, title: '', body: '', [field]: 'x', data: { detail: 'd'.repeat(2048) } },
+          { ...base, safeAssetIds: new Set() },
+        ),
+      ).toThrow('The push payload exceeds its size limit');
+    } finally {
+      guard.mockRestore();
+    }
+  });
+
+  it('preserves job references while shortening Unicode text to fit', () => {
+    const data = {
+      ...pushJobData({ id: 'op-1', type: 'media-operation', actions: ['retry'] }),
+      detail: 'd'.repeat(1000),
+    };
+    const payload = buildPushPayload(
+      { type: PushEventType.RenderFinished, title: '🌲'.repeat(120), body: '🌲'.repeat(400), data, assetIds: [safe] },
+      { ...base, safeAssetIds: new Set([safe]) },
+    );
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThanOrEqual(PUSH_PLAINTEXT_MAX_BYTES);
+    expect(payload.data).toEqual(data);
+    expect(payload.assetIds).toEqual([safe]);
+    expect(payload.preview).toEqual({ assetId: safe });
+  });
 });
 
 describe('Cloud Backup activation progress (FL-228)', () => {

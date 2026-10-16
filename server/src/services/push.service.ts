@@ -693,8 +693,8 @@ export class PushService {
       (!device.disabledEvents.includes(notice.type) || silentRenderEnd)
     ) {
       const id = randomUUID();
-      const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
       try {
+        const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
         planned.push({
           deviceId: device.id,
           kind: PushTargetKind.Device,
@@ -709,7 +709,7 @@ export class PushService {
           },
         });
       } catch (error) {
-        this.logger.warn(`Push device ${device.id} has an unusable key and was skipped: ${errorMessage(error)}`);
+        this.logger.warn(`Push device ${device.id} could not receive this notice: ${errorMessage(error)}`);
       }
     }
     return planned;
