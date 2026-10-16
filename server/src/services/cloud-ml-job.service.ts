@@ -1237,6 +1237,17 @@ export class CloudMlJobService {
       await this.stop(run, failure);
       return false;
     }
+    if ((run.snapshot.stage === 'preview' ? row.previewOperationId : row.fullOperationId) !== run.operation.id) {
+      await this.stop(
+        run,
+        new CloudMlJobFailure(
+          'cloud_ml_restoration_decided',
+          'Another operation owns this version now; nothing more is sent',
+          false,
+        ),
+      );
+      return false;
+    }
     if (row.status === statuses.running) {
       return true;
     }
@@ -1244,7 +1255,13 @@ export class CloudMlJobService {
       run.snapshot.stage === 'preview'
         ? [AssetRestorationStatus.PreviewQueued, AssetRestorationStatus.PreviewFailed]
         : [AssetRestorationStatus.Accepted, AssetRestorationStatus.RestoreFailed];
-    const moved = await this.restorationRepository.transition(row.id, from, { status: statuses.running, error: null });
+    const moved = await this.restorationRepository.transition(
+      row.id,
+      from,
+      { status: statuses.running, error: null },
+      undefined,
+      { stage: run.snapshot.stage, id: run.operation.id },
+    );
     if (!moved) {
       const detail = `This version is ${row.status.replaceAll('_', ' ')} now; nothing more is sent`;
       await this.stop(run, new CloudMlJobFailure('cloud_ml_restoration_decided', detail, false));
@@ -1848,15 +1865,10 @@ export class CloudMlJobService {
     };
     const placed: string[] = [];
     const columns: Partial<Record<PublishedFile['column'], string>> = {};
+    for (const file of files) columns[file.column] = file.final;
     let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
     try {
       outcome = await this.mediaOperationRepository.publishValidated(operation.id, claimToken, async (trx) => {
-        for (const file of files) {
-          this.storageRepository.mkdirSync(path.dirname(file.final));
-          await this.storageRepository.rename(file.tmp, file.final);
-          placed.push(file.final);
-          columns[file.column] = file.final;
-        }
         const updated = await this.restorationRepository.transition(
           row.id,
           [statuses.running],
@@ -1874,8 +1886,15 @@ export class CloudMlJobService {
             ...(run.result.upscaleScale !== null && { upscale: run.result.upscaleScale }),
           },
           trx,
+          { stage: snapshot.stage, id: operation.id },
         );
-        return !!updated;
+        if (!updated) return false;
+        for (const file of files) {
+          this.storageRepository.mkdirSync(path.dirname(file.final));
+          await this.storageRepository.rename(file.tmp, file.final);
+          placed.push(file.final);
+        }
+        return true;
       });
     } catch (error) {
       for (const file of placed) {
@@ -2087,11 +2106,17 @@ export class CloudMlJobService {
       { retry: failure.retry },
     );
     if (outcome === 'failed') {
-      await this.restorationRepository.transition(snapshot.restorationId, [statuses.running, this.queuedStatus(run)], {
-        status: statuses.failed,
-        error: failure.message.slice(0, 500),
-        ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(new Date()) }),
-      });
+      await this.restorationRepository.transition(
+        snapshot.restorationId,
+        [statuses.running, this.queuedStatus(run)],
+        {
+          status: statuses.failed,
+          error: failure.message.slice(0, 500),
+          ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(new Date()) }),
+        },
+        undefined,
+        { stage: snapshot.stage, id: operation.id },
+      );
       // the prepared copies and anything downloaded are of no use to a job that will not run again
       await this.removeJobFiles(snapshot);
       this.logger.warn(`Frameleaf Cloud job ${operation.id} failed (${failure.code}): ${failure.message}`);
@@ -2168,17 +2193,29 @@ export class CloudMlJobService {
     const now = new Date();
     if (snapshot.stage === 'full' && !run.result.job) {
       // nothing was sent: the reviewed preview is back to be decided, as if it had not been accepted
-      await this.restorationRepository.transition(snapshot.restorationId, [statuses.running, this.queuedStatus(run)], {
-        status: AssetRestorationStatus.PreviewReady,
-        reviewedAt: null,
-        fullOperationId: null,
-        previewExpiresAt: previewExpiryAfterReady(now),
-      });
+      await this.restorationRepository.transition(
+        snapshot.restorationId,
+        [statuses.running, this.queuedStatus(run)],
+        {
+          status: AssetRestorationStatus.PreviewReady,
+          reviewedAt: null,
+          fullOperationId: null,
+          previewExpiresAt: previewExpiryAfterReady(now),
+        },
+        undefined,
+        { stage: snapshot.stage, id: operation.id },
+      );
     } else {
-      await this.restorationRepository.transition(snapshot.restorationId, [statuses.running, this.queuedStatus(run)], {
-        status: statuses.cancelled,
-        ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(now) }),
-      });
+      await this.restorationRepository.transition(
+        snapshot.restorationId,
+        [statuses.running, this.queuedStatus(run)],
+        {
+          status: statuses.cancelled,
+          ...(snapshot.stage === 'full' && { resultExpiresAt: resultExpiryAfterAbandon(now) }),
+        },
+        undefined,
+        { stage: snapshot.stage, id: operation.id },
+      );
     }
     await this.removeJobFiles(snapshot);
     this.logger.log(`Frameleaf Cloud job ${operation.id} cancelled by its owner`);
@@ -2279,6 +2316,8 @@ export class CloudMlJobService {
           snapshot.restorationId,
           [statuses.running, this.queuedStatus({ snapshot })],
           { status: failed ? statuses.failed : statuses.cancelled },
+          undefined,
+          { stage: snapshot.stage, id: operation.id },
         );
         await this.removeJobFiles(snapshot);
       } catch {
@@ -2315,13 +2354,25 @@ export class CloudMlJobService {
           continue;
         }
         await (snapshot.stage === 'full'
-          ? this.restorationRepository.transition(snapshot.restorationId, from, {
-              status: AssetRestorationStatus.PreviewReady,
-              reviewedAt: null,
-              fullOperationId: null,
-              previewExpiresAt: previewExpiryAfterReady(now),
-            })
-          : this.restorationRepository.transition(snapshot.restorationId, from, { status: statuses.cancelled }));
+          ? this.restorationRepository.transition(
+              snapshot.restorationId,
+              from,
+              {
+                status: AssetRestorationStatus.PreviewReady,
+                reviewedAt: null,
+                fullOperationId: null,
+                previewExpiresAt: previewExpiryAfterReady(now),
+              },
+              undefined,
+              { stage: snapshot.stage, id: operation.id },
+            )
+          : this.restorationRepository.transition(
+              snapshot.restorationId,
+              from,
+              { status: statuses.cancelled },
+              undefined,
+              { stage: snapshot.stage, id: operation.id },
+            ));
         await this.removeJobFiles(snapshot);
       } catch (error) {
         this.logger.warn(`Frameleaf Cloud job ${operation.id} was not reconciled: ${errorMessage(error)}`);

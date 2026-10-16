@@ -333,11 +333,19 @@ export class RestorationWorkerService {
       return;
     }
     const status = restoration.status as AssetRestorationStatus;
-    if (!canRunStage(stage, status)) {
+    const previousOperationId =
+      (stage === 'preview' ? restoration.previewOperationId : restoration.fullOperationId) ?? null;
+    const ownsStage =
+      previousOperationId === null ||
+      previousOperationId === operation.id ||
+      previousOperationId === operation.retryOfId;
+    if (!canRunStage(stage, status) || !ownsStage) {
       // A retry of a preview over an accepted restoration, or of a full render over a rejected
       // one, must do nothing. The row already says what the owner decided.
       await this.operationRepository.fail(operation.id, claimToken, {
-        error: `A ${stage} render cannot run while the restoration is ${status}`,
+        error: ownsStage
+          ? `A ${stage} render cannot run while the restoration is ${status}`
+          : 'Another operation owns this restoration stage',
         errorCode: RestorationErrorCode.StageNotRunnable,
       });
       return;
@@ -345,14 +353,27 @@ export class RestorationWorkerService {
 
     const statuses = STAGE_STATUSES[stage];
     // Bind this job to the row (a retry is a new job id) and mark the stage running.
-    await this.restorationRepository.update(restoration.id, {
-      status: statuses.running,
-      error: null,
-      // A retry takes the leftovers back from retention (FL-115).
-      ...(stage === 'preview'
-        ? { previewOperationId: operation.id }
-        : { fullOperationId: operation.id, resultExpiresAt: null }),
-    });
+    const bound = await this.restorationRepository.transition(
+      restoration.id,
+      [status],
+      {
+        status: statuses.running,
+        error: null,
+        // A retry takes the leftovers back from retention (FL-115).
+        ...(stage === 'preview'
+          ? { previewOperationId: operation.id }
+          : { fullOperationId: operation.id, resultExpiresAt: null }),
+      },
+      undefined,
+      { stage, id: previousOperationId },
+    );
+    if (!bound) {
+      await this.operationRepository.fail(operation.id, claimToken, {
+        error: 'The restoration changed before this render could start',
+        errorCode: RestorationErrorCode.StageNotRunnable,
+      });
+      return;
+    }
 
     const controller = new AbortController();
     this.activeController = controller;
@@ -388,7 +409,7 @@ export class RestorationWorkerService {
       claimToken,
       snapshot,
       stage,
-      restoration: { ...restoration, status: statuses.running },
+      restoration: bound,
       signal: controller.signal,
       workDir,
       scratch: [],
@@ -934,21 +955,11 @@ export class RestorationWorkerService {
     };
 
     const columns: Partial<Record<PublishedFile['column'], string>> = {};
+    for (const file of output.files) columns[file.column] = file.final;
     const placed: string[] = [];
     let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
     try {
       outcome = await this.operationRepository.publishValidated(operation.id, claimToken, async (trx) => {
-        for (const file of output.files) {
-          this.storageRepository.mkdirSync(path.dirname(file.final));
-          await this.storageRepository.rename(file.tmp, file.final);
-          placed.push(file.final);
-          const index = ctx.scratch.indexOf(file.tmp);
-          if (index !== -1) {
-            ctx.scratch.splice(index, 1);
-          }
-          columns[file.column] = file.final;
-        }
-
         const updated = await this.restorationRepository.transition(
           restoration.id,
           [statuses.running],
@@ -964,8 +975,17 @@ export class RestorationWorkerService {
               : { restoredAt: now, outputWidth: output.width, outputHeight: output.height }),
           },
           trx,
+          { stage, id: operation.id },
         );
-        return !!updated;
+        if (!updated) return false;
+        for (const file of output.files) {
+          this.storageRepository.mkdirSync(path.dirname(file.final));
+          await this.storageRepository.rename(file.tmp, file.final);
+          placed.push(file.final);
+          const index = ctx.scratch.indexOf(file.tmp);
+          if (index !== -1) ctx.scratch.splice(index, 1);
+        }
+        return true;
       });
     } catch (error) {
       // Nothing was recorded; the files this attempt moved into place belong to no row.
@@ -1010,14 +1030,21 @@ export class RestorationWorkerService {
     statuses: (typeof STAGE_STATUSES)[RestorationStage],
   ): Promise<void> {
     const { operation, claimToken, restoration } = ctx;
+    const stage = statuses.running === AssetRestorationStatus.PreviewRendering ? 'preview' : 'full';
     if (error instanceof RestorationInterrupted || ctx.signal.aborted) {
       const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
       if (current?.status === MediaOperationStatus.Cancelling) {
         await this.operationRepository.acknowledgeCancel(operation.id, claimToken, { released: true });
-        await this.restorationRepository.transition(restoration.id, [statuses.running], {
-          status: statuses.cancelled,
-          ...this.abandonedRetention(statuses),
-        });
+        await this.restorationRepository.transition(
+          restoration.id,
+          [statuses.running],
+          {
+            status: statuses.cancelled,
+            ...this.abandonedRetention(statuses),
+          },
+          undefined,
+          { stage, id: operation.id },
+        );
         this.logger.log(`Restoration ${restoration.id} cancelled by its owner`);
       } else if (current?.pauseRequestedAt && (await this.operationRepository.settlePause(operation.id, claimToken))) {
         // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
@@ -1042,11 +1069,17 @@ export class RestorationWorkerService {
     this.logger.error(`Restoration ${restoration.id} failed (${code}): ${message}`);
     const outcome = await this.operationRepository.fail(operation.id, claimToken, { error: message, errorCode: code });
     if (outcome === 'failed') {
-      await this.restorationRepository.transition(restoration.id, [statuses.running], {
-        status: statuses.failed,
-        error: message,
-        ...this.abandonedRetention(statuses),
-      });
+      await this.restorationRepository.transition(
+        restoration.id,
+        [statuses.running],
+        {
+          status: statuses.failed,
+          error: message,
+          ...this.abandonedRetention(statuses),
+        },
+        undefined,
+        { stage, id: operation.id },
+      );
     } else if (outcome === 'retrying') {
       // Every job gets one automatic retry before a failure is reported (FL-104, owner decision
       // September 22, 2026). The row stays running: the stage is runnable from there, and the next

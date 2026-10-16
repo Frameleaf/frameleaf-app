@@ -136,12 +136,20 @@ export class AssetRestorationRepository {
     patch: AssetRestorationUpdate & { status: AssetRestorationStatus },
     /** A transaction to write in, when the transition must land together with the job's completion. */
     executor: Kysely<DB> = this.db,
+    operation?: { stage: 'preview' | 'full'; id: string | null },
   ): Promise<AssetRestoration | undefined> {
     return (await executor
       .updateTable('asset_restoration')
       .set(patch)
       .where('id', '=', id)
       .where('status', 'in', [...from])
+      .$if(!!operation, (qb) =>
+        qb.where(
+          operation!.stage === 'preview' ? 'previewOperationId' : 'fullOperationId',
+          operation!.id === null ? 'is' : '=',
+          operation!.id,
+        ),
+      )
       .returningAll()
       .executeTakeFirst()) as AssetRestoration | undefined;
   }

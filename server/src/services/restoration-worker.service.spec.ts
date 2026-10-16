@@ -266,14 +266,97 @@ describe(RestorationWorkerService.name, () => {
     );
   });
 
+  describe('operation ownership', () => {
+    let current: AssetRestoration;
+    beforeEach(() => {
+      current = row();
+      restorations.get.mockImplementation(() => Promise.resolve({ ...current }));
+      restorations.update.mockImplementation((_id: string, patch: Partial<AssetRestoration>) =>
+        Promise.resolve((current = { ...current, ...patch })),
+      );
+      restorations.transition.mockImplementation(
+        (
+          _id: string,
+          from: AssetRestorationStatus[],
+          patch: Partial<AssetRestoration>,
+          _tx: unknown,
+          operation?: { stage: 'preview' | 'full'; id: string | null },
+        ) => {
+          if (
+            !from.includes(current.status as AssetRestorationStatus) ||
+            (operation &&
+              current[operation.stage === 'preview' ? 'previewOperationId' : 'fullOperationId'] !== operation.id)
+          )
+            return Promise.resolve();
+          return Promise.resolve((current = { ...current, ...patch }));
+        },
+      );
+    });
+
+    it('refuses an older job when another operation owns the runnable stage', async () => {
+      current.previewOperationId = 'new-operation';
+      await sut.run(operation(), CLAIM);
+      expect(restore).not.toHaveBeenCalled();
+      expect(current.previewOperationId).toBe('new-operation');
+    });
+
+    it('keeps an owner decision made after the worker reads the stage', async () => {
+      restorations.get.mockImplementationOnce(() => {
+        const read = { ...current };
+        current.status = AssetRestorationStatus.Rejected;
+        return Promise.resolve(read);
+      });
+      await sut.run(operation(), CLAIM);
+      expect(restore).not.toHaveBeenCalled();
+      expect(current.status).toBe(AssetRestorationStatus.Rejected);
+    });
+
+    it('allows a retry to replace its parent operation and publish', async () => {
+      current.previewOperationId = 'parent-operation';
+      current.status = AssetRestorationStatus.PreviewFailed;
+      await sut.run(operation({ retryOfId: 'parent-operation' }), CLAIM);
+      expect(restore).toHaveBeenCalled();
+      expect(current).toMatchObject({ status: AssetRestorationStatus.PreviewReady, previewOperationId: OPERATION_ID });
+    });
+
+    it('moves no final files after another operation takes over during rendering', async () => {
+      const render = restore.getMockImplementation()!;
+      restore.mockImplementationOnce((...args) => {
+        current.previewOperationId = 'new-operation';
+        return render(...args);
+      });
+      await sut.run(operation(), CLAIM);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(current).toMatchObject({
+        status: AssetRestorationStatus.PreviewRendering,
+        previewOperationId: 'new-operation',
+      });
+    });
+
+    it('leaves a newer operation running when an older render fails', async () => {
+      restore.mockImplementationOnce(() => {
+        current.previewOperationId = 'new-operation';
+        throw new Error('old render failed');
+      });
+      await sut.run(operation(), CLAIM);
+      expect(current).toMatchObject({
+        status: AssetRestorationStatus.PreviewRendering,
+        previewOperationId: 'new-operation',
+      });
+    });
+  });
+
   describe('run: still preview', () => {
     it('crops, downsizes, restores on the admitted destination and publishes both preview files atomically', async () => {
       await sut.run(operation(), CLAIM);
 
       // The stage was bound to this job before any work started.
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.PreviewQueued],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, previewOperationId: OPERATION_ID }),
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
       );
       // The crop is the requested region of the decoded frame; the input is bounded to the preview edge.
       expect(mocks.media.renderDevelopGeometry).toHaveBeenCalledWith(
@@ -326,6 +409,7 @@ describe(RestorationWorkerService.name, () => {
           }),
         }),
         TRX,
+        { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.publishValidated).toHaveBeenCalledWith(OPERATION_ID, CLAIM, expect.any(Function));
       expect(operations.complete).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { resultAssetId: null });
@@ -357,6 +441,8 @@ describe(RestorationWorkerService.name, () => {
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewRendering],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewFailed }),
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
       );
     });
 
@@ -426,7 +512,7 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(operation(), CLAIM);
 
-      expect(restorations.update).not.toHaveBeenCalled();
+      expect(restorations.transition).not.toHaveBeenCalled();
       expect(restore).not.toHaveBeenCalled();
       expect(operations.fail).toHaveBeenCalledWith(
         OPERATION_ID,
@@ -440,9 +526,12 @@ describe(RestorationWorkerService.name, () => {
         row({ status: AssetRestorationStatus.PreviewFailed, error: 'earlier attempt' }),
       );
       await sut.run(operation({ attempt: 2 }), CLAIM);
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.PreviewFailed],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, error: null }),
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.complete).toHaveBeenCalled();
     });
@@ -457,13 +546,12 @@ describe(RestorationWorkerService.name, () => {
       expect(restorations.get).not.toHaveBeenCalled();
     });
 
-    it('removes the published files again when the owner discarded the restoration mid-render', async () => {
-      restorations.transition.mockResolvedValue(undefined);
+    it('moves no final files when the owner discarded the restoration mid-render', async () => {
+      restorations.transition
+        .mockResolvedValueOnce(row({ status: AssetRestorationStatus.PreviewRendering }))
+        .mockResolvedValueOnce(undefined);
       await sut.run(operation(), CLAIM);
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: expect.arrayContaining([expect.stringMatching(/_after\.png$/)]) },
-      });
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
       expect(operations.fail).toHaveBeenCalledWith(
         OPERATION_ID,
@@ -484,13 +572,16 @@ describe(RestorationWorkerService.name, () => {
     it('takes the leftovers back from retention when a retry starts', async () => {
       await sut.run(fullOperation(), CLAIM);
 
-      expect(restorations.update).toHaveBeenCalledWith(
+      expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
+        [AssetRestorationStatus.RestoreFailed],
         expect.objectContaining({
           status: AssetRestorationStatus.Restoring,
           fullOperationId: OPERATION_ID,
           resultExpiresAt: null,
         }),
+        undefined,
+        { stage: 'full', id: null },
       );
     });
 
@@ -516,10 +607,16 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(fullOperation(), CLAIM);
 
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.Restoring], {
-        status: AssetRestorationStatus.RestoreCancelled,
-        resultExpiresAt: expect.any(Date),
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.Restoring],
+        {
+          status: AssetRestorationStatus.RestoreCancelled,
+          resultExpiresAt: expect.any(Date),
+        },
+        undefined,
+        { stage: 'full', id: OPERATION_ID },
+      );
     });
 
     it('refuses a full render when the destination no longer runs the reviewed model', async () => {
@@ -584,10 +681,16 @@ describe(RestorationWorkerService.name, () => {
 
       await sut.run(operation(), CLAIM);
 
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
-        status: AssetRestorationStatus.PreviewFailed,
-        error: 'worker unreachable',
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        {
+          status: AssetRestorationStatus.PreviewFailed,
+          error: 'worker unreachable',
+        },
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
+      );
     });
   });
 
@@ -696,9 +799,15 @@ describe(RestorationWorkerService.name, () => {
       await sut.run(operation(), CLAIM);
 
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
-        status: AssetRestorationStatus.PreviewCancelled,
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        {
+          status: AssetRestorationStatus.PreviewCancelled,
+        },
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
+      );
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });
@@ -714,7 +823,7 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.settlePause).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(restorations.transition).not.toHaveBeenCalled();
+      expect(restorations.transition).toHaveBeenCalledTimes(1);
     });
 
     it('requeues at once when the owner resumed before the pause landed (FL-104)', async () => {
@@ -743,11 +852,18 @@ describe(RestorationWorkerService.name, () => {
         expect.anything(),
         expect.objectContaining({ status: AssetRestorationStatus.PreviewReady }),
         expect.anything(),
+        { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { released: true });
-      expect(restorations.transition).toHaveBeenCalledWith(RESTORATION_ID, [AssetRestorationStatus.PreviewRendering], {
-        status: AssetRestorationStatus.PreviewCancelled,
-      });
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        {
+          status: AssetRestorationStatus.PreviewCancelled,
+        },
+        undefined,
+        { stage: 'preview', id: OPERATION_ID },
+      );
       // The rendered output stays scratch and is removed; it was never moved into place.
       expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringContaining('/after-'));
       expect(operations.fail).not.toHaveBeenCalled();
@@ -779,7 +895,7 @@ describe(RestorationWorkerService.name, () => {
 
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(restorations.transition).not.toHaveBeenCalled();
+      expect(restorations.transition).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -878,13 +994,15 @@ describe(RestorationWorkerService.name, () => {
           RESTORATION_ID,
           [AssetRestorationStatus.PreviewRendering],
           { status: AssetRestorationStatus.PreviewCancelled },
+          undefined,
+          { stage: 'preview', id: OPERATION_ID },
         );
       } else if (reason === 'pause') {
         expect(operations.settlePause).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
-        expect(restorations.transition).not.toHaveBeenCalled();
+        expect(restorations.transition).toHaveBeenCalledTimes(1);
       } else {
         expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0, returnAttempt: true });
-        expect(restorations.transition).not.toHaveBeenCalled();
+        expect(restorations.transition).toHaveBeenCalledTimes(1);
       }
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();

@@ -450,15 +450,28 @@ describe(CloudMlJobService.name, () => {
       }),
       transition: vi
         .fn()
-        .mockImplementation((id: string, from: AssetRestorationStatus[], patch: Partial<AssetRestoration>) => {
-          const current = rows.get(id);
-          if (!current || !from.includes(current.status as AssetRestorationStatus)) {
-            return Promise.resolve();
-          }
-          const updated = { ...current, ...patch } as AssetRestoration;
-          rows.set(id, updated);
-          return Promise.resolve(updated);
-        }),
+        .mockImplementation(
+          (
+            id: string,
+            from: AssetRestorationStatus[],
+            patch: Partial<AssetRestoration>,
+            _tx: unknown,
+            operation?: { stage: 'preview' | 'full'; id: string | null },
+          ) => {
+            const current = rows.get(id);
+            if (
+              !current ||
+              !from.includes(current.status as AssetRestorationStatus) ||
+              (operation &&
+                current[operation.stage === 'preview' ? 'previewOperationId' : 'fullOperationId'] !== operation.id)
+            ) {
+              return Promise.resolve();
+            }
+            const updated = { ...current, ...patch } as AssetRestoration;
+            rows.set(id, updated);
+            return Promise.resolve(updated);
+          },
+        ),
       setCurrent: vi.fn(),
       listExpiredPreviews: vi.fn(),
       listExpiredResults: vi.fn(),
@@ -2055,7 +2068,11 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('puts a full render cancelled before anything was sent back to its reviewed preview', async () => {
-      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, status: AssetRestorationStatus.Accepted });
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: OPERATION_ID,
+      });
       mocks.mediaOperation.setBulkResult.mockResolvedValue({
         status: MediaOperationStatus.Cancelling,
         cancelRequestedAt: now,
@@ -2327,6 +2344,107 @@ describe(CloudMlJobService.name, () => {
         { error: expect.stringMatching(/not 2× the photo/), errorCode: 'cloud_ml_output_invalid' },
         { retry: false },
       );
+    });
+  });
+
+  describe('operation ownership', () => {
+    beforeEach(async () => {
+      await estimateAndConfirm();
+    });
+
+    it('sends no input when a newer operation owns the stage before admission', async () => {
+      rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
+
+      await sut.step(claimed(), 'claim', now);
+
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.PreviewQueued,
+        previewOperationId: 'new-operation',
+      });
+    });
+
+    it('leaves a newer full render unchanged when releasing an older remote job', async () => {
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'new-operation',
+      });
+      mocks.mediaOperation.getUnreleasedRemoteOperations.mockResolvedValue([
+        {
+          ...following(),
+          status: MediaOperationStatus.Cancelled,
+          claimToken: null,
+          remoteJobId: JOB_ID,
+          snapshot: { ...created!.snapshot, stage: 'full' },
+        } as MediaOperation,
+      ]);
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: view('job-completed.json', { status: 'cancelled' }),
+        etag: null,
+        retryAfterSeconds: null,
+      });
+
+      await sut.releaseUnwatched();
+
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'new-operation',
+      });
+      expect(mocks.mediaOperation.markRemoteReleased).toHaveBeenCalledWith(OPERATION_ID);
+      expect(mocks.frameleafCloudMl.cancelJob).toHaveBeenCalled();
+    });
+
+    it('keeps a newer full render that replaces ownership after cancelled cleanup reads the row', async () => {
+      rows.set(RESTORATION_ID, {
+        ...rows.get(RESTORATION_ID)!,
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: OPERATION_ID,
+      });
+      mocks.mediaOperation.listUnreconciledCancelledCloudMlJobs.mockResolvedValue([
+        {
+          ...claimed(),
+          status: MediaOperationStatus.Cancelled,
+          claimToken: null,
+          snapshot: { ...created!.snapshot, stage: 'full' },
+        } as MediaOperation,
+      ]);
+      restorations.get.mockImplementationOnce((id: string) => {
+        const read = rows.get(id)!;
+        rows.set(id, { ...read, fullOperationId: 'new-operation' });
+        return Promise.resolve(read);
+      });
+
+      await sut.reconcileCancelled(now);
+
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: 'new-operation',
+      });
+    });
+
+    it('moves no final files when another operation owns the row at publication', async () => {
+      rendering();
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completedWithOutputs(),
+        etag: null,
+        retryAfterSeconds: null,
+      });
+      mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
+        rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
+        return (await publish({} as never)) ? 'completed' : 'rejected';
+      });
+
+      await sut.step(following(), 'claim', now);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)).toMatchObject({
+        status: AssetRestorationStatus.PreviewRendering,
+        previewOperationId: 'new-operation',
+      });
     });
   });
 
