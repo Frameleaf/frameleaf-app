@@ -251,6 +251,17 @@ describe(JobRepository.name, () => {
       sut['store'].defer = vi.fn().mockResolvedValue(true);
     });
 
+    it('defers a late operation-owned claim after shutdown without starting its handler', async () => {
+      const late = { ...claim(4), data: { operationId: 'late-operation' } };
+      sut['eventRepository'].emit = vi.fn().mockResolvedValue(undefined);
+      await sut.stopWorkers(0);
+      await sut['execute'](late, new AbortController());
+      expect(sut['eventRepository'].emit).not.toHaveBeenCalled();
+      expect(sut['store'].complete).not.toHaveBeenCalled();
+      expect(sut['store'].defer).toHaveBeenCalledExactlyOnceWith(late, 'local-capacity');
+      expect(attemptEvidence.recordStoppedAttempt).toHaveBeenCalledWith(sut['store'].db, late.id, late.token);
+    });
+
     it('backpressures 128 claimed handlers before they can exhaust the ten-session execution pool', async () => {
       const work = Promise.withResolvers<void>();
       let active = 0;

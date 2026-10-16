@@ -241,6 +241,7 @@ export class JobRepository {
     };
     try {
       try {
+        if (this.stopping) abort.abort(new Error('Worker stopped'));
         releaseExecution = await admission.execution.acquire(abort.signal);
         abort.signal.throwIfAborted();
         started = true;
