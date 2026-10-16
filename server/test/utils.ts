@@ -10,6 +10,7 @@ import multer, { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
 import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { Duplex, Readable, Writable } from 'node:stream';
 import { PNG } from 'pngjs';
 import { Mock, Mocked, assert, vitest } from 'vitest';
@@ -635,7 +636,8 @@ export const getKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): P
   const connection = { connectionType: 'url', url: withDatabase(testUrl, 'postgres') } as DatabaseConnectionParams;
   const sql = createPostgres({ maxConnections: 1, connection });
 
-  const randomSuffix = Math.random().toString(36).slice(2, 7);
+  // 5 random base36 chars collided across the ~1,400 clones of a medium run ("already exists").
+  const randomSuffix = randomUUID().replaceAll('-', '');
   const dbName = `frameleaf_${suffix ?? randomSuffix}`;
   try {
     await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);
