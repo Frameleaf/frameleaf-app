@@ -10599,6 +10599,16 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "producerAdmissionKey",
+          "tableName": "asset_video_duplicate_frame",
+          "nullable": false,
+          "isArray": false,
+          "default": "'legacy'::text",
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -10623,6 +10633,20 @@
           "when": null,
           "synchronize": true,
           "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        },
+        {
+          "name": "asset_video_duplicate_frame_producer_guard",
+          "definition": "CREATE TRIGGER asset_video_duplicate_frame_producer_guard BEFORE INSERT OR UPDATE ON public.asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION desktop_clip_producer_guard()",
+          "tableName": "asset_video_duplicate_frame",
+          "functionName": "desktop_clip_producer_guard",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
             "update"
           ],
           "timing": "before",
@@ -10663,6 +10687,22 @@
           "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "tableName": "asset_video_duplicate_frame",
           "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_video_duplicate_frame_producerAdmissionKey_fkey",
+          "definition": "FOREIGN KEY (\"producerAdmissionKey\") REFERENCES desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "tableName": "asset_video_duplicate_frame",
+          "columnNames": [
+            "producerAdmissionKey"
+          ],
+          "referenceTableName": "desktop_clip_producer",
+          "referenceColumnNames": [
+            "key"
+          ],
+          "onUpdate": "RESTRICT",
+          "onDelete": "RESTRICT",
           "synchronize": true
         }
       ],
@@ -29285,6 +29325,16 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "producerAdmissionKey",
+          "tableName": "smart_search",
+          "nullable": false,
+          "isArray": false,
+          "default": "'legacy'::text",
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -29300,7 +29350,22 @@
           "synchronize": true
         }
       ],
-      "triggers": [],
+      "triggers": [
+        {
+          "name": "smart_search_producer_guard",
+          "definition": "CREATE TRIGGER smart_search_producer_guard BEFORE INSERT OR UPDATE ON public.smart_search FOR EACH ROW EXECUTE FUNCTION desktop_clip_producer_guard()",
+          "tableName": "smart_search",
+          "functionName": "desktop_clip_producer_guard",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
           "type": "primary-key",
@@ -29334,6 +29399,22 @@
           "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "tableName": "smart_search",
           "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "smart_search_producerAdmissionKey_fkey",
+          "definition": "FOREIGN KEY (\"producerAdmissionKey\") REFERENCES desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "tableName": "smart_search",
+          "columnNames": [
+            "producerAdmissionKey"
+          ],
+          "referenceTableName": "desktop_clip_producer",
+          "referenceColumnNames": [
+            "key"
+          ],
+          "onUpdate": "RESTRICT",
+          "onDelete": "RESTRICT",
           "synchronize": true
         }
       ],
@@ -29369,6 +29450,16 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "producerAdmissionKey",
+          "tableName": "smart_search_description",
+          "nullable": false,
+          "isArray": false,
+          "default": "'legacy'::text",
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -29384,7 +29475,22 @@
           "synchronize": true
         }
       ],
-      "triggers": [],
+      "triggers": [
+        {
+          "name": "smart_search_description_producer_guard",
+          "definition": "CREATE TRIGGER smart_search_description_producer_guard BEFORE INSERT OR UPDATE ON public.smart_search_description FOR EACH ROW EXECUTE FUNCTION desktop_clip_producer_guard()",
+          "tableName": "smart_search_description",
+          "functionName": "desktop_clip_producer_guard",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
           "type": "primary-key",
@@ -29418,6 +29524,22 @@
           "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "tableName": "smart_search_description",
           "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "smart_search_description_producerAdmissionKey_fkey",
+          "definition": "FOREIGN KEY (\"producerAdmissionKey\") REFERENCES desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "tableName": "smart_search_description",
+          "columnNames": [
+            "producerAdmissionKey"
+          ],
+          "referenceTableName": "desktop_clip_producer",
+          "referenceColumnNames": [
+            "key"
+          ],
+          "onUpdate": "RESTRICT",
+          "onDelete": "RESTRICT",
           "synchronize": true
         }
       ],
@@ -31409,6 +31531,16 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "producerAdmissionKey",
+          "tableName": "video_moment_frame_embedding",
+          "nullable": false,
+          "isArray": false,
+          "default": "'legacy'::text",
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -31424,7 +31556,22 @@
           "synchronize": true
         }
       ],
-      "triggers": [],
+      "triggers": [
+        {
+          "name": "video_moment_frame_embedding_producer_guard",
+          "definition": "CREATE TRIGGER video_moment_frame_embedding_producer_guard BEFORE INSERT OR UPDATE ON public.video_moment_frame_embedding FOR EACH ROW EXECUTE FUNCTION desktop_clip_producer_guard()",
+          "tableName": "video_moment_frame_embedding",
+          "functionName": "desktop_clip_producer_guard",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
           "type": "primary-key",
@@ -31458,6 +31605,22 @@
           "definition": "CHECK (((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
           "tableName": "video_moment_frame_embedding",
           "expression": "(((\"producerModelKey\" IS NULL) OR ((\"producerModelKey\")::text ~ '^clip:[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "video_moment_frame_embedding_producerAdmissionKey_fkey",
+          "definition": "FOREIGN KEY (\"producerAdmissionKey\") REFERENCES desktop_clip_producer(key) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "tableName": "video_moment_frame_embedding",
+          "columnNames": [
+            "producerAdmissionKey"
+          ],
+          "referenceTableName": "desktop_clip_producer",
+          "referenceColumnNames": [
+            "key"
+          ],
+          "onUpdate": "RESTRICT",
+          "onDelete": "RESTRICT",
           "synchronize": true
         }
       ],
@@ -40694,6 +40857,132 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "desktop_clip_index",
+      "columns": [
+        {
+          "type": "text",
+          "primary": false,
+          "name": "scope",
+          "tableName": "desktop_clip_index",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "revisionId",
+          "tableName": "desktop_clip_index",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "space",
+          "tableName": "desktop_clip_index",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "desktop_clip_index_scope_check",
+          "definition": "CHECK ((scope = ANY (ARRAY['unadmitted'::text, 'clip'::text])))",
+          "tableName": "desktop_clip_index",
+          "expression": "((scope = ANY (ARRAY['unadmitted'::text, 'clip'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_clip_index_space_check",
+          "definition": "CHECK ((((scope = 'unadmitted'::text) AND (space IS NULL)) OR ((scope = 'clip'::text) AND (space IS NOT NULL) AND (jsonb_typeof(space) = 'object'::text))))",
+          "tableName": "desktop_clip_index",
+          "expression": "((((scope = 'unadmitted'::text) AND (space IS NULL)) OR ((scope = 'clip'::text) AND (space IS NOT NULL) AND (jsonb_typeof(space) = 'object'::text))))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_clip_index_pkey",
+          "definition": "PRIMARY KEY (scope)",
+          "tableName": "desktop_clip_index",
+          "columnNames": [
+            "scope"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "desktop_clip_producer",
+      "columns": [
+        {
+          "type": "text",
+          "primary": false,
+          "name": "key",
+          "tableName": "desktop_clip_producer",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "scope",
+          "tableName": "desktop_clip_producer",
+          "nullable": false,
+          "isArray": false,
+          "default": "'unadmitted'::text",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "foreign-key",
+          "name": "desktop_clip_producer_scope_fkey",
+          "definition": "FOREIGN KEY (scope) REFERENCES desktop_clip_index(scope) ON UPDATE RESTRICT ON DELETE RESTRICT",
+          "tableName": "desktop_clip_producer",
+          "columnNames": [
+            "scope"
+          ],
+          "referenceTableName": "desktop_clip_index",
+          "referenceColumnNames": [
+            "scope"
+          ],
+          "onUpdate": "RESTRICT",
+          "onDelete": "RESTRICT",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "desktop_clip_producer_key_check",
+          "definition": "CHECK (((key = 'legacy'::text) OR (key ~ '^(image|text):clip:[a-f0-9]{64}$'::text)))",
+          "tableName": "desktop_clip_producer",
+          "expression": "(((key = 'legacy'::text) OR (key ~ '^(image|text):clip:[a-f0-9]{64}$'::text)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "desktop_clip_producer_pkey",
+          "definition": "PRIMARY KEY (key)",
+          "tableName": "desktop_clip_producer",
+          "columnNames": [
+            "key"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
@@ -40967,6 +41256,11 @@
     {
       "name": "stack_delete_audit",
       "expression": "CREATE OR REPLACE FUNCTION public.stack_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO stack_audit (\"stackId\", \"userId\")\n      SELECT \"id\", \"ownerId\"\n      FROM OLD;\n      RETURN NULL;\n    END\n  $function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "desktop_clip_producer_guard",
+      "expression": "CREATE OR REPLACE FUNCTION public.desktop_clip_producer_guard()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE role text;\n    BEGIN\n      IF TG_TABLE_NAME = 'smart_search_description' THEN role := 'text';\n      ELSIF TG_TABLE_NAME IN ('smart_search', 'asset_video_duplicate_frame', 'video_moment_frame_embedding') THEN role := 'image';\n      ELSE RAISE EXCEPTION 'unsupported_clip_store';\n      END IF;\n      NEW.\"producerAdmissionKey\" := CASE WHEN NEW.\"producerModelKey\" IS NULL THEN 'legacy' ELSE role || ':' || NEW.\"producerModelKey\" END;\n      INSERT INTO public.desktop_clip_producer (key) VALUES (NEW.\"producerAdmissionKey\") ON CONFLICT DO NOTHING;\n      RETURN NEW;\n    END$function$\n",
       "synchronize": true
     }
   ],
