@@ -549,25 +549,39 @@
       font-size: var(--fl-font-title);
     }
   }
+  /* As People's `.pl-toolbar`: a capped search field, the sort beside it, the buttons at the far side. */
   .toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--fl-space-3) var(--fl-space-2);
     align-items: center;
   }
   .toolbar input[type='search'] {
     flex: 1;
     min-width: 12rem;
+    max-width: 24rem;
     min-height: var(--fl-control-height);
-    padding: 0.5rem 0.75rem;
+    padding: var(--fl-space-2) var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
+    font: var(--fl-type-body);
+  }
+  .toolbar input[type='search']::placeholder {
+    color: var(--fl-muted);
+  }
+  @media (max-width: 700px) {
+    .toolbar input[type='search'] {
+      flex: 1 1 100%;
+      max-width: none;
+    }
   }
   .toolbar select {
+    margin-inline-end: auto;
+    font: var(--fl-type-body);
     min-height: var(--fl-control-height);
-    padding: 0 0.75rem;
+    padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

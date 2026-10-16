@@ -399,7 +399,12 @@
     if (!map || markers.length === 0) {
       return;
     }
-    map.fitBounds(extent(), { padding: 48, maxZoom: 15, animate: announce });
+    // Clear of the floating overlays: the in-view chip and legend (top, bottom) and the tool column (right, 72px).
+    map.fitBounds(extent(), {
+      padding: { top: 64, bottom: 64, left: 48, right: 120 },
+      maxZoom: 15,
+      animate: announce,
+    });
     changed = false;
     if (announce) {
       status = $t('frameleaf_map_status_reset');

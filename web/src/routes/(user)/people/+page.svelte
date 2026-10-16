@@ -34,7 +34,7 @@
     type PersonResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
-  import { mdiEyeOffOutline, mdiEyeOutline, mdiTuneVariant } from '@mdi/js';
+  import { mdiAccountMultipleOutline, mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
@@ -407,8 +407,8 @@
         </FrameleafButton>
       {/if}
       <FrameleafButton onclick={() => goto('/people/manage')}>
-        <Icon icon={mdiTuneVariant} size={ICON_SIZE.lg} aria-hidden="true" />
-        {$t('frameleaf_people_choose_who_appears')}
+        <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+        {$t('frameleaf_people_show_and_hide')}
       </FrameleafButton>
     </div>
     {#if mergeSuggestions.length > 0}

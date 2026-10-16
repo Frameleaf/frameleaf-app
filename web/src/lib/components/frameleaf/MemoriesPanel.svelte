@@ -331,7 +331,7 @@
         <small class="fm-card-count">
           {count}
           {#if memory.isSaved}
-            <span aria-hidden="true"> · </span><Icon icon={mdiHeart} size="12" aria-hidden="true" />
+            <span aria-hidden="true">&nbsp;·&nbsp;</span><Icon icon={mdiHeart} size="12" aria-hidden="true" />
             {$t('favorite')}
           {/if}
         </small>

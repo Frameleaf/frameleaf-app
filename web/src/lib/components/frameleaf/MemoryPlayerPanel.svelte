@@ -1066,7 +1066,7 @@
       <div class="fmp-heading">
         <strong>{headline?.title}</strong>
         <small>
-          {#if headline?.subtitle}{headline.subtitle}<span aria-hidden="true"> · </span>{/if}
+          {#if headline?.subtitle}{headline.subtitle}<span aria-hidden="true">&nbsp;·&nbsp;</span>{/if}
           {$t('frameleaf_memories_item_count', { values: { count: current.memory.assets.length } })}
         </small>
       </div>
@@ -1384,7 +1384,7 @@
                   <strong>{lowerThird.place}</strong>
                   <span>
                     {lowerThird.day}{#if lowerThird.video && videoMuted}
-                      <span aria-hidden="true"> · </span>{$t('frameleaf_memories_video_muted')}{/if}
+                      <span aria-hidden="true">&nbsp;·&nbsp;</span>{$t('frameleaf_memories_video_muted')}{/if}
                   </span>
                   {#if currentPeople.length > 0}
                     {@const names = currentPeople.map((person) => person.name).join(', ')}
