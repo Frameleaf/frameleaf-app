@@ -2115,6 +2115,45 @@ describe(RenderWorkerService.name, () => {
         expect(mocks.asset.getById).not.toHaveBeenCalled();
       });
 
+      it('refuses a valid Studio grant issued for another project revision', async () => {
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified(
+            { kind: StudioResourceKind.LibraryAsset, id: 'clip-1', key: 'library-asset:clip-1', revision: 8 },
+            '/library/owner-a/clip-1.mov',
+          ),
+        );
+        await expect(
+          sut.readInput(
+            SESSION_A,
+            studioClaimed.id,
+            studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'other-revision-grant' }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it.each(['unlisted', 'unavailable'] as const)(
+        'refuses an otherwise valid direct file grant when the operation manifest is %s',
+        async (reason) => {
+          studioResources.verifyReadGrant.mockResolvedValue(
+            verified(
+              { kind: StudioResourceKind.LibraryAsset, id: 'clip-1', key: 'library-asset:clip-1' },
+              '/library/owner-a/clip-1.mov',
+            ),
+          );
+          studioResources.resolveProjectResources.mockResolvedValue({
+            manifest: studioManifestStub({ complete: reason !== 'unavailable', entries: [] }),
+            refused: [],
+          });
+          await expect(
+            sut.readInput(
+              SESSION_A,
+              studioClaimed.id,
+              studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'old-source-grant' }),
+            ),
+          ).rejects.toBeInstanceOf(NotFoundException);
+        },
+      );
+
       it('serves one file of a font family by its own input id, and no file the manifest does not list', async () => {
         const manifest = studioManifestStub();
         const font = manifest.entries.find((entry) => entry.key === 'font:inter')!;

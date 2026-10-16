@@ -1845,7 +1845,10 @@ export class RenderWorkerService {
     }
 
     const { grant } = verification;
+    const studio = studioContextOf(operation);
     if (
+      !studio ||
+      grant.revision !== studio.revision ||
       grant.scope !== 'render' ||
       grant.projectId !== operation.projectId ||
       grant.key !== payload.inputId ||
@@ -1854,17 +1857,12 @@ export class RenderWorkerService {
       throw new ForbiddenException('Input grant invalid');
     }
 
-    if (verification.path) {
-      return verification.path;
-    }
-
-    // Project-owned and deployment-owned files: FL-90 bound their access at resolve time; the path
-    // comes from a fresh resolution so a re-declared or removed resource is not served from memory.
+    // Even a live resource grant must belong to this operation's current resource set.
     const resolved = await this.resolveManifest(operation, workerSessionId);
     const granted = resolved.complete ? (resolved.studio?.entries ?? []).filter((item) => item.grant === 'render') : [];
     const entry = granted.find((candidate) => candidate.key === payload.inputId);
     if (entry?.path) {
-      return entry.path;
+      return verification.path || entry.path;
     }
     // A file of a font family: the id is compared whole against the ids this resolution issues.
     for (const candidate of granted) {
