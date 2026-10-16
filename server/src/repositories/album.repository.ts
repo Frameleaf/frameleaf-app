@@ -574,6 +574,21 @@ export class AlbumRepository {
   async delete(id: string): Promise<void> {
     await this.db.transaction().execute((tx) => this.deleteIn(tx, id));
   }
+  async deleteFailedClassificationAlbum(id: string, ownerId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      const album = await tx
+        .selectFrom('album')
+        .select('id')
+        .where('id', '=', id)
+        .where(isAlbumOwned(ownerId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (!album) return;
+      // The row lock waits for an uncertain rule insert's foreign-key lock before this fresh read.
+      const rule = await tx.selectFrom('classification_rule').select('id').where('albumId', '=', id).executeTakeFirst();
+      if (!rule) await this.deleteIn(tx, id);
+    });
+  }
   /**
    * FL-146: delete a collection and keep its albums, which move to the collection's own parent (the
    * top level when it has none), as the prototype does. One transaction: a collection whose delete fails
