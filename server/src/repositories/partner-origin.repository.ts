@@ -93,6 +93,9 @@ const GENERATED_FILE_TYPES = [
 ];
 /** Copies form chains (A→B→C…); lineage walks stop here, far beyond any real chain, as a guard. */
 const MAX_LINEAGE_DEPTH = 64;
+const TAG_EDIT_LOCK_PREFIX = 'partner-tags:';
+const lockIncomingTags = (tx: Kysely<DB>, ownerId: string) =>
+  sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${TAG_EDIT_LOCK_PREFIX + ownerId}, 0))`.execute(tx);
 /**
  * Whether `sharedById` still shares with `sharedWithId`, holding the partner row FOR SHARE until the
  * caller's transaction ends: `PartnerService.remove` deletes that row before it stops following, so a copy
@@ -178,6 +181,13 @@ export class PartnerOriginRepository {
   ): Promise<T | undefined> {
     const { table, key, source, copy } = TABLES[kind];
     return this.db.transaction().execute(async (tx) => {
+      if (kind === 'asset') {
+        const { rows } = await sql<{ ownerId: string }>`
+          SELECT "ownerId" FROM public.asset_origin WHERE "assetId" = ${id}::uuid
+        `.execute(tx);
+        if (!rows[0]) return;
+        await lockIncomingTags(tx, rows[0].ownerId);
+      }
       const { rows } = await sql<OriginRow>`
         SELECT ${selectOrigin(kind)} FROM ${sql.raw(table)} origin
         JOIN ${sql.raw(copy)} copy ON copy.id = origin.${sql.id(key)}
@@ -195,6 +205,16 @@ export class PartnerOriginRepository {
     if (ids.length === 0) return write();
     const { table, key } = TABLES[kind];
     return this.db.transaction().execute(async (tx) => {
+      if (kind === 'asset') {
+        const owners = await tx
+          .selectFrom('asset')
+          .select('ownerId')
+          .distinct()
+          .where('id', 'in', ids)
+          .orderBy('ownerId')
+          .execute();
+        for (const owner of owners) await lockIncomingTags(tx, owner.ownerId);
+      }
       await sql`
         SELECT origin.${sql.id(key)} FROM ${sql.raw(table)} origin
         WHERE origin.${sql.id(key)} = ANY(${ids}::uuid[])
@@ -205,6 +225,13 @@ export class PartnerOriginRepository {
         await this.markOverridden(kind, ids, fields);
         return value;
       });
+    });
+  }
+  /** Tree edits exclude incoming copies and tag propagation, including origins not created yet. */
+  async withOwnerTagEdit<T>(ownerId: string, write: () => Promise<T>): Promise<T> {
+    return this.db.transaction().execute(async (tx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${TAG_EDIT_LOCK_PREFIX + ownerId}, 0))`.execute(tx);
+      return publicationTransaction.run(tx, write);
     });
   }
   async createOrigin(kind: OriginKind, input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
@@ -563,6 +590,7 @@ export class PartnerOriginRepository {
    */
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
+      await lockIncomingTags(trx, input.ownerId);
       if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
         return;
       }

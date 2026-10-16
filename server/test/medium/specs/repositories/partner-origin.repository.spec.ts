@@ -5,6 +5,7 @@ import {
   PartnerBackfillState,
   PartnerOriginRepository,
 } from 'src/repositories/partner-origin.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
@@ -30,6 +31,57 @@ it('installs feature tables in the real canonical baseline', async () => {
 });
 
 describe(PartnerOriginRepository.name, () => {
+  it.each(['copy', 'propagation'] as const)('keeps incoming %s behind an owner-wide tag edit', async (operation) => {
+    const { ctx, sut } = setup();
+    const { user: alice } = await ctx.newUser();
+    const { user: bob } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+    const { asset: source } = await ctx.newAsset({ ownerId: alice.id });
+    const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(source.id);
+    if (!original) throw new Error('Expected source physical file');
+    const copyId = operation === 'propagation' ? (await ctx.newAsset({ ownerId: bob.id })).asset.id : source.id;
+    if (operation === 'propagation') {
+      await sut.createAssetOrigin({
+        id: copyId,
+        sourceId: source.id,
+        ownerId: bob.id,
+        rootOwnerId: alice.id,
+        partnerSharedById: alice.id,
+      });
+    }
+    const { promise: entered, resolve: ready } = Promise.withResolvers<void>();
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const editing = sut.withOwnerTagEdit(bob.id, async () => {
+      ready();
+      await held;
+    });
+    await entered;
+    let settled = false;
+    const incoming = (
+      operation === 'copy'
+        ? sut.insertAssetCopy({
+            sourceAssetId: source.id,
+            ownerId: bob.id,
+            rootOwnerId: alice.id,
+            partnerSharedById: alice.id,
+            original,
+          })
+        : sut.withFollowingOrigin('asset', source.id, copyId, () => Promise.resolve('applied'))
+    ).then((result) => {
+      settled = true;
+      return result;
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(settled).toBe(false);
+    } finally {
+      release();
+      await Promise.allSettled([editing, incoming]);
+    }
+    await editing;
+    expect(await incoming).toBeTruthy();
+  });
+
   it('rolls propagation writes back with the held origin when the callback fails', async () => {
     const { ctx, sut } = setup();
     const { user: alice } = await ctx.newUser();

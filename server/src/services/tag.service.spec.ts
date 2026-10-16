@@ -17,10 +17,32 @@ describe(TagService.name, () => {
     mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set(['tag-1']));
     mocks.tag.getSubtreeAssetIds.mockResolvedValue([]);
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+    mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_ownerId, write) => write());
   });
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  it.each(['rename', 'merge', 'delete'] as const)('keeps tag %s behind owner edit admission', async (action) => {
+    mocks.access.tag.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+    mocks.tag.update.mockResolvedValue(tagStub.tag);
+    mocks.tag.merge.mockResolvedValue({ tag: tagStub.tag, merged: [], taggedAssetIds: [], assetIds: [] });
+    mocks.tag.delete.mockResolvedValue([]);
+    mocks.user.getMetadata.mockResolvedValue([]);
+    mocks.partnerOrigin.withOwnerTagEdit.mockRejectedValue(new Error('tag owner busy'));
+    await expect(
+      action === 'rename'
+        ? sut.update(authStub.admin, 'tag-1', { name: 'Renamed' })
+        : action === 'merge'
+          ? sut.merge(authStub.admin, 'tag-1', { targetId: 'tag-2' })
+          : sut.remove(authStub.admin, 'tag-1'),
+    ).rejects.toThrow('tag owner busy');
+    expect(mocks.tag.update).not.toHaveBeenCalled();
+    expect(mocks.tag.merge).not.toHaveBeenCalled();
+    expect(mocks.tag.delete).not.toHaveBeenCalled();
+    expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+    expect(mocks.event.emit).not.toHaveBeenCalled();
   });
 
   describe('getAll', () => {
@@ -319,6 +341,28 @@ describe(TagService.name, () => {
   });
 
   describe('remove', () => {
+    it('rebuilds deleted tag metadata and records the recipient override before notifying', async () => {
+      mocks.tag.delete.mockResolvedValue(['asset-1']);
+      mocks.asset.getForUpdateTags.mockResolvedValue({ tags: [] });
+
+      await sut.remove(authStub.admin, 'tag-1');
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+        exif: { assetId: 'asset-1', tags: [], lockedProperties: ['tags'] },
+        lockedPropertiesBehavior: 'append',
+      });
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith(
+        'asset',
+        ['asset-1'],
+        ['tags'],
+        authStub.admin.user.id,
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('AssetUntag', { assetId: 'asset-1' });
+      expect(mocks.partnerOrigin.markOverridden.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.event.emit.mock.invocationCallOrder[0],
+      );
+    });
+
     it('should throw an error for an invalid id', async () => {
       mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set());
       await expect(sut.remove(authStub.admin, 'tag-1')).rejects.toBeInstanceOf(NotFoundException);
@@ -327,7 +371,7 @@ describe(TagService.name, () => {
 
     it('should remove a tag', async () => {
       mocks.tag.get.mockResolvedValue(tagStub.tag);
-      mocks.tag.delete.mockResolvedValue();
+      mocks.tag.delete.mockResolvedValue([]);
 
       await sut.remove(authStub.admin, 'tag-1');
       expect(mocks.tag.delete).toHaveBeenCalledWith('tag-1');

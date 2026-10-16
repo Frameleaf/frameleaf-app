@@ -880,6 +880,30 @@ describe(PartnerCopyService.name, () => {
       return { sut, ctx, origins, bob, source, copyId, tag, tags: BaseService.create(TagService, sut) };
     };
 
+    it('keeps a tag rename completed after a replay reads its origin', async () => {
+      const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(true);
+      const getOrigin = origins.getOrigin.bind(origins);
+      let renamed = false;
+      const snapshot = vi.spyOn(origins, 'getOrigin').mockImplementation(async (kind, id) => {
+        const origin = await getOrigin(kind, id);
+        if (kind === 'asset' && id === copyId && !renamed) {
+          renamed = true;
+          await tags.update(factory.auth({ user: bob }), tag.id, { name: 'Recipient choice' });
+        }
+        return origin;
+      });
+      try {
+        await expect(sut.copyAsset(source.id, bob.id, source.ownerId)).resolves.toBe(copyId);
+      } finally {
+        snapshot.mockRestore();
+      }
+      expect(renamed).toBe(true);
+      expect(await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId).execute()).toEqual([
+        { tagId: tag.id },
+      ]);
+      expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(AssetOriginField.Tags);
+    });
+
     it.each(['add', 'remove', 'bulk-add'] as const)(
       'rolls %s tags and EXIF back when the override marker fails',
       async (action) => {

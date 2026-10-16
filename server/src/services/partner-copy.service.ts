@@ -288,9 +288,11 @@ export class PartnerCopyService extends BaseService {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
       }
     }
-    if (!overriddenFields.includes(AssetOriginField.Tags)) {
-      await this.copyTags(source.id, copyId, targetOwnerId);
-    }
+    await this.partnerOriginRepository.withFollowingOrigin('asset', source.id, copyId, async (origin) => {
+      if (!origin.overriddenFields.includes(AssetOriginField.Tags)) {
+        await this.copyTags(source.id, copyId, targetOwnerId);
+      }
+    });
     if (!overriddenFields.includes(AssetOriginField.Faces)) {
       await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
     }

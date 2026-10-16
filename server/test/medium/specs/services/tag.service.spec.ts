@@ -18,6 +18,7 @@ import { ClassificationRepository } from 'src/repositories/classification.reposi
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { AssetOriginField, PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
@@ -89,6 +90,77 @@ beforeAll(async () => {
 });
 
 describe(TagService.name, () => {
+  it.each(['rename', 'merge', 'delete'] as const)(
+    'rolls a partner copy’s tag %s back when its override marker cannot be recorded',
+    async (action) => {
+      const { sut, ctx } = setup();
+      const { user: sharer } = await ctx.newUser();
+      const { user: recipient } = await ctx.newUser();
+      const { asset: original } = await ctx.newAsset({ ownerId: sharer.id });
+      const { asset: copy } = await ctx.newAsset({
+        ownerId: recipient.id,
+        checksum: original.checksum,
+        originalPath: original.originalPath,
+      });
+      const origins = ctx.get(PartnerOriginRepository);
+      await origins.createAssetOrigin({
+        id: copy.id,
+        sourceId: original.id,
+        ownerId: recipient.id,
+        rootOwnerId: sharer.id,
+        partnerSharedById: sharer.id,
+      });
+      const [tag, target] = await upsertTags(ctx.get(TagRepository), {
+        userId: recipient.id,
+        tags: ['Choice', 'Target'],
+      });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [copy.id] });
+      await ctx.newExif({ assetId: copy.id, tags: ['Choice'] });
+      const beforeTags = await defaultDatabase
+        .selectFrom('tag')
+        .select(['id', 'value', 'parentId'])
+        .where('userId', '=', recipient.id)
+        .orderBy('id')
+        .execute();
+      const marker = vi.spyOn(origins, 'markOverridden').mockRejectedValueOnce(new Error('override unavailable'));
+      ctx.getMock(EventRepository).emit.mockClear();
+      const auth = factory.auth({ user: recipient });
+      try {
+        await expect(
+          action === 'rename'
+            ? sut.update(auth, tag.id, { name: 'Recipient choice' })
+            : action === 'merge'
+              ? sut.merge(auth, tag.id, { targetId: target.id })
+              : sut.remove(auth, tag.id),
+        ).rejects.toThrow('override unavailable');
+      } finally {
+        marker.mockRestore();
+      }
+      expect(
+        await defaultDatabase
+          .selectFrom('tag')
+          .select(['id', 'value', 'parentId'])
+          .where('userId', '=', recipient.id)
+          .orderBy('id')
+          .execute(),
+      ).toEqual(beforeTags);
+      expect(
+        await defaultDatabase.selectFrom('tag_asset').select('tagId').where('assetId', '=', copy.id).execute(),
+      ).toEqual([{ tagId: tag.id }]);
+      expect(
+        (
+          await defaultDatabase
+            .selectFrom('asset_exif')
+            .select('tags')
+            .where('assetId', '=', copy.id)
+            .executeTakeFirstOrThrow()
+        ).tags,
+      ).toEqual(['Choice']);
+      expect((await origins.getOrigin('asset', copy.id))?.overriddenFields).not.toContain(AssetOriginField.Tags);
+      expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+    },
+  );
+
   describe('get', () => {
     it('should not return a tag of another user', async () => {
       const { sut, ctx } = setup();

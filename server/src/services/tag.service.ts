@@ -127,15 +127,20 @@ export class TagService extends BaseService {
       await this.requireTag(auth, Permission.TagRead, parentId);
     }
 
-    // the path, cycle and duplicate checks run with the owner's tags locked (see TagRepository.update)
-    const tag = await this.tagRepository.update(id, { name, color, parentId });
-    if (name !== undefined || parentId !== undefined) {
+    if (name === undefined && parentId === undefined) {
+      return mapTag(await this.tagRepository.update(id, { name, color, parentId }));
+    }
+    const { tag, assetIds } = await this.partnerOriginRepository.withOwnerTagEdit(auth.user.id, async () => {
+      // The repository holds tag rows until this transaction commits, pinning the affected memberships.
+      const tag = await this.tagRepository.update(id, { name, color, parentId });
       const assetIds = await this.tagRepository.getSubtreeAssetIds(id);
       for (const assetId of assetIds) {
         await this.updateTags(assetId);
       }
-      await this.recordTagEdit(auth, assetIds);
-    }
+      await this.partnerOriginRepository.markOverridden('asset', assetIds, [AssetOriginField.Tags], auth.user.id);
+      return { tag, assetIds };
+    });
+    await this.recordTagEdit(auth, assetIds);
     return mapTag(tag);
   }
 
@@ -147,9 +152,14 @@ export class TagService extends BaseService {
   async remove(auth: AuthDto, id: string): Promise<void> {
     await this.requireTag(auth, Permission.TagDelete, id);
 
-    // TODO sync tag changes for affected assets
-
-    await this.tagRepository.delete(id);
+    const assetIds = await this.partnerOriginRepository.withOwnerTagEdit(auth.user.id, async () => {
+      const assetIds = await this.tagRepository.delete(id);
+      for (const assetId of assetIds) await this.updateTags(assetId);
+      await this.partnerOriginRepository.markOverridden('asset', assetIds, [AssetOriginField.Tags], auth.user.id);
+      return assetIds;
+    });
+    for (const assetId of assetIds) await this.eventRepository.emit('AssetUntag', { assetId });
+    await this.recordTagEdit(auth, assetIds);
   }
 
   /**
@@ -174,20 +184,30 @@ export class TagService extends BaseService {
     await this.requireTag(auth, Permission.TagUpdate, dto.targetId);
 
     const userId = auth.user.id;
-    const { result, rulesChanged } = await this.databaseRepository.withUserPreferencesLock(userId, async (tx) => {
-      // the self, descendant and owner checks run with the owner's tags locked (see TagRepository.merge)
-      const result = await this.tagRepository.merge(tx, id, dto.targetId);
-      const previous = getPreferences(await this.userRepository.getMetadata(userId, tx));
-      const updated = followMergedTags(previous, result.merged);
-      if (!updated) {
-        return { result, rulesChanged: false };
-      }
-      await this.userRepository.upsertMetadata(
+    const { result, rulesChanged } = await this.partnerOriginRepository.withOwnerTagEdit(userId, async () => {
+      const outcome = await this.databaseRepository.withUserPreferencesLock(userId, async (tx) => {
+        // the self, descendant and owner checks run with the owner's tags locked (see TagRepository.merge)
+        const result = await this.tagRepository.merge(tx, id, dto.targetId);
+        const previous = getPreferences(await this.userRepository.getMetadata(userId, tx));
+        const updated = followMergedTags(previous, result.merged);
+        if (!updated) {
+          return { result, rulesChanged: false };
+        }
+        await this.userRepository.upsertMetadata(
+          userId,
+          { key: UserMetadataKey.Preferences, value: getPreferencesPartial(updated) },
+          tx,
+        );
+        return { result, rulesChanged: changesSyncVisibility(previous, updated) };
+      });
+      for (const assetId of outcome.result.assetIds) await this.updateTags(assetId);
+      await this.partnerOriginRepository.markOverridden(
+        'asset',
+        outcome.result.assetIds,
+        [AssetOriginField.Tags],
         userId,
-        { key: UserMetadataKey.Preferences, value: getPreferencesPartial(updated) },
-        tx,
       );
-      return { result, rulesChanged: changesSyncVisibility(previous, updated) };
+      return outcome;
     });
     if (rulesChanged) {
       // FL-218: the Locked rules filter the whole sync stream, so every session reads it again
@@ -196,7 +216,6 @@ export class TagService extends BaseService {
 
     const tagged = new Set(result.taggedAssetIds);
     for (const assetId of result.assetIds) {
-      await this.updateTags(assetId);
       // An item that gained no tag lost one or carries one under a new path: only its sidecar follows.
       await (tagged.has(assetId)
         ? this.eventRepository.emit('AssetTag', { assetId, userId })
