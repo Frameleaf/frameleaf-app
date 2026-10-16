@@ -26,6 +26,7 @@ describe(AlbumService.name, () => {
       write(undefined!, mocks.album as unknown as AlbumRepository),
     );
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   });
 
   it('should work', () => {
@@ -473,6 +474,24 @@ describe(AlbumService.name, () => {
   });
 
   describe('update', () => {
+    it('keeps album writes and notifications behind origin edit admission', async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumName: 'recipient choice', coverFollowsNewest: true }),
+      ).rejects.toThrow('origin busy');
+
+      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.album.setCoverFollowsNewest).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
     it('should prevent updating an album that does not exist', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.album.getById.mockResolvedValue(void 0);
@@ -1703,6 +1722,34 @@ describe(AlbumService.name, () => {
   });
 
   describe('addAssets', () => {
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'keeps %s membership writes behind origin edit admission',
+      async (action) => {
+        const asset = AssetFactory.create();
+        const album = AlbumFactory.from({ albumThumbnailAssetId: asset.id }).build();
+        const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+        const auth = AuthFactory.create(owner);
+        mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.album.getById.mockResolvedValue(getForAlbum(album));
+        mocks.album.getAssetIds.mockResolvedValue(new Set(action === 'remove' ? [asset.id] : []));
+        mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+
+        await expect(
+          action === 'bulk-add'
+            ? sut.addAssetsToAlbums(auth, { albumIds: [album.id], assetIds: [asset.id] })
+            : action === 'add'
+              ? sut.addAssets(auth, album.id, { ids: [asset.id] })
+              : sut.removeAssets(auth, album.id, { ids: [asset.id] }),
+        ).rejects.toThrow('origin busy');
+
+        expect(mocks.album.addAssetIds).not.toHaveBeenCalled();
+        expect(mocks.album.removeAssetIds).not.toHaveBeenCalled();
+        expect(mocks.album.addAssetIdsToAlbums).not.toHaveBeenCalled();
+        expect(mocks.event.emit).not.toHaveBeenCalled();
+      },
+    );
+
     it('should allow the owner to add assets', async () => {
       const owner = UserFactory.create({ isAdmin: true });
       const album = AlbumFactory.from().owner(owner).build();

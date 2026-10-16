@@ -14,7 +14,7 @@ import type { PostgresError } from 'postgres';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { type Tag, columns } from 'src/database.js';
 import { Chunked, ChunkedSet, DATABASE_PARAMETER_CHUNK_SIZE, DummyValue, GenerateSql } from 'src/decorators.js';
-import { publicationDatabase } from 'src/queue/transaction.js';
+import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
@@ -437,7 +437,14 @@ export class TagRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async delete(id: string) {
-    await this.db.deleteFrom('tag').where('id', '=', id).execute();
+    return this.db.transaction().execute((tx) =>
+      publicationTransaction.run(tx, async () => {
+        await this.lockOwnerTags(tx, id);
+        const assetIds = await this.getSubtreeAssetIds(id);
+        await tx.deleteFrom('tag').where('id', '=', id).execute();
+        return assetIds;
+      }),
+    );
   }
 
   /** A rename or move changes the values carried by the entire subtree's assets. */

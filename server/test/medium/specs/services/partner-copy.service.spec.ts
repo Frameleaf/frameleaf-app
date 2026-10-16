@@ -55,8 +55,10 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { BaseService } from 'src/services/base.service.js';
 import { PartnerCopyService, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
+import { TagService } from 'src/services/tag.service.js';
 import { checkAccess } from 'src/utils/access.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -862,6 +864,209 @@ describe(PartnerCopyService.name, () => {
   });
 
   describe('propagation', () => {
+    const tagEditFixture = async (removing: boolean) => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+      const { tag } = await ctx.newTag({ userId: bob.id, value: 'Choice' });
+      if (removing) {
+        const { tag: originalTag } = await ctx.newTag({ userId: alice.id, value: 'Choice' });
+        await ctx.newTagAsset({ tagIds: [originalTag.id], assetIds: [source.id] });
+        await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [copyId] });
+      }
+      return { sut, ctx, origins, bob, source, copyId, tag, tags: BaseService.create(TagService, sut) };
+    };
+
+    it.each([AssetOriginField.Faces, AssetOriginField.Visibility])(
+      'keeps a recipient %s override completed after replay reads its origin',
+      async (field) => {
+        const { sut, ctx, origins, bob, source, copyId } = await tagEditFixture(true);
+        if (field === AssetOriginField.Faces) {
+          await ctx.newAssetFace({ assetId: source.id, personGroupId: null, boundingBoxX1: 40 });
+        } else {
+          await ctx.get(AssetRepository).lock([source.id], AssetLockReason.Marked, source.ownerId);
+          await ctx.get(AssetRepository).lock([copyId], AssetLockReason.Marked, bob.id);
+        }
+        const getOrigin = origins.getOrigin.bind(origins);
+        let edited = false;
+        const snapshot = vi.spyOn(origins, 'getOrigin').mockImplementation(async (kind, id) => {
+          const origin = await getOrigin(kind, id);
+          if (kind === 'asset' && id === copyId && !edited) {
+            edited = true;
+            if (field === AssetOriginField.Faces) {
+              await ctx.newAssetFace({ assetId: copyId, personGroupId: null, boundingBoxX1: 10 });
+            } else {
+              await ctx.get(AssetRepository).unlock([copyId]);
+            }
+            await origins.markOverridden('asset', [copyId], [field], bob.id);
+          }
+          return origin;
+        });
+        try {
+          await expect(sut.copyAsset(source.id, bob.id, source.ownerId)).resolves.toBe(copyId);
+        } finally {
+          snapshot.mockRestore();
+        }
+        expect(edited).toBe(true);
+        if (field === AssetOriginField.Faces) {
+          expect(
+            await db.selectFrom('asset_face').select('boundingBoxX1').where('assetId', '=', copyId).execute(),
+          ).toEqual([{ boundingBoxX1: 10 }]);
+        } else {
+          expect(await ctx.get(AssetRepository).getLockReasons([copyId])).toEqual([]);
+        }
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(field);
+      },
+    );
+
+    it('keeps a tag rename completed after a replay reads its origin', async () => {
+      const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(true);
+      const getOrigin = origins.getOrigin.bind(origins);
+      let renamed = false;
+      const snapshot = vi.spyOn(origins, 'getOrigin').mockImplementation(async (kind, id) => {
+        const origin = await getOrigin(kind, id);
+        if (kind === 'asset' && id === copyId && !renamed) {
+          renamed = true;
+          await tags.update(factory.auth({ user: bob }), tag.id, { name: 'Recipient choice' });
+        }
+        return origin;
+      });
+      try {
+        await expect(sut.copyAsset(source.id, bob.id, source.ownerId)).resolves.toBe(copyId);
+      } finally {
+        snapshot.mockRestore();
+      }
+      expect(renamed).toBe(true);
+      expect(await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId).execute()).toEqual([
+        { tagId: tag.id },
+      ]);
+      expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(AssetOriginField.Tags);
+    });
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'rolls %s tags and EXIF back when the override marker fails',
+      async (action) => {
+        const { ctx, origins, bob, copyId, tag, tags } = await tagEditFixture(action === 'remove');
+        const before = await db.selectFrom('tag_asset').selectAll().where('assetId', '=', copyId).execute();
+        const exif = await db
+          .selectFrom('asset_exif')
+          .select('tags')
+          .where('assetId', '=', copyId)
+          .executeTakeFirstOrThrow();
+        const marker = vi.spyOn(origins, 'markOverridden').mockRejectedValueOnce(new Error('override unavailable'));
+        ctx.getMock(EventRepository).emit.mockClear();
+        try {
+          await expect(
+            action === 'bulk-add'
+              ? tags.bulkTagAssets(factory.auth({ user: bob }), { tagIds: [tag.id], assetIds: [copyId] })
+              : action === 'add'
+                ? tags.addAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] })
+                : tags.removeAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] }),
+          ).rejects.toThrow('override unavailable');
+        } finally {
+          marker.mockRestore();
+        }
+        expect(await db.selectFrom('tag_asset').selectAll().where('assetId', '=', copyId).execute()).toEqual(before);
+        expect(
+          await db.selectFrom('asset_exif').select('tags').where('assetId', '=', copyId).executeTakeFirstOrThrow(),
+        ).toEqual(exif);
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).not.toContain(AssetOriginField.Tags);
+        expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'preserves %s tags when propagation starts before the override commits',
+      async (action) => {
+        const { sut, origins, bob, source, copyId, tag, tags } = await tagEditFixture(action === 'remove');
+        const markOverridden = origins.markOverridden.bind(origins);
+        const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+        const { promise: held, resolve: release } = Promise.withResolvers<void>();
+        const marker = vi.spyOn(origins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          ready();
+          await held;
+          return markOverridden(...args);
+        });
+        const getFollowers = origins.getFollowers.bind(origins);
+        const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+          const followers = await getFollowers(...args);
+          expect(followers.map((row) => row.id)).toContain(copyId);
+          selectedNow();
+          return followers;
+        });
+        const editing =
+          action === 'bulk-add'
+            ? tags.bulkTagAssets(factory.auth({ user: bob }), { tagIds: [tag.id], assetIds: [copyId] })
+            : action === 'add'
+              ? tags.addAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] })
+              : tags.removeAssets(factory.auth({ user: bob }), tag.id, { ids: [copyId] });
+        try {
+          await written;
+          const propagating = sut.handlePropagate({
+            kind: 'asset',
+            sourceId: source.id,
+            fields: [AssetOriginField.Tags],
+          });
+          await selected;
+          release();
+          await Promise.all([editing, propagating]);
+        } finally {
+          release();
+          await editing;
+          marker.mockRestore();
+          selection.mockRestore();
+        }
+        expect(
+          (await db.selectFrom('tag_asset').select('tagId').where('assetId', '=', copyId).execute()).map(
+            (row) => row.tagId,
+          ),
+        ).toEqual(action === 'remove' ? [] : [tag.id]);
+        expect((await origins.getOrigin('asset', copyId))?.overriddenFields).toContain(AssetOriginField.Tags);
+      },
+    );
+
+    it.each(['recipient-edit', 'stop-following'] as const)(
+      'preserves the recipient description when %s completes after follower selection',
+      async (change) => {
+        const { sut, ctx, origins } = setup();
+        const { assets } = assetService();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const copyId = (await sut.copyAsset(source.id, bob.id, alice.id))!;
+        await db
+          .updateTable('asset_exif')
+          .set({ description: 'new source' })
+          .where('assetId', '=', source.id)
+          .execute();
+        const getFollowers = origins.getFollowers.bind(origins);
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (kind, id) => {
+          const followers = await getFollowers(kind, id);
+          expect(followers.map((row) => row.id)).toContain(copyId);
+          if (change === 'recipient-edit') {
+            await assets.update(factory.auth({ user: bob }), copyId, { description: 'recipient choice' });
+          } else {
+            await origins.stopFollowing(alice.id, bob.id);
+          }
+          return followers;
+        });
+        try {
+          await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Description] });
+        } finally {
+          selection.mockRestore();
+        }
+        expect((await exifOf(copyId)).description).toBe(
+          change === 'recipient-edit' ? 'recipient choice' : 'at the lake',
+        );
+        expect((await exifOf(source.id)).description).toBe('new source');
+      },
+    );
+
     it("pushes the source's edits to every following copy, onward through the partner's partners", async () => {
       const { sut, ctx } = setup();
       const { assets, assetCtx } = assetService();
@@ -1126,6 +1331,185 @@ describe(PartnerCopyService.name, () => {
       const albumCopy = (await origins.getCopyId('album', album.id, bob.id))!;
       return { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy, origins };
     };
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'rolls %s membership back when its override marker fails',
+      async (action) => {
+        const { albums, albumCtx, bob, first, third, copyOf, albumCopy, origins } = await shareWithAlbum();
+        const assetId = await copyOf(action === 'remove' ? first.id : third.id);
+        const before = await albumAssetIds(albumCopy);
+        const marker = vi
+          .spyOn(albumCtx.get(PartnerOriginRepository), 'markOverridden')
+          .mockRejectedValueOnce(new Error('override unavailable'));
+        try {
+          await expect(
+            action === 'bulk-add'
+              ? albums.addAssetsToAlbums(factory.auth({ user: bob }), { albumIds: [albumCopy], assetIds: [assetId] })
+              : action === 'add'
+                ? albums.addAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] })
+                : albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] }),
+          ).rejects.toThrow('override unavailable');
+        } finally {
+          marker.mockRestore();
+        }
+        expect(await albumAssetIds(albumCopy)).toEqual(before);
+        expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).not.toContain(
+          AlbumOriginField.Membership,
+        );
+      },
+    );
+
+    it.each(['add', 'remove', 'bulk-add'] as const)(
+      'preserves %s membership when propagation starts before the override commits',
+      async (action) => {
+        const { sut, albums, albumCtx, bob, album, first, third, copyOf, albumCopy, origins } = await shareWithAlbum();
+        const assetId = await copyOf(action === 'remove' ? first.id : third.id);
+        const recipientOrigins = albumCtx.get(PartnerOriginRepository);
+        const markOverridden = recipientOrigins.markOverridden.bind(recipientOrigins);
+        const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+        const { promise: held, resolve: release } = Promise.withResolvers<void>();
+        const marker = vi.spyOn(recipientOrigins, 'markOverridden').mockImplementationOnce(async (...args) => {
+          ready();
+          await held;
+          return markOverridden(...args);
+        });
+        const getFollowers = origins.getFollowers.bind(origins);
+        const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+          const followers = await getFollowers(...args);
+          expect(followers.map((row) => row.id)).toContain(albumCopy);
+          selectedNow();
+          return followers;
+        });
+        const editing =
+          action === 'bulk-add'
+            ? albums.addAssetsToAlbums(factory.auth({ user: bob }), { albumIds: [albumCopy], assetIds: [assetId] })
+            : action === 'add'
+              ? albums.addAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] })
+              : albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [assetId] });
+        try {
+          await written;
+          const propagating = sut.handlePropagate({
+            kind: 'album',
+            sourceId: album.id,
+            fields: [AlbumOriginField.Membership],
+          });
+          await selected;
+          release();
+          await Promise.all([editing, propagating]);
+        } finally {
+          release();
+          await editing;
+          marker.mockRestore();
+          selection.mockRestore();
+        }
+        expect((await albumAssetIds(albumCopy)).includes(assetId)).toBe(action !== 'remove');
+        expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).toContain(AlbumOriginField.Membership);
+      },
+    );
+
+    it('keeps an album title edit and its override marker in the same transaction', async () => {
+      const { albums, albumCtx, bob, albumCopy } = await shareWithAlbum();
+      const marker = vi
+        .spyOn(albumCtx.get(PartnerOriginRepository), 'markOverridden')
+        .mockRejectedValueOnce(new Error('override unavailable'));
+      try {
+        await expect(
+          albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' }),
+        ).rejects.toThrow('override unavailable');
+      } finally {
+        marker.mockRestore();
+      }
+      const copy = await db
+        .selectFrom('album')
+        .select('albumName')
+        .where('id', '=', albumCopy)
+        .executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('Lake');
+      expect((await albumCtx.get(PartnerOriginRepository).getOrigin('album', albumCopy))?.overriddenFields).toEqual([]);
+    });
+
+    it('preserves an album title edit when propagation selects the follower before the edit commits', async () => {
+      const { sut, albums, albumCtx, alice, bob, album, albumCopy, origins } = await shareWithAlbum();
+      await db.updateTable('album').set({ albumName: 'new source' }).where('id', '=', album.id).execute();
+      const repository = albumCtx.get(AlbumRepository);
+      const update = repository.update.bind(repository);
+      const { promise: written, resolve: ready } = Promise.withResolvers<void>();
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const writing = vi.spyOn(repository, 'update').mockImplementationOnce(async (...args) => {
+        const result = await update(...args);
+        ready();
+        await held;
+        return result;
+      });
+      const getFollowers = origins.getFollowers.bind(origins);
+      const { promise: selected, resolve: selectedNow } = Promise.withResolvers<void>();
+      const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (...args) => {
+        const followers = await getFollowers(...args);
+        expect(followers.map((row) => row.id)).toContain(albumCopy);
+        selectedNow();
+        return followers;
+      });
+      const editing = albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' });
+      try {
+        await written;
+        const propagating = sut.handlePropagate({
+          kind: 'album',
+          sourceId: album.id,
+          fields: [AlbumOriginField.Title],
+        });
+        await selected;
+        release();
+        await Promise.all([editing, propagating]);
+      } finally {
+        release();
+        await editing;
+        writing.mockRestore();
+        selection.mockRestore();
+      }
+      const copy = await db
+        .selectFrom('album')
+        .select('albumName')
+        .where('id', '=', albumCopy)
+        .executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('recipient choice');
+      expect((await origins.getOrigin('album', albumCopy))?.overriddenFields).toContain(AlbumOriginField.Title);
+      expect((await origins.getAlbumForCopy(album.id))?.ownerId).toBe(alice.id);
+    });
+
+    it.each(['recipient-edit', 'stop-following'] as const)(
+      'preserves the recipient album title when %s completes after follower selection',
+      async (change) => {
+        const { sut, albums, alice, bob, album, albumCopy, origins } = await shareWithAlbum();
+        await db.updateTable('album').set({ albumName: 'new source' }).where('id', '=', album.id).execute();
+        const getFollowers = origins.getFollowers.bind(origins);
+        const selection = vi.spyOn(origins, 'getFollowers').mockImplementationOnce(async (kind, id) => {
+          const followers = await getFollowers(kind, id);
+          expect(followers.map((row) => row.id)).toContain(albumCopy);
+          if (change === 'recipient-edit') {
+            await albums.update(factory.auth({ user: bob }), albumCopy, { albumName: 'recipient choice' });
+          } else {
+            await origins.stopFollowing(alice.id, bob.id);
+          }
+          return followers;
+        });
+        try {
+          await sut.handlePropagate({ kind: 'album', sourceId: album.id, fields: [AlbumOriginField.Title] });
+        } finally {
+          selection.mockRestore();
+        }
+        const copy = await db
+          .selectFrom('album')
+          .select('albumName')
+          .where('id', '=', albumCopy)
+          .executeTakeFirstOrThrow();
+        expect(copy.albumName).toBe(change === 'recipient-edit' ? 'recipient choice' : 'Lake');
+        expect(
+          (await db.selectFrom('album').select('albumName').where('id', '=', album.id).executeTakeFirstOrThrow())
+            .albumName,
+        ).toBe('new source');
+      },
+    );
 
     it("copies an album the partner owns, holding the recipient's copies, and mirrors its membership", async () => {
       const { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy } =

@@ -57,6 +57,7 @@ describe(AssetService.name, () => {
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
+    mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     mocks.search.getAssetLandmarks.mockResolvedValue([]);
     mocks.map.getLandmarkIcons.mockReturnValue(new Map());
     removedExtras = {};
@@ -372,6 +373,19 @@ describe(AssetService.name, () => {
   });
 
   describe('fillMissingMetadata', () => {
+    it('takes origin admission before entering metadata write locks', async () => {
+      mocks.partnerOrigin.withOriginEdit.mockRejectedValue(new Error('origin busy'));
+
+      await expect(sut.fillMissingMetadata(authStub.admin, 'asset-1', { description: 'Imported' })).rejects.toThrow(
+        'origin busy',
+      );
+
+      expect(mocks.asset.withMetadataUpdate).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.job.queueInTransaction).not.toHaveBeenCalled();
+    });
+
     const id = 'asset-1';
     const requested = {
       description: 'From Google',

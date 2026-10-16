@@ -408,7 +408,7 @@ export const getMocks = () => {
     ocr: automock(OcrRepository, { args: [database], strict: false }),
     oauth: automock(OAuthRepository, { args: [loggerMock] }),
     partner: automock(PartnerRepository, { strict: false }),
-    partnerOrigin: automock(PartnerOriginRepository, { strict: false }),
+    partnerOrigin: automock(PartnerOriginRepository, { args: [database], strict: false }),
     person: automock(PersonRepository, { args: [database], strict: false }),
     physicalFile: automock(PhysicalFileRepository, { strict: false }),
     physicalFileTrash: automock(PhysicalFileTrashRepository, { strict: false }),

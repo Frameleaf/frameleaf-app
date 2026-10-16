@@ -67,6 +67,7 @@ import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
+
 const imageEditActions = new Set<AssetEditAction>([
   AssetEditAction.Crop,
   AssetEditAction.Rotate,
@@ -274,49 +275,51 @@ export class AssetService extends BaseService {
     id: string,
     dto: Pick<UpdateAssetDto, 'description' | 'latitude' | 'longitude' | 'isFavorite' | 'visibility'>,
   ): Promise<boolean> {
-    const result = await this.assetRepository.withMetadataUpdate(id, async (assets, access, tx) => {
-      const current = await assets.getById(id, { exifInfo: true });
-      if (!current || current.ownerId !== auth.user.id || current.deletedAt)
-        throw new BadRequestException('Asset not found');
-      if (isLockedRow(current)) return false;
-      await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
-      const update: UpdateAssetDto = {};
-      if (dto.description && !current.exifInfo?.description) update.description = dto.description;
-      if (
-        dto.latitude !== null &&
-        dto.latitude !== undefined &&
-        dto.longitude !== null &&
-        dto.longitude !== undefined &&
-        (current.exifInfo?.latitude === null ||
-          current.exifInfo?.latitude === undefined ||
-          current.exifInfo?.longitude === null ||
-          current.exifInfo?.longitude === undefined)
-      ) {
-        update.latitude = dto.latitude;
-        update.longitude = dto.longitude;
-      }
-      if (dto.isFavorite && !current.isFavorite) update.isFavorite = true;
-      if (dto.visibility === AssetVisibility.Archive && current.visibility === AssetVisibility.Timeline)
-        update.visibility = AssetVisibility.Archive;
-      if (Object.keys(update).length === 0) return true;
-      const { isFavorite, visibility, ...exif } = update;
-      const sidecarIds = await this.updateExif({ id, ...exif }, assets);
-      const asset = await assets.update({ id, ...omitBy({ isFavorite, visibility }, isUndefined) });
-      if (!asset) throw new BadRequestException('Asset not found');
-      const fields = getAssetEditFields(update);
-      if (fields.length > 0) {
-        await this.partnerOriginRepository.markOverridden('asset', [id], fields, auth.user.id, tx);
-        for (const sourceId of await this.partnerOriginRepository.getIdsWithFollowers('asset', [id])) {
-          await this.jobRepository.queueInTransaction(tx, {
-            name: JobName.PartnerPropagate,
-            data: { kind: 'asset', sourceId, fields },
-          });
+    const result = await this.partnerOriginRepository.withOriginEdit('asset', [id], [], () =>
+      this.assetRepository.withMetadataUpdate(id, async (assets, access, tx) => {
+        const current = await assets.getById(id, { exifInfo: true });
+        if (!current || current.ownerId !== auth.user.id || current.deletedAt)
+          throw new BadRequestException('Asset not found');
+        if (isLockedRow(current)) return false;
+        await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
+        const update: UpdateAssetDto = {};
+        if (dto.description && !current.exifInfo?.description) update.description = dto.description;
+        if (
+          dto.latitude !== null &&
+          dto.latitude !== undefined &&
+          dto.longitude !== null &&
+          dto.longitude !== undefined &&
+          (current.exifInfo?.latitude === null ||
+            current.exifInfo?.latitude === undefined ||
+            current.exifInfo?.longitude === null ||
+            current.exifInfo?.longitude === undefined)
+        ) {
+          update.latitude = dto.latitude;
+          update.longitude = dto.longitude;
         }
-      }
-      for (const id of sidecarIds)
-        await this.jobRepository.queueInTransaction(tx, { name: JobName.SidecarWrite, data: { id } });
-      return { asset, update };
-    });
+        if (dto.isFavorite && !current.isFavorite) update.isFavorite = true;
+        if (dto.visibility === AssetVisibility.Archive && current.visibility === AssetVisibility.Timeline)
+          update.visibility = AssetVisibility.Archive;
+        if (Object.keys(update).length === 0) return true;
+        const { isFavorite, visibility, ...exif } = update;
+        const sidecarIds = await this.updateExif({ id, ...exif }, assets);
+        const asset = await assets.update({ id, ...omitBy({ isFavorite, visibility }, isUndefined) });
+        if (!asset) throw new BadRequestException('Asset not found');
+        const fields = getAssetEditFields(update);
+        if (fields.length > 0) {
+          await this.partnerOriginRepository.markOverridden('asset', [id], fields, auth.user.id, tx);
+          for (const sourceId of await this.partnerOriginRepository.getIdsWithFollowers('asset', [id])) {
+            await this.jobRepository.queueInTransaction(tx, {
+              name: JobName.PartnerPropagate,
+              data: { kind: 'asset', sourceId, fields },
+            });
+          }
+        }
+        for (const id of sidecarIds)
+          await this.jobRepository.queueInTransaction(tx, { name: JobName.SidecarWrite, data: { id } });
+        return { asset, update };
+      }),
+    );
     if (typeof result === 'boolean') return result;
     if (result.update.visibility !== undefined) {
       const siblingIds = result.asset.stackId ? ((await this.assetRepository.getStackSiblingIds([id])) ?? []) : [];

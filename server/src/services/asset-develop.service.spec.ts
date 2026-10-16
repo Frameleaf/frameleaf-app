@@ -1801,6 +1801,50 @@ describe(AssetDevelopService.name, () => {
       expect(developRepository.setCurrent).not.toHaveBeenCalled();
     });
 
+    it('leaves the replacement version alone when failure settlement loses its claim', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.media.encodeDevelopOutput.mockRejectedValueOnce(new Error('libvips: out of memory'));
+      mocks.mediaOperation.fail.mockResolvedValue(false);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.mediaOperation.fail).toHaveBeenCalled();
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+      );
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
+    it('retains the imported master when permanent failure settlement loses its claim', async () => {
+      const revision = revisionStub({
+        assetId: asset.id,
+        kind: AssetDevelopRevisionKind.External,
+        status: AssetDevelopRevisionStatus.Queued,
+        masterPath: '/thumbs/imported-master.tif',
+        sourceChecksum: Buffer.alloc(32, 3),
+        renditionChecksum: renditionSha,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.mediaOperation.fail.mockResolvedValue(false);
+
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.mediaOperation.fail).toHaveBeenCalledWith(
+        'op-1',
+        'token-1',
+        expect.objectContaining({ errorCode: 'source_changed' }),
+        { retry: false },
+      );
+      expect(developRepository.update).not.toHaveBeenCalledWith(revision.id, { masterPath: null });
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(revision.masterPath);
+    });
+
     it('reports the failure once the job has used its automatic retry', async () => {
       const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
       developRepository.get.mockResolvedValue(revision);
