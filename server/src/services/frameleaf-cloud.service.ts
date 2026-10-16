@@ -300,49 +300,51 @@ export class FrameleafCloudService extends BaseService {
 
   /** `POST admin/cloud/link`: start an RFC 8628 device authorization. */
   async startLink(auth: AuthDto): Promise<CloudStatusResponseDto> {
-    const cloudUrl = this.requireCloudUrl();
-    const current = await this.readLink(cloudUrl);
-    if (current?.status === 'linked') {
-      throw new ConflictException('This server is already linked to a Frameleaf account. Unlink it first.');
-    }
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const cloudUrl = this.requireCloudUrl();
+      const current = await this.readLink(cloudUrl);
+      if (current?.status === 'linked') {
+        throw new ConflictException('This server is already linked to a Frameleaf account. Unlink it first.');
+      }
 
-    const identity = await loadInstanceIdentity(this.gatewayDeps());
-    const { name } = await this.serverIdentity();
-    const authorization = await this.unavailableOnError(async () => {
-      const document = await this.discover(cloudUrl);
-      return this.frameleafCloudRepository.requestJson(deviceAuthorizationSchema, {
-        method: 'POST',
-        url: linkEndpoints(document).deviceAuthorization,
-        unauthenticated: FrameleafCloudPublicCall.DeviceAuthorization,
-        form: {
-          client_id: FRAMELEAF_LINK_CLIENT_ID,
-          instance_name: name,
-          version: serverVersion.toString(),
-          jkt: identity.kid,
-          platform: this.platform(),
-        },
+      const identity = await loadInstanceIdentity(this.gatewayDeps());
+      const { name } = await this.serverIdentity();
+      const authorization = await this.unavailableOnError(async () => {
+        const document = await this.discover(cloudUrl);
+        return this.frameleafCloudRepository.requestJson(deviceAuthorizationSchema, {
+          method: 'POST',
+          url: linkEndpoints(document).deviceAuthorization,
+          unauthenticated: FrameleafCloudPublicCall.DeviceAuthorization,
+          form: {
+            client_id: FRAMELEAF_LINK_CLIENT_ID,
+            instance_name: name,
+            version: serverVersion.toString(),
+            jkt: identity.kid,
+            platform: this.platform(),
+          },
+        });
       });
-    });
 
-    const now = Date.now();
-    const link: FrameleafCloudLink = {
-      ...emptyLink(cloudUrl, current),
-      status: 'pending',
-      pending: {
-        deviceCode: authorization.device_code,
-        userCode: authorization.user_code,
-        verificationUri: authorization.verification_uri,
-        verificationUriComplete: authorization.verification_uri_complete,
-        expiresAt: new Date(now + authorization.expires_in * 1000).toISOString(),
-        intervalSeconds: authorization.interval,
-        nextPollAt: new Date(now + authorization.interval * 1000).toISOString(),
-        startedBy: auth.user.id,
-      },
-    };
-    if (!(await this.saveLink(link, 'link', { expected: current }))) {
-      throw new ConflictException('The Frameleaf Cloud link changed. Try again.');
-    }
-    return this.getStatus();
+      const now = Date.now();
+      const link: FrameleafCloudLink = {
+        ...emptyLink(cloudUrl, current),
+        status: 'pending',
+        pending: {
+          deviceCode: authorization.device_code,
+          userCode: authorization.user_code,
+          verificationUri: authorization.verification_uri,
+          verificationUriComplete: authorization.verification_uri_complete,
+          expiresAt: new Date(now + authorization.expires_in * 1000).toISOString(),
+          intervalSeconds: authorization.interval,
+          nextPollAt: new Date(now + authorization.interval * 1000).toISOString(),
+          startedBy: auth.user.id,
+        },
+      };
+      if (!(await this.saveLink(link, 'link', { expected: current }))) {
+        throw new ConflictException('The Frameleaf Cloud link changed. Try again.');
+      }
+      return this.getStatus();
+    });
   }
 
   /**
@@ -430,47 +432,49 @@ export class FrameleafCloudService extends BaseService {
    * region, so the administrator needs no new code. Another refusal is shown like any link refusal.
    */
   async continueLink(auth: AuthDto): Promise<CloudStatusResponseDto> {
-    const cloudUrl = this.requireCloudUrl();
-    const link = await this.readLink(cloudUrl);
-    const held = link?.heldLink;
-    if (!link || link.status !== 'unlinked' || !held) {
-      throw new BadRequestException('There is no refused link to continue. Start linking again.');
-    }
-    const dataRegion = isDataRegion(held.accountRegion) ? held.accountRegion : undefined;
-    try {
-      await this.completeLink(
-        cloudUrl,
-        { linkToken: held.linkToken, actorId: auth.user.id },
-        { dataRegion, expected: link },
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Frameleaf Cloud did not link this server in its account's region: ${message}`);
-      const mismatch = regionMismatchOf(error);
-      const current = (await this.readLink(cloudUrl)) ?? link;
-      if (mismatch) {
-        await this.holdRegionMismatch(cloudUrl, link, held.linkToken, held.startedBy, mismatch);
-      } else if (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500)) {
-        // not answered, or paused (FC-62): the token was not spent, so it stays held for another try
-        await this.saveLink({ ...current, lastError: pausedMessageOf(error) ?? message }, 'link', { expected: link });
-      } else {
-        await this.saveLink(
-          {
-            ...emptyLink(cloudUrl, current),
-            lastError: `Linking did not finish: ${message}`,
-            lastLinkRefusal: linkRefusalOf(error) ?? undefined,
-          },
-          'link',
-          { expected: link },
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const cloudUrl = this.requireCloudUrl();
+      const link = await this.readLink(cloudUrl);
+      const held = link?.heldLink;
+      if (!link || link.status !== 'unlinked' || !held) {
+        throw new BadRequestException('There is no refused link to continue. Start linking again.');
+      }
+      const dataRegion = isDataRegion(held.accountRegion) ? held.accountRegion : undefined;
+      try {
+        await this.completeLink(
+          cloudUrl,
+          { linkToken: held.linkToken, actorId: auth.user.id },
+          { dataRegion, expected: link },
         );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Frameleaf Cloud did not link this server in its account's region: ${message}`);
+        const mismatch = regionMismatchOf(error);
+        const current = (await this.readLink(cloudUrl)) ?? link;
+        if (mismatch) {
+          await this.holdRegionMismatch(cloudUrl, link, held.linkToken, held.startedBy, mismatch);
+        } else if (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500)) {
+          // not answered, or paused (FC-62): the token was not spent, so it stays held for another try
+          await this.saveLink({ ...current, lastError: pausedMessageOf(error) ?? message }, 'link', { expected: link });
+        } else {
+          await this.saveLink(
+            {
+              ...emptyLink(cloudUrl, current),
+              lastError: `Linking did not finish: ${message}`,
+              lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+            },
+            'link',
+            { expected: link },
+          );
+        }
+        const paused = pausedException(error);
+        if (paused) {
+          throw paused;
+        }
+        throw new ServiceUnavailableException(`Frameleaf Cloud did not complete the request: ${message}`);
       }
-      const paused = pausedException(error);
-      if (paused) {
-        throw paused;
-      }
-      throw new ServiceUnavailableException(`Frameleaf Cloud did not complete the request: ${message}`);
-    }
-    return this.getStatus();
+      return this.getStatus();
+    });
   }
 
   /**
@@ -853,52 +857,56 @@ export class FrameleafCloudService extends BaseService {
 
   /** `DELETE admin/cloud/link`: unlink from this side. Local data is never touched. */
   async unlink(auth: AuthDto): Promise<CloudStatusResponseDto> {
-    const cloudUrl = this.requireCloudUrl();
-    const link = await this.readLink(cloudUrl);
-    if (!link || (link.status !== 'linked' && link.status !== 'revoked')) {
-      throw new BadRequestException('This server is not linked');
-    }
-    if (link.status === 'linked' && link.instanceId) {
-      // tell the cloud when it is reachable; the local unlink happens either way
-      try {
-        const { document, token } = await this.apiToken(cloudUrl, link);
-        await this.frameleafCloudRepository.requestJson(z.unknown(), {
-          method: 'DELETE',
-          url: linkEndpoints(document).instance,
-          dpop: token,
-        });
-      } catch (error) {
-        this.logger.warn(`Frameleaf Cloud was not told about the unlink: ${error}`);
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const cloudUrl = this.requireCloudUrl();
+      const link = await this.readLink(cloudUrl);
+      if (!link || (link.status !== 'linked' && link.status !== 'revoked')) {
+        throw new BadRequestException('This server is not linked');
       }
-    }
-    await this.clearLink(cloudUrl, link, 'unlinked');
-    await this.clearKeyRecovery();
-    await this.audit(AdminAuditAction.CloudUnlinked, link.accountLabel ?? null, auth.user.id);
-    this.notify({
-      level: NotificationLevel.Info,
-      title: 'Server unlinked from Frameleaf',
-      description: 'Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.',
-      dedupeKey: `frameleaf-cloud:unlinked:${Date.now()}`,
+      if (link.status === 'linked' && link.instanceId) {
+        // tell the cloud when it is reachable; the local unlink happens either way
+        try {
+          const { document, token } = await this.apiToken(cloudUrl, link);
+          await this.frameleafCloudRepository.requestJson(z.unknown(), {
+            method: 'DELETE',
+            url: linkEndpoints(document).instance,
+            dpop: token,
+          });
+        } catch (error) {
+          this.logger.warn(`Frameleaf Cloud was not told about the unlink: ${error}`);
+        }
+      }
+      await this.clearLink(cloudUrl, link, 'unlinked');
+      await this.clearKeyRecovery();
+      await this.audit(AdminAuditAction.CloudUnlinked, link.accountLabel ?? null, auth.user.id);
+      this.notify({
+        level: NotificationLevel.Info,
+        title: 'Server unlinked from Frameleaf',
+        description: 'Cloud features on this server stopped. Local photos, accounts and sign-in are unchanged.',
+        dedupeKey: `frameleaf-cloud:unlinked:${Date.now()}`,
+      });
+      return this.getStatus();
     });
-    return this.getStatus();
   }
 
   /** `PUT admin/cloud/permissions`: what Frameleaf Cloud may ask this server to do. */
   async updatePermissions(auth: AuthDto, dto: CloudPermissionsUpdateDto): Promise<CloudStatusResponseDto> {
-    const cloudUrl = this.requireCloudUrl();
-    const permissions = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
-      const link = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
-      const permissions: FrameleafCloudPermissions = { ...permissionsOf(link), ...dto };
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, { ...link, permissions });
-      return permissions;
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const cloudUrl = this.requireCloudUrl();
+      const permissions = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        const link = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
+        const permissions: FrameleafCloudPermissions = { ...permissionsOf(link), ...dto };
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, { ...link, permissions });
+        return permissions;
+      });
+      await this.broadcast('link');
+      const on = Object.entries(permissions)
+        .filter(([, value]) => value)
+        .map(([key]) => key)
+        .join(',');
+      await this.audit(AdminAuditAction.CloudPermissionsChanged, on || 'none', auth.user.id);
+      return this.getStatus();
     });
-    await this.broadcast('link');
-    const on = Object.entries(permissions)
-      .filter(([, value]) => value)
-      .map(([key]) => key)
-      .join(',');
-    await this.audit(AdminAuditAction.CloudPermissionsChanged, on || 'none', auth.user.id);
-    return this.getStatus();
   }
 
   /**
@@ -907,25 +915,27 @@ export class FrameleafCloudService extends BaseService {
    * page, once linked.
    */
   async updateSignIn(auth: AuthDto, dto: CloudSignInUpdateDto): Promise<CloudStatusResponseDto> {
-    const cloudUrl = this.requireCloudUrl();
-    const link = await this.readLink(cloudUrl);
-    if (dto.showOnLocalLogin !== undefined && link?.status !== 'linked') {
-      throw new BadRequestException('Link this server first.');
-    }
-    const { oldConfig, newConfig } = await this.updateConfigExclusively(
-      (config) => {
-        config.frameleafCloud.signIn = {
-          ...config.frameleafCloud.signIn,
-          ...(dto.showOnLocalLogin !== undefined && { showOnLocalLogin: dto.showOnLocalLogin }),
-          ...(dto.buttonText !== undefined && { buttonText: dto.buttonText }),
-          ...(dto.invitedStorageQuota !== undefined && { invitedStorageQuota: dto.invitedStorageQuota }),
-        };
-      },
-      { source: 'frameleaf-cloud', auth },
-    );
-    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-    this.logger.log(`Sign in with Frameleaf settings changed by ${auth.user.id}`);
-    return this.getStatus();
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const cloudUrl = this.requireCloudUrl();
+      const link = await this.readLink(cloudUrl);
+      if (dto.showOnLocalLogin !== undefined && link?.status !== 'linked') {
+        throw new BadRequestException('Link this server first.');
+      }
+      const { oldConfig, newConfig } = await this.updateConfigExclusively(
+        (config) => {
+          config.frameleafCloud.signIn = {
+            ...config.frameleafCloud.signIn,
+            ...(dto.showOnLocalLogin !== undefined && { showOnLocalLogin: dto.showOnLocalLogin }),
+            ...(dto.buttonText !== undefined && { buttonText: dto.buttonText }),
+            ...(dto.invitedStorageQuota !== undefined && { invitedStorageQuota: dto.invitedStorageQuota }),
+          };
+        },
+        { source: 'frameleaf-cloud', auth },
+      );
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      this.logger.log(`Sign in with Frameleaf settings changed by ${auth.user.id}`);
+      return this.getStatus();
+    });
   }
 
   /**
@@ -934,28 +944,30 @@ export class FrameleafCloudService extends BaseService {
    * administrator turns them on; turning either on needs a linked server. Turning them off always works.
    */
   async updateRemoteAccess(auth: AuthDto, dto: CloudRemoteAccessUpdateDto): Promise<CloudStatusResponseDto> {
-    const cloudUrl = this.requireCloudUrl();
-    const link = await this.readLink(cloudUrl);
-    const turningOn = dto.allowOriginalsOverRelay === true || dto.allowPasswordOverRelay === true;
-    if (turningOn && link?.status !== 'linked') {
-      throw new BadRequestException('Link this server first.');
-    }
-    const { oldConfig, newConfig } = await this.updateConfigExclusively(
-      (config) => {
-        config.frameleafCloud.remoteAccess = {
-          ...config.frameleafCloud.remoteAccess,
-          ...(dto.allowOriginalsOverRelay !== undefined && { allowOriginalsOverRelay: dto.allowOriginalsOverRelay }),
-          ...(dto.allowPasswordOverRelay !== undefined && { allowPasswordOverRelay: dto.allowPasswordOverRelay }),
-        };
-      },
-      { source: 'frameleaf-cloud', auth },
-    );
-    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-    const { allowOriginalsOverRelay, allowPasswordOverRelay } = newConfig.frameleafCloud.remoteAccess;
-    this.logger.log(
-      `Remote access settings changed by ${auth.user.id}: originals over the relay ${allowOriginalsOverRelay}, password sign-in away from home ${allowPasswordOverRelay}`,
-    );
-    return this.getStatus();
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+      const cloudUrl = this.requireCloudUrl();
+      const link = await this.readLink(cloudUrl);
+      const turningOn = dto.allowOriginalsOverRelay === true || dto.allowPasswordOverRelay === true;
+      if (turningOn && link?.status !== 'linked') {
+        throw new BadRequestException('Link this server first.');
+      }
+      const { oldConfig, newConfig } = await this.updateConfigExclusively(
+        (config) => {
+          config.frameleafCloud.remoteAccess = {
+            ...config.frameleafCloud.remoteAccess,
+            ...(dto.allowOriginalsOverRelay !== undefined && { allowOriginalsOverRelay: dto.allowOriginalsOverRelay }),
+            ...(dto.allowPasswordOverRelay !== undefined && { allowPasswordOverRelay: dto.allowPasswordOverRelay }),
+          };
+        },
+        { source: 'frameleaf-cloud', auth },
+      );
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      const { allowOriginalsOverRelay, allowPasswordOverRelay } = newConfig.frameleafCloud.remoteAccess;
+      this.logger.log(
+        `Remote access settings changed by ${auth.user.id}: originals over the relay ${allowOriginalsOverRelay}, password sign-in away from home ${allowPasswordOverRelay}`,
+      );
+      return this.getStatus();
+    });
   }
 
   /**
