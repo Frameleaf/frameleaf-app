@@ -113,7 +113,7 @@ describe(AuthService.name, () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', {
         userId: user.id,
         currentSessionId: auth.session?.id,
-        shouldLogoutSessions: undefined,
+        invalidateSessions: undefined,
       });
     });
 
@@ -693,8 +693,7 @@ describe(AuthService.name, () => {
     });
 
     it('should not accept a key without a user', async () => {
-      mocks.sharedLink.getByKey.mockResolvedValue(sharedLinkStub.expired as any);
-      mocks.user.get.mockResolvedValue(void 0);
+      mocks.sharedLink.getByKey.mockResolvedValue({ ...sharedLinkStub.valid, user: null } as any);
 
       await expect(
         sut.authenticate({
