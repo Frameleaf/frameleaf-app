@@ -18,7 +18,7 @@ const exporting = {
   id: 'package-1',
   name: 'Family archive',
   origin: PreservationPackageOrigin.Export,
-  status: PreservationPackageStatus.Exporting,
+  status: PreservationPackageStatus.Building,
   sizeBytes: null,
   createdAt: '2026-10-01T10:00:00.000Z',
   expiresAt: null,
