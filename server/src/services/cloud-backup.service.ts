@@ -616,22 +616,37 @@ export class CloudBackupService {
     }
     try {
       const usage = await this.cloudBackup.usage(await this.managedApi());
-      const managed = {
-        ...metadata.managed,
-        quotaBytes: usage.includedBytes,
-        readOnly: usage.readOnly,
-        readOnlyReason: usage.readOnlyReason,
-        usage: {
-          measuredAt: usage.measuredAt,
-          bytesCurrent: usage.bytesCurrent,
-          objects: usage.objects,
-          allowanceBytes: usage.allowanceBytes,
-          extraBlocks: usage.extraBlocks,
-        },
-        checkedAt: new Date().toISOString(),
-      };
-      await this.updateMetadata((current) => ({ ...current, managed }));
-      return { ...metadata, managed };
+      let refreshed = metadata;
+      await this.updateMetadata((current) => {
+        if (
+          current.target !== metadata.target ||
+          current.bucketRef !== metadata.bucketRef ||
+          current.keyFingerprint !== metadata.keyFingerprint ||
+          current.instanceId !== metadata.instanceId ||
+          current.bucket !== metadata.bucket ||
+          current.region !== metadata.region ||
+          current.managed?.storageId !== metadata.managed?.storageId ||
+          current.managed?.location?.locationId !== metadata.managed?.location?.locationId
+        )
+          return current;
+        const managed = {
+          ...current.managed,
+          quotaBytes: usage.includedBytes,
+          readOnly: usage.readOnly,
+          readOnlyReason: usage.readOnlyReason,
+          usage: {
+            measuredAt: usage.measuredAt,
+            bytesCurrent: usage.bytesCurrent,
+            objects: usage.objects,
+            allowanceBytes: usage.allowanceBytes,
+            extraBlocks: usage.extraBlocks,
+          },
+          checkedAt: new Date().toISOString(),
+        };
+        refreshed = { ...current, managed };
+        return refreshed;
+      });
+      return refreshed;
     } catch (error) {
       this.logger.warn(`Could not read the managed backup usage: ${errorMessage(error)}`);
       return metadata;
@@ -1060,25 +1075,27 @@ export class CloudBackupService {
    */
   async turnOff(auth: AuthDto): Promise<CloudBackupStatusResponseDto> {
     this.requireEditableConfig();
-    if (await this.activeBucketOperation()) {
-      throw new ConflictException('Cancel the running backup before turning cloud backup off.');
-    }
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
-      DatabaseLock.SystemConfigUpdate,
+      DatabaseLock.FrameleafCloudBackup,
       async () => {
-        const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
-          const current = await readConfig(repos);
-          const next = structuredClone(current);
-          next.frameleafCloud.cloudBackup.enabled = false;
-          const saved = await updateConfig(repos, next);
-          return { oldConfig: current, newConfig: saved };
+        if (await this.activeBucketOperation()) {
+          throw new ConflictException('Cancel the running backup before turning cloud backup off.');
+        }
+        return this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+          const result = await withEffectiveConfigWrite(this.configRepos(), async (repos) => {
+            const current = await readConfig(repos);
+            const next = structuredClone(current);
+            next.frameleafCloud.cloudBackup.enabled = false;
+            const saved = await updateConfig(repos, next);
+            return { oldConfig: current, newConfig: saved };
+          });
+          // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
+          await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
+            kind: 'settings',
+            source: 'frameleaf-cloud',
+          });
+          return result;
         });
-        // FL-146 (FL-66): listed in the settings history as a Frameleaf Cloud change, under the same lock
-        await recordConfigHistory(this.historyRecorder(), result.oldConfig, result.newConfig, auth.user, {
-          kind: 'settings',
-          source: 'frameleaf-cloud',
-        });
-        return result;
       },
     );
     this.clearMemoryKey();
@@ -1088,6 +1105,7 @@ export class CloudBackupService {
       await this.reportAgentSettings(metadata.keyMode, false);
     }
     this.logger.log(`Cloud backup turned off by ${auth.user.id}; the bucket and its backups are kept`);
+
     return this.getStatus();
   }
 
@@ -4222,10 +4240,12 @@ export class CloudBackupService {
   }
 
   private async updateMetadata(change: (current: FrameleafCloudBackup) => FrameleafCloudBackup) {
-    const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    if (current) {
-      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, change(current));
-    }
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
+      const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+      if (current) {
+        await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudBackup, change(current));
+      }
+    });
   }
 
   private notify(notice: {

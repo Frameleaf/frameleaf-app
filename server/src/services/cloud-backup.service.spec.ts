@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
@@ -458,6 +459,123 @@ describe(CloudBackupService.name, () => {
     sut.keyAskMs = 0;
   });
   afterEach(() => sut.onShutdown());
+
+  describe('metadata update races', () => {
+    const internal = () =>
+      sut as unknown as {
+        updateMetadata: (change: (current: FrameleafCloudBackup) => FrameleafCloudBackup) => Promise<void>;
+        refreshManagedUsage: (current: FrameleafCloudBackup, linked: boolean) => Promise<FrameleafCloudBackup>;
+        managedApi: () => Promise<{ api: string; token: string }>;
+      };
+
+    it('checks active operations under the bucket lock before turning backup off', async () => {
+      const held = new Set<DatabaseLock>();
+      const lock = new AsyncLock();
+      mocks.database.withLock.mockImplementation((key, callback) =>
+        lock.acquire(String(key), async () => {
+          held.add(key);
+          try {
+            return await callback();
+          } finally {
+            held.delete(key);
+          }
+        }),
+      );
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      const set = mocks.systemMetadata.set.getMockImplementation()!;
+      mocks.systemMetadata.set.mockImplementation((name, value, overwrite) => {
+        if (name === SystemMetadataKey.SystemConfig) expect(held.has(DatabaseLock.FrameleafCloudBackup)).toBe(true);
+        return set(name, value, overwrite);
+      });
+      mocks.event.emit.mockImplementation(() => {
+        expect(held.has(DatabaseLock.FrameleafCloudBackup)).toBe(false);
+        return Promise.resolve();
+      });
+      operations.getActiveOfKind.mockImplementationOnce(() => {
+        expect(held.has(DatabaseLock.FrameleafCloudBackup)).toBe(true);
+        return Promise.resolve(undefined);
+      });
+      await sut.turnOff(authStub.admin);
+      expect((await savedConfig()).frameleafCloud.cloudBackup.enabled).toBe(false);
+    });
+
+    it('preserves fields from simultaneous metadata updates under the existing bucket lock', async () => {
+      const lock = new AsyncLock();
+      mocks.database.withLock.mockImplementation((key, callback) => lock.acquire(String(key), callback));
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      await Promise.all([
+        internal().updateMetadata((current) => ({ ...current, lastCheckAt: 'check' })),
+        internal().updateMetadata((current) => ({ ...current, lastFullVerifyAt: 'verify' })),
+      ]);
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        lastCheckAt: 'check',
+        lastFullVerifyAt: 'verify',
+      });
+    });
+
+    it.each([
+      ['bucket', { bucketRef: 'replacement' }],
+      ['key', { keyFingerprint: 'replacement' }],
+      ['target', { target: 'byo-s3' as const }],
+      ['instance', { instanceId: 'replacement' }],
+      ['bucket name', { bucket: 'replacement' }],
+      ['region', { region: 'replacement' }],
+      ['storage ID', { managed: { storageId: 'replacement' } }],
+      ['location', { managed: { location: { locationId: 'replacement' } } }],
+    ] as const)('ignores a delayed usage response after setup changes the %s', async (_changed, patch) => {
+      const before = claim({ target: 'managed' });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = before;
+      vi.spyOn(internal(), 'managedApi').mockResolvedValue({ api: 'https://cloud.test', token: 'synthetic' });
+      const { promise, resolve } = Promise.withResolvers<unknown>();
+      cloudBackup.usage.mockReturnValue(promise);
+      const refresh = internal().refreshManagedUsage(before, true);
+      await vi.waitFor(() => expect(cloudBackup.usage).toHaveBeenCalledOnce());
+      const replacement = { ...before, ...patch };
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = replacement;
+      resolve({
+        includedBytes: 10,
+        readOnly: false,
+        readOnlyReason: null,
+        measuredAt: 'now',
+        bytesCurrent: 2,
+        objects: 1,
+        allowanceBytes: 10,
+        extraBlocks: 0,
+      });
+      await refresh;
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toEqual(replacement);
+    });
+
+    it('merges usage into the latest managed state without losing a newer refusal', async () => {
+      const before = claim({
+        target: 'managed',
+        managed: { checkedAt: '2000-01-01', readOnly: false, readOnlyReason: null, quotaBytes: 1 },
+      });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = before;
+      vi.spyOn(internal(), 'managedApi').mockResolvedValue({ api: 'https://cloud.test', token: 'synthetic' });
+      cloudBackup.usage.mockImplementation(() => {
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = {
+          ...before,
+          managed: { ...before.managed, refusal: 'new refusal' },
+        };
+        return Promise.resolve({
+          includedBytes: 10,
+          readOnly: false,
+          readOnlyReason: null,
+          measuredAt: 'now',
+          bytesCurrent: 2,
+          objects: 1,
+          allowanceBytes: 10,
+          extraBlocks: 0,
+        });
+      });
+      await internal().refreshManagedUsage(before, true);
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
+        managed: { refusal: 'new refusal', quotaBytes: 10, usage: { bytesCurrent: 2 } },
+      });
+    });
+  });
 
   describe('task checkpoint progress', () => {
     beforeEach(() => vi.useFakeTimers());
