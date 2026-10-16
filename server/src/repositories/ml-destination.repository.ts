@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, SqlBool, Updateable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, SqlBool, type Transaction, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { MlEndpoint } from 'src/repositories/machine-learning.repository.js';
+import type { MlEndpoint, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
@@ -437,6 +437,34 @@ export class MlDestinationRepository {
       ])
       .orderBy('workload', 'asc')
       .execute();
+  }
+
+  async assertDefaultRoute(
+    selection: Pick<MlSelection, 'destinationId' | 'kind' | 'endpoint'>,
+    revisionId: string,
+    tx?: Transaction<DB>,
+  ) {
+    const { destinationId } = selection;
+    if (tx) await this.lockRoute(tx, MlWorkload.Clip);
+    const repository = tx ? new MlDestinationRepository(tx) : this;
+    const route = (await repository.getRouteStates()).find((route) => route.workload === MlWorkload.Clip);
+    if (route?.origin !== 'default' || route.destinationId !== destinationId || route.revisionId !== revisionId)
+      throw new Error('desktop_pool_route_changed');
+    const destination = await (tx ?? this.db)
+      .selectFrom('ml_destination')
+      .selectAll()
+      .where('id', '=', destinationId)
+      .$if(!!tx, (query) => query.forShare())
+      .executeTakeFirst();
+    if (
+      !destination ||
+      !destination.enabled ||
+      destination.kind !== selection.kind ||
+      !destination.workloads.includes(MlWorkload.Clip) ||
+      destination.url !== selection.endpoint.url ||
+      (destination.authToken ?? null) !== (selection.endpoint.authToken ?? null)
+    )
+      throw new Error('desktop_pool_destination_changed');
   }
 
   /** FL-186: the Frameleaf Cloud model an administrator chose per model group. */

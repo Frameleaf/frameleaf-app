@@ -677,10 +677,11 @@ export class JobRepository {
     if (!queueExecution.getStore()) {
       return;
     }
-    const read = async () => {
+    const context = queueExecution.getStore()!;
+    const read = async (tx?: Transaction<DB>) => {
       const {
         rows: [row],
-      } = await sql<{ checksum: Buffer; revision: unknown }>`select a.checksum,
+      } = await sql<{ checksum: Buffer; ownerId: string; revision: unknown }>`select a.checksum, a."ownerId",
         jsonb_build_object('originalPath', a."originalPath", 'modifiedAt', a."fileModifiedAt", 'ownerId', a."ownerId",
           'visibility', a.visibility, 'deletedAt', a."deletedAt",
           'lock', (select to_jsonb(l) from asset_lock l where l."assetId" = a.id),
@@ -688,19 +689,27 @@ export class JobRepository {
             from asset_file f where f."assetId" = a.id and ${derivatives}::boolean),
           'edits', (select jsonb_agg(jsonb_build_array(e.sequence, e.action, e.parameters) order by e.sequence, e.id)
             from asset_edit e where e."assetId" = a.id and ${derivatives}::boolean)) revision
-        from asset a where a.id = ${assetId}::uuid`.execute(publicationTransaction.getStore() ?? this.store.db);
+        from asset a where a.id = ${assetId}::uuid`.execute(tx ?? publicationTransaction.getStore() ?? this.store.db);
       return row;
     };
     const source = await read();
     if (!source) {
       return;
     }
-    deferJobAdoption(async () => {
-      await assertPublicationSource(assetId, source.checksum);
-      const current = await read();
-      if (!current || JSON.stringify(current.revision) !== JSON.stringify(source.revision)) {
+    const assertCurrent = async (tx?: Transaction<DB>) => {
+      const current = await read(tx);
+      if (
+        !current ||
+        !Buffer.from(current.checksum).equals(source.checksum) ||
+        JSON.stringify(current.revision) !== JSON.stringify(source.revision)
+      ) {
         throw new Error('Asset inputs changed before publication');
       }
+    };
+    (context.sourceAuthorities ??= new Map()).set(assetId, { ownerId: source.ownerId, assertCurrent });
+    deferJobAdoption(async () => {
+      await assertPublicationSource(assetId, source.checksum);
+      await assertCurrent();
     });
   }
 

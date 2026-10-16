@@ -1,8 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import z from 'zod';
+import type { Transaction } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 
 const schema = z.strictObject({
   version: z.literal(1),
@@ -34,6 +37,16 @@ export class DesktopAssistancePolicyService {
   async read(ownerId: string) {
     z.uuid().parse(ownerId);
     return (await this.registry(this.metadata)).accounts[ownerId];
+  }
+
+  snapshot() {
+    return this.registry(this.metadata);
+  }
+
+  async assertCurrent(ownerId: string, revisionId: string, tx?: Transaction<DB>) {
+    if (tx) await lockEffectiveConfig(tx, 'read');
+    const policy = await this.registry(tx ? new SystemMetadataRepository(tx) : this.metadata);
+    if (policy.accounts[ownerId]?.revisionId !== revisionId) throw new ConflictException('desktop_pool_policy_changed');
   }
 
   private async registry(metadata: SystemMetadataRepository): Promise<DesktopAssistancePolicyRegistry> {

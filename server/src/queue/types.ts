@@ -60,6 +60,7 @@ export type QueueClaim = {
   safeToRetry?: boolean;
 };
 export type QueueExecution = {
+  sourceAuthorities?: Map<string, { ownerId: string; assertCurrent: (tx?: Transaction<any>) => Promise<void> }>;
   claim: QueueClaim;
   signal: AbortSignal;
   /** A handler must report actual new bytes/frames/items, never a timer tick. */

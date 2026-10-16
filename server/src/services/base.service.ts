@@ -470,13 +470,14 @@ export class BaseService {
    */
   protected async selectMlDestination(request: MlSelectionRequest) {
     const destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
-    return selectMlDestination(
+    const selection = await selectMlDestination(
       {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
       },
       { ...request, destinationId },
     );
+    return this.machineLearningRepository.selectBackgroundPool(selection, request.jobId);
   }
 
   /**

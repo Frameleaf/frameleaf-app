@@ -6,7 +6,9 @@ import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import z from 'zod';
+import type { Transaction } from 'kysely';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import type { DB } from 'src/schema/index.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import type { MlContainerReport } from 'src/utils/hardware-check.js';
@@ -33,12 +35,14 @@ import {
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
@@ -477,6 +481,7 @@ export class MachineLearningRepository implements RestorationInference {
     private configRepo?: ConfigRepository,
     private metadataRepo?: SystemMetadataRepository,
     private clipIndex?: DesktopClipIndexRepository,
+    private desktopMl?: DesktopMlService,
   ) {
     this.logger.setContext(MachineLearningRepository.name);
   }
@@ -1030,6 +1035,34 @@ export class MachineLearningRepository implements RestorationInference {
     };
   }
 
+  async selectBackgroundPool(selection: MlSelection, jobId?: string | null): Promise<MlSelection> {
+    if (!this.desktopMl || !queueExecution.getStore() || selection.workload !== MlWorkload.Clip) return selection;
+    const modelName = this.config.clip.modelName;
+    return this.desktopMl.selectBackgroundPool(selection, {
+      jobId,
+      modelName,
+      assertConfig: async (tx?: Transaction<DB>) => {
+        const current =
+          this.configRepo && this.metadataRepo
+            ? (
+                await readConfig({
+                  configRepo: this.configRepo,
+                  metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+                  logger: this.logger,
+                })
+              ).machineLearning
+            : this.config;
+        if (
+          !current.enabled ||
+          !current.clip.enabled ||
+          current.clip.modelName !== modelName ||
+          (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+        )
+          throw new Error('desktop_pool_config_changed');
+      },
+    });
+  }
+
   async captureClipRead() {
     if (this.clipIndex) return this.clipIndex.captureRead();
     return {
@@ -1063,7 +1096,7 @@ export class MachineLearningRepository implements RestorationInference {
   async encodeBoundClip(selection: MlSelection, payload: ModelPayload, profile: DesktopModelProfile) {
     const image = 'imagePath' in payload;
     if (
-      selection.workload !== MlWorkload.Clip ||
+      ![MlWorkload.Clip, MlWorkload.PetRecognition].includes(selection.workload) ||
       image === 'text' in payload ||
       image !== (profile.spec.fixtureKind === 'image') ||
       profile.modelKey !== profile.spec.modelKey

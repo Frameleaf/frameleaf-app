@@ -127,39 +127,44 @@ describe(MachineLearningRepository.name, () => {
   });
 
   describe('predict', () => {
-    it('binds NAS CLIP transport and returned vector to the exact producing profile', async () => {
-      const embedding = JSON.stringify(Array.from({ length: boundProfile.embeddingDimensions }, () => 0.1));
-      const fetch = vi.fn().mockResolvedValue(
-        jsonResponse({
+    it.each([MlWorkload.Clip, MlWorkload.PetRecognition])(
+      'binds NAS %s transport and returned vector to the exact producing profile',
+      async (workload) => {
+        const embedding = JSON.stringify(Array.from({ length: boundProfile.embeddingDimensions }, () => 0.1));
+        const fetch = vi.fn().mockResolvedValue(
+          jsonResponse({
+            protocolVersion: 1,
+            modelKey: boundProfile.modelKey,
+            preprocessingSha256: boundProfile.spec.preprocessingSha256,
+            result: { clip: embedding },
+          }),
+        );
+        vi.stubGlobal('fetch', fetch);
+        const assertAuthority = vi.fn().mockResolvedValue(undefined);
+        const record = vi.fn();
+        const chosen = selection(MlDestinationKind.Lan, lanUrl, record, 'synthetic-token');
+        chosen.workload = MlWorkload.Clip;
+        chosen.endpoint.assertAuthority = assertAuthority;
+        expect(await sut.encodeBoundClip({ ...chosen, workload }, { text: 'frameleaf fixture' }, boundProfile)).toEqual(
+          {
+            embedding,
+            modelKey: boundProfile.modelKey,
+          },
+        );
+        expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict-bound`);
+        const request = fetch.mock.calls[0][1];
+        expect(new Headers(request.headers).get('authorization')).toBe('Bearer synthetic-token');
+        expect(JSON.parse((request.body as FormData).get('binding') as string)).toEqual({
           protocolVersion: 1,
           modelKey: boundProfile.modelKey,
+          models: boundProfile.spec.models,
+          entries: boundProfile.spec.entries,
           preprocessingSha256: boundProfile.spec.preprocessingSha256,
-          result: { clip: embedding },
-        }),
-      );
-      vi.stubGlobal('fetch', fetch);
-      const assertAuthority = vi.fn().mockResolvedValue(undefined);
-      const record = vi.fn();
-      const chosen = selection(MlDestinationKind.Lan, lanUrl, record, 'synthetic-token');
-      chosen.workload = MlWorkload.Clip;
-      chosen.endpoint.assertAuthority = assertAuthority;
-      expect(await sut.encodeBoundClip(chosen, { text: 'frameleaf fixture' }, boundProfile)).toEqual({
-        embedding,
-        modelKey: boundProfile.modelKey,
-      });
-      expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict-bound`);
-      const request = fetch.mock.calls[0][1];
-      expect(new Headers(request.headers).get('authorization')).toBe('Bearer synthetic-token');
-      expect(JSON.parse((request.body as FormData).get('binding') as string)).toEqual({
-        protocolVersion: 1,
-        modelKey: boundProfile.modelKey,
-        models: boundProfile.spec.models,
-        entries: boundProfile.spec.entries,
-        preprocessingSha256: boundProfile.spec.preprocessingSha256,
-      });
-      expect(assertAuthority).toHaveBeenCalledTimes(2);
-      expect(record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
-    });
+        });
+        expect(assertAuthority).toHaveBeenCalledTimes(2);
+        expect(record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+      },
+    );
 
     it.each(['wrong-key', 'wrong-preprocessing', 'wrong-dimensions', 'unexpected-image-metadata'])(
       'refuses %s producer output without accounting it as success',

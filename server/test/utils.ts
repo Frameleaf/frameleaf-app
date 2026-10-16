@@ -448,6 +448,7 @@ export const getMocks = () => {
     workflow: automock(WorkflowRepository, { strict: true }),
   };
 
+  mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
   mocks.machineLearning.captureClipRead.mockResolvedValue({
     assertCurrent: () => Promise.resolve(),
     publish: (write) => write(),

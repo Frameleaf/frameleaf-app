@@ -8,11 +8,14 @@ import type { MlSelection, ModelPayload } from 'src/repositories/machine-learnin
 import type { DB } from 'src/schema/index.js';
 import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import {
   type DesktopClipIndexBinding,
   DesktopClipIndexRepository,
 } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopMlRepository, DesktopMlRequest } from 'src/repositories/desktop-ml.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
+import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -21,7 +24,67 @@ export class DesktopMlService {
   constructor(
     private repository: DesktopMlRepository,
     private index: DesktopClipIndexRepository,
+    private policies?: DesktopAssistancePolicyService,
+    private routes?: MlDestinationRepository,
   ) {}
+
+  async selectBackgroundPool(
+    selection: MlSelection,
+    options: {
+      jobId?: string | null;
+      modelName: string;
+      assertConfig: (tx?: Transaction<DB>) => Promise<void>;
+    },
+  ): Promise<MlSelection> {
+    const context = queueExecution.getStore();
+    if (
+      !context ||
+      selection.workload !== MlWorkload.Clip ||
+      ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(selection.kind) ||
+      selection.endpoint.cloud
+    )
+      return selection;
+    if (!this.policies || !this.routes) throw new Error('desktop_pool_authority_unavailable');
+    const route = (await this.routes.getRouteStates()).find((route) => route.workload === MlWorkload.Clip);
+    if (route?.origin !== 'default' || route.destinationId !== selection.destinationId || !route.revisionId)
+      return selection;
+    const policy = await this.policies.snapshot();
+    const sources = context.sourceAuthorities;
+    const source = options.jobId
+      ? sources?.get(options.jobId)
+      : sources?.size === 1
+        ? sources.values().next().value
+        : undefined;
+    if (!source) {
+      if (Object.keys(policy.accounts).length > 0) {
+        deferJobUntilDependency('source-unavailable');
+        throw new Error('desktop_pool_source_required');
+      }
+      return selection;
+    }
+    const ownerId = source.ownerId;
+    const account = policy.accounts[ownerId];
+    if (!account) return selection;
+    const selected = await this.index.selectProfile(options.modelName, 'image');
+    if (!selected) {
+      deferJobUntilDependency('destination-configuration');
+      throw new Error('desktop_pool_index_required');
+    }
+    const revisionId = route.revisionId;
+    const assertAuthority = async (tx?: Transaction<DB>) => {
+      await this.policies!.assertCurrent(ownerId, account.revisionId, tx);
+      await this.routes!.assertDefaultRoute(selection, revisionId, tx);
+      await options.assertConfig(tx);
+      await source.assertCurrent(tx);
+    };
+    await assertAuthority();
+    return this.selectClipPool(selection, {
+      ownerId,
+      authorityKey: `${account.revisionId}:${revisionId}`,
+      binding: selected.binding,
+      assertAuthority,
+    });
+  }
 
   selectClipPool(
     selection: MlSelection,

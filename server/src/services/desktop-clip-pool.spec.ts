@@ -10,6 +10,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, type MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
+import * as destinationSelection from 'src/utils/ml-destination.js';
 import { newTestService } from 'test/utils.js';
 
 const catalogue = JSON.parse(
@@ -74,7 +75,10 @@ beforeEach(() => {
     });
   });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 const pool = () =>
   service.selectClipPool(selection, {
     ownerId,
@@ -214,12 +218,37 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
   const { sut, mocks } = newTestService(SmartInfoService);
   const settings = structuredClone(defaults);
   settings.machineLearning.clip.modelName = visual.modelName;
+  settings.machineLearning.urls = [selection.endpoint.url];
   const hooks = sut as unknown as {
     getConfig: () => Promise<typeof settings>;
     selectRoutedMlDestination: () => Promise<MlSelection>;
   };
   vi.spyOn(hooks, 'getConfig').mockResolvedValue(settings);
-  vi.spyOn(hooks, 'selectRoutedMlDestination').mockImplementation(() => Promise.resolve(pool()));
+  vi.spyOn(destinationSelection, 'selectMlDestination').mockResolvedValue(selection);
+  const policies = {
+    snapshot: vi.fn().mockResolvedValue({ accounts: { [ownerId]: { revisionId: 'consent' } } }),
+    assertCurrent: vi.fn(),
+  };
+  const routes = {
+    getRouteStates: vi
+      .fn()
+      .mockResolvedValue([
+        { workload: MlWorkload.Clip, destinationId: selection.destinationId, origin: 'default', revisionId: 'route' },
+      ]),
+    assertDefaultRoute: vi.fn(),
+  };
+  service = new DesktopMlService(repository as never, index as never, policies as never, routes as never);
+  ml = new MachineLearningRepository(
+    LoggingRepository.create(),
+    undefined,
+    undefined,
+    undefined,
+    index as never,
+    service,
+  );
+  ml.setup(settings.machineLearning);
+  context.sourceAuthorities = new Map([[ownerId, { ownerId, assertCurrent: vi.fn() }]]);
+  mocks.machineLearning.selectBackgroundPool.mockImplementation(ml.selectBackgroundPool.bind(ml));
   mocks.assetJob.getForClipEncoding.mockResolvedValue({
     id: ownerId,
     ownerId,
