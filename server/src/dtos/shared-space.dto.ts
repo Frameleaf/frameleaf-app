@@ -8,13 +8,10 @@ import { AlbumUserRoleSchema, SharedSpaceEventTypeSchema } from 'src/enum.js';
 /**
  * What a recipient is shown about a shared space before they accept (FL-55).
  *
- * This is the only thing a pending recipient can read, and it deliberately
- * carries no asset: no ids, no thumbnail, no file names, no people and no
- * places. The counts and dates are computed with sensitive/Locked media
- * excluded, so an item the owner marked Sensitive does not even move the
- * number a recipient sees. Accepting is what grants access to the space's
- * photos; everything from that point on runs through the ordinary album
- * access checks.
+ * Pending recipients get space and invitation details, safe-media counts and
+ * dates, and up to 12 asset IDs for the dedicated preview-thumbnail route.
+ * Sensitive, hidden and Locked media stay outside that preview. Accepting
+ * grants ordinary access to the space's photos through the album access checks.
  */
 const SharedSpacePreviewResponseSchema = z
   .object({
