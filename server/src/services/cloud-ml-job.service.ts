@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Kysely } from 'kysely';
+import { type Kysely, sql } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -1255,12 +1255,11 @@ export class CloudMlJobService {
       run.snapshot.stage === 'preview'
         ? [AssetRestorationStatus.PreviewQueued, AssetRestorationStatus.PreviewFailed]
         : [AssetRestorationStatus.Accepted, AssetRestorationStatus.RestoreFailed];
-    const moved = await this.restorationRepository.transition(
-      row.id,
-      from,
-      { status: statuses.running, error: null },
-      undefined,
-      { stage: run.snapshot.stage, id: run.operation.id },
+    const moved = await this.databaseRepository.withAssetMetadataLock(run.snapshot.assetId, (trx) =>
+      this.restorationRepository.transition(row.id, from, { status: statuses.running, error: null }, trx, {
+        stage: run.snapshot.stage,
+        id: run.operation.id,
+      }),
     );
     if (!moved) {
       const detail = `This version is ${row.status.replaceAll('_', ' ')} now; nothing more is sent`;
@@ -1869,6 +1868,8 @@ export class CloudMlJobService {
     let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
     try {
       outcome = await this.mediaOperationRepository.publishValidated(operation.id, claimToken, async (trx) => {
+        // Share retention's asset lock without opening a second transaction inside publication.
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${snapshot.assetId})::int)`.execute(trx);
         const updated = await this.restorationRepository.transition(
           row.id,
           [statuses.running],

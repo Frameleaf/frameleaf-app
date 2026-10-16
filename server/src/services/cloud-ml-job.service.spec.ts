@@ -1,7 +1,9 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
+import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { DB } from 'src/schema/index.js';
 import type { CloudJobView, CloudUploadTarget } from 'src/utils/frameleaf-cloud.js';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
@@ -210,6 +212,10 @@ const wallet = (balanceUsd: number) => ({
   settingsUrl: null,
 });
 
+const dialect = new PostgresDialect({ pool: {} as never });
+dialect.createDriver = () => new DummyDriver();
+const TRX = new Kysely<DB>({ dialect });
+
 describe(CloudMlJobService.name, () => {
   let sut: CloudMlJobService;
   let mocks: ServiceMocks;
@@ -291,6 +297,7 @@ describe(CloudMlJobService.name, () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mocks = getMocks();
+    vi.spyOn(TRX.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
     metadata = new Map();
     rows = new Map();
     created = undefined;
@@ -310,6 +317,7 @@ describe(CloudMlJobService.name, () => {
       return Promise.resolve();
     });
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+    mocks.database.withAssetMetadataLock.mockImplementation((_assetId, callback) => callback(TRX) as never);
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({
       instanceId: 'instance-1',
       kid: 'kid-1',
@@ -421,7 +429,7 @@ describe(CloudMlJobService.name, () => {
     mocks.mediaOperation.listCloudMlJobsAwaitingCost.mockResolvedValue([]);
     mocks.mediaOperation.setFinishedResult.mockResolvedValue(true);
     mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) =>
-      (await publish({} as never)) ? 'completed' : 'rejected',
+      (await publish(TRX)) ? 'completed' : 'rejected',
     );
 
     const row = (input: Partial<AssetRestoration>): AssetRestoration =>
@@ -476,6 +484,7 @@ describe(CloudMlJobService.name, () => {
       listExpiredPreviews: vi.fn(),
       listExpiredResults: vi.fn(),
       clearExpiredResult: vi.fn(),
+      clearExpiredPreview: vi.fn(),
       alignWithOperations: vi.fn(),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
@@ -1718,7 +1727,7 @@ describe(CloudMlJobService.name, () => {
       });
       mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
         order.push('published');
-        return (await publish({} as never)) ? 'completed' : 'rejected';
+        return (await publish(TRX)) ? 'completed' : 'rejected';
       });
       mocks.frameleafCloudMl.deleteJob.mockImplementation(() => {
         order.push('DELETE /v2/jobs');
@@ -2353,6 +2362,67 @@ describe(CloudMlJobService.name, () => {
       await estimateAndConfirm();
     });
 
+    it('waits for retention before cloud admission changes the restoration or sends input', async () => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      mocks.database.withAssetMetadataLock.mockImplementation(async (_assetId, callback) => {
+        entered.resolve();
+        await release.promise;
+        return callback(TRX);
+      });
+      const step = sut.step(claimed(), 'claim', now);
+      try {
+        await Promise.race([
+          entered.promise,
+          step.then(() => {
+            throw new Error('Cloud admission bypassed retention lock');
+          }),
+        ]);
+        expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewQueued);
+        expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+        expect(mocks.frameleafCloudMl.uploadInput).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await step;
+      }
+      expect(mocks.database.withAssetMetadataLock).toHaveBeenCalledWith(created!.assetId, expect.any(Function));
+      expect(mocks.frameleafCloudMl.createJob).toHaveBeenCalled();
+    });
+
+    it('waits for retention before cloud publication renames final output', async () => {
+      rendering();
+      mocks.frameleafCloudMl.getJobView.mockResolvedValue({
+        notModified: false,
+        data: completedWithOutputs(),
+        etag: null,
+        retryAfterSeconds: null,
+      });
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      vi.spyOn(TRX.getExecutor(), 'executeQuery').mockImplementation(async (query) => {
+        expect(query.sql).toBe('SELECT pg_advisory_xact_lock(-1, hashtext($1)::int)');
+        expect(query.parameters).toEqual([created!.assetId]);
+        entered.resolve();
+        await release.promise;
+        return { rows: [] };
+      });
+      const step = sut.step(following(), 'claim', now);
+      try {
+        await Promise.race([
+          entered.promise,
+          step.then(() => {
+            throw new Error('Cloud publication bypassed retention lock');
+          }),
+        ]);
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await step;
+      }
+      expect(mocks.storage.rename).toHaveBeenCalled();
+      expect(rows.get(RESTORATION_ID)?.status).toBe(AssetRestorationStatus.PreviewReady);
+    });
+
     it('sends no input when a newer operation owns the stage before admission', async () => {
       rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
 
@@ -2436,7 +2506,7 @@ describe(CloudMlJobService.name, () => {
       });
       mocks.mediaOperation.publishValidated.mockImplementation(async (_id, _token, publish) => {
         rows.set(RESTORATION_ID, { ...rows.get(RESTORATION_ID)!, previewOperationId: 'new-operation' });
-        return (await publish({} as never)) ? 'completed' : 'rejected';
+        return (await publish(TRX)) ? 'completed' : 'rejected';
       });
 
       await sut.step(following(), 'claim', now);

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DummyDriver, Kysely, PostgresDialect } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import {
   AssetRestorationMode,
   AssetRestorationSourceType,
@@ -45,7 +47,9 @@ const RESTORATION_ID = '0195e2a0-0000-7000-8000-000000000010';
 const OPERATION_ID = '0195e2a0-0000-7000-8000-000000000020';
 const CLAIM = 'claim-token';
 /** Stands in for the transaction `publishValidated` hands its callback (FL-43). */
-const TRX = { transaction: 'publish' } as never;
+const dialect = new PostgresDialect({ pool: {} as never });
+dialect.createDriver = () => new DummyDriver();
+const TRX = new Kysely<DB>({ dialect });
 
 describe(RestorationWorkerService.name, () => {
   let sut: RestorationWorkerService;
@@ -168,6 +172,8 @@ describe(RestorationWorkerService.name, () => {
 
   beforeEach(() => {
     mocks = getMocks();
+    vi.spyOn(TRX.getExecutor(), 'executeQuery').mockResolvedValue({ rows: [] });
+    mocks.database.withAssetMetadataLock.mockImplementation((_assetId, callback) => callback(TRX) as never);
     restorations = {
       create: vi.fn(),
       get: vi.fn().mockResolvedValue(row()),
@@ -187,6 +193,7 @@ describe(RestorationWorkerService.name, () => {
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
       clearExpiredResult: vi.fn().mockImplementation((id: string) => Promise.resolve(row({ id }))),
+      clearExpiredPreview: vi.fn().mockImplementation((id: string) => Promise.resolve(row({ id }))),
       alignWithOperations: vi.fn().mockResolvedValue({ preview: 0, full: 0 }),
       getFilePaths: vi.fn(),
       deleteByAsset: vi.fn(),
@@ -271,6 +278,7 @@ describe(RestorationWorkerService.name, () => {
       mocks.storage as never,
       mocks.crypto as never,
       mocks.job as never,
+      mocks.database as never,
     );
   });
 
@@ -363,7 +371,7 @@ describe(RestorationWorkerService.name, () => {
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewQueued],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, previewOperationId: OPERATION_ID }),
-        undefined,
+        TRX,
         { stage: 'preview', id: OPERATION_ID },
       );
       // The crop is the requested region of the decoded frame; the input is bounded to the preview edge.
@@ -538,7 +546,7 @@ describe(RestorationWorkerService.name, () => {
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewFailed],
         expect.objectContaining({ status: AssetRestorationStatus.PreviewRendering, error: null }),
-        undefined,
+        TRX,
         { stage: 'preview', id: OPERATION_ID },
       );
       expect(operations.complete).toHaveBeenCalled();
@@ -588,7 +596,7 @@ describe(RestorationWorkerService.name, () => {
           fullOperationId: OPERATION_ID,
           resultExpiresAt: null,
         }),
-        undefined,
+        TRX,
         { stage: 'full', id: null },
       );
     });
@@ -1394,6 +1402,166 @@ describe(RestorationWorkerService.name, () => {
   });
 
   describe('sweep', () => {
+    it('keeps preview files when eligibility changed before cleanup', async () => {
+      restorations.listExpiredPreviews.mockResolvedValue([
+        row({
+          status: AssetRestorationStatus.PreviewReady,
+          previewBeforePath: '/b.jpg',
+          previewExpiresAt: new Date(0) as never,
+        }),
+      ]);
+      restorations.clearExpiredPreview.mockResolvedValue(undefined);
+
+      expect((await sut.sweep()).removed).toBe(0);
+
+      expect(restorations.update).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it.each(['preview', 'result', 'work folder'])('does not acknowledge failed %s deletion', async (target) => {
+      if (target === 'preview') {
+        restorations.listExpiredPreviews.mockResolvedValue([
+          row({ status: AssetRestorationStatus.PreviewReady, previewBeforePath: '/b.jpg' }),
+        ]);
+      } else {
+        restorations.listExpiredResults.mockResolvedValue([
+          row({
+            status: AssetRestorationStatus.RestoreFailed,
+            resultPath: '/result.png',
+            resultExpiresAt: new Date(0) as never,
+          }),
+        ]);
+      }
+      (target === 'work folder' ? mocks.storage.unlinkDir : mocks.storage.unlink).mockRejectedValueOnce(
+        new Error('disk unavailable'),
+      );
+
+      await expect(sut.sweep()).rejects.toThrow('disk unavailable');
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('finishes deleting the old work folder before admitting a retry', async () => {
+      const deleting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const queued = Promise.withResolvers<void>();
+      let tail = Promise.resolve();
+      mocks.database.withAssetMetadataLock.mockImplementation(async (_assetId, callback) => {
+        const previous = tail;
+        const settled = Promise.withResolvers<void>();
+        tail = previous.then(() => settled.promise);
+        if (mocks.database.withAssetMetadataLock.mock.calls.length === 2) queued.resolve();
+        await previous;
+        try {
+          return await callback(TRX);
+        } finally {
+          settled.resolve();
+        }
+      });
+      const expired = row({
+        status: AssetRestorationStatus.RestoreCancelled,
+        fullOperationId: 'parent',
+        resultExpiresAt: new Date(0) as never,
+      });
+      restorations.listExpiredResults.mockResolvedValue([expired]);
+      restorations.get.mockResolvedValue(expired);
+      mocks.storage.unlinkDir.mockImplementationOnce(async () => {
+        deleting.resolve();
+        await release.promise;
+      });
+      const sweep = sut.sweep();
+      await deleting.promise;
+      const retry = sut.run(
+        operation({ kind: MediaOperationKind.Restoration, retryOfId: 'parent', snapshot: snapshot({ stage: 'full' }) }),
+        CLAIM,
+      );
+      try {
+        await Promise.race([
+          queued.promise,
+          retry.then(() => {
+            throw new Error('Retry ran before cleanup released admission');
+          }),
+        ]);
+        expect(restorations.transition).not.toHaveBeenCalled();
+        expect(mocks.storage.mkdirSync).not.toHaveBeenCalled();
+      } finally {
+        release.resolve();
+        await Promise.all([sweep, retry]);
+      }
+      expect(restorations.transition).toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.RestoreCancelled],
+        expect.any(Object),
+        TRX,
+        { stage: 'full', id: 'parent' },
+      );
+    });
+
+    it('waits for preview deletion before publishing and never queues deletion of a reusable path', async () => {
+      const inference = Promise.withResolvers<void>();
+      const rendering = Promise.withResolvers<void>();
+      const deleting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const publishing = Promise.withResolvers<void>();
+      let tail = Promise.resolve();
+      mocks.database.withAssetMetadataLock.mockImplementation(async (_assetId, callback) => {
+        const previous = tail;
+        const settled = Promise.withResolvers<void>();
+        tail = previous.then(() => settled.promise);
+        await previous;
+        try {
+          return await callback(TRX);
+        } finally {
+          settled.resolve();
+        }
+      });
+      vi.spyOn(TRX.getExecutor(), 'executeQuery').mockImplementation(async (query) => {
+        expect(query.sql).toBe('SELECT pg_advisory_xact_lock(-1, hashtext($1)::int)');
+        expect(query.parameters).toEqual([asset.id]);
+        publishing.resolve();
+        await tail;
+        return { rows: [] };
+      });
+      const render = restore.getMockImplementation()!;
+      restore.mockImplementationOnce(async (...args) => {
+        rendering.resolve();
+        await inference.promise;
+        return render(...args);
+      });
+      const run = sut.run(operation(), CLAIM);
+      await rendering.promise;
+      restorations.listExpiredPreviews.mockResolvedValue([
+        row({ id: 'other', status: AssetRestorationStatus.Rejected, previewBeforePath: '/old.jpg' }),
+      ]);
+      mocks.storage.unlink.mockImplementationOnce(async () => {
+        deleting.resolve();
+        await release.promise;
+      });
+      const sweep = sut.sweep();
+      try {
+        await Promise.race([
+          deleting.promise,
+          sweep.then(() => {
+            throw new Error('Cleanup finished without deleting the old preview');
+          }),
+        ]);
+        inference.resolve();
+        await Promise.race([
+          publishing.promise,
+          run.then(() => {
+            throw new Error('Publication bypassed retention lock');
+          }),
+        ]);
+        expect(mocks.storage.rename).not.toHaveBeenCalled();
+      } finally {
+        inference.resolve();
+        release.resolve();
+        await Promise.all([sweep, run]);
+      }
+      expect(mocks.storage.rename).toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('aligns rows with finished jobs and applies preview retention, leaving recovery to the one sweep', async () => {
       restorations.listExpiredPreviews.mockResolvedValue([
         row({ status: AssetRestorationStatus.PreviewReady, previewBeforePath: '/b.jpg', previewAfterPath: '/a.png' }),
@@ -1410,23 +1578,21 @@ describe(RestorationWorkerService.name, () => {
       // Lapsed claims are MediaOperationSweepService's to recover, for every kind (FL-104).
       expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
       expect(restorations.alignWithOperations).toHaveBeenCalled();
-      // An unreviewed preview expires; a decided one only loses its files.
-      expect(restorations.update).toHaveBeenCalledWith(
+      // The repository guards both unreviewed and decided rows before their files are removed.
+      expect(restorations.clearExpiredPreview).toHaveBeenCalledWith(
         RESTORATION_ID,
-        expect.objectContaining({
-          status: AssetRestorationStatus.Expired,
-          previewBeforePath: null,
-          previewAfterPath: null,
-          previewExpiresAt: null,
-        }),
+        AssetRestorationStatus.PreviewReady,
+        expect.any(Date),
+        TRX,
       );
-      expect(restorations.update).toHaveBeenCalledWith('other', {
-        previewBeforePath: null,
-        previewAfterPath: null,
-        previewExpiresAt: null,
-      });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/b.jpg', '/a.png'] } });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/rb.jpg'] } });
+      expect(restorations.clearExpiredPreview).toHaveBeenCalledWith(
+        'other',
+        AssetRestorationStatus.Rejected,
+        expect.any(Date),
+        TRX,
+      );
+      expect(mocks.storage.unlink.mock.calls).toEqual([['/b.jpg'], ['/a.png'], ['/rb.jpg']]);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(result.removed).toBe(3);
     });
 
@@ -1450,6 +1616,7 @@ describe(RestorationWorkerService.name, () => {
         RESTORATION_ID,
         AssetRestorationStatus.RestoreCancelled,
         expect.any(Date),
+        TRX,
       );
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining(RESTORATION_ID), {
         recursive: true,

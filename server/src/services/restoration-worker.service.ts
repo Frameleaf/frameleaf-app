@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -19,6 +20,7 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -171,6 +173,7 @@ export class RestorationWorkerService {
     private storageRepository: StorageRepository,
     private cryptoRepository: CryptoRepository,
     private jobRepository: JobRepository,
+    private databaseRepository: DatabaseRepository,
   ) {
     this.logger.setContext(RestorationWorkerService.name);
   }
@@ -287,40 +290,37 @@ export class RestorationWorkerService {
 
     let removed = 0;
     for (const row of await this.restorationRepository.listExpiredPreviews(now, RETENTION_BATCH)) {
-      const files = [row.previewBeforePath, row.previewAfterPath].filter((file): file is string => !!file);
-      const unreviewed = row.status === AssetRestorationStatus.PreviewReady;
-      await this.restorationRepository.update(row.id, {
-        previewBeforePath: null,
-        previewAfterPath: null,
-        previewExpiresAt: null,
-        ...(unreviewed && { status: AssetRestorationStatus.Expired }),
+      removed += await this.databaseRepository.withAssetMetadataLock(row.assetId, async (trx) => {
+        const cleared = await this.restorationRepository.clearExpiredPreview(
+          row.id,
+          row.status as AssetRestorationStatus,
+          now,
+          trx,
+        );
+        if (!cleared) return 0;
+        const files = [row.previewBeforePath, row.previewAfterPath].filter((file): file is string => !!file);
+        // Finish deleting reusable paths before another worker can admit or publish this asset.
+        for (const file of files) await this.storageRepository.unlink(file);
+        return files.length;
       });
-      if (files.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
-        removed += files.length;
-      }
     }
     // A failed or cancelled full render keeps its chunk checkpoints for a while so a retry can
     // resume; past that date the work folder goes. The row stays, still retryable from scratch.
     for (const row of await this.restorationRepository.listExpiredResults(now, RETENTION_BATCH)) {
-      // Re-check the status in the write: a retry started since the read owns the folder now.
-      const cleared = await this.restorationRepository.clearExpiredResult(
-        row.id,
-        row.status as AssetRestorationStatus,
-        now,
-      );
-      if (!cleared) {
-        continue;
-      }
-      const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
-      if (files.length > 0) {
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
-        removed += files.length;
-      }
-      const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, row.ownerId, row.assetId);
-      await this.storageRepository
-        .unlinkDir(restorationWorkDir(base, row.id), { recursive: true, force: true })
-        .catch((error) => this.logger.warn(`Could not remove the work folder of restoration ${row.id}: ${error}`));
+      removed += await this.databaseRepository.withAssetMetadataLock(row.assetId, async (trx) => {
+        const cleared = await this.restorationRepository.clearExpiredResult(
+          row.id,
+          row.status as AssetRestorationStatus,
+          now,
+          trx,
+        );
+        if (!cleared) return 0;
+        const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
+        for (const file of files) await this.storageRepository.unlink(file);
+        const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, row.ownerId, row.assetId);
+        await this.storageRepository.unlinkDir(restorationWorkDir(base, row.id), { recursive: true, force: true });
+        return files.length;
+      });
     }
     if (removed > 0) {
       this.logger.log(`Restoration retention removed ${removed} expired files`);
@@ -373,19 +373,21 @@ export class RestorationWorkerService {
 
     const statuses = STAGE_STATUSES[stage];
     // Bind this job to the row (a retry is a new job id) and mark the stage running.
-    const bound = await this.restorationRepository.transition(
-      restoration.id,
-      [status],
-      {
-        status: statuses.running,
-        error: null,
-        // A retry takes the leftovers back from retention (FL-115).
-        ...(stage === 'preview'
-          ? { previewOperationId: operation.id }
-          : { fullOperationId: operation.id, resultExpiresAt: null }),
-      },
-      undefined,
-      { stage, id: previousOperationId },
+    const bound = await this.databaseRepository.withAssetMetadataLock(snapshot.assetId, (trx) =>
+      this.restorationRepository.transition(
+        restoration.id,
+        [status],
+        {
+          status: statuses.running,
+          error: null,
+          // A retry takes the leftovers back from retention (FL-115).
+          ...(stage === 'preview'
+            ? { previewOperationId: operation.id }
+            : { fullOperationId: operation.id, resultExpiresAt: null }),
+        },
+        trx,
+        { stage, id: previousOperationId },
+      ),
     );
     if (!bound) {
       await this.operationRepository.fail(operation.id, claimToken, {
@@ -996,6 +998,8 @@ export class RestorationWorkerService {
     let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
     try {
       outcome = await this.operationRepository.publishValidated(operation.id, claimToken, async (trx) => {
+        // Share retention's asset lock without opening a second transaction inside publication.
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${snapshot.assetId})::int)`.execute(trx);
         const updated = await this.restorationRepository.transition(
           restoration.id,
           [statuses.running],

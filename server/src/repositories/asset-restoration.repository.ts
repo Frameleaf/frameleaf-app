@@ -226,6 +226,28 @@ export class AssetRestorationRepository {
       .execute()) as unknown as AssetRestoration[];
   }
 
+  async clearExpiredPreview(
+    id: string,
+    status: AssetRestorationStatus,
+    now: Date,
+    executor: Kysely<DB> = this.db,
+  ): Promise<AssetRestoration | undefined> {
+    return (await executor
+      .updateTable('asset_restoration')
+      .set({
+        previewBeforePath: null,
+        previewAfterPath: null,
+        previewExpiresAt: null,
+        ...(status === AssetRestorationStatus.PreviewReady && { status: AssetRestorationStatus.Expired }),
+      })
+      .where('id', '=', id)
+      .where('status', '=', status)
+      .where('previewExpiresAt', 'is not', null)
+      .where('previewExpiresAt', '<=', now)
+      .returningAll()
+      .executeTakeFirst()) as AssetRestoration | undefined;
+  }
+
   /**
    * Failed or cancelled full renders whose leftovers (chunk checkpoints, any partial result) are
    * past their retention date. A finished result never carries an expiry (FL-115).
@@ -251,8 +273,9 @@ export class AssetRestorationRepository {
     id: string,
     status: AssetRestorationStatus,
     now: Date,
+    executor: Kysely<DB> = this.db,
   ): Promise<AssetRestoration | undefined> {
-    return (await this.db
+    return (await executor
       .updateTable('asset_restoration')
       .set({ resultPath: null, resultPreviewPath: null, resultExpiresAt: null })
       .where('id', '=', id)
