@@ -111,6 +111,28 @@ describe('import admission and activation gates', () => {
     expect(statements.some((statement) => /^(INSERT|UPDATE)/u.test(statement))).toBe(false);
   });
 
+  it.each([
+    { scope: 'unadmitted', space: null, key: 'legacy', producerScope: 'unadmitted', accepted: true },
+    { scope: 'clip', space: {}, key: 'legacy', producerScope: 'unadmitted', accepted: false },
+    { scope: 'unadmitted', space: null, key: 'image:clip:changed', producerScope: 'unadmitted', accepted: false },
+    { scope: 'unadmitted', space: null, key: 'legacy', producerScope: 'clip', accepted: false },
+  ])('admits only pristine desktop CLIP bootstrap rows: %j', async (seed) => {
+    const { importer, statements } = createImporter();
+    const query = importer.destination.query.bind(importer.destination);
+    vi.spyOn(importer.destination, 'query').mockImplementation((sql, args) => {
+      if (sql.includes('FROM pg_tables'))
+        return Promise.resolve([{ tablename: 'desktop_clip_index' }, { tablename: 'desktop_clip_producer' }]);
+      if (sql.includes('FROM public."desktop_clip_index"'))
+        return Promise.resolve([{ scope: seed.scope, space: seed.space }]);
+      if (sql.includes('FROM public."desktop_clip_producer"'))
+        return Promise.resolve([{ key: seed.key, scope: seed.producerScope }]);
+      return query(sql, args);
+    });
+    if (seed.accepted) await expect(importer.preflight()).resolves.toMatchObject({ status: 'fresh' });
+    else await expect(importer.preflight()).rejects.toThrow('DESTINATION_NOT_FRESH');
+    expect(statements.some((statement) => /^(INSERT|UPDATE)/u.test(statement))).toBe(false);
+  });
+
   it('refuses populated destinations before journal writes', async () => {
     const { importer, statements } = createImporter(undefined, true);
     await expect(importer.run()).rejects.toThrow('DESTINATION_NOT_FRESH');
