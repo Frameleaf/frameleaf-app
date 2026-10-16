@@ -9,6 +9,7 @@ import type {
 } from 'src/dtos/photo-source.dto.js';
 import type { DB } from 'src/schema/index.js';
 import type { PhotoSourceResourceTable } from 'src/schema/tables/photo-source.table.js';
+import type { FolderUploadSourceIdentity } from 'src/utils/asset-upload-resource.js';
 import { AssetStatus, AssetVisibility } from 'src/enum.js';
 import { lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
 
@@ -71,6 +72,29 @@ export class PhotoSourceRepository {
     if (!run) throw new NotFoundException('Photo source run unavailable');
     if (open && run.state !== 'open') throw new ConflictException('photo_source_run_not_open');
     return { ...context, run };
+  }
+  async assertUpload(
+    auth: SourceAuthority,
+    binding: FolderUploadSourceIdentity,
+    checksum: Buffer,
+    size: number | undefined,
+    transaction?: Transaction<DB>,
+  ): Promise<void> {
+    const check = async (tx: Transaction<DB>) => {
+      await this.activeRun(tx, auth, binding.sourceId, binding.runId);
+      const item = await tx
+        .selectFrom('photo_source_resource')
+        .selectAll()
+        .where('id', '=', binding.itemId)
+        .where('runId', '=', binding.runId)
+        .forShare()
+        .executeTakeFirst();
+      if (!item || item.state !== 'planned' || size !== Number(item.bytes) || !item.checksum.equals(checksum))
+        throw new ConflictException('photo_source_upload_changed');
+      await this.owner(tx, auth);
+    };
+    if (transaction) await check(transaction);
+    else await this.db.transaction().execute(check);
   }
   create(auth: SourceAuthority, dto: PhotoSourceCreateDto) {
     return this.db.transaction().execute(async (tx) => {

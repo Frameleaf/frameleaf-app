@@ -187,3 +187,32 @@ it('an existing item ID cannot be reassigned to another known resource identity'
     'photo_source_item_changed',
   );
 });
+
+it('upload admission binds live photo authority to the exact planned bytes and source run', async () => {
+  const { sut, source, authority, device } = await setup();
+  const run = await sut.run(authority, source.id, { id: randomUUID(), maxItems: 1, maxBytes: 10 });
+  const item = {
+    id: randomUUID(),
+    resourceKey: 'b'.repeat(64),
+    version: 'c'.repeat(64),
+    sha256: 'd'.repeat(64),
+    bytes: 6,
+  };
+  await sut.plan(authority, source.id, run.id, item);
+  const binding = { kind: 'folder' as const, sourceId: source.id, runId: run.id, itemId: item.id };
+  const checksum = Buffer.from(item.sha256, 'hex');
+  await expect(sut.assertUpload(authority, binding, checksum, 6)).resolves.toBeUndefined();
+  await expect(sut.assertUpload(authority, binding, checksum, undefined)).rejects.toThrow();
+  await expect(sut.assertUpload(authority, binding, checksum, 7)).rejects.toThrow();
+  await expect(sut.assertUpload(authority, binding, Buffer.alloc(32), 6)).rejects.toThrow();
+  await expect(sut.assertUpload(authority, { ...binding, runId: randomUUID() }, checksum, 6)).rejects.toThrow();
+  await expect(sut.assertUpload({ ...authority, sessionId: randomUUID() }, binding, checksum, 6)).rejects.toThrow();
+  await sut.setState(authority, source.id, run.id, { state: 'paused', inventoryComplete: false });
+  await expect(sut.assertUpload(authority, binding, checksum, 6)).rejects.toThrow();
+  await sut.setState(authority, source.id, run.id, { state: 'open', inventoryComplete: false });
+  await db.updateTable('desktop_device').set({ state: 'paused' }).where('id', '=', device.id).execute();
+  await expect(sut.assertUpload(authority, binding, checksum, 6)).rejects.toThrow();
+  await db.updateTable('desktop_device').set({ state: 'awaiting-approval' }).where('id', '=', device.id).execute();
+  await sut.revoke(authority, source.id);
+  await expect(sut.assertUpload(authority, binding, checksum, 6)).rejects.toThrow();
+});

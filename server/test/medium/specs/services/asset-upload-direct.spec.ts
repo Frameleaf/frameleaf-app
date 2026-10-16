@@ -21,6 +21,7 @@ import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.r
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -141,6 +142,7 @@ describe('direct peer and actual native resource publication', () => {
       ctx.getMock(LoggingRepository),
       admission,
       new ICloudIdentityRepository(db),
+      new PhotoSourceRepository(db),
     );
     direct = new AssetUploadDirectService(native, authentication, admission);
     vi.spyOn(direct as unknown as { createPeer: () => RTCPeerConnection }, 'createPeer').mockImplementation(() => {
