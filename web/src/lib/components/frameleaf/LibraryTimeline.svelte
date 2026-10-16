@@ -1140,10 +1140,15 @@
   /** The keyboard's month jump: the month's first row at the top of the timeline. */
   const onJump = ({ year, month }: { year: number; month: number }) => {
     const target = timelineManager.months.find(({ yearMonth }) => yearMonth.year === year && yearMonth.month === month);
-    if (target) {
-      scrubberMoves++;
-      timelineManager.scrollTo(Math.min(target.top, timelineManager.maxScroll));
+    if (!target) {
+      return;
     }
+    const moves = ++scrubberMoves;
+    const place = () => timelineManager.scrollTo(Math.min(target.top, timelineManager.maxScroll));
+    place();
+    // The months reached load after the scroll and outgrow their estimates (every day has a row of
+    // its own), so End would stop a month short of the oldest one: keep the month in place meanwhile.
+    void holdWhileSettling(place, () => moves === scrubberMoves);
   };
 
   // note: don't throttle or debounce - it causes flicker
