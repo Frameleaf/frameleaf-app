@@ -1,5 +1,7 @@
+import type { QueueExecution } from 'src/queue/types.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { getCLIPModelInfo } from 'src/utils/misc.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -19,6 +21,25 @@ describe(SmartInfoService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  it('refuses a stored producer change even when postprocessing vector bytes stay equal', async () => {
+    const asset = { id: 'asset', ownerId: 'owner', visibility: AssetVisibility.Timeline };
+    mocks.assetJob.getForClipEncoding.mockResolvedValue(asset as never);
+    const stored = { assetId: asset.id, embedding: '[1]', producerModelKey: 'producer-before' };
+    mocks.search.getEmbedding.mockResolvedValueOnce(stored as never).mockResolvedValue({
+      ...stored,
+      producerModelKey: 'producer-after',
+    } as never);
+    const context = {
+      claim: { id: 'job', token: 'token' },
+      signal: new AbortController().signal,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    } as unknown as QueueExecution;
+    await queueExecution.run(context, () => sut.handlePostprocessClip({ id: asset.id }));
+    await expect(context.adoptions[0]({} as never)).rejects.toThrow('CLIP embedding changed');
   });
 
   describe('onConfigValidateEvent', () => {

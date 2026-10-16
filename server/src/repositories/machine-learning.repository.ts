@@ -1030,6 +1030,14 @@ export class MachineLearningRepository implements RestorationInference {
     };
   }
 
+  async captureClipRead() {
+    if (this.clipIndex) return this.clipIndex.captureRead();
+    return {
+      assertCurrent: () => Promise.resolve(),
+      publish: <T>(write: () => Promise<T>) => write(),
+    };
+  }
+
   async clipCacheKey(modelName: string, language?: string): Promise<string> {
     const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
     return selected ? `${selected.binding.revisionId}:${selected.profile.modelKey}` : 'legacy';
@@ -1048,6 +1056,7 @@ export class MachineLearningRepository implements RestorationInference {
     }
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
     const response = await this.predict<ClipVisualResponse>(selection, { imagePath }, request);
+    if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
     return response[ModelTask.SEARCH];
   }
 
@@ -1108,6 +1117,7 @@ export class MachineLearningRepository implements RestorationInference {
     }
     const request = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: { modelName, options: { language } } } };
     const response = await this.predict<ClipTextualResponse>(selection, { text }, request);
+    if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
     return response[ModelTask.SEARCH];
   }
 

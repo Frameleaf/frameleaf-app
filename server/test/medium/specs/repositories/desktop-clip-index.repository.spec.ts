@@ -201,3 +201,81 @@ it('retains explicit legacy reset behavior while the index is unadmitted', async
   expect(await database.getDimensionSize('smart_search')).toBe(512);
   expect(await repository.getActive()).toBeUndefined();
 });
+
+it('refuses publication prepared before admission without running its writes', async () => {
+  const read = await repository.captureRead();
+  await repository.admit(space.spaceKey);
+  const publish = vi.fn().mockResolvedValue(undefined);
+  await expect(read.publish(publish)).rejects.toThrow('desktop_clip_index_changed');
+  expect(publish).not.toHaveBeenCalled();
+});
+it('holds the admission fence through a direct publication commit', async () => {
+  const read = await repository.captureRead();
+  const { promise: ready, resolve: entered } = Promise.withResolvers<void>();
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  const publication = read.publish(async () => {
+    entered();
+    await gate;
+  });
+  await ready;
+  let admitted = false;
+  const admission = repository.admit(space.spaceKey).then(() => {
+    admitted = true;
+  });
+  try {
+    await vi.waitFor(async () => {
+      const { rows } = await sql<{ waiting: boolean }>`SELECT EXISTS (
+        SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=912741 AND objid=1 AND NOT granted
+      ) AS waiting`.execute(db);
+      expect(rows[0].waiting).toBe(true);
+    });
+    expect(admitted).toBe(false);
+  } finally {
+    release();
+  }
+  await publication;
+  await admission;
+  expect(admitted).toBe(true);
+});
+
+it('rolls back a direct guarded mutation and joins an existing publication transaction', async () => {
+  const { publicationTransaction } = await import('src/queue/transaction.js');
+  const read = await repository.captureRead();
+  for (const outer of [false, true]) {
+    let existing: unknown;
+    const publish = () =>
+      read.publish(async () => {
+        const tx = publicationTransaction.getStore()!;
+        expect(tx).toBeDefined();
+        if (outer) expect(tx).toBe(existing);
+        await sql`UPDATE asset SET "originalFileName"='guard-rollback' WHERE id=${assetId}::uuid`.execute(tx);
+        throw new Error('rollback-fixture');
+      });
+    await expect(
+      outer
+        ? db.transaction().execute((tx) => {
+            existing = tx;
+            return publicationTransaction.run(tx, publish);
+          })
+        : publish(),
+    ).rejects.toThrow('rollback-fixture');
+    const asset = await db
+      .selectFrom('asset')
+      .select('originalFileName')
+      .where('id', '=', assetId)
+      .executeTakeFirstOrThrow();
+    expect(asset.originalFileName).not.toBe('guard-rollback');
+  }
+});
+it('refuses a publication transaction whose snapshot can predate admission', async () => {
+  const { publicationTransaction } = await import('src/queue/transaction.js');
+  const read = await repository.captureRead();
+  const write = vi.fn().mockResolvedValue(undefined);
+  await expect(
+    db
+      .transaction()
+      .setIsolationLevel('repeatable read')
+      .execute((tx) => publicationTransaction.run(tx, () => read.publish(write))),
+  ).rejects.toThrow('desktop_clip_publication_isolation');
+  expect(write).not.toHaveBeenCalled();
+});

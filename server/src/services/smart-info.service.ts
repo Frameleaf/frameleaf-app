@@ -163,17 +163,19 @@ export class SmartInfoService extends BaseService {
   @OnJob({ name: JobName.SmartSearchPostprocess, queue: QueueName.SmartSearch })
   async handlePostprocessClip({ id }: JobOf<JobName.SmartSearchPostprocess>): Promise<JobStatus> {
     await this.jobRepository.guardAssetSource(id);
+    const read = await this.machineLearningRepository.captureClipRead();
     const asset = await this.assetJobRepository.getForClipEncoding(id);
     const persisted = await this.searchRepository.getEmbedding(id);
     if (!asset || !persisted || asset.visibility === AssetVisibility.Hidden) {
       return JobStatus.Skipped;
     }
     deferJobAdoption(async () => {
-      if ((await this.searchRepository.getEmbedding(id))?.embedding !== persisted.embedding) {
+      const current = await this.searchRepository.getEmbedding(id);
+      if (current?.embedding !== persisted.embedding || current?.producerModelKey !== persisted.producerModelKey) {
         throw new Error('CLIP embedding changed before postprocessing publication');
       }
     });
-    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding);
+    await this.zeroShotTaggingService.tagAsset(asset.id, asset.ownerId, persisted.embedding, read);
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
     return JobStatus.Success;
   }

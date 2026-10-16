@@ -214,6 +214,7 @@ export class ClassificationService extends BaseService {
     await this.validateCriteria(auth, criteria);
     const rule = { ...criteria, ownerId: auth.user.id };
 
+    const read = await this.machineLearningRepository.captureClipRead();
     const vectors = await this.encodePhrases(criteria.visualQueries);
     if (!vectors) {
       return { exact: false, sampled: 0, matched: 0, items: [], visualSearchAvailable: false };
@@ -225,6 +226,7 @@ export class ClassificationService extends BaseService {
         this.classificationRepository.countMatches(rule, vectors),
         this.classificationRepository.findMatches(rule, vectors, { limit: CLASSIFICATION_PREVIEW_ITEMS }),
       ]);
+      await read.assertCurrent();
       return { exact: true, sampled, matched, items, visualSearchAvailable: true };
     }
 
@@ -234,6 +236,7 @@ export class ClassificationService extends BaseService {
       this.classificationRepository.countMatches(rule, vectors, { sampleSize }),
       this.classificationRepository.findMatches(rule, vectors, { sampleSize, limit: CLASSIFICATION_PREVIEW_ITEMS }),
     ]);
+    await read.assertCurrent();
     return { exact: false, sampled, matched, items, visualSearchAvailable: true };
   }
 
@@ -244,6 +247,7 @@ export class ClassificationService extends BaseService {
    */
   async plan(auth: AuthDto, id: string): Promise<ClassificationPlanResponseDto> {
     const rule = await this.requireRule(auth, id);
+    const read = await this.machineLearningRepository.captureClipRead();
     const vectors = await this.encodePhrases(rule.visualQueries);
     if (!vectors) {
       throw new BadRequestException('Visual categories cannot be compared right now');
@@ -254,6 +258,7 @@ export class ClassificationService extends BaseService {
       this.classificationRepository.getMatches(rule.id),
       this.classificationRepository.getUndoableAssetIds(rule),
     ]);
+    await read.assertCurrent();
     const recordByAsset = new Map(records.map((record) => [record.assetId, record]));
     const matching = new Set(matches.map(({ assetId }) => assetId));
 
@@ -400,23 +405,26 @@ export class ClassificationService extends BaseService {
           await this.applyToAssets(rule, [assetId]);
           continue;
         }
+        const read = await this.machineLearningRepository.captureClipRead();
         const vectors = await this.encodePhrases(rule.visualQueries);
         if (!vectors) continue;
-        await publishJobResult(async () => {
-          // A changed or disabled rule must never publish decisions prepared from an older revision.
-          const current = (await this.classificationRepository.getEnabledRules(ownerId)).find(
-            ({ id }) => id === rule.id,
-          );
-          if (!current || JSON.stringify(current) !== JSON.stringify(rule))
-            throw new Error('Classification rule changed before publication');
-          const matches = await this.classificationRepository.findMatches(current, vectors, { assetIds: [assetId] });
-          const outcome = await this.classificationRepository.apply(
-            current,
-            [assetId],
-            new Map(matches.map(({ assetId, score }) => [assetId, score])),
-          );
-          await afterJobCommit(() => this.emitTagEvents(ownerId, outcome));
-        });
+        await publishJobResult(() =>
+          read.publish(async () => {
+            // A changed or disabled rule must never publish decisions prepared from an older revision.
+            const current = (await this.classificationRepository.getEnabledRules(ownerId)).find(
+              ({ id }) => id === rule.id,
+            );
+            if (!current || JSON.stringify(current) !== JSON.stringify(rule))
+              throw new Error('Classification rule changed before publication');
+            const matches = await this.classificationRepository.findMatches(current, vectors, { assetIds: [assetId] });
+            const outcome = await this.classificationRepository.apply(
+              current,
+              [assetId],
+              new Map(matches.map(({ assetId, score }) => [assetId, score])),
+            );
+            await afterJobCommit(() => this.emitTagEvents(ownerId, outcome));
+          }),
+        );
       } catch (error) {
         if (queueExecution.getStore()) throw error;
         this.logger.warn(
@@ -433,16 +441,19 @@ export class ClassificationService extends BaseService {
     rule: ClassificationRuleWithAlbum,
     assetIds: string[],
   ): Promise<ClassificationApplyOutcome | undefined> {
+    const read = await this.machineLearningRepository.captureClipRead();
     const vectors = await this.encodePhrases(rule.visualQueries);
     if (!vectors) {
       return undefined;
     }
-    const matches = await this.classificationRepository.findMatches(rule, vectors, { assetIds });
-    const outcome = await this.classificationRepository.apply(
-      rule,
-      assetIds,
-      new Map(matches.map(({ assetId, score }) => [assetId, score])),
-    );
+    const outcome = await read.publish(async () => {
+      const matches = await this.classificationRepository.findMatches(rule, vectors, { assetIds });
+      return this.classificationRepository.apply(
+        rule,
+        assetIds,
+        new Map(matches.map(({ assetId, score }) => [assetId, score])),
+      );
+    });
     await this.emitTagEvents(rule.ownerId, outcome);
     return outcome;
   }

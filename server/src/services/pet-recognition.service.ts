@@ -13,7 +13,7 @@ import {
   PetRecognitionUnavailableReason,
   QueueName,
 } from 'src/enum.js';
-import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobAdoption, publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -216,6 +216,7 @@ export class PetRecognitionService {
   /** A pet was confirmed in a photo: look again at the owner's photos most like it (bounded). */
   @OnJob({ name: JobName.PetRecognitionNearest, queue: QueueName.PetRecognition })
   async handleNearest({ petId, assetId }: JobOf<JobName.PetRecognitionNearest>): Promise<JobStatus> {
+    const read = await this.machineLearningRepository.captureClipRead();
     const asset = await this.petRepository.getRecognitionAsset(assetId);
     const [pet] = asset ? await this.petRepository.getByIds(asset.ownerId, [petId]) : [];
     if (!asset || !pet) {
@@ -223,9 +224,12 @@ export class PetRecognitionService {
     }
 
     const ids = await this.petRepository.getNearestAssetIds(asset.ownerId, assetId, PET_NEAREST_ASSET_LIMIT);
-    await this.jobRepository.collectFollowups(() =>
-      this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.PetRecognition, data: { id } }))),
-    );
+    const enqueue = () =>
+      this.jobRepository.collectFollowups(() =>
+        this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.PetRecognition, data: { id } }))),
+      );
+    if (deferJobAdoption(() => read.publish(() => Promise.resolve()))) await enqueue();
+    else await read.publish(enqueue);
     return JobStatus.Success;
   }
 
@@ -253,6 +257,7 @@ export class PetRecognitionService {
       return done(JobStatus.Skipped);
     }
 
+    const read = await this.machineLearningRepository.captureClipRead();
     await this.jobRepository.guardAssetSource(assetId);
     const asset = await this.petRepository.getRecognitionAsset(assetId);
     if (!asset || asset.deletedAt || asset.visibility === AssetVisibility.Hidden) {
@@ -263,20 +268,22 @@ export class PetRecognitionService {
     const run = petRecognitionRun(machineLearning.clip.modelName);
     const publish = async (write: (allIds: string[]) => Promise<number>, status = JobStatus.Success) => {
       const result = done(status);
-      await publishJobResult(async () => {
-        const tx = publicationTransaction.getStore();
-        if (tx) {
-          await tx.selectFrom('asset').select('id').where('id', '=', asset.id).forUpdate().execute();
-          await tx.selectFrom('pet_detection').select('id').where('assetId', '=', asset.id).forUpdate().execute();
-        }
-        const current = await this.petRepository.getRecognitionAsset(asset.id);
-        if (!current || current.embedding !== asset.embedding)
-          throw new Error('Pet embedding changed before publication');
-        if (runId && !(await this.petRepository.isRunActive(runId)))
-          throw new Error('Pet recognition run was cancelled');
-        const { allIds } = detectionsToReplace(await this.petRepository.getDetectionsForAsset(asset.id), run);
-        result.proposals = await write(allIds);
-      });
+      await publishJobResult(() =>
+        read.publish(async () => {
+          const tx = publicationTransaction.getStore();
+          if (tx) {
+            await tx.selectFrom('asset').select('id').where('id', '=', asset.id).forUpdate().execute();
+            await tx.selectFrom('pet_detection').select('id').where('assetId', '=', asset.id).forUpdate().execute();
+          }
+          const current = await this.petRepository.getRecognitionAsset(asset.id);
+          if (!current || current.embedding !== asset.embedding)
+            throw new Error('Pet embedding changed before publication');
+          if (runId && !(await this.petRepository.isRunActive(runId)))
+            throw new Error('Pet recognition run was cancelled');
+          const { allIds } = detectionsToReplace(await this.petRepository.getDetectionsForAsset(asset.id), run);
+          result.proposals = await write(allIds);
+        }),
+      );
       return result;
     };
     if (references.length === 0) {

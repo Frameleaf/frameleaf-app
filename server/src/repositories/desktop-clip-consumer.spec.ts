@@ -90,3 +90,14 @@ it('names caches with the admitted revision and exact text producer', async () =
   index.selectProfile.mockResolvedValue(undefined);
   expect(await ml.clipCacheKey(profile.modelName)).toBe('legacy');
 });
+
+it.each(['image', 'text'])('refuses legacy %s output when admission occurs during inference', async (kind) => {
+  index.selectProfile.mockResolvedValue(undefined);
+  Object.assign(index, { getActive: vi.fn().mockResolvedValue(binding) });
+  vi.spyOn(ml as unknown as { predict: () => Promise<unknown> }, 'predict').mockResolvedValue({ clip: '[0.1]' });
+  await expect(
+    kind === 'image'
+      ? ml.encodeImage(selection, '/synthetic/image', defaults.machineLearning.clip)
+      : ml.encodeText(selection, 'query', { modelName: 'legacy' }),
+  ).rejects.toThrow('desktop_clip_index_changed');
+});

@@ -5,11 +5,16 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DB } from 'src/schema/index.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { type DesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopClipIndexBinding = { revisionId: string; space: DesktopClipSpace };
+export type DesktopClipReadGuard = {
+  assertCurrent: () => Promise<void>;
+  publish: <T>(write: () => Promise<T>) => Promise<T>;
+};
 const tables = [
   'smart_search',
   'smart_search_description',
@@ -62,6 +67,40 @@ export class DesktopClipIndexRepository {
     } catch (error) {
       throw new Error('desktop_clip_index_invalid', { cause: error });
     }
+  }
+
+  /** Carry this snapshot across inference/cache reads; only DB adoption holds the admission lock. */
+  async captureRead(): Promise<DesktopClipReadGuard> {
+    const binding = structuredClone((await this.getActive()) ?? null);
+    const validate = async (target: Kysely<DB> = this.db) => {
+      const current = await this.getActive(target);
+      if (
+        binding
+          ? !current || current.revisionId !== binding.revisionId || identity(current.space) !== identity(binding.space)
+          : current !== undefined
+      )
+        throw new Error('desktop_clip_index_changed');
+    };
+    return {
+      assertCurrent: () => validate(),
+      publish: async <T>(write: () => Promise<T>): Promise<T> => {
+        const adopt = async (tx: Kysely<DB>) => {
+          const { rows } = await sql<{
+            level: string;
+          }>`SELECT current_setting('transaction_isolation') AS level`.execute(tx);
+          if (rows[0]?.level !== 'read committed') throw new Error('desktop_clip_publication_isolation');
+          await sql`SELECT pg_advisory_xact_lock_shared(912741, 1)`.execute(tx);
+          await validate(tx);
+          return write();
+        };
+        const tx = publicationTransaction.getStore();
+        if (tx) return adopt(tx as unknown as Kysely<DB>);
+        return this.db
+          .transaction()
+          .setIsolationLevel('read committed')
+          .execute((tx) => publicationTransaction.run(tx, () => adopt(tx)));
+      },
+    };
   }
 
   async selectProfile(modelName: string, kind: 'image' | 'text', language?: string) {

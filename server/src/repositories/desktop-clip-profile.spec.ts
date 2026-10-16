@@ -42,3 +42,18 @@ it('rejects forged space contents even when the revision and space key are uncha
     repository.assertCurrent({ ...binding, space: { ...space, visualModelKey: `clip:${'f'.repeat(64)}` } }),
   ).rejects.toThrow('desktop_clip_index_changed');
 });
+
+it('refuses a legacy read after index admission', async () => {
+  vi.mocked(repository.getActive).mockResolvedValue(undefined);
+  const read = await repository.captureRead();
+  await read.assertCurrent();
+  vi.mocked(repository.getActive).mockResolvedValue(binding);
+  await expect(read.assertCurrent()).rejects.toThrow('desktop_clip_index_changed');
+});
+it('snapshots the complete admitted binding for a read', async () => {
+  const mutable = structuredClone(binding);
+  vi.mocked(repository.getActive).mockResolvedValue(mutable);
+  const read = await repository.captureRead();
+  mutable.space.visualModelKey = `clip:${'f'.repeat(64)}`;
+  await expect(read.assertCurrent()).rejects.toThrow('desktop_clip_index_changed');
+});

@@ -377,6 +377,7 @@ export class SearchService extends BaseService {
     }
 
     const userIds = this.getUserIdsToSearch(auth);
+    const read = await this.machineLearningRepository.captureClipRead();
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size || 100;
@@ -395,6 +396,7 @@ export class SearchService extends BaseService {
       },
     );
 
+    await read.assertCurrent();
     return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
   }
 
@@ -548,6 +550,7 @@ export class SearchService extends BaseService {
       throw new BadRequestException('Smart search is not enabled');
     }
 
+    const read = await this.machineLearningRepository.captureClipRead();
     const [{ filter, scope }, embedding] = await Promise.all([
       this.resolveSearchScopeV3(auth, dto),
       this.resolveEmbedding(auth, dto, machineLearning),
@@ -567,6 +570,7 @@ export class SearchService extends BaseService {
       scope,
     );
 
+    await read.assertCurrent();
     return this.mapResponse(items, { auth });
   }
 

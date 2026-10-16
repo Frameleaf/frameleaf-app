@@ -20,6 +20,40 @@ const mockTagUpserts = (mocks: ServiceMocks) => {
 };
 
 describe(ZeroShotTaggingService.name, () => {
+  it('notifies direct callers only after the guarded database commit', async () => {
+    const { sut, mocks } = newTestService(ZeroShotTaggingService);
+    withConfig(mocks, { clip: { modelName: 'guarded-commit-notification' } });
+    mocks.machineLearning.encodeText.mockResolvedValue(EMBEDDING);
+    mockTagUpserts(mocks);
+    let committed = false;
+    const observed: boolean[] = [];
+    mocks.event.emit.mockImplementation(() => {
+      observed.push(committed);
+      return Promise.resolve();
+    });
+    await sut.tagAsset(ASSET_ID, OWNER_ID, EMBEDDING, {
+      assertCurrent: () => Promise.resolve(),
+      publish: async (write) => {
+        const result = await write();
+        committed = true;
+        return result;
+      },
+    });
+    expect(observed).toEqual([true]);
+  });
+
+  it('retains the caller snapshot when a stored embedding was read before admission', async () => {
+    const { sut, mocks } = newTestService(ZeroShotTaggingService);
+    withConfig(mocks, { clip: { modelName: 'caller-snapshot-model' } });
+    mocks.machineLearning.encodeText.mockResolvedValue(EMBEDDING);
+    mockTagUpserts(mocks);
+    await sut.tagAsset(ASSET_ID, OWNER_ID, EMBEDDING, {
+      assertCurrent: () => Promise.reject(new Error('desktop_clip_index_changed')),
+      publish: () => Promise.reject(new Error('desktop_clip_index_changed')),
+    });
+    expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
+  });
+
   it('prepares queued ML tags without writes and publishes tags only inside accepted adoption', async () => {
     const { sut, mocks } = newTestService(ZeroShotTaggingService);
     withConfig(mocks, { clip: { modelName: 'queued-publication-model' } });

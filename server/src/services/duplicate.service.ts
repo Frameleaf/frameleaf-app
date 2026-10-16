@@ -665,79 +665,81 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const publish = async (): Promise<JobStatus> => {
-      const tx = publicationTransaction.getStore();
-      if (tx) {
-        // Group merges can touch siblings not returned by the nearest-neighbour query.
-        // Lock this owner's rows in stable order before reading matching/manual resolution state.
-        const owner = await tx.selectFrom('asset').select('ownerId').where('id', '=', id).executeTakeFirst();
-        if (owner)
-          await tx
-            .selectFrom('asset')
-            .select('id')
-            .where('ownerId', '=', owner.ownerId)
-            .orderBy('id')
-            .forUpdate()
-            .execute();
-      }
-      const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
-      if (!asset) {
-        this.logger.error(`Asset ${id} not found`);
-        return JobStatus.Failed;
-      }
+    const read = await this.machineLearningRepository.captureClipRead();
+    const publish = (): Promise<JobStatus> =>
+      read.publish(async () => {
+        const tx = publicationTransaction.getStore();
+        if (tx) {
+          // Group merges can touch siblings not returned by the nearest-neighbour query.
+          // Lock this owner's rows in stable order before reading matching/manual resolution state.
+          const owner = await tx.selectFrom('asset').select('ownerId').where('id', '=', id).executeTakeFirst();
+          if (owner)
+            await tx
+              .selectFrom('asset')
+              .select('id')
+              .where('ownerId', '=', owner.ownerId)
+              .orderBy('id')
+              .forUpdate()
+              .execute();
+        }
+        const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
+        if (!asset) {
+          this.logger.error(`Asset ${id} not found`);
+          return JobStatus.Failed;
+        }
 
-      if (asset.stackId) {
-        this.logger.debug(`Asset ${id} is part of a stack, skipping`);
-        return JobStatus.Skipped;
-      }
+        if (asset.stackId) {
+          this.logger.debug(`Asset ${id} is part of a stack, skipping`);
+          return JobStatus.Skipped;
+        }
 
-      if (asset.visibility === AssetVisibility.Hidden) {
-        this.logger.debug(`Asset ${id} is not visible, skipping`);
-        return JobStatus.Skipped;
-      }
+        if (asset.visibility === AssetVisibility.Hidden) {
+          this.logger.debug(`Asset ${id} is not visible, skipping`);
+          return JobStatus.Skipped;
+        }
 
-      if (asset.visibility === AssetVisibility.Locked) {
-        this.logger.debug(`Asset ${id} is locked, skipping`);
-        return JobStatus.Skipped;
-      }
+        if (asset.visibility === AssetVisibility.Locked) {
+          this.logger.debug(`Asset ${id} is locked, skipping`);
+          return JobStatus.Skipped;
+        }
 
-      if (!asset.embedding) {
-        this.logger.debug(`Asset ${id} is missing embedding`);
-        return JobStatus.Failed;
-      }
+        if (!asset.embedding) {
+          this.logger.debug(`Asset ${id} is missing embedding`);
+          return JobStatus.Failed;
+        }
 
-      let duplicateAssets = await this.duplicateRepository.search({
-        assetId: asset.id,
-        embedding: asset.embedding,
-        maxDistance: machineLearning.duplicateDetection.maxDistance,
-        type: asset.type,
-        userIds: [asset.ownerId],
+        let duplicateAssets = await this.duplicateRepository.search({
+          assetId: asset.id,
+          embedding: asset.embedding,
+          maxDistance: machineLearning.duplicateDetection.maxDistance,
+          type: asset.type,
+          userIds: [asset.ownerId],
+        });
+
+        if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
+          duplicateAssets = await this.filterConfirmedVideoDuplicates(
+            asset,
+            duplicateAssets,
+            machineLearning.duplicateDetection,
+          );
+        }
+
+        let assetIds = [asset.id];
+        if (duplicateAssets.length > 0) {
+          this.logger.debug(
+            `Found ${duplicateAssets.length} duplicate${duplicateAssets.length === 1 ? '' : 's'} for asset ${asset.id}`,
+          );
+          assetIds = await this.updateDuplicates(asset, duplicateAssets);
+        } else if (asset.duplicateId) {
+          this.logger.debug(`No duplicates found for asset ${asset.id}, removing duplicateId`);
+          await this.assetRepository.update({ id: asset.id, duplicateId: null });
+        }
+
+        const duplicatesDetectedAt = new Date();
+        await this.assetRepository.upsertJobStatus(...assetIds.map((assetId) => ({ assetId, duplicatesDetectedAt })));
+
+        return JobStatus.Success;
       });
-
-      if (asset.type === AssetType.Video && duplicateAssets.length > 0) {
-        duplicateAssets = await this.filterConfirmedVideoDuplicates(
-          asset,
-          duplicateAssets,
-          machineLearning.duplicateDetection,
-        );
-      }
-
-      let assetIds = [asset.id];
-      if (duplicateAssets.length > 0) {
-        this.logger.debug(
-          `Found ${duplicateAssets.length} duplicate${duplicateAssets.length === 1 ? '' : 's'} for asset ${asset.id}`,
-        );
-        assetIds = await this.updateDuplicates(asset, duplicateAssets);
-      } else if (asset.duplicateId) {
-        this.logger.debug(`No duplicates found for asset ${asset.id}, removing duplicateId`);
-        await this.assetRepository.update({ id: asset.id, duplicateId: null });
-      }
-
-      const duplicatesDetectedAt = new Date();
-      await this.assetRepository.upsertJobStatus(...assetIds.map((assetId) => ({ assetId, duplicatesDetectedAt })));
-
-      return JobStatus.Success;
-    };
     if (
       deferJobAdoption(async () => {
         if ((await publish()) === JobStatus.Failed) throw new Error('Duplicate matching could not be published');
