@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
 
 export type AlbumSyncState = {
@@ -255,7 +256,7 @@ export class ICloudAlbumRepository {
     limit: number,
     config: ICloudConfig,
   ): Promise<boolean> {
-    const { rows } = await sql<Membership>`SELECT m.*,s."albumId" AS "targetAlbumId",r."assetId" AS "targetAssetId"
+    const selection = sql<Membership>`SELECT m.*,s."albumId" AS "targetAlbumId",r."assetId" AS "targetAssetId"
       FROM public.icloud_membership m JOIN public.icloud_album s
         ON s."connectionId"=m."connectionId" AND s."libraryKey"=m."libraryKey" AND s."sourceId"=m."sourceAlbumId" AND NOT s.deleted
       LEFT JOIN LATERAL (SELECT r."assetId" FROM public.icloud_resource r JOIN asset a ON a.id=r."assetId"
@@ -273,37 +274,49 @@ export class ICloudAlbumRepository {
           OR (NOT m."sourcePresent" AND m."addedBySync" AND m."albumId" IS NOT NULL AND m."assetId" IS NOT NULL
             AND EXISTS(SELECT 1 FROM public.icloud_checkpoint c WHERE c."connectionId"=m."connectionId"
               AND c.scope='memberships:' || m."libraryKey" || ':' || m."sourceAlbumId" AND c.complete)))
-      ORDER BY m."libraryKey",m."sourceAlbumId",m."sourceAssetId" LIMIT ${limit}`.execute(db);
-    for (const row of rows) {
-      if (row.addedBySync && row.albumId && row.assetId) {
-        await sql`DELETE FROM album_asset aa WHERE aa."albumId"=${row.albumId}::uuid AND aa."assetId"=${row.assetId}::uuid
+      ORDER BY m."libraryKey",m."sourceAlbumId",m."sourceAssetId" LIMIT ${limit}`;
+    const candidates = (await selection.execute(db)).rows;
+    if (candidates.length === 0) return candidates.length < limit;
+    const albumIds = new Set(
+      candidates.flatMap(({ albumId, targetAlbumId }) => [albumId, targetAlbumId]).filter((id): id is string => !!id),
+    );
+    return new AlbumRepository(db).withMembershipWrite([...albumIds], async () => {
+      // A manual removal ends source ownership; reread it after that writer releases the album.
+      const { rows } = await selection.execute(db);
+      if (rows.some(({ albumId, targetAlbumId }) => [albumId, targetAlbumId].some((id) => id && !albumIds.has(id)))) {
+        throw new ConflictException('icloud_album_membership_changed');
+      }
+      for (const row of rows) {
+        if (row.addedBySync && row.albumId && row.assetId) {
+          await sql`DELETE FROM album_asset aa WHERE aa."albumId"=${row.albumId}::uuid AND aa."assetId"=${row.assetId}::uuid
           AND EXISTS(SELECT 1 FROM album_user u WHERE u."albumId"=aa."albumId" AND u."userId"=${ownerId}::uuid AND u.role='owner')
           AND EXISTS(SELECT 1 FROM asset a WHERE a.id=aa."assetId" AND a."ownerId"=${ownerId}::uuid)
           AND NOT EXISTS(SELECT 1 FROM public.icloud_membership other WHERE other."albumId"=aa."albumId" AND other."assetId"=aa."assetId"
             AND (other."sourcePresent" OR NOT other."addedBySync")
             AND (other."connectionId",other."libraryKey",other."sourceAlbumId",other."sourceAssetId") IS DISTINCT FROM
               (${connectionId}::uuid,${row.libraryKey},${row.sourceAlbumId},${row.sourceAssetId}))`.execute(db);
-      }
-      let inserted = false;
-      if (row.sourcePresent && row.targetAlbumId && row.targetAssetId) {
-        inserted =
-          (await sql`INSERT INTO album_asset ("albumId","assetId") VALUES (${row.targetAlbumId}::uuid,${row.targetAssetId}::uuid)
-          ON CONFLICT DO NOTHING RETURNING "assetId"`
-            .execute(db)
-            .then(({ rows }) => rows.length)) > 0;
-        if (!inserted) {
+        }
+        let inserted = false;
+        if (row.sourcePresent && row.targetAlbumId && row.targetAssetId) {
           inserted =
-            (await sql`SELECT 1 FROM public.icloud_membership WHERE "albumId"=${row.targetAlbumId}::uuid
-            AND "assetId"=${row.targetAssetId}::uuid AND "addedBySync" AND "sourcePresent" LIMIT 1`
+            (await sql`INSERT INTO album_asset ("albumId","assetId") VALUES (${row.targetAlbumId}::uuid,${row.targetAssetId}::uuid)
+          ON CONFLICT DO NOTHING RETURNING "assetId"`
               .execute(db)
               .then(({ rows }) => rows.length)) > 0;
+          if (!inserted) {
+            inserted =
+              (await sql`SELECT 1 FROM public.icloud_membership WHERE "albumId"=${row.targetAlbumId}::uuid
+            AND "assetId"=${row.targetAssetId}::uuid AND "addedBySync" AND "sourcePresent" LIMIT 1`
+                .execute(db)
+                .then(({ rows }) => rows.length)) > 0;
+          }
         }
-      }
-      await sql`UPDATE public.icloud_membership SET "albumId"=${row.sourcePresent ? row.targetAlbumId : null}::uuid,
+        await sql`UPDATE public.icloud_membership SET "albumId"=${row.sourcePresent ? row.targetAlbumId : null}::uuid,
         "assetId"=${row.sourcePresent ? row.targetAssetId : null}::uuid,"addedBySync"=${inserted}
         WHERE "connectionId"=${connectionId}::uuid AND "libraryKey"=${row.libraryKey} AND "sourceAlbumId"=${row.sourceAlbumId}
           AND "sourceAssetId"=${row.sourceAssetId}`.execute(db);
-    }
-    return rows.length < limit;
+      }
+      return rows.length < limit;
+    });
   }
 }

@@ -422,6 +422,10 @@ export class AlbumRepository {
           AS removed("albumId", "assetId")
       WHERE provenance."linkId" = link.id AND link."albumId" = removed."albumId"
         AND provenance."assetId" = removed."assetId"`.execute(this.db);
+    await sql`UPDATE public.icloud_membership provenance SET "addedBySync"=false
+      FROM unnest(${removed.map(({ albumId }) => albumId)}::uuid[], ${removed.map(({ assetId }) => assetId)}::uuid[])
+        AS removed("albumId", "assetId")
+      WHERE provenance."albumId"=removed."albumId" AND provenance."assetId"=removed."assetId"`.execute(this.db);
   }
   /**
    * Get asset IDs for the given album ID.

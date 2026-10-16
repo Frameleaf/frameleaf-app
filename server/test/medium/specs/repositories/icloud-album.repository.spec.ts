@@ -1,6 +1,7 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ICloudAlbumRepository, mergeICloudAlbum } from 'src/repositories/icloud-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
@@ -142,6 +143,112 @@ describe('iCloud album owner and provenance reconciliation (PostgreSQL)', () => 
     await finish(context);
     expect(await rows(sql`SELECT 1 FROM album_asset WHERE "albumId"=${albumId}::uuid`)).toHaveLength(0);
   });
+  it.each(['single', 'all'])(
+    'preserves a manual re-add after %s removal when the iCloud source later drops the item',
+    async (mode) => {
+      const context = await arrange();
+      await source(context.connectionId, 'album');
+      await finish(context);
+      const albumId = await mapped(context.connectionId, 'album');
+      const assetId = await membership(context, 'logical');
+      await finish(context);
+      const albums = new AlbumRepository(db);
+      if (mode === 'single') await albums.removeAssetIds(albumId, [assetId]);
+      else await albums.removeAssetsFromAll([assetId]);
+      await albums.addAssetIds(albumId, [assetId]);
+      expect(
+        await first(
+          sql`SELECT "addedBySync" FROM public.icloud_membership WHERE "connectionId"=${context.connectionId}::uuid`,
+        ),
+      ).toEqual({ addedBySync: false });
+      await sql`UPDATE public.icloud_membership SET "sourcePresent"=false WHERE "connectionId"=${context.connectionId}::uuid`.execute(
+        db,
+      );
+      await sql`INSERT INTO public.icloud_checkpoint("connectionId",scope,complete,"snapshotId") VALUES(${context.connectionId}::uuid,'memberships:private:album',true,${randomUUID()}::uuid)`.execute(
+        db,
+      );
+      await finish(context);
+      expect(await rows(sql`SELECT "assetId" FROM album_asset WHERE "albumId"=${albumId}::uuid`)).toEqual([
+        { assetId },
+      ]);
+    },
+  );
+
+  it('rereads manual ownership after waiting for a remove/readd on a separate connection', async () => {
+    const context = await arrange();
+    await source(context.connectionId, 'album');
+    await finish(context);
+    const albumId = await mapped(context.connectionId, 'album');
+    const assetId = await membership(context, 'logical');
+    await finish(context);
+    await sql`UPDATE public.icloud_membership SET "sourcePresent"=false WHERE "connectionId"=${context.connectionId}::uuid`.execute(
+      db,
+    );
+    await sql`INSERT INTO public.icloud_checkpoint("connectionId",scope,complete,"snapshotId") VALUES(${context.connectionId}::uuid,'memberships:private:album',true,${randomUUID()}::uuid)`.execute(
+      db,
+    );
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const connection = Promise.withResolvers<number>();
+    let manual: Promise<void> | undefined;
+    let sync: Promise<unknown> | undefined;
+    try {
+      manual = db.transaction().execute((tx) =>
+        new AlbumRepository(tx).withMembershipWrite([albumId], async (_tx, albums) => {
+          await albums.removeAssetIds(albumId, [assetId]);
+          await albums.addAssetIds(albumId, [assetId]);
+          entered.resolve();
+          await release.promise;
+        }),
+      );
+      await Promise.race([
+        entered.promise,
+        manual.then(() => {
+          throw new Error('Manual writer did not enter');
+        }),
+      ]);
+      sync = db
+        .connection()
+        .execute(async (db) => {
+          const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(db);
+          connection.resolve(rows[0].pid);
+          return new ICloudAlbumRepository(db).reconcile(context.connectionId, context.ownerId);
+        })
+        .then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+      const pid = await Promise.race([
+        connection.promise,
+        sync.then(() => {
+          throw new Error('Sync did not enter its connection');
+        }),
+      ]);
+      await vi.waitFor(
+        async () => {
+          const { rows } = await sql<{ blocked: boolean }>`SELECT cardinality(pg_blocking_pids(${pid}::int)) > 0
+          AND query LIKE '%for no key update%' AS blocked FROM pg_stat_activity WHERE pid=${pid}::int`.execute(db);
+          expect(rows[0]?.blocked).toBe(true);
+        },
+        { timeout: 5000, interval: 25 },
+      );
+      release.resolve();
+      await manual;
+      expect(await sync).toEqual({ value: true });
+      expect(await rows(sql`SELECT "assetId" FROM album_asset WHERE "albumId"=${albumId}::uuid`)).toEqual([
+        { assetId },
+      ]);
+      expect(
+        await first(
+          sql`SELECT "addedBySync" FROM public.icloud_membership WHERE "connectionId"=${context.connectionId}::uuid`,
+        ),
+      ).toEqual({ addedBySync: false });
+    } finally {
+      release.resolve();
+      await Promise.allSettled([manual, sync].filter((value): value is Promise<unknown> => !!value));
+    }
+  });
+
   it('leaves manual collision provenance false and preserves manual membership', async () => {
     const context = await arrange();
     await source(context.connectionId, 'album');
