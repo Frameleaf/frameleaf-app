@@ -10,7 +10,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, type MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
-import * as destinationSelection from 'src/utils/ml-destination.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newTestService } from 'test/utils.js';
 
 const catalogue = JSON.parse(
@@ -224,7 +224,16 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
     selectRoutedMlDestination: () => Promise<MlSelection>;
   };
   vi.spyOn(hooks, 'getConfig').mockResolvedValue(settings);
-  vi.spyOn(destinationSelection, 'selectMlDestination').mockResolvedValue(selection);
+  mocks.mlDestination.getById.mockResolvedValue({
+    ...mlDestinationStub.local,
+    id: selection.destinationId,
+    url: selection.endpoint.url,
+  });
+  mocks.mlDestination.getRoute.mockResolvedValue({
+    workload: MlWorkload.Clip,
+    destinationId: selection.destinationId,
+  } as never);
+  mocks.machineLearning.probe.mockRejectedValue(new Error('NAS backend is unavailable'));
   const policies = {
     snapshot: vi.fn().mockResolvedValue({ accounts: { [ownerId]: { revisionId: 'consent' } } }),
     assertCurrent: vi.fn(),
@@ -271,6 +280,7 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
         modelKey: visual.modelKey,
       });
       expect(repository.create).toHaveBeenCalledOnce();
+      expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();
     });
   } finally {
