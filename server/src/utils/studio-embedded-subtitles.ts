@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import z from 'zod';
 import { isTranscriptSubtitleItem } from '#studio-subtitle-sidecar';
+import { studioExportFormatSpec } from 'src/utils/studio-export-formats.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import {
   type StudioSidecarSeal,
@@ -12,13 +13,16 @@ import {
 const CueSchema = z
   .object({ startMs: z.int().nonnegative(), endMs: z.int().positive(), text: z.string().min(1) })
   .strict();
+/** The caption track each container carries (FL-105): timed text in MP4/MOV, SubRip in MKV, WebVTT in WebM. */
+const TEXT_TRACKS = { mp4: 'mov_text', mov: 'mov_text', mkv: 'subrip', webm: 'webvtt' } as const;
+
 /** Embedded track authority uses the same immutable, range-clipped cue producer as SRT. */
 export const StudioEmbeddedSubtitleSealSchema = z
   .object({
     version: z.literal(1),
     mode: z.literal('embedded'),
-    container: z.literal('mp4'),
-    codec: z.literal('mov_text'),
+    container: z.enum(['mp4', 'mov', 'mkv', 'webm']),
+    codec: z.enum(['mov_text', 'subrip', 'webvtt']),
     language: z.literal('und'),
     default: z.literal(1),
     forced: z.literal(0),
@@ -27,7 +31,11 @@ export const StudioEmbeddedSubtitleSealSchema = z
   })
   .strict()
   .refine(
-    (seal) => !seal.source.zeroCue && seal.source.cueCount > 0 && BigInt(seal.source.sizeInBytes) <= 1024n * 1024n,
+    (seal) =>
+      TEXT_TRACKS[seal.container] === seal.codec &&
+      !seal.source.zeroCue &&
+      seal.source.cueCount > 0 &&
+      BigInt(seal.source.sizeInBytes) <= 1024n * 1024n,
   );
 export type StudioEmbeddedSubtitleSeal = z.infer<typeof StudioEmbeddedSubtitleSealSchema>;
 
@@ -35,7 +43,13 @@ export function sealStudioEmbeddedSubtitles(
   graph: Record<string, unknown>,
   binding: Pick<StudioSidecarSeal, 'revisionDigest' | 'manifestDigest' | 'engineDigest'>,
   range?: { inPoint: number; outPoint: number },
+  format = 'mp4-h264',
 ): StudioEmbeddedSubtitleSeal {
+  const spec = studioExportFormatSpec(format);
+  const container = spec?.kind === 'video' && spec.textTrack ? (spec.container as keyof typeof TEXT_TRACKS) : null;
+  if (!container || !Object.hasOwn(TEXT_TRACKS, container)) {
+    throw new Error('This format has no caption track');
+  }
   const source = sealStudioSidecar(graph, binding, range);
   const plan = buildStudioSidecarSemanticPlan(graph, range);
   // V1 carries timing/text/provenance only. Unknown rendering fields must not
@@ -82,7 +96,7 @@ export function sealStudioEmbeddedSubtitles(
     // contribute no output cues and ordinary titles retain their behavior.
     const contribution = buildStudioSidecarSemanticPlan({ ...graph, timeline: { ...timeline, items: [item] } }, range);
     if (contribution.cueCount > 0)
-      throw new Error('Embedded MP4 text cannot preserve authored caption styling or rendering fields');
+      throw new Error('An embedded caption track cannot preserve authored caption styling or rendering fields');
   }
   const cues = plan.cues.map((cue) => ({
     startMs: Math.round(cue.startSeconds * 1000),
@@ -99,12 +113,12 @@ export function sealStudioEmbeddedSubtitles(
         cue.text.includes('\n\n'),
     )
   )
-    throw new Error('MP4 timed text requires nonempty plain captions without overlapping cues');
+    throw new Error('An embedded caption track requires nonempty plain captions without overlapping cues');
   return StudioEmbeddedSubtitleSealSchema.parse({
     version: 1,
     mode: 'embedded',
-    container: 'mp4',
-    codec: 'mov_text',
+    container,
+    codec: TEXT_TRACKS[container],
     language: 'und',
     default: 1,
     forced: 0,
@@ -154,7 +168,7 @@ export function findEmbeddedSubtitleMismatch(
     measured.streams.length !== 1 ||
     !stream ||
     stream.codec !== seal.codec ||
-    stream.language !== seal.language ||
+    (stream.language ?? 'und') !== seal.language ||
     stream.default !== seal.default ||
     stream.forced !== seal.forced
   )

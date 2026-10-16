@@ -111,6 +111,7 @@ import {
 } from 'src/utils/render-admission.js';
 import { RenderArtifact, openRenderArtifact, receiveRenderArtifact } from 'src/utils/render-artifact.js';
 import { sameTimeBase } from 'src/utils/studio-export-contract.js';
+import { studioExportFormatSpec } from 'src/utils/studio-export-formats.js';
 import { studioFontFileInputId } from 'src/utils/studio-fonts.js';
 import { StudioDestination, isStudioDestination } from 'src/utils/studio-resources.js';
 import { sidecarSealOf } from 'src/utils/studio-subtitle-sidecar.js';
@@ -1390,16 +1391,8 @@ export class RenderWorkerService {
       }
       await this.artifactContext(sessionToken, operation.id, dto.claimToken);
       const artifact = await this.verifyCompletedArtifact(sessionToken, operation);
-      const contentTypes: Record<string, string> = {
-        'sdr-jpeg': 'image/jpeg',
-        'hdr-jpeg': 'image/jpeg',
-        'hdr-heic': 'image/heic',
-        'mp4-hevc-main10': 'video/mp4',
-        'mp4-h264': 'video/mp4',
-        'webm-av1': 'video/webm',
-        'prores-422-hq': 'video/quicktime',
-      };
-      const contentType = contentTypes[String(asObject(operation.settings).format)];
+      // Container type comes from the server-selected export format, never from the worker.
+      const contentType = studioExportFormatSpec(asObject(operation.settings).format)?.contentType;
       if (!contentType) {
         throw new BadRequestException('Unknown export format');
       }

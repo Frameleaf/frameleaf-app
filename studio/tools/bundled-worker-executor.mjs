@@ -7,9 +7,10 @@
 // from an attempt that lost its lease (a restarted container) is reused, never re-rendered.
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { holdLease } from './bundled-worker-client.mjs';
+import { audioPlan, encodeArgs, runFfmpeg } from './bundled-worker-formats.mjs';
 import { BundledRefusal, bundledRecipe, outputMismatch } from './bundled-worker-recipe.mjs';
 
 const MEDIA_INPUT_KINDS = new Set(['library-asset', 'project-import']);
@@ -26,7 +27,8 @@ const sha256File = async (file) => {
  * @param claim the server's claim
  * @param context.client a worker client with the session (`createWorkerClient`)
  * @param context.renderer `{ softwareRenderer, render({ project, media, settings, bounds, outputPath, signal, onProgress }) }`
- * @param context.probe `(file) => Promise<ffprobe streams>`
+ * @param context.probe `(file) => Promise<{ streams, format }>` (`probeMedia`)
+ * @param context.ffmpeg the ffmpeg binary for second-pass formats (default `ffmpeg`)
  * @param context.workRoot where private per-claim directories are made
  * @param context.maxInputBytes the byte budget for all of a claim's inputs together
  */
@@ -50,7 +52,7 @@ export async function executeBundledClaim(claim, context) {
   let failure;
   try {
     await lease.beat();
-    const recipe = bundledRecipe(claim, { softwareRenderer: renderer.softwareRenderer });
+    const recipe = bundledRecipe(claim, { softwareRenderer: renderer.softwareRenderer, writers: renderer.writers });
     const resumable = claim.checkpoints?.find(
       (checkpoint) => checkpoint.sequence === 0 && checkpoint.chunkKey === recipe.chunkKey && checkpoint.state === 'complete',
     );
@@ -77,15 +79,26 @@ export async function executeBundledClaim(claim, context) {
       if (claim.limits?.maxOutputBytes && BigInt(size) > BigInt(claim.limits.maxOutputBytes)) {
         throw new BundledRefusal('output_too_large', 'The rendered export is larger than this server allows.');
       }
-      lease.assertLive();
-      const uploaded = await client.uploadArtifact(
-        claim.operationId,
-        claim.claimToken,
-        outputPath,
-        { chunkKey: recipe.chunkKey, checksum: await sha256File(outputPath), sizeInBytes: String(size) },
-        { signal: lease.signal },
-      );
-      if (!uploaded?.accepted) throw new BundledRefusal('artifact_refused', 'The server refused the rendered file.');
+      // A sidecar export is a sealed pair: the media and the SRT the server sealed, uploaded as its sibling.
+      const files = [{ file: outputPath, size, role: undefined }];
+      if (recipe.captions.mode === 'sidecar') {
+        const captions = path.join(folder, 'captions.srt');
+        await writeFile(captions, recipe.captions.content, { flag: 'wx', mode: 0o600 });
+        files.push({ file: captions, size: Buffer.byteLength(recipe.captions.content), role: 'subtitle' });
+      }
+      for (const { file, size: bytes, role } of files) {
+        lease.assertLive();
+        const uploaded = await client.uploadArtifact(
+          claim.operationId,
+          claim.claimToken,
+          file,
+          { chunkKey: recipe.chunkKey, checksum: await sha256File(file), sizeInBytes: String(bytes), ...(role && { role }) },
+          { signal: lease.signal },
+        );
+        if (!uploaded?.accepted) {
+          throw new BundledRefusal('artifact_refused', `The server refused the rendered ${role === 'subtitle' ? 'caption file' : 'file'}.`);
+        }
+      }
     }
 
     await lease.beat();
@@ -142,7 +155,7 @@ async function settleFailure(claim, client, { failure, cancelled, reason, log })
 
 /** Read the claim's inputs, render with the engine and check the encoded file. Returns its path. */
 async function renderClaim(claim, recipe, context) {
-  const { client, renderer, probe, folder, lease, post, maxInputBytes, onBytes } = context;
+  const { client, renderer, probe, folder, lease, post, maxInputBytes, onBytes, ffmpeg = 'ffmpeg' } = context;
   const inputs = path.join(folder, 'inputs');
   await mkdir(inputs, { mode: 0o700 });
   const files = new Map();
@@ -180,13 +193,13 @@ async function renderClaim(claim, recipe, context) {
 
   await post('/progress', { status: 'rendering', processedUnits: 0, totalUnits: recipe.frames });
   let reported = 0;
-  const outputPath = path.join(folder, 'export.mp4');
+  const engineOutput = path.join(folder, recipe.pass === 'engine' ? 'export.mp4' : 'master.mp4');
   await renderer.render({
     project: recipe.graph,
     files,
     settings: recipe.settings,
     bounds: recipe.bounds,
-    outputPath,
+    outputPath: engineOutput,
     signal: lease.signal,
     onProgress: (fraction) => {
       const processed = Math.min(recipe.frames, Math.floor(fraction * recipe.frames));
@@ -197,8 +210,46 @@ async function renderClaim(claim, recipe, context) {
     },
   });
   lease.assertLive();
+  let outputPath = engineOutput;
+  if (recipe.pass !== 'engine') {
+    outputPath = await secondPass(recipe, engineOutput, { ...context, ffmpeg });
+    await rm(engineOutput, { force: true });
+  }
   onBytes((await stat(outputPath)).size);
   const mismatch = outputMismatch(recipe, await probe(outputPath));
   if (mismatch) throw new BundledRefusal('output_mismatch', `The export was not written as promised: ${mismatch}.`);
   return outputPath;
+}
+
+/**
+ * FL-105: write the requested format from the engine's master with this container's ffmpeg: a
+ * stream copy for H.264 and AAC, an encode for every other codec, plus the sealed caption track.
+ */
+async function secondPass(recipe, master, { probe, folder, lease, ffmpeg, renderer }) {
+  const masterAudio = (await probe(master)).streams.find((stream) => stream.codec_type === 'audio') ?? null;
+  const audio = audioPlan(recipe.target, masterAudio, new Set(renderer.encoders ?? ['libopus']));
+  if (audio.refusal) throw new BundledRefusal('unsupported_audio', audio.refusal);
+  if (recipe.target.kind === 'audio' && !masterAudio) {
+    throw new BundledRefusal('no_audio', 'The engine wrote no sound for this project, so there is nothing to export.');
+  }
+  let subtitles;
+  if (recipe.captions.mode === 'embedded') {
+    subtitles = path.join(folder, 'track.srt');
+    await writeFile(subtitles, recipe.captions.content, { flag: 'wx', mode: 0o600 });
+  }
+  const output = path.join(folder, `export${recipe.target.extension}`);
+  lease.assertLive();
+  try {
+    await runFfmpeg(
+      encodeArgs({ input: master, output, format: recipe.target, encoder: recipe.encoder, quality: recipe.quality, audio, subtitles }),
+      { ffmpeg, signal: lease.signal },
+    );
+  } catch (error) {
+    if (lease.signal.aborted) throw lease.signal.reason;
+    throw new BundledRefusal(
+      'encode_failed',
+      `This machine-learning container could not write ${recipe.target.id} (${String(error.stderr || error.message).trim().split('\n')[0]}).`,
+    );
+  }
+  return output;
 }

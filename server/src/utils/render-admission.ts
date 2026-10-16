@@ -21,6 +21,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReason } from 'src/enum.js';
 import { isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
+import { studioExportFormatSpec } from 'src/utils/studio-export-formats.js';
 
 /* ------------------------------------------------------------------ */
 /* Seams                                                                */
@@ -347,7 +348,7 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
   }
 
   const output = requiredOutput(operation.settings);
-  if (output?.profile) {
+  if (output?.profiles) {
     // An unexpired credential may outlive its measurement or an admin enrollment change.
     // Only paired Sidecar output requires this stronger current-session qualification.
     if (
@@ -368,11 +369,7 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
   }
 
   const gpuHint = snapshotNumber(operation.snapshot, 'gpuMemoryHintBytes');
-  const resolution = operation.settings?.resolution;
-  const requiredMemory =
-    typeof resolution === 'string' && Object.hasOwn(RENDER_MEMORY_BY_RESOLUTION, resolution)
-      ? RENDER_MEMORY_BY_RESOLUTION[resolution]
-      : undefined;
+  const requiredMemory = renderMemoryOf(operation.settings);
   if (
     requiredMemory === undefined ||
     session.gpuMemoryBytes === null ||
@@ -434,63 +431,32 @@ export const evaluateRunningLimits = ({
   return ADMIT;
 };
 
+/** Legacy paired-output profiles: MP4/H.264 at 720p, high quality, preserved audio (FL-105 v1). */
+export const LEGACY_SIDECAR_PROFILE = 'mp4-h264+srt-sidecar-v1';
+export const LEGACY_EMBEDDED_PROFILE = 'mp4-h264+mov-text-v1';
 /**
- * The encoder family and container each Studio export format writes (`STUDIO_EXPORT_FORMATS`).
- * A worker proves a family by reporting any encoder whose name carries one of its tokens, so
- * `hevc_nvenc`, `libx265` and `hevc_vaapi` all prove HEVC.
+ * FL-105 / FL-408: paired output for every SDR video format, resolution and quality. A worker that
+ * names these writes the sealed SRT sibling, or the sealed cues as the container's own text track.
  */
-/**
- * Verified writer identities that can write each export format: ffmpeg encoders and the
- * measured browser WebCodecs AVC writer. Evidence must name one of them
- * exactly: a decoder such as `h264_cuvid` or `hevc_qsv`'s decode-only sibling proves nothing about
- * writing the format, so substring matching is not allowed.
- */
-const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; container: string }>> = {
-  'mp4-hevc-main10': {
-    codec: [
-      'libx265',
-      'hevc_nvenc',
-      'hevc_qsv',
-      'hevc_vaapi',
-      'hevc_videotoolbox',
-      'hevc_amf',
-      'hevc_rkmpp',
-      'hevc_v4l2m2m',
-    ],
-    container: 'mp4',
-  },
-  'mp4-h264': {
-    codec: [
-      // Explicit encoder evidence from a real WebCodecs AVC encode, never a decoder name.
-      'webcodecs-avc',
-      'libx264',
-      'h264_nvenc',
-      'h264_qsv',
-      'h264_vaapi',
-      'h264_videotoolbox',
-      'h264_amf',
-      'h264_rkmpp',
-      'h264_v4l2m2m',
-    ],
-    container: 'mp4',
-  },
-  'webm-av1': {
-    codec: ['libsvtav1', 'libaom-av1', 'librav1e', 'av1_nvenc', 'av1_qsv', 'av1_vaapi', 'av1_amf'],
-    container: 'webm',
-  },
-  'sdr-jpeg': { codec: ['frameleaf-sdr-jpeg'], container: 'jpeg' },
-  'hdr-jpeg': { codec: ['frameleaf-ultrahdr-jpeg'], container: 'jpeg' },
-  'hdr-heic': { codec: ['frameleaf-heic-pq'], container: 'heic' },
-  'prores-422-hq': { codec: ['prores_ks', 'prores', 'prores_aw', 'prores_videotoolbox'], container: 'mov' },
-};
+export const SIDECAR_PROFILE = 'srt-sidecar-v2';
+export const EMBEDDED_PROFILE = 'embedded-text-v2';
 
 export type RequiredOutput = {
   format: string;
   codec: readonly string[];
   container: string;
-  profile?: string;
+  /** Any one of these must appear in the session's formats evidence. */
+  profiles?: readonly string[];
   subtitleCodec?: string;
+  /** The format id itself must appear in the evidence (FL-105 matrix formats). */
+  combination?: boolean;
 };
+
+const impossible = (format: unknown): RequiredOutput => ({
+  format: typeof format === 'string' ? format : '',
+  codec: [],
+  container: '',
+});
 
 /** What a job's output needs, or null when it names no output format. An unknown format needs the impossible. */
 export const requiredOutput = (settings: Record<string, unknown> | undefined): RequiredOutput | null => {
@@ -498,31 +464,46 @@ export const requiredOutput = (settings: Record<string, unknown> | undefined): R
   const mode = settings?.subtitleMode;
   const sidecar = mode === 'sidecar';
   const embedded = mode === 'embedded';
-  // Unknown modes and unsupported paired-output tuples cannot fall back to an ordinary writer.
-  // Graph/range authority and the semantic byte seal remain separate server declaration gates.
-  if (
-    (mode !== undefined && mode !== 'burn' && mode !== 'off' && !sidecar && !embedded) ||
-    ((sidecar || embedded) &&
-      (format !== 'mp4-h264' ||
-        settings?.color !== 'preserve' ||
-        settings?.resolution !== '720p' ||
-        (settings?.quality ?? 'high') !== 'high' ||
-        (settings?.audio ?? 'preserve') !== 'preserve'))
-  ) {
-    return { format: typeof format === 'string' ? format : '', codec: [], container: '' };
+  if (mode !== undefined && mode !== 'burn' && mode !== 'off' && !sidecar && !embedded) {
+    return impossible(format);
   }
   if (typeof format !== 'string' || format.length === 0) {
-    return null;
+    return sidecar || embedded ? impossible(format) : null;
   }
-  const known = Object.hasOwn(OUTPUT_FORMATS, format) ? OUTPUT_FORMATS[format] : undefined;
-  return known
-    ? {
-        format,
-        ...known,
-        ...(sidecar && { profile: 'mp4-h264+srt-sidecar-v1' }),
-        ...(embedded && { profile: 'mp4-h264+mov-text-v1', subtitleCodec: 'mov_text' }),
-      }
-    : { format, codec: [], container: format };
+  const spec = studioExportFormatSpec(format);
+  if (!spec) {
+    return { format, codec: [], container: format };
+  }
+  // Sound alone has no captions to burn, embed or pair.
+  if (spec.kind === 'audio' && mode !== undefined && mode !== 'off') {
+    return impossible(format);
+  }
+  const base: RequiredOutput = {
+    format,
+    codec: spec.writers,
+    container: spec.container,
+    ...(spec.combination && { combination: true }),
+  };
+  if (!sidecar && !embedded) {
+    return base;
+  }
+  // Paired output never falls back to an ordinary writer: SDR video only, and the text track must
+  // exist in the container. Graph/range authority and the semantic seal stay server declaration gates.
+  if (spec.kind !== 'video' || spec.bitDepth !== 8 || settings?.color !== 'preserve' || (embedded && !spec.textTrack)) {
+    return impossible(format);
+  }
+  const legacy =
+    format === 'mp4-h264' &&
+    settings?.resolution === '720p' &&
+    (settings?.quality ?? 'high') === 'high' &&
+    (settings?.audio ?? 'preserve') === 'preserve';
+  return sidecar
+    ? { ...base, profiles: legacy ? [LEGACY_SIDECAR_PROFILE, SIDECAR_PROFILE] : [SIDECAR_PROFILE] }
+    : {
+        ...base,
+        profiles: legacy ? [LEGACY_EMBEDDED_PROFILE, EMBEDDED_PROFILE] : [EMBEDDED_PROFILE],
+        subtitleCodec: spec.textTrack,
+      };
 };
 
 /** Did the session's evidence name one of this format's encoders, exactly, and its container? */
@@ -539,7 +520,8 @@ export const provesOutput = (
     output.codec.some((encoder) => codecs.has(encoder)) &&
     (!output.subtitleCodec || codecs.has(output.subtitleCodec)) &&
     formats.includes(output.container) &&
-    (!output.profile || capabilities.formats.includes(output.profile))
+    (!output.combination || capabilities.formats.includes(output.format)) &&
+    (!output.profiles || output.profiles.some((profile) => capabilities.formats.includes(profile)))
   );
 };
 
@@ -685,18 +667,26 @@ export const RENDER_MEMORY_BY_RESOLUTION: Readonly<Record<string, number>> = Obj
   original: 8 * 1024 ** 3,
 });
 
-/** Bit depth a format writes: Main10 and ProRes 422 HQ are 10-bit. */
-const FORMAT_BIT_DEPTH: Readonly<Record<string, number>> = Object.freeze({
-  'mp4-hevc-main10': 10,
-  'mp4-h264': 8,
-  'webm-av1': 10,
-  'prores-422-hq': 10,
-});
+/**
+ * The working memory an export needs. Sound alone composites only the smallest picture (FL-105), so
+ * it needs the 720p budget whatever resolution the request names.
+ */
+export const renderMemoryOf = (settings: Record<string, unknown> | undefined): number | undefined => {
+  const resolution = studioExportFormatSpec(settings?.format)?.kind === 'audio' ? '720p' : settings?.resolution;
+  return typeof resolution === 'string' && Object.hasOwn(RENDER_MEMORY_BY_RESOLUTION, resolution)
+    ? RENDER_MEMORY_BY_RESOLUTION[resolution]
+    : undefined;
+};
+
+/** Picture precision a format promises: Main10, 10-bit AV1 and ProRes 422 HQ are 10-bit. */
+const formatBitDepth = (format: string) => studioExportFormatSpec(format)?.bitDepth ?? 8;
 
 export type RenderOutputRequest = {
   format: string;
   color: string;
   resolution: string;
+  /** The precision the export's contract needs when its sources raise it (an HDR picture kept as is). */
+  minBitDepth?: number;
   subtitleMode?: string;
   quality?: string;
   audio?: string;
@@ -712,9 +702,9 @@ export type RenderOutputCandidate = {
   engineDigest?: string | null;
 };
 
-const colorSupported = (color: string, format: string, precision: RenderColorPrecision) => {
+const colorSupported = (color: string, format: string, precision: RenderColorPrecision, minBitDepth = 8) => {
   if (format === 'hdr-jpeg' || format === 'hdr-heic') return precision.maxBitDepth >= 10 && precision.hdr10;
-  const depth = Math.max(FORMAT_BIT_DEPTH[format] ?? 8, color === 'preserve' ? 8 : 10);
+  const depth = Math.max(formatBitDepth(format), color === 'preserve' ? 8 : 10, minBitDepth);
   if (precision.maxBitDepth < depth) {
     return false;
   }
@@ -741,9 +731,7 @@ export const evaluateRenderOutput = (
   if (candidates.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.NoQualifiedWorker };
   }
-  const neededMemory = Object.hasOwn(RENDER_MEMORY_BY_RESOLUTION, request.resolution)
-    ? RENDER_MEMORY_BY_RESOLUTION[request.resolution]
-    : undefined;
+  const neededMemory = renderMemoryOf(request);
   if (neededMemory === undefined) return { supported: false, refusal: RenderOutputRefusal.InsufficientMemory };
   const withMemory = candidates.filter(
     (candidate) =>
@@ -758,14 +746,14 @@ export const evaluateRenderOutput = (
   const withCodec = withMemory.filter(
     (candidate) =>
       !!output &&
-      (!output.profile || !!candidate.engineDigest) &&
+      (!output.profiles || !!candidate.engineDigest) &&
       provesOutput({ codecs: candidate.codecs, formats: candidate.formats ?? [] }, output),
   );
   if (withCodec.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.CodecUnavailable };
   }
   const withColor = withCodec.filter((candidate) =>
-    colorSupported(request.color, request.format, candidate.colorPrecision ?? SDR_ONLY),
+    colorSupported(request.color, request.format, candidate.colorPrecision ?? SDR_ONLY, request.minBitDepth),
   );
   if (withColor.length === 0) {
     return { supported: false, refusal: RenderOutputRefusal.IncompatibleColor };
