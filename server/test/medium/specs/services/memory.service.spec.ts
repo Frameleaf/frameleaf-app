@@ -1,6 +1,7 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buffer, text } from 'node:stream/consumers';
@@ -246,6 +247,11 @@ describe(MemoryService.name, () => {
 
   beforeEach(async () => {
     defaultDatabase = await getKyselyDB();
+  });
+
+  // several tests set the system time; none may leak a fake clock into the next
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('create', () => {
@@ -1058,7 +1064,8 @@ describe(MemoryService.name, () => {
     let mediaLocation: string;
 
     beforeEach(() => {
-      mediaLocation = mkdtempSync(join(tmpdir(), 'memory-highlight-'));
+      // the owner-restore path check compares real paths (macOS tmpdir is a symlink)
+      mediaLocation = realpathSync(mkdtempSync(join(tmpdir(), 'memory-highlight-')));
       StorageCore.reset();
       StorageCore.setMediaLocation(mediaLocation);
     });
@@ -1092,6 +1099,8 @@ describe(MemoryService.name, () => {
       });
       const { sut, ctx } = services;
       ctx.getMock(JobRepository).queue.mockResolvedValue();
+      // saving to the library queues the saved copy's metadata extraction with its commit
+      ctx.getMock(JobRepository).queueInTransaction.mockResolvedValue();
       const logger = ctx.getMock(LoggingRepository);
       const projects = new StudioProjectRepository(defaultDatabase);
       const operations = new MediaOperationRepository(defaultDatabase);
@@ -1182,8 +1191,9 @@ describe(MemoryService.name, () => {
     /** What a render worker and publication leave: a published result kept with its project. */
     const publishKept = async (context: ReturnType<typeof setupHighlight>, ownerId: string, versionId: string) => {
       const path = studioExportProjectPath(ownerId, versionId, '.mp4');
+      const bytes = Buffer.from('a highlight video');
       mkdirSync(join(path, '..'), { recursive: true });
-      writeFileSync(path, 'a highlight video');
+      writeFileSync(path, bytes);
       await defaultDatabase
         .updateTable('studio_export_version')
         .set({
@@ -1191,8 +1201,9 @@ describe(MemoryService.name, () => {
           scope: StudioExportScope.Project,
           version: 1,
           outputPath: path,
-          outputChecksum: Buffer.alloc(32, 1),
-          outputSizeInBytes: '17',
+          // saving to the library verifies the retained file against its recorded digest and size
+          outputChecksum: createHash('sha256').update(bytes).digest(),
+          outputSizeInBytes: String(bytes.length),
           outputContentType: 'video/mp4',
           privacy: { lockReason: null, scope: StudioExportScope.Project },
           publishedAt: new Date(),

@@ -96,6 +96,8 @@ const setup = () => {
   });
   ctx.getMock(JobRepository).queue.mockResolvedValue();
   ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  // tag edits made through the fixture's TagService emit AssetTag events
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
   return { sut, ctx, origins: ctx.get(PartnerOriginRepository) };
 };
 
