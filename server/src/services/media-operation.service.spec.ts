@@ -290,6 +290,32 @@ describe(MediaOperationService.name, () => {
     const lockedId = '0195e2a0-0000-7000-8000-0000000000aa';
     const visibleId = '0195e2a0-0000-7000-8000-0000000000bb';
 
+    it('rechecks Locked ids named only in the pending bulk retry list', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.Bulk,
+        result: {
+          items: [],
+          retry: { ids: [visibleId, lockedId], total: 2, processed: 0 },
+        },
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.getLockedAssetIds).mockImplementation((_ownerId, ids) =>
+        Promise.resolve(new Set(ids.filter((id) => id === lockedId))),
+      );
+
+      const ordinary = await sut.get(authStub.user1, operation.id);
+      expect(ordinary.bulkRetryPending).toEqual([visibleId]);
+      expect(repository.getLockedAssetIds).toHaveBeenCalledWith(authStub.user1.user.id, [visibleId, lockedId]);
+
+      vi.mocked(repository.getLockedAssetIds).mockClear();
+      const elevated = await sut.get(
+        { ...authStub.user1, session: { id: 'session-id', hasElevatedPermission: true } } as never,
+        operation.id,
+      );
+      expect(elevated.bulkRetryPending).toEqual([visibleId, lockedId]);
+      expect(repository.getLockedAssetIds).not.toHaveBeenCalled();
+    });
+
     it('never names an asset that is Locked now to a session that has not unlocked it', async () => {
       const operation = operationStub({ assetId: lockedId, resultAssetId: visibleId });
       vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
