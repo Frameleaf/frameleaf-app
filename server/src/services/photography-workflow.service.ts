@@ -2410,10 +2410,24 @@ export class PhotographyWorkflowService {
       url: `/studio/${ownerId}`,
     };
   }
-  private async portfolio(ownerId: string, shootId: string, captureId: string) {
-    const row = await this.repository.get(shootId);
-    if (!row || row.ownerId !== ownerId) throw new NotFoundException();
-    await this.repository.live(row);
+  private async portfolio(
+    ownerId: string,
+    shootId: string,
+    captureId: string,
+    shoots?: Map<string, Promise<WorkflowRow>>,
+  ) {
+    // a portfolio usually holds several photographs of one gallery: read and check it once per request
+    let gallery = shoots?.get(shootId);
+    if (!gallery) {
+      gallery = (async () => {
+        const found = await this.repository.get(shootId);
+        if (!found || found.ownerId !== ownerId) throw new NotFoundException();
+        await this.repository.live(found);
+        return found;
+      })();
+      shoots?.set(shootId, gallery);
+    }
+    const row = await gallery;
     if (expired(row.value.config.expiresAt) || !(await this.eligible(row, [captureId], true)).has(captureId))
       throw new NotFoundException();
     const photo = row.value.published?.photos.find((p) => p.captureId === captureId);
@@ -2428,7 +2442,8 @@ export class PhotographyWorkflowService {
     const dto = PhotographySiteSaveDto.schema.parse(input);
     if (new Set(dto.site.portfolio.map((p) => `${p.shootId}:${p.captureId}`)).size !== dto.site.portfolio.length)
       throw new BadRequestException('Duplicate portfolio photographs');
-    for (const item of dto.site.portfolio) await this.portfolio(ownerId, item.shootId, item.captureId);
+    const shoots = new Map<string, Promise<WorkflowRow>>();
+    for (const item of dto.site.portfolio) await this.portfolio(ownerId, item.shootId, item.captureId, shoots);
     return this.repository.saveSite(ownerId, dto.expectedRevision, dto.site);
   }
   async publicSite(ownerId: string) {
@@ -2436,9 +2451,10 @@ export class PhotographyWorkflowService {
     const site = await this.repository.site(ownerId);
     if (!site?.value?.enabled) throw new NotFoundException();
     const portfolio: { shootId: string; captureId: string; url: string }[] = [];
+    const shoots = new Map<string, Promise<WorkflowRow>>();
     for (const item of site.value.portfolio) {
       try {
-        await this.portfolio(ownerId, item.shootId, item.captureId);
+        await this.portfolio(ownerId, item.shootId, item.captureId, shoots);
       } catch (error) {
         if (error instanceof NotFoundException || error instanceof ForbiddenException) continue;
         throw error;
