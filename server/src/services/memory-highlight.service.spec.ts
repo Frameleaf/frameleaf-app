@@ -155,6 +155,32 @@ describe(MemoryHighlightService.name, () => {
   });
 
   describe('create', () => {
+    it('keeps a concurrent refresh pending after project creation until the export version is attached', async () => {
+      let current = runRow({
+        status: MemoryExportStatus.Pending,
+        studioProjectId: null,
+        studioExportVersionId: null,
+      });
+      memories.createExport.mockResolvedValue(current);
+      memories.updateExport = vi.fn((_id: string, patch: Partial<MemoryExport>) => {
+        current = { ...current, ...patch };
+        return Promise.resolve(current);
+      });
+      studioExports.create = vi.fn(async () => {
+        expect(current.studioProjectId).toBe(PROJECT);
+        const pending = current;
+        await expect(sut.refresh(pending)).resolves.toBe(pending);
+        expect(projects.delete).not.toHaveBeenCalled();
+        return { version: { id: VERSION }, operation: { id: RENDER } };
+      });
+
+      await expect(sut.create(auth, memory)).resolves.toMatchObject({
+        status: MemoryExportStatus.Running,
+        studioExportVersionId: VERSION,
+      });
+      expect(projects.delete).not.toHaveBeenCalled();
+    });
+
     it("renders the memory as a Studio export with the prototype's defaults, kept out of the library", async () => {
       const run = await sut.create(auth, memory);
 
@@ -234,6 +260,16 @@ describe(MemoryHighlightService.name, () => {
   });
 
   describe('refresh', () => {
+    it('fails a pending run when its already attached export version has disappeared', async () => {
+      versions.getById.mockResolvedValue(undefined);
+
+      await expect(sut.refresh(runRow({ status: MemoryExportStatus.Pending }))).resolves.toMatchObject({
+        status: MemoryExportStatus.Failed,
+        error: 'The render of this highlight is gone',
+      });
+      expect(projects.delete).toHaveBeenCalledWith(PROJECT);
+    });
+
     it('follows the render job while it renders', async () => {
       const run = await sut.refresh(runRow());
       expect(run.status).toBe(MemoryExportStatus.Running);
