@@ -116,6 +116,7 @@ import {
   hasRequiredConsent,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 type CloudMlSettings = SystemConfig['frameleafCloud']['cloudMl'];
 
@@ -651,11 +652,12 @@ export class CloudMlBatchService extends BaseService {
    * What automatic batches admitted on the server's calendar day of `now` cost: each settled charge
    * once known, else what the wallet holds for it (one SQL sum over every such batch).
    */
-  private automaticSpentToday(now: Date): Promise<number> {
+  private async automaticSpentToday(now: Date): Promise<number> {
+    const timeZone = await this.serverZone();
     return this.mediaOperationRepository.sumCloudDescriptionSpend({
       origin: 'automatic',
-      from: serverDayStart(now),
-      to: nextServerDay(now),
+      from: serverDayStart(now, timeZone),
+      to: nextServerDay(now, timeZone),
     });
   }
 
@@ -666,9 +668,14 @@ export class CloudMlBatchService extends BaseService {
       level: NotificationLevel.Info,
       title: 'Automatic descriptions paused for today',
       description: `Describing new photos with Frameleaf Cloud reached today's budget of ${dailyBudgetUsd.toFixed(2)} USD. New photos wait and are described from tomorrow; nothing is sent to another destination.`,
-      dedupeKey: `frameleaf-cloud:description-budget:${serverDay(now)}`,
+      dedupeKey: `frameleaf-cloud:description-budget:${serverDay(now, await this.serverZone())}`,
       dedupeDays: 1,
     });
+  }
+
+  /** FL-426: the zone the server's calendar day is in, the one chosen in Server name & welcome. */
+  private async serverZone(): Promise<string> {
+    return serverTimeZone((await this.getConfig({ withCache: true })).server);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1076,7 +1083,10 @@ export class CloudMlBatchService extends BaseService {
     const automatic = snapshot.origin === 'automatic';
     if (wallet.dailyCapUsd !== null && wallet.spentTodayUsd + hold > wallet.dailyCapUsd) {
       if (automatic) {
-        throw new WaitUntil(nextServerDay(now), "Today's AI Wallet limit is reached; this batch waits for tomorrow");
+        throw new WaitUntil(
+          nextServerDay(now, await this.serverZone()),
+          "Today's AI Wallet limit is reached; this batch waits for tomorrow",
+        );
       }
       throw new BatchRefusal(
         'cloud_description_daily_cap',
@@ -1099,7 +1109,7 @@ export class CloudMlBatchService extends BaseService {
       if ((await this.automaticSpentToday(now)) + hold > budget) {
         await this.budgetSpent(now, budget);
         throw new WaitUntil(
-          nextServerDay(now),
+          nextServerDay(now, await this.serverZone()),
           "Today's budget for automatic descriptions is reached; this batch waits for tomorrow",
         );
       }

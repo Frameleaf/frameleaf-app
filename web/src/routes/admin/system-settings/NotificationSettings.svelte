@@ -40,6 +40,7 @@
   import Tiles from '$lib/components/frameleaf/settings/kit/Tiles.svelte';
   import EmailWordingDialog from '$lib/components/frameleaf/settings/notifications/EmailWordingDialog.svelte';
   import {
+    FIRST_LINE,
     senderOf,
     senderParts,
     shownSender,
@@ -156,6 +157,13 @@
     said = $t(words.trim() ? 'frameleaf_notify_wording_said_yours' : 'frameleaf_notify_wording_said_standard', {
       values: { name: $t(wording.name) },
     });
+  };
+
+  const emails = $derived(settingsDraft.draft.templates.email);
+  /** FL-426: the invitation's first line in plain words; the server keeps codes such as `{recipientName}`. */
+  const firstLine = $derived(toWords(emails.invitationFirstLine, FIRST_LINE, tr));
+  const setFirstLine = (words: string) => {
+    settingsDraft.draft.templates.email.invitationFirstLine = toTemplate(words, FIRST_LINE, tr);
   };
 
   const tiles = $derived.by(() => {
@@ -595,6 +603,30 @@
           </Button>
         </Row>
       {/each}
+      <!-- FL-426: the invitation's first line and the header, beside the wordings (notifications.jsx). -->
+      <Row
+        label={$t('frameleaf_notify_first_line')}
+        help={emails.albumInviteTemplate
+          ? `${$t('frameleaf_notify_first_line_help')} ${$t('frameleaf_notify_first_line_own_wording')}`
+          : $t('frameleaf_notify_first_line_help')}
+      >
+        <Field
+          wide
+          label={$t('frameleaf_notify_first_line')}
+          value={firstLine}
+          placeholder={$t('frameleaf_notify_first_line_placeholder')}
+          {disabled}
+          onChange={setFirstLine}
+        />
+      </Row>
+      <Row label={$t('frameleaf_notify_branding')} help={$t('frameleaf_notify_branding_help')}>
+        <Switch
+          label={$t('frameleaf_notify_branding')}
+          checked={emails.showBranding}
+          held={disabled}
+          onChange={(value) => (settingsDraft.draft.templates.email.showBranding = value)}
+        />
+      </Row>
     </Advanced>
   </Section>
 
@@ -602,6 +634,8 @@
     <EmailWordingDialog
       wording={editing}
       words={toWords(settingsDraft.draft.templates.email[editing.key], editing, tr)}
+      {firstLine}
+      showBranding={emails.showBranding}
       onUse={(words) => editing && useWording(editing, words)}
       onClose={() => (editing = undefined)}
     />

@@ -332,7 +332,7 @@ export class NotificationService extends BaseService {
       return;
     }
 
-    const { server } = await this.getConfig({ withCache: false });
+    const { server, templates } = await this.getConfig({ withCache: false });
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.ITEM_SHARE,
       data: {
@@ -341,6 +341,8 @@ export class NotificationService extends BaseService {
         recipientName: recipient.name,
         count,
         link: link ?? undefined,
+        showBranding: templates.email.showBranding,
+        firstLine: templates.email.invitationFirstLine,
       },
       customTemplate: '',
     });
@@ -499,12 +501,13 @@ export class NotificationService extends BaseService {
       throw new BadRequestException('Failed to verify SMTP configuration', { cause: error });
     }
 
-    const { server } = await this.getConfig({ withCache: false });
+    const { server, templates } = await this.getConfig({ withCache: false });
     const { html, text } = await this.emailRepository.renderEmail({
       template: EmailTemplate.TEST_EMAIL,
       data: {
         baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
+        showBranding: templates.email.showBranding,
       },
       customTemplate: tempTemplate!,
     });
@@ -536,6 +539,7 @@ export class NotificationService extends BaseService {
         displayName: user.name,
         username: user.email,
         password,
+        showBranding: templates.email.showBranding,
       },
       customTemplate: templates.email.welcomeTemplate,
     });
@@ -636,10 +640,15 @@ export class NotificationService extends BaseService {
       recipientName: recipient.name,
       senderName: context.senderName ?? '',
       cid: attachment?.cid,
+      showBranding: templates.email.showBranding,
     };
     const { html, text } = await this.emailRepository.renderEmail(
       invite
-        ? { template: EmailTemplate.ALBUM_INVITE, data, customTemplate: templates.email.albumInviteTemplate }
+        ? {
+            template: EmailTemplate.ALBUM_INVITE,
+            data: { ...data, firstLine: templates.email.invitationFirstLine },
+            customTemplate: templates.email.albumInviteTemplate,
+          }
         : { template: EmailTemplate.ALBUM_UPDATE, data, customTemplate: templates.email.albumUpdateTemplate },
     );
     return {

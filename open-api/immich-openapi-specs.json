@@ -55683,6 +55683,9 @@
             "description": "Login page message",
             "type": "string"
           },
+          "loginPageMessageFormat": {
+            "$ref": "#/components/schemas/LoginPageMessageFormat"
+          },
           "name": {
             "description": "Server name shown in settings; empty uses the host name",
             "maxLength": 100,
@@ -55691,14 +55694,20 @@
           "publicUsers": {
             "description": "Public users",
             "type": "boolean"
+          },
+          "timeZone": {
+            "description": "Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on",
+            "type": "string"
           }
         },
         "required": [
           "externalDomain",
           "lanDiscovery",
           "loginPageMessage",
+          "loginPageMessageFormat",
           "name",
-          "publicUsers"
+          "publicUsers",
+          "timeZone"
         ],
         "type": "object"
       },
@@ -55918,6 +55927,15 @@
             "description": "Album update template",
             "type": "string"
           },
+          "invitationFirstLine": {
+            "description": "First line of an invitation email (an album or items shared with someone), shown as plain text in place of the standard greeting. {recipientName} and {senderName} are replaced; empty keeps the standard greeting. An album invitation with its own albumInviteTemplate is sent as that template says.",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "showBranding": {
+            "description": "Show the Frameleaf name and logo at the top of every email",
+            "type": "boolean"
+          },
           "welcomeTemplate": {
             "description": "Welcome template",
             "type": "string"
@@ -55926,6 +55944,8 @@
         "required": [
           "albumInviteTemplate",
           "albumUpdateTemplate",
+          "invitationFirstLine",
+          "showBranding",
           "welcomeTemplate"
         ],
         "type": "object"
@@ -82238,6 +82258,14 @@
         ],
         "type": "object"
       },
+      "LoginPageMessageFormat": {
+        "description": "How the welcome message is shown: as typed (plain) or as cleaned web formatting (html)",
+        "enum": [
+          "plain",
+          "html"
+        ],
+        "type": "string"
+      },
       "LoginResponseDto": {
         "properties": {
           "accessToken": {
@@ -106481,6 +106509,9 @@
             "description": "Login page message",
             "type": "string"
           },
+          "loginPageMessageFormat": {
+            "$ref": "#/components/schemas/LoginPageMessageFormat"
+          },
           "name": {
             "description": "Server name shown in settings; empty uses the host name",
             "maxLength": 100,
@@ -106489,6 +106520,7 @@
         },
         "required": [
           "loginPageMessage",
+          "loginPageMessageFormat",
           "name"
         ],
         "type": "object"
@@ -113994,6 +114026,10 @@
             "description": "Source URL",
             "type": "string"
           },
+          "systemTimeZone": {
+            "description": "Time zone of the computer the server runs on (IANA name); the server uses it when none is chosen",
+            "type": "string"
+          },
           "thirdPartyBugFeatureUrl": {
             "description": "Third-party bug/feature URL",
             "type": "string"
@@ -114133,6 +114169,9 @@
             "description": "Login page message",
             "type": "string"
           },
+          "loginPageMessageFormat": {
+            "$ref": "#/components/schemas/LoginPageMessageFormat"
+          },
           "maintenanceMode": {
             "description": "Whether maintenance mode is active",
             "type": "boolean"
@@ -114188,6 +114227,7 @@
           "isInitialized",
           "isOnboarded",
           "loginPageMessage",
+          "loginPageMessageFormat",
           "maintenanceMode",
           "mapDarkStyleUrl",
           "mapLightStyleUrl",
@@ -128365,6 +128405,9 @@
             "description": "Login page message",
             "type": "string"
           },
+          "loginPageMessageFormat": {
+            "$ref": "#/components/schemas/LoginPageMessageFormat"
+          },
           "name": {
             "description": "Server name shown in settings; empty uses the host name",
             "maxLength": 100,
@@ -128378,6 +128421,7 @@
         "required": [
           "externalDomain",
           "loginPageMessage",
+          "loginPageMessageFormat",
           "name",
           "publicUsers"
         ],

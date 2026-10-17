@@ -61,7 +61,7 @@ describe(NotificationService.name, () => {
       await expect(sut.sendTestEmail('', smtpTransport.notifications.smtp)).resolves.not.toThrow();
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name },
+        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -81,7 +81,7 @@ describe(NotificationService.name, () => {
       await expect(sut.sendTestEmail('', smtpTransport.notifications.smtp)).resolves.not.toThrow();
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: 'https://photos.example.com', displayName: userStub.admin.name },
+        data: { baseUrl: 'https://photos.example.com', displayName: userStub.admin.name, showBranding: true },
       });
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -121,7 +121,7 @@ describe(NotificationService.name, () => {
 
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: 'https://photos.example.com', displayName: userStub.admin.name },
+        data: { baseUrl: 'https://photos.example.com', displayName: userStub.admin.name, showBranding: true },
       });
     });
 
@@ -152,7 +152,7 @@ describe(NotificationService.name, () => {
 
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name },
+        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
     });
 
@@ -182,7 +182,7 @@ describe(NotificationService.name, () => {
 
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name },
+        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
     });
 
@@ -197,7 +197,7 @@ describe(NotificationService.name, () => {
       ).resolves.not.toThrow();
       expect(mocks.email.renderEmail).toHaveBeenCalledWith({
         template: EmailTemplate.TEST_EMAIL,
-        data: { baseUrl: undefined, displayName: userStub.admin.name },
+        data: { baseUrl: undefined, displayName: userStub.admin.name, showBranding: true },
       });
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -281,5 +281,25 @@ describe('administrator email template previews', () => {
       );
     }
     expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('previews the saved first line of an invitation and the Frameleaf name and logo choice (FL-426)', async () => {
+    const { sut, mocks } = newTestService(NotificationAdminService);
+    mocks.systemMetadata.get.mockResolvedValue({
+      templates: { email: { invitationFirstLine: 'Hi {recipientName}!', showBranding: false } },
+    });
+    mocks.email.renderEmail.mockResolvedValue({ html: 'rendered-preview', text: '' });
+
+    await sut.getTemplate(EmailTemplate.ALBUM_INVITE, '');
+    expect(mocks.email.renderEmail).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ firstLine: 'Hi {recipientName}!', showBranding: false }),
+      }),
+    );
+
+    await sut.getTemplate(EmailTemplate.WELCOME, '');
+    expect(mocks.email.renderEmail).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ showBranding: false }) }),
+    );
   });
 });

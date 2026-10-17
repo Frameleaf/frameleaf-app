@@ -1721,10 +1721,13 @@ export type AdminConfigServerDto = {
     lanDiscovery: boolean;
     /** Login page message */
     loginPageMessage: string;
+    loginPageMessageFormat: LoginPageMessageFormat;
     /** Server name shown in settings; empty uses the host name */
     name: string;
     /** Public users */
     publicUsers: boolean;
+    /** Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on */
+    timeZone: string;
 };
 export type AdminConfigSmartAlbumKindDto = {
     /** CLIP query phrases used when no tag trigger matches */
@@ -1771,6 +1774,10 @@ export type AdminConfigTemplateEmailsDto = {
     albumInviteTemplate: string;
     /** Album update template */
     albumUpdateTemplate: string;
+    /** First line of an invitation email (an album or items shared with someone), shown as plain text in place of the standard greeting. {recipientName} and {senderName} are replaced; empty keeps the standard greeting. An album invitation with its own albumInviteTemplate is sent as that template says. */
+    invitationFirstLine: string;
+    /** Show the Frameleaf name and logo at the top of every email */
+    showBranding: boolean;
     /** Welcome template */
     welcomeTemplate: string;
 };
@@ -5882,6 +5889,7 @@ export type UserConfigServerDto = {
     externalDomain: string;
     /** Login page message */
     loginPageMessage: string;
+    loginPageMessageFormat: LoginPageMessageFormat;
     /** Server name shown in settings; empty uses the host name */
     name: string;
     /** Public users */
@@ -11608,6 +11616,7 @@ export type PublicConfigPasswordLoginDto = {
 export type PublicConfigServerDto = {
     /** Login page message */
     loginPageMessage: string;
+    loginPageMessageFormat: LoginPageMessageFormat;
     /** Server name shown in settings; empty uses the host name */
     name: string;
 };
@@ -12754,6 +12763,8 @@ export type ServerAboutResponseDto = {
     sourceRef?: string;
     /** Source URL */
     sourceUrl?: string;
+    /** Time zone of the computer the server runs on (IANA name); the server uses it when none is chosen */
+    systemTimeZone?: string;
     /** Third-party bug/feature URL */
     thirdPartyBugFeatureUrl?: string;
     /** Third-party documentation URL */
@@ -12823,6 +12834,7 @@ export type ServerConfigDto = {
     isOnboarded: boolean;
     /** Login page message */
     loginPageMessage: string;
+    loginPageMessageFormat: LoginPageMessageFormat;
     /** Whether maintenance mode is active */
     maintenanceMode: boolean;
     /** Map dark style URL */
@@ -30530,6 +30542,10 @@ export enum MailTransportType {
 export enum OAuthTokenEndpointAuthMethod {
     ClientSecretPost = "client_secret_post",
     ClientSecretBasic = "client_secret_basic"
+}
+export enum LoginPageMessageFormat {
+    Plain = "plain",
+    Html = "html"
 }
 export enum ClassificationRuleAction {
     Review = "review",

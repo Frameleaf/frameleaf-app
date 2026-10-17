@@ -296,6 +296,8 @@ export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Transla
   // FL-196: the linked-server tour is reopened from Account & link.
   'cloud-account': ['frameleaf_cloud_tour_search_keywords'],
   'cloud-remote': ['frameleaf_remote_public_url_title', 'frameleaf_remote_domain_title', 'frameleaf_remote_hostname'],
+  // FL-426: the server's time zone is chosen on Server name & welcome.
+  server: ['frameleaf_server_identity_zone'],
 });
 
 /** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */

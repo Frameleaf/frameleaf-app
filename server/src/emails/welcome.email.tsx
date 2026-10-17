@@ -7,7 +7,14 @@ import { NO_LINK_SIGN_IN } from 'src/emails/components/no-link.js';
 import { WelcomeEmailProps } from 'src/repositories/email.repository.js';
 import { replaceTemplateTags } from 'src/utils/replace-template-tags.js';
 
-export const WelcomeEmail = ({ baseUrl, displayName, username, password, customTemplate }: WelcomeEmailProps) => {
+export const WelcomeEmail = ({
+  baseUrl,
+  displayName,
+  username,
+  password,
+  customTemplate,
+  showBranding,
+}: WelcomeEmailProps) => {
   const usableTemplateVariables = {
     displayName,
     username,
@@ -40,6 +47,7 @@ export const WelcomeEmail = ({ baseUrl, displayName, username, password, customT
   return (
     <ImmichLayout
       baseUrl={baseUrl}
+      showBranding={showBranding}
       preview={customTemplate ? toPlainText(emailContent.toString()) : 'You have been invited to a Frameleaf server.'}
     >
       {customTemplate && (

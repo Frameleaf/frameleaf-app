@@ -365,6 +365,8 @@ export const adminConfigDefaults = {
     name: '',
     externalDomain: '',
     loginPageMessage: '',
+    loginPageMessageFormat: 'plain',
+    timeZone: '',
     publicUsers: true,
   },
   notifications: {
@@ -389,6 +391,8 @@ export const adminConfigDefaults = {
       welcomeTemplate: '',
       albumInviteTemplate: '',
       albumUpdateTemplate: '',
+      invitationFirstLine: '',
+      showBranding: true,
     },
   },
   user: {

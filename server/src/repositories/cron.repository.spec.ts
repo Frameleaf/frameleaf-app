@@ -123,6 +123,48 @@ describe(CronRepository.name, () => {
     expect(onTick).toHaveBeenCalledOnce();
   });
 
+  describe('time zone (FL-426)', () => {
+    const logger = () => ({ setContext: vi.fn(), log: vi.fn() }) as unknown as LoggingRepository;
+    const nextRun = (name: string) => registry.getCronJob(name).nextDate().toUTC().toISO();
+
+    it('runs new and rescheduled jobs in the chosen time zone', () => {
+      repository = new CronRepository(registry, logger());
+      repository.setTimeZone('America/Edmonton');
+      repository.create({ name: 'nightly', expression: '0 0 2 * * *', onTick: vi.fn() });
+      // 02:00 in Edmonton in January (UTC−07:00)
+      expect(nextRun('nightly')).toBe('2026-01-01T09:00:00.000Z');
+
+      repository.update({ name: 'nightly', expression: '0 30 3 * * *' });
+      expect(nextRun('nightly')).toBe('2026-01-01T10:30:00.000Z');
+    });
+
+    it('moves existing jobs to a new time zone, keeping each running or stopped', () => {
+      repository = new CronRepository(registry, logger());
+      repository.create({ name: 'nightly', expression: '0 0 2 * * *', onTick: vi.fn() });
+      repository.create({ name: 'paused', expression: '0 0 4 * * *', onTick: vi.fn(), start: false });
+
+      repository.setTimeZone('Europe/London');
+      expect(nextRun('nightly')).toBe('2026-01-01T02:00:00.000Z');
+      expect(registry.getCronJob('nightly').isActive).toBe(true);
+      expect(registry.getCronJob('paused').isActive).toBe(false);
+      expect(registry.getCronJob('paused').cronTime.timeZone).toBe('Europe/London');
+
+      repository.setTimeZone('Asia/Tokyo');
+      // 02:00 in Tokyo is 17:00 UTC the day before; the next one is that evening
+      expect(nextRun('nightly')).toBe('2026-01-01T17:00:00.000Z');
+    });
+
+    it("goes back to the computer's own clock when the choice is emptied", () => {
+      repository = new CronRepository(registry, logger());
+      repository.setTimeZone('Asia/Tokyo');
+      repository.create({ name: 'nightly', expression: '0 0 2 * * *', onTick: vi.fn() });
+      repository.setTimeZone('');
+      expect(registry.getCronJob('nightly').cronTime.timeZone).toBe(
+        new Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
+    });
+  });
+
   it('preserves missing-job errors and registry deletion cleanup', () => {
     expect(() => repository.update({ name: 'missing', start: true })).toThrow();
     repository.create({ name: 'deleted', expression: '* * * * * *', onTick: vi.fn() });

@@ -1297,6 +1297,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'server.loginPageMessage',
   },
   {
+    // FL-426: "Welcome message is" Plain text / Web formatting, under Advanced.
+    pattern: 'server.loginPageMessageFormat',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    evidence: 'draft.server.loginPageMessageFormat = ',
+  },
+  {
     pattern: 'server.name',
     kind: 'control',
     file: 'src/routes/admin/system-settings/ServerSettings.svelte',
@@ -1307,6 +1314,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/routes/(user)/user-settings/SharingSettings.svelte',
     evidence: 'server.publicUsers',
+  },
+  {
+    // FL-426: the Time zone chooser; empty is "Same as this computer".
+    pattern: 'server.timeZone',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/ServerSettings.svelte',
+    evidence: 'draft.server.timeZone = ',
   },
   {
     pattern: 'smartAlbums.builtIn.*.clipQueries',
@@ -1376,7 +1390,33 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     // ADMIN-P3: "The emails themselves", each email's wording in plain words (EmailWordingDialog).
-    pattern: 'templates.email.*',
+    pattern: 'templates.email.albumInviteTemplate',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'templates.email[wording.key]',
+  },
+  {
+    pattern: 'templates.email.albumUpdateTemplate',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'templates.email[wording.key]',
+  },
+  {
+    // FL-426: "First line of an invitation", beside the wordings.
+    pattern: 'templates.email.invitationFirstLine',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'draft.templates.email.invitationFirstLine = ',
+  },
+  {
+    // FL-426: "Show the Frameleaf name and logo".
+    pattern: 'templates.email.showBranding',
+    kind: 'control',
+    file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
+    evidence: 'draft.templates.email.showBranding = ',
+  },
+  {
+    pattern: 'templates.email.welcomeTemplate',
     kind: 'control',
     file: 'src/routes/admin/system-settings/NotificationSettings.svelte',
     evidence: 'templates.email[wording.key]',

@@ -333,6 +333,15 @@ describe(ServerService.name, () => {
       expect(about.version).toMatch(/^v\d+\.\d+\.\d+/);
       expect(about.versionUrl).not.toContain('immich-app');
     });
+
+    it("names the computer's own time zone, which an unchosen time zone means (FL-426)", async () => {
+      mocks.serverInfo.getBuildVersions.mockResolvedValue({} as never);
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      const about = await sut.getAboutInfo();
+
+      expect(about.systemTimeZone).toBe(new Intl.DateTimeFormat().resolvedOptions().timeZone);
+    });
   });
 
   describe('ping (FL-229)', () => {
@@ -581,6 +590,7 @@ describe(ServerService.name, () => {
       const { defaultImageDescriptionRawPromptTemplate, ...rest } = result;
       expect(rest).toEqual({
         loginPageMessage: '',
+        loginPageMessageFormat: 'plain',
         serverName: '',
         oauthButtonText: 'Login with OAuth',
         oauthAccountManagementUrl: '',

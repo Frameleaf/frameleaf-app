@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { invitationFirstLine } from 'src/emails/components/first-line.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { NO_LINK_ITEM_SHARE } from 'src/emails/components/no-link.js';
 import { ItemShareEmailProps } from 'src/repositories/email.repository.js';
@@ -10,13 +11,27 @@ import { ItemShareEmailProps } from 'src/repositories/email.repository.js';
  * you, at the Public server URL, else the direct-connection address or the custom hostname; without
  * one the email asks the recipient to open Frameleaf on their server (FL-190).
  */
-export const ItemShareEmail = ({ baseUrl, senderName, recipientName, count, link }: ItemShareEmailProps) => {
+export const ItemShareEmail = ({
+  baseUrl,
+  senderName,
+  recipientName,
+  count,
+  link,
+  showBranding,
+  firstLine,
+}: ItemShareEmailProps) => {
   const items = count === 1 ? 'an item' : `${count} items`;
+  // FL-426: an invitation's own first line, in place of the standard greeting
+  const greeting = invitationFirstLine(firstLine, { recipientName, senderName });
 
   return (
-    <ImmichLayout baseUrl={baseUrl} preview={`${senderName} shared ${items} with you.`}>
+    <ImmichLayout baseUrl={baseUrl} showBranding={showBranding} preview={`${senderName} shared ${items} with you.`}>
       <Text className="m-0">
-        Hey <strong>{recipientName}</strong>!
+        {greeting ?? (
+          <>
+            Hey <strong>{recipientName}</strong>!
+          </>
+        )}
       </Text>
 
       <Text>
