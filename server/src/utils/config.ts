@@ -119,7 +119,12 @@ const epochFor = (value: SystemConfig, sourceKind: Epoch['sourceKind'], epoch: n
   trashEnabled: value.trash.enabled,
 });
 
-/** Bootstrap publishes an absent database epoch without changing any settings. */
+/**
+ * Bootstrap publishes an absent database epoch without changing any settings. A database epoch
+ * whose digest no longer matches (an upgrade changed the defaults the stored values merge over)
+ * is re-published as the next epoch under the write lock, so readers holding the old epoch see it
+ * change. A source-kind change (file vs database) is still refused.
+ */
 export async function initializeEffectiveConfig(repos: RepoDeps): Promise<void> {
   if (repos.configRepo.getEnv().configFile) {
     await readConfig(repos);
@@ -128,13 +133,18 @@ export async function initializeEffectiveConfig(repos: RepoDeps): Promise<void> 
   await withEffectiveConfigWrite(repos, async (bound) => {
     const candidate = await readConfig(bound);
     const current = await bound.metadataRepo.getEffectiveConfigEpoch();
-    if (current) {
-      assertEpoch(current);
-      if (current.sourceKind !== 'database' || current.digest !== configDigest(candidate))
-        throw new ConflictException('effective_config_source_changed');
+    if (!current) {
+      await bound.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, epochFor(candidate, 'database', 1));
       return;
     }
-    await bound.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, epochFor(candidate, 'database', 1));
+    assertEpoch(current);
+    if (current.sourceKind !== 'database') throw new ConflictException('effective_config_source_changed');
+    if (current.digest === configDigest(candidate)) return;
+    const next = epochFor(candidate, 'database', current.epoch + 1);
+    if (current.recoveryMl) next.recoveryMl = current.recoveryMl;
+    if (current.recoveryMlBinding) next.recoveryMlBinding = current.recoveryMlBinding;
+    if (!Number.isSafeInteger(next.epoch)) throw new ConflictException('effective_config_epoch_exhausted');
+    await bound.metadataRepo.set(SystemMetadataKey.EffectiveConfigEpoch, next);
   });
 }
 
