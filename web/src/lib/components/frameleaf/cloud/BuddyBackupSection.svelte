@@ -59,8 +59,7 @@
   let status = $state<BuddyStatusDto | null>(null);
   let coverage = $state<BuddyPreflightDto | null>(null);
   const linked = $derived(cloudManager.status?.state === 'linked');
-  const entitled = $derived(linked && !!cloudManager.license?.entitlements.cloudBackup);
-  // A new pairing needs a plan and a Server licence on both servers (FC-147).
+  // A new pairing needs a Server licence on both servers; no plan, unless the buddies use the relay (FL-434).
   const serverLicensed = $derived.by(() => {
     const key = cloudManager.license?.key;
     return (
@@ -69,8 +68,8 @@
       (key.state === LicenseState.Active || key.state === LicenseState.Grace)
     );
   });
-  const presentation = $derived(buddyBackupPresentation(status, linked, entitled));
-  const place = $derived(buddyPlaceState(status, { linked, entitled }, new Date()));
+  const presentation = $derived(buddyBackupPresentation(status, linked));
+  const place = $derived(buddyPlaceState(status, { linked }, new Date()));
   let failure = $state('');
   let notice = $state('');
   let busy = $state(false);
@@ -378,19 +377,12 @@
         {/snippet}
         <div class="inside">
           {#if !status.pairing}
-            <!-- Link, then a plan, then a Server licence; setup stays visible until every gate is satisfied. -->
+            <!-- Link first, then a Server licence; setup stays visible until every gate is satisfied. -->
             {#if !linked}
               <p class="explain">{$t('frameleaf_buddy_link_required')}</p>
               <div class="fc-actions">
                 <a class="fc-button is-primary" href={commandCenterUrl('cloud', 'cloud-account')}
                   >{$t('frameleaf_cloud_backup_gate_link')}</a
-                >
-              </div>
-            {:else if !entitled}
-              <p class="explain">{$t('frameleaf_buddy_subscription_required')}</p>
-              <div class="fc-actions">
-                <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-plan')}
-                  >{$t('frameleaf_cloud_backup_gate_plan')}</a
                 >
               </div>
             {:else if !serverLicensed}
@@ -406,11 +398,10 @@
                   'frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off',
                 )}
               </p>
+              <p class="explain">{$t('frameleaf_buddy_direct_or_relay')}</p>
             {/if}
-            <Button
-              variant="primary"
-              disabled={busy || !status.enabled || !entitled || !serverLicensed}
-              onclick={beginSetup}>{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
+            <Button variant="primary" disabled={busy || !status.enabled || !serverLicensed} onclick={beginSetup}
+              >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
             >
           {:else}
             <dl class="facts">

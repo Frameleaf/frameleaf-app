@@ -8,14 +8,14 @@ Buddy Backup is initially disabled while beta qualification is completed. Enabli
 
 ## Set up a buddy
 
-1. Link both servers to Frameleaf Cloud. Both need an active subscription or its existing grace period for new backups, and both need a Server licence to start a new pairing.
+1. Link both servers to a Frameleaf account. Both servers need a Server licence to start a new pairing. A Frameleaf Cloud plan is not needed when the two servers connect directly; only the relay needs a plan. Removing a licence later stops new pairings only, never an existing one.
 2. Open **Settings → Backup → Buddy controls**. The existing **Frameleaf Cloud → Backup** entry also opens the Backup Command Center. Check library mounts, configuration coverage and estimated initial size.
 3. Choose a dedicated hosting directory outside photo libraries, external import paths and the server identity directory. Set a hard capacity for the storage you offer. Your buddy can offer a different amount.
-4. Invite the buddy's Cloud account. Your buddy accepts the invitation on their server, then you confirm the pairing on yours: only the server that sent the invitation confirms. Both owners check the other server, its key and the reciprocal storage agreement first.
+4. Invite the buddy's Frameleaf account. Your buddy accepts the invitation on their server, and then you confirm the pairing on yours: only the server that sent the invitation confirms. Both owners check the other server, its key and the storage agreement first.
 5. Download and re-import your recovery kit to verify it. Keep it somewhere independent of the original server. Optional Cloud escrow contains only a package encrypted locally using your passphrase; Cloud does not receive the passphrase.
 6. Run the encrypted connection check, then start the initial backup.
 
-The default schedule is 02:00 in the source server's timezone. Sending and receiving each default to 20 Mbit/s, with two block transfers per direction. Configure transfer windows and limits under **Hosting & transfer settings**. Direct connections are preferred; the relay handles connections that cannot connect directly. Relay allowances still apply.
+The default schedule is 02:00 in the source server's timezone. Sending and receiving each default to 20 Mbit/s, with two block transfers per direction. Configure transfer windows and limits under **Hosting & transfer settings**. Direct connections are preferred. Without a plan, your buddy reaches this server directly at its HTTPS **Public server URL** (**Frameleaf Cloud → Remote access**), so that address must forward `/api/buddy/` to this server. If the two servers cannot connect directly, they need the relay, which requires a Frameleaf Cloud plan; relay allowances apply.
 
 ## Coverage and controls
 
@@ -163,7 +163,7 @@ Full recovery stages and verifies the files before entering maintenance mode. Re
 
 Snapshots include Buddy's schedule, timezone, transfer windows and limits, pause flags and derived-file policy. Settings and server recovery with **Keep** preserve current Buddy preferences. **Replace** restores the operational preferences while preserving the replacement server's hosting directory, quota, declared configuration allowlist, identity, pairing and recovery checks. During replacement, a direction remains paused if either server's saved settings pause it. The source storage paths and quota remain encrypted reference data; they do not authorize a new hosting location or storage agreement. Older snapshots without these preferences remain recoverable.
 
-After subscription expiry, authenticated recovery remains available through restricted read-only Buddy routes. Ordinary remote access remains subject to its subscription policy. Ending a pairing normally leaves a 30-day recovery window; a security block revokes access immediately. Unlinking or Cloud failure does not silently erase a hosted vault.
+Existing pairings keep backing up over a direct connection without a plan. After a plan ends, authenticated recovery also remains available through the restricted read-only recovery relay. Ordinary remote access remains subject to its plan. Ending a pairing normally leaves a 30-day recovery window; a security block revokes access immediately. Unlinking or Cloud failure does not silently erase a hosted vault.
 
 For a replacement server, sign in to Cloud, explicitly rebind the server in the Buddy account page, and import the recovery kit or unlock the escrow package locally. Rebinding revokes the old server identity.
 

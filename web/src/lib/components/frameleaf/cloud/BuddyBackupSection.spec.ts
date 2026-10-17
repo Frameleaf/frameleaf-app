@@ -5,20 +5,16 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import en from '../../../../../../i18n/en.json';
 import BuddyBackupSection from './BuddyBackupSection.svelte';
 
-const cloud = vi.hoisted(() => ({
-  linked: true,
-  entitled: true,
-  licence: 'server' as 'server' | 'individual' | null,
-}));
+const cloud = vi.hoisted(() => ({ linked: true, licence: 'server' as 'server' | 'individual' | null }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
   cloudManager: {
     get status() {
       return { state: cloud.linked ? 'linked' : 'unlinked' };
     },
     get license() {
-      // A new pairing needs both the plan and a Server licence (FC-147)
+      // FL-434: no plan anywhere; only the supporter key decides whether a new pairing can be made
       return {
-        entitlements: { cloudBackup: cloud.entitled },
+        entitlements: { cloudBackup: false, remoteAccess: false },
         key: cloud.licence ? { kind: cloud.licence, state: 'active' } : null,
       };
     },
@@ -35,7 +31,6 @@ let status: BuddyStatusDto;
 beforeEach(() => {
   vi.resetAllMocks();
   cloud.linked = true;
-  cloud.entitled = true;
   cloud.licence = 'server';
   addMessages('dev', en);
   status = {
@@ -128,16 +123,14 @@ it('submits only selected variable names and allows declaration capture to be re
 });
 
 it.each([
-  { linked: false, entitled: false, licence: null, enabled: false, disabled: true },
-  { linked: false, entitled: true, licence: 'server', enabled: true, disabled: true },
-  { linked: true, entitled: false, licence: 'server', enabled: true, disabled: true },
-  { linked: true, entitled: true, licence: null, enabled: true, disabled: true },
-  { linked: true, entitled: true, licence: 'individual', enabled: true, disabled: true },
-  { linked: true, entitled: true, licence: 'server', enabled: false, disabled: true },
-  { linked: true, entitled: true, licence: 'server', enabled: true, disabled: false },
-] as const)('keeps unpaired setup visible with gates $linked/$entitled/$licence/$enabled', async (gate) => {
+  { linked: false, licence: null, enabled: false, disabled: true },
+  { linked: false, licence: 'server', enabled: true, disabled: true },
+  { linked: true, licence: null, enabled: true, disabled: true },
+  { linked: true, licence: 'individual', enabled: true, disabled: true },
+  { linked: true, licence: 'server', enabled: false, disabled: true },
+  { linked: true, licence: 'server', enabled: true, disabled: false },
+] as const)('keeps unpaired setup visible with gates $linked/$licence/$enabled, without a plan', async (gate) => {
   cloud.linked = gate.linked;
-  cloud.entitled = gate.entitled;
   cloud.licence = gate.licence;
   Object.assign(status, { enabled: gate.enabled, configured: false, settings: null, pairing: null });
   render(BuddyBackupSection, { view: 'status' });
@@ -156,12 +149,11 @@ it.each([
   if (!gate.linked) {
     expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
     expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_link })).toBeVisible();
-  } else if (!gate.entitled) {
-    expect(outgoing.getByText(en.frameleaf_buddy_subscription_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_plan })).toBeVisible();
   } else if (gate.licence !== 'server') {
     expect(outgoing.getByText(en.frameleaf_buddy_server_licence_required)).toBeVisible();
     expect(outgoing.getByRole('link', { name: en.frameleaf_buddy_server_licence_action })).toBeVisible();
+  } else {
+    expect(outgoing.getByText(en.frameleaf_buddy_direct_or_relay)).toBeVisible();
   }
 });
 
