@@ -77,5 +77,5 @@ SMTP templates/subjects, captions and messages retain their existing delivery be
 translated coverage for these system producers requires explicit reviewed template registrations
 and approved locale catalogs; this bounded producer/contract packet does not claim that coverage.
 
-PR #140 remains draft/open/unmerged with automatic merge disabled. No deployment, translation
+No deployment, translation
 publication, native distribution or language qualification follows from this packet.

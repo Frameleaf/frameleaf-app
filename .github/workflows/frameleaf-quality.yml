@@ -2,7 +2,7 @@ name: Frameleaf quality
 
 on:
   pull_request:
-    branches: ['main', 'master/frameleaf-implementation']
+    branches: ['main']
   workflow_call:
   workflow_dispatch:
     inputs:

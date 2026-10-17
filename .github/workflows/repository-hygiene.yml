@@ -1,9 +1,9 @@
 name: Repository hygiene
 on:
   pull_request:
-    branches: [main, master/frameleaf-implementation]
+    branches: [main]
   push:
-    branches: [main, master/frameleaf-implementation]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read

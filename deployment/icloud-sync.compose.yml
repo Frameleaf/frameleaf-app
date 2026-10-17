@@ -10,7 +10,7 @@ services:
       FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE: /run/secrets/icloud_bridge_token
       FRAMELEAF_ICLOUD_KEY_FILE: /run/secrets/icloud_encryption_key
       FRAMELEAF_ICLOUD_CA_FILE: /run/secrets/icloud_bridge_ca
-      FRAMELEAF_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
+      FRAMELEAF_ICLOUD_STAGING_PATH: /var/lib/frameleaf-icloud-staging
     secrets:
       - icloud_bridge_token
       - icloud_encryption_key
@@ -18,7 +18,7 @@ services:
     volumes:
       - type: bind
         source: ${ICLOUD_STAGING_DIR:?Set a private staging directory outside every media and external-library root}
-        target: /var/lib/immich-icloud-staging
+        target: /var/lib/frameleaf-icloud-staging
         bind:
           create_host_path: false
     networks:
@@ -34,7 +34,7 @@ services:
       args:
         UID: ${FRAMELEAF_UID:-${IMMICH_UID:-1000}}
         GID: ${FRAMELEAF_GID:-${IMMICH_GID:-1000}}
-    image: immich-icloud-bridge:rclone-1.75.1
+    image: frameleaf-icloud-bridge:rclone-1.75.2
     user: '${FRAMELEAF_UID:-${IMMICH_UID:-1000}}:${FRAMELEAF_GID:-${IMMICH_GID:-1000}}'
     restart: unless-stopped
     read_only: true

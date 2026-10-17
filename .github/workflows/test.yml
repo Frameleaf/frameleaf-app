@@ -10,7 +10,6 @@ name: Test
   pull_request:
     branches:
       - main
-      - master/frameleaf-implementation
   push:
     branches:
       - main
@@ -403,7 +402,7 @@ jobs:
           build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
-          # The integration branch's registry cache (e2e-build-cache.yml). The Actions cache is not
+          # main's registry cache (e2e-build-cache.yml). The Actions cache is not
           # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
           cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}
@@ -487,7 +486,7 @@ jobs:
           build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
-          # The integration branch's registry cache (e2e-build-cache.yml). The Actions cache is not
+          # main's registry cache (e2e-build-cache.yml). The Actions cache is not
           # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
           cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}
@@ -700,17 +699,17 @@ jobs:
         id: docker
         run: docker compose up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
         if: ${{ !cancelled() }}
-      - name: Wait for Immich server readiness
+      - name: Wait for Frameleaf server readiness
         id: server-ready
         env:
           SERVER_PING_URL: http://127.0.0.1:2285/api/server/ping
         run: |
           if timeout 120s bash -c 'until curl --fail --silent --max-time 2 "$SERVER_PING_URL" > /dev/null; do sleep 2; done'; then
-            echo "Immich server is ready"
+            echo "Frameleaf server is ready"
             exit 0
           fi
 
-          echo "::error::Immich server did not become ready within 120 seconds"
+          echo "::error::Frameleaf server did not become ready within 120 seconds"
           docker compose ps
           docker compose logs --no-color --tail 200 frameleaf-server
           exit 1
