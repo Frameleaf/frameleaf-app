@@ -9,13 +9,13 @@ Buddy Backup is initially disabled while beta qualification is completed. Enabli
 ## Set up a buddy
 
 1. Link both servers to a Frameleaf account. Both servers need a Server licence to start a new pairing. A Frameleaf Cloud plan is not needed when the two servers connect directly; only the relay needs a plan. Removing a licence later stops new pairings only, never an existing one.
-2. Open **Settings → Backup → Buddy controls**. The existing **Frameleaf Cloud → Backup** entry also opens the Backup Command Center. Check library mounts, configuration coverage and estimated initial size.
+2. Open **Settings → Backup** and choose **Buddy Backup**. **Settings → Frameleaf Cloud → Cloud backup** opens the same Backup screen. Check library mounts, configuration coverage and estimated initial size.
 3. Choose a dedicated hosting directory outside photo libraries, external import paths and the server identity directory. Set a hard capacity for the storage you offer. Your buddy can offer a different amount.
 4. Invite the buddy's Frameleaf account. Your buddy accepts the invitation on their server, and then you confirm the pairing on yours: only the server that sent the invitation confirms. Both owners check the other server, its key and the storage agreement first.
 5. Download and re-import your recovery kit to verify it. Keep it somewhere independent of the original server. Optional Cloud escrow contains only a package encrypted locally using your passphrase; Cloud does not receive the passphrase.
 6. Run the encrypted connection check, then start the initial backup.
 
-The default schedule is 02:00 in the source server's timezone. Sending and receiving each default to 20 Mbit/s, with two block transfers per direction. Configure transfer windows and limits under **Hosting & transfer settings**. Direct connections are preferred. Without a plan, your buddy reaches this server directly at its HTTPS **Public server URL** (**Frameleaf Cloud → Remote access**), so that address must forward `/api/buddy/` to this server. If the two servers cannot connect directly, they need the relay, which requires a Frameleaf Cloud plan; relay allowances apply.
+The default schedule is 02:00 in the source server's timezone. Sending and receiving each default to 20 Mbit/s, with two block transfers per direction. Configure transfer windows and limits under **Hosting & transfer settings**. Direct connections are preferred. Without a plan, your buddy reaches this server directly: at the Frameleaf direct address its Server licence gives it when your router lets the connection in (**Frameleaf Cloud → Remote access**), or at its HTTPS **Public server URL** if you set one up yourself, in which case that address must forward `/api/buddy/` to this server. If the two servers cannot connect directly, they need the relay, which requires a Frameleaf Cloud plan; relay allowances apply.
 
 ## Coverage and controls
 
@@ -27,7 +27,7 @@ Only new or changed encrypted media objects are transferred after the initial ba
 
 **My backup** reports the latest complete restore point separately from the latest successful restore verification. **Hosting for my buddy** shows storage usage and reservations without exposing the buddy's filenames, albums or media. Overview and Analytics show these outgoing and incoming directions alongside Cloud Backup. Their server-wide operational snapshot is independent of library filters; refresh it to read the latest destination status.
 
-The Backup Command Center separates **Status**, **Cloud Backup**, **Buddy controls**, **Recover**, and **How it works**. Recovery opens your source server's backup only. The comparison describes the distinct encryption models: Cloud Backup uses provider-side SSE-C, while Buddy encrypts before transmission.
+The Backup screen has **Overview**, **Schedule** and **Restore** tabs, and a page for each place a backup is kept: **Cloud Backup**, **Buddy Backup** and **On this server**. Recovery opens your source server's backup only. The comparison describes the distinct encryption models: Cloud Backup uses provider-side SSE-C, while Buddy encrypts before transmission.
 
 - **Pause sending / receiving** keeps acknowledged progress. **Resume** continues it.
 - **Restart backup** abandons an incomplete run, scans again and reuses verified objects at the destination.

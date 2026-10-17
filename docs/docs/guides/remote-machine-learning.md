@@ -54,9 +54,9 @@ Studio's render worker runs only in a machine learning container on the same hos
 Version mismatches between both hosts may cause bugs and instability, so remember to update this container as well when updating the local Frameleaf instance.
 :::
 
-4. Navigate to **Administration → Settings → Machine Learning Settings**
-5. Click _Add URL_
-6. Fill the new field with the URL to the remote machine learning container, e.g. `http://ip:port`
+4. Open **Settings → Search & intelligence** and expand **Advanced: the helper program’s address**
+5. Select **Add address**
+6. Fill the new field with the URL to the remote machine learning container, e.g. `http://ip:port`, then select **Save changes**
 
 ## Forcing remote processing
 
@@ -64,7 +64,7 @@ Adding a new URL to the settings is recommended over replacing the existing URL 
 
 <ComposeBuilder query="machineLearning.external=true" />
 
-Do note that this will mean that Smart Search and Face Detection jobs will fail to be processed when the remote instance is not available. This in turn means that tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for affected assets. If this occurs, you must manually click the _Missing_ button next to Smart Search and Face Detection on the **Administration → Job queues** page for the jobs to be retried.
+Do note that this will mean that Smart Search and Face Detection jobs will fail to be processed when the remote instance is not available. This in turn means that tasks dependent on these features—Duplicate Detection and Facial Recognition—will not run for affected assets. If this occurs, you must select **Catch up** for **Visual search** and **Face detection** under **Settings → Computers & background work → Background work** for the jobs to be retried.
 
 ## Load balancing
 

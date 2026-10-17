@@ -4,9 +4,9 @@ Frameleaf supports hierarchical tags, with the ability to read existing tags fro
 
 ## Enable tags feature
 
-1. Open **Settings** from the sidebar and go to **Your preferences**.
-2. In **Library features**, turn on **Enable tags**.
-3. To keep a link to the view in the sidebar, also turn on **Show Tags in the sidebar**.
+1. Open **Settings** from the sidebar and go to **Your preferences** → **Tools & sidebar**.
+2. In the **Tags** row, turn on **Use**.
+3. To keep a link to the view in the sidebar, also turn on **Show in sidebar** in the same row.
 
 ## Creating tags
 

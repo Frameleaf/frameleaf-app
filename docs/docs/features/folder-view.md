@@ -4,9 +4,11 @@ Folder view provides an additional view besides the timeline that is similar to 
 
 ## Enable folder view
 
-1. Open **Settings** from the sidebar and go to **Your preferences**.
-2. In **Library features**, turn on **Enable folders**.
-3. To keep a link to the view in the sidebar, also turn on **Show Folders in the sidebar**.
+Folder view is on by default and shows in the sidebar. If it was turned off:
+
+1. Open **Settings** from the sidebar and go to **Your preferences** → **Tools & sidebar**.
+2. In the **Folders** row, turn on **Use**.
+3. To keep a link to the view in the sidebar, also turn on **Show in sidebar** in the same row.
 
 ## Usage
 

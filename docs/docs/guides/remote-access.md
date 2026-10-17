@@ -1,13 +1,16 @@
 # Remote Access
 
-Native mobile backup can bypass relay payload bandwidth through a bounded direct
-WebRTC data channel when ICE reaches the home server. Existing LAN/WAN/IPv6 HTTPS
-remains the first choice, and resumable HTTPS remains the fallback subject to
-relay policy. See [Direct mobile backup](../features/direct-mobile-backup.md) for
-the signaling contract, STUN endpoints and qualification limits.
+This page gives a few pointers on how to access your Frameleaf server from outside your home network.
 
-This page gives a few pointers on how to access your Frameleaf instance from outside your LAN.
-You can read the [full discussion in Discord](https://discord.com/channels/979116623879368755/1122615710846308484)
+## Frameleaf remote access
+
+Link the server to a Frameleaf account, then open **Settings → Frameleaf Cloud → Remote access**.
+
+- **Server licence, no plan.** The server gets its own Frameleaf direct address and certificate. A browser or a Buddy Backup partner reaches it directly when your router lets them in (automatic port mapping, or **I forward the port myself**).
+- **Frameleaf Cloud plan.** Adds the Frameleaf relay, which works even when your router or internet provider blocks incoming connections, plus a custom hostname on a domain you own and the monthly relay allowance. The Frameleaf apps use the relay away from home.
+- **Your own address.** An address you set up yourself (your own domain behind a reverse proxy, a VPN or Tailscale, described below) works anywhere without a licence or a plan. Enter it as the **Public server URL** so shared links and sign-in callbacks use it.
+
+The native apps can also back up over a bounded direct WebRTC data channel when it reaches the home server; see [Direct mobile backup](../features/direct-mobile-backup.md).
 
 :::danger
 Never forward port 2283 directly to the internet without additional configuration. This will expose the web interface via http to the internet, making you susceptible to [man in the middle](https://en.wikipedia.org/wiki/Man-in-the-middle_attack) attacks.
@@ -15,7 +18,7 @@ Never forward port 2283 directly to the internet without additional configuratio
 
 ## Option 1: VPN to home network
 
-You may use a VPN service to open an encrypted connection to your Frameleaf instance. OpenVPN and Wireguard are two popular VPN solutions. Here is a guide on setting up VPN access to your server - [Pihole documentation](https://docs.pi-hole.net/guides/vpn/wireguard/overview/)
+You may use a VPN service to open an encrypted connection to your Frameleaf server. OpenVPN and Wireguard are two popular VPN solutions. Here is a guide on setting up VPN access to your server - [Pihole documentation](https://docs.pi-hole.net/guides/vpn/wireguard/overview/)
 
 ### Pros
 
@@ -33,10 +36,6 @@ You may use a VPN service to open an encrypted connection to your Frameleaf inst
 
 If you are unable to open a port on your router for Wireguard or OpenVPN to your server, [Tailscale](https://tailscale.com/) is a good option. Tailscale mediates a peer-to-peer wireguard tunnel between your server and remote device, even if one or both of them are behind a [NAT firewall](https://en.wikipedia.org/wiki/Network_address_translation).
 
-:::tip Video tutorial
-You can learn how to set up Tailscale together with Frameleaf with the [tutorial video](https://www.youtube.com/watch?v=Vt4PDUXB_fg) they created.
-:::
-
 ### Pros
 
 - Minimal configuration needed on server and client sides.
@@ -50,7 +49,7 @@ You can learn how to set up Tailscale together with Frameleaf with the [tutorial
 
 ## Option 3: Reverse Proxy
 
-A reverse proxy is a service that sits between web servers and clients. A reverse proxy can either be hosted on the server itself or remotely. Clients can connect to the reverse proxy via https, and the proxy relays data to Frameleaf. This setup makes most sense if you have your own domain and want to access your Frameleaf instance just like any other website, from outside your LAN. You can also use a DDNS provider like DuckDNS or no-ip if you don't have a domain. This configuration allows the Frameleaf Android and iphone apps to connect to your server without a VPN or tailscale app on the client side.
+A reverse proxy is a service that sits between web servers and clients. A reverse proxy can either be hosted on the server itself or remotely. Clients can connect to the reverse proxy via https, and the proxy relays data to Frameleaf. This setup makes most sense if you have your own domain and want to access your Frameleaf server just like any other website, from outside your LAN. You can also use a DDNS provider like DuckDNS or no-ip if you don't have a domain. This configuration allows the Frameleaf iPhone and Android apps to connect to your server without a VPN or tailscale app on the client side.
 
 If you're hosting your own reverse proxy, [Nginx](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/) is a great option. An example configuration for Nginx is provided [here](/administration/reverse-proxy.md).
 

@@ -65,11 +65,7 @@ If you only want to do web development connected to an existing, remote backend,
 FRAMELEAF_SERVER_URL=https://photos.example.com/ mise //web:start
 ```
 
-This will install all dependencies (including the SDK) and start the dev server in one step. To connect to the hosted demo server specifically, use the shorthand:
-
-```bash
-mise //web:start-demo
-```
+This will install all dependencies (including the SDK) and start the dev server in one step.
 
 If you're using PowerShell on Windows you may need to set the env var separately like so:
 
@@ -84,7 +80,7 @@ The UI lives in `packages/ui/dist/` as the local `@frameleaf/ui` workspace packa
 
 ### Mobile apps
 
-Frameleaf is building its own native iOS and Android apps. The inherited Flutter app has been removed from this repository, so there is no mobile app to build here yet. The server API is unchanged, so existing mobile clients can still connect to a development server at `http://your-machine-ip:3000`.
+Frameleaf's native iOS and Android apps are developed in their own repositories, so there is no mobile app to build here. Point a development build of the Frameleaf app at a development server at `http://your-machine-ip:3000`. The API the apps use is described in the [native app API guide](./native-app-api.md).
 
 ## IDE setup
 
@@ -96,60 +92,4 @@ Setting these in the IDE give a better developer experience, auto-formatting cod
 
 Install the `Prettier`, `ESLint` and `Svelte` extensions. These extensions are listed in the `extensions.json` file under `.vscode/` and should appear as workspace recommendations.
 
-Here are the settings we use, they should be active as workspace settings (`settings.json`):
-
-```json title="settings.json"
-{
-  "[css]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-  "[javascript]": {
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": "explicit",
-      "source.removeUnusedImports": "explicit"
-    },
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-  "[json]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-  "[jsonc]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-  "[svelte]": {
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": "explicit",
-      "source.removeUnusedImports": "explicit"
-    },
-    "editor.defaultFormatter": "svelte.svelte-vscode",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-  "[typescript]": {
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": "explicit",
-      "source.removeUnusedImports": "explicit"
-    },
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "editor.formatOnSave": true,
-    "editor.tabSize": 2
-  },
-  "cSpell.words": ["immich"],
-  "editor.formatOnSave": true,
-  "eslint.validate": ["javascript", "svelte"],
-  "explorer.fileNesting.enabled": true,
-  "explorer.fileNesting.patterns": {
-    "*.ts": "${capture}.spec.ts,${capture}.mock.ts"
-  },
-  "svelte.enable-ts-plugin": true,
-  "typescript.preferences.importModuleSpecifier": "non-relative"
-}
-```
+The settings we use are checked in as workspace settings in [`.vscode/settings.json`](https://github.com/Frameleaf/frameleaf-app/blob/main/.vscode/settings.json) and apply automatically when you open the repository. They format on save with Prettier, ESLint and the Svelte extension, and nest spec and mock files under their source files.

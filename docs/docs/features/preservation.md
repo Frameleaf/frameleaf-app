@@ -2,7 +2,7 @@
 
 A **preservation package** is an independent copy of your original files together with what your library knows about them: dates, places, your descriptions, ratings, favourites, archive, Locked records, albums and collections, tags, named people, edit recipes, Live Photo and stack links, document corrections and moment notes. Every file in it is checked when it is written and can be checked again at any time. A package can be restored into your library, on this server or another one.
 
-Find it under **Settings → Originals & preservation** (administrators also see it under **Import & protection** in server settings), or from **Utilities → Preservation verification**.
+Find it under **Settings → Import & protection → Originals & preservation**.
 
 A package is not a backup of the server. It does not contain accounts, sharing, shared spaces, server settings, pets, memories or Studio projects (Studio projects travel as project bundles). Keep your database backups and a separate copy of your originals as well.
 

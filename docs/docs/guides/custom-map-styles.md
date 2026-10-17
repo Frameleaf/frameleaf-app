@@ -10,9 +10,9 @@ can be used as a basis for creating your own style.
 There are several sources for already-made `style.json` map themes, as well as
 online generators you can use.
 
-1. In **Frameleaf**, navigate to **Administration --> Settings --> Map & GPS Settings** and expand the **Map Settings** subsection.
-2. Paste the link to your JSON style in either the **Light Style** or **Dark Style**. (You can add different styles which will help make the map style more appropriate depending on whether you set **Frameleaf** to Light or Dark mode.)
-3. Save your selections. Reload the map, and enjoy your custom map style!
+1. In **Frameleaf**, open **Settings → Server & updates → Maps & places** and set **Map look** to **Custom**.
+2. Under **Advanced**, paste the link to your JSON style in **Light map style address** or **Dark map style address**. (You can add different styles which will help make the map style more appropriate depending on whether you set **Frameleaf** to Light or Dark mode.)
+3. Select **Save changes**. Reload the map, and enjoy your custom map style!
 
 ## Use MapTiler to build a custom style
 

@@ -1,1 +1,1 @@
-Login to the mobile app with the server endpoint URL at `http://<machine-ip-address>:2283`, then continue and sign in with your email and password.
+Open the app and choose **Sign in with Frameleaf**, pick your server from the ones the app finds on your Wi-Fi, or enter the server address (for example `http://<machine-ip-address>:2283`) and sign in with your email and password.

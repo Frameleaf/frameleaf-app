@@ -9,7 +9,7 @@
 - Nothing your privacy settings hide (suppressed people, pets and tags, and hidden sensitive detections) while your session is locked.
 - External-library files that went missing. A library scan puts them in the trash and brings them back when the file is found again; they are listed with a note, and the trash does not restore or delete them. An item you trashed yourself whose file went missing afterwards is restored or deleted like any other.
 
-The summary counts what is listed, the combined size of the originals, and the retention window: items are eligible for permanent deletion after the number of days set in **Trash settings**, or immediately when the trash is turned off.
+The summary counts what is listed, the combined size of the originals, and the retention window: items are eligible for permanent deletion after the number of days set in **Settings → Storage & originals → Trash & retention**, or immediately when the trash is turned off.
 
 ## Changing the trash
 

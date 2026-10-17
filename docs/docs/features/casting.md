@@ -1,6 +1,6 @@
 # Chromecast support
 
-Frameleaf supports the Google's Cast protocol so that photos and videos can be cast to devices such as a Chromecast and a Nest Hub. This feature is considered experimental and has several important limitations listed below. Currently, this feature is only supported by the web client, support on Android and iOS is planned for the future.
+Frameleaf supports the Google's Cast protocol so that photos and videos can be cast to devices such as a Chromecast and a Nest Hub. This feature is considered experimental and has several important limitations listed below. This page covers casting from the web app; the Frameleaf Android app has Google Cast built in, and the iPhone app plays to an Apple TV with AirPlay.
 
 ## Enable Google Cast Support
 
@@ -8,8 +8,10 @@ Google Cast support is disabled by default. The web UI uses Google-provided scri
 
 To enable it:
 
-1. Open **Settings** from the sidebar and go to **Your preferences**.
-2. In **Library features**, turn on **Enable Chromecast**.
+1. Open **Settings** from the sidebar and go to **Your preferences** → **Tools & sidebar**.
+2. In the **Cast to a TV** row, turn on **Use**.
+
+If the switch can't be turned on, your administrator has turned casting off for your account.
 
 ## Limitations
 

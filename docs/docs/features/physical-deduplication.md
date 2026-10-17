@@ -14,6 +14,6 @@ Administrators can open **Settings > Utilities > File trash** to review stored o
 
 Restore returns a file to its last library. Files whose account has been deleted cannot be restored there. Permanent deletion asks for confirmation.
 
-New uploads need no plan: matching content is reused when it is stored. Copies stored before universal storage can still be merged from **Settings > Storage & originals > Physical deduplication**, which previews a plan for the account you pick on the page before anything is applied.
+New uploads need no plan: matching content is reused when it is stored. Copies stored before universal storage can still be merged from **Settings > Library care > Merge older copies**, which previews a plan for the account you pick on the page before anything is applied.
 
 Keep an independent, verified backup: reusing one stored file does not protect it against disk loss.
