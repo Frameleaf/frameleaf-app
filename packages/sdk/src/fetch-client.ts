@@ -17061,6 +17061,9 @@ export type TimeBucketAssetDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17105,6 +17108,9 @@ export type TimeBucketDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17147,9 +17153,12 @@ export type TimelineHighlightsDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
     grouping?: TimelineHighlightGrouping;
     /** Highlights besides the key photo for each month card (default 4). Year cards carry none */
     highlightCount?: number;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -17196,6 +17205,9 @@ export type TimelineOrderedDto = {
     bestPhotos?: boolean;
     /** Date source for timeline bucket grouping. Defaults to taken date. */
     dateType?: TimeBucketDateType;
+    /** A SearchFilter, JSON-encoded: the structured filter POST /search/metadata takes in `filter`, with the same meaning (dates, places, cameras, rating, people, pets, tags, albums, media type, favourites, statuses and `or` branches). It only narrows what this timeline may show: its own owner, album, visibility and Locked rules still apply. Neither it nor imageEnrichment is available through a shared link */
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by favorite status (true for favorites only, false for non-favorites only) */
     isFavorite?: boolean;
     /** Filter by trash status (true for trashed assets only, false for non-trashed only) */
@@ -29043,12 +29055,14 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29076,6 +29090,8 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
         bbox,
         bestPhotos,
         dateType,
+        filter,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -29100,12 +29116,14 @@ export function getTimeBucket({ albumId, assetType, bbox, bestPhotos, dateType, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29132,6 +29150,8 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         bbox,
         bestPhotos,
         dateType,
+        filter,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -29155,14 +29175,16 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
     grouping?: TimelineHighlightGrouping;
     highlightCount?: number;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29189,8 +29211,10 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
         bbox,
         bestPhotos,
         dateType,
+        filter,
         grouping,
         highlightCount,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
@@ -29214,7 +29238,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
+export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withStacked }: {
     after?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
@@ -29222,6 +29246,8 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
     before?: string;
     bestPhotos?: boolean;
     dateType?: TimeBucketDateType;
+    filter?: string;
+    imageEnrichment?: ImageEnrichmentFilter;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -29253,6 +29279,8 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
         before,
         bestPhotos,
         dateType,
+        filter,
+        imageEnrichment,
         isFavorite,
         isTrashed,
         key,
