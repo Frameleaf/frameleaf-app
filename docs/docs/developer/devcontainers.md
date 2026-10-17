@@ -120,7 +120,7 @@ Unlike the Frameleaf developer setup based on Docker Compose which uses `.env` f
 
 ```json
 "remoteEnv": {
-    "UPLOAD_LOCATION": "${localEnv:UPLOAD_LOCATION:./Library}",
+    "UPLOAD_LOCATION": "${localEnv:UPLOAD_LOCATION:./library}",
     "DB_PASSWORD": "${localEnv:DB_PASSWORD:postgres}",
     "DB_USERNAME": "${localEnv:DB_USERNAME:postgres}",
     "DB_DATABASE_NAME": "${localEnv:DB_DATABASE_NAME:frameleaf}"
@@ -133,15 +133,15 @@ The `${localEnv:VARIABLE:default}` syntax reads from your shell environment with
 
 The `UPLOAD_LOCATION` environment variable controls where files are stored:
 
-**Default:** `./Library` (relative to the `docker` directory)
-**Resolved to:** `<repo-root>/docker/Library`
+**Not set:** uploads and the database use the named Docker volumes `upload-devcontainer-volume` and `postgres19-devcontainer-volume`
+**Set:** relative paths resolve from the `docker` directory (for example `./library` becomes `<repo-root>/docker/library`)
 
-**Bind Mounts Created:**
+**Bind Mounts Created when set:**
 
 ```yaml
 # From .devcontainer/server/container-compose-overrides.yml
-- ${UPLOAD_LOCATION-./Library}/photos:/data
-- ${UPLOAD_LOCATION-./Library}/postgres:/var/lib/postgresql/data
+- ${UPLOAD_LOCATION}/photos:/data
+- ${UPLOAD_LOCATION}/postgres19:/var/lib/postgresql
 ```
 
 ### Database Configuration
@@ -159,8 +159,8 @@ These variables have sensible defaults (for development) but can be customized:
 Add these to your shell profile (`~/.bashrc`, `~/.zshrc`, `~/.bash_profile`, etc.):
 
 ```bash
-# Required
-export UPLOAD_LOCATION=./Library  # or absolute path
+# Optional (named Docker volumes are used when unset)
+export UPLOAD_LOCATION=./library  # or absolute path
 
 # Optional (only if using non-default values)
 export DB_PASSWORD=your_password
@@ -201,17 +201,12 @@ To use your SSH key for commit signing, see the [GitHub guide on SSH commit sign
 
 When the Dev Container starts, it automatically:
 
-1. **Runs post-create script** (`container-server-post-create.sh`):
-   - Adjusts file permissions for the `node` user
-   - Installs dependencies: `pnpm install` in all packages
-   - Builds TypeScript SDK: `pnpm --filter @frameleaf/sdk build`
-
-2. **Starts development servers** via VS Code tasks:
-   - The `API Server (Nest)` task - API server with hot-reloading on port 2283
-   - The `Web Server (Vite)` task - Web frontend with hot-reloading on port 3000
+1. **Starts development servers** via VS Code tasks that run the scripts in `.devcontainer/server/`:
+   - The API server task (`container-start-backend.sh`) installs the server dependencies and starts the API server with hot-reloading on port 2283
+   - The web server task (`container-start-frontend.sh`) installs and builds `@frameleaf/sdk` and `@frameleaf/plugin-sdk`, installs the web dependencies, waits for the API server and starts the web frontend with hot-reloading on port 3000
    - Both servers watch for file changes and recompile automatically
 
-3. **Configures port forwarding**:
+2. **Configures port forwarding**:
    - Web UI: http://localhost:3000 (opens automatically)
    - API: http://localhost:2283
    - Debug ports: 9230 (workers), 9231 (API)
@@ -230,12 +225,12 @@ Once running, you can access:
 | API      | http://localhost:2283 | REST API endpoints (Not used directly, web UI will expose this over http://localhost:3000/api) |
 | Database | localhost:5432        | PostgreSQL (username: `postgres`) (Not used directly)                                          |
 
-### Connecting Mobile Apps
+### Connecting the Frameleaf App
 
-To connect the mobile app to your Dev Container:
+To connect a development build of the Frameleaf app to your Dev Container:
 
 1. Find your machine's IP address
-2. In the mobile app, use: `http://YOUR_IP:3000/api`
+2. In the app, use the server address `http://YOUR_IP:2283`
 3. Ensure your firewall allows connections on port 2283
 
 ### Making Code Changes
@@ -286,11 +281,11 @@ The Dev Container is pre-configured for debugging:
 1. **API Server Debugging**:
    - Set breakpoints in VS Code
    - Press `F5` or use "Run and Debug" panel
-   - Select "Attach to Server" configuration
+   - Select the "Immich API Server" attach configuration
    - Debug port: 9231
 
 2. **Worker Debugging**:
-   - Use "Attach to Workers" configuration
+   - Use the "Immich Workers" attach configuration
    - Debug port: 9230
 
 3. **Web Debugging**:
@@ -306,8 +301,8 @@ The Dev Container is pre-configured for debugging:
 **Problem**: `EACCES` or permission denied errors  
 **Solution**:
 
-- The Dev Container runs as the `node` user (UID 1000)
-- If your host UID differs, you may see permission issues
+- The Dev Container runs as `root` (`remoteUser` in `.devcontainer/devcontainer.json`)
+- Files it creates in a bind-mounted `UPLOAD_LOCATION` may be owned by `root` on the host
 - Try rebuilding the container: "Dev Containers: Rebuild Container"
 
 #### Container Won't Start
@@ -334,7 +329,7 @@ The Dev Container is pre-configured for debugging:
 **Problem**: Errors about missing UPLOAD_LOCATION  
 **Solution**:
 
-1. Set the environment variable: `export UPLOAD_LOCATION=./Library`
+1. Set the environment variable: `export UPLOAD_LOCATION=./library`
 2. Add to your shell profile for persistence
 3. Restart your terminal and VS Code
 
@@ -378,7 +373,7 @@ devpod up .
 
 ## Mobile Development
 
-While the Dev Container focuses on server and web development, you can connect mobile apps for testing:
+While the Dev Container focuses on server and web development, you can connect the Frameleaf app for testing:
 
 ### Connecting iOS/Android Apps
 
@@ -395,10 +390,10 @@ While the Dev Container focuses on server and web development, you can connect m
    ```
 
 2. **Configure mobile app**:
-   - Server URL: `http://YOUR_IP:2283/api`
+   - Server address: `http://YOUR_IP:2283`
    - Ensure firewall allows port 2283
 
-3. **Native app development**: Frameleaf is building its own native iOS and Android apps. The inherited Flutter app has been removed from this repository, so there is no mobile app to build in the Dev Container.
+3. **Native app development**: Frameleaf's native iOS and Android apps are developed in their own repositories, so there is no mobile app to build in the Dev Container. See the [native app API guide](./native-app-api.md).
 
 ## Advanced Configuration
 

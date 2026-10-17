@@ -25,8 +25,8 @@ SELECT * FROM "asset" WHERE "originalFileName" LIKE '%_2023_%'; -- all files wit
 ```
 
 ```sql title="Find by path"
-SELECT * FROM "asset" WHERE "originalPath" = 'upload/library/admin/2023/2023-09-03/PXL_2023.jpg';
-SELECT * FROM "asset" WHERE "originalPath" LIKE 'upload/library/admin/2023/%';
+SELECT * FROM "asset" WHERE "originalPath" = '/data/library/admin/2023/2023-09-03/PXL_2023.jpg';
+SELECT * FROM "asset" WHERE "originalPath" LIKE '/data/library/admin/2023/%';
 ```
 
 ### ID

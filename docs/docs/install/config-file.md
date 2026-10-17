@@ -24,7 +24,7 @@ Keep the activated file contents available to every worker. A process that has a
 
 In JSON format, create a new config file (e.g. `frameleaf-config.json`) and put it in a location mounted in the container that can be accessed by Frameleaf.
 YAML-formatted config files are also supported.
-The default configuration looks like this:
+Part of the default configuration looks like this (the file can hold any setting; **Copy as text** below gives the complete current configuration):
 
 <details>
 <summary>frameleaf-config.json</summary>
@@ -264,8 +264,8 @@ The default configuration looks like this:
 </details>
 
 :::tip
-In Administration > Settings is a button to copy the current configuration to your clipboard.
-So you can just grab it from there, paste it into a file and you're pretty much good to go.
+**Settings → Server & updates → Copy settings** has **Copy as text** and **Save to a file**, which give the current configuration without passwords or keys.
+So you can just grab it from there, put it into a file and you're pretty much good to go.
 :::
 
 ### Step 2 - Specify the file location

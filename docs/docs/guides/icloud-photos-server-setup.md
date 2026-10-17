@@ -2,17 +2,17 @@
 
 This guide is for the administrator who installs and maintains iCloud Photos Sync. After setup, each user connects their own Apple account through the [iCloud Photos Sync user guide](icloud-photos-sync.md).
 
-The feature requires a fork build containing iCloud sync, its database migrations, and the separate HTTPS bridge. It is disabled until configured. Availability in this checkout does not mean an older published image contains the feature. Use a tested fork image that includes it.
+The feature requires a Frameleaf release that contains iCloud sync and its database migrations, plus the separate HTTPS bridge. It is disabled until configured. Older published images may not contain it; use a tested Frameleaf release that includes it.
 
 ## Deploy the bridge
 
-Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
+Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed Frameleaf release. The bridge imports Rclone **v1.75.2**, commit `be8d6044eacb843b74d335db0c5fbe09222031fe`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/main/icloud-bridge/api.md) records the transport contract and limitations.
 
 Prepare absolute paths in your deployment environment:
 
 ```dotenv
 FRAMELEAF_SOURCE_ROOT=/opt/frameleaf-app
-FRAMELEAF_IMAGE=your-registry/frameleaf-server:your-tested-fork-release
+FRAMELEAF_IMAGE=ghcr.io/frameleaf/frameleaf-server:your-tested-release
 FRAMELEAF_UID=1000
 FRAMELEAF_GID=1000
 ICLOUD_SECRETS_DIR=/srv/frameleaf-icloud/secrets

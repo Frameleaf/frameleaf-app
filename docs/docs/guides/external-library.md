@@ -40,5 +40,5 @@ In the Frameleaf web UI:
 
 # Confirm stuff is happening
 
-1. Select **Settings** in the sidebar to open the Command Center, then open **Compute & jobs**.
+1. Select **Settings** in the sidebar to open the Command Center, then open **Computers & background work → Background work**.
 2. You should see active jobs for the library scan, thumbnail generation and metadata extraction.

@@ -5,9 +5,9 @@ Frameleaf gives each user the ability to manage their own settings. This include
 To open your settings:
 
 1. Select your avatar in the top right corner of the screen.
-2. Choose **Account settings**.
+2. Choose **Account settings**, or open **Settings** from the sidebar.
 
-Settings opens on **Your preferences**, which holds your profile, library features and account access.
+**Your preferences** holds your profile, your Frameleaf account, downloads and **Tools & sidebar**. Password, Locked folder PIN, API keys, sign-in provider, signed-in devices and Locked tags & people are under **Access & security**.
 
 ---
 
@@ -19,7 +19,7 @@ Everything in this part of the settings changes only your own account.
 - **Password**: enter your current password and the new one twice. **Sign out my other devices** is on by default; this device stays signed in.
 - **Locked folder PIN**: create, change or clear the six-digit PIN that protects your Locked photos and videos. **Forgot your PIN?** clears it with your account password; when password sign-in is turned off, ask your administrator.
 - **API keys**: create a key with only the permissions an application needs (or full access), edit its name and permissions, rotate it or delete it. A new or rotated key is shown once; the old value of a rotated key stops working at once.
-- **Sign-in provider**: connect or disconnect your account from the server's sign-in provider, and open the provider's account page when your administrator configured one.
+- **Sign-in provider** (OAuth): connect or disconnect your account from the server's sign-in provider, and open the provider's account page when your administrator configured one.
 - **Signed-in devices**: see where your account is signed in, sign out one device or every device except this one.
 - **Frameleaf account**: link or unlink your Frameleaf account when your administrator has configured the service. You can keep signing in locally when it is not configured.
 - **Supporter status**: activate or remove personal supporter status with its key. Administrators also register or remove the server support key here, as a separate action.

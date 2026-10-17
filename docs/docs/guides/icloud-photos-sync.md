@@ -1,6 +1,6 @@
 # iCloud Photos Sync
 
-Import your iCloud Photos library into Frameleaf from **Utilities → iCloud Photos Sync**. Downloads run on the server and continue when you close the browser. You can import available Apple edits, preserve Live Photos, and recover matching Frameleaf files that are missing or damaged.
+Import your iCloud Photos library into Frameleaf from **Settings → Utilities → iCloud Photos**. Downloads run on the server and continue when you close the browser. You can import available Apple edits, preserve Live Photos, and recover matching Frameleaf files that are missing or damaged.
 
 This is a one-way import. It does not write changes back to Apple or delete Frameleaf photos when you delete them from iCloud. Disconnecting leaves your imported Frameleaf photos in place.
 
@@ -14,7 +14,7 @@ The implementation has passed local protocol, database, and web tests. A live Ap
 
 ## Connect and choose photos
 
-1. Open **Utilities → iCloud Photos Sync**.
+1. Open **Settings → Utilities → iCloud Photos**.
 2. Enter a **Connection name**, such as “Personal iCloud”, and select **Add connection**.
 3. Enter your **Apple account email** and password, then select **Sign in to iCloud**.
 4. If prompted, enter the six-digit code from your trusted device and select **Verify code**. If device approval is required, approve access on your device, then select **Check device approval**.
@@ -68,7 +68,7 @@ Up to **20 distinct retained Apple edit versions per source photo** can be admit
 
 A Live Photo contains a still image, such as JPG or HEIC, and a short movie. The connector uses Apple source identities to link these through Frameleaf's native Live Photo relationship. The movie becomes the still's motion component rather than a separate timeline item.
 
-If only the movie is missing or corrupt, the connector can recover that component without replacing the healthy still. General pairing of files already imported outside this connector remains available under **Utilities → Relink live photos**.
+If only the movie is missing or corrupt, the connector can recover that component without replacing the healthy still. General pairing of files already imported outside this connector remains available under **Settings → Utilities → Live Photo pairing**.
 
 Available original and RAW alternatives are preserved as their own resources. An available JPEG preview is not substituted for an original HEIC or RAW file. Unsupported decoding is reported for review.
 

@@ -23,7 +23,7 @@ People you share the photo with read it with your corrections applied and withou
 
 ## Suggested details
 
-An administrator can turn on **Suggest receipt and document fields** in the **OCR** section of the machine learning settings (off by default). The panel then suggests a **date**, a **total**, a **reference**, an **email address** and a **phone number** from the photo's text.
+An administrator can turn on **Suggest receipt details** in **Settings → Search & intelligence → Text, documents & receipts** (off by default). The panel then suggests a **date**, a **total**, a **reference**, an **email address** and a **phone number** from the photo's text.
 
 A suggestion is only what the text says. It shows where it was read and how confident the recognition was about that text, and it is never treated as a verified record: a well-read "12.50" can still be the wrong total, and day and month order in a date is not guessed. For each value you can:
 
