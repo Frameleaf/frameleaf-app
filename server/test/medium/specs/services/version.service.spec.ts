@@ -1,6 +1,5 @@
 import { Kysely } from 'kysely';
 import { serverVersion } from 'src/constants.js';
-import { JobName } from 'src/enum.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -45,27 +44,21 @@ describe(VersionService.name, () => {
       });
     });
 
-    it('should queue memory creation when upgrading from 1.128.0', async () => {
-      const { sut, ctx } = setup();
-      const jobMock = ctx.getMock(JobRepository);
-      const versionHistoryRepo = ctx.get(VersionHistoryRepository);
-      jobMock.queue.mockResolvedValue(void 0);
+    it.each(['v0.9.0', 'v1.128.0', 'v1.129.0', 'v3.2.0'])(
+      'records the transition from %s without running the retired Immich memory migration',
+      async (previous) => {
+        const { sut, ctx } = setup();
+        const jobMock = ctx.getMock(JobRepository);
+        const versionHistoryRepo = ctx.get(VersionHistoryRepository);
 
-      await versionHistoryRepo.create({ version: 'v1.128.0' });
-      await sut.onBootstrap();
+        const countBefore = (await versionHistoryRepo.getAll()).length;
+        await versionHistoryRepo.create({ version: previous });
+        await sut.onBootstrap();
 
-      expect(jobMock.queue).toHaveBeenCalledWith({ name: JobName.MemoryGenerate });
-    });
-
-    it('should not queue memory creation when upgrading from 1.129.0', async () => {
-      const { sut, ctx } = setup();
-      const jobMock = ctx.getMock(JobRepository);
-      const versionHistoryRepo = ctx.get(VersionHistoryRepository);
-
-      await versionHistoryRepo.create({ version: 'v1.129.0' });
-      await sut.onBootstrap();
-
-      expect(jobMock.queue).not.toHaveBeenCalled();
-    });
+        expect(jobMock.queue).not.toHaveBeenCalled();
+        expect(await versionHistoryRepo.getAll()).toHaveLength(countBefore + 2);
+        expect((await versionHistoryRepo.getAll()).map(({ version }) => version)).toContain(serverVersion.toString());
+      },
+    );
   });
 });
