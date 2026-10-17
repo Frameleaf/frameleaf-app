@@ -424,16 +424,17 @@ export class SyncService extends BaseService {
   }
 
   /**
-   * FL-447 (owner rule, October 17, 2026: items hidden by the owner's Locked rules reach partners only).
-   * The cursor album streams (AlbumToAssetsV1, AlbumAssetsV2, AlbumAssetExifsV1) leave out another
-   * member's item that matches its owner's Locked rules, but a cursor cannot take back an item a device
-   * already received before the item matched, nor send one again once it stops matching. So the session
-   * keeps a fingerprint of the album items withheld from it; when the set of items it could already have
-   * changed — the owner made or lifted a rule, or tagged, named or confirmed something into or out of
-   * one, or a Studio export's source did — the device is reset and syncs again under the rules as they
-   * stand, as the owner's own devices are when their rules change (FL-218). A device that synced before
-   * this check existed and has something withheld from it is reset once. AlbumAssetAccessV1 reconciles
-   * per item and needs none of this; partners receive locked copies through their own streams.
+   * FL-447 (owner decision, October 17, 2026: Locked items and items hidden by their owner's Locked
+   * rules reach partners only). The cursor album streams (AlbumToAssetsV1, AlbumAssetsV2,
+   * AlbumAssetExifsV1) leave out another member's item that is locked or matches its owner's Locked
+   * rules, but a cursor cannot take back an item a device already received before that, nor send one
+   * again once it is unlocked or stops matching. So the session keeps a fingerprint of the album items
+   * withheld from it; when the set of items it could already have changed — the owner locked or
+   * unlocked an item, made or lifted a rule, or tagged, named or confirmed something into or out of one,
+   * or a Studio export's source did — the device is reset and syncs again as things stand, as the
+   * owner's own devices are when their rules change (FL-218). A device that synced before this check
+   * existed and has something withheld from it is reset once. AlbumAssetAccessV1 reconciles per item and
+   * needs none of this; partners receive locked copies through their own streams.
    */
   private async hasWithheldAlbumAssetsChanged(
     userId: string,

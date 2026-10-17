@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetLockReason, SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { SyncTestContext } from 'test/medium.factory.js';
 import { getKyselyDB, wait } from 'test/utils.js';
@@ -114,6 +114,29 @@ describe('withheld album items (FL-447)', () => {
     const next = await ctx.syncStream(auth, legacyTypes);
     expect(next).not.toContainEqual(expect.objectContaining({ type: SyncEntityType.SyncResetV1 }));
     expect(albumAssetIds(next).has(hidden.id)).toBe(false);
+  });
+
+  it('withdraws a locked item the device already synced and returns it once unlocked', async () => {
+    const { ctx, auth, plain, tagged } = await setup();
+    const first = await ctx.syncStream(auth, legacyTypes);
+    await ctx.syncAckAll(auth, first);
+    await ctx.assertSyncIsComplete(auth, legacyTypes);
+
+    await db
+      .insertInto('asset_lock')
+      .values({ assetId: plain.id, reason: AssetLockReason.Marked, lockedBy: null, previousVisibility: null })
+      .execute();
+    await wait(2);
+    const withdrawn = await ctx.syncStream(auth, legacyTypes);
+    expect(withdrawn).toEqual(reset);
+    await ctx.syncAckAll(auth, withdrawn);
+    const again = await ctx.syncStream(auth, legacyTypes);
+    expect(albumAssetIds(again)).toEqual(new Set([tagged.id]));
+    await ctx.syncAckAll(auth, again);
+
+    await db.deleteFrom('asset_lock').where('assetId', '=', plain.id).execute();
+    await wait(2);
+    await expect(ctx.syncStream(auth, legacyTypes)).resolves.toEqual(reset);
   });
 
   it('never resets the owner, whose own items follow their own session', async () => {
