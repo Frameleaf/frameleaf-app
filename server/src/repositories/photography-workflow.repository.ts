@@ -70,13 +70,44 @@ export class PhotographyWorkflowRepository {
     );
     return rows[0]?.name || null;
   }
-  async mutate<T>(
+  /**
+   * The studio owner's edit: changes the workflow under its lock and gives it a new `revision`. The
+   * revision is what the owner edits against, so only the owner's own edits change it (FL-423).
+   */
+  mutate<T>(
     id: string,
     ownerId: string,
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
     change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+  ) {
+    return this.write(id, ownerId, albumId, expected, initial, change, false);
+  }
+  /**
+   * FL-423: everything that is not the owner's edit (a client's sign-in, choices, approvals, orders,
+   * downloads and payments, and the background work they start) changes the workflow under the same
+   * lock and keeps its `revision`, so it never makes the owner's next save stale. A workflow's first
+   * write still gets a revision.
+   */
+  mutateKeepingRevision<T>(
+    id: string,
+    ownerId: string,
+    albumId: string,
+    expected: string | null | undefined,
+    initial: PhotographyWorkflow,
+    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+  ) {
+    return this.write(id, ownerId, albumId, expected, initial, change, true);
+  }
+  private async write<T>(
+    id: string,
+    ownerId: string,
+    albumId: string,
+    expected: string | null | undefined,
+    initial: PhotographyWorkflow,
+    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    keepRevision: boolean,
   ): Promise<{
     row: WorkflowRow;
     result: T;
@@ -104,7 +135,7 @@ export class PhotographyWorkflowRepository {
         throw new ConflictException('Workflow changed; reload before saving');
       const value = current?.value ?? structuredClone(initial);
       const result = await change(value, tx);
-      const revision = randomUUID();
+      const revision = keepRevision && current ? current.revision : randomUUID();
       const encoded = JSON.stringify(value);
       if (Buffer.byteLength(encoded) > 20_000_000)
         throw new ConflictException('Workflow history storage limit reached');

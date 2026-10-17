@@ -128,6 +128,7 @@ describe('RestorationPanel Smooth motion (FL-162, FL-159)', () => {
           refusalDetail: null,
           estimate: { sampleCount: 0, bytesPerSecond: null, windowDays: 30, previewBytes: 0, fullBytes: 0 },
           gpu: { name: 'NVIDIA RTX 4070', memoryTotalBytes: 12 * 1024 ** 3 },
+          models: [],
         },
       ],
       ...overrides,
@@ -214,6 +215,7 @@ describe('RestorationPanel Enhance & upscale (VIEWER-P6)', () => {
           refusalDetail: null,
           estimate: { sampleCount: 0, windowDays: 30, previewSeconds: null, fullSeconds: null },
           gpu: null,
+          models: [],
         },
       ],
     } as never);
@@ -239,6 +241,152 @@ describe('RestorationPanel Enhance & upscale (VIEWER-P6)', () => {
         destinationId: 'server',
       }),
     });
+    // FL-423: a computer that listed no models keeps its usual one, so no model is named
+    expect(sdkMock.requestAssetRestoration.mock.calls[0][0].assetRestorationRequestDto).not.toHaveProperty('model');
+  });
+});
+
+// FL-423: the Enhance slider's stops are the models the computer at home runs, then Frameleaf Cloud.
+describe('RestorationPanel Enhance model choice (FL-423)', () => {
+  const photo = assetFactory.build({ type: AssetTypeEnum.Image, id: 'photo-3' });
+  const destination = (overrides: Record<string, unknown>) => ({
+    health: 'healthy',
+    available: true,
+    leavesNetwork: false,
+    consentRequired: false,
+    consentGranted: true,
+    refusal: null,
+    refusalDetail: null,
+    estimate: { sampleCount: 0, windowDays: 30, previewSeconds: null, fullSeconds: null },
+    gpu: null,
+    models: [],
+    ...overrides,
+  });
+  const garage = destination({
+    id: 'garage',
+    kind: MlDestinationKind.Lan,
+    name: 'Garage GPU',
+    gpu: { name: 'NVIDIA RTX 4090', memoryTotalBytes: 24e9 },
+    models: [
+      { id: 'seedvr2-3b', name: 'SeedVR2 3B', family: 'seedvr2', mode: AssetRestorationMode.Creative, available: true },
+      {
+        id: 'realbasicvsr-x4',
+        name: 'RealBasicVSR',
+        family: 'realbasicvsr',
+        mode: AssetRestorationMode.Faithful,
+        available: true,
+      },
+      {
+        id: 'seedvr2-7b',
+        name: 'SeedVR2 7B',
+        family: 'seedvr2',
+        mode: AssetRestorationMode.Creative,
+        available: false,
+      },
+    ],
+  });
+  const cloud = destination({
+    id: 'cloud',
+    kind: MlDestinationKind.FrameleafCloud,
+    name: 'Frameleaf Cloud',
+    leavesNetwork: true,
+    consentRequired: true,
+  });
+  const options = (route: AssetRestorationRoute, destinations: unknown[]) =>
+    sdkMock.getAssetRestorationOptions.mockImplementation(({ mode }: { mode?: AssetRestorationMode }) =>
+      Promise.resolve({
+        assetId: photo.id,
+        sourceType: AssetRestorationSourceType.Image,
+        sourceWidth: 1800,
+        sourceHeight: 1200,
+        durationSeconds: null,
+        mode,
+        workload: `restoration-${mode}`,
+        upscale: 4,
+        outputWidth: 3840,
+        outputHeight: 2560,
+        previewSeconds: null,
+        adapterInstalled: true,
+        route,
+        destinations,
+      } as never),
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [] });
+    sdkMock.requestAssetRestoration.mockResolvedValue(item({ id: 'enhance-2', sourceType: 'image' as never }));
+  });
+
+  it('offers each model the computer runs, lighter first, and starts on a ready Faithful one', async () => {
+    options(AssetRestorationRoute.Both, [garage, cloud]);
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+
+    const slider = await screen.findByRole('group', { name: 'frameleaf_enhance_model' });
+    await waitFor(() => expect(within(slider).getAllByRole('radio')).toHaveLength(4));
+    const radios = within(slider).getAllByRole('radio') as HTMLInputElement[];
+    expect(radios.map((radio) => radio.value)).toEqual([
+      'realbasicvsr-x4',
+      'seedvr2-3b',
+      'seedvr2-7b',
+      'frameleaf-cloud',
+    ]);
+    expect(radios.map((radio) => radio.disabled)).toEqual([false, false, true, false]);
+    await waitFor(() => expect(radios[0]).toBeChecked());
+    expect(slider).toHaveTextContent('frameleaf_enhance_model_not_ready');
+    expect(slider).toHaveTextContent('frameleaf_enhance_model_on');
+  });
+
+  it('asks the computer for the chosen model, with the kind of restoration it does', async () => {
+    options(AssetRestorationRoute.Local, [garage]);
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+
+    const slider = await screen.findByRole('group', { name: 'frameleaf_enhance_model' });
+    const creative = await within(slider).findByRole('radio', { name: /SeedVR2 3B/ });
+    await fireEvent.click(creative);
+    await waitFor(() =>
+      expect(sdkMock.getAssetRestorationOptions).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: AssetRestorationMode.Creative }),
+      ),
+    );
+    // Where each job runs keeps this work at home: no Frameleaf Cloud stop
+    expect(within(slider).queryByRole('radio', { name: /frameleaf_enhance_model_cloud/ })).not.toBeInTheDocument();
+
+    const run = screen.getByRole('button', { name: /frameleaf_enhance_run_on/ });
+    await waitFor(() => expect(run).toBeEnabled());
+    await fireEvent.click(run);
+    expect(sdkMock.requestAssetRestoration).toHaveBeenCalledWith({
+      id: photo.id,
+      assetRestorationRequestDto: expect.objectContaining({
+        mode: AssetRestorationMode.Creative,
+        model: 'seedvr2-3b',
+        upscale: 4,
+        destinationId: 'garage',
+      }),
+    });
+  });
+
+  it('sends a blue stop to the Frameleaf Cloud estimate, and crosses it out until Frameleaf Cloud is set up', async () => {
+    options(AssetRestorationRoute.Both, [garage]);
+    const { unmount } = render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+    const slider = await screen.findByRole('group', { name: 'frameleaf_enhance_model' });
+    const blue = await within(slider).findByRole('radio', { name: /frameleaf_enhance_model_cloud/ });
+    expect(blue).toBeDisabled();
+    expect(slider).toHaveTextContent('frameleaf_enhance_needs_cloud');
+    unmount();
+
+    options(AssetRestorationRoute.Both, [garage, cloud]);
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+    await fireEvent.click(
+      await within(await screen.findByRole('group', { name: 'frameleaf_enhance_model' })).findByRole('radio', {
+        name: /frameleaf_enhance_model_cloud/,
+      }),
+    );
+    const run = await screen.findByRole('button', { name: /frameleaf_enhance_run_cloud/ });
+    await waitFor(() => expect(run).toBeEnabled());
+    await fireEvent.click(run);
+    await waitFor(() => expect(sdkMock.estimateCloudMlJob).toHaveBeenCalled());
+    expect(sdkMock.requestAssetRestoration).not.toHaveBeenCalled();
   });
 });
 
@@ -257,6 +405,7 @@ describe('RestorationPanel options for the chosen mode', () => {
     refusalDetail: null,
     estimate: { sampleCount: 0, windowDays: 30, previewSeconds: null, fullSeconds: null },
     gpu: null,
+    models: [],
   });
   const optionsWith = (name: string, mode: AssetRestorationMode) =>
     ({
@@ -303,5 +452,42 @@ describe('RestorationPanel options for the chosen mode', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole('option', { name: /Stale/ })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Current/ })).toBeInTheDocument();
+  });
+
+  it('lets the person pick a model only when the computer has more than one ready for the kind (FL-423)', async () => {
+    const faithful = (id: string, name: string, available = true) => ({
+      id,
+      name,
+      family: 'realbasicvsr',
+      mode: AssetRestorationMode.Faithful,
+      available,
+    });
+    const withModels = (models: unknown[]) =>
+      ({
+        ...(optionsWith('Garage', AssetRestorationMode.Faithful) as object),
+        destinations: [{ ...destination('Garage'), models }],
+      }) as never;
+    sdkMock.getAssetRestorationOptions.mockResolvedValue(
+      withModels([faithful('rbv-a', 'Model A'), faithful('rbv-x', 'Model X', false)]),
+    );
+    const { unmount } = render(RestorationPanel, { asset: photo, onCompare: vi.fn() });
+    await screen.findByRole('option', { name: /Garage/ });
+    expect(screen.queryByRole('radiogroup', { name: 'frameleaf_restoration_model' })).not.toBeInTheDocument();
+    unmount();
+
+    sdkMock.getAssetRestorationOptions.mockResolvedValue(
+      withModels([faithful('rbv-a', 'Model A'), faithful('rbv-b', 'Model B')]),
+    );
+    sdkMock.requestAssetRestoration.mockResolvedValue(item({ id: 'chosen', sourceType: 'image' as never }));
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn() });
+    const models = await screen.findByRole('radiogroup', { name: 'frameleaf_restoration_model' });
+    expect(within(models).getByRole('radio', { name: 'Model A' })).toHaveAttribute('aria-checked', 'true');
+    await fireEvent.click(within(models).getByRole('radio', { name: 'Model B' }));
+    await fireEvent.click(screen.getByRole('button', { name: /frameleaf_restoration_request_preview/ }));
+
+    expect(sdkMock.requestAssetRestoration).toHaveBeenCalledWith({
+      id: photo.id,
+      assetRestorationRequestDto: expect.objectContaining({ mode: AssetRestorationMode.Faithful, model: 'rbv-b' }),
+    });
   });
 });

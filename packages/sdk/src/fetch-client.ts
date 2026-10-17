@@ -5171,6 +5171,8 @@ export type AssetRestorationRequestDto = {
     /** Preserve fine film grain instead of smoothing it */
     keepGrain?: boolean;
     mode: AssetRestorationMode;
+    /** FL-423: the restoration model to use, one of the destination's `models` for this mode. Left out, the destination uses its own model for the mode. Never substituted: a model the destination cannot run is refused. */
+    model?: string;
     region?: AssetRestorationRegionDto;
     /** Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise. */
     smoothMotionFactor?: 2 | 4 | 8;
@@ -5180,6 +5182,17 @@ export type AssetRestorationRequestDto = {
 export type AssetRestorationSelectDto = {
     /** Restored revision to use as the playback version; omitted, the original is used */
     restorationId?: string;
+};
+export type AssetRestorationModelDto = {
+    /** The worker reported it available, with verified weights and a qualification, at its last check */
+    available: boolean;
+    /** Model family, for example realbasicvsr, seedvr2 or rife */
+    family: string;
+    /** The model id to send as the request’s `model` */
+    id: string;
+    mode: AssetRestorationMode;
+    /** The model’s display name */
+    name: string;
 };
 export type AssetRestorationDestinationDto = {
     /** The server would admit this workload on this destination right now */
@@ -5198,6 +5211,8 @@ export type AssetRestorationDestinationDto = {
     kind: MlDestinationKind;
     /** Media sent to this destination leaves the network */
     leavesNetwork: boolean;
+    /** FL-423: the models a home restoration worker can choose from for this kind of work (Faithful and Creative for a restoration, Smooth motion for Smooth motion), in the order the worker lists them. Empty for Frameleaf Cloud, whose model is chosen with its estimate, and for a worker that reported none. */
+    models: AssetRestorationModelDto[];
     name: string;
     /** Why the destination cannot be chosen, or null */
     refusal: (MlAdmissionRefusal) | null;
@@ -6292,7 +6307,7 @@ export type DownloadArchiveDto = {
     assetIds: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
-    /** Put each photo's details file (XMP sidecar, when it has one) beside it as <file name>.xmp. Left out, the account's download.includeSidecar preference decides (shared links: no) */
+    /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
     includeSidecar?: boolean;
 };
 export type DownloadInfoDto = {

@@ -2,15 +2,17 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { parse } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   DownloadArchiveDto,
   DownloadArchiveInfo,
   DownloadInfoDto,
   DownloadResponseDto,
 } from 'src/dtos/download.dto.js';
-import { Permission } from 'src/enum.js';
+import { AssetVisibility, Permission } from 'src/enum.js';
 import { ReadStreamResponse } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { nextArchiveName } from 'src/utils/file.js';
@@ -19,8 +21,12 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
+/** Whether the archive holds the edited file rather than the original. */
+const usesEditedFile = (asset: { editedPath?: string | null }, dto: DownloadArchiveDto) =>
+  !!dto.edited && !!asset.editedPath;
+
 const archiveFileName = (asset: { originalFileName: string; editedPath?: string | null }, dto: DownloadArchiveDto) =>
-  dto.edited && asset.editedPath
+  usesEditedFile(asset, dto) && asset.editedPath
     ? `${parse(asset.originalFileName).name}${parse(asset.editedPath).ext}`
     : asset.originalFileName;
 
@@ -120,6 +126,12 @@ export class DownloadService extends BaseService {
     const disposition = dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`;
 
     const sidecars = dto.includeSidecar ? await this.getSidecarPaths(assets.map(({ id }) => id)) : new Map();
+    const details = dto.includeSidecar
+      ? await this.getGeneratedDetails(
+          auth,
+          assets.filter(({ id }) => !sidecars.has(id)).map(({ id }) => id),
+        )
+      : new Map<string, AssetDetails>();
     const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
     const zip = this.storageRepository.createZipStream();
     const paths = new Map<string, number>();
@@ -137,8 +149,13 @@ export class DownloadService extends BaseService {
 
       // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
       const sidecar = sidecars.get(assetId);
+      const generated = details.get(assetId);
       if (sidecar) {
         zip.addFile(sidecar, nextArchiveName(paths, `${name}.xmp`));
+      } else if (generated) {
+        // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
+        const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
+        zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
       }
     }
 
@@ -182,6 +199,32 @@ export class DownloadService extends BaseService {
     return masters;
   }
 
+  /**
+   * FL-423: what a details file says about each photo that has no sidecar, read exactly as this person's
+   * asset response shows it (their own names for the people in it, a shared link's response without
+   * people). A link that hides metadata gets none; its downloads are refused before this anyway. The
+   * motion part of a Live Photo gets none either: the photo beside it carries the details.
+   */
+  private async getGeneratedDetails(auth: AuthDto, assetIds: string[]): Promise<Map<string, AssetDetails>> {
+    const details = new Map<string, AssetDetails>();
+    if (assetIds.length === 0 || (auth.sharedLink && !auth.sharedLink.showExif)) {
+      return details;
+    }
+    for (const asset of await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, auth.user.id)) {
+      const response = mapAsset(asset, { auth });
+      if (response.visibility === AssetVisibility.Hidden) {
+        continue;
+      }
+      details.set(asset.id, {
+        exifInfo: response.exifInfo,
+        tags: response.tags,
+        people: auth.sharedLink ? [] : response.people,
+        localDateTime: response.localDateTime,
+      });
+    }
+    return details;
+  }
+
   /** The details file on disk for each asset that has one; a missing file is left out, not an error. */
   private async getSidecarPaths(assetIds: string[]): Promise<Map<string, string>> {
     const sidecars = new Map<string, string>();
@@ -200,7 +243,7 @@ export class DownloadService extends BaseService {
     { originalPath, editedPath }: { originalPath: string; editedPath?: string | null },
     dto: DownloadArchiveDto,
   ) {
-    let realpath = dto.edited && editedPath ? editedPath : originalPath;
+    let realpath = usesEditedFile({ editedPath }, dto) && editedPath ? editedPath : originalPath;
 
     try {
       realpath = await this.storageRepository.realpath(realpath);
