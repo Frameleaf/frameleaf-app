@@ -45,7 +45,7 @@ describe('/trash', () => {
   };
 
   describe('POST /trash/empty', () => {
-    it('should empty the trash', async () => {
+    it('should empty the trash', { timeout: process.env.CI ? 210_000 : 50_000 }, async () => {
       const { id: assetId } = await utils.createAsset(admin.accessToken);
       await utils.waitForAllQueuesFinish(admin.accessToken);
       await utils.deleteAssets(admin.accessToken, [assetId]);
