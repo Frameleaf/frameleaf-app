@@ -281,11 +281,11 @@ The Dev Container is pre-configured for debugging:
 1. **API Server Debugging**:
    - Set breakpoints in VS Code
    - Press `F5` or use "Run and Debug" panel
-   - Select the "Immich API Server" attach configuration
+   - Select the API server attach configuration
    - Debug port: 9231
 
 2. **Worker Debugging**:
-   - Use the "Immich Workers" attach configuration
+   - Use the workers attach configuration
    - Debug port: 9230
 
 3. **Web Debugging**:

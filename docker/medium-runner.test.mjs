@@ -58,7 +58,7 @@ test("normal medium job supplies only owned fixture paths and cleans its contain
     .split("  e2e-tests-server-cli:\n")[0];
   assert.match(job, /target: medium-test/);
   assert.match(job, /load: true/);
-  // FL-380: the integration branch's registry cache, read only; the Actions cache evicted itself.
+  // FL-380: main's registry cache, read only; the Actions cache evicted itself.
   assert.match(
     job,
     /cache-from: type=registry,ref=ghcr\.io\/frameleaf\/frameleaf-server-build-cache:ci-linux-amd64/,

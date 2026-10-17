@@ -1,6 +1,6 @@
 # Moving to the Frameleaf app
 
-Frameleaf runs its own application and PostgreSQL 19 database. Moving an existing Immich 2.0 or later library into Frameleaf is a one-time offline import into a fresh database. Follow the [offline import runbook](./import-immich.md), verify the imported library, and activate Frameleaf before signing in with the Frameleaf app.
+Frameleaf runs its own application and PostgreSQL 19 database. Moving an existing library into Frameleaf is a one-time offline import into a fresh database. Follow the [offline import runbook](./import-immich.md), verify the imported library, and activate Frameleaf before signing in with the Frameleaf app.
 
 The source database and media remain the recovery copy. Frameleaf does not synchronize changes with that source or provide a switch-back compatibility contract. Use the Frameleaf app with the Frameleaf server; ongoing upstream client compatibility is not supported.
 

@@ -103,6 +103,6 @@
     "/workflows/[workflowId]"
   ],
   "schemaVersion": 2,
-  "scope": "Committed Svelte page routes: the clean baseline plus routes added by FL stories on the integration branch. Presence does not establish action, authorization, redesign, or native parity.",
+  "scope": "Committed Svelte page routes: the clean baseline plus routes added by FL stories on main. Presence does not establish action, authorization, redesign, or native parity.",
   "status": "production-present-not-qualified"
 }

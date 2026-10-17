@@ -4,7 +4,6 @@ name: Docs build
   pull_request:
     branches:
       - main
-      - master/frameleaf-implementation
   push:
     branches:
       - main
