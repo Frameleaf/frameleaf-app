@@ -84,10 +84,10 @@ beforeAll(async () => {
 
 describe(AssetService.name, () => {
   describe('get', () => {
-    it("shows the owner's tag names to viewers of a shared item, Locked-rule tags included (owner decision 2026-09-29, FL-137)", async () => {
-      // Owner decision (Q2 option A): album members, partners and item-share recipients see the owner's
-      // tags on an item shared with them, including a tag the owner uses in a Locked rule. Changing that
-      // is an owner decision, not a refactor.
+    it("shows the owner's tag names to viewers of a shared item, and withholds a Locked-rule match (FL-446)", async () => {
+      // Album members see the owner's tags on an item shared with them (owner decision 2026-09-29). An
+      // item matching the owner's Locked rules reaches partners only (owner decision 2026-10-17, FL-446),
+      // so a member never reads it, and with it the tag the owner uses in the rule.
       const { sut, ctx } = setup();
       const { user: owner } = await ctx.newUser();
       const { user: member } = await ctx.newUser();
@@ -95,14 +95,6 @@ describe(AssetService.name, () => {
       const { tag: privateTag } = await ctx.newTag({ userId: owner.id, value: 'Medical' });
       const { tag: plainTag } = await ctx.newTag({ userId: owner.id, value: 'Holiday' });
       await ctx.newTagAsset({ tagIds: [privateTag.id, plainTag.id], assetIds: [asset.id] });
-      await ctx.database
-        .insertInto('user_metadata')
-        .values({
-          userId: owner.id,
-          key: UserMetadataKey.Preferences,
-          value: { privacy: { suppression: { tagIds: [privateTag.id], scope: 'visible' } } },
-        } as never)
-        .execute();
       const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
       await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
 
@@ -111,6 +103,18 @@ describe(AssetService.name, () => {
         'Holiday',
         'Medical',
       ]);
+
+      await ctx.database
+        .insertInto('user_metadata')
+        .values({
+          userId: owner.id,
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: [privateTag.id], scope: 'visible' } } },
+        } as never)
+        .execute();
+      await expect(sut.get(factory.auth({ user: member }), asset.id)).rejects.toThrow(
+        'Not found or no asset.read access',
+      );
     });
 
     it('should not return an asset of another user', async () => {

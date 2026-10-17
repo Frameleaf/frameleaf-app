@@ -399,7 +399,9 @@ export class SharedLinkService extends BaseService {
   private async applyNsfwPrivacy(auth: AuthDto, sharedLink: SharedLink): Promise<SharedLink> {
     const album = sharedLink.album;
     const albumThumbnailAssetId = album?.albumThumbnailAssetId;
-    if (!albumThumbnailAssetId) {
+    // the owner's own management view keeps its cover unless their session hides it; a visitor's never
+    // shows another owner's Locked-rule match either (FL-446)
+    if (!albumThumbnailAssetId || (!auth.hideNsfwAssets && !auth.sharedLink)) {
       return sharedLink;
     }
 
