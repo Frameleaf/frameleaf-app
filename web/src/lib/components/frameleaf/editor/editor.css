@@ -1251,8 +1251,8 @@
   margin-bottom: 8px;
   border: 1px solid var(--fl-viewer-border);
   border-radius: var(--fl-radius-card);
-  background: #ffffff06;
-  color: #dfe3e8;
+  background: color-mix(in srgb, var(--ed-ink) 2%, transparent);
+  color: var(--fl-viewer-text);
   font-size: var(--fl-font-small);
 }
 .ed-version.current {
@@ -1757,7 +1757,7 @@
   padding: 0 10px;
   border: 0;
   background: transparent;
-  color: #dfe3e8;
+  color: var(--fl-viewer-text);
   font-size: var(--fl-font-small);
   text-align: start;
 }

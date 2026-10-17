@@ -1067,7 +1067,9 @@ export class RenderWorkerService {
       }
       // The re-planned chunk itself is pending again; everything else from the restart is invalid.
       if (restart < dto.sequence) {
-        await this.operations.invalidateCheckpointsFrom(operation.id, restart);
+        if (!(await this.operations.invalidateCheckpointsFrom(operation.id, dto.claimToken, restart))) {
+          return { accepted: false, refusal: null };
+        }
         await this.operations.upsertCheckpoint(
           operation.id,
           dto.claimToken,
@@ -1090,8 +1092,11 @@ export class RenderWorkerService {
             ? [(tx: Transaction<DB>, paths: string[]) => this.studioExports.retireArtifacts(tx, operation, paths)]
             : []),
         );
-      } else if (stored.some((chunk) => chunk.sequence > dto.sequence)) {
-        await this.operations.invalidateCheckpointsFrom(operation.id, dto.sequence + 1);
+      } else if (
+        stored.some((chunk) => chunk.sequence > dto.sequence) &&
+        !(await this.operations.invalidateCheckpointsFrom(operation.id, dto.claimToken, dto.sequence + 1))
+      ) {
+        return { accepted: false, refusal: null };
       }
     }
 
@@ -1441,6 +1446,10 @@ export class RenderWorkerService {
       }
       if (!dto.output) {
         throw new BadRequestException('A preview render must report the frame it produced');
+      }
+      // Like an export, a frame is published only from `validating`: never after a cancel, never unvalidated.
+      if (operation.status !== MediaOperationStatus.Validating) {
+        return { accepted: false, refusal: null };
       }
       // FL-96: the frame is published (or, when superseded meanwhile, discarded) before the job
       // completes, so the person never waits on a finished render whose frame is missing.

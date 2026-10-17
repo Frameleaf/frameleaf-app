@@ -18,6 +18,8 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 | `version`                  | Print Frameleaf version                                       |
 | `change-media-location`    | Change database file paths to align with a new media location |
 | `schema-check`             | Verify database migrations and check for schema drift         |
+| `import-immich`            | One-time offline import of an existing library (see below)    |
+| `cloud-backup restore`     | Restore this server from its Frameleaf Cloud backup bucket    |
 
 ## How to run a command
 
@@ -126,7 +128,7 @@ Print Frameleaf Version
 
 ```
 frameleaf-admin version
-v1.129.0
+v1.0.0
 ```
 
 Change media location
@@ -158,4 +160,4 @@ No schema drift detected
 
 ## Offline Immich import
 
-`frameleaf-admin import-immich` (also available through the current `immich-admin` alias) supports `preflight`, `run`, `status`, `resume` and `verify` with `--config /path/config.json`. Use a fresh destination, a stopped read-only supported source and distinct media copies. Follow the [offline import runbook](./import-immich.md) before starting; ordinary API-based server migration is a separate feature.
+`frameleaf-admin import-immich` (also available through the current `immich-admin` alias) supports `preflight`, `run`, `status`, `resume`, `verify` and `abandon` with `--config /path/config.json`. Use a fresh destination, a stopped read-only supported source and distinct media copies. Follow the [offline import runbook](./import-immich.md) before starting; ordinary API-based server migration is a separate feature.

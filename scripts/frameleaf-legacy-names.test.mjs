@@ -170,7 +170,7 @@ test("the importer journal identifier is internal and allowed only in its defini
   );
 });
 
-test("the offline import alias allowance does not excuse other commands, variables or documentation", () => {
+test("the import runbook gets no legacy admin alias allowance", () => {
   const file = "docs/docs/administration/import-immich.md";
   for (const command of [
     "immich-admin import-immich preflight --config /path/config.json",
@@ -179,7 +179,8 @@ test("the offline import alias allowance does not excuse other commands, variabl
     "immich-admin import-immich resume --config /path/config.json",
     "immich-admin import-immich verify --config /path/config.json",
   ]) {
-    assert.deepEqual(scanLegacyText(command, { file }), []);
+    // The runbook documents frameleaf-admin; the old alias gets no allowance there or anywhere else.
+    assert.equal(scanLegacyText(command, { file }).length, 1);
     assert.equal(
       scanLegacyText(command, { file: "docs/docs/example.md" }).length,
       1,

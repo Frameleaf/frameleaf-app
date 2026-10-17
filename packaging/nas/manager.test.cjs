@@ -20,7 +20,7 @@ test('NAS Manager packages authenticate the component, both architectures and ex
       repository: 'Frameleaf/frameleaf-app', runId: '123', runAttempt: '1',
       digest, configDigest: digest, archiveSha256: 'c'.repeat(64), rootfsDiffIds: [digest], smoke: 'passed' })),
   };
-  const build = { head_sha: sourceCommit, head_branch: 'master/frameleaf-implementation',
+  const build = { head_sha: sourceCommit, head_branch: 'main',
     head_repository: { full_name: 'Frameleaf/frameleaf-app' }, event: 'workflow_dispatch',
     status: 'completed', conclusion: 'success', path: '.github/workflows/manager.yml', run_attempt: 1 };
   const run = (program, args) => {
@@ -84,7 +84,7 @@ for template in templates:
       assert.equal(bind.source, bind.target);
     assert(!compose.services.manager.volumes.some(bind => bind.target.startsWith('/var/lib/postgresql')));
     assert.deepEqual(await fs.readdir(output), ['manager-manifest.json', 'truenas', 'unraid']);
-    for (const head_branch of ['main', 'aj/frameleaf-manager-release']) {
+    for (const head_branch of ['main']) {
       const admitted = path.join(directory, head_branch.replaceAll('/', '-'));
       await buildManager(file, admitted, { run, request: async () => ({ ...build, head_branch }) });
       assert.equal(JSON.parse(await fs.readFile(path.join(admitted, 'manager-manifest.json'), 'utf8')).image, manifest.image);
@@ -109,7 +109,7 @@ for template in templates:
     await fs.writeFile(file, JSON.stringify(manifest));
     for (const patch of [{ conclusion: 'failure' }, { path: '.github/workflows/cli.yml' },
       { head_sha: 'e'.repeat(40) }, { head_branch: 'aj/unreviewed' },
-      { head_branch: 'aj/frameleaf-manager-release-unreviewed' },
+      { head_branch: 'aj/frameleaf-manager-release' }, { head_branch: 'master/frameleaf-implementation' },
       { head_repository: { full_name: 'other/frameleaf-app' } }, { run_attempt: 2 }]) {
       const refused = path.join(directory, `refused-${count++}`);
       await assert.rejects(buildManager(file, refused, { run, request: async () => ({ ...build, ...patch }) }));

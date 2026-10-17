@@ -6,8 +6,7 @@ Frameleaf has a command line interface (CLI) that allows you to perform certain 
 
 - Upload photos and videos to Frameleaf
 - Check server version
-
-More features are planned for the future.
+- Move a user's library from one Frameleaf server to another with `frameleaf migrate` (see [Server migration](/administration/server-migration))
 
 :::tip Google Photos Takeout
 To import a Google Photos Takeout export, use [Import Google Photos](/features/google-photos-import) in Frameleaf.
@@ -79,6 +78,7 @@ Commands:
   logout                              Remove stored credentials
   server-info                         Display server information
   upload [options] [paths...]         Upload assets
+  migrate [options]                   Migrate a user's entire library between Frameleaf servers (server-to-server)
   help [command]                      display help for command
 ```
 
@@ -102,7 +102,7 @@ Arguments:
 Options:
   -r, --recursive             Recursive (default: false, env: FRAMELEAF_RECURSIVE)
   -i, --ignore <pattern>      Pattern to ignore (env: FRAMELEAF_IGNORE_PATHS)
-  -h, --skip-hash             Don't hash files before upload (default: false, env: FRAMELEAF_SKIP_HASH)
+  --skip-hash                 Don't hash files before upload (default: false, env: FRAMELEAF_SKIP_HASH)
   -H, --include-hidden        Include hidden folders (default: false, env: FRAMELEAF_INCLUDE_HIDDEN)
   -a, --album                 Automatically create albums based on folder name (default: false, env: FRAMELEAF_AUTO_CREATE_ALBUM)
   -A, --album-name <name>     Add all assets to specified album (env: FRAMELEAF_ALBUM_NAME)
@@ -172,7 +172,7 @@ You can also choose to upload all assets to a specific album with the `--album-n
 frameleaf upload --album-name "My summer holiday" --recursive directory/
 ```
 
-It is possible to skip assets matching a glob pattern by passing the `--ignore` option. See [the library documentation](docs/features/libraries.md) on how to use glob patterns. You can add several exclusion patterns if needed.
+It is possible to skip assets matching a glob pattern by passing the `--ignore` option. See [the library documentation](/features/libraries) on how to use glob patterns. You can add several exclusion patterns if needed.
 
 ```bash
 frameleaf upload --ignore **/Raw/** --recursive directory/
@@ -208,8 +208,7 @@ frameleaf upload --dry-run --json-output . | tail -n +6 | jq .newFiles[]
 
 The API key can be created in your account settings on the web interface. You can also specify permissions for the key to limit its access.
 
-1. Select your avatar in the top right corner and choose **Account settings**.
-2. In **Your preferences**, open **Account access**.
-3. Under **API keys**, select **Create API key**.
-4. Give the key a name and choose only the permissions the CLI needs, or full access.
-5. Create the key and copy it. The key is shown only once.
+1. Open **Settings → Access & security → API keys**.
+2. Select **Create API key**.
+3. Give the key a name and choose only the permissions the CLI needs, or full access.
+4. Create the key and copy it. The key is shown only once.

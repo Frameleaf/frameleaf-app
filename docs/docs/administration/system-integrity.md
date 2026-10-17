@@ -2,7 +2,7 @@
 
 ## Integrity report
 
-At a customizable interval (**Administration → Settings → Integrity checks**), Frameleaf runs integrity checks to ensure that your library is still intact and there are no corrupt files.
+At a customizable interval (**Settings → Library care → File checks**), Frameleaf runs integrity checks to ensure that your library is still intact and there are no corrupt files.
 There are three kind of issues Frameleaf checks for:
 
 - Untracked files: the path was found in Frameleaf's directories but it is not referenced in Frameleaf's database
@@ -11,14 +11,14 @@ There are three kind of issues Frameleaf checks for:
 
 All three run nightly at 3am by default. For the "Checksum files" check, there are additional time and progress limits, as those are the most taxing checks. With these additional limits, Frameleaf can slowly check checksums of your files over the course of a couple of days.
 
-You can see the results of these checks on the **Administration → Maintenance** page. Here, you can also trigger a full scan (a _check_) for specific jobs, or all of them. In addition, you can also _refresh_ checks. This will only look at items that have currently been reported on, and check if those have been fixed.
+You can see the results of these checks on the same **Settings → Library care → File checks** page. Here, you can also trigger a full scan (a _check_) for specific jobs, or all of them. In addition, you can also _refresh_ checks. This will only look at items that have currently been reported on, and check if those have been fixed.
 
 ### Common causes
 
 Most common are untracked files. In many cases those are corrupted thumbnails or encoded videos that have been partially generated at some point and never got cleaned up properly. These are usually fine to delete, as both can always be regenerated at a later point. Other files will need to be investigated on a case-by-case basis by checking they already exist in Frameleaf and thinking about how they might have gotten untracked.
 
 :::info
-You might want to run the _missing_ jobs for thumbnails and encoded videos (**Administration → Job queues**) to make sure all your assets have proper thumbnails and encoded videos. Watch the server logs while running the jobs, in case there are any issues with some assets.
+You might want to run the _missing_ jobs for thumbnails and encoded videos (**Settings → Computers & background work → Background work**) to make sure all your assets have proper thumbnails and encoded videos. Watch the server logs while running the jobs, in case there are any issues with some assets.
 :::
 
 Missing files are files where Frameleaf references them internally, but they don't actually exist on disk in that location. It could be that you deleted a file on disk from the internal library (don't do that, Frameleaf doesn't support it). It could also be that there are issues with your file storage. Carefully investigate missing files, and ask on [GitHub Discussions](https://github.com/Frameleaf/frameleaf-app/discussions) if you have any questions.

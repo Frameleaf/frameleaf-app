@@ -499,7 +499,7 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: 'non-existent' });
 
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
-      expect(mocks.asset.update).not.toHaveBeenCalledWith();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should skip thumbnail generation if asset type is unknown', async () => {
@@ -510,7 +510,7 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
-      expect(mocks.asset.update).not.toHaveBeenCalledWith();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should skip video thumbnail generation if no video stream', async () => {
@@ -521,7 +521,7 @@ describe(MediaService.name, () => {
       });
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrowError();
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
-      expect(mocks.asset.update).not.toHaveBeenCalledWith();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should skip invisible assets', async () => {
@@ -531,7 +531,7 @@ describe(MediaService.name, () => {
       expect(await sut.handleGenerateThumbnails({ id: asset.id })).toEqual(JobStatus.Skipped);
 
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
-      expect(mocks.asset.update).not.toHaveBeenCalledWith();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
     });
 
     it('should delete previous preview if different path', async () => {
@@ -4724,7 +4724,8 @@ describe(MediaService.name, () => {
     });
 
     it('should skip transcoding if asset not found', async () => {
-      await sut.handleVideoConversion({ id: 'video-id' });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 

@@ -546,6 +546,7 @@ describe(MlDestinationService.name, () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
       await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).resolves.toBeDefined();
       expect(mocks.frameleafConsent.revoke).toHaveBeenCalledWith(mlDestinationStub.frameleafCloudConsented.id);
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('was withdrawn on this server only'));
     });
 
     it('keeps the withdrawal when reaching Frameleaf Cloud fails in any other way (FL-159)', async () => {

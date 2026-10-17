@@ -2,7 +2,7 @@
 
 A minimal devcontainer is supplied with this repository. All commands can be executed directly inside this container to avoid tedious installation of the environment.
 :::warning
-The provided devcontainer isn't complete at the moment. At least all dockerized steps in the Makefile won't work (`mise dev`, ....). Feel free to contribute!
+The provided devcontainer isn't complete at the moment. At least the dockerized `mise` tasks (`mise dev`, ...) won't work. Feel free to contribute!
 :::
 When contributing code through a pull request, please check the following:
 
@@ -63,4 +63,4 @@ The OpenAPI client libraries need to be regenerated whenever there are changes t
 
 ## Database Migrations
 
-A database migration needs to be generated whenever there are changes to `server/src/infra/src/entities`. See [Database Migration](/developer/database-migrations.md) for more details.
+A database migration needs to be generated whenever there are changes to the schema definitions in `server/src/schema`. See [Database Migration](/developer/database-migrations.md) for more details.

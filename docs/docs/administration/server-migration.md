@@ -41,7 +41,7 @@ servers**: an API key can only read and write the library of the account it
 belongs to, so an administrator's key would copy the library into the
 administrator's own account.
 
-Sign in as the person on each server, open **Account settings → API keys**, and
+Sign in as the person on each server, open **Settings → Access & security → API keys**, and
 create a key with these permissions (or `all`):
 
 | Server      | Required                                                                                       | Optional                                                        |

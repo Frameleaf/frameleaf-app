@@ -67,7 +67,7 @@ file**, then set **Autostart controller path** to
 path. Leave both fields blank for a fresh install without that file mounted.
 Manager needs this writable file to fence source autostart while preserving other
 entries. Follow the
-[offline import guide](https://github.com/Frameleaf/frameleaf-app/blob/master/frameleaf-implementation/docs/docs/administration/import-immich.md).
+[offline import guide](https://github.com/Frameleaf/frameleaf-app/blob/main/docs/docs/administration/import-immich.md).
 
 ## Updates and backups
 
@@ -102,7 +102,7 @@ An ML container on another host cannot share that folder, so Studio stays
 unavailable without a local `frameleaf-ml`. Keep application, ML, database and
 release evidence from the same supported release. Preserve matched database and
 media backups before upgrades. See the
-[manual container guide](https://github.com/Frameleaf/frameleaf-app/blob/master/frameleaf-implementation/docker/README.md).
+[manual container guide](https://github.com/Frameleaf/frameleaf-app/blob/main/docker/README.md).
 
 ## Support and listing status
 

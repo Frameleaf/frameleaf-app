@@ -128,7 +128,10 @@ export class CloudBackupDetailsService extends BaseService {
       return { status: 'no-owner' };
     }
     const checksum = Buffer.from(input.sha256, 'hex');
-    const existing = await repositories.asset.getUploadAssetIdByChecksum(input.ownerId, checksum);
+    // the owner's own Locked copy counts too: the item is already back, and a second row would break the checksum key
+    const existing = await repositories.asset.getUploadAssetIdByChecksum(input.ownerId, checksum, {
+      lockedOwnerId: input.ownerId,
+    });
     if (existing) {
       return { status: 'duplicate', assetId: existing };
     }

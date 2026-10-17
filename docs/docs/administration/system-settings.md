@@ -1,6 +1,6 @@
 # System Settings
 
-The admin user can manage settings for the Frameleaf instance here.
+The admin user manages settings for the Frameleaf server in **Settings** (the account menu's **Administration** entry opens it). Server settings are grouped into areas such as **Editing & playback** or **Server & updates**; the paths below are written as **Settings → Area → Page**.
 
 ## Saving changes
 
@@ -29,7 +29,7 @@ Scripts can use `GET /api/admin/config/credentials` to see which credentials are
 
 ## Authentication Settings
 
-Manage password, OAuth, and other authentication settings
+Manage password, OAuth, and other authentication settings in **Settings → Access & security → Sign-in methods**.
 
 ### OAuth Authentication
 
@@ -44,6 +44,8 @@ You can always use the [Server CLI](/administration/server-commands) to re-enabl
 :::
 
 ## Image Settings (thumbnails and previews)
+
+These are in **Settings → Editing & playback → Image previews**.
 
 - Thumbnails - Used in the main timeline.
 - Previews - Used in the asset viewer.
@@ -85,7 +87,7 @@ The default resolution for Large thumbnails can be lowered from 1440p (default) 
 
 ## Job Settings
 
-Using these settings, you can determine the amount of work that will run concurrently for each task in microservices. Some tasks can be set to higher values on computers with powerful hardware and storage with good I/O capabilities.
+Using these settings in **Settings → Computers & background work → Background work**, you can determine the amount of work that will run concurrently for each task in microservices. Some tasks can be set to higher values on computers with powerful hardware and storage with good I/O capabilities.
 
 With higher concurrency, the host will work on more assets in parallel,
 this advice improves throughput, not latency, for example, it will make Smart Search jobs process more quickly, but it won't make searching faster.
@@ -110,29 +112,28 @@ External libraries can automatically import changed files without a full rescan.
 
 ### Periodic Scanning
 
-You can define a custom interval for the trigger external library rescan under Administration -> Settings -> Library.  
+You can define a custom interval for the trigger external library rescan under **Settings → Libraries → Folder scanning**.  
 You can set the scanning interval using the preset or cron format. For more information please refer to e.g. [Crontab Guru](https://crontab.guru/).
 
 ## Logging
 
-The default Frameleaf log level is `Log` (commonly known as `Info`). The Frameleaf administrator can choose a higher or lower log level according to personal preference or as requested by support.
+The log level is set in **Settings → Server & updates → Troubleshooting**. The default Frameleaf log level is `Log` (commonly known as `Info`). The Frameleaf administrator can choose a higher or lower log level according to personal preference or as requested by support.
 
 ## Machine Learning Settings
 
-Through this setting, you can manage all the settings related to machine learning in Frameleaf, from the setting of remote machine learning to the model and its parameters
-You can choose to disable a certain type of machine learning, for example smart search or facial recognition.
+Machine-learning features are set in **Settings → Search & intelligence**, one page per feature (**Visual search**, **Faces & identity**, **Descriptions & tags**, **Locked-content detection** and so on), and the machine-learning servers in **Settings → Computers & background work → Computers**. You can choose to disable a certain type of machine learning, for example smart search or facial recognition.
 
 ### URL
 
-The built in (`http://frameleaf-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers.
+The built in (`http://frameleaf-machine-learning:3003`) machine learning server will be configured by default, but you can change this or add additional servers under **Details → AI helpers: addresses, access keys and limits** on the **Computers** page. See [Workers and endpoints](/administration/workers-and-endpoints).
 
 Hosting the `frameleaf-machine-learning` container on a machine with a more powerful GPU can be helpful to for processing a large number of photos (such as during batch import) or for faster search.
 
-If more than one URL is provided, each server will be attempted one-at-a-time until one responds successfully, in order from first to last. Servers that don't respond will be temporarily ignored until they come back online.
+Each kind of library work runs on the server chosen for it in **Where work runs**; nothing falls back to another server. Library work that has no route yet goes to the first URL in the list.
 
 ### Smart Search
 
-The [smart search](/features/searching) settings allow you to change the [CLIP model](https://openai.com/research/clip). Larger models will typically provide more accurate search results but consume more processing power and RAM. When [changing the CLIP model](/FAQ#can-i-use-a-custom-clip-model) it is mandatory to re-run the Smart Search job on all images to fully apply the change.
+The [smart search](/features/searching) settings (**Settings → Search & intelligence → Visual search**) allow you to change the [CLIP model](https://openai.com/research/clip). Larger models will typically provide more accurate search results but consume more processing power and RAM. When [changing the CLIP model](/FAQ#can-i-use-a-custom-clip-model) it is mandatory to re-run the Smart Search job on all images to fully apply the change.
 
 :::info Internet connection
 Changing models requires a connection to the Internet to download the model.
@@ -142,25 +143,25 @@ Unless version checking has been enabled in the settings.
 
 ### Image Descriptions and Tags
 
-The [image enrichment](/features/image-enrichment) settings allow you to generate searchable descriptions and tags for image assets. Existing user descriptions are preserved, and generated descriptions are appended once. Generated tags are plain searchable tags and are deduplicated against existing tags.
+The [image enrichment](/features/image-enrichment) settings (**Settings → Search & intelligence → Descriptions & tags**) allow you to generate searchable descriptions and tags for image assets. Existing user descriptions are preserved, and generated descriptions are appended once. Generated tags are plain searchable tags and are deduplicated against existing tags.
 
 This feature is independent from Smart Search. Smart Search uses CLIP embeddings for contextual search, while image enrichment writes visible descriptions and tags to asset metadata.
 
 ### NSFW Detection
 
-The NSFW detection settings allow you to classify image assets with a dedicated safety model. The detection result is stored privately, and Frameleaf can add a visible `nsfw` tag plus specific reason tags when supported by the image content and classifier result.
+The NSFW detection settings (**Settings → Search & intelligence → Locked-content detection**) allow you to classify image assets with a dedicated safety model. The detection result is stored privately, and Frameleaf can add a visible `nsfw` tag plus specific reason tags when supported by the image content and classifier result.
 
 The private NSFW flag is the source of truth for privacy features. Tags are searchable metadata and should not be treated as a security boundary. If `Hide detected NSFW assets` is enabled, flagged assets are hidden from non-elevated library, shared-link, download, and sync responses until the current session is unlocked with the locked-folder PIN. Album membership is preserved while hidden assets are filtered from non-elevated responses.
 
 ### Duplicate Detection
 
-Use CLIP embeddings to find likely duplicates. The maximum detection distance can be configured in order to improve / reduce the level of accuracy.
+Use CLIP embeddings to find likely duplicates (**Settings → Library care → Duplicates**). The maximum detection distance can be configured in order to improve / reduce the level of accuracy.
 
 - **Maximum detection distance -** Maximum distance between two images to consider them duplicates, ranging from 0.001-0.1. Higher values will detect more duplicates, but may result in false positives.
 
 ### Facial Recognition
 
-Under these settings, you can change the facial recognition settings
+Under **Settings → Search & intelligence → Faces & identity**, you can change the facial recognition settings.
 Editable settings:
 
 - **Facial Recognition Model**
@@ -185,7 +186,7 @@ If you have twins, you might want to lower the Max Recognition Distance value, d
 
 ### Map Settings
 
-In these settings, you can change the appearance of the map in night and day modes according to your personal preference and according to the supported options.
+In **Settings → Server & updates → Maps & places**, you can change the appearance of the map in night and day modes according to your personal preference and according to the supported options.
 The map can be adjusted via [OpenMapTiles](https://openmaptiles.org/styles/) for example.
 
 ### Reverse Geocoding Settings
@@ -194,11 +195,11 @@ Frameleaf supports [Reverse Geocoding](/features/reverse-geocoding) using data f
 
 ## Notification Settings
 
-SMTP server setup, for user creation notifications, new albums, etc. More information can be found [here](/administration/email-notification)
+SMTP server setup (**Settings → Notifications → Email delivery**), for user creation notifications, new albums, etc. More information can be found [here](/administration/email-notification)
 
 ## Notification Templates
 
-Override the default notifications text with notification templates. More information can be found [here](/administration/email-notification)
+Change the wording of the emails under **The emails themselves** on the same page. More information can be found [here](/administration/email-notification)
 
 ## Server Settings
 
@@ -208,7 +209,7 @@ The address this server puts in shared links, emails, maintenance login links an
 
 ### Local network discovery
 
-**Local network discovery** lets the Frameleaf apps find this server on the same Wi-Fi without typing an address. It is on by default. Turn it off here to stop advertising; direct connections and sign-in requirements don't change.
+**Local network discovery** (**Let phones on your Wi-Fi find this server** in **Settings → Server & updates → Server name & welcome**) lets the Frameleaf apps find this server on the same Wi-Fi without typing an address. It is on by default. Turn it off there to stop advertising; direct connections and sign-in requirements don't change.
 
 While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the LAN:
 
@@ -249,15 +250,15 @@ The server only advertises when it can see a LAN interface. Inside a container o
 
 ### Welcome Message
 
-The administrator can set a custom message on the login screen (the message will be displayed to all users).
+The administrator can set a custom message on the login screen in **Settings → Server & updates → Server name & welcome** (the message will be displayed to all users).
 
 ## Storage Template
 
-Frameleaf supports a custom [Storage Template](/administration/storage-template). Learn more about this feature and its configuration [here](/administration/storage-template).
+Frameleaf supports a custom [Storage Template](/administration/storage-template), set in **Settings → Storage & originals → Originals & folder structure**. Learn more about this feature and its configuration [here](/administration/storage-template).
 
 ## Theme Settings
 
-You can write custom CSS that will get loaded in the web application for all users. This enables administrators to change fonts, colors, and other styles.
+In **Settings → Server & updates → Custom styling**, you can write custom CSS that will get loaded in the web application for all users. This enables administrators to change fonts, colors, and other styles.
 
 For example:
 
@@ -269,29 +270,29 @@ p {
 
 ## Trash Settings
 
-In the system administrator's option to set a trash for deleted files, these files will remain in the trash until the deletion date 30 days (default) or as defined by the system administrator.
+In **Settings → Storage & originals → Trash & retention**, the system administrator can set a trash for deleted files; these files will remain in the trash until the deletion date 30 days (default) or as defined by the system administrator.
 
 The trash can be disabled, however this is not recommended as future files that are deleted will be permanently deleted.
 
-:::tip Keyboard shortcut for permanently deletion
-You can select assets and press Ctrl + Del from the timeline for quick permanent deletion without the trash option.
+:::tip Keyboard shortcut for permanent deletion
+In the photo viewer, press Shift + Delete to permanently delete the open photo or video without moving it to the trash.
 :::
 
 ## User Settings
 
 ### Delete delay
 
-The system administrator can choose to delete users through the administration panel, the system administrator can delete users immediately or alternatively delay the deletion for users (7 days by default) this action permanently delete a user's account and assets. The user deletion job runs at midnight to check for users that are ready for deletion. Changes to this setting will be evaluated at the next execution.
+In **Settings → Storage & originals → Deleted accounts**, the system administrator sets how long deleted users are kept. Users are deleted from **Settings → Users**; the system administrator can delete users immediately or alternatively delay the deletion for users (7 days by default) this action permanently delete a user's account and assets. The user deletion job runs at midnight to check for users that are ready for deletion. Changes to this setting will be evaluated at the next execution.
 
 ## Version Check
 
-When this option is enabled the server asks the Frameleaf release feed (`https://api.frameleaf.cloud/v1/releases/latest`) for a new version every hour, and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No upstream service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
+These options are in **Settings → Server & updates → Updates**. When automatic checks are enabled the server asks the Frameleaf release feed (`https://api.frameleaf.cloud/v1/releases/latest`) for a new version daily or weekly (**Check frequency**, daily by default), and administrators see an announcement that links to the release notes. If the feed cannot answer, the server asks Frameleaf's own GitHub releases (`https://api.github.com/repos/Frameleaf/frameleaf-app/releases`) instead and reads the version from the `frameleaf-v<version>-<n>` release tag. No upstream service is contacted, and no library data or instance identifier is sent to either. The **Update channel** choice picks Stable releases (`stable`) or also release candidates (`beta`). Turn this option off to stop the check.
 
-Checking never installs anything. An administrator can also check at any time with **Check for updates** in About Frameleaf or on the Versions & compatibility page, even when automatic checks are off. Other accounts see the result of the last check in About Frameleaf.
+Checking never installs anything. An administrator can also check at any time with **Check for updates** in About Frameleaf or on the **Updates** page, even when automatic checks are off. Other accounts see the result of the last check in About Frameleaf.
 
 ## Video Transcoding Settings
 
-The system administrator can configure which video files will be converted to different formats. The settings can be changed in depth, to learn more about the terminology used here, refer to FFmpeg documentation for [H.264](https://trac.ffmpeg.org/wiki/Encode/H.264) codec, [HEVC](https://trac.ffmpeg.org/wiki/Encode/H.265) codec and [VP9](https://trac.ffmpeg.org/wiki/Encode/VP9) codec.
+In **Settings → Editing & playback → Video playback copies**, the system administrator can configure which video files will be converted to different formats. The settings can be changed in depth, to learn more about the terminology used here, refer to FFmpeg documentation for [H.264](https://trac.ffmpeg.org/wiki/Encode/H.264) codec, [HEVC](https://trac.ffmpeg.org/wiki/Encode/H.265) codec and [VP9](https://trac.ffmpeg.org/wiki/Encode/VP9) codec.
 
 Which streams of a video file will be transcoded is determined by the [Transcode Policy](#ffmpeg.transcode). Streams that are transcoded use the following settings (config file name in brackets). Streams that are not transcoded are untouched and preserve their original settings.
 
@@ -323,7 +324,7 @@ The default value is `h264`.
 
 When transcoding a video stream, downscale the largest dimension to this value while preserving aspect ratio. Videos are never upscaled.
 
-The default value is `720`.
+The default value is `1080`.
 
 ### Transcode policy (`ffmpeg.transcode`) {#ffmpeg.transcode}
 

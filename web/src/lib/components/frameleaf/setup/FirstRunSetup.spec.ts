@@ -234,6 +234,8 @@ describe('FirstRunSetup (FL-176)', () => {
       sdkMock.getServerConfig.mockResolvedValue(serverConfig({ cloudConfigured: true, signInAvailable: false }));
       render(FirstRunSetup, { initial: choiceStep(), authenticated: false });
       await waitFor(() => expect(sdkMock.getServerConfig).toHaveBeenCalled());
+      // the server's answer has been applied, not just requested
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(within(card('Frameleaf account')).getByRole('radio')).toBeChecked();
       expect(within(card('Frameleaf account')).getByRole('radio')).toBeEnabled();
       expect(within(card('Frameleaf account')).getByText('Recommended')).toBeInTheDocument();

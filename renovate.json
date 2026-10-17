@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>immich-app/.github:renovate-config"],
+  "extends": ["config:recommended"],
   "packageRules": [
     {
       "matchFileNames": [
@@ -20,7 +20,7 @@
       "groupName": null
     },
     {
-      "description": "Frameleaf's Postgres image keeps PostgreSQL 14 and its extension versions identical to existing databases; change them only with a migration plan (FL-191).",
+      "description": "Frameleaf's Postgres image pins PostgreSQL 19 beta 4 and pgvector 0.8.7 by digest and checksum; change them only with a migration plan (FL-191).",
       "matchPackageNames": ["ghcr.io/frameleaf/frameleaf-postgres", "docker.io/pgvector/pgvector"],
       "enabled": false
     }

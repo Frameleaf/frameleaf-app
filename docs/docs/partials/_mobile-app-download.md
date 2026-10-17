@@ -1,1 +1,1 @@
-Frameleaf mobile apps are coming; for now use the web app.
+Install [Frameleaf from the App Store](https://apps.apple.com/us/app/frameleaf/id6821111014) on iPhone or iPad, or [Frameleaf from Google Play](https://play.google.com/store/apps/details?id=app.frameleaf.android) on Android.

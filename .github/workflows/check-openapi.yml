@@ -10,7 +10,6 @@ name: Check OpenAPI
   pull_request:
     branches:
       - main
-      - master/frameleaf-implementation
     types:
       - opened
       - synchronize

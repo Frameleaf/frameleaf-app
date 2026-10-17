@@ -635,7 +635,7 @@ describe(CloudMlBatchService.name, () => {
 
       const estimate = await sut.estimateBackfill(admin, now);
 
-      expect(estimate.refusal).toMatch(/^The AI Wallet has 0\.01 USD available/);
+      expect(estimate.refusal).toMatch(/^The AI Wallet has \$0\.01 available/);
     });
 
     it("counts the destination's spend in its window and running batches' holds against its budget (review P2)", async () => {
@@ -651,7 +651,7 @@ describe(CloudMlBatchService.name, () => {
         cloud.id,
         new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
       );
-      expect(estimate.refusal).toMatch(/has 0\.01 USD left of its 1\.00 USD spending limit/);
+      expect(estimate.refusal).toMatch(/has \$0\.01 left of its \$1\.00 spending limit/);
     });
 
     it('steers small batches away from a 72B-class model', async () => {
@@ -1306,7 +1306,7 @@ describe(CloudMlBatchService.name, () => {
         type: NotificationType.SystemMessage,
         level: NotificationLevel.Info,
         title: 'Automatic descriptions paused for today',
-        description: expect.stringContaining('0.50 USD'),
+        description: expect.stringContaining('$0.50'),
         dedupeKey: expect.stringMatching(/^frameleaf-cloud:description-budget:\d{4}-\d{2}-\d{2}$/),
         dedupeDays: 1,
       });

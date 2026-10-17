@@ -1,6 +1,6 @@
 # Import Google Photos
 
-**Import from Google Photos** brings a Google Takeout export into your library: the original files, the dates they were taken, descriptions, locations, favorites, archived photos, Locked Folder photos, Live Photos and album memberships. Open it from **Settings → Google Photos & server imports → Import from Google Photos…**, from the administrator's **Import & protection** settings, or by searching for it.
+**Import from Google Photos** brings a Google Takeout export into your library: the original files, the dates they were taken, descriptions, locations, favorites, archived photos, Locked Folder photos, Live Photos and album memberships. Open it from **Settings → Import & protection → Google Photos import → Import from Google Photos…**, or by searching for it.
 
 An import has three steps, **Upload**, **Check** and **Import**, and moves on by itself: you choose the ZIP files and press **Import** once.
 
@@ -16,7 +16,7 @@ Each archive is uploaded in parts. If the upload stops (the browser closed, the 
 
 An archive is refused when your storage quota or the server's free space could not hold it.
 
-Administrators can import from a folder on the server instead of uploading, under **Import from a folder on this server**, but only from a folder inside one of the locations the server operator permitted with `FRAMELEAF_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
+Administrators can import from a folder on the server instead of uploading, under **Advanced: import from a folder on this server**, but only from a folder inside one of the locations the server operator permitted with `FRAMELEAF_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
 
 ## Check
 
@@ -33,7 +33,7 @@ When the check finishes, the import shows what it found: new photos and videos, 
 - turn off **Keep album memberships**, or choose which albums are made; Google's automatic year folders are never made into albums
 - turn on **Fill in missing details on photos you already have**
 - bring in the photos that were in your Google Photos trash, which are left out otherwise
-- when some photos came with two sets of details, choose **Let me choose for these**: those photos wait while everything else is imported, then you see each photo with both sets of details and pick the right ones for any you know; the rest get the most likely
+- when some photos came with two sets of details, choose **Let me choose for these photos with two sets of details**: those photos wait while everything else is imported, then you see each photo with both sets of details and pick the right ones for any you know; the rest get the most likely
 
 Each file is copied into your library; the files in your export are never changed. A photo that is already in your library (the same file, by checksum) is not copied again: it joins its albums, keeps its own date and details, and only gains what it is missing when you fill in missing details. Running an import again, or retrying one, never creates a second copy of anything.
 
