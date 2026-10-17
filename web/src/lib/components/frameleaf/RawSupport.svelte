@@ -543,6 +543,9 @@
     color: var(--fl-accent);
     flex-shrink: 0;
   }
+  .raw-core-note strong {
+    font-size: 15px;
+  }
   .raw-core-note p {
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
