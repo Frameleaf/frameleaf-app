@@ -268,7 +268,7 @@ test(
   'installed execution authority accepts a protected system executable on POSIX',
   { skip: process.platform === 'win32' },
   async () => {
-    await protectNativeController('/bin/echo');
+    await protectNativeController(await realpath('/bin/echo'));
   },
 );
 
