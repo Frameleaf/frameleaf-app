@@ -23,6 +23,7 @@
   import { providerOf, signInProviderFor } from '$lib/components/frameleaf/settings/notifications/mail-providers';
   import { getMailConnection, MailConnectionStatus, MailTransportType, type MailConnectionDto } from '@frameleaf/sdk';
   import {
+    mdiBellAlertOutline,
     mdiEmailAlertOutline,
     mdiEmailCheckOutline,
     mdiEmailFastOutline,
@@ -103,11 +104,19 @@
   const ROW_ICONS: Record<string, string> = {
     'email-preferences': mdiEmailOutline,
     notifications: mdiEmailFastOutline,
+    signals: mdiBellAlertOutline,
   };
 
-  const rows = (admin: boolean) =>
+  /**
+   * FL-421: "What needs your attention" is an administrator's page, listed under "For you" with the
+   * emails each person receives, as in the prototype. Email delivery is for everyone on the server.
+   */
+  const FOR_YOU_ADMIN_PAGES = new Set(['signals']);
+  const forEveryone = (section: SettingsHostSection) => !!section.admin && !FOR_YOU_ADMIN_PAGES.has(section.key);
+
+  const rows = (everyone: boolean) =>
     sections
-      .filter((section) => Boolean(section.admin) === admin)
+      .filter((section) => forEveryone(section) === everyone)
       .map((section): LinkRow => ({
         // The prototype's mail icons (settings-v2/server/notifications.jsx); the navigation keeps the bell.
         icon: ROW_ICONS[section.key] ?? section.icon,

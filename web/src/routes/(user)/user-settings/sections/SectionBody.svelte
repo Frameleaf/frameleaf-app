@@ -15,6 +15,7 @@
   import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
   import ThingsToFix from '$lib/components/frameleaf/settings/care/ThingsToFix.svelte';
+  import AttentionPage from '$lib/components/frameleaf/settings/notifications/AttentionPage.svelte';
   import type { SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import UserSettingsList from '../UserSettingsList.svelte';
   import DeduplicationSection from './DeduplicationSection.svelte';
@@ -68,6 +69,8 @@
     <UsersSection />
   {:else if section.key === 'enrichment-care'}
     <CareProgress />
+  {:else if section.key === 'signals'}
+    <AttentionPage />
   {/if}
 {:else if section.key === 'repair'}
   <ThingsToFix />

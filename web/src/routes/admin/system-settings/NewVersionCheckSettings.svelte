@@ -33,10 +33,12 @@
   import { websocketStore } from '$lib/stores/websocket';
   import { semverToName } from '$lib/utils';
   import { checkVersionNow, getVersionCheck, ReleaseChannel, VersionCheckFrequency } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiBackupRestore,
     mdiCheckDecagramOutline,
+    mdiChevronRight,
     mdiHandBackRightOutline,
     mdiLifebuoy,
     mdiShieldCheckOutline,
@@ -225,6 +227,12 @@
         onChange={setLook}
       />
     </Row>
+    <!-- FL-421: where a new version is said, as the prototype's "Hear about a new version" row. -->
+    <Row label={$t('frameleaf_server_updates_hear')} help={$t('frameleaf_server_updates_hear_help')}>
+      <a class="button" href={commandCenterUrl('notifications', 'signals')}>
+        {$t('frameleaf_settings_area_notifications')}<Icon icon={mdiChevronRight} size="16" aria-hidden />
+      </a>
+    </Row>
     <Promises
       rows={[
         {
@@ -285,5 +293,17 @@
   .value {
     font-size: var(--fl-font-callout);
     font-weight: 600;
+  }
+  a.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--fl-space-1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  a.button:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
   }
 </style>

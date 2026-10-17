@@ -99,6 +99,30 @@ describe('Notifications landing: email status (FL-368, FL-379)', () => {
     expect(hero().getByRole('button', { name: en.frameleaf_notify_turn_on })).toBeInTheDocument();
   });
 
+  it('lists What needs your attention for an administrator under For you, and Email delivery for everyone (FL-421)', () => {
+    draft.store = saved(MailTransportType.Smtp);
+    const page = (key: string, title: string, admin?: boolean) => ({ key, title, subtitle: '', icon: '', admin });
+    render(NotificationsLanding, {
+      sections: [
+        page('email-preferences', 'Emails you receive'),
+        page('signals', en.frameleaf_cc_section_signals, true),
+        page('notifications', 'Email delivery', true),
+      ],
+    });
+
+    const forYou = within(screen.getByRole('region', { name: en.frameleaf_notify_for_you }));
+    expect(forYou.getAllByRole('link').map((link) => link.querySelector('strong')?.textContent)).toEqual([
+      'Emails you receive',
+      en.frameleaf_cc_section_signals,
+    ]);
+    expect(forYou.getByRole('link', { name: new RegExp(en.frameleaf_cc_section_signals) })).toHaveAttribute(
+      'href',
+      '/user-settings?area=notifications&section=signals',
+    );
+    const everyone = within(screen.getByRole('region', { name: en.frameleaf_sharing_server_title }));
+    expect(everyone.getAllByRole('link')).toHaveLength(1);
+  });
+
   it('never asks the administrator-only question for a member', () => {
     user.isAdmin = false;
     draft.store = undefined;
