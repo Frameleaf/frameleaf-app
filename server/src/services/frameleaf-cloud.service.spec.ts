@@ -1060,6 +1060,44 @@ describe(FrameleafCloudService.name, () => {
         expect(cloud.requests).toHaveLength(0);
       });
 
+      it('links with the original answer when Frameleaf Cloud replays an exact repeat registration', async () => {
+        // frameleaf-cloud aj/instance-register-replay: the same token, instance id and key get the original answer
+        const original = cloud.routes.get('POST /api/v1/instances')!;
+        const answers = new Map<string, { identity: string; answer: FakeCloudAnswer }>();
+        cloud.on('POST /api/v1/instances', async (request) => {
+          const token = request.headers['x-frameleaf-link-token'] as string;
+          const identity = `${request.json().instanceId}:${request.dpop?.jkt}`;
+          const replay = answers.get(token);
+          if (replay) {
+            atSend = structuredClone(storedLink());
+            return replay.identity === identity
+              ? replay.answer
+              : { status: 401, body: { code: 'invalid_token', message: 'already used', retryable: false } };
+          }
+          const answer = await original(request);
+          answers.set(token, { identity, answer });
+          return answer;
+        });
+        await sut.onBootstrap();
+        const first = cloud.requests.find(({ path }) => path === '/api/v1/instances')!;
+        crashTo(atSend);
+
+        await sut.onBootstrap();
+        // the same registration again first (same token, instance id and key), and nothing undone
+        const [again] = registrations();
+        expect(again.headers['x-frameleaf-link-token']).toBe('fll_headless_token_crash');
+        expect(again.json().instanceId).toBe(first.json().instanceId);
+        expect(again.dpop!.jkt).toBe(first.dpop!.jkt);
+        expect(pathsCalled()).not.toContain('DELETE /api/v1/instance');
+        expect(storedLink()).toMatchObject({
+          status: 'linked',
+          instanceId: localInstanceId(),
+          accountId: 'account-1',
+        });
+        expect(storedLink()?.usedLinkTokens).toHaveLength(1);
+        expect(storedLink()?.pendingLinkToken).toBeUndefined();
+      });
+
       it('records a token that someone else used without touching any link', async () => {
         spent.add('fll_headless_token_crash');
         cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
