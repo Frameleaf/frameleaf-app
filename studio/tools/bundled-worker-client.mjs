@@ -48,7 +48,10 @@ export function createWorkerClient({ serverUrl, sessionToken = null, fetchImpl =
   const request = async (method, pathname, { body, timeoutMs = 15_000, signal, extraHeaders } = {}) => {
     const response = await fetchImpl(new URL(pathname, origin), {
       method,
-      headers: headers({ ...(body !== undefined && { 'Content-Type': 'application/json' }), ...extraHeaders }),
+      headers: headers({
+        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+        ...extraHeaders,
+      }),
       ...(body !== undefined && { body: JSON.stringify(body) }),
       redirect: 'error',
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
@@ -128,7 +131,10 @@ export function createWorkerClient({ serverUrl, sessionToken = null, fetchImpl =
         new URL(`/api/render-workers/operations/${operationId}/artifacts/0?${query}`, origin),
         {
           method: 'PUT',
-          headers: headers({ 'x-render-claim-token': claimToken, 'Content-Type': 'application/octet-stream' }),
+          headers: headers({
+            'x-render-claim-token': claimToken,
+            'Content-Type': 'application/octet-stream',
+          }),
           body: createReadStream(file),
           duplex: 'half',
           redirect: 'error',
@@ -150,7 +156,10 @@ export const checksumOf = (checksum) => {
   assert.equal(typeof checksum, 'string', 'INVALID_INPUT_CHECKSUM');
   const hex = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(checksum);
   const digest = Buffer.from(checksum, hex ? 'hex' : 'base64');
-  assert.ok([20, 32].includes(digest.length) && (hex || digest.toString('base64') === checksum), 'INVALID_INPUT_CHECKSUM');
+  assert.ok(
+    [20, 32].includes(digest.length) && (hex || digest.toString('base64') === checksum),
+    'INVALID_INPUT_CHECKSUM',
+  );
   return { algorithm: digest.length === 20 ? 'sha1' : 'sha256', digest };
 };
 
@@ -160,7 +169,16 @@ export const checksumOf = (checksum) => {
  * lease is lost, the job is paused or a limit stopped it; `cancelled` is set when the owner asked
  * to stop, which the caller acknowledges.
  */
-export function holdLease({ client, operationId, claimToken, leaseMs, intervalMs, outputBytes = () => 0, now = Date.now }) {
+export function holdLease({
+  client,
+  operationId,
+  claimToken,
+  leaseMs,
+  intervalMs,
+  outputBytes = () => 0,
+  now = Date.now,
+  signal,
+}) {
   const controller = new AbortController();
   const state = { deadline: now() + leaseMs, cancelled: false, reason: null };
   const path = `/api/render-workers/operations/${operationId}/heartbeat`;
@@ -170,6 +188,9 @@ export function holdLease({ client, operationId, claimToken, leaseMs, intervalMs
     state.reason = reason;
     controller.abort(new Error(reason));
   };
+  const abort = () => stop('WORKER_STOPPED');
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
   const beat = async () => {
     if (controller.signal.aborted) return;
     const started = now();
@@ -177,8 +198,12 @@ export function holdLease({ client, operationId, claimToken, leaseMs, intervalMs
       const response = await client.post(
         path,
         { claimToken, outputBytes: String(outputBytes()) },
-        { timeoutMs: Math.max(1000, Math.min(15_000, state.deadline - started)) },
+        {
+          timeoutMs: Math.max(1000, Math.min(15_000, state.deadline - started)),
+          signal: controller.signal,
+        },
       );
+      if (controller.signal.aborted) return;
       if (response?.cancelRequested) {
         state.cancelled = true;
         stop('CANCELLED');
@@ -193,15 +218,18 @@ export function holdLease({ client, operationId, claimToken, leaseMs, intervalMs
       if (now() >= state.deadline) stop('LEASE_LOST');
     }
   };
-  const timer = setInterval(() => {
-    if (now() >= state.deadline) {
-      stop('LEASE_LOST');
-      return;
-    }
-    inFlight ??= beat().finally(() => {
-      inFlight = null;
-    });
-  }, Math.max(250, intervalMs));
+  const timer = setInterval(
+    () => {
+      if (now() >= state.deadline) {
+        stop('LEASE_LOST');
+        return;
+      }
+      inFlight ??= beat().finally(() => {
+        inFlight = null;
+      });
+    },
+    Math.max(250, intervalMs),
+  );
   timer.unref?.();
   return {
     signal: controller.signal,
@@ -217,9 +245,11 @@ export function holdLease({ client, operationId, claimToken, leaseMs, intervalMs
       if (now() >= state.deadline) stop('LEASE_LOST');
       if (controller.signal.aborted) throw controller.signal.reason;
     },
-    release() {
+    async release() {
       clearInterval(timer);
+      signal?.removeEventListener('abort', abort);
       stop('RELEASED');
+      await inFlight;
     },
   };
 }
