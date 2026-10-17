@@ -524,6 +524,7 @@ export class CloudBackupSelectionRepository {
     patch: Partial<
       Pick<
         CloudBackupCoverageReport,
+        | 'instanceId'
         | 'revisionId'
         | 'sequence'
         | 'status'
