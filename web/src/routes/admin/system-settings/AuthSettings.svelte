@@ -6,7 +6,7 @@
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
-  import { appCallbacks } from '$lib/frameleaf/oauth-callbacks';
+  import { appCallback, FRAMELEAF_APP_CALLBACK } from '$lib/frameleaf/oauth-callbacks';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -55,9 +55,9 @@
   // FL-135: this installation's documentation, or no link at all
   const oauthDocs = $derived(helpLinks.docs('administration/oauth'));
 
-  // FL-131: what the identity provider must allow for each app, derived the way the server does
-  const callbacks = $derived(
-    appCallbacks(configToEdit.oauth.mobileOverrideEnabled, configToEdit.oauth.mobileRedirectUri),
+  // FL-131: what the identity provider must allow for the app, derived the way the server does
+  const callback = $derived(
+    appCallback(configToEdit.oauth.mobileOverrideEnabled, configToEdit.oauth.mobileRedirectUri),
   );
 </script>
 
@@ -271,7 +271,7 @@
               <SettingToggle
                 title={$t('admin.oauth_mobile_redirect_uri_override')}
                 subtitle={$t('admin.oauth_mobile_redirect_uri_override_description', {
-                  values: { callback: 'app.immich:///oauth-callback' },
+                  values: { callback: FRAMELEAF_APP_CALLBACK },
                 })}
                 disabled={disabled || !configToEdit.oauth.enabled}
                 onToggle={() => handleToggleOverride()}
@@ -289,7 +289,7 @@
                 />
               {/if}
 
-              <!-- FL-131: both apps sign in against this server; each needs its own callback allowed.
+              <!-- FL-131: the Frameleaf app's callback the identity provider must allow.
                    Grouped-list pattern from the prototype's settings rows (SystemPanels.jsx). -->
               <section class="app-callbacks" aria-labelledby="app-callbacks-title">
                 <h4 id="app-callbacks-title">{$t('frameleaf_oauth_app_callbacks_title')}</h4>
@@ -298,20 +298,15 @@
                   <div>
                     <dt>{$t('frameleaf_oauth_app_callbacks_frameleaf')}</dt>
                     <dd>
-                      {#if callbacks.frameleaf}
-                        <code>{callbacks.frameleaf}</code>
+                      {#if callback}
+                        <code>{callback}</code>
                       {:else}
                         <span class="refused" role="alert">{$t('frameleaf_oauth_app_callbacks_frameleaf_refused')}</span
                         >
                       {/if}
                     </dd>
                   </div>
-                  <div>
-                    <dt>{$t('frameleaf_oauth_app_callbacks_immich')}</dt>
-                    <dd><code>{callbacks.immich}</code></dd>
-                  </div>
                 </dl>
-                <p>{$t('frameleaf_oauth_app_callbacks_independent')}</p>
               </section>
             {/if}
           </div>

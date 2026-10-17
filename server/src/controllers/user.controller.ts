@@ -302,7 +302,8 @@ export class UserController {
   }
 
   @Get(':id/profile-image')
-  @FileResponse()
+  // FL-436: made in the thumbnail format; older pictures keep the type they were uploaded in
+  @FileResponse('image/jpeg', 'image/webp', 'image/*')
   @Authenticated({ permission: Permission.UserProfileImageRead })
   @Endpoint({
     summary: 'Retrieve user profile image',

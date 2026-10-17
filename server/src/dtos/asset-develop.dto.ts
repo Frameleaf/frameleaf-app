@@ -726,6 +726,13 @@ const AssetDevelopSaveSchema = z
       .describe(
         'Immutable revision of this owned asset whose omitted fields are preserved; never the implicit current revision',
       ),
+    expectedCurrentRevisionId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe(
+        'Optimistic precondition: the currentRevisionId the client last read. null expects the original to be current (no current revision). When it no longer matches, the save is refused with 409 code develop_current_revision_changed and the actual currentRevisionId. Omit to save unconditionally',
+      ),
     replaceRecipe: z
       .boolean()
       .optional()

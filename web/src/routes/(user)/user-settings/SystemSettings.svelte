@@ -83,6 +83,7 @@
     mdiTrayFull,
     mdiWrench,
     mdiBackupRestore,
+    mdiBellAlertOutline,
     mdiBellOutline,
     mdiBookshelf,
     mdiClockOutline,
@@ -389,6 +390,8 @@
       [
         ['deduplication', 'frameleaf_cc_section_deduplication', mdiContentDuplicate],
         ['enrichment-care', 'frameleaf_cc_section_enrichment', mdiAutoFix],
+        // FL-421: Notifications → What needs your attention.
+        ['signals', 'frameleaf_cc_section_signals', mdiBellAlertOutline],
         // FL-364: Computers & background work. Computers also answers the addresses of the pages it
         // replaced (Workers & endpoints, Render workers).
         ['computers', 'frameleaf_computers_page_computers', mdiDesktopTowerMonitor],

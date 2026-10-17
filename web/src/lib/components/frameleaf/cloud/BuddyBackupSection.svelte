@@ -44,6 +44,8 @@
     type BuddyKitDto,
     type BuddySettingsDto,
     EnvironmentKeys,
+    LicenseKind,
+    LicenseState,
     Version,
   } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
@@ -57,9 +59,17 @@
   let status = $state<BuddyStatusDto | null>(null);
   let coverage = $state<BuddyPreflightDto | null>(null);
   const linked = $derived(cloudManager.status?.state === 'linked');
-  const entitled = $derived(linked && !!cloudManager.license?.entitlements.cloudBackup);
-  const presentation = $derived(buddyBackupPresentation(status, linked, entitled));
-  const place = $derived(buddyPlaceState(status, { linked, entitled }, new Date()));
+  // A new pairing needs a Server licence on both servers; no plan, unless the buddies use the relay (FL-434).
+  const serverLicensed = $derived.by(() => {
+    const key = cloudManager.license?.key;
+    return (
+      linked &&
+      key?.kind === LicenseKind.Server &&
+      (key.state === LicenseState.Active || key.state === LicenseState.Grace)
+    );
+  });
+  const presentation = $derived(buddyBackupPresentation(status, linked));
+  const place = $derived(buddyPlaceState(status, { linked }, new Date()));
   let failure = $state('');
   let notice = $state('');
   let busy = $state(false);
@@ -367,7 +377,7 @@
         {/snippet}
         <div class="inside">
           {#if !status.pairing}
-            <!-- Link first, then a plan; setup stays visible until every gate is satisfied. -->
+            <!-- Link first, then a Server licence; setup stays visible until every gate is satisfied. -->
             {#if !linked}
               <p class="explain">{$t('frameleaf_buddy_link_required')}</p>
               <div class="fc-actions">
@@ -375,11 +385,11 @@
                   >{$t('frameleaf_cloud_backup_gate_link')}</a
                 >
               </div>
-            {:else if !entitled}
-              <p class="explain">{$t('frameleaf_buddy_subscription_required')}</p>
+            {:else if !serverLicensed}
+              <p class="explain">{$t('frameleaf_buddy_server_licence_required')}</p>
               <div class="fc-actions">
-                <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-plan')}
-                  >{$t('frameleaf_cloud_backup_gate_plan')}</a
+                <a class="fc-button" href={commandCenterUrl('cloud', 'cloud-license')}
+                  >{$t('frameleaf_buddy_server_licence_action')}</a
                 >
               </div>
             {:else}
@@ -388,8 +398,9 @@
                   'frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off',
                 )}
               </p>
+              <p class="explain">{$t('frameleaf_buddy_direct_or_relay')}</p>
             {/if}
-            <Button variant="primary" disabled={busy || !status.enabled || !entitled} onclick={beginSetup}
+            <Button variant="primary" disabled={busy || !status.enabled || !serverLicensed} onclick={beginSetup}
               >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
             >
           {:else}
@@ -875,12 +886,16 @@
           </div>
         </dl>{/if}
       <p>{$t('frameleaf_buddy_each_direction_keeps_30_days_and_12_monthly_restore_points_both_sides_enforce_thei')}</p>
+      {#if status?.pairing?.state === 'pending' && !status.canConfirm}
+        <p class="explain">{$t('frameleaf_buddy_waiting_for_inviter_confirmation')}</p>
+      {/if}
       <Button
         variant="primary"
         disabled={busy || !status?.pairing}
         onclick={() =>
           action(async () => {
-            if (status?.pairing?.state !== 'active') {
+            // Only the server that sent the invitation confirms; the one that accepted it waits (FL-434).
+            if (status?.pairing?.state === 'pending' && status.canConfirm) {
               status = await changeBuddyRelationship({
                 buddyRelationshipDto: { action: BuddyRelationshipAction.Confirm },
               });

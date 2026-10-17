@@ -26,8 +26,11 @@ Native Synology source and SPKs must stay in the private repository.
    release needs a version bump; publishing changed bytes under the same version
    is refused. A failed partial promotion may resume only at the same source SHA.
 
-The retired `frameleaf-v3.2.0-N` rebuild tags remain usable for explicit,
-version-matched recovery. They are excluded from the new server's update offers.
+The retired `frameleaf-v3.2.0-N` releases and their registry images were removed
+for the independent release reset. Recovery of a legacy installation requires
+previously retained, authenticated, version-matched images and installation files;
+the old Git tags alone cannot restore deleted release assets or registry images.
+Legacy rebuild tags are excluded from the new server's update offers.
 A feed response must name the matching independent tag; an old cloud feed falls
 back to GitHub. Existing 3.2 servers cannot recognize 1.0.0 as a newer SemVer:
 first update Manager to **0.1.2 or later**, then explicitly review and select

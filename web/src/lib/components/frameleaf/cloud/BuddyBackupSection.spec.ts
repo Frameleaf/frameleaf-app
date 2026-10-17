@@ -5,14 +5,18 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import en from '../../../../../../i18n/en.json';
 import BuddyBackupSection from './BuddyBackupSection.svelte';
 
-const cloud = vi.hoisted(() => ({ linked: true, entitled: true }));
+const cloud = vi.hoisted(() => ({ linked: true, licence: 'server' as 'server' | 'individual' | null }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
   cloudManager: {
     get status() {
       return { state: cloud.linked ? 'linked' : 'unlinked' };
     },
     get license() {
-      return { entitlements: { cloudBackup: cloud.entitled } };
+      // FL-434: no plan anywhere; only the supporter key decides whether a new pairing can be made
+      return {
+        entitlements: { cloudBackup: false, remoteAccess: false },
+        key: cloud.licence ? { kind: cloud.licence, state: 'active' } : null,
+      };
     },
     listen: () => () => {},
   },
@@ -27,7 +31,7 @@ let status: BuddyStatusDto;
 beforeEach(() => {
   vi.resetAllMocks();
   cloud.linked = true;
-  cloud.entitled = true;
+  cloud.licence = 'server';
   addMessages('dev', en);
   status = {
     enabled: true,
@@ -119,14 +123,15 @@ it('submits only selected variable names and allows declaration capture to be re
 });
 
 it.each([
-  { linked: false, entitled: false, enabled: false, disabled: true },
-  { linked: false, entitled: true, enabled: true, disabled: true },
-  { linked: true, entitled: false, enabled: true, disabled: true },
-  { linked: true, entitled: true, enabled: false, disabled: true },
-  { linked: true, entitled: true, enabled: true, disabled: false },
-])('keeps unpaired setup visible with gates $linked/$entitled/$enabled', async (gate) => {
+  { linked: false, licence: null, enabled: false, disabled: true },
+  { linked: false, licence: 'server', enabled: true, disabled: true },
+  { linked: true, licence: null, enabled: true, disabled: true },
+  { linked: true, licence: 'individual', enabled: true, disabled: true },
+  { linked: true, licence: 'server', enabled: false, disabled: true },
+  { linked: true, licence: 'server', enabled: true, disabled: false },
+] as const)('keeps unpaired setup visible with gates $linked/$licence/$enabled, without a plan', async (gate) => {
   cloud.linked = gate.linked;
-  cloud.entitled = gate.entitled;
+  cloud.licence = gate.licence;
   Object.assign(status, { enabled: gate.enabled, configured: false, settings: null, pairing: null });
   render(BuddyBackupSection, { view: 'status' });
   const outgoing = within(await screen.findByRole('region', { name: 'My backup' }));
@@ -144,8 +149,30 @@ it.each([
   if (!gate.linked) {
     expect(outgoing.getByText(en.frameleaf_buddy_link_required)).toBeVisible();
     expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_link })).toBeVisible();
-  } else if (!gate.entitled) {
-    expect(outgoing.getByText(en.frameleaf_buddy_subscription_required)).toBeVisible();
-    expect(outgoing.getByRole('link', { name: en.frameleaf_cloud_backup_gate_plan })).toBeVisible();
+  } else if (gate.licence !== 'server') {
+    expect(outgoing.getByText(en.frameleaf_buddy_server_licence_required)).toBeVisible();
+    expect(outgoing.getByRole('link', { name: en.frameleaf_buddy_server_licence_action })).toBeVisible();
+  } else {
+    expect(outgoing.getByText(en.frameleaf_buddy_direct_or_relay)).toBeVisible();
   }
+});
+
+it('lets only the inviter confirm: the server that accepted the invitation never calls confirm (FL-434)', async () => {
+  Object.assign(status, { pairing: null });
+  sdkMock.acceptBackupBuddy.mockResolvedValue({
+    ...status,
+    pairing: { version: 1, pairId: 'pair', state: State.Pending, readUntil: null, vaults: [] },
+    canConfirm: false,
+  });
+  render(BuddyBackupSection, { view: 'status' });
+  await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_buddy_set_up_buddy_backup }));
+  const dialog = within(await screen.findByRole('dialog', { name: en.frameleaf_buddy_set_up_buddy_backup }));
+  await fireEvent.input(dialog.getByLabelText(en.frameleaf_buddy_invitation_from_your_buddy), {
+    target: { value: 'a'.repeat(43) },
+  });
+  await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_accept_invitation }));
+  expect(await dialog.findByText(en.frameleaf_buddy_waiting_for_inviter_confirmation)).toBeVisible();
+  await fireEvent.click(dialog.getByRole('button', { name: en.frameleaf_buddy_confirm_agreement }));
+  expect(await dialog.findByRole('button', { name: en.frameleaf_buddy_generate_recovery_kit })).toBeVisible();
+  expect(sdkMock.changeBuddyRelationship).not.toHaveBeenCalled();
 });

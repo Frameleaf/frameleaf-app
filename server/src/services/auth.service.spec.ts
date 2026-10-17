@@ -1294,6 +1294,24 @@ describe(AuthService.name, () => {
       ]);
     });
 
+    it('uses an override that already is the Frameleaf forwarder as is', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        oauth: {
+          ...frameleafOverride.oauth,
+          mobileRedirectUri: 'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect/?x=1',
+        },
+      });
+
+      await sut.authorize({ redirectUri: 'frameleaf-auth:///oauth-callback' });
+
+      expect(mocks.oauth.authorize).toHaveBeenCalledWith(
+        expect.anything(),
+        'https://photos.example.test/immich/api/oauth/frameleaf-mobile-redirect/',
+        undefined,
+        undefined,
+      );
+    });
+
     it('refuses to send the Frameleaf callback anywhere but beside a mobile-redirect override (FL-131)', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.oauthWithMobileOverride);
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpStatus, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import {
@@ -148,6 +148,8 @@ export class AssetDevelopRepository {
     recipe: AssetDevelopRecipe;
     recipeVersion: number;
     sourceRevisionId?: string;
+    /** FL-431: undefined skips the check; null expects no current revision. */
+    expectedCurrentRevisionId?: string | null;
     replaceRecipe?: boolean;
     requireRenderable?: boolean;
     label: string | null;
@@ -175,6 +177,24 @@ export class AssetDevelopRepository {
         .forShare()
         .executeTakeFirst();
       if (!asset) throw new BadRequestException('Develop source asset is no longer available');
+      if (input.expectedCurrentRevisionId !== undefined) {
+        // FL-431: read under the per-asset lock above, in the inserting transaction, so the
+        // precondition and the new row are one decision. Saving never moves `isCurrent`, so a
+        // render or revert that commits after this read is ordered after this save.
+        const current = await sql<{ id: string }>`
+          SELECT id FROM ${TABLE} WHERE "assetId" = ${input.assetId}::uuid AND "isCurrent" LIMIT 1
+        `.execute(trx);
+        const currentRevisionId = current.rows[0]?.id ?? null;
+        if (currentRevisionId !== input.expectedCurrentRevisionId) {
+          throw new ConflictException({
+            message: 'This photo has a newer current version than the one this edit started from',
+            error: 'Conflict',
+            statusCode: HttpStatus.CONFLICT,
+            code: 'develop_current_revision_changed',
+            currentRevisionId,
+          });
+        }
+      }
       let recipe = developEnvelope(input.recipe);
       if (input.sourceRevisionId) {
         const source =
