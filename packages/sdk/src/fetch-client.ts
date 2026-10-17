@@ -12942,6 +12942,41 @@ export type ServerFeaturesDto = {
     /** Whether trash feature is enabled */
     trash: boolean;
 };
+export type ServerIdentityJwk = {
+    crv: Crv;
+    kty: Kty;
+    /** The raw 32-byte Ed25519 public key, base64url without padding (RFC 8037) */
+    x: string;
+};
+export type ServerIdentityKey = {
+    jwk: ServerIdentityJwk;
+    /** The key id: the key's RFC 7638 JWK thumbprint (SHA-256, base64url without padding) */
+    kid: string;
+};
+export type ServerIdentityResponseDto = {
+    /** This server's Ed25519 identity keys, current key first, then the key the last rotation replaced while it is still kept (about a day). Linked servers use the key Frameleaf Cloud already holds, and the cloud lists the same `{kid, jwk}` entries for each instance. This route is public because the keys are public, but an app must only PIN keys learned over a trusted path: this response fetched over https (a verified certificate) or the relay at sign-in, or the Frameleaf Cloud instance list. Keys read over plain http are not trustworthy and must not replace a pinned set. */
+    identityKeys: ServerIdentityKey[];
+    /** The id this server signs as: the same value as `GET /server/ping` `id` (the Frameleaf Cloud instance id while linked, else a stable local id) */
+    instanceId: string;
+    /** Whether `instanceId` is a Frameleaf Cloud instance id */
+    linked: boolean;
+};
+export type ServerIdentityChallengeDto = {
+    /** A fresh random value from the app, used once: 16-96 random bytes as 22-128 base64url characters (no padding) */
+    nonce: string;
+};
+export type ServerIdentityChallengeResponseDto = {
+    /** When the proof was signed, Unix seconds */
+    iat: number;
+    /** The id signed in the proof (see `GET /server/identity`) */
+    instanceId: string;
+    /** The origin signed in the proof: `<scheme>://<host>[:port]`, lowercase, that the request actually arrived on (see the origin rule on `proof`) */
+    origin: string;
+    /** Signed by the current identity key. A compact JWS (RFC 7515) signed EdDSA (Ed25519, RFC 8037). Protected header: `{"alg":"EdDSA","typ":"frameleaf-lan-identity+jwt","kid":"<kid>"}`. Payload segment: base64url of the UTF-8 string `frameleaf-lan-identity-v1|<instanceId>|<nonce>|<iat>|<origin>` (pipe-separated, not JSON; `iat` in Unix seconds; `origin` is `<scheme>://<host>[:port]`, lowercase, as the request arrived). Signature: Ed25519 over the ASCII bytes `<header segment>.<payload segment>`. The app checks `typ`, that `kid` is a pinned key and the signature verifies with it, that the nonce is the one it sent, that `instanceId` is the server it expects, and that `origin` equals the address it dialled. Origin rule: one server answers on many origins at once (LAN addresses, the relay hostname, custom hostnames, a direct internet address) and one `identityKeys` set covers them all; `origin` is the origin this request actually arrived on: through Frameleaf remote access, the scheme and host the edge worker vouched for; otherwise the Host header as received and the connection scheme. `X-Forwarded-*` headers from any other peer are ignored. The app accepts the proof only when `origin` exactly equals the origin it dialled. This proves the host holds the private key; it is not channel binding: a live man-in-the-middle on plain http can still relay, so apps should prefer https or the relay when available. */
+    proof: string;
+    /** The same payload signed by the key the last rotation replaced, only while that key is still kept, so an app that pinned it keeps working until it learns the new key from a trusted path */
+    retiringProof?: string;
+};
 export type LibraryMovePauseDto = {
     /** Frameleaf Manager move operation that holds the pause */
     operationId: string;
@@ -26549,6 +26584,32 @@ export function getServerFeatures(opts?: Oazapfts.RequestOpts) {
     }>("/server/features", {
         ...opts
     }));
+}
+/**
+ * Get server identity keys
+ */
+export function getServerIdentity(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ServerIdentityResponseDto;
+    }>("/server/identity", {
+        ...opts
+    }));
+}
+/**
+ * Prove server identity
+ */
+export function serverIdentityChallenge({ serverIdentityChallengeDto }: {
+    serverIdentityChallengeDto: ServerIdentityChallengeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ServerIdentityChallengeResponseDto;
+    }>("/server/identity/challenge", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: serverIdentityChallengeDto
+    })));
 }
 /**
  * Manager machine-authenticated library move pause status (renews the named operation)

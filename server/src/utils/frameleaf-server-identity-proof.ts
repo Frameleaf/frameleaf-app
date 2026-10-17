@@ -59,18 +59,34 @@ export const assertIdentityNonce = (nonce: unknown): string => {
   return nonce;
 };
 
+/** What `identityRequestOrigin` reads from a request, after `frameleafViaMiddleware` ran. */
+export type IdentityOriginRequest = {
+  headers: { host?: string };
+  socket?: { encrypted?: boolean } | null;
+  /** Set by `frameleafViaMiddleware` only for a request the edge worker vouched for with its secret. */
+  frameleafForwarded?: { proto: string | null; host: string | null } | null;
+};
+
 /**
- * The origin the request arrived on, `<scheme>://<host>[:port]`, lowercased: the edge worker's
- * forwarded values when it vouched for the request, else this connection's own. Anything that is not a
- * plain host is refused (400), so the signed payload can never carry an extra `|` field.
+ * The origin the request actually arrived on, `<scheme>://<host>[:port]`, lowercased (FL-430). One
+ * server answers on many origins at once (LAN addresses, the relay hostname and custom hostnames, a
+ * direct internet address) and the app accepts a proof only when this equals the origin it dialled.
+ *
+ * - Through remote access (relay, direct, or LAN through the edge worker) the scheme and host are the
+ *   `X-Forwarded-Proto` / `X-Forwarded-Host` the edge worker vouched for with `FRAMELEAF_EDGE_SECRET`
+ *   (`frameleafForwarded`); that is the only source of forwarded values trusted here.
+ * - Otherwise the Host header as received and this connection's own scheme. `X-Forwarded-*` from
+ *   anyone else is ignored, including Express's `trust proxy` (which by default trusts every private
+ *   address, so any LAN peer).
+ *
+ * Anything that is not a plain host is refused (400), so the signed payload can never carry an extra
+ * `|` field.
  */
-export const identityRequestOrigin = (input: {
-  protocol: string;
-  host: string | undefined;
-  forwarded?: { proto: string | null; host: string | null } | null;
-}): string => {
-  const scheme = (input.forwarded?.proto ?? input.protocol).toLowerCase();
-  const host = (input.forwarded?.host ?? input.host ?? '').toLowerCase();
+export const identityRequestOrigin = (request: IdentityOriginRequest): string => {
+  const forwarded = request.frameleafForwarded ?? null;
+  const ownScheme = request.socket?.encrypted ? 'https' : 'http';
+  const scheme = (forwarded?.proto ?? ownScheme).toLowerCase();
+  const host = (forwarded?.host ?? request.headers.host ?? '').toLowerCase();
   if ((scheme !== 'http' && scheme !== 'https') || host.length > MAX_HOST_LENGTH || !HOST_PATTERN.test(host)) {
     throw new BadRequestException('The request has no usable Host header');
   }

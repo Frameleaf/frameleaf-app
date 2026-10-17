@@ -28,7 +28,7 @@ import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { VersionService } from 'src/services/version.service.js';
-import { identityRequestOrigin } from 'src/utils/frameleaf-server-identity-proof.js';
+import { type IdentityOriginRequest, identityRequestOrigin } from 'src/utils/frameleaf-server-identity-proof.js';
 
 @ApiTags(ApiTag.Server)
 @Controller('server')
@@ -135,11 +135,7 @@ export class ServerController {
     @Req() request: Request,
     @Body() dto: ServerIdentityChallengeDto,
   ): Promise<ServerIdentityChallengeResponseDto> {
-    const origin = identityRequestOrigin({
-      protocol: request.protocol,
-      host: request.get('host'),
-      forwarded: (request as FrameleafRequest).frameleafForwarded ?? null,
-    });
+    const origin = identityRequestOrigin(request as FrameleafRequest & IdentityOriginRequest);
     return this.service.identityChallenge(dto.nonce, origin);
   }
 

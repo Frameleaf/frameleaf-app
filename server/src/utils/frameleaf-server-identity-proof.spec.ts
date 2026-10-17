@@ -1,8 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { Request, Response } from 'express';
+import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import {
+  type IdentityOriginRequest,
   assertIdentityNonce,
   identityRequestOrigin,
   lanIdentityPayload,
@@ -77,20 +80,62 @@ describe('LAN identity proof (FL-430)', () => {
     }
   });
 
-  it('takes the origin from the connection, or from the edge worker when it vouched for the request', () => {
-    expect(identityRequestOrigin({ protocol: 'http', host: '192.168.1.20:2283' })).toBe('http://192.168.1.20:2283');
-    expect(identityRequestOrigin({ protocol: 'http', host: 'Frameleaf.Local' })).toBe('http://frameleaf.local');
-    expect(identityRequestOrigin({ protocol: 'http', host: '[fe80::1]:2283' })).toBe('http://[fe80::1]:2283');
-    expect(
-      identityRequestOrigin({
-        protocol: 'http',
-        host: '127.0.0.1:2283',
-        forwarded: { proto: 'https', host: 'home.example.com' },
-      }),
-    ).toBe('https://home.example.com');
-    for (const host of [undefined, '', 'evil|host', 'a b', 'x'.repeat(300)]) {
-      expect(() => identityRequestOrigin({ protocol: 'http', host })).toThrow(BadRequestException);
-    }
-    expect(() => identityRequestOrigin({ protocol: 'ftp', host: 'a' })).toThrow(BadRequestException);
+  describe('the origin the request arrived on', () => {
+    const secret = 'edge-secret-0123456789abcdef';
+    /** A request after the real `frameleafViaMiddleware`, as the controller sees it. */
+    const arrive = (headers: Record<string, string>, encrypted = false) => {
+      const request = { headers: { ...headers }, socket: { encrypted } } as unknown as Request;
+      const next = vi.fn();
+      frameleafViaMiddleware(secret)(request, {} as Response, next);
+      expect(next).toHaveBeenCalled();
+      return identityRequestOrigin(request as unknown as IdentityOriginRequest);
+    };
+
+    it('signs the LAN Host as received, with the connection scheme', () => {
+      expect(arrive({ host: '192.168.1.20:2283' })).toBe('http://192.168.1.20:2283');
+      expect(arrive({ host: 'Frameleaf.Local' })).toBe('http://frameleaf.local');
+      expect(arrive({ host: '[fe80::1]:2283' })).toBe('http://[fe80::1]:2283');
+      expect(arrive({ host: 'photos.home.test' }, true)).toBe('https://photos.home.test');
+    });
+
+    it('signs the relay host and scheme the edge worker vouched for', () => {
+      expect(
+        arrive({
+          host: '127.0.0.1:2283',
+          'x-frameleaf-via': 'relay',
+          'x-frameleaf-via-auth': secret,
+          'x-forwarded-proto': 'https',
+          'x-forwarded-host': 'abc123.relay.frameleaf.app',
+        }),
+      ).toBe('https://abc123.relay.frameleaf.app');
+      expect(
+        arrive({
+          host: '127.0.0.1:2283',
+          'x-frameleaf-via': 'wan',
+          'x-frameleaf-via-auth': secret,
+          'x-forwarded-proto': 'https',
+          'x-forwarded-host': 'photos.example.com',
+        }),
+      ).toBe('https://photos.example.com');
+    });
+
+    it('ignores X-Forwarded-* from a peer the edge worker did not vouch for', () => {
+      expect(
+        arrive({
+          host: '192.168.1.20:2283',
+          'x-forwarded-proto': 'https',
+          'x-forwarded-host': 'attacker.example',
+        }),
+      ).toBe('http://192.168.1.20:2283');
+    });
+
+    it('refuses a Host that is missing or not a plain host', () => {
+      for (const host of [undefined, '', 'evil|host', 'a b', 'x'.repeat(300)]) {
+        expect(() => identityRequestOrigin({ headers: { host } })).toThrow(BadRequestException);
+      }
+      expect(() =>
+        identityRequestOrigin({ headers: { host: 'a' }, frameleafForwarded: { proto: 'ftp', host: null } }),
+      ).toThrow(BadRequestException);
+    });
   });
 });

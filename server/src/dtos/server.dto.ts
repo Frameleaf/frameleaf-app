@@ -88,12 +88,17 @@ const LAN_PROOF_FORMAT =
   'Payload segment: base64url of the UTF-8 string `frameleaf-lan-identity-v1|<instanceId>|<nonce>|<iat>|<origin>` (pipe-separated, not JSON; `iat` in Unix seconds; `origin` is `<scheme>://<host>[:port]`, lowercase, as the request arrived). ' +
   'Signature: Ed25519 over the ASCII bytes `<header segment>.<payload segment>`. ' +
   'The app checks `typ`, that `kid` is a pinned key and the signature verifies with it, that the nonce is the one it sent, that `instanceId` is the server it expects, and that `origin` equals the address it dialled. ' +
+  'Origin rule: one server answers on many origins at once (LAN addresses, the relay hostname, custom hostnames, a direct internet address) and one `identityKeys` set covers them all; `origin` is the origin this request actually arrived on: through Frameleaf remote access, the scheme and host the edge worker vouched for; otherwise the Host header as received and the connection scheme. `X-Forwarded-*` headers from any other peer are ignored. The app accepts the proof only when `origin` exactly equals the origin it dialled. ' +
   'This proves the host holds the private key; it is not channel binding: a live man-in-the-middle on plain http can still relay, so apps should prefer https or the relay when available.';
 
 const ServerIdentityChallengeResponseSchema = z
   .object({
     instanceId: z.string().describe('The id signed in the proof (see `GET /server/identity`)'),
-    origin: z.string().describe('The origin signed in the proof: `<scheme>://<host>[:port]` the request arrived on'),
+    origin: z
+      .string()
+      .describe(
+        'The origin signed in the proof: `<scheme>://<host>[:port]`, lowercase, that the request actually arrived on (see the origin rule on `proof`)',
+      ),
     iat: z.int().describe('When the proof was signed, Unix seconds'),
     proof: z.string().describe(`Signed by the current identity key. ${LAN_PROOF_FORMAT}`),
     retiringProof: z
