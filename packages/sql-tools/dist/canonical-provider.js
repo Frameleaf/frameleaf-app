@@ -1,6 +1,7 @@
 import { FileMigrationProvider } from 'kysely/migration';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /** Runtime and CLI must execute exactly the same checked-in canonical migration chain. */
 export const createMigrationProvider = (migrationFolder, options = {}) => ({
@@ -17,8 +18,9 @@ export const createMigrationProvider = (migrationFolder, options = {}) => ({
     const unlisted = filenames.map((name) => name.replace(/\.[^.]+$/, '')).filter((name) => !names.includes(name));
     if (unlisted.length) throw new Error(`Canonical migration ORDER mismatch: unlisted [${unlisted.join(', ')}]`);
     // Source runners must resolve migrations in their own module loader (e.g. Vitest's TS aliases).
-    // Compiled runtime and CLI callers can keep Kysely's native import default.
-    const provider = new FileMigrationProvider({ fs: { readdir }, path: { join }, migrationFolder, import: options.import });
+    // Native Node imports require file URLs for Windows drives and URL-significant characters.
+    const provider = new FileMigrationProvider({ fs: { readdir }, path: { join }, migrationFolder,
+      import: options.import ?? ((filename) => import(pathToFileURL(filename).href)) });
     const migrations = await provider.getMigrations();
     const unexpected = Object.keys(migrations).filter((name) => !names.includes(name));
     const missing = names.filter((name) => !Object.hasOwn(migrations, name));
