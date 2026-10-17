@@ -38,6 +38,21 @@ describe('renderRawWithLibRaw', () => {
   beforeEach(() => vi.mocked(execFile).mockReset());
   afterEach(() => vi.useRealTimers());
 
+  it('uses the desktop verified decoder path and rejects relative overrides', async () => {
+    vi.stubEnv('FRAMELEAF_RAW_DECODER_PATH', '/private/runtime with spaces/raw/bin/dcraw_emu');
+    try {
+      mockDecoder();
+      expect(await renderRawWithLibRaw('photo.DNG')).toBe(tiff);
+      expect(vi.mocked(execFile).mock.calls[0][0]).toBe('/private/runtime with spaces/raw/bin/dcraw_emu');
+      vi.mocked(execFile).mockReset();
+      vi.stubEnv('FRAMELEAF_RAW_DECODER_PATH', 'dcraw_emu');
+      await expect(renderRawWithLibRaw('photo.DNG')).rejects.toMatchObject({ reason: 'dependency_missing' });
+      expect(execFile).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('uses the pinned CLI, camera WB, sRGB, full-resolution 16-bit TIFF and bounded stdout', async () => {
     mockDecoder();
     expect(await renderRawWithLibRaw('-photo with spaces.CR3')).toBe(tiff);
