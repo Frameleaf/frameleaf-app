@@ -814,6 +814,77 @@ where
     "asset"."ownerId" = $2::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."ownerId" != $3::uuid
+    and exists (
+      select
+        1
+      from
+        user_metadata as owner_rules
+      where
+        owner_rules."userId" = "asset"."ownerId"
+        and owner_rules.key = 'preferences'
+        and (
+          exists (
+            select
+              1
+            from
+              tag_asset
+              inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+            where
+              tag_asset."assetId" = "asset"."id"
+              and tag_closure.id_ancestor in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.tagIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+          )
+          or exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "asset"."id"
+              and asset_face."personGroupId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.personIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+          or exists (
+            select
+              1
+            from
+              pet_observation
+              inner join pet on pet.id = pet_observation."petId"
+            where
+              pet_observation."assetId" = "asset"."id"
+              and pet_observation."petId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.petIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and pet_observation.state = 'confirmed'
+              and pet."ownerId" = "asset"."ownerId"
+          )
+        )
+    )
+  )
   and (
     exists (
       select
@@ -821,14 +892,14 @@ where
         "album_asset"
       where
         "album_asset"."assetId" = "asset"."id"
-        and "album_asset"."albumId" = any ($3::uuid[])
+        and "album_asset"."albumId" = any ($4::uuid[])
     )
     or (
-      "asset_exif"."city" = $4
+      "asset_exif"."city" = $5
       and (
-        "asset"."ownerId" = any ($5::uuid[])
+        "asset"."ownerId" = any ($6::uuid[])
         and (
-          "asset"."ownerId" = $6::uuid
+          "asset"."ownerId" = $7::uuid
           or (
             "asset"."deletedAt" is null
             and "asset"."visibility" in ('timeline', 'hidden')
@@ -841,9 +912,9 @@ order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $7
-offset
   $8
+offset
+  $9
 
 -- SearchRepository.searchMetadataV3 (or-exif-only)
 select
@@ -1444,21 +1515,92 @@ where
     "asset"."ownerId" = $2::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."ownerId" != $3::uuid
+    and exists (
+      select
+        1
+      from
+        user_metadata as owner_rules
+      where
+        owner_rules."userId" = "asset"."ownerId"
+        and owner_rules.key = 'preferences'
+        and (
+          exists (
+            select
+              1
+            from
+              tag_asset
+              inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+            where
+              tag_asset."assetId" = "asset"."id"
+              and tag_closure.id_ancestor in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.tagIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+          )
+          or exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "asset"."id"
+              and asset_face."personGroupId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.personIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+          or exists (
+            select
+              1
+            from
+              pet_observation
+              inner join pet on pet.id = pet_observation."petId"
+            where
+              pet_observation."assetId" = "asset"."id"
+              and pet_observation."petId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.petIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and pet_observation.state = 'confirmed'
+              and pet."ownerId" = "asset"."ownerId"
+          )
+        )
+    )
+  )
   and exists (
     select
     from
       "album_asset"
     where
       "album_asset"."assetId" = "asset"."id"
-      and "album_asset"."albumId" = any ($3::uuid[])
+      and "album_asset"."albumId" = any ($4::uuid[])
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $4
-offset
   $5
+offset
+  $6
 
 -- SearchRepository.searchMetadataV3 (ids-all)
 select
@@ -1607,21 +1749,92 @@ where
     "asset"."ownerId" = $2::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."ownerId" != $3::uuid
+    and exists (
+      select
+        1
+      from
+        user_metadata as owner_rules
+      where
+        owner_rules."userId" = "asset"."ownerId"
+        and owner_rules.key = 'preferences'
+        and (
+          exists (
+            select
+              1
+            from
+              tag_asset
+              inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+            where
+              tag_asset."assetId" = "asset"."id"
+              and tag_closure.id_ancestor in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.tagIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+          )
+          or exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "asset"."id"
+              and asset_face."personGroupId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.personIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+          or exists (
+            select
+              1
+            from
+              pet_observation
+              inner join pet on pet.id = pet_observation."petId"
+            where
+              pet_observation."assetId" = "asset"."id"
+              and pet_observation."petId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.petIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and pet_observation.state = 'confirmed'
+              and pet."ownerId" = "asset"."ownerId"
+          )
+        )
+    )
+  )
   and exists (
     select
     from
       "album_asset"
     where
       "album_asset"."assetId" = "asset"."id"
-      and "album_asset"."albumId" = any ($3::uuid[])
+      and "album_asset"."albumId" = any ($4::uuid[])
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $4
-offset
   $5
+offset
+  $6
 
 -- SearchRepository.searchMetadataV3 (ids-none)
 select
@@ -2749,16 +2962,87 @@ where
     "asset"."ownerId" = $2::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."ownerId" != $3::uuid
+    and exists (
+      select
+        1
+      from
+        user_metadata as owner_rules
+      where
+        owner_rules."userId" = "asset"."ownerId"
+        and owner_rules.key = 'preferences'
+        and (
+          exists (
+            select
+              1
+            from
+              tag_asset
+              inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+            where
+              tag_asset."assetId" = "asset"."id"
+              and tag_closure.id_ancestor in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.tagIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+          )
+          or exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "asset"."id"
+              and asset_face."personGroupId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.personIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+          or exists (
+            select
+              1
+            from
+              pet_observation
+              inner join pet on pet.id = pet_observation."petId"
+            where
+              pet_observation."assetId" = "asset"."id"
+              and pet_observation."petId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.petIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and pet_observation.state = 'confirmed'
+              and pet."ownerId" = "asset"."ownerId"
+          )
+        )
+    )
+  )
   and (
-    "asset"."fileCreatedAt" < $3
-    and "asset"."fileCreatedAt" >= $4
+    "asset"."fileCreatedAt" < $4
+    and "asset"."fileCreatedAt" >= $5
     and (
       (
-        "asset"."isFavorite" = $5
+        "asset"."isFavorite" = $6
         and (
-          "asset"."ownerId" = any ($6::uuid[])
+          "asset"."ownerId" = any ($7::uuid[])
           and (
-            "asset"."ownerId" = $7::uuid
+            "asset"."ownerId" = $8::uuid
             or (
               "asset"."deletedAt" is null
               and "asset"."visibility" in ('timeline', 'hidden')
@@ -2772,7 +3056,7 @@ where
           "album_asset"
         where
           "album_asset"."assetId" = "asset"."id"
-          and "album_asset"."albumId" = any ($8::uuid[])
+          and "album_asset"."albumId" = any ($9::uuid[])
       )
     )
   )
@@ -2780,9 +3064,9 @@ order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $9
-offset
   $10
+offset
+  $11
 
 -- SearchRepository.searchMetadataV3 (cursor-offset)
 select
