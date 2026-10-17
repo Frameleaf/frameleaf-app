@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express, { type Request, type Response } from 'express';
+import { createReadStream, fstatSync } from 'node:fs';
+import { createNativeService } from './runtime/native-service.js';
 import { chmod, mkdir, readFile, realpath, stat, statfs, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
@@ -20,6 +22,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z, ZodError } from 'zod';
 import { Store } from './store.js';
+import { DesktopGrants } from './desktop-grants.js';
+import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
 import { Security } from './security.js';
 import { Backups } from './backups.js';
@@ -27,20 +31,32 @@ import { Releases } from './releases.js';
 import { Operations, ReviewInput } from './operations.js';
 import { Refusal, publicSource, redact } from './contracts.js';
 import { appdataDefaults } from './appdata.js';
+import { nativeListener } from './runtime/native-listener.js';
 import { PostgresStorage } from './postgres-storage.js';
 
 const directory = process.env.MANAGER_DATA;
 const origin = process.env.MANAGER_ORIGIN;
 if (!directory || directory !== resolve(directory) || !origin)
   throw new Error('MANAGER_DATA and MANAGER_ORIGIN are required');
+const runtime = process.env.MANAGER_RUNTIME ?? 'docker';
+const nativeAddress = runtime === 'native' ? nativeListener(origin) : null;
+if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
 const store = new Store(directory);
+if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
+if (runtime === 'native') {
+  const bootstrapPipe = fstatSync(0);
+  if (!bootstrapPipe.isFIFO() && !bootstrapPipe.isSocket()) throw new Refusal('native_bootstrap_unavailable');
+}
+const native = runtime === 'native'
+  ? await createNativeService(store, createReadStream('', { fd: 0, autoClose: true }), origin)
+  : null;
 const docker = new Docker();
 const bootstrapFile = join(directory, 'claim-key');
 const security = new Security(store, origin, bootstrapFile, process.env.MANAGER_FRAME_ORIGIN);
 const seed = store.get<string>('release-seed') ?? randomBytes(32).toString('hex');
 store.createOnce('release-seed', seed);
 const releases = new Releases(join(directory, 'releases'), seed);
-const backupRoot = process.env.MANAGER_BACKUP_ROOT;
+const backupRoot = process.env.MANAGER_BACKUP_ROOT ?? (native ? join(directory, 'backups') : undefined);
 if (!backupRoot || backupRoot !== resolve(backupRoot))
   throw new Error('MANAGER_BACKUP_ROOT must be an absolute mounted directory');
 const backups = new Backups(join(backupRoot, 'frameleaf-database'), join(directory, 'recovery-key'));
@@ -52,7 +68,7 @@ async function databaseDefaults() {
   });
   return appdataDefaults(process.env, config);
 }
-const defaults = await databaseDefaults();
+const defaults = native ? { roots: [], platform: 'native' as const } : await databaseDefaults();
 const databaseStorage = new PostgresStorage(docker, directory, defaults.roots, defaults.platform === 'unraid');
 const operations = new Operations(
   store,
@@ -63,6 +79,7 @@ const operations = new Operations(
   databaseStorage,
   process.env.MANAGER_UNRAID_AUTOSTART,
 );
+const lifecycle = native ?? operations;
 const RequestKey = z.string().uuid();
 const Password = z.string().min(14).max(256);
 
@@ -370,38 +387,52 @@ async function main() {
   }
   const cert = join(directory!, 'tls.crt'),
     key = join(directory!, 'tls.key');
-  try {
-    await stat(cert);
-    await stat(key);
-  } catch {
-    const host = new URL(origin!).hostname.replace(/^\[|\]$/g, '');
-    if (!/^[A-Za-z0-9.:-]+$/.test(host)) throw new Error('Invalid HTTPS hostname');
-    await command('openssl', [
-      'req',
-      '-x509',
-      '-newkey',
-      'rsa:3072',
-      '-nodes',
-      '-days',
-      '365',
-      '-keyout',
-      key,
-      '-out',
-      cert,
-      '-subj',
-      `/CN=${host}`,
-      '-addext',
-      `subjectAltName=${isIP(host) ? 'IP' : 'DNS'}:${host}`,
-    ]);
-    await chmod(key, 0o600);
+  if (!native) {
+    try {
+      await stat(cert);
+      await stat(key);
+    } catch {
+      const host = new URL(origin!).hostname.replace(/^\[|\]$/g, '');
+      if (!/^[A-Za-z0-9.:-]+$/.test(host)) throw new Error('Invalid HTTPS hostname');
+      await command('openssl', [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:3072',
+        '-nodes',
+        '-days',
+        '365',
+        '-keyout',
+        key,
+        '-out',
+        cert,
+        '-subj',
+        `/CN=${host}`,
+        '-addext',
+        `subjectAltName=${isIP(host) ? 'IP' : 'DNS'}:${host}`,
+      ]);
+      await chmod(key, 0o600);
+    }
   }
+  const httpsOptions = native
+    ? native.httpsOptions()
+    : { cert: await readFile(cert), key: await readFile(key) };
   store.interrupt();
   const app = await NestFactory.create(ManagerModule, {
     logger: false,
     bodyParser: false,
-    httpsOptions: { cert: await readFile(cert), key: await readFile(key) },
+    httpsOptions,
   });
+  app.use(desktopApi(store, security, new DesktopGrants(store, security), lifecycle));
   app.use(security.guard);
+  if (native) {
+    // Native management uses the desktop UI; Docker recovery/import routes cannot operate on native state.
+    const credentials = new Set(['/manager-api/status', '/manager-api/claim', '/manager-api/login', '/manager-api/logout', '/manager-api/administrator']);
+    app.use((request: Request, response: Response, next: express.NextFunction) => {
+      if (credentials.has(request.path)) return next();
+      response.status(409).json({ code: 'native_action_unavailable' });
+    });
+  }
   app.use(express.json({ limit: '32kb' }));
   app.useGlobalFilters(new Errors());
   let ui = fileURLToPath(new URL('../ui/dist', import.meta.url));
@@ -425,7 +456,8 @@ async function main() {
   }
   app.use(express.static(ui, { index: 'index.html', dotfiles: 'deny' }));
   app.enableShutdownHooks();
-  await app.listen(9443, '0.0.0.0');
+  await app.listen(nativeAddress?.port ?? 9443, nativeAddress?.host ?? '0.0.0.0');
+  if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
 }
 main().catch(() => {
   process.stderr.write('Frameleaf Manager could not start; check its mounted configuration.\n');
