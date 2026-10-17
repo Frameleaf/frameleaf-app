@@ -187,7 +187,9 @@ describe(AlbumService.name, () => {
       const result = await sut.getAll(AuthFactory.create(owner), { assetId: album.assets[0].id });
       expect(result).toHaveLength(1);
       expect(result[0].id).toEqual(album.id);
-      expect(mocks.album.getByAssetId).toHaveBeenCalledWith(owner.id, album.assets[0].id, {});
+      expect(mocks.album.getByAssetId).toHaveBeenCalledWith(owner.id, album.assets[0].id, {
+        othersRulesViewerId: owner.id,
+      });
     });
 
     it('gets list of albums that are shared', async () => {
