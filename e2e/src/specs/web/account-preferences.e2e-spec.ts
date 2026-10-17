@@ -85,7 +85,9 @@ test.describe('Account preferences (FL-144)', () => {
 
     await utils.setAuthCookies(context, alice.accessToken);
     await page.reload();
-    // The number is a few choices now; one saved outside them shows as "Custom" and is kept.
+    // The number is a few choices now; one saved outside them shows as "Custom" and is kept. It sits in
+    // the People row's closed options (ACCOUNT-P4).
+    await page.getByText('People options', { exact: true }).click(); // frameleaf_prefs_tools_people_options
     await expect(
       page
         .getByRole('group', { name: 'Show a person once they appear in' }) // frameleaf_prefs_tools_people_minimum

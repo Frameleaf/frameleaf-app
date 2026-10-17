@@ -162,7 +162,7 @@ test.describe('Database Backups', () => {
     await utils.resetDatabase();
 
     await page.goto('/');
-    await page.getByRole('button', { name: 'Restore from backup' }).click();
+    await page.getByRole('button', { name: 'Restore from a backup' }).click(); // frameleaf_maintenance_restore_from_backup
 
     try {
       await page.waitForURL('/maintenance**');
