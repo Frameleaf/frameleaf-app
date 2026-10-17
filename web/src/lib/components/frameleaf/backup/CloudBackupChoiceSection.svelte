@@ -124,7 +124,7 @@
 
   /** What each picker can choose from: only the person's own library. */
   const loadOptions = async (kind: Kind) => {
-    if (options[kind]) {
+    if (Object.hasOwn(options, kind)) {
       return;
     }
     try {
@@ -154,13 +154,13 @@
         }
         case 'folders': {
           const paths = await getUniqueOriginalPaths();
-          found = paths.map((path) => ({ id: path, name: path.split('/').filter(Boolean).at(-1) ?? path, detail: path }));
+          found = paths.map((path) => ({ id: path, name: path.split('/').findLast(Boolean) ?? path, detail: path }));
           break;
         }
       }
       options = {
         ...options,
-        [kind]: found.toSorted((a, b) => a.name.localeCompare(b.name, $locale) || a.id.localeCompare(b.id)),
+        [kind]: [...found].sort((a, b) => a.name.localeCompare(b.name, $locale) || a.id.localeCompare(b.id)),
       };
     } catch {
       options = { ...options, [kind]: [] };
@@ -274,7 +274,9 @@
       none: [],
       '12m': [{ kind: CloudBackupDateRangeKind.Recent, months: 12 }],
       '5y': [{ kind: CloudBackupDateRangeKind.Recent, months: 60 }],
-      between: [{ kind: CloudBackupDateRangeKind.Between, from: between?.from ?? yearAgo(), to: between?.to ?? today() }],
+      between: [
+        { kind: CloudBackupDateRangeKind.Between, from: between?.from ?? yearAgo(), to: between?.to ?? today() },
+      ],
     };
     void save({ dateRanges: ranges[value as Period] });
   };

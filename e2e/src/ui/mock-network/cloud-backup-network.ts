@@ -212,6 +212,24 @@ export const setupCloudBackupMockApiRoutes = async (context: BrowserContext, moc
       );
       return route.fulfill({ status: 200, json: { manifestKey: MANIFESTS[0].key, total: items.length, items } });
     }
+    if (method === 'POST' && path === 'admin/cloud/backup/manifests/exclusions') {
+      // FL-362: every item of the mocked library has its original in the backup
+      return route.fulfill({
+        status: 200,
+        json: {
+          manifestKey: MANIFESTS[0].key,
+          decisionKnown: true,
+          totals: { selection: 0, licence: 0, notCommitted: 0, unknown: 0 },
+          accounts: [],
+        },
+      });
+    }
+    if (method === 'GET' && path === 'admin/cloud/backup/coverage') {
+      return route.fulfill({
+        status: 200,
+        json: { runId: null, inventoryAt: null, state: 'unknown', accounts: [] },
+      });
+    }
     if (method === 'POST' && path === 'admin/cloud/backup/manifests/albums') {
       return route.fulfill({
         status: 200,

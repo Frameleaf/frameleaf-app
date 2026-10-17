@@ -2714,7 +2714,7 @@ describe(CloudBackupService.name, () => {
             snapshot: { kind: 'legacy', manifestKey: 'm/20260926T030000Z.json.gz' },
           }),
         );
-        const [, , , , body] = cloudBackup.putCoveragePage.mock.calls[0];
+        const body = cloudBackup.putCoveragePage.mock.calls[0][4];
         expect(JSON.parse(body)).toEqual({
           rows: [
             {

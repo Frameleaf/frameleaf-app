@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type {
   CloudBackupCoverageReport,
   CloudBackupSelectionRepository,
@@ -8,6 +7,7 @@ import type {
   FrameleafCloudBackupRepository,
   ManagedBackupApi,
 } from 'src/repositories/frameleaf-cloud-backup.repository.js';
+import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { BackupRunReport } from 'src/utils/frameleaf-cloud-backup.js';
 import {
   type BackupCoverageRow,
@@ -245,7 +245,7 @@ export class CloudBackupCoverage {
           this.logger.error(`Cloud backup coverage for run ${current.runId} conflicts with what Frameleaf Cloud holds`);
           throw new Settled('rejected', errorText(error));
         }
-        if (status === 400 || status === 413 || status === 422) {
+        if (status !== null && [400, 413, 422].includes(status)) {
           throw new Settled('rejected', errorText(error));
         }
         throw new Settled('retry', errorText(error));
@@ -271,14 +271,14 @@ export class CloudBackupCoverage {
       const runReport = report.runReport as unknown as BackupRunReport;
       try {
         await this.cloud.reportRun(target, runReport);
-      } catch (refused) {
-        const code = statusOf(refused);
+      } catch (error_) {
+        const code = statusOf(error_);
         if (runReport.manifestKey && (code === 400 || code === 422)) {
           await this.cloud.reportRun(target, { ...runReport, manifestKey: null });
           // the run is known without its manifest: inclusion can no longer be claimed against it
           throw new Settled('rebuild', 'legacy manifest key refused');
         }
-        throw refused;
+        throw error_;
       }
       await this.cloud.beginCoverage(target, report.runId, header);
     }
@@ -351,7 +351,7 @@ export class CloudBackupCoverage {
       sequence: bodies.header.sequence,
       snapshot: null,
       pages: bodies.pages,
-      runReport: { ...(report.runReport ?? {}), manifestKey: null },
+      runReport: { ...report.runReport, manifestKey: null },
       revisionAccepted: false,
       attempts,
       nextAttemptAt: now,

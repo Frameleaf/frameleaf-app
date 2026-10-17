@@ -46,7 +46,7 @@ export const canonicalSelection = (chosen: CloudBackupChosen): CloudBackupChosen
   collectionIds: unique(chosen.collectionIds),
   personIds: unique(chosen.personIds),
   tagIds: unique(chosen.tagIds),
-  folders: unique(chosen.folders.map(normalizeBackupFolder).filter(Boolean)),
+  folders: unique(chosen.folders.map((folder) => normalizeBackupFolder(folder)).filter(Boolean)),
   favorites: chosen.favorites,
   dateRanges: chosen.dateRanges
     .map((range): CloudBackupDateRange =>

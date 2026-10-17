@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { CloudBackupChoices } from 'src/services/cloud-backup-choices.js';
 import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
+import { CloudBackupChoices } from 'src/services/cloud-backup-choices.js';
 import { backupUserFingerprint, canonicalSelection, selectionHash } from 'src/utils/cloud-backup-selection.js';
 
 const INSTANCE = '01900000-0000-7000-8000-000000000001';

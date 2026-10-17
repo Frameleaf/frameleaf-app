@@ -2,10 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, RawBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Selectable } from 'kysely';
+import type { CloudBackupCoverageReportTable } from 'src/schema/tables/cloud-backup-selection.table.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import type { CloudBackupCoverageReportTable } from 'src/schema/tables/cloud-backup-selection.table.js';
 import {
   type BackupLicenceScope,
   CLOUD_BACKUP_DESTINATION,

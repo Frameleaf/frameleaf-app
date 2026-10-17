@@ -45,13 +45,13 @@ const decisions = async (runId: string) => {
 const capture = (
   sut: CloudBackupSelectionRepository,
   runId: string,
-  licence: Parameters<typeof sut.captureInventory>[0]['licence'] = { scope: 'all' },
+  licence?: Parameters<typeof sut.captureInventory>[0]['licence'],
 ) =>
   sut.captureInventory({
     runId,
     manifestKey: `m/20261016T12000${runId.at(-1)}Z.json.gz`,
     instanceId: INSTANCE,
-    licence,
+    licence: licence ?? { scope: 'all' },
   });
 
 beforeEach(async () => {

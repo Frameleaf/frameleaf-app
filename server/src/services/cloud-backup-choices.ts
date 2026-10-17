@@ -19,6 +19,9 @@ import {
 } from 'src/utils/cloud-backup-selection.js';
 import { backupCoverageRowSchema } from 'src/utils/frameleaf-cloud-backup-coverage.js';
 
+/** Report states the coverage view shows as they are; a refused or expired one was not reported. */
+const SHOWN_REPORT_STATES: ReadonlySet<string> = new Set(['published', 'pending', 'local']);
+
 /** Items a classification reads from the database at a time. */
 const CLASSIFY_PAGE = 5000;
 
@@ -77,7 +80,7 @@ export class CloudBackupChoices {
       collectionIds: dto.collectionIds,
       personIds: dto.personIds,
       tagIds: dto.tagIds,
-      folders: dto.folders.map(normalizeBackupFolder),
+      folders: dto.folders.map((folder) => normalizeBackupFolder(folder)),
       favorites: dto.favorites,
       dateRanges: dto.dateRanges.map((range) =>
         range.kind === 'between'
@@ -133,10 +136,9 @@ export class CloudBackupChoices {
     return {
       runId: report.runId,
       inventoryAt: new Date(report.inventoryAt as unknown as string).toISOString(),
-      state:
-        report.status === 'published' || report.status === 'pending' || report.status === 'local'
-          ? report.status
-          : 'not-reported',
+      state: SHOWN_REPORT_STATES.has(report.status)
+        ? (report.status as 'published' | 'pending' | 'local')
+        : 'not-reported',
       accounts: rows.flatMap((row) => {
         const account = byFingerprint.get(row.userFingerprint);
         return account

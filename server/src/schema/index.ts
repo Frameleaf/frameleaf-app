@@ -75,17 +75,17 @@ import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import {
-  CloudBackupManifestEntryTable,
-  CloudBackupManifestTable,
-  CloudBackupObjectTable,
-} from 'src/schema/tables/cloud-backup.table.js';
-import {
   CloudBackupCoverageReportTable,
   CloudBackupDecisionAccountTable,
   CloudBackupDecisionAssetTable,
   CloudBackupDecisionRunTable,
   CloudBackupSelectionTable,
 } from 'src/schema/tables/cloud-backup-selection.table.js';
+import {
+  CloudBackupManifestEntryTable,
+  CloudBackupManifestTable,
+  CloudBackupObjectTable,
+} from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';

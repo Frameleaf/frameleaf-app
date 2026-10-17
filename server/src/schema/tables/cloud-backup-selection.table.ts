@@ -1,7 +1,7 @@
 import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
-import { UserTable } from 'src/schema/tables/user.table.js';
 import type { CloudBackupDateRange, CloudBackupDecisionReason } from 'src/utils/cloud-backup-selection.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
  * FL-362: what one account chose for one backup destination (only `cloud` so far). No row means

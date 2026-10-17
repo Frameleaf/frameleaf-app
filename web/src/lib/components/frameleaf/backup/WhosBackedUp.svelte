@@ -31,7 +31,12 @@
   const load = async () => {
     failed = false;
     try {
-      coverage = await getCloudBackupCoverage();
+      const found = await getCloudBackupCoverage();
+      if (found && Array.isArray(found.accounts)) {
+        coverage = found;
+      } else {
+        failed = true;
+      }
     } catch {
       failed = true;
     }
@@ -46,7 +51,11 @@
   /** What one account's row says: numbers only, never a choice. */
   const rowOf = (account: CloudBackupCoverageAccountDto): { status: string; tone: KitTone; note?: string } => {
     if (!account.licenceEligible) {
-      return { status: $t('frameleaf_backup_who_no_licence'), tone: 'warn', note: $t('frameleaf_backup_who_no_licence_note') };
+      return {
+        status: $t('frameleaf_backup_who_no_licence'),
+        tone: 'warn',
+        note: $t('frameleaf_backup_who_no_licence_note'),
+      };
     }
     if (account.totalOriginals === 0) {
       return { status: $t('frameleaf_backup_who_empty'), tone: 'off' };

@@ -36,14 +36,20 @@ describe('Backup › What Cloud Backup keeps (FL-362)', () => {
   it('keeps everything by default and says how much that is', async () => {
     render(CloudBackupChoiceSection);
     expect(await screen.findByRole('heading', { name: en.frameleaf_backup_keeps_title })).toBeInTheDocument();
-    expect(await screen.findByText('All 3,400 of your photos and videos, and everything you add later.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('All 3,400 of your photos and videos, and everything you add later.'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Everything/ })).toHaveAttribute('aria-pressed', 'true');
     // the pickers appear only once the person narrows what is kept
     expect(screen.queryByRole('button', { name: 'Choose albums' })).toBeNull();
   });
 
   it('narrows to what the person chooses, says the union back and warns when nothing is chosen', async () => {
-    sdkMock.setOwnCloudBackupSelection.mockResolvedValue({ ...EVERYTHING, mode: 'chosen', selectedOriginals: 0 } as never);
+    sdkMock.setOwnCloudBackupSelection.mockResolvedValue({
+      ...EVERYTHING,
+      mode: 'chosen',
+      selectedOriginals: 0,
+    } as never);
     render(CloudBackupChoiceSection);
     await fireEvent.click(await screen.findByRole('button', { name: /Only what I choose/ }));
 
@@ -57,7 +63,11 @@ describe('Backup › What Cloud Backup keeps (FL-362)', () => {
   });
 
   it('saves favorites at once and shows the new count', async () => {
-    sdkMock.getOwnCloudBackupSelection.mockResolvedValue({ ...EVERYTHING, mode: 'chosen', selectedOriginals: 0 } as never);
+    sdkMock.getOwnCloudBackupSelection.mockResolvedValue({
+      ...EVERYTHING,
+      mode: 'chosen',
+      selectedOriginals: 0,
+    } as never);
     sdkMock.setOwnCloudBackupSelection.mockResolvedValue({
       ...EVERYTHING,
       mode: 'chosen',
@@ -74,7 +84,11 @@ describe('Backup › What Cloud Backup keeps (FL-362)', () => {
   });
 
   it('chooses albums from the person’s own albums only, not their collections', async () => {
-    sdkMock.getOwnCloudBackupSelection.mockResolvedValue({ ...EVERYTHING, mode: 'chosen', selectedOriginals: 0 } as never);
+    sdkMock.getOwnCloudBackupSelection.mockResolvedValue({
+      ...EVERYTHING,
+      mode: 'chosen',
+      selectedOriginals: 0,
+    } as never);
     sdkMock.setOwnCloudBackupSelection.mockResolvedValue({
       ...EVERYTHING,
       mode: 'chosen',

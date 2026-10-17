@@ -1,7 +1,7 @@
 import type { CloudBackupCoverageReport } from 'src/repositories/cloud-backup-selection.repository.js';
+import { MlAdmissionRefusal } from 'src/enum.js';
 import { CloudBackupCoverage } from 'src/services/cloud-backup-coverage.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
-import { MlAdmissionRefusal } from 'src/enum.js';
 
 const RUN = '01900000-0000-7000-8000-0000000000aa';
 const INSTANCE = '01900000-0000-7000-8000-000000000001';
@@ -56,8 +56,8 @@ const fakeSelection = (accounts: number) => {
       reports.set(runId, { ...reports.get(runId)!, ...patch });
       return Promise.resolve();
     }),
-    listDueCoverageReports: vi.fn(() => Promise.resolve([...reports.values()].filter((r) => r.status === 'pending'))),
-    getLatestCoverageReport: vi.fn(() => Promise.resolve([...reports.values()].at(-1))),
+    listDueCoverageReports: vi.fn(() => Promise.resolve(reports.values().toArray().filter((r) => r.status === 'pending'))),
+    getLatestCoverageReport: vi.fn(() => Promise.resolve(reports.values().toArray().at(-1))),
   };
   return { repository, reports };
 };
@@ -126,7 +126,7 @@ describe(CloudBackupCoverage.name, () => {
     await sut.write({ runId: RUN, managed: true, instanceId: INSTANCE, snapshot: legacy, runReport });
     await sut.publish(RUN, now);
 
-    expect(sent.map(({ route }) => route.split(' ')[0])).toEqual(['begin', 'page', 'page', 'finalize']);
+    expect(sent.map(({ route }) => route.split(' ', 1)[0])).toEqual(['begin', 'page', 'page', 'finalize']);
     const [first, second] = sent
       .filter(({ route }) => route.startsWith('page'))
       .map(({ body }) => JSON.parse(body as string));

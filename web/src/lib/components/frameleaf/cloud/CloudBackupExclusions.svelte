@@ -30,7 +30,12 @@
     try {
       const found = await getCloudBackupManifestExclusions({ cloudBackupExclusionsDto: { manifestKey: key } });
       if (mine === request) {
-        exclusions = found;
+        // an answer without its counts is no answer: say it could not be read rather than guess
+        if (found?.totals && Array.isArray(found.accounts)) {
+          exclusions = found;
+        } else {
+          failed = true;
+        }
       }
     } catch {
       if (mine === request) {
