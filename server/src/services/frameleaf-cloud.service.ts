@@ -184,8 +184,39 @@ const linkAttempt = (link: FrameleafCloudLink | null | undefined) =>
         deviceCode: link.pending?.deviceCode,
         heldToken: link.heldLink?.linkToken,
         usedLinkTokens: link.usedLinkTokens,
+        pendingLinkToken: link.pendingLinkToken?.hash,
       }
     : null;
+
+/** FL-433: `link` with `hash` recorded as the link token about to be sent (nothing is spent yet). */
+const sendingLinkToken = (link: FrameleafCloudLink, hash: string): FrameleafCloudLink => ({
+  ...link,
+  pendingLinkToken: { hash, startedAt: new Date().toISOString() },
+});
+
+/** FL-433: `link` with `hash` spent: Frameleaf Cloud accepted the token, or refused it as used. */
+const spendLinkToken = (link: FrameleafCloudLink, hash: string): FrameleafCloudLink => ({
+  ...link,
+  pendingLinkToken: undefined,
+  usedLinkTokens: [...(link.usedLinkTokens ?? []).filter((used) => used !== hash), hash].slice(-20),
+});
+
+/**
+ * FL-433: Frameleaf Cloud refused the link token itself (401 `invalid_token`: unknown, expired, revoked or used), the
+ * only answer that spends it on this side. A refused DPoP proof or key is about the key, not the token.
+ */
+const linkTokenRefused = (error: unknown) =>
+  error instanceof FrameleafCloudError &&
+  error.status === 401 &&
+  !['invalid_dpop_proof', 'use_dpop_nonce', CloudErrorCode.KeyRetired].includes(cloudErrorCode(error) ?? '');
+
+/**
+ * FL-433: Frameleaf Cloud answered the registration without linking (a refusal), so an unanswered earlier attempt is
+ * ruled out. No answer, a server error, or a failure after it answered leave the attempt open.
+ */
+const linkAnswered = (error: unknown) =>
+  !!pausedMessageOf(error) ||
+  (error instanceof FrameleafCloudError && error.status !== null && error.status >= 400 && error.status < 500);
 
 /**
  * Linking this server to a Frameleaf account (FL-155, CLD-002; FL-154 status).
@@ -588,10 +619,9 @@ export class FrameleafCloudService extends BaseService {
         if (current?.usedLinkTokens?.includes(hash)) {
           throw setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
         }
-        const reserved = {
-          ...(current ?? emptyLink(cloudUrl)),
-          usedLinkTokens: [...(current?.usedLinkTokens ?? []), hash].slice(-20),
-        };
+        // FL-433: spent only with the link, or when Frameleaf Cloud refuses it as used
+        const resent = current?.pendingLinkToken?.hash === hash;
+        const reserved = sendingLinkToken(current ?? emptyLink(cloudUrl), hash);
         if (!(await this.saveLink(reserved, null, { expected: current }))) {
           throw setupRefusal(FrameleafSetupErrorCode.LinkFailed);
         }
@@ -601,18 +631,28 @@ export class FrameleafCloudService extends BaseService {
           link = await this.completeLink(
             cloudUrl,
             { headlessToken: dto.linkToken },
-            { name: dto.serverName, expected: reserved },
+            { name: dto.serverName, expected: reserved, spendsLinkToken: hash },
           );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           this.logger.warn(`The Frameleaf app's link token did not link this server: ${message}`);
+          const after = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
+          if (linkTokenRefused(error)) {
+            const lost = resent ? await this.undoUnsavedLink(cloudUrl) : null;
+            const lastError = lost
+              ? `Frameleaf Cloud linked this server, but the server stopped before it saved the link, and Frameleaf Cloud does not send the link again. ${lost}`
+              : message;
+            await this.saveLink({ ...spendLinkToken(after, hash), lastError }, 'link', { expected: reserved });
+            throw lost
+              ? setupRefusal(FrameleafSetupErrorCode.LinkFailed, { message: lastError })
+              : setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
+          }
           if (error instanceof FrameleafCloudError && error.status === 401) {
             throw setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
           }
           // not answered, a region mismatch or another refusal: the token may still be usable
-          const after = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
           await this.saveLink(
-            { ...after, usedLinkTokens: after.usedLinkTokens?.filter((used) => used !== hash), lastError: message },
+            { ...(linkAnswered(error) ? { ...after, pendingLinkToken: undefined } : after), lastError: message },
             'link',
             { expected: reserved },
           );
@@ -741,7 +781,13 @@ export class FrameleafCloudService extends BaseService {
      * that choice yet, so it is set only when linking again in the account's region after a refusal.
      * FL-304: `name` registers the server under a name that is not saved yet (setup from the app).
      */
-    options: { dataRegion?: DataRegion; name?: string; expected?: FrameleafCloudLink | null } = {},
+    options: {
+      dataRegion?: DataRegion;
+      name?: string;
+      expected?: FrameleafCloudLink | null;
+      /** FL-433: the sha256 of the link token sent; it is spent in the same write that saves the link. */
+      spendsLinkToken?: string;
+    } = {},
   ): Promise<FrameleafCloudLink> {
     const previous = options.expected === undefined ? await this.readLink(cloudUrl) : options.expected;
     if (options.expected !== undefined && !isEqual(linkAttempt(await this.readLink(cloudUrl)), linkAttempt(previous))) {
@@ -807,7 +853,7 @@ export class FrameleafCloudService extends BaseService {
     }
 
     const at = new Date().toISOString();
-    const link: FrameleafCloudLink = {
+    let link: FrameleafCloudLink = {
       status: 'linked',
       cloudUrl,
       instanceId: registration.instanceId,
@@ -834,6 +880,9 @@ export class FrameleafCloudService extends BaseService {
       },
       usedLinkTokens: previous?.usedLinkTokens,
     };
+    if (options.spendsLinkToken) {
+      link = spendLinkToken(link, options.spendsLinkToken);
+    }
     this.frameleafCloudRepository.forget();
     // Only fresh approved registration may replace the Cloud authority; background writes must
     // still belong to the currently linked generation.
@@ -1108,7 +1157,11 @@ export class FrameleafCloudService extends BaseService {
     }
   }
 
-  /** Link once with `FRAMELEAF_LINK_TOKEN`; a token that was used before is never sent again. */
+  /**
+   * Link once with `FRAMELEAF_LINK_TOKEN`; a token that was used before is never sent again. FL-433: the token is
+   * spent only in the write that saves the link, or when Frameleaf Cloud refuses it as used, so a start that stops
+   * (or gets no answer) before then sends the same token at the next start while it is still valid.
+   */
   async linkHeadless(cloudUrl: string, token: string): Promise<void> {
     await this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
       const link = await this.readLink(cloudUrl);
@@ -1123,11 +1176,12 @@ export class FrameleafCloudService extends BaseService {
         );
         return;
       }
-      const usedLinkTokens = [...(link?.usedLinkTokens ?? []), hash].slice(-20);
-      const reserved = { ...(link ?? emptyLink(cloudUrl)), usedLinkTokens };
+      // an earlier start sent this token and never saved Frameleaf Cloud's answer
+      const resent = link?.pendingLinkToken?.hash === hash;
+      const reserved = sendingLinkToken(link ?? emptyLink(cloudUrl), hash);
       if (!(await this.saveLink(reserved, null, { expected: link }))) return;
       try {
-        await this.completeLink(cloudUrl, { headlessToken: token }, { expected: reserved });
+        await this.completeLink(cloudUrl, { headlessToken: token }, { expected: reserved, spendsLinkToken: hash });
         this.logger.log('Linked to Frameleaf with FRAMELEAF_LINK_TOKEN. Remove it from the environment.');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1135,6 +1189,8 @@ export class FrameleafCloudService extends BaseService {
         const current = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
         const paused = pausedMessageOf(error);
         const mismatch = regionMismatchOf(error);
+        // FL-433: without an answer the attempt stays open, so the next start can recognise an unheard acceptance
+        const settled: FrameleafCloudLink = linkAnswered(error) ? { ...current, pendingLinkToken: undefined } : current;
         if (mismatch) {
           // FC-18: the cloud wrote nothing and did not spend the token, so it is not burned here either
           this.logger.error(
@@ -1142,8 +1198,7 @@ export class FrameleafCloudService extends BaseService {
           );
           await this.saveLink(
             {
-              ...current,
-              usedLinkTokens: current.usedLinkTokens?.filter((used) => used !== hash),
+              ...settled,
               lastError: mismatch.message,
               lastLinkRefusal: 'region-mismatch',
               lastRegionMismatch: { accountRegion: mismatch.accountRegion, requestedRegion: mismatch.requestedRegion },
@@ -1153,25 +1208,77 @@ export class FrameleafCloudService extends BaseService {
           );
           return;
         }
+        if (paused) {
+          // FC-62: new links are paused and the cloud refused before spending the token, so it is tried again
+          await this.saveLink({ ...settled, lastError: paused }, 'link', { expected: reserved });
+          return;
+        }
+        if (linkTokenRefused(error)) {
+          const lost = resent ? await this.undoUnsavedLink(cloudUrl) : null;
+          if (lost) {
+            const lastError = `Frameleaf Cloud linked this server with FRAMELEAF_LINK_TOKEN, but the server stopped before it saved the link, and Frameleaf Cloud does not send the link again. ${lost}`;
+            this.logger.error(lastError);
+            await this.saveLink({ ...spendLinkToken(current, hash), lastError }, 'link', { expected: reserved });
+            return;
+          }
+          await this.saveLink(
+            {
+              ...spendLinkToken(current, hash),
+              lastError: `The link token did not work: ${message}`,
+              lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+            },
+            'link',
+            { expected: reserved },
+          );
+          return;
+        }
+        // not answered, or refused for another reason: the token was not spent, so it is tried again
         await this.saveLink(
-          paused
-            ? {
-                // FC-62: new links are paused and the cloud refused before spending the token, so it is
-                // tried again at the next start
-                ...current,
-                usedLinkTokens: current.usedLinkTokens?.filter((used) => used !== hash),
-                lastError: paused,
-              }
-            : {
-                ...current,
-                lastError: `The link token did not work: ${message}`,
-                lastLinkRefusal: linkRefusalOf(error) ?? undefined,
-              },
+          {
+            ...settled,
+            lastError: `The link token did not link this server yet: ${message} It is tried again at the next start.`,
+            lastLinkRefusal: linkRefusalOf(error) ?? undefined,
+          },
           'link',
           { expected: reserved },
         );
       }
     });
+  }
+
+  /**
+   * FL-433: Frameleaf Cloud refused a link token as used that an earlier start had sent without saving the answer.
+   * When this server's own key still gets a token, that earlier registration was accepted: Frameleaf Cloud holds this
+   * server as linked, but the link details (owner, sign-in client) are only ever sent in the registration answer. The
+   * unfinished link is undone in Frameleaf Cloud, so a new link token links this server again (a linked server id
+   * refuses every new link). Returns what to tell the administrator, or null when the token was not this server's.
+   */
+  private async undoUnsavedLink(cloudUrl: string): Promise<string | null> {
+    const proven = await (async () => {
+      const document = await this.discover(cloudUrl);
+      const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
+      const signer = this.instanceIdentityRepository.currentSigner();
+      return {
+        document,
+        token: await this.frameleafCloudRepository.accessToken(document, instanceId, document.api, signer),
+      };
+    })().catch(() => null);
+    if (!proven) {
+      return null;
+    }
+    try {
+      await this.frameleafCloudRepository.requestJson(z.unknown(), {
+        method: 'DELETE',
+        url: linkEndpoints(proven.document).instance,
+        dpop: proven.token,
+      });
+      return 'The unfinished link was removed from the Frameleaf account. Create a new link token and start the server with it.';
+    } catch (error) {
+      this.logger.warn(`Frameleaf Cloud was not told to remove the unfinished link: ${error}`);
+      return 'Unlink this server in the Frameleaf account, then create a new link token and start the server with it.';
+    } finally {
+      this.frameleafCloudRepository.forget();
+    }
   }
 
   /**

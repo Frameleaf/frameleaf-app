@@ -12,7 +12,7 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -63,6 +63,11 @@ export class AssetDevelopController {
 
   @Put(':id/develop')
   @Authenticated({ permission: Permission.AssetEditCreate })
+  @ApiResponse({
+    status: 409,
+    description:
+      'expectedCurrentRevisionId no longer matches; nothing was saved. Body: { code: "develop_current_revision_changed", currentRevisionId: string | null, message, error, statusCode }',
+  })
   @Endpoint({
     summary: 'Save a develop recipe as a new version',
     description:

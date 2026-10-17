@@ -13015,6 +13015,9 @@
               }
             },
             "description": ""
+          },
+          "409": {
+            "description": "expectedCurrentRevisionId no longer matches; nothing was saved. Body: { code: \"develop_current_revision_changed\", currentRevisionId: string | null, message, error, statusCode }"
           }
         },
         "security": [
@@ -61059,6 +61062,13 @@
       },
       "AssetDevelopSaveDto": {
         "properties": {
+          "expectedCurrentRevisionId": {
+            "description": "Optimistic precondition: the currentRevisionId the client last read. null expects the original to be current (no current revision). When it no longer matches, the save is refused with 409 code develop_current_revision_changed and the actual currentRevisionId. Omit to save unconditionally",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
           "label": {
             "description": "Optional name for the saved version",
             "maxLength": 120,
