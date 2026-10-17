@@ -18,7 +18,11 @@ import {
 import { Permission, SharedLinkType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
-import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import {
+  type HiddenContentQueryOptions,
+  everyOwnersRules,
+  getHiddenContentQueryOptions,
+} from 'src/utils/hidden-content.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
 
 /** A bcrypt hash as stored for a shared-link password (FL-161); anything else is a legacy plaintext value. */
@@ -56,7 +60,7 @@ export class SharedLinkService extends BaseService {
       throw new ForbiddenException();
     }
 
-    const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.nsfwOptions(auth));
+    const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.visitorOptions(auth));
     const { id, password } = sharedLink;
 
     if (!password) {
@@ -84,7 +88,7 @@ export class SharedLinkService extends BaseService {
       throw new ForbiddenException();
     }
 
-    const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.nsfwOptions(auth));
+    const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id, this.visitorOptions(auth));
     const { id, password } = sharedLink;
 
     const expected = password ? await this.asToken({ id, password }) : null;
@@ -302,7 +306,7 @@ export class SharedLinkService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const sharedLink = await this.applyNsfwPrivacy(
       auth,
-      await this.findOrFail(auth.sharedLink.userId, auth.sharedLink.id, this.nsfwOptions(auth)),
+      await this.findOrFail(auth.sharedLink.userId, auth.sharedLink.id, this.visitorOptions(auth)),
     );
     const assetId =
       sharedLink.album?.albumThumbnailAssetId || sharedLink.album?.assets?.[0]?.id || sharedLink.assets[0]?.id;
@@ -395,13 +399,15 @@ export class SharedLinkService extends BaseService {
   private async applyNsfwPrivacy(auth: AuthDto, sharedLink: SharedLink): Promise<SharedLink> {
     const album = sharedLink.album;
     const albumThumbnailAssetId = album?.albumThumbnailAssetId;
-    if (!auth.hideNsfwAssets || !albumThumbnailAssetId) {
+    // the owner's own management view keeps its cover unless their session hides it; a visitor's never
+    // shows another owner's Locked-rule match either (FL-446)
+    if (!albumThumbnailAssetId || (!auth.hideNsfwAssets && !auth.sharedLink)) {
       return sharedLink;
     }
 
     const nsfwThumbnailIds = await this.assetRepository.getHiddenContentAssetIds(
       [albumThumbnailAssetId],
-      getHiddenContentQueryOptions(auth),
+      this.visitorOptions(auth),
     );
     return nsfwThumbnailIds.has(albumThumbnailAssetId)
       ? {
@@ -413,5 +419,13 @@ export class SharedLinkService extends BaseService {
 
   private nsfwOptions(auth: AuthDto) {
     return auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : undefined;
+  }
+
+  /**
+   * What a visitor of the link may see: the owner's hidden-content filter and, whichever member added
+   * it, no item that matches its owner's Locked rules (FL-446: such items reach partners only).
+   */
+  private visitorOptions(auth: AuthDto): HiddenContentQueryOptions {
+    return { ...this.nsfwOptions(auth), ...everyOwnersRules };
   }
 }

@@ -13,7 +13,7 @@ import { MEMORY_SYNC_ACK_VERSION, MEMORY_SYNC_TYPES } from 'src/repositories/tag
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
@@ -284,7 +284,13 @@ export class SyncService extends BaseService {
     }
 
     const { nowId } = await this.syncCheckpointRepository.getNow();
-    const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
+    // FL-446: album streams never carry another member's item that matches its owner's Locked rules
+    const options: SyncQueryOptions = {
+      nowId,
+      userId: auth.user.id,
+      ...getHiddenContentQueryOptions(auth),
+      ...getOthersRulesQueryOptions(auth),
+    };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
       [SyncRequestType.AlbumAssetAccessV1]: () => this.syncTags(auth, response, 'albumAsset'),

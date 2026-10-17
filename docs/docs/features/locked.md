@@ -31,13 +31,19 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 
 ### Locked rules and what you shared
 
-A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock. It also stops you from sharing them item by item: a matching item cannot be shared with a person, and a person you already shared it with stops seeing it, and cannot preview or export it in their Studio projects, for as long as the rule applies.
+A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock.
 
-A Locked rule does not take back what you shared on purpose. An item you put in a shared album or space, or include in a shared link, stays visible there, even while it matches one of your Locked rules. To stop sharing such an item, remove it from the album or link, or lock the item itself: a locked item never reaches album or space members or shared links. Partners are different: their copies of items your rules hide arrive locked, as described above.
+Items your Locked rules hide are shared only through partner sharing, never any other way (owner decision, October 17, 2026, replacing the September 29 rule that kept explicit shares). A partner receives such an item as a locked copy, like a locked item. Everyone else is treated as if the item were not there, for as long as the rule applies, even if you shared it before you made the rule:
+
+- **Album and space members** do not see it in the album or space, its counts, timeline, map, search, activity, downloads or sync, and cannot open its thumbnail or original. It is never shown as a cover to them, and adding only such items does not notify them.
+- **Shared links** leave it out, whichever member added it to the album.
+- **People you shared it with item by item** stop seeing it, and cannot preview or export it in their Studio projects. A matching item cannot be shared item by item.
+
+The rule is read from your current Locked rules on every request, so removing an item from a rule shares it again wherever you had shared it. Items other people add to a shared album follow their owners' Locked rules, not yours.
 
 ### Tag names
 
-Anyone you share an item with (album or space members, partners, people you shared the item with, and shared links that show metadata) sees the tags you put on it, including a tag you use in a Locked rule. People's names work differently: everyone sees only the names they gave.
+Anyone you share an item with (album or space members, partners, people you shared the item with, and shared links that show metadata) sees the tags you put on it. An item carrying a tag you use in a Locked rule never reaches them, except a partner's locked copy. People's names work differently: everyone sees only the names they gave.
 
 Clearing cached photos on sign-in and sign-out relies on the browser's `Clear-Site-Data` header, which browsers honour only over HTTPS (or `localhost`). On a plain-HTTP connection a shared browser can keep showing the previous person's cached thumbnails until they expire.
 
@@ -83,3 +89,4 @@ Select items and choose **Unmark Sensitive** to unlock them. A rule match has no
 - In a PIN-unlocked session, any other requested visibility (`timeline`, `archive`, in time buckets, search bodies and structured `filter`s alike) also matches your own marked and detected items with that stored visibility, reported as `visibility: locked`. Nobody else's locked items ever match.
 - Setting any other visibility never unlocks: the item stays locked and only its stored visibility changes. Only `POST /assets/unlock` unlocks.
 - A partner's copy of a locked item (or of an item the sharer's Locked rules hide) is locked in the partner's own library, and only the partner's PIN-unlocked session reveals it.
+- Every other read that can return someone else's media (albums, album time buckets, search and map within albums, album downloads and activity, album sync streams, shared links and access checks for thumbnails and originals) leaves out an item that matches its owner's Locked rules, whoever asks.

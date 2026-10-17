@@ -7,7 +7,7 @@ import {
   MapStatisticsResponseDto,
 } from 'src/dtos/map.dto.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 
 @Injectable()
 export class MapService extends BaseService {
@@ -17,6 +17,8 @@ export class MapService extends BaseService {
     return this.mapRepository.getMapMarkers(auth.user.id, [auth.user.id], albumIds, {
       ...options,
       ...getHiddenContentQueryOptions(auth),
+      // FL-446: a shared album never places another member's item that matches its owner's Locked rules
+      ...(albumIds.length > 0 && getOthersRulesQueryOptions(auth)),
     });
   }
 

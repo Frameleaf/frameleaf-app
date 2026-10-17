@@ -193,7 +193,10 @@ describe(SharedSpaceService.name, () => {
 
       await sut.getPreview(AuthFactory.create(recipient), space.id);
 
-      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([space.id], { excludeNsfw: true });
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([space.id], {
+        excludeNsfw: true,
+        othersRulesViewerId: null,
+      });
     });
 
     it('tells a stranger nothing, not even that the space exists', async () => {
@@ -528,6 +531,7 @@ describe(SharedSpaceService.name, () => {
       // The intersection is taken against the space, and sensitive/Locked media are dropped first.
       expect(mocks.albumUser.getLinkedAlbumCounts).toHaveBeenCalledWith(space.id, [linkedAlbumId], {
         excludeNsfw: true,
+        othersRulesViewerId: null,
       });
     });
 
@@ -767,6 +771,7 @@ describe(SharedSpaceService.name, () => {
       // Candidates are scoped to the caller's own people, inside the space, without sensitive/Locked media.
       expect(mocks.albumUser.getSpacePersonCandidates).toHaveBeenCalledWith(space.id, editor.id, {
         excludeNsfw: true,
+        othersRulesViewerId: null,
       });
     });
 
@@ -871,7 +876,7 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.getSpaceNewAssetCount).toHaveBeenCalledWith(
         space.id,
         { since: undefined, viewerId: editor.id },
-        { excludeNsfw: true },
+        { excludeNsfw: true, othersRulesViewerId: null },
       );
     });
 
@@ -888,7 +893,7 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.getSpaceNewAssetCount).toHaveBeenCalledWith(
         space.id,
         { since: lastSeenAt, viewerId: editor.id },
-        { excludeNsfw: true },
+        { excludeNsfw: true, othersRulesViewerId: null },
       );
     });
   });
@@ -964,7 +969,7 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.filterVisibleSpaceAssetIds).toHaveBeenCalledWith(
         space.id,
         expect.arrayContaining([visibleId, lockedId]),
-        { excludeNsfw: true },
+        { excludeNsfw: true, othersRulesViewerId: editor.id },
         { inSpace: true },
       );
     });

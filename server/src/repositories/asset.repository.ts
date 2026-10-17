@@ -60,6 +60,7 @@ import {
   hasPeople,
   hasPets,
   hiddenContentAssetIdExists,
+  hiddenContentOrOthersRules,
   inSharedAlbum,
   isMotionOfLockedStill,
   removeUndefinedKeys,
@@ -75,7 +76,6 @@ import {
   withFilePath,
   withFiles,
   withHiddenContentFilter,
-  withHiddenContentOnly,
   withImageEnrichmentFilter,
   withLibrary,
   withLockedOwnerScope,
@@ -2815,16 +2815,20 @@ export class AssetRepository {
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
+  /**
+   * Of `ids`, the assets the session hides: its hidden-content filter's matches and, with
+   * `othersRulesViewerId`, other owners' Locked-rule matches (FL-446).
+   */
   async getHiddenContentAssetIds(ids: string[], options: HiddenContentQueryOptions): Promise<Set<string>> {
-    const hiddenContent = getHiddenContentFilter(options);
-    if (ids.length === 0 || !hiddenContent) {
+    const hidden = hiddenContentOrOthersRules(options);
+    if (ids.length === 0 || !hidden) {
       return new Set();
     }
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
       .where('asset.id', '=', anyUuid(ids))
-      .$call((qb) => withHiddenContentOnly(qb, hiddenContent))
+      .where(hidden)
       .execute();
     return new Set(rows.map(({ id }) => id));
   }

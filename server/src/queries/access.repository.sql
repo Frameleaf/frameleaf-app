@@ -130,6 +130,77 @@ where
     where
       asset_lock."assetId" = "asset"."id"
   )
+  and not (
+    "asset"."ownerId" != $3::uuid
+    and exists (
+      select
+        1
+      from
+        user_metadata as owner_rules
+      where
+        owner_rules."userId" = "asset"."ownerId"
+        and owner_rules.key = 'preferences'
+        and (
+          exists (
+            select
+              1
+            from
+              tag_asset
+              inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+            where
+              tag_asset."assetId" = "asset"."id"
+              and tag_closure.id_ancestor in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.tagIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+          )
+          or exists (
+            select
+              1
+            from
+              asset_face
+            where
+              asset_face."assetId" = "asset"."id"
+              and asset_face."personGroupId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.personIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and asset_face."deletedAt" is null
+              and asset_face."isVisible" is true
+          )
+          or exists (
+            select
+              1
+            from
+              pet_observation
+              inner join pet on pet.id = pet_observation."petId"
+            where
+              pet_observation."assetId" = "asset"."id"
+              and pet_observation."petId" in (
+                select
+                  (
+                    jsonb_path_query(
+                      owner_rules.value,
+                      '$.privacy.suppression.petIds[*]'
+                    ) #>> '{}'
+                  )::uuid
+              )
+              and pet_observation.state = 'confirmed'
+              and pet."ownerId" = "asset"."ownerId"
+          )
+        )
+    )
+  )
 
 -- AccessRepository.asset.checkOwnerAccess
 select
@@ -188,6 +259,74 @@ from
     where
       asset_lock."assetId" = "asset"."id"
   )
+  and not exists (
+    select
+      1
+    from
+      user_metadata as owner_rules
+    where
+      owner_rules."userId" = "asset"."ownerId"
+      and owner_rules.key = 'preferences'
+      and (
+        exists (
+          select
+            1
+          from
+            tag_asset
+            inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+          where
+            tag_asset."assetId" = "asset"."id"
+            and tag_closure.id_ancestor in (
+              select
+                (
+                  jsonb_path_query(
+                    owner_rules.value,
+                    '$.privacy.suppression.tagIds[*]'
+                  ) #>> '{}'
+                )::uuid
+            )
+        )
+        or exists (
+          select
+            1
+          from
+            asset_face
+          where
+            asset_face."assetId" = "asset"."id"
+            and asset_face."personGroupId" in (
+              select
+                (
+                  jsonb_path_query(
+                    owner_rules.value,
+                    '$.privacy.suppression.personIds[*]'
+                  ) #>> '{}'
+                )::uuid
+            )
+            and asset_face."deletedAt" is null
+            and asset_face."isVisible" is true
+        )
+        or exists (
+          select
+            1
+          from
+            pet_observation
+            inner join pet on pet.id = pet_observation."petId"
+          where
+            pet_observation."assetId" = "asset"."id"
+            and pet_observation."petId" in (
+              select
+                (
+                  jsonb_path_query(
+                    owner_rules.value,
+                    '$.privacy.suppression.petIds[*]'
+                  ) #>> '{}'
+                )::uuid
+            )
+            and pet_observation.state = 'confirmed'
+            and pet."ownerId" = "asset"."ownerId"
+        )
+      )
+  )
   left join "album_asset" on "album_asset"."albumId" = "album"."id"
   left join "asset" as "albumAssets" on "albumAssets"."id" = "album_asset"."assetId"
   and "albumAssets"."deletedAt" is null
@@ -198,6 +337,74 @@ from
       asset_lock
     where
       asset_lock."assetId" = "albumAssets"."id"
+  )
+  and not exists (
+    select
+      1
+    from
+      user_metadata as owner_rules
+    where
+      owner_rules."userId" = "albumAssets"."ownerId"
+      and owner_rules.key = 'preferences'
+      and (
+        exists (
+          select
+            1
+          from
+            tag_asset
+            inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+          where
+            tag_asset."assetId" = "albumAssets"."id"
+            and tag_closure.id_ancestor in (
+              select
+                (
+                  jsonb_path_query(
+                    owner_rules.value,
+                    '$.privacy.suppression.tagIds[*]'
+                  ) #>> '{}'
+                )::uuid
+            )
+        )
+        or exists (
+          select
+            1
+          from
+            asset_face
+          where
+            asset_face."assetId" = "albumAssets"."id"
+            and asset_face."personGroupId" in (
+              select
+                (
+                  jsonb_path_query(
+                    owner_rules.value,
+                    '$.privacy.suppression.personIds[*]'
+                  ) #>> '{}'
+                )::uuid
+            )
+            and asset_face."deletedAt" is null
+            and asset_face."isVisible" is true
+        )
+        or exists (
+          select
+            1
+          from
+            pet_observation
+            inner join pet on pet.id = pet_observation."petId"
+          where
+            pet_observation."assetId" = "albumAssets"."id"
+            and pet_observation."petId" in (
+              select
+                (
+                  jsonb_path_query(
+                    owner_rules.value,
+                    '$.privacy.suppression.petIds[*]'
+                  ) #>> '{}'
+                )::uuid
+            )
+            and pet_observation.state = 'confirmed'
+            and pet."ownerId" = "albumAssets"."ownerId"
+        )
+      )
   )
 where
   "shared_link"."id" = $1
