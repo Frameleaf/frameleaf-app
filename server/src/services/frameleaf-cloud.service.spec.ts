@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { arch, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1018,75 +1018,6 @@ describe(FrameleafCloudService.name, () => {
       const config = metadata.get(SystemMetadataKey.SystemConfig) as Record<string, unknown> | undefined;
       metadata.set(SystemMetadataKey.SystemConfig, { ...config, server: { lanDiscovery: false } });
       clearConfigCache();
-      makeDue();
-      await sut.handleHeartbeat();
-      expect(lastBeat().endpoints).toEqual([]);
-    });
-
-    it('publishes the owner’s own HTTPS address for a Buddy pairing without a plan (FL-434)', async () => {
-      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
-      const lastBeat = () => cloud.requests.findLast(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
-      const setExternalDomain = (externalDomain: string) => {
-        const config = metadata.get(SystemMetadataKey.SystemConfig) as Record<string, unknown> | undefined;
-        metadata.set(SystemMetadataKey.SystemConfig, { ...config, server: { lanDiscovery: false, externalDomain } });
-        clearConfigCache();
-      };
-      const self = storedLink()!.instanceId!;
-      const peer = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e52';
-      const key = { kty: 'OKP', crv: 'Ed25519', x: 'a'.repeat(43) };
-      const vault = {
-        vaultId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54',
-        sourceInstanceId: peer,
-        destinationInstanceId: self,
-        sourceKey: key,
-        destinationKey: key,
-        quotaBytes: 10 * 1024 ** 3,
-        retention: { days: 30, monthly: 12 },
-      };
-      const writePairing = async (state: 'pending' | 'active') => {
-        await mkdir(join(identityDir, 'buddy'), { recursive: true });
-        await writeFile(
-          join(identityDir, 'buddy', 'state.json'),
-          JSON.stringify({
-            version: 1,
-            settings: { directory: '/buddy-host', quotaBytes: 10 * 1024 ** 3 },
-            pairing: {
-              version: 1,
-              pairId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53',
-              state,
-              readUntil: null,
-              vaults: [
-                vault,
-                {
-                  ...vault,
-                  vaultId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e55',
-                  sourceInstanceId: self,
-                  destinationInstanceId: peer,
-                },
-              ],
-            },
-          }),
-        );
-      };
-
-      setExternalDomain('https://photos.example.com');
-      makeDue();
-      await sut.handleHeartbeat();
-      expect(lastBeat().endpoints).toEqual([]);
-
-      await writePairing('pending');
-      makeDue();
-      await sut.handleHeartbeat();
-      expect(lastBeat().endpoints).toEqual([]);
-
-      await writePairing('active');
-      makeDue();
-      await sut.handleHeartbeat();
-      expect(lastBeat().endpoints).toEqual([{ kind: 'custom', url: 'https://photos.example.com' }]);
-      expect(lastBeat().remoteAccess).toMatchObject({ enabled: false, relayConnected: false });
-
-      // a plain-HTTP address is never offered to a buddy
-      setExternalDomain('http://photos.example.com');
       makeDue();
       await sut.handleHeartbeat();
       expect(lastBeat().endpoints).toEqual([]);

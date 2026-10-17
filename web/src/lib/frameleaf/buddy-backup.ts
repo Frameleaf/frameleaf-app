@@ -1,15 +1,16 @@
 import type { BuddyStatusDto } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 
-/**
- * Presentation only. The server validates grants, licences and identity for every operation. An existing
- * pairing needs no Frameleaf Cloud plan: the servers back up over a direct connection, and only the relay
- * needs a plan (FL-434). A licence is checked when a new pairing is made, not for every backup.
- */
-export const buddyBackupPresentation = (status: BuddyStatusDto | null, linked: boolean, now = Date.now()) => {
+/** Presentation only. The server validates grants, entitlement and identity for every operation. */
+export const buddyBackupPresentation = (
+  status: BuddyStatusDto | null,
+  linked: boolean,
+  entitled: boolean,
+  now = Date.now(),
+) => {
   const pairing = status?.pairing;
   const active = pairing?.state === 'active';
-  const write = !!(active && linked && status?.enabled && status.settings);
+  const write = !!(active && linked && entitled && status?.enabled && status.settings);
   const read = !!(
     linked &&
     status?.keyFingerprint &&
@@ -27,7 +28,7 @@ export const buddyBackupPresentation = (status: BuddyStatusDto | null, linked: b
           : pairing.state === 'pending'
             ? 'frameleaf_backup_pending'
             : linked
-              ? !status?.enabled
+              ? !entitled || !status?.enabled
                 ? 'frameleaf_backup_recovery_only'
                 : undefined
               : 'frameleaf_backup_authorization';

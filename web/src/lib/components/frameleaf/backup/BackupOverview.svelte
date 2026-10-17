@@ -114,6 +114,7 @@
 
   const settingsDraft = getSystemConfigDraft();
   const linked = $derived(cloudManager.status?.state === 'linked');
+  const entitled = $derived(linked && !!cloudManager.license?.entitlements.cloudBackup);
 
   // The clock the page judges "up to date" by, moved on with every reading.
   let now = $state(new Date());
@@ -122,7 +123,7 @@
   const behind = $derived(schedule ? behindAfterMs(schedule) : undefined);
   const places = $derived({
     cloud: cloudPlaceState(cloud, now, behind),
-    buddy: buddyPlaceState(buddy, { linked }, now, behind),
+    buddy: buddyPlaceState(buddy, { linked, entitled }, now, behind),
     local: localPlaceState(snapshots, settingsDraft?.baseline.backup.database.enabled ?? true, now, behind),
   });
 
@@ -256,7 +257,7 @@
       ? { used: buddy.hosting.committedBytes + buddy.hosting.reservedBytes, limit: hosted.quotaBytes }
       : undefined,
   );
-  const incoming = $derived(buddyBackupPresentation(buddy, linked, now.getTime()).incoming);
+  const incoming = $derived(buddyBackupPresentation(buddy, linked, entitled, now.getTime()).incoming);
 
   type Recent = { id: string; at: Date; place: BackupPlaceId; detail: string; tone: KitTone; result: Translations };
   /** The newest backups each place reports: every saved snapshot, and the last run of the others. */

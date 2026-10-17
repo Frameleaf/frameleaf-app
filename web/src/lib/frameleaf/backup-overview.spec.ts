@@ -39,7 +39,7 @@ const buddy = (patch: Record<string, unknown> = {}) =>
     ...patch,
   }) as unknown as BuddyStatusDto;
 
-const access = { linked: true };
+const access = { linked: true, entitled: true };
 const snapshot = (stamp: string, prefix = '') => ({
   filename: `${prefix}frameleaf-db-backup-${stamp}-v3.2.0-pg19.0.sql.gz`,
   filesize: 1024,
@@ -102,7 +102,7 @@ describe('a place a backup is kept (FL-362)', () => {
     expect(key(buddy({ run: { state: 'waiting-quota' } }))).toBe('frameleaf_backup_state_buddy_full');
     expect(key(buddy({ settings: { pausedSending: true } }))).toBe('frameleaf_backup_state_paused');
     expect(key(buddy({ pairing: { state: 'ended', vaults: [] } }))).toBe('frameleaf_backup_state_buddy_ended');
-    expect(key(buddy(), { linked: false })).toBe('frameleaf_backup_state_buddy_sign_in');
+    expect(key(buddy(), { linked: false, entitled: false })).toBe('frameleaf_backup_state_buddy_sign_in');
     expect(key(buddy())).toBe('frameleaf_backup_state_up_to_date');
   });
 
