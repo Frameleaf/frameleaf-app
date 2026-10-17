@@ -5,7 +5,7 @@ exporters, instrumentation, metrics listener, or user/job metric collectors. The
 `IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, and metrics-port variables cannot
 re-enable reporting. The bundled Compose configurations no longer start Prometheus or Grafana.
 
-Version checks never contact an Immich service. When they are turned on, the server asks
+Version checks never contact an upstream service. When they are turned on, the server asks
 only Frameleaf's release feed (`api.frameleaf.cloud`), falling back to Frameleaf's own GitHub releases, for a newer version. Local version history, health checks,
 job progress, and logs remain available.
 

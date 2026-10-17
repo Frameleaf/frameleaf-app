@@ -374,7 +374,7 @@ Identity injection pulls named recognized faces from Frameleaf's facial-recognit
 > [!NOTE]
 > The **Custom instructions** field from the structured controls is NOT injected into raw templates. If you want that text in a raw template, paste it directly where you want it to appear. Likewise, dynamic per-asset behavior such as the **video-context prefix** (added for videos) and the **NSFW reinforcement** (added when the NSFW classifier flags an asset) are still added automatically around your template — you don't need to handle them.
 
-**Placeholder validation** (**If '{schema}' is missing**):
+**Placeholder validation** (**If `{schema}` is missing**):
 
 - **Don't save** (`strict`) — save fails if `{schema}` is missing from the template.
 - **Warn me** (`warn`) — save succeeds but the admin sees a warning banner.
