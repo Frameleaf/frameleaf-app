@@ -7746,6 +7746,66 @@ export type MediaHealthLocateDto = {
     /** Search locations; library storage and external libraries when omitted */
     rootIds?: string[];
 };
+export type RawSupportCountsDto = {
+    damaged: number;
+    dependency: number;
+    pending: number;
+    preview: number;
+    ready: number;
+    timeout: number;
+    unsupported: number;
+};
+export type RawSupportEngineDto = {
+    available: boolean;
+    version: string | null;
+};
+export type RawSupportFormatDto = {
+    /** Unsupported, damaged, timed out or decoder missing */
+    attention: number;
+    count: number;
+    /** Lowercase file extension without the dot */
+    extension: string;
+    ready: number;
+    /** Cameras this server build was qualified with for this format */
+    tested: string[];
+};
+export type RawSupportItemDto = {
+    assetId: string;
+    /** Lowercase file extension without the dot */
+    extension: string;
+    fileName: string;
+    /** A full-resolution render exists */
+    hasFullsize: boolean;
+    height: number | null;
+    make: string | null;
+    model: string | null;
+    /** The other photo stacked with it, such as the camera JPEG */
+    pairedFileName: string | null;
+    /** When the preview was last written; repair progress compares against it */
+    renderedAt: string | null;
+    source: RawSupportSource;
+    status: RawSupportStatus;
+    width: number | null;
+};
+export type RawSupportResponseDto = {
+    /** Colour profile of rendered previews */
+    colorspace: Colorspace;
+    counts: RawSupportCountsDto;
+    /** Viewing: the RAW decoder that renders previews */
+    decoder: RawSupportEngineDto;
+    /** Full RAW development */
+    developer: RawSupportEngineDto;
+    /** Fast previews come from the camera JPEG inside the RAW file */
+    embeddedPreviews: boolean;
+    /** One row per RAW extension in the library */
+    formats: RawSupportFormatDto[];
+    /** Full-resolution renders are made for RAW originals */
+    fullResolution: boolean;
+    /** Files needing attention first, then the newest */
+    items: RawSupportItemDto[];
+    /** Every RAW original the caller can see, not only the listed ones */
+    total: number;
+};
 export type MediaHealthRootDto = {
     /** Search location ID */
     id: string;
@@ -16283,6 +16343,10 @@ export type QueueOwnerStatisticsSearchDto = {
     /** The account whose jobs are counted */
     ownerId: string;
 };
+export type RawSupportQueryDto = {
+    /** How many files to list */
+    limit?: number;
+};
 export type RenderWorkerArtifactDto = {
     checksum: string;
     chunkKey: string;
@@ -23036,6 +23100,21 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
     }>("/media-health/missing/scan", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get RAW support status
+ */
+export function getRawSupport({ limit }: {
+    limit?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RawSupportResponseDto;
+    }>(`/media-health/raw${QS.query(QS.explode({
+        limit
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -31994,6 +32073,20 @@ export enum MediaHealthSeverity {
     Info = "info",
     Warning = "warning",
     Critical = "critical"
+}
+export enum RawSupportSource {
+    Sensor = "sensor",
+    Embedded = "embedded",
+    None = "none"
+}
+export enum RawSupportStatus {
+    Ready = "ready",
+    Preview = "preview",
+    Pending = "pending",
+    Timeout = "timeout",
+    Unsupported = "unsupported",
+    Damaged = "damaged",
+    Dependency = "dependency"
 }
 export enum MediaHealthOperationMode {
     Scan = "scan",

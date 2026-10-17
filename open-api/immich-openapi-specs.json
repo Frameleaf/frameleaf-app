@@ -24020,6 +24020,64 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/media-health/raw": {
+      "get": {
+        "description": "How the caller's RAW originals are doing: whether the server can decode and develop RAW files, how many files are in each state, one row per RAW extension, and the files needing attention first. Read-only; repair uses the regenerate-thumbnail asset job.",
+        "operationId": "getRawSupport",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "How many files to list",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 200,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawSupportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get RAW support status",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/media-health/reopen": {
       "post": {
         "description": "Undo a dismissal, or reopen confirmed damage whose item was restored from the trash, putting the findings back in review.",
@@ -108255,6 +108313,280 @@
           }
         },
         "type": "object"
+      },
+      "RawSupportCountsDto": {
+        "description": "How many RAW originals are in each state",
+        "properties": {
+          "damaged": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dependency": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pending": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "preview": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ready": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "timeout": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unsupported": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "damaged",
+          "dependency",
+          "pending",
+          "preview",
+          "ready",
+          "timeout",
+          "unsupported"
+        ],
+        "type": "object"
+      },
+      "RawSupportEngineDto": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "version": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "version"
+        ],
+        "type": "object"
+      },
+      "RawSupportFormatDto": {
+        "properties": {
+          "attention": {
+            "description": "Unsupported, damaged, timed out or decoder missing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "extension": {
+            "description": "Lowercase file extension without the dot",
+            "type": "string"
+          },
+          "ready": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tested": {
+            "description": "Cameras this server build was qualified with for this format",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "attention",
+          "count",
+          "extension",
+          "ready",
+          "tested"
+        ],
+        "type": "object"
+      },
+      "RawSupportItemDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "extension": {
+            "description": "Lowercase file extension without the dot",
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "hasFullsize": {
+            "description": "A full-resolution render exists",
+            "type": "boolean"
+          },
+          "height": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "make": {
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pairedFileName": {
+            "description": "The other photo stacked with it, such as the camera JPEG",
+            "nullable": true,
+            "type": "string"
+          },
+          "renderedAt": {
+            "description": "When the preview was last written; repair progress compares against it",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RawSupportSource"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RawSupportStatus"
+          },
+          "width": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "extension",
+          "fileName",
+          "hasFullsize",
+          "height",
+          "make",
+          "model",
+          "pairedFileName",
+          "renderedAt",
+          "source",
+          "status",
+          "width"
+        ],
+        "type": "object"
+      },
+      "RawSupportQueryDto": {
+        "properties": {
+          "limit": {
+            "default": 200,
+            "description": "How many files to list",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RawSupportResponseDto": {
+        "properties": {
+          "colorspace": {
+            "description": "Colour profile of rendered previews",
+            "enum": [
+              "srgb",
+              "p3"
+            ],
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/RawSupportCountsDto"
+          },
+          "decoder": {
+            "$ref": "#/components/schemas/RawSupportEngineDto",
+            "description": "Viewing: the RAW decoder that renders previews"
+          },
+          "developer": {
+            "$ref": "#/components/schemas/RawSupportEngineDto",
+            "description": "Full RAW development"
+          },
+          "embeddedPreviews": {
+            "description": "Fast previews come from the camera JPEG inside the RAW file",
+            "type": "boolean"
+          },
+          "formats": {
+            "description": "One row per RAW extension in the library",
+            "items": {
+              "$ref": "#/components/schemas/RawSupportFormatDto"
+            },
+            "type": "array"
+          },
+          "fullResolution": {
+            "description": "Full-resolution renders are made for RAW originals",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Files needing attention first, then the newest",
+            "items": {
+              "$ref": "#/components/schemas/RawSupportItemDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Every RAW original the caller can see, not only the listed ones",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "colorspace",
+          "counts",
+          "decoder",
+          "developer",
+          "embeddedPreviews",
+          "formats",
+          "fullResolution",
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "RawSupportSource": {
+        "description": "Where the preview shown for a RAW original comes from",
+        "enum": [
+          "sensor",
+          "embedded",
+          "none"
+        ],
+        "type": "string"
+      },
+      "RawSupportStatus": {
+        "description": "How a RAW original is doing",
+        "enum": [
+          "ready",
+          "preview",
+          "pending",
+          "timeout",
+          "unsupported",
+          "damaged",
+          "dependency"
+        ],
+        "type": "string"
       },
       "ReactionLevel": {
         "description": "Reaction level",
