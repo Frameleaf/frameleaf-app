@@ -76,3 +76,6 @@ FORK_FOLLOWUPS.md
 
 # Exact owned Studio pure runtime emitted by normal server preparation.
 /server/resources/studio/
+
+# vitest JSON reporter output
+.vitest/
