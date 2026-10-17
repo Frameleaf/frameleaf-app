@@ -1,9 +1,11 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import type { AssetDevelopRevisionResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import RawDevelopEditor from './RawDevelopEditor.svelte';
 
-const previews = vi.hoisted(() => ({ calls: [] as Array<{ id: string; recipe: Record<string, unknown>; size: number }> }));
+const previews = vi.hoisted(() => ({
+  calls: [] as Array<{ id: string; recipe: Record<string, unknown>; size: number }>,
+}));
 vi.mock('$lib/frameleaf/develop-api', () => ({
   PREVIEW_DEBOUNCE_MS: 0,
   developFileUrl: () => '/file',
@@ -115,7 +117,9 @@ describe('RawDevelopEditor', () => {
     await waitFor(() => expect(screen.getByText('frameleaf_develop_status_saved')).toBeInTheDocument());
     await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_develop_tab_masks' }));
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_develop_mask_radial' }));
-    expect(screen.getByRole('button', { name: 'frameleaf_develop_mask_name_radial', pressed: true })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'frameleaf_develop_mask_name_radial', pressed: true }),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(lastPreview()?.recipe).toMatchObject({
         sensorCanvas: true,

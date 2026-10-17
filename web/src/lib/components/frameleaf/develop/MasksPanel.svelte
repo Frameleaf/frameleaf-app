@@ -36,7 +36,13 @@
     background: 'frameleaf_develop_mask_name_background',
   };
   const icon = (kind: MaskKind) =>
-    isSuggested(kind) ? mdiCreation : kind === 'radial' ? mdiCircleOutline : kind === 'linear' ? mdiGradientVertical : mdiBrush;
+    isSuggested(kind)
+      ? mdiCreation
+      : kind === 'radial'
+        ? mdiCircleOutline
+        : kind === 'linear'
+          ? mdiGradientVertical
+          : mdiBrush;
 
   function add(kind: MaskKind, artifact?: string) {
     if (masks.length >= MAX_MASKS) {
@@ -121,9 +127,12 @@
         tools.maskId = mask.id;
         tools.gesture = isPlaced(mask.kind) ? 'place' : 'brush';
       }}
-      ><Icon icon={icon(mask.kind)} size="16" class={isSuggested(mask.kind) ? 'rde-ai' : undefined} aria-hidden={true} /><span
-        >{mask.name ?? $t(NAMES[mask.kind] as never, { values: { number: '' } })}</span
-      ></button
+      ><Icon
+        icon={icon(mask.kind)}
+        size="16"
+        class={isSuggested(mask.kind) ? 'rde-ai' : undefined}
+        aria-hidden={true}
+      /><span>{mask.name ?? $t(NAMES[mask.kind] as never, { values: { number: '' } })}</span></button
     >
     <input
       type="checkbox"

@@ -40,7 +40,8 @@ export const EXPOSURE_RANGE = { min: -5, max: 5, step: 0.05 } as const;
 
 /** Contrast: darktable's 0.01-1.99 (1 is neutral) as the prototype's -100 to 100. */
 export const contrastSlider = (value: number | undefined) => Math.round(((value ?? 1) - 1) * 100);
-export const contrastValue = (slider: number) => (slider === 0 ? undefined : round(clamp(1 + slider / 100, 0.01, 1.99)));
+export const contrastValue = (slider: number) =>
+  slider === 0 ? undefined : round(clamp(1 + slider / 100, 0.01, 1.99));
 
 /** Saturation: darktable's 0-2 (1 is neutral) as -100 to 100. */
 export const saturationSlider = (value: number | undefined) => Math.round(((value ?? 1) - 1) * 100);
@@ -123,7 +124,9 @@ export function curveValue(levels: readonly number[]): CurvePoint[] | undefined 
 /** Sharpness 0-100 is darktable's sharpen amount 0-2, at its default radius and threshold. */
 export const sharpnessSlider = (sharpen: NativeRecipe['sharpen']) => Math.round((sharpen?.amount ?? 0) * 50);
 export const sharpnessValue = (slider: number, current: NativeRecipe['sharpen']): NativeRecipe['sharpen'] =>
-  slider === 0 ? undefined : { radius: current?.radius ?? 2, threshold: current?.threshold ?? 0.5, amount: slider / 50 };
+  slider === 0
+    ? undefined
+    : { radius: current?.radius ?? 2, threshold: current?.threshold ?? 0.5, amount: slider / 50 };
 
 /** Denoise 0-100 is the native pre-demosaic noise threshold 0-0.1. */
 export const denoiseSlider = (threshold: number | undefined) => Math.round((threshold ?? 0) * 1000);
@@ -165,12 +168,13 @@ export function aspectCrop(aspect: Aspect, width: number, height: number): CropR
 }
 
 export const turn = (rotation: NativeRecipe['rotation'], by: 90 | -90) =>
-  ((((rotation ?? 0) + by) % 360) + 360) % 360 as NonNullable<NativeRecipe['rotation']>;
+  (((((rotation ?? 0) + by) % 360) + 360) % 360) as NonNullable<NativeRecipe['rotation']>;
 
 /* Masks ------------------------------------------------------------------ */
 
 export type MaskKind = NativeMask['kind'];
-export const isPainted = (kind: MaskKind) => kind === 'brush' || kind === 'subject' || kind === 'sky' || kind === 'background';
+export const isPainted = (kind: MaskKind) =>
+  kind === 'brush' || kind === 'subject' || kind === 'sky' || kind === 'background';
 export const isSuggested = (kind: MaskKind) => kind === 'subject' || kind === 'sky' || kind === 'background';
 export const isPlaced = (kind: MaskKind) => kind === 'radial' || kind === 'linear';
 
@@ -294,9 +298,7 @@ export function applyLook(base: NativeRecipe, lookId: string, strength: number):
   next.contrast = scale(base.contrast, look.contrast, 0.01, 1.99);
   // A black-and-white look fades the colour out in a straight line; a power of zero would not.
   next.saturation =
-    look.saturation === 0
-      ? round((base.saturation ?? 1) * (1 - s))
-      : scale(base.saturation, look.saturation, 0, 2);
+    look.saturation === 0 ? round((base.saturation ?? 1) * (1 - s)) : scale(base.saturation, look.saturation, 0, 2);
   next.exposureEV = add(base.exposureEV, look.exposureEV, -18, 18) ?? 0;
   next.shadows = add(base.shadows, look.shadows, -100, 100);
   next.highlights = add(base.highlights, look.highlights, -100, 100);

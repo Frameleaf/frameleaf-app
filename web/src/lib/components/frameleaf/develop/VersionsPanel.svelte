@@ -56,7 +56,9 @@
 <div class="rde-version">
   <button type="button" onclick={() => session.change(id, initialNativeRecipe())}>
     <span class="rde-thumb"><PhotographyThumb src={original} /></span>
-    <span><strong>{$t('frameleaf_develop_original')}</strong><small>{$t('frameleaf_develop_original_detail')}</small></span>
+    <span
+      ><strong>{$t('frameleaf_develop_original')}</strong><small>{$t('frameleaf_develop_original_detail')}</small></span
+    >
     <Icon icon={mdiRestore} size="17" aria-hidden={true} />
   </button>
   {#if record.currentRevisionId}<div class="rde-version-actions">
@@ -82,7 +84,9 @@
         session.restore(id, version);
         say(
           $t('frameleaf_develop_version_loaded', {
-            values: { name: version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } }) },
+            values: {
+              name: version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } }),
+            },
           }),
         );
       }}
@@ -93,7 +97,8 @@
         /></span
       >
       <span
-        ><strong>{version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } })}</strong
+        ><strong
+          >{version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } })}</strong
         ><small
           >{time(version.createdAt)} · {native ? status(version) : $t('frameleaf_develop_version_other_editor')}</small
         ></span

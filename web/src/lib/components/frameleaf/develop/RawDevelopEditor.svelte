@@ -132,7 +132,9 @@
   const targets = $derived(selected.filter((item) => item.id !== id));
   const placeholder = $derived(id ? getAssetMediaUrl({ id, size: AssetMediaSize.Preview }) : '');
   const dims = $derived(info[id]);
-  const busyRevision = $derived(record.revisions.find((item) => item.status === 'queued' || item.status === 'rendering'));
+  const busyRevision = $derived(
+    record.revisions.find((item) => item.status === 'queued' || item.status === 'rendering'),
+  );
   const latest = $derived(record.revisions[0]);
   const queue = $derived(
     session.photos.flatMap((item) => {
@@ -526,7 +528,8 @@
               onclick={() =>
                 session
                   .render(entry.photo.id, entry.revision.id)
-                  .catch(() => say($t('frameleaf_develop_action_failed')))}>{$t('frameleaf_develop_render_again')}</button
+                  .catch(() => say($t('frameleaf_develop_action_failed')))}
+              >{$t('frameleaf_develop_render_again')}</button
             >{/if}
         </div>
       {/each}
@@ -692,9 +695,7 @@
             session.patch(id, { crop: undefined, rotation: undefined, straighten: undefined });
           }}>{$t('reset')}</button
         >
-        <button type="button" class="rde-button active" onclick={() => (tools.cropOpen = false)}
-          >{$t('done')}</button
-        >
+        <button type="button" class="rde-button active" onclick={() => (tools.cropOpen = false)}>{$t('done')}</button>
       </div>
     {/if}
 
@@ -712,14 +713,22 @@
               values: { count: targets.length },
             })}</button
           >{/if}
-        <span>{$t('frameleaf_develop_position', { values: { index: session.activeIndex + 1, total: session.photos.length } })}</span>
+        <span
+          >{$t('frameleaf_develop_position', {
+            values: { index: session.activeIndex + 1, total: session.photos.length },
+          })}</span
+        >
       </div>
     {/if}
 
     {#if multi}
       <div class="rde-filmstrip" aria-label={$t('frameleaf_develop_filmstrip')}>
         {#each session.photos as item, index (item.id)}
-          <div class="rde-film-frame" class:current={item.id === id} class:selected={session.selected.includes(item.id)}>
+          <div
+            class="rde-film-frame"
+            class:current={item.id === id}
+            class:selected={session.selected.includes(item.id)}
+          >
             <button
               type="button"
               class="rde-film-photo"
@@ -796,7 +805,9 @@
             {id}
             {say}
             onSaveVersion={() => {
-              versionName = $t('frameleaf_editor_version_number', { values: { revision: record.revisions.length + 1 } });
+              versionName = $t('frameleaf_editor_version_number', {
+                values: { revision: record.revisions.length + 1 },
+              });
               show('version');
             }}
           />
@@ -806,7 +817,9 @@
       {/if}
     </div>
     <div class="rde-inspector-footer">
-      <Icon icon={mdiShieldCheckOutline} size="15" aria-hidden={true} /><span>{$t('frameleaf_develop_original_kept')}</span>
+      <Icon icon={mdiShieldCheckOutline} size="15" aria-hidden={true} /><span
+        >{$t('frameleaf_develop_original_kept')}</span
+      >
     </div>
   </aside>
 </main>
@@ -886,7 +899,12 @@
     {/snippet}
   </Dialog>
 {:else if dialog === 'export' && photo}
-  <Dialog title={$t('frameleaf_develop_export_title')} closeLabel={$t('close')} bind:open={dialogOpen} onClosed={() => (dialog = null)}>
+  <Dialog
+    title={$t('frameleaf_develop_export_title')}
+    closeLabel={$t('close')}
+    bind:open={dialogOpen}
+    onClosed={() => (dialog = null)}
+  >
     <div class="rde-dialog-content">
       <p>{$t('frameleaf_develop_export_format')}</p>
       <p class="rde-muted">{$t('frameleaf_develop_export_note')}</p>

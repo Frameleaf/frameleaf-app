@@ -178,7 +178,11 @@ export class RawDevelopSession {
    * A new working recipe for a photo, as one undo step. Changes to the same control (`coalesce`) in
    * quick succession, a slider being dragged, make one step.
    */
-  change(id: string, next: NativeRecipe, { keepLook = false, coalesce }: { keepLook?: boolean; coalesce?: string } = {}) {
+  change(
+    id: string,
+    next: NativeRecipe,
+    { keepLook = false, coalesce }: { keepLook?: boolean; coalesce?: string } = {},
+  ) {
     const record = this.records[id];
     if (!record || record.status !== 'ready') {
       return;
@@ -393,9 +397,7 @@ export class RawDevelopSession {
   }
 
   toggleSelected(id: string) {
-    this.selected = this.selected.includes(id)
-      ? this.selected.filter((item) => item !== id)
-      : [...this.selected, id];
+    this.selected = this.selected.includes(id) ? this.selected.filter((item) => item !== id) : [...this.selected, id];
   }
 
   selectAll() {
@@ -412,7 +414,10 @@ export class RawDevelopSession {
       return;
     }
     const preset = await createDevelopPreset({
-      developPresetCreateDto: { name: name.trim(), settings: { native: nativePreset(sendable(record.recipe)) } as never },
+      developPresetCreateDto: {
+        name: name.trim(),
+        settings: { native: nativePreset(sendable(record.recipe)) } as never,
+      },
     });
     this.presets = [...this.presets, preset];
   }

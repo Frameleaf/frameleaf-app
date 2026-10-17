@@ -1,5 +1,5 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { render, screen, within } from '@testing-library/svelte';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import PhotographyDevelop from './PhotographyDevelop.svelte';
 
 const api = vi.hoisted(() => ({ loadWorkspace: vi.fn(), loadPhotos: vi.fn(), ratePhoto: vi.fn() }));
@@ -43,7 +43,11 @@ describe('PhotographyDevelop', () => {
   it("opens every RAW photo of the shoot that isn't rejected, across pages", async () => {
     render(PhotographyDevelop, { shootId: 'shoot-1', only: null, onBack: vi.fn(), onProof: vi.fn() });
     const filmstrip = await screen.findByLabelText('frameleaf_develop_filmstrip');
-    expect(within(filmstrip).getAllByText(/CR3|ARW|NEF|JPG/).map((node) => node.textContent)).toEqual(['CR3', 'ARW']);
+    expect(
+      within(filmstrip)
+        .getAllByText(/CR3|ARW|NEF|JPG/)
+        .map((node) => node.textContent),
+    ).toEqual(['CR3', 'ARW']);
     expect(api.loadPhotos).toHaveBeenNthCalledWith(2, 'shoot-1', 'next');
     expect(screen.getByText('Cabin weekend')).toBeInTheDocument();
   });

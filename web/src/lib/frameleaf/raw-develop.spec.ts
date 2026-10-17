@@ -101,14 +101,15 @@ describe('raw-develop', () => {
     expect(isOriginal(recipe({ contrast: undefined, sensorCanvas: true }))).toBe(true);
     expect(isOriginal(recipe({ exposureEV: 0.5 }))).toBe(false);
     expect(
-      sameRecipe(
-        recipe({ crop: { x: 0, y: 0, w: 0.5, h: 1 }, contrast: 1.2 }),
-        { contrast: 1.2, crop: { h: 1, w: 0.5, y: 0, x: 0 }, ...initialNativeRecipe() } as NativeRecipe,
-      ),
+      sameRecipe(recipe({ crop: { x: 0, y: 0, w: 0.5, h: 1 }, contrast: 1.2 }), {
+        contrast: 1.2,
+        crop: { h: 1, w: 0.5, y: 0, x: 0 },
+        ...initialNativeRecipe(),
+      } as NativeRecipe),
     ).toBe(true);
-    expect(sameRecipe(recipe({ crop: { x: 0, y: 0, w: 0.5, h: 1 } }), recipe({ crop: { x: 0, y: 0, w: 0.6, h: 1 } }))).toBe(
-      false,
-    );
+    expect(
+      sameRecipe(recipe({ crop: { x: 0, y: 0, w: 0.5, h: 1 } }), recipe({ crop: { x: 0, y: 0, w: 0.6, h: 1 } })),
+    ).toBe(false);
     expect(originalFraming(recipe({ exposureEV: 2, rotation: 90, straighten: 3 }))).toEqual(
       recipe({ rotation: 90, straighten: 3 }),
     );
@@ -127,7 +128,12 @@ describe('raw-develop', () => {
 
   it('keeps brush strokes on their own photo when syncing', () => {
     const source = syncSource(
-      recipe({ masks: [{ ...createMask('brush', 'Brush'), strokes: [{ points: [[0.5, 0.5]], radius: 0.02, erase: false }] }, createMask('radial', 'Radial')] }),
+      recipe({
+        masks: [
+          { ...createMask('brush', 'Brush'), strokes: [{ points: [[0.5, 0.5]], radius: 0.02, erase: false }] },
+          createMask('radial', 'Radial'),
+        ],
+      }),
     );
     expect(source.masks?.map((mask) => mask.kind)).toEqual(['radial']);
   });

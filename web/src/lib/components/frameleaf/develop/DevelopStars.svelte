@@ -32,7 +32,11 @@
       aria-label={$t('frameleaf_develop_rate_stars', { values: { count: value, name } })}
       aria-pressed={rating >= value}
       onclick={() => onChange(value === rating ? 0 : value)}
-      ><Icon icon={value <= rating ? mdiStar : mdiStarOutline} size={compact ? '13' : '17'} aria-hidden={true} /></button
+      ><Icon
+        icon={value <= rating ? mdiStar : mdiStarOutline}
+        size={compact ? '13' : '17'}
+        aria-hidden={true}
+      /></button
     >
   {/each}
 </div>

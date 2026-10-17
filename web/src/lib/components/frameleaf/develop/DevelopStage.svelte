@@ -71,7 +71,8 @@
   const frameWidth = $derived(tools.zoom === 'fit' ? fitWidth : (natural.width * Number(tools.zoom)) / 100);
   const frameHeight = $derived(frameWidth / ratio);
   const interactive = $derived(
-    !tools.compare && (mode === 'crop' || (mode === 'masks' && !!active && (active.enabled || active.kind === 'brush'))),
+    !tools.compare &&
+      (mode === 'crop' || (mode === 'masks' && !!active && (active.enabled || active.kind === 'brush'))),
   );
   const shownCrop = $derived(draft?.kind === 'crop' ? draft.rect : (crop ?? FULL_FRAME));
   const shownMask = $derived(draft?.kind === 'place' ? draft.mask : active);
@@ -301,13 +302,7 @@
               {/each}
             </mask>
           </defs>
-          {#if tools.overlay}<rect
-              width={W}
-              height={H}
-              fill={colour}
-              opacity="0.4"
-              mask={`url(#${uid}-mask)`}
-            />{/if}
+          {#if tools.overlay}<rect width={W} height={H} fill={colour} opacity="0.4" mask={`url(#${uid}-mask)`} />{/if}
           {#if shownMask.kind === 'radial'}<ellipse
               cx={shownMask.x * W}
               cy={shownMask.y * H}

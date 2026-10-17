@@ -126,8 +126,8 @@
         }
         event.currentTarget.value = '';
       }}
-      ><option value="">{$t('frameleaf_develop_curve_choose')}</option>{#each curvePresets as [preset, label] (preset)}<option
-          value={preset}>{$t(label as never)}</option
+      ><option value="">{$t('frameleaf_develop_curve_choose')}</option
+      >{#each curvePresets as [preset, label] (preset)}<option value={preset}>{$t(label as never)}</option
         >{/each}</select
     ></label
   >
