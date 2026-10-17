@@ -545,7 +545,9 @@ describe(DownloadService.name, () => {
       await expect(sut.getDownloadInfo(authStub.admin, { albumId: 'album-1' })).resolves.toEqual(downloadResponse);
 
       expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['album-1']));
-      expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1');
+      expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', {
+        othersRulesViewerId: authStub.admin.user.id,
+      });
     });
 
     it('should filter album downloads when NSFW hiding is active', async () => {
@@ -561,7 +563,10 @@ describe(DownloadService.name, () => {
 
       await expect(sut.getDownloadInfo(auth, { albumId: 'album-1' })).resolves.toEqual(downloadResponse);
 
-      expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', { excludeNsfw: true });
+      expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', {
+        excludeNsfw: true,
+        othersRulesViewerId: auth.user.id,
+      });
     });
 
     it('should include the elevated owner as the Locked owner of an album download (FL-32)', async () => {
@@ -579,6 +584,7 @@ describe(DownloadService.name, () => {
 
       expect(mocks.downloadRepository.downloadAlbumId).toHaveBeenCalledWith('album-1', {
         lockedOwnerId: auth.user.id,
+        othersRulesViewerId: auth.user.id,
       });
     });
 

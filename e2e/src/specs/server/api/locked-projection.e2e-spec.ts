@@ -565,7 +565,10 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     );
   });
 
-  it('never shows a Locked item to a partner, an album member or a shared link', async () => {
+  // FL-446 (owner decision, October 17, 2026): "hidden items are only shared with partner sharing,
+  // they're never shared any other way". A Locked-rule match reaches the partner as a locked copy and
+  // nobody else: not an album member, not the album's shared link.
+  it('never shows a Locked item or a Locked-rule match to a partner, an album member or a shared link', async () => {
     await unlock(owner.accessToken);
     await lock(partner.accessToken);
     const hiddenCopyIds = hiddenIds().map((id) => partnerCopyIds[id]);
@@ -650,13 +653,30 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
           path: '/search/metadata',
           body: { filter: { albumIds: { any: [albumId] }, visibility: { eq: 'timeline' } } },
         },
+        { name: 'member album timeline', path: '/timeline/buckets', query: { albumId } },
+        { name: 'member album activities', path: '/activities', query: { albumId } },
         ...oneItemReads(locked.id),
         ...oneItemReads(detected.id),
+        ...oneItemReads(ruleMatch.id),
       ],
       bearer(member.accessToken),
     );
-    expectNoTrace(memberAnswers, [locked.id, detected.id, 'locked-secret', 'detected-secret']);
-    expect(JSON.parse(memberAnswers[0].text).assetCount).toBe(2);
+    expectNoTrace(memberAnswers, [
+      locked.id,
+      detected.id,
+      ruleMatch.id,
+      'locked-secret',
+      'detected-secret',
+      'rule-secret',
+    ]);
+    // only the plain item: the owner's Locked-rule match is withheld like a lock
+    expect(JSON.parse(memberAnswers[0].text).assetCount).toBe(1);
+    expect(JSON.parse(memberAnswers.find(({ name }) => name === 'member album timeline')!.text)).toEqual([
+      { timeBucket: '2021-06-01', count: 1 },
+    ]);
+    for (const read of oneItemReads(ruleMatch.id)) {
+      expect(memberAnswers.find(({ name }) => name === read.name)!.status, read.name).toBeGreaterThanOrEqual(400);
+    }
 
     const linkAnswers = await readAll(
       [
@@ -667,13 +687,23 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
         { name: 'link download', method: 'post', path: '/download/info', query: { key: sharedKey }, body: { albumId } },
         { name: 'link thumbnail', path: `/assets/${locked.id}/thumbnail`, query: { key: sharedKey } },
         { name: 'link original', path: `/assets/${locked.id}/original`, query: { key: sharedKey } },
+        { name: 'link rule thumbnail', path: `/assets/${ruleMatch.id}/thumbnail`, query: { key: sharedKey } },
+        { name: 'link rule original', path: `/assets/${ruleMatch.id}/original`, query: { key: sharedKey } },
       ],
       {},
     );
-    expectNoTrace(linkAnswers, [locked.id, detected.id, 'locked-secret', 'detected-secret']);
-    for (const name of ['link thumbnail', 'link original']) {
+    expectNoTrace(linkAnswers, [
+      locked.id,
+      detected.id,
+      ruleMatch.id,
+      'locked-secret',
+      'detected-secret',
+      'rule-secret',
+    ]);
+    for (const name of ['link thumbnail', 'link original', 'link rule thumbnail', 'link rule original']) {
       expect(linkAnswers.find((answer) => answer.name === name)!.status, name).toBeGreaterThanOrEqual(400);
     }
+    expect(JSON.parse(linkAnswers.find(({ name }) => name === 'link album')!.text).assetCount).toBe(1);
   });
 
   it("never gives an unlocked administrator another owner's Locked item, name or count", async () => {

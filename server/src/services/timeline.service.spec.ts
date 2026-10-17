@@ -192,6 +192,7 @@ describe(TimelineService.name, () => {
         {
           timeBucket: 'bucket',
           albumId: 'album-id',
+          othersRulesViewerId: authStub.admin.user.id,
         },
         authStub.admin,
       );
@@ -294,7 +295,12 @@ describe(TimelineService.name, () => {
       await sut.getTimeBuckets(elevated, { albumId: 'album-id' });
 
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
-        { albumId: 'album-id', lockedOwnerId: elevated.user.id, revealLockedOwnerId: elevated.user.id },
+        {
+          albumId: 'album-id',
+          lockedOwnerId: elevated.user.id,
+          revealLockedOwnerId: elevated.user.id,
+          othersRulesViewerId: elevated.user.id,
+        },
         elevated,
       );
     });
@@ -305,7 +311,10 @@ describe(TimelineService.name, () => {
 
       await sut.getTimeBuckets(authStub.admin, { albumId: 'album-id' });
 
-      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith({ albumId: 'album-id' }, authStub.admin);
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        { albumId: 'album-id', othersRulesViewerId: authStub.admin.user.id },
+        authStub.admin,
+      );
       expect(mocks.asset.getTimeBuckets.mock.calls[0][0].lockedOwnerId).toBeUndefined();
     });
 
@@ -340,6 +349,7 @@ describe(TimelineService.name, () => {
           userIds: [elevated.user.id],
           lockedOwnerId: elevated.user.id,
           revealLockedOwnerId: elevated.user.id,
+          othersRulesViewerId: elevated.user.id,
         },
         elevated,
       );
@@ -457,11 +467,11 @@ describe(TimelineService.name, () => {
       expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(owner, new Set(['album-id']));
       expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
         'bucket',
-        { timeBucket: 'bucket', albumId: 'album-id', userIds: [owner], bestPhotos },
+        { timeBucket: 'bucket', albumId: 'album-id', userIds: [owner], bestPhotos, othersRulesViewerId: owner },
         authStub.admin,
       );
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
-        { personId, userIds: [owner], bestPhotos },
+        { personId, userIds: [owner], bestPhotos, othersRulesViewerId: owner },
         authStub.admin,
       );
     });
@@ -582,7 +592,13 @@ describe(TimelineService.name, () => {
       await sut.getTimeBuckets(authStub.admin, { filter, personId: 'person-3', visibility: AssetVisibility.Archive });
 
       expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
-        { filter, personId: 'person-3', visibility: AssetVisibility.Archive, userIds: [authStub.admin.user.id] },
+        {
+          filter,
+          personId: 'person-3',
+          visibility: AssetVisibility.Archive,
+          userIds: [authStub.admin.user.id],
+          othersRulesViewerId: authStub.admin.user.id,
+        },
         authStub.admin,
       );
     });

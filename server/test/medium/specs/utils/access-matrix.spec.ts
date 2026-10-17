@@ -95,24 +95,21 @@ const VISIBLE_TO_OTHERS = new Set<Item>(['ordinary', 'liveStill', 'liveMotion'])
 const LOCKED = new Set<Item>(['lockedMarked', 'lockedDetected', 'lockedFolder', 'lockedLiveStill', 'lockedLiveMotion']);
 
 /**
- * An item under the owner's Locked tag rule. Owner decision, September 29, 2026 ("No, keep explicit
- * shares"): a Locked rule withdraws the item from per-item shares (FL-198) and Studio publication
- * (FL-106) only. What the owner explicitly shared (a shared album or space, a partner share, a
- * public link) keeps showing it. `docs/docs/features/locked.md` states the same rule.
- *
- * Also decided that day and asserted elsewhere: partner sync keeps Locked items, marked locked with
- * their details blanked (sync-partner-asset / sync-partner-stack specs), and viewers of a shared item
- * see the owner's tag names, Locked-rule tags included (asset.service spec).
+ * An item under the owner's Locked tag rule. Owner decision, October 17, 2026 (FL-446, superseding the
+ * September 29 "keep explicit shares" rule): "hidden items are only shared with partner sharing,
+ * they're never shared any other way". Partners receive it as a locked copy of their own (FL-326);
+ * album and space members, public links and per-item recipients never reach it, and only the
+ * owner's unlocked session does. `docs/docs/features/locked.md` states the same rule.
  */
 const OWNER_RULE_REACHES: Record<Actor, boolean> = {
   owner: false,
   ownerUnlocked: true,
-  editor: true,
-  viewer: true,
+  editor: false,
+  viewer: false,
   partner: false,
   recipient: false,
-  link: true,
-  linkNoDownload: true,
+  link: false,
+  linkNoDownload: false,
   admin: false,
   stranger: false,
 };
@@ -322,24 +319,25 @@ describe('cross-surface access matrix (FL-137 QA-101)', () => {
     );
   });
 
-  it("keeps explicit album and link shares under the owner's Locked rule, and withdraws per-item shares (owner decision, 2026-09-29)", async () => {
+  it("withdraws an item under the owner's Locked rule from every album, link and per-item share (FL-446)", async () => {
     const { ctx, access } = setup();
     const lib = await library(ctx);
     const ids = new Set([lib.items.lockedRule]);
     const reaches = async (actor: Actor) =>
       (await checkAccess(access, { auth: lib.auths[actor], permission: Permission.AssetRead, ids })).size > 0;
+    const sharers = ['editor', 'viewer', 'link', 'linkNoDownload', 'recipient'] as const;
 
-    for (const actor of ['editor', 'viewer', 'link', 'linkNoDownload', 'ownerUnlocked'] as const) {
-      await expect(reaches(actor)).resolves.toBe(true);
-    }
-    // FL-326: a partner reaches none of the owner's rows, whatever the rule
-    for (const actor of ['recipient', 'owner', 'partner'] as const) {
+    await expect(reaches('ownerUnlocked')).resolves.toBe(true);
+    // FL-326: a partner reaches none of the owner's rows, whatever the rule; it holds a locked copy
+    for (const actor of [...sharers, 'owner', 'partner'] as const) {
       await expect(reaches(actor)).resolves.toBe(false);
     }
 
-    // Lifting the rule gives the per-item recipient the item back; nothing was frozen at share time.
+    // Lifting the rule gives every sharer the item back; nothing was frozen at share time.
     await setOwnerLockedTagRule(lib.owner.id, []);
-    await expect(reaches('recipient')).resolves.toBe(true);
+    for (const actor of sharers) {
+      await expect(reaches(actor)).resolves.toBe(true);
+    }
   });
 
   it('revokes every grant path at once', async () => {

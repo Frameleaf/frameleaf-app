@@ -9,7 +9,9 @@ import {
   anyUuid,
   asUuid,
   getHiddenContentFilter,
+  hiddenByOwnerRules,
   hiddenContentAssetIdExists,
+  hiddenFromOthers,
   isMotionOfLockedStill,
   isNotLockedAsset,
   memoryHasNoHiddenItem,
@@ -190,6 +192,8 @@ class AssetAccess {
         // Locked media stays a member of an album but is never reachable through the album: only its
         // owner's elevated session sees it, via checkOwnerAccess (owner decision, September 22, 2026).
         .where(isNotLocked('asset'))
+        // FL-446: another member's item that matches its owner's Locked rules reaches partners only
+        .where(sql<boolean>`not ${hiddenFromOthers(userId, 'asset')}`)
         .$call((qb) => withHiddenContentFilter(qb, options))
         .execute()
         .then((assets) => {
@@ -329,19 +333,22 @@ class AssetAccess {
         )
         .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
         // A shared link never reaches Locked media, whether the link names the asset or its album
-        // (owner decision, September 22, 2026).
+        // (owner decision, September 22, 2026), nor an item matching its owner's Locked rules,
+        // whichever member added it (FL-446).
         .leftJoin('asset', (join) =>
           join
             .onRef('asset.id', '=', 'shared_link_asset.assetId')
             .on('asset.deletedAt', 'is', null)
-            .on(isNotLocked('asset')),
+            .on(isNotLocked('asset'))
+            .on(sql<boolean>`not ${hiddenByOwnerRules('asset')}`),
         )
         .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
         .leftJoin('asset as albumAssets', (join) =>
           join
             .onRef('albumAssets.id', '=', 'album_asset.assetId')
             .on('albumAssets.deletedAt', 'is', null)
-            .on(isNotLocked('albumAssets')),
+            .on(isNotLocked('albumAssets'))
+            .on(sql<boolean>`not ${hiddenByOwnerRules('albumAssets')}`),
         )
         .select([
           'asset.id as assetId',

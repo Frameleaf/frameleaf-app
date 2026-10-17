@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
@@ -461,7 +461,7 @@ export class AlbumUserRepository {
           .whereRef('album_asset.albumId', '=', 'link.albumId')
           .where('asset.deletedAt', 'is', null)
           .$call(withDefaultVisibility)
-          .$call((query) => withHiddenContentFilter(query, { excludeNsfw: true }))
+          .$call((query) => withHiddenContentFilter(query, { excludeNsfw: true, ...everyOwnersRules }))
           .select('asset.id')
           .as('coverAssetId'),
       )

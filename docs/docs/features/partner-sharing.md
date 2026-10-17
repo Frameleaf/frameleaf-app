@@ -8,7 +8,9 @@ Copies include metadata, tags and faces. Photo edits and Studio develop versions
 
 Descriptions, locations, capture dates, ratings, tags, faces and visibility continue to follow the source until the recipient edits that field. Album titles, descriptions, covers and membership follow the same rule. Renaming or moving a tag updates the photos that use it, including descendant tags.
 
-Locked media arrives locked. The recipient uses their own PIN to view it. A sharing partner's PIN grants no access to another person's Locked view.
+Locked media arrives locked, and so does every item the sharing partner's Locked rules hide (the people, pets and tags they chose). The recipient uses their own PIN to view it. A sharing partner's PIN grants no access to another person's Locked view.
+
+Partner sharing is the only way an item hidden by its owner's Locked rules is ever shared: shared albums and spaces, shared links and item-by-item shares leave it out (see [Locked](/features/locked#locked-rules-and-what-you-shared)).
 
 ## Sharing with a Partner
 

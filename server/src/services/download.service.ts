@@ -16,7 +16,7 @@ import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
 import { nextArchiveName } from 'src/utils/file.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { OriginalLocationPolicy, getOriginalLocationPolicies } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
@@ -45,12 +45,10 @@ export class DownloadService extends BaseService {
     } else if (dto.albumId) {
       const albumId = dto.albumId;
       await this.requireAccess({ auth, permission: Permission.AlbumDownload, ids: [albumId] });
-      // The archive holds what the album shows this viewer: their own Locked members only when elevated.
-      const albumOptions = { ...nsfwOptions, ...getLockedVisibilityOptions(auth) };
-      assets =
-        Object.keys(albumOptions).length > 0
-          ? this.downloadRepository.downloadAlbumId(albumId, albumOptions)
-          : this.downloadRepository.downloadAlbumId(albumId);
+      // The archive holds what the album shows this viewer: their own Locked members only when elevated,
+      // and never another member's item that matches its owner's Locked rules (FL-446).
+      const albumOptions = { ...nsfwOptions, ...getLockedVisibilityOptions(auth), ...getOthersRulesQueryOptions(auth) };
+      assets = this.downloadRepository.downloadAlbumId(albumId, albumOptions);
     } else if (dto.userId) {
       const userId = dto.userId;
       await this.requireAccess({ auth, permission: Permission.TimelineDownload, ids: [userId] });

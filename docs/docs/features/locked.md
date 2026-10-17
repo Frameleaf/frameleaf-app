@@ -18,22 +18,26 @@ Stacks and live photos lock and unlock as a whole: locking one photo of a stack 
 
 - **You, while your session is locked**: nothing. The item is left out of the timeline, albums, search, the map, memories, people, pets and downloads. Your own devices still sync it, marked locked.
 - **You, after unlocking with your PIN**: **Locked** lists every locked item. Everywhere else, every locked item (marked, detected or moved from the old Locked folder) and every item your Locked rules hide behaves exactly like any other item ("Revealed for this session", see below). Albums show their locked members.
-- **Partners, album and space members**: never, whatever their own session. A partner's device is still sent the item, marked locked, so a device that already had it hides it (see [Partner devices](#partner-devices-and-tag-names)).
+- **Partners**: only as a locked copy in their own library, which only their own PIN shows (see [Partner sharing](/features/partner-sharing)).
+- **Album and space members**: never, whatever their own session.
 - **Shared links**: never.
 - **Server jobs** (thumbnails, machine learning, backups, restorations): always. Background work is never skipped because an item is locked. A bulk change you queue without unlocking skips any item that was locked after you queued it.
 
 ### Locked rules and what you shared
 
-A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock. It also stops you from sharing them item by item: a matching item cannot be shared with a person, and a person you already shared it with stops seeing it, and cannot preview or export it in their Studio projects, for as long as the rule applies.
+A Locked rule (the people, pets and tags you chose in the Locked rules of your security settings) hides matching items from your own sessions until you unlock.
 
-A Locked rule does not take back what you shared on purpose (owner decision, September 29, 2026). An item you put in a shared album or space, share with a partner, or include in a shared link stays visible there, even while it matches one of your Locked rules. To stop sharing such an item, remove it from the album or link, stop partner sharing, or lock the item itself: a locked item never reaches anybody else.
+Items your Locked rules hide are shared only through partner sharing, never any other way (owner decision, October 17, 2026, replacing the September 29 rule that kept explicit shares). A partner receives such an item as a locked copy, like a locked item. Everyone else is treated as if the item were not there, for as long as the rule applies, even if you shared it before you made the rule:
 
-### Partner devices and tag names
+- **Album and space members** do not see it in the album or space, its counts, timeline, map, search, activity, downloads or sync, and cannot open its thumbnail or original. It is never shown as a cover to them, and adding only such items does not notify them.
+- **Shared links** leave it out, whichever member added it to the album.
+- **People you shared it with item by item** stop seeing it, and cannot preview or export it in their Studio projects. A matching item cannot be shared item by item.
 
-Two more owner decisions (September 29, 2026) settle what others still learn about your items:
+The rule is read from your current Locked rules on every request, so removing an item from a rule shares it again wherever you had shared it. Items other people add to a shared album follow their owners' Locked rules, not yours.
 
-- **Partner devices.** The sync your partners' apps use keeps a locked item in the stream, marked locked, so a device that already holds it hides it instead of keeping a stale copy. Its file name, thumbnail preview, location and other photo details, and its live-photo link are blanked. The item's id, checksum, capture date and time, media type, duration, size in pixels and stack are still sent, also to a device that never had it, and a locked stack still appears as a stack. The web app shows none of it.
-- **Tag names.** Anyone you share an item with (album or space members, partners, people you shared the item with, and shared links that show metadata) sees the tags you put on it, including a tag you use in a Locked rule. People's names work differently: everyone sees only the names they gave.
+### Tag names
+
+Anyone you share an item with (album or space members, partners, people you shared the item with, and shared links that show metadata) sees the tags you put on it. An item carrying a tag you use in a Locked rule never reaches them, except a partner's locked copy. People's names work differently: everyone sees only the names they gave.
 
 Clearing cached photos on sign-in and sign-out relies on the browser's `Clear-Site-Data` header, which browsers honour only over HTTPS (or `localhost`). On a plain-HTTP connection a shared browser can keep showing the previous person's cached thumbnails until they expire.
 
@@ -45,7 +49,7 @@ Once you unlock with your PIN, the items you marked, the ones detection locked, 
 - **Library views**: the timeline, the archive, Explore, memories, people and pets, Best Photos, duplicates, albums, the map, tags and folders show and count them.
 - **Actions**: bulk actions (favorite, archive, add to album, change date or location, delete) and downloads work on them, and **Studio** can place them in a project, use one as a project's poster and export them.
 
-They still never reach anybody else: partners, album and space members, administrators and shared links never see them, whatever their own session. Sharing a revealed item is not offered, and a revealed item never becomes an album cover, a featured photo or a profile picture, because those show whatever the session.
+They still never reach anybody else: album and space members, administrators and shared links never see them, whatever their own session, and partners only hold locked copies of their own. Sharing a revealed item is not offered, and a revealed item never becomes an album cover, a featured photo or a profile picture, because those show whatever the session.
 
 When the session locks again, they keep every place and association they have (albums, stacks, tags, people, memories, Studio projects and posters) but show nowhere, as before.
 
@@ -91,4 +95,5 @@ Going back to a release without lock records restores the upstream Locked folder
 - Time bucket requests with `visibility: locked` accept `lockReason` (`marked`, `detected` or `frameleaf-locked-folder`). The `lockReason` array comes back with them, and with every other time bucket request of a PIN-unlocked session, which reveals your marked and detected items.
 - In a PIN-unlocked session, any other requested visibility (`timeline`, `archive`, in time buckets, search bodies and structured `filter`s alike) also matches your own marked and detected items with that stored visibility, reported as `visibility: locked`. Nobody else's locked items ever match.
 - Setting any other visibility never unlocks: the item stays locked and only its stored visibility changes. Only `POST /assets/unlock` unlocks.
-- Partner sync keeps sending a partner's locked item with `visibility: locked` and its details blanked, so a device that already had it hides it.
+- A partner's items reach a partner's devices only as their own copies, through their own asset streams; a copy of a locked item, or of one the sharing partner's Locked rules hide, arrives locked. The partner asset streams stay for older clients and send nothing.
+- Every other read that can return someone else's media (albums, album time buckets, search and map within albums, album downloads and activity, album sync streams, shared links and access checks for thumbnails and originals) leaves out an item that matches its owner's Locked rules, whoever asks.
