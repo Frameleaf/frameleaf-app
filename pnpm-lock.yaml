@@ -1098,6 +1098,9 @@ importers:
       dom-to-image:
         specifier: ^2.6.0
         version: 2.6.0
+      dompurify:
+        specifier: ^3.4.17
+        version: 3.4.17
       fabric:
         specifier: ^7.4.0
         version: 7.4.0(supports-color@10.2.2)

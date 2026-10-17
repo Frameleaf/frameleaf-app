@@ -159,6 +159,7 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       contentType: 'application/json',
       json: {
         loginPageMessage: '',
+        loginPageMessageFormat: 'plain',
         serverName: '',
         trashDays: 30,
         userDeleteDelay: 7,

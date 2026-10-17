@@ -14,6 +14,7 @@ export const AlbumUpdateEmail = ({
   albumId,
   cid,
   customTemplate,
+  showBranding,
 }: AlbumUpdateEmailProps) => {
   const usableTemplateVariables = {
     albumName,
@@ -40,6 +41,7 @@ export const AlbumUpdateEmail = ({
   return (
     <ImmichLayout
       baseUrl={baseUrl}
+      showBranding={showBranding}
       preview={customTemplate ? toPlainText(emailContent.toString()) : 'New media has been added to a shared album.'}
     >
       {customTemplate && (

@@ -52,6 +52,21 @@ describe('setting words (FL-368)', () => {
     ).toMatchObject({ label: 'Schedule', before: 'A custom schedule', after: 'A custom schedule' });
   });
 
+  it('says the server time zone, the welcome format and the email look in their own words (FL-426)', () => {
+    expect(
+      describeChange($t(), 'server', { path: 'server.timeZone', before: '', after: 'America/Edmonton' }).said,
+    ).toBe('Time zone: Same as this computer → America/Edmonton');
+    expect(
+      describeChange($t(), 'server', { path: 'server.loginPageMessageFormat', before: 'plain', after: 'html' }).said,
+    ).toBe('Welcome message is: Plain text → Web formatting');
+    expect(
+      describeChange($t(), 'server', { path: 'templates.email.showBranding', before: true, after: false }).said,
+    ).toBe('Show the Frameleaf name and logo turned off');
+    expect(
+      describeChange($t(), 'server', { path: 'templates.email.invitationFirstLine', before: '', after: 'Hi' }).before,
+    ).toBe('Standard wording');
+  });
+
   it('names the page a setting lives on, with moved settings on their new page', () => {
     expect(settingPage('server', 'newVersionCheck.enabled')).toEqual({ area: 'server', section: 'version-check' });
     expect(settingPage('server', 'server.publicUsers')).toEqual({ area: 'sharing' });

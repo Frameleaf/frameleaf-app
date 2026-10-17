@@ -1184,11 +1184,21 @@
   "server.loginPageMessage": {
     "type": "string"
   },
+  "server.loginPageMessageFormat": {
+    "type": "string",
+    "enum": [
+      "plain",
+      "html"
+    ]
+  },
   "server.name": {
     "type": "string"
   },
   "server.publicUsers": {
     "type": "boolean"
+  },
+  "server.timeZone": {
+    "type": "string"
   },
   "smartAlbums.builtIn.documents.clipQueries": {
     "type": "array"
@@ -1325,6 +1335,12 @@
   },
   "templates.email.albumUpdateTemplate": {
     "type": "string"
+  },
+  "templates.email.invitationFirstLine": {
+    "type": "string"
+  },
+  "templates.email.showBranding": {
+    "type": "boolean"
   },
   "templates.email.welcomeTemplate": {
     "type": "string"

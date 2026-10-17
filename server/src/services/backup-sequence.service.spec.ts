@@ -22,6 +22,7 @@ const setup = (options: { chosen?: string; databaseEnabled?: boolean; databaseCr
       schedule: { cronExpression: options.chosen ?? '' },
     },
     frameleafCloud: { cloudBackup: { enabled: true, target: 'managed', schedule: { cronExpression: '0 3 * * *' } } },
+    server: { timeZone: '' },
   };
   const mocks = {
     logger: { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -313,6 +314,21 @@ describe('the one backup schedule (FL-362)', () => {
       run: { place: 'cloud' },
     });
     expect(schedule.nextRunAt).toEqual(expect.any(String));
-    expect(schedule.timezone).toEqual(expect.any(String));
+    expect(schedule.timezone).toBe(new Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it('gives the next start in the time zone chosen for the server (FL-426)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));
+    try {
+      const { sut, config } = setup({ chosen: '0 1 * * *' });
+      config.server.timeZone = 'America/Edmonton';
+      const schedule = await sut.getSchedule();
+      expect(schedule.timezone).toBe('America/Edmonton');
+      // 01:00 in Edmonton on 2 January is 08:00 UTC
+      expect(schedule.nextRunAt).toBe('2026-01-02T08:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

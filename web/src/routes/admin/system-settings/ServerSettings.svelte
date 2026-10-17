@@ -6,26 +6,31 @@
    * see" (ADMIN-P7), a sample of the phone app's server list and the sign-in page that follows what
    * is typed. "People can find each other when sharing" has moved to People & sharing.
    *
-   * The time zone is the one the server runs in (its computer's clock), read from the backup
-   * schedule; it is shown, not chosen here. Left for later (server work): choosing the time zone,
-   * and a welcome message that is plain text unless formatting is asked for. The message is shown
-   * exactly as today; the sample shows it as plain text.
+   * FL-426: the time zone is chosen here (`server.timeZone`). It starts as "Same as this computer",
+   * the zone of the computer Frameleaf runs on, which is how every server kept time before. Under
+   * Advanced, "Welcome message is" switches the message between plain text (the default, shown
+   * exactly as typed) and web formatting, which is cleaned before it is shown. The sample and the
+   * sign-in page draw the message with the same `WelcomeMessage`.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { goto } from '$app/navigation';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextArea from '$lib/components/frameleaf/settings/kit/TextArea.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import WelcomeMessage from '$lib/components/frameleaf/WelcomeMessage.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import { timeZoneLabel } from '$lib/frameleaf/time-zones';
+  import { timeZoneChoices, timeZoneLabel } from '$lib/frameleaf/time-zones';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getBackupSchedule } from '@frameleaf/sdk';
+  import { getAboutInfo, LoginPageMessageFormat } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiServerOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -36,18 +41,42 @@
   const settingsDraft = requireSystemConfigDraft();
   const server = $derived(settingsDraft.draft.server);
 
-  /** The server's own time zone; the row is left out until it is known. */
-  let zone = $state<string>();
+  /** The zone of the computer Frameleaf runs on, which "Same as this computer" means. */
+  let computerZone = $state<string>();
   onMount(() => {
-    void getBackupSchedule()
-      .then((schedule) => (zone = schedule.timezone))
+    void getAboutInfo()
+      .then((about) => (computerZone = about.systemTimeZone))
       .catch(() => {
-        // Without it the page still names the server and its welcome.
+        // Without it the choice still reads "Same as this computer".
       });
   });
-  const zoneName = $derived(
-    zone ? timeZoneLabel(zone, DateTime.now().setZone(zone).toFormat("yyyy-MM-dd'T'HH:mm"), $locale).label : '',
+  const labelOf = (zone: string) =>
+    timeZoneLabel(zone, DateTime.now().setZone(zone).toFormat("yyyy-MM-dd'T'HH:mm"), $locale).label;
+  /** Every zone, west to east (worked out once per language: there are several hundred). */
+  const choices = $derived(
+    timeZoneChoices({ locale: $locale }).map((choice) => ({ value: choice.value, label: choice.label })),
   );
+  const zoneOptions = $derived.by(() => {
+    const chosen = server.timeZone;
+    // a saved zone the list leaves out (an offset such as Etc/GMT+5) still shows as chosen
+    const saved =
+      chosen && choices.every((choice) => choice.value !== chosen) ? [{ value: chosen, label: chosen }] : [];
+    return [
+      {
+        value: '',
+        label: computerZone
+          ? $t('frameleaf_server_identity_zone_computer_named', { values: { zone: labelOf(computerZone) } })
+          : $t('frameleaf_server_identity_zone_computer'),
+      },
+      ...saved,
+      ...choices,
+    ];
+  });
+
+  const formats = $derived([
+    { value: LoginPageMessageFormat.Plain, label: $t('frameleaf_server_identity_format_plain') },
+    { value: LoginPageMessageFormat.Html, label: $t('frameleaf_server_identity_format_html') },
+  ]);
 </script>
 
 <KitPage>
@@ -81,11 +110,29 @@
             />
           </div>
         </Row>
-        {#if zoneName}
-          <Row label={$t('frameleaf_server_identity_zone')} help={$t('frameleaf_server_identity_zone_help')}>
-            <span class="value">{zoneName}</span>
+        <Row label={$t('frameleaf_server_identity_zone')} help={$t('frameleaf_server_identity_zone_help')}>
+          <div class="zone">
+            <Select
+              label={$t('frameleaf_server_identity_zone')}
+              value={server.timeZone ?? ''}
+              options={zoneOptions}
+              {disabled}
+              onChange={(value) => (settingsDraft.draft.server.timeZone = value)}
+            />
+          </div>
+        </Row>
+        <Advanced>
+          <Row label={$t('frameleaf_server_identity_format')} help={$t('frameleaf_server_identity_format_help')}>
+            <SegmentedControl
+              label={$t('frameleaf_server_identity_format')}
+              value={server.loginPageMessageFormat ?? 'plain'}
+              options={formats}
+              {disabled}
+              onChange={(value) =>
+                (settingsDraft.draft.server.loginPageMessageFormat = value as LoginPageMessageFormat)}
+            />
           </Row>
-        {/if}
+        </Advanced>
       </Section>
 
       <Section title={$t('frameleaf_server_identity_finding')}>
@@ -123,7 +170,9 @@
         <div class="sample sample-signin">
           <strong>{$t('frameleaf_auth_welcome_title')}</strong>
           {#if server.loginPageMessage.trim()}
-            <p>{server.loginPageMessage}</p>
+            <div class="message">
+              <WelcomeMessage message={server.loginPageMessage} format={server.loginPageMessageFormat ?? 'plain'} />
+            </div>
           {:else}
             <p class="hint">{$t('frameleaf_server_identity_preview_no_message')}</p>
           {/if}
@@ -159,9 +208,14 @@
   .area :global(.kit-area) {
     margin-bottom: 0;
   }
-  .value {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
+  /* As wide as the other fields: several hundred places would otherwise widen it to the longest name. */
+  .zone {
+    width: 380px;
+    max-width: 100%;
+  }
+  .zone :global(.kit-select) {
+    width: 100%;
+    text-overflow: ellipsis;
   }
   .preview {
     display: grid;
@@ -221,11 +275,11 @@
     display: grid;
     gap: var(--fl-space-2);
   }
-  .sample-signin p {
+  .sample-signin p,
+  .sample-signin .message {
     margin: 0;
     font-size: var(--fl-font-small);
     line-height: 1.5;
-    white-space: pre-line;
     overflow-wrap: anywhere;
   }
   .sample-signin > span {

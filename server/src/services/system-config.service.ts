@@ -344,7 +344,7 @@ export class SystemConfigService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigInit', priority: -100 })
-  onConfigInit({ newConfig: { logging, machineLearning } }: ArgOf<'ConfigInit'>) {
+  onConfigInit({ newConfig: { logging, machineLearning, server } }: ArgOf<'ConfigInit'>) {
     const { logLevel: envLevel } = this.configRepository.getEnv();
     const configLevel = logging.enabled ? logging.level : false;
     const level = envLevel ?? configLevel;
@@ -352,6 +352,8 @@ export class SystemConfigService extends BaseService {
     this.logger.log(`LogLevel=${level} ${envLevel ? '(set via FRAMELEAF_LOG_LEVEL)' : '(set via system config)'}`);
 
     this.machineLearningRepository.setup(machineLearning);
+    // FL-426: every worker's schedules run in the chosen time zone, before and after they are made
+    this.cronRepository.setTimeZone(server.timeZone);
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })

@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import type { SystemConfig } from 'src/config.js';
 import type { DatabaseRepository } from 'src/repositories/database.repository.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
@@ -392,15 +393,19 @@ export const heavyModelGuidance = (
   };
 };
 
+/**
+ * `date` on the server's clock. FL-426: `timeZone` is the one chosen for the server
+ * (`serverTimeZone`); without one it is the computer's own.
+ */
+const onServerClock = (date: Date, timeZone?: string) => DateTime.fromJSDate(date, { zone: timeZone || 'local' });
+
 /** The server's calendar day (its own time zone), which the daily budget of automatic batches counts by. */
-export const serverDay = (date: Date): string => {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
+export const serverDay = (date: Date, timeZone?: string): string =>
+  onServerClock(date, timeZone).toFormat('yyyy-MM-dd');
 
 /** The start of the server's next calendar day, when a daily budget that ran out applies again. */
-export const nextServerDay = (date: Date): Date =>
-  new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0, 0);
+export const nextServerDay = (date: Date, timeZone?: string): Date =>
+  onServerClock(date, timeZone).startOf('day').plus({ days: 1 }).toJSDate();
 
 /** The cloud job states after which nothing more happens to a job (docs/cloud-ml.md state machine). */
 export const CLOUD_JOB_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
@@ -419,8 +424,8 @@ export const CLOUD_DESCRIPTION_TRANSIENT_REFUSALS: ReadonlySet<MlAdmissionRefusa
 ]);
 
 /** The start of the server's calendar day `date` falls on. */
-export const serverDayStart = (date: Date): Date =>
-  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+export const serverDayStart = (date: Date, timeZone?: string): Date =>
+  onServerClock(date, timeZone).startOf('day').toJSDate();
 
 type QueueDeps = {
   databaseRepository: Pick<DatabaseRepository, 'withLock'>;

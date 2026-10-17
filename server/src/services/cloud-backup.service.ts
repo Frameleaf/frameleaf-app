@@ -237,6 +237,7 @@ import {
 } from 'src/utils/managed-backup-session.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { OperationClaimLostError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
+import { serverTimeZone } from 'src/utils/server-time-zone.js';
 
 const KIND = MediaOperationKind.CloudBackup;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
@@ -563,14 +564,20 @@ export class CloudBackupService {
       claimedAt: metadata?.claimedAt ?? null,
       keyLoaded: metadata ? !!(await this.loadKeyOrAsk(metadata).catch(() => null)) : false,
       firstRun,
-      nextRunAt: metadata && target !== 'off' ? this.nextScheduledRun(settings.schedule.cronExpression) : null,
+      nextRunAt:
+        metadata && target !== 'off'
+          ? this.nextScheduledRun(settings.schedule.cronExpression, serverTimeZone(config.server))
+          : null,
     };
   }
 
-  /** FL-234: when the configured schedule next starts a backup, or null for an expression that never does. */
-  private nextScheduledRun(cronExpression: string): string | null {
+  /**
+   * FL-234: when the configured schedule next starts a backup, or null for an expression that never
+   * does. FL-426: on the server's clock, in the time zone chosen for it.
+   */
+  private nextScheduledRun(cronExpression: string, timeZone: string): string | null {
     try {
-      return new CronTime(cronExpression).sendAt().toUTC().toISO();
+      return new CronTime(cronExpression, timeZone).sendAt().toUTC().toISO();
     } catch {
       return null;
     }
@@ -1325,10 +1332,13 @@ export class CloudBackupService {
     await this.updateMetadata(({ scheduledRunDueAt: _due, ...current }) => current);
   }
 
-  /** FL-164: whether the scheduled backup starts within the next hour, when a check would hold it up. */
-  private backupStartsSoon(cronExpression: string, now: Date) {
+  /**
+   * FL-164: whether the scheduled backup starts within the next hour, when a check would hold it up.
+   * FL-426: the schedule runs in the server's chosen time zone.
+   */
+  private backupStartsSoon(cronExpression: string, now: Date, timeZone: string) {
     try {
-      const next = new CronTime(cronExpression).sendAt().toMillis();
+      const next = new CronTime(cronExpression, timeZone).sendAt().toMillis();
       return next - now.getTime() < VERIFY_QUIET_MS;
     } catch {
       return false;
@@ -1342,7 +1352,7 @@ export class CloudBackupService {
   @OnJob({ name: JobName.CloudBackupVerify, queue: QueueName.BackgroundTask })
   async handleVerifyCheck(): Promise<JobStatus> {
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    const { frameleafCloud } = await this.readSettings();
+    const { frameleafCloud, server } = await this.readSettings();
     const settings = frameleafCloud.cloudBackup;
     if (!metadata || !settings.enabled || settings.target === 'off') {
       return JobStatus.Skipped;
@@ -1354,7 +1364,7 @@ export class CloudBackupService {
       return JobStatus.Skipped;
     }
     // and none starts in the hour before the scheduled backup, which it would hold up
-    if (this.backupStartsSoon(settings.schedule.cronExpression, now)) {
+    if (this.backupStartsSoon(settings.schedule.cronExpression, now, serverTimeZone(server))) {
       return JobStatus.Skipped;
     }
     const depth = verificationDue(

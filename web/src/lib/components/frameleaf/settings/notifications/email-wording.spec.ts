@@ -1,7 +1,9 @@
 import {
+  FIRST_LINE,
   senderOf,
   senderParts,
   shownSender,
+  standardWithFirstLine,
   toTemplate,
   toWords,
   withSamples,
@@ -16,6 +18,24 @@ const t = (key: string) => {
   return typeof value === 'string' ? value : key;
 };
 const [welcome, invite] = WORDINGS;
+
+describe('the first line of an invitation (FL-426)', () => {
+  it('names the person and who shared it in brackets, and keeps codes for the server', () => {
+    const stored = 'Hi {recipientName}, {senderName} shared something';
+    const words = toWords(stored, FIRST_LINE, t);
+    expect(words).toBe('Hi [Person’s name], [Who shared it] shared something');
+    expect(toTemplate(words, FIRST_LINE, t)).toBe(stored);
+  });
+
+  it('opens the standard invitation with it, and leaves the other emails and own wording alone', () => {
+    const update = WORDINGS[2];
+    expect(standardWithFirstLine(t(invite.standard), invite, 'Hi [Person’s name]')).toBe(
+      'Hi [Person’s name]\n\n[Who shared it] has added you to the album [Album name].',
+    );
+    expect(standardWithFirstLine(t(invite.standard), invite, '  ')).toBe(t(invite.standard));
+    expect(standardWithFirstLine(t(update.standard), update, 'Hi')).toBe(t(update.standard));
+  });
+});
 
 describe('email wording in plain words', () => {
   it('shows codes as names and line breaks as new lines, and writes them back the same', () => {

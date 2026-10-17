@@ -20,9 +20,11 @@ interface ImmichLayoutProps {
   children: React.ReactNode;
   preview: string;
   baseUrl?: string;
+  /** FL-426: "Show the Frameleaf name and logo" (`templates.email.showBranding`); on unless turned off. */
+  showBranding?: boolean;
 }
 
-export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) => (
+export const ImmichLayout = ({ children, preview, baseUrl, showBranding = true }: ImmichLayoutProps) => (
   <Html>
     <Tailwind
       config={{
@@ -61,17 +63,19 @@ export const ImmichLayout = ({ children, preview, baseUrl }: ImmichLayoutProps) 
       <Body className="bg-[#F4F4f4] my-auto mx-auto px-2 font-sans text-base text-gray-800">
         <Container className="my-[40px] mx-auto max-w-[465px]">
           <Section className="my-6 p-12 border border-red-400 rounded-[50px] bg-gray-50">
-            <Section className="flex justify-center mb-12">
-              {baseUrl ? (
-                <Img
-                  src={getFrameleafEmailLogoUrl(baseUrl)}
-                  className="h-12 antialiased rounded-none w-full"
-                  alt="Frameleaf"
-                />
-              ) : (
-                <Text className="m-0 text-center text-2xl font-semibold">Frameleaf</Text>
-              )}
-            </Section>
+            {showBranding && (
+              <Section className="flex justify-center mb-12">
+                {baseUrl ? (
+                  <Img
+                    src={getFrameleafEmailLogoUrl(baseUrl)}
+                    className="h-12 antialiased rounded-none w-full"
+                    alt="Frameleaf"
+                  />
+                ) : (
+                  <Text className="m-0 text-center text-2xl font-semibold">Frameleaf</Text>
+                )}
+              </Section>
+            )}
 
             {children}
           </Section>

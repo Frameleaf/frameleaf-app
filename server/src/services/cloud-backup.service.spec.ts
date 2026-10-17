@@ -4434,6 +4434,22 @@ describe(CloudBackupService.name, () => {
       });
     });
 
+    it("computes the next scheduled run on the server's chosen time zone (FL-426)", async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-06-15T12:00:00.000Z') });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = {
+        server: { timeZone: 'America/Edmonton' },
+        frameleafCloud: {
+          cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, schedule: { cronExpression: '0 4 * * *' } },
+        },
+      };
+
+      // 04:00 in Edmonton in June (UTC−06:00)
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({
+        nextRunAt: '2026-06-16T10:00:00.000Z',
+      });
+    });
+
     it('has no next run while cloud backup is turned off', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = {
