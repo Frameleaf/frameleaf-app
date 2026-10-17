@@ -67,6 +67,8 @@ FORK_FOLLOWUPS.md
 /docs/docs/administration/cloud-backup-keys.md
 /docs/docs/administration/cloud-backup-recovery.md
 /docs/docs/developer/cloud-backup-format.md
+# Kept local 2026-10-17 (owner, FL-445): internal development process page.
+/docs/docs/developer/frameleaf-development.md
 /studio/*-test-packet.md
 /studio/*-source-contract.md
 /studio/*-qualification.md
