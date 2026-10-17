@@ -54,6 +54,67 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type AttentionCheckDto = {
+    kind: AttentionKind;
+    state: AttentionCheckState;
+};
+export type AttentionBackupDto = {
+    /** Whole days since it last finished, when it is behind */
+    days: number | null;
+    /** When this place last finished a backup */
+    lastSuccessAt: string | null;
+    /** The place the finding is about; null when there is none */
+    place: (AttentionBackupPlace) | null;
+};
+export type AttentionStorageDto = {
+    /** Space left on the drive the library is on */
+    availableBytes: number;
+    /** Size of that drive */
+    totalBytes: number;
+    /** How full the drive is */
+    usedPercent: number;
+};
+export type AttentionVersionDto = {
+    /** The newest version offered */
+    available: string;
+    /** The version this server runs */
+    current: string;
+};
+export type AttentionWorkQueueDto = {
+    count: number;
+    name: QueueName;
+};
+export type AttentionWorkDto = {
+    /** Items that failed, or that wait behind a pause, across these kinds of work */
+    count: number;
+    /** Each kind of work involved, most items first */
+    queues: AttentionWorkQueueDto[];
+};
+export type AttentionItemDto = {
+    /** The place, for a backup item */
+    backup: (AttentionBackupDto) | null;
+    /** Stable for the same finding across reads, for example backup:cloud */
+    id: string;
+    kind: AttentionKind;
+    level: AttentionLevel;
+    reason: AttentionReason;
+    /** When it started, when the server knows */
+    since: string | null;
+    /** The drive, for a storage item */
+    storage: (AttentionStorageDto) | null;
+    /** The versions, for a version item */
+    version: (AttentionVersionDto) | null;
+    /** The kinds of work, for a work item */
+    work: (AttentionWorkDto) | null;
+};
+export type AttentionResponseDto = {
+    /** When the checks were made */
+    checkedAt: string;
+    /** How each kind of check came out, in a fixed order */
+    checks: AttentionCheckDto[];
+    /** What needs attention, the most urgent first */
+    items: AttentionItemDto[];
+};
 export type BackupDeviceDto = {
     appVersion: string;
     deviceKey: string;
@@ -17336,6 +17397,17 @@ export function deleteActivity({ id }: {
     }));
 }
 /**
+ * Get what needs attention
+ */
+export function getAttention(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AttentionResponseDto;
+    }>("/admin/attention", {
+        ...opts
+    }));
+}
+/**
  * Unlink all OAuth accounts
  */
 export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
@@ -30076,6 +30148,64 @@ export enum UserAvatarColor {
     Gray = "gray",
     Amber = "amber"
 }
+export enum AttentionKind {
+    Backup = "backup",
+    Storage = "storage",
+    Work = "work",
+    Version = "version"
+}
+export enum AttentionCheckState {
+    Ok = "ok",
+    Attention = "attention",
+    Off = "off",
+    Unknown = "unknown"
+}
+export enum AttentionBackupPlace {
+    Cloud = "cloud",
+    Buddy = "buddy",
+    Local = "local"
+}
+export enum AttentionLevel {
+    Now = "now",
+    Soon = "soon"
+}
+export enum AttentionReason {
+    NotBackedUp = "not-backed-up",
+    BackupFailed = "backup-failed",
+    BackupBehind = "backup-behind",
+    NearlyFull = "nearly-full",
+    OutOfSpace = "out-of-space",
+    WorkFailed = "work-failed",
+    WorkPaused = "work-paused",
+    NewVersion = "new-version"
+}
+export enum QueueName {
+    ThumbnailGeneration = "thumbnailGeneration",
+    MetadataExtraction = "metadataExtraction",
+    VideoConversion = "videoConversion",
+    FaceDetection = "faceDetection",
+    FacialRecognition = "facialRecognition",
+    SmartSearch = "smartSearch",
+    DuplicateDetection = "duplicateDetection",
+    VideoDuplicateDetection = "videoDuplicateDetection",
+    BackgroundTask = "backgroundTask",
+    StorageTemplateMigration = "storageTemplateMigration",
+    Migration = "migration",
+    Search = "search",
+    Sidecar = "sidecar",
+    Library = "library",
+    Notifications = "notifications",
+    BackupDatabase = "backupDatabase",
+    Ocr = "ocr",
+    ImageEnrichment = "imageEnrichment",
+    ImageDescription = "imageDescription",
+    NsfwDetection = "nsfwDetection",
+    MediaHealth = "mediaHealth",
+    Workflow = "workflow",
+    IntegrityCheck = "integrityCheck",
+    Editor = "editor",
+    PetRecognition = "petRecognition"
+}
 export enum State {
     Pending = "pending",
     Active = "active",
@@ -30947,33 +31077,6 @@ export enum MlWorkerReadiness {
 export enum WorkerInventorySource {
     MlDestination = "ml-destination",
     RenderWorker = "render-worker"
-}
-export enum QueueName {
-    ThumbnailGeneration = "thumbnailGeneration",
-    MetadataExtraction = "metadataExtraction",
-    VideoConversion = "videoConversion",
-    FaceDetection = "faceDetection",
-    FacialRecognition = "facialRecognition",
-    SmartSearch = "smartSearch",
-    DuplicateDetection = "duplicateDetection",
-    VideoDuplicateDetection = "videoDuplicateDetection",
-    BackgroundTask = "backgroundTask",
-    StorageTemplateMigration = "storageTemplateMigration",
-    Migration = "migration",
-    Search = "search",
-    Sidecar = "sidecar",
-    Library = "library",
-    Notifications = "notifications",
-    BackupDatabase = "backupDatabase",
-    Ocr = "ocr",
-    ImageEnrichment = "imageEnrichment",
-    ImageDescription = "imageDescription",
-    NsfwDetection = "nsfwDetection",
-    MediaHealth = "mediaHealth",
-    Workflow = "workflow",
-    IntegrityCheck = "integrityCheck",
-    Editor = "editor",
-    PetRecognition = "petRecognition"
 }
 export enum AlbumSourceKind {
     IosPhotos = "ios-photos",
