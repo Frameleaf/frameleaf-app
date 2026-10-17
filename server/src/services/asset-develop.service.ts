@@ -239,6 +239,7 @@ export class AssetDevelopService {
       recipe,
       recipeVersion: recipe.version,
       sourceRevisionId: dto.sourceRevisionId,
+      expectedCurrentRevisionId: dto.expectedCurrentRevisionId,
       replaceRecipe: dto.replaceRecipe,
       requireRenderable: dto.render,
       label: dto.label ?? null,
