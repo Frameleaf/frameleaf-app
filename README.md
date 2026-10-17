@@ -28,6 +28,9 @@
 
 ---
 
+> [!WARNING]
+> **Frameleaf is in BETA testing and under heavy development.** Expect bugs, breaking changes and incomplete features. Keep independent backups of your photos and videos, and don't rely on Frameleaf as the only copy of your library.
+
 <p align="center">
   <img src="https://frameleaf.app/web/library-grid.webp" alt="Frameleaf library timeline in the web app" width="100%">
 </p>
