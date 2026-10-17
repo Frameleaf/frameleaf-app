@@ -14,7 +14,6 @@ import { pathToFileURL } from "node:url";
 
 const MISE_FILES = [
   "mise.toml",
-  "deployment/mise.toml",
   "docs/mise.toml",
   "machine-learning/mise.toml",
 ];
@@ -57,10 +56,8 @@ const PROBES = {
     args: ["version"],
   },
   "npm:oazapfts": { commands: ["oazapfts"], args: ["--version"] },
-  opentofu: { commands: ["tofu"], args: ["version"] },
   pnpm: { commands: ["pnpm"], args: ["--version"], safe: false },
   python: { commands: ["python3", "python"], args: ["--version"], safe: true },
-  terragrunt: { commands: ["terragrunt"], args: ["--version"] },
   uv: { commands: ["uv"], args: ["--version"], safe: true },
   wrangler: { commands: ["wrangler"], args: ["--version"] },
 };

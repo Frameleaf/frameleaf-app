@@ -5,7 +5,6 @@ config_roots = [
   "packages/plugin-core",
   "server",
   "packages/cli",
-  "deployment",
   "e2e",
   "web",
   "docs",
@@ -16,8 +15,6 @@ config_roots = [
 [tools]
 node = "26.11.1"
 pnpm = "12.11.2"
-terragrunt = "1.1.6"
-opentofu = "1.13.1"
 "npm:oazapfts" = "7.5.0"
 "github:extism/cli" = "1.6.3"
 "github:webassembly/binaryen" = { version = "133", version_prefix = "version_" }
