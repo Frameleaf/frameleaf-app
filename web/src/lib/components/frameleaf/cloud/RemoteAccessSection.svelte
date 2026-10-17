@@ -5,7 +5,8 @@
    * `customHostnameRecords` and `checkCustomHostname` in frameleaf-cloud-data.mjs) on real state from
    * `admin/cloud/remote` and `admin/cloud/status`:
    *
-   * - the switch and connection mode, turned on only for a linked server with a remote access plan;
+   * - the switch and connection mode, turned on only for a linked server with a Server licence or a
+   *   remote access plan (FL-437: without a plan there is no relay or custom domain, only the direct address);
    * - the relay and direct connection as the edge worker reports them, and port forwarding;
    * - the public address with its certificate and QR code;
    * - the custom hostname: the two DNS records to add, "Check DNS" (adds the hostname, then asks
@@ -87,7 +88,9 @@
   let portInput = $state('');
 
   const blocked = $derived(remote?.unavailableReason ?? null);
-  const direct = $derived(remote?.mode === RemoteAccessMode.RelayAndDirect);
+  // FL-437: a Server licence without a plan has its direct address but no relay; direct is the only way in
+  const relayNeedsPlan = $derived(!blocked && !!remote?.relayNeedsPlan);
+  const direct = $derived(remote?.mode === RemoteAccessMode.RelayAndDirect || relayNeedsPlan);
   const hostCheck = $derived(hostInput ? checkCustomHostname(hostInput) : null);
   const hostVerified = $derived(remote?.customHostnameStatus === RemoteHostnameStatus.Verified);
   const hostPending = $derived(remote?.customHostnameStatus === RemoteHostnameStatus.Pending);
@@ -106,7 +109,7 @@
   const choseCustom = $derived(remote?.publicUrlChoice === RemoteAccessPublicUrl.Custom);
 
   const records = $derived(
-    hostCheck?.valid && remote?.frameleafAddress
+    hostCheck?.valid && remote?.frameleafAddress && !relayNeedsPlan
       ? [
           {
             type: 'CNAME',
@@ -231,7 +234,7 @@
 
   // FL-166: "Relay use this month" as Frameleaf Cloud meters it, asked for only once remote access is
   // available (a linked server with the plan); the meter stays hidden when it cannot be read
-  const usageAvailable = $derived(!!remote && !remote.unavailableReason);
+  const usageAvailable = $derived(!!remote && !remote.unavailableReason && !relayNeedsPlan);
   $effect(() => {
     if (!usageAvailable) {
       usage = null;
@@ -450,14 +453,16 @@
     <label class="fc-stack">
       {$t('frameleaf_remote_connection')}
       <select
-        value={remote?.mode ?? RemoteAccessMode.Relay}
-        disabled={!!blocked || !remote || busy}
+        value={relayNeedsPlan ? RemoteAccessMode.RelayAndDirect : (remote?.mode ?? RemoteAccessMode.Relay)}
+        disabled={!!blocked || !remote || busy || relayNeedsPlan}
         onchange={(event) => void update({ mode: event.currentTarget.value as RemoteAccessMode })}
       >
-        <option value={RemoteAccessMode.Relay}>{$t('frameleaf_remote_mode_relay')}</option>
+        <option value={RemoteAccessMode.Relay} disabled={relayNeedsPlan}>{$t('frameleaf_remote_mode_relay')}</option>
         <option value={RemoteAccessMode.RelayAndDirect}>{$t('frameleaf_remote_mode_direct')}</option>
       </select>
-      <small class="fc-muted">{$t('frameleaf_remote_connection_help')}</small>
+      <small class="fc-muted"
+        >{relayNeedsPlan ? $t('frameleaf_remote_connection_needs_plan') : $t('frameleaf_remote_connection_help')}</small
+      >
     </label>
     {#if remote?.enabled && remote.reason && !blocked}
       <p class="fc-muted" role="status">{remote.reason}</p>
@@ -467,9 +472,11 @@
   <div class="fc-grid">
     <CloudCard
       title={$t('frameleaf_remote_relay_title')}
-      status={remote?.enabled && remote.relayConnected
-        ? $t('frameleaf_remote_connected')
-        : $t('frameleaf_remote_not_connected')}
+      status={relayNeedsPlan
+        ? $t('frameleaf_remote_relay_needs_plan_status')
+        : remote?.enabled && remote.relayConnected
+          ? $t('frameleaf_remote_connected')
+          : $t('frameleaf_remote_not_connected')}
       tone={remote?.enabled && remote.relayConnected ? 'ok' : 'muted'}
     >
       <dl class="fc-facts">
@@ -535,7 +542,14 @@
           </p>
         {/if}
       {/if}
-      {#if remote?.enabled && remote.relayRevoked}
+      {#if relayNeedsPlan}
+        <p class="fc-muted" role="status">{$t('frameleaf_remote_relay_needs_plan_body')}</p>
+        <div class="fc-actions">
+          <Button onclick={() => goto(commandCenterUrl('cloud', 'cloud-plan'))}
+            >{$t('frameleaf_remote_gate_plan')}</Button
+          >
+        </div>
+      {:else if remote?.enabled && remote.relayRevoked}
         <CloudBanner tone="warning" title={$t('frameleaf_remote_relay_revoked_title')}>
           {$t('frameleaf_remote_relay_revoked_body')}
         </CloudBanner>
@@ -659,14 +673,16 @@
         placeholder="photos.example.com"
         autocomplete="off"
         spellcheck={false}
-        disabled={!!blocked}
+        disabled={!!blocked || relayNeedsPlan}
         aria-invalid={hostCheck ? !hostCheck.valid : undefined}
         oninput={(event) => {
           hostInput = event.currentTarget.value;
           hostTouched = true;
         }}
       />
-      <small class="fc-muted">{$t('frameleaf_remote_hostname_help')}</small>
+      <small class="fc-muted"
+        >{relayNeedsPlan ? $t('frameleaf_remote_domain_needs_plan') : $t('frameleaf_remote_hostname_help')}</small
+      >
       {#if hostCheck && !hostCheck.valid && hostInput.length > 3}
         <small class="fc-notice is-error">{$t(hostnameMessageKey(hostCheck.reason))}</small>
       {/if}
@@ -711,7 +727,7 @@
     <div class="fc-actions">
       <Button
         variant={remote?.customHostname ? 'default' : 'primary'}
-        disabled={!!blocked || busy || !hostCheck?.valid}
+        disabled={!!blocked || relayNeedsPlan || busy || !hostCheck?.valid}
         onclick={() => void checkDns()}
       >
         <Icon icon={mdiDnsOutline} size="16" />

@@ -1427,6 +1427,11 @@ export type FrameleafRemoteAccess = {
     disconnectedSince?: string | null;
     /** Frameleaf Cloud revoked or suspended the tunnel; it is tried again once the server is linked again. */
     revoked?: boolean;
+    /**
+     * FL-437: no relay without a Frameleaf Cloud plan: this server has none, or Frameleaf Cloud refused the
+     * relay (`entitlement-missing`). The direct name and certificate keep working.
+     */
+    needsPlan?: boolean;
   };
   direct: {
     listening: boolean;

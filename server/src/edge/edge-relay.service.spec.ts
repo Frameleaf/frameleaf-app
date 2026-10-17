@@ -491,6 +491,58 @@ describe(EdgeRelayService.name, () => {
     expect(calls.filter((call) => call.url.endsWith('/relay-token'))).toHaveLength(asked);
   });
 
+  it('treats a relay refused for want of a plan as no relay, not as a failure (FL-437)', async () => {
+    const noPlan = () =>
+      new FrameleafCloudError('other' as never, 403, 'no plan', { code: 'entitlement-missing' } as never);
+    let refuse = true;
+    const answer = (cloud.requestJson as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    (cloud.requestJson as ReturnType<typeof vi.fn>).mockImplementation((schema: any, request: any) => {
+      if (refuse && request.url === `${API}/v1/remote/relays/candidates`) {
+        calls.push({ url: request.url, body: request.body });
+        throw noPlan();
+      }
+      return answer(schema, request);
+    });
+    sut.wait = () => new Promise((resolve) => setTimeout(resolve, 5));
+    await sut.ensure(target);
+    await until(() => !!sut.status().needsPlan);
+    // quiet: no token asked for, no revocation, nothing for the relay-down notice to count
+    expect(calls.some((call) => call.url.endsWith('/relay-token'))).toBe(false);
+    expect(sut.status()).toMatchObject({
+      connected: false,
+      needsPlan: true,
+      revoked: false,
+      disconnectedSince: null,
+      lastError: 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.',
+    });
+    // not asked again within ten minutes
+    const asked = calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(calls).toHaveLength(asked);
+
+    // the plan arrives: the edge worker restarts the relay and it connects
+    refuse = false;
+    await sut.stop();
+    const connected = relay.nextTunnel();
+    await sut.ensure(target);
+    await connected;
+    await until(() => sut.status().connected);
+    expect(sut.status().needsPlan).toBeUndefined();
+  });
+
+  it('treats a relay token refused for want of a plan the same way (FL-437)', async () => {
+    tokenAnswer = () => {
+      throw new FrameleafCloudError('other' as never, 403, 'no plan', { code: 'entitlement-missing' } as never);
+    };
+    sut.wait = () => new Promise((resolve) => setTimeout(resolve, 5));
+    await sut.ensure(target);
+    await until(() => !!sut.status().needsPlan);
+    expect(sut.status()).toMatchObject({ connected: false, revoked: false, disconnectedSince: null });
+    const asked = calls.filter((call) => call.url.endsWith('/relay-token')).length;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(calls.filter((call) => call.url.endsWith('/relay-token'))).toHaveLength(asked);
+  });
+
   it('refreshes the token in-band at half its life', async () => {
     tokenAnswer = () =>
       relay.tokenAnswer(

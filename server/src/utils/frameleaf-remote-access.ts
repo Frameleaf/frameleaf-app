@@ -5,13 +5,14 @@ import { networkInterfaces } from 'node:os';
 import z from 'zod';
 import type {
   FrameleafEdgeCertificate,
+  FrameleafLicenseStore,
   FrameleafRemoteAccess,
   FrameleafRemoteConnection,
   FrameleafRemoteEnrollment,
 } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { type CloudGatewayDeps, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
-import { entitlementFlags } from 'src/utils/frameleaf-license.js';
+import { entitlementFlags, hasServerLicence } from 'src/utils/frameleaf-license.js';
 import { isHomeAddress } from 'src/utils/frameleaf-sign-in.js';
 
 /**
@@ -476,9 +477,30 @@ export const hostnameProblem = (hostname: Pick<RemoteHostname, 'state' | 'failur
 
 // ------------------------------------------------------------------ availability
 
+/** Why remote access cannot be turned on without a Server licence or a plan. */
+export const REMOTE_NEEDS_LICENCE = 'Remote access needs a Server licence or a Frameleaf Cloud plan.';
+/** Why the relay (and what goes through it: the custom hostname and its meter) is not available. */
+export const RELAY_NEEDS_PLAN =
+  'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.';
+
+/**
+ * FL-437 (FC-147, owner decision 2026-10-17): what remote access this server is entitled to. A live
+ * Server licence or a plan gives the enrolment, the Frameleaf direct names and their certificate
+ * (`direct`); only the plan's `REMOTE_ACCESS` gives the relay (`relay`), and with it the relay name,
+ * custom hostnames and the relay meter.
+ */
+export const remoteEntitlement = (
+  store: FrameleafLicenseStore | null | undefined,
+  now = Date.now(),
+): { direct: boolean; relay: boolean } => {
+  const relay = entitlementFlags([store?.key, store?.plan], now).remoteAccess;
+  return { relay, direct: relay || hasServerLicence(store, now) };
+};
+
 /**
  * Why remote access cannot be turned on, or null when it can (prototype `remoteAvailability`): it
- * needs Frameleaf Cloud set up, a linked server and an active or grace remote access entitlement.
+ * needs Frameleaf Cloud set up, a linked server and a Server licence or a remote access plan (active
+ * or in grace).
  */
 export const remoteAccessUnavailable = async (
   deps: Pick<CloudGatewayDeps, 'configRepository' | 'systemMetadataRepository'>,
@@ -492,10 +514,23 @@ export const remoteAccessUnavailable = async (
     return 'Link this server to a Frameleaf account first.';
   }
   const licenses = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
-  if (!entitlementFlags([licenses?.key, licenses?.plan], now).remoteAccess) {
-    return 'Remote access is included with a Frameleaf Cloud plan.';
+  if (!remoteEntitlement(licenses, now).direct) {
+    return REMOTE_NEEDS_LICENCE;
   }
   return null;
+};
+
+/** Why the relay, the custom hostname and the relay meter are not available, or null when they are. */
+export const relayUnavailable = async (
+  deps: Pick<CloudGatewayDeps, 'configRepository' | 'systemMetadataRepository'>,
+  now = Date.now(),
+): Promise<string | null> => {
+  const problem = await remoteAccessUnavailable(deps, now);
+  if (problem) {
+    return problem;
+  }
+  const licenses = await deps.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+  return remoteEntitlement(licenses, now).relay ? null : RELAY_NEEDS_PLAN;
 };
 
 // ------------------------------------------------------------------ public URL and candidates

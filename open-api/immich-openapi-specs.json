@@ -108888,7 +108888,7 @@
             "type": "boolean"
           },
           "frameleafAddress": {
-            "description": "https://r.<label>.<direct domain>, once enrolled",
+            "description": "https://r.<label>.<direct domain> once enrolled; without a plan, the direct address Frameleaf Cloud reached",
             "nullable": true,
             "type": "string"
           },
@@ -108975,6 +108975,10 @@
             "minimum": -9007199254740991,
             "nullable": true,
             "type": "integer"
+          },
+          "relayNeedsPlan": {
+            "description": "No relay without a Frameleaf Cloud plan: this server is reached through its direct address only",
+            "type": "boolean"
           },
           "relayRegion": {
             "description": "The relay this server uses (eu1, us1)",

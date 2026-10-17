@@ -14,6 +14,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
+  RELAY_NEEDS_PLAN,
   type RemoteHostname,
   customHostnameRecords,
   directDomainOf,
@@ -21,8 +22,10 @@ import {
   hostnameProblem,
   hostnameStatus,
   ipv4Name,
+  relayUnavailable,
   remoteAccessUnavailable,
   remoteEndpoints,
+  remoteEntitlement,
   remoteHostnameListSchema,
   remoteHostnameSchema,
   remoteLabel,
@@ -116,6 +119,13 @@ export class FrameleafRemoteAccessService extends BaseService {
     const domain = directDomainOf(names, discovery);
     const host = settings.customHostname.host || null;
     const lastTest = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccessTest);
+    // FL-437: a Server licence without a plan has the direct names and certificate but no relay, so its
+    // address is the direct name Frameleaf Cloud reached, never the relay name (which does not resolve)
+    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    const relayNeedsPlan =
+      !unavailableReason && (!remoteEntitlement(licenses, now).relay || (current && !!state?.relay.needsPlan));
+    const directAddress = (current && state?.direct.wan?.verified && state.direct.wan.uri) || null;
+    const frameleafAddress = names ? (relayNeedsPlan ? directAddress : `https://${names.names.relay}`) : null;
 
     return {
       unavailableReason,
@@ -126,8 +136,8 @@ export class FrameleafRemoteAccessService extends BaseService {
       publicUrlChoice: settings.publicUrl,
       status,
       reason: status === 'unknown' ? 'Remote access is starting. This can take a minute.' : (state?.reason ?? null),
-      publicUrl: settings.enabled && names ? remotePublicUrl(names, settings) : null,
-      frameleafAddress: names ? `https://${names.names.relay}` : null,
+      publicUrl: settings.enabled && names ? (relayNeedsPlan ? directAddress : remotePublicUrl(names, settings)) : null,
+      frameleafAddress,
       certificateName: state?.certificate?.names[0] ?? null,
       certificateExpiresAt: state?.certificate?.notAfter ?? null,
       certificateError: state?.certificateIssuance?.lastError ?? null,
@@ -140,6 +150,7 @@ export class FrameleafRemoteAccessService extends BaseService {
       relayLastError: state?.relay.lastError ?? null,
       relayLastErrorAt: state?.relay.lastErrorAt ?? null,
       relayRevoked: !!state?.relay.revoked,
+      relayNeedsPlan,
       directListening: current && !!state?.direct.listening,
       cgnatSuspected: !!state?.direct.cgnatSuspected,
       mappingMethod: (current && state?.direct.mapping?.method) || null,
@@ -223,7 +234,7 @@ export class FrameleafRemoteAccessService extends BaseService {
   /** `PUT admin/cloud/remote/hostname`: add a hostname the administrator owns; its records then wait for DNS. */
   async setCustomHostname(auth: AuthDto, dto: RemoteHostnameUpdateDto): Promise<RemoteAccessStatusResponseDto> {
     return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
-      const { cloudUrl, link } = await this.requireAvailable();
+      const { cloudUrl, link } = await this.requireRelay();
       const state = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess);
       const names = state?.names?.instanceId === link.instanceId ? state.names : null;
       const document = await this.cloudCall(() => this.frameleafCloudRepository.discovery(cloudUrl));
@@ -258,7 +269,7 @@ export class FrameleafRemoteAccessService extends BaseService {
   /** `POST admin/cloud/remote/hostname/check`: ask Frameleaf Cloud whether the records are in place. */
   async checkCustomHostname(auth: AuthDto): Promise<RemoteAccessStatusResponseDto> {
     return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
-      const { cloudUrl, link } = await this.requireAvailable();
+      const { cloudUrl, link } = await this.requireRelay();
       const config = await this.getConfig({ withCache: false });
       const host = config.frameleafCloud.remoteAccess.customHostname.host;
       if (!host) {
@@ -375,7 +386,7 @@ export class FrameleafRemoteAccessService extends BaseService {
    */
   async getUsage(auth: AuthDto, now = Date.now()): Promise<RemoteAccessUsageResponseDto> {
     return this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
-      const { cloudUrl, link } = await this.requireAvailable();
+      const { cloudUrl, link } = await this.requireRelay();
       const authority = JSON.stringify([cloudUrl, link.instanceId, link.accountId ?? null, link.linkedAt ?? null]);
       const cached = this.usageCache;
       if (cached?.authority === authority && now >= cached.at && now - cached.at < USAGE_FRESH_MS) {
@@ -458,7 +469,11 @@ export class FrameleafRemoteAccessService extends BaseService {
       checks.push({
         id: 'relay',
         ok: relayConnected,
-        detail: relayConnected ? 'Connected to the Frameleaf relay.' : 'Not connected to the Frameleaf relay yet.',
+        detail: relayConnected
+          ? 'Connected to the Frameleaf relay.'
+          : state?.relay.needsPlan
+            ? RELAY_NEEDS_PLAN
+            : 'Not connected to the Frameleaf relay yet.',
       });
 
       if (settings.mode === 'relay-and-direct') {
@@ -538,8 +553,9 @@ export class FrameleafRemoteAccessService extends BaseService {
 
   // ------------------------------------------------------------------ helpers
 
-  private async requireAvailable() {
-    const reason = await remoteAccessUnavailable(this.linkDeps);
+  /** The relay is available: custom hostnames and the relay meter need a plan, not only a licence (FL-437). */
+  private async requireRelay() {
+    const reason = await relayUnavailable(this.linkDeps);
     if (reason) {
       throw new BadRequestException(reason);
     }
