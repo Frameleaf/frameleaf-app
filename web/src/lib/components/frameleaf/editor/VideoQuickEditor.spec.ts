@@ -34,6 +34,7 @@ vi.mock('@frameleaf/sdk', async () => {
     getVideoEditVersions: vi.fn().mockResolvedValue([]),
     getAssetRestorations: vi.fn().mockResolvedValue([]),
     getAssetRestorationOptions: vi.fn().mockResolvedValue({ destinations: [], modes: [] }),
+    getUserConfig: vi.fn().mockResolvedValue({}),
   };
 });
 
