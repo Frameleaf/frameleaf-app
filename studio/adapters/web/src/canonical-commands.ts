@@ -1658,15 +1658,29 @@ const handlers: Record<string, Handler> = {
       invalid(`kind: "${kind}" does not match the asset`)
     }
     if ((track.kind ?? 'video') !== 'video') invalid('trackId: library media goes on a video track')
-    if (track.locked) failed('clip.add: the destination track is locked')
     const natural = getDroppedMediaDurationInFrames(source!, mediaType as 'image' | 'video', fps)
     if (mediaType === 'video' && duration !== undefined && duration > natural) {
       invalid('duration is longer than the source')
     }
     const durationInFrames = duration ?? natural
-    // A video with sound gets Freecut's linked audio companion, on the first unlocked audio track.
+    // A video with sound gets Freecut's linked audio companion, on the first audio track.
     const linkVideoAudio = mediaType === 'video' && !!source!.audioCodec
-    const audioTrackId = linkVideoAudio ? audioTrackForLinkedSound('clip.add') : undefined
+    let audioTrackId: string | undefined
+    if (linkVideoAudio) {
+      audioTrackId = tracks().find(
+        (candidate) => !candidate.isGroup && candidate.kind === 'audio',
+      )?.id
+      if (!audioTrackId) {
+        const all = tracks()
+        const created = createClassicTrack({
+          tracks: all,
+          kind: 'audio',
+          order: Math.max(0, ...all.map((t) => t.order)) + 1,
+        })
+        setTracks([...all, created])
+        audioTrackId = created.id
+      }
+    }
     const { width, height } = canvas()
     // The editor's own drop path (`buildDroppedMediaTimelineItems`), so a command-placed clip is
     // the clip a person dragging the same media would get.
