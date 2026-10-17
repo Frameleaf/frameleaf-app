@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Post, Query, Req, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Put, Query, Req, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -12,6 +12,12 @@ import {
   OwnerBackupRestoreResponseDto,
   OwnerBackupsResponseDto,
 } from 'src/dtos/cloud-backup-owner.dto.js';
+import {
+  CloudBackupSelectionResponseDto,
+  CloudBackupSelectionUpdateDto,
+  OwnerBackupExclusionsDto,
+  OwnerBackupExclusionsResponseDto,
+} from 'src/dtos/cloud-backup-selection.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
@@ -68,6 +74,51 @@ export class CloudBackupOwnerController {
     @Req() request: Request,
   ): Promise<OwnerBackupRestoreResponseDto> {
     return this.service.startOwnerRestore(auth, dto, this.refresh(request, Permission.AssetUpdate));
+  }
+
+  @Get('selection')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @Endpoint({
+    summary: 'Get what Cloud Backup keeps of your library',
+    description:
+      'FL-362: Everything (the default) or only what you choose: albums, collections, people, tags, folders, favorites and dates. A photo is kept when it matches any choice. With how many of your photos and videos it keeps now. Your choice stays on this server.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getOwnCloudBackupSelection(@Auth() auth: AuthDto): Promise<CloudBackupSelectionResponseDto> {
+    return this.service.getOwnSelection(auth);
+  }
+
+  @Put('selection')
+  @Authenticated({ permission: Permission.UserPreferenceUpdate })
+  @Endpoint({
+    summary: 'Choose what Cloud Backup keeps of your library',
+    description:
+      'FL-362: only your own albums (or ones shared with you), collections, people and tags can be chosen. The next backup takes it; library data is always backed up in full.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  setOwnCloudBackupSelection(
+    @Auth() auth: AuthDto,
+    @Body() dto: CloudBackupSelectionUpdateDto,
+  ): Promise<CloudBackupSelectionResponseDto> {
+    return this.service.setOwnSelection(auth, dto);
+  }
+
+  @Get('exclusions')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AssetRead, refreshElevation: false })
+  @Endpoint({
+    summary: 'List your items a kept backup holds no original of, and why',
+    description:
+      'FL-362: from that backup’s own decision: left out by your selection, no licence for your account, not backed up yet, or unknown for a backup made before choices were recorded. A Locked item is never named.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  listOwnBackupExclusions(
+    @Auth() auth: AuthDto,
+    @Query() dto: OwnerBackupExclusionsDto,
+    @Req() request: Request,
+  ): Promise<OwnerBackupExclusionsResponseDto> {
+    return this.service.listOwnExclusions(auth, dto, this.refresh(request));
   }
 
   @Get('backups')

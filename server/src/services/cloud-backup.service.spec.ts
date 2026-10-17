@@ -278,6 +278,7 @@ describe(CloudBackupService.name, () => {
   let databaseBackup: Record<string, Mock>;
   let cloudBackup: Record<string, Mock>;
   let details: Record<string, Mock>;
+  let selection: Record<string, Mock>;
   /** What each streamed upload sent (the gzipped manifests). */
   let streamed: Buffer[];
 
@@ -304,6 +305,7 @@ describe(CloudBackupService.name, () => {
       mocks.cron as never,
       mocks.job as never,
       details as never,
+      selection as never,
     );
 
   const configWrites = () =>
@@ -435,6 +437,21 @@ describe(CloudBackupService.name, () => {
       getAlbumRecords: vi.fn().mockResolvedValue(new Map()),
       getPersonRecords: vi.fn().mockResolvedValue(new Map()),
       getAlbumMembers: vi.fn().mockResolvedValue(new Map()),
+    };
+    selection = {
+      getDecisionRun: vi.fn().mockResolvedValue(undefined),
+      captureInventory: vi.fn().mockResolvedValue({ inventoryAt: new Date(), created: true }),
+      getEligibleOwners: vi.fn().mockResolvedValue(new Set()),
+      recordIncluded: vi.fn().mockResolvedValue(undefined),
+      getDecisionAccounts: vi.fn().mockResolvedValue([]),
+      getCoverageReport: vi.fn().mockResolvedValue(undefined),
+      createCoverageReport: vi.fn(),
+      updateCoverageReport: vi.fn().mockResolvedValue(undefined),
+      listDueCoverageReports: vi.fn().mockResolvedValue([]),
+      getLatestCoverageReport: vi.fn().mockResolvedValue(undefined),
+      findDecisionRunByManifest: vi.fn().mockResolvedValue(undefined),
+      getInventoryPage: vi.fn().mockResolvedValue([]),
+      listAccounts: vi.fn().mockResolvedValue([]),
     };
     keys = {
       read: vi.fn().mockResolvedValue(null),
@@ -2605,6 +2622,185 @@ describe(CloudBackupService.name, () => {
       });
     });
 
+    describe('selected Cloud Backup (FL-362)', () => {
+      const decision = {
+        runId: 'run-1',
+        manifestKey: 'm/20260926T030000Z.json.gz',
+        inventoryAt: new Date('2026-09-26T03:00:01.000Z'),
+        licenceScope: 'all',
+      };
+      let reports: Map<string, Record<string, unknown>>;
+
+      beforeEach(() => {
+        let decided = false;
+        reports = new Map();
+        selection.captureInventory.mockImplementation(() => {
+          decided = true;
+          return Promise.resolve({ inventoryAt: decision.inventoryAt, created: true });
+        });
+        selection.getDecisionRun.mockImplementation(() => Promise.resolve(decided ? decision : undefined));
+        selection.getEligibleOwners.mockResolvedValue(new Set(['owner-1']));
+        selection.getDecisionAccounts.mockResolvedValue([
+          {
+            userId: 'owner-1',
+            userFingerprint: 'a'.repeat(64),
+            selectionHash: null,
+            totalOriginals: 2,
+            selectedOriginals: 1,
+            licenceEligible: true,
+            includedOriginals: 1,
+          },
+        ]);
+        selection.getCoverageReport.mockImplementation((runId: string) => Promise.resolve(reports.get(runId)));
+        selection.createCoverageReport.mockImplementation((report: Record<string, unknown>) => {
+          reports.set(report.runId as string, { attempts: 0, revisionAccepted: false, ...report });
+          return Promise.resolve(reports.get(report.runId as string));
+        });
+        selection.updateCoverageReport.mockImplementation((runId: string, patch: Record<string, unknown>) => {
+          reports.set(runId, { ...reports.get(runId), ...patch });
+          return Promise.resolve();
+        });
+        cloudBackup.beginCoverage = vi.fn().mockResolvedValue({});
+        cloudBackup.putCoveragePage = vi.fn().mockResolvedValue({});
+        cloudBackup.finalizeCoverage = vi.fn().mockResolvedValue({});
+        cloudBackup.getCoverageState = vi.fn().mockResolvedValue({ published: null, pending: null });
+        index.listAssets.mockResolvedValueOnce([asset('asset-1', SHA_A)]).mockResolvedValueOnce([]);
+        index.getEntriesPage.mockResolvedValue([entry('asset-1:original')]);
+      });
+
+      it('takes the inventory before the database copy and walks only what it keeps', async () => {
+        cloudBackup.rotate.mockResolvedValue({
+          ...rotated,
+          coverage: { scope: 'users', userFingerprints: [backupUserFingerprint('instance-1', 'owner-1')] },
+        });
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.complete).toHaveBeenCalled();
+        expect(selection.captureInventory).toHaveBeenCalledWith({
+          runId: 'run-1',
+          manifestKey: 'm/20260926T030000Z.json.gz',
+          instanceId: 'instance-1',
+          licence: { scope: 'users', userFingerprints: [backupUserFingerprint('instance-1', 'owner-1')] },
+        });
+        expect(selection.captureInventory.mock.invocationCallOrder[0]).toBeLessThan(
+          databaseBackup.createDatabaseBackup.mock.invocationCallOrder[0],
+        );
+        expect(index.countAssets).toHaveBeenCalledWith('run-1');
+        expect(index.listAssets).toHaveBeenCalledWith(expect.objectContaining({ decisionRunId: 'run-1' }));
+        expect(selection.recordIncluded).toHaveBeenCalledWith('run-1', 'manifest-1');
+        expect(selection.recordIncluded.mock.invocationCallOrder[0]).toBeLessThan(
+          index.deleteEntries.mock.invocationCallOrder[0],
+        );
+        // nothing about the choice in the manifest
+        expect(Object.keys(manifestOf())).not.toEqual(expect.arrayContaining(['selection']));
+        expect(JSON.stringify(manifestOf())).not.toMatch(/selection|albumIds|favorites/);
+      });
+
+      it('names the legacy manifest in the run report and publishes coverage bound to it', async () => {
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(cloudBackup.reportRun).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ runId: 'run-1', status: 'succeeded', manifestKey: 'm/20260926T030000Z.json.gz' }),
+        );
+        expect(cloudBackup.beginCoverage).toHaveBeenCalledWith(
+          expect.anything(),
+          'run-1',
+          expect.objectContaining({
+            sequence: 1,
+            accountCount: 1,
+            pageCount: 1,
+            snapshot: { kind: 'legacy', manifestKey: 'm/20260926T030000Z.json.gz' },
+          }),
+        );
+        const [, , , , body] = cloudBackup.putCoveragePage.mock.calls[0];
+        expect(JSON.parse(body)).toEqual({
+          rows: [
+            {
+              userFingerprint: 'a'.repeat(64),
+              totalOriginals: 2,
+              selectedOriginals: 1,
+              licenceEligible: true,
+              includedOriginals: 1,
+            },
+          ],
+        });
+        expect(cloudBackup.finalizeCoverage).toHaveBeenCalled();
+        expect(reports.get('run-1')).toMatchObject({ status: 'published' });
+      });
+
+      it('reports the run again without its key to an older Frameleaf Cloud, and then claims no inclusion', async () => {
+        cloudBackup.reportRun
+          .mockRejectedValueOnce(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 400, 'invalid', null))
+          .mockResolvedValue(undefined);
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(cloudBackup.reportRun).toHaveBeenNthCalledWith(
+          2,
+          expect.anything(),
+          expect.objectContaining({ manifestKey: null }),
+        );
+        expect(cloudBackup.beginCoverage).toHaveBeenCalledWith(
+          expect.anything(),
+          'run-1',
+          expect.objectContaining({ snapshot: null }),
+        );
+        expect(JSON.parse(cloudBackup.putCoveragePage.mock.calls[0][4]).rows[0].includedOriginals).toBeNull();
+        expect(operations.complete).toHaveBeenCalled();
+      });
+
+      it('reports a failed run and its coverage with nothing committed, and the run still fails as before', async () => {
+        store.uploadFile.mockRejectedValue(new Error('provider down'));
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.fail).toHaveBeenCalled();
+        expect(cloudBackup.reportRun).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ status: 'failed', manifestKey: null, errorCode: 'cloud_backup_failed' }),
+        );
+        expect(cloudBackup.beginCoverage).toHaveBeenCalledWith(
+          expect.anything(),
+          'run-1',
+          expect.objectContaining({ snapshot: null }),
+        );
+        expect(JSON.parse(cloudBackup.putCoveragePage.mock.calls[0][4]).rows[0].includedOriginals).toBeNull();
+      });
+
+      it('never lets coverage publication fail or hold up a backup', async () => {
+        cloudBackup.beginCoverage.mockRejectedValue(new Error('cloud unreachable'));
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.complete).toHaveBeenCalled();
+        expect(operations.fail).not.toHaveBeenCalled();
+        expect(reports.get('run-1')).toMatchObject({ status: 'pending', attempts: 1 });
+      });
+
+      it('keeps a claim from before FL-362 walking as it did', async () => {
+        await sut.run(
+          operationOf({
+            snapshot: managedOperation().snapshot,
+            result: {
+              ...emptyRunResult(),
+              phase: 'reconcile',
+              manifestId: 'manifest-1',
+              manifestKey: decision.manifestKey,
+            },
+          }),
+          'claim-1',
+        );
+
+        expect(selection.captureInventory).not.toHaveBeenCalled();
+        expect(index.listAssets).toHaveBeenCalledWith(
+          expect.not.objectContaining({ decisionRunId: expect.anything() }),
+        );
+        expect(cloudBackup.beginCoverage).not.toHaveBeenCalled();
+      });
+    });
+
     it('retains the same transfer operation while Cloud renewal is temporarily unavailable', async () => {
       store.uploadFile.mockRejectedValueOnce(new ManagedBackupAuthorizationError(undefined, 120_000));
       await sut.run(managedOperation(), 'claim-1');
@@ -4110,6 +4306,7 @@ describe(CloudBackupService.name, () => {
         clientKeys: structuredClone(fixture.file.client),
         uploadedNow: new Set<string>(),
         eligibleOwners: null,
+        decided: false,
         progress: {
           result: {
             ...emptyRunResult(),
