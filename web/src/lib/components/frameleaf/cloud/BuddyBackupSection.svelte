@@ -13,7 +13,7 @@
   import { buddyPlaceState } from '$lib/frameleaf/backup-overview';
   import { mdiHandshakeOutline } from '@mdi/js';
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
-  import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
+  import { buddyBackupPresentation, buddyConnectionKey } from '$lib/frameleaf/buddy-backup';
   import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
@@ -419,7 +419,7 @@
               </div>
               <div>
                 <dt>{$t('frameleaf_buddy_connection')}</dt>
-                <dd>{status.connection ?? $t('frameleaf_buddy_waiting_for_a_transfer')}</dd>
+                <dd>{$t(buddyConnectionKey(status.connection) ?? 'frameleaf_buddy_waiting_for_a_transfer')}</dd>
               </div>
               <div>
                 <dt>{$t('frameleaf_buddy_transfer_speed')}</dt>

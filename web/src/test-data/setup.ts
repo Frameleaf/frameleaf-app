@@ -106,14 +106,6 @@ Object.defineProperty(globalThis, 'matchMedia', {
   }),
 });
 
-vi.mock('$env/dynamic/public', () => {
-  return {
-    env: {
-      PUBLIC_IMMICH_HOSTNAME: '',
-    },
-  };
-});
-
 // happy-dom's `:checked` never matches a selected <option>, and Svelte's `bind:value` on a
 // <select> reads the chosen option through `select.querySelector(':checked')`, so every bound
 // select would read back its first option. Answer that one query from the element's real

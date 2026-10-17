@@ -438,6 +438,12 @@ describe('SystemConfigDraftStore (FL-66)', () => {
       );
       await store.save();
       expect(storage.value()).toBeNull();
+
+      store.draft.trash.days = 20;
+      store.persistJournal();
+      expect(storage.value()).not.toBeNull();
+      store.discard();
+      expect(storage.value()).toBeNull();
     });
 
     it('keeps working when this browser refuses session storage', () => {

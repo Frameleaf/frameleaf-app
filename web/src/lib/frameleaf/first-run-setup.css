@@ -137,8 +137,8 @@
 }
 .frs-stat strong {
   letter-spacing: var(--fl-tracking-display);
-  font-variant-numeric: var(--fl-numeric);
   font: var(--fl-type-display);
+  font-variant-numeric: var(--fl-numeric);
 }
 .frs-stat > span {
   color: var(--fl-muted);
@@ -1113,7 +1113,7 @@
   box-shadow: var(--fl-shadow-2);
   border: 1px solid var(--fl-border-strong);
   left: calc(14px + var(--i) * 26px);
-  top: calc(32px + (var(--i) * 17px) % 70px);
+  top: calc(32px + mod(var(--i) * 17px, 70px));
   transform: rotate(calc((var(--i) - 2.5) * 5deg));
 }
 .frs-import-badge {
