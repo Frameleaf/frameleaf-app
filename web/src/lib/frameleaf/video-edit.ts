@@ -140,7 +140,8 @@ export type VideoSource = {
 
 const secondsOf = (source: VideoSource) => Math.max(MIN_SPAN, source.durationMs / 1000);
 
-export const initialVideoEdit = (duration: number): VideoEdit => ({
+/** `trim` is where a new trim starts: the server's "How trims are cut" (FL-422). */
+export const initialVideoEdit = (duration: number, trim: VideoTrim = 'precise'): VideoEdit => ({
   ...developDefaults(),
   rotation: 0,
   crop: 'Original',
@@ -153,7 +154,7 @@ export const initialVideoEdit = (duration: number): VideoEdit => ({
   volume: 100,
   start: 0,
   end: round(duration, 3),
-  trim: 'precise',
+  trim,
   speed: 1,
   speedSegments: [],
   textOverlays: [],
@@ -467,7 +468,8 @@ export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditAct
     push(AssetEditAction.Trim, {
       startMs: ms(edit.start),
       endMs: Math.max(ms(edit.start) + 1, ms(edit.end)),
-      ...(edit.trim === 'fast' && { mode: VideoTrimMode.Fast }),
+      // Always named: a trim without a mode is cut the server's default way (FL-422).
+      mode: edit.trim === 'fast' ? VideoTrimMode.Fast : VideoTrimMode.Precise,
     });
   }
 
@@ -514,13 +516,17 @@ export function toVideoEdits(edit: VideoEdit, source: VideoSource): AssetEditAct
 type Parameters = Record<string, unknown>;
 const numberOf = (parameters: Parameters, key: string, fallback: number) => finite(parameters[key], fallback);
 
-/** A stored recipe back into an edit the editor can show. Unknown actions are ignored. */
+/**
+ * A stored recipe back into an edit the editor can show. Unknown actions are ignored. `trim` is where
+ * a new trim starts when the recipe has none; a stored trim keeps the mode it was cut with.
+ */
 export function fromVideoEdits(
   edits: ReadonlyArray<{ action: string; parameters: unknown }>,
   source: VideoSource,
+  trim: VideoTrim = 'precise',
 ): VideoEdit {
   const duration = secondsOf(source);
-  const edit = initialVideoEdit(duration);
+  const edit = initialVideoEdit(duration, trim);
   let originalRect: CropRect | null = null;
   const ranges: VideoSpeedRange[] = [];
   const overlays: Array<Parameters> = [];

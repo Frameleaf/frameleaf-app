@@ -96,7 +96,12 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     group: 'library',
     sections: ['smart-search', 'faces', 'documents', 'sensitive-detection', 'descriptions', 'smart-albums'],
   },
-  { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
+  // FL-422: the Editing group (Edited masters, AI restoration, Studio & Dolby Vision) after Viewing.
+  {
+    id: 'editing',
+    group: 'library',
+    sections: ['image', 'video-transcoding', 'masters', 'restoration', 'studio'],
+  },
   // The template's People & sharing: partner sharing moved out of the personal settings list.
   { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
   // Library care (FL-366): File checks (the one checker), Things to fix, Duplicates with Merge older
@@ -288,6 +293,8 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   'smart-albums': 'frameleaf_page_smart_albums_description',
   image: 'frameleaf_page_previews_description',
   'video-transcoding': 'frameleaf_page_playback_description',
+  restoration: 'frameleaf_page_restoration_description',
+  studio: 'frameleaf_page_studio_description',
   'integrity-checks': 'frameleaf_page_file_checks_description',
   integrity: 'frameleaf_page_file_checks_description',
   repair: 'frameleaf_page_repair_description',
@@ -618,6 +625,7 @@ export type DirectoryGroupId =
   | 'recognition'
   | 'photos'
   | 'video_playback'
+  | 'editing'
   | 'sharing'
   | 'health'
   | 'repairs'
@@ -658,7 +666,13 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'sensitive-detection': 'recognition',
     'smart-albums': 'smart_albums',
   },
-  editing: { image: 'photos', 'video-transcoding': 'video_playback' },
+  editing: {
+    image: 'photos',
+    'video-transcoding': 'video_playback',
+    masters: 'editing',
+    restoration: 'editing',
+    studio: 'editing',
+  },
   sharing: { sharing: 'sharing' },
   care: {
     'integrity-checks': 'health',

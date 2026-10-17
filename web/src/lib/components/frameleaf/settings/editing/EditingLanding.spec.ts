@@ -34,6 +34,9 @@ const queue = (name: QueueName, waiting: number) =>
 const sections = [
   { key: 'image', title: 'Image output', subtitle: 'old', icon: '' },
   { key: 'video-transcoding', title: 'Video playback proxies', subtitle: 'old', icon: '' },
+  { key: 'masters', title: 'Edited masters', subtitle: 'How your edited photos and videos are saved.', icon: '' },
+  { key: 'restoration', title: 'AI restoration', subtitle: 'Clean up and sharpen old videos.', icon: '' },
+  { key: 'studio', title: 'Studio & Dolby Vision', subtitle: 'Studio exports.', icon: '' },
 ] as SettingsHostSection[];
 
 describe('Editing & playback landing (FL-366)', () => {
@@ -64,21 +67,19 @@ describe('Editing & playback landing (FL-366)', () => {
     );
   });
 
-  it('lists the Editing group, each row opening the page where that work is decided (ADMIN-P5)', () => {
+  it('lists the Editing group, each row opening its own page (ADMIN-P5, FL-422)', () => {
     draft.store = baseline();
     render(EditingLanding, { sections });
 
-    const editing = screen.getByRole('heading', { name: 'Editing' }).closest('section')!;
-    expect(within(editing).getByRole('link', { name: /AI restoration/ })).toHaveAttribute(
-      'href',
-      '/user-settings?area=processing&section=routing',
-    );
-    expect(within(editing).getByRole('link', { name: /Studio & Dolby Vision/ })).toHaveAttribute(
-      'href',
-      '/user-settings?area=processing&section=hardware',
-    );
-    // Nothing in the app sets how edited masters are saved yet, so the row is not offered.
-    expect(screen.queryByRole('link', { name: /Edited masters/ })).toBeNull();
+    const editing = within(screen.getByRole('heading', { name: 'Editing' }).closest('section')!);
+    expect(editing.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      '/user-settings?area=editing&section=masters',
+      '/user-settings?area=editing&section=restoration',
+      '/user-settings?area=editing&section=studio',
+    ]);
+    // Viewing keeps its two pages only.
+    const viewing = within(screen.getByRole('heading', { name: 'Viewing' }).closest('section')!);
+    expect(viewing.getAllByRole('link')).toHaveLength(2);
   });
 
   it('says copies are being made while work is waiting', async () => {
