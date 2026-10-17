@@ -3,7 +3,7 @@
 This page contains details about using OAuth in Frameleaf.
 
 :::tip
-Unable to set `app.immich:///oauth-callback` as a valid redirect URI? See [Mobile Redirect URI](#mobile-redirect-uri) for an alternative solution.
+Unable to set `frameleaf-auth:///oauth-callback` as a valid redirect URI? See [Mobile Redirect URI](#mobile-redirect-uri) for an alternative solution.
 :::
 
 ## Overview
@@ -29,14 +29,14 @@ Before enabling OAuth in Frameleaf, a new client application needs to be configu
 2. Configure Redirect URIs/Origins
 
    The **Sign-in redirect URIs** should include:
-   - `app.immich:///oauth-callback` - for logging in with OAuth from the [Mobile App](/features/mobile-app.mdx)
+   - `frameleaf-auth:///oauth-callback` - for logging in with OAuth from the [Mobile App](/features/mobile-app.mdx)
    - `http://DOMAIN:PORT/auth/login` - for logging in with OAuth from the Web Client
    - `http://DOMAIN:PORT/user-settings` - for manually linking OAuth in the Web Client
 
    Redirect URIs should contain all the domains you will be using to access Frameleaf. Some examples include:
 
    Mobile
-   - `app.immich:///oauth-callback` (You **MUST** include this for iOS and Android mobile apps to work properly)
+   - `frameleaf-auth:///oauth-callback` (You **MUST** include this for the iOS and Android apps to work properly)
 
    Localhost
    - `http://localhost:2283/auth/login`
@@ -119,28 +119,12 @@ Auto Launch can also be enabled on a per-request basis by navigating to `/auth/l
 
 ## Mobile Redirect URI
 
-The redirect URI for the mobile app is `app.immich:///oauth-callback`, which is a [Custom Scheme](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app). If this custom scheme is an invalid redirect URI for your OAuth Provider, you can work around this by doing the following:
+The redirect URI for the Frameleaf mobile app is `frameleaf-auth:///oauth-callback`, which is a [Custom Scheme](https://developer.apple.com/documentation/xcode/defining-a-custom-url-scheme-for-your-app). If this custom scheme is an invalid redirect URI for your OAuth Provider, use this server's forwarding route instead:
 
-1. Configure an http(s) endpoint to forwards requests to `app.immich:///oauth-callback`
-2. Whitelist the new endpoint as a valid redirect URI with your provider.
-3. Specify the new endpoint as the `Mobile Redirect URI Override`, in the OAuth settings.
+1. Allow `https://DOMAIN/api/oauth/frameleaf-mobile-redirect` as a redirect URI with your provider (for example `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`). Frameleaf forwards requests on this route to `frameleaf-auth:///oauth-callback`.
+2. Enable `Mobile Redirect URI Override` in the OAuth settings and set it to that address.
 
-With these steps in place, you should be able to use OAuth from the [Mobile App](/features/mobile-app.mdx) without a custom scheme redirect URI.
-
-:::info
-Frameleaf has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
-:::
-
-### Frameleaf mobile app
-
-The Frameleaf mobile app signs in with its own callback, `frameleaf-auth:///oauth-callback`, so it can be installed beside the upstream mobile app without either app opening for the other's sign-in. Without the override, register `frameleaf-auth:///oauth-callback` as a redirect URI with your provider.
-
-When the `Mobile Redirect URI Override` is enabled, the Frameleaf app is sent to `/api/oauth/frameleaf-mobile-redirect` on the same server, which forwards to `frameleaf-auth:///oauth-callback`. In that case:
-
-1. The override must be this server's `/api/oauth/mobile-redirect` address (for example `https://photos.example.com/api/oauth/mobile-redirect`). Any other override cannot be matched to a Frameleaf address, and Frameleaf app sign-in is refused with an error.
-2. Register a **second** redirect URI with your provider: the same address ending in `/api/oauth/frameleaf-mobile-redirect` (for example `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`).
-
-Administration → Settings → Authentication lists both apps' callbacks for the current configuration under **Mobile app callbacks**. For what does and does not carry over between the two apps, see [Moving to the Frameleaf app](./frameleaf-app-transition.md).
+Any other override address cannot be matched to this server, and app sign-in is refused with an error. Administration → Settings → Authentication shows the exact callback for the current configuration under **Mobile app callback**.
 
 ## Example Configuration
 
@@ -190,7 +174,7 @@ identity_providers:
         redirect_uris:
           - 'https://photos.example.com/auth/login'
           - 'https://photos.example.com/user-settings'
-          - 'app.immich:///oauth-callback'
+          - 'frameleaf-auth:///oauth-callback'
         scopes:
           - 'openid'
           - 'profile'
@@ -275,7 +259,7 @@ In the OAuth client's **Authorised redirect URIs**, select **Add URI** for each 
 
 1. `https://photos.example.com/auth/login`
 2. `https://photos.example.com/user-settings`
-3. `https://photos.example.com/api/oauth/mobile-redirect`
+3. `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`
 
 Google notes that changes can take from five minutes to a few hours to apply.
 
@@ -295,7 +279,7 @@ Configuration of OAuth in Frameleaf System Settings
 | Auto Register                | Enabled (optional)                                                           |
 | Auto Launch                  | Enabled                                                                      |
 | Mobile Redirect URI Override | Enabled (required)                                                           |
-| Mobile Redirect URI          | `https://photos.example.com/api/oauth/mobile-redirect`                       |
+| Mobile Redirect URI          | `https://photos.example.com/api/oauth/frameleaf-mobile-redirect`             |
 
 </details>
 

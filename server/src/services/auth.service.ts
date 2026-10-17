@@ -158,17 +158,13 @@ export const emailVerificationProblem = (profile: { email_verified?: unknown }):
 const LEGACY_MOBILE_REDIRECT_PATH = /\/oauth\/mobile-redirect\/?$/;
 
 /**
- * The HTTP address that forwards an OAuth callback to the Frameleaf app, derived from the
- * configured Immich mobile redirect (FL-131).
+ * The HTTP address that forwards an OAuth callback to the Frameleaf app when the mobile redirect
+ * override is on (FL-131), for identity providers that only accept `https` callbacks.
  *
- * The override exists because some identity providers only accept `https` callbacks. The Immich
- * app's callback is replaced by the configured `…/oauth/mobile-redirect`; the Frameleaf app's by
- * the sibling `…/oauth/frameleaf-mobile-redirect` on the same server, so the provider hands each
- * app back its own callback and neither app is opened for the other's sign-in.
- *
- * Only an override that is this server's `…/oauth/mobile-redirect` has a known sibling. Any other
- * address may not be this server at all, so there is nothing safe to derive, and the Frameleaf
- * callback is refused with setup guidance instead of being sent somewhere else.
+ * The documented override is this server's `…/oauth/frameleaf-mobile-redirect`, used as is. An older
+ * `…/oauth/mobile-redirect` override still maps to its `frameleaf-mobile-redirect` sibling on the same
+ * server. Any other address may not be this server at all, so the Frameleaf callback is refused with
+ * setup guidance instead of being sent somewhere else.
  */
 const frameleafRedirectUri = (mobileRedirectUri: string): string => {
   let url: URL | undefined;
@@ -177,11 +173,16 @@ const frameleafRedirectUri = (mobileRedirectUri: string): string => {
   } catch {
     url = undefined;
   }
+  if (url && url.pathname.replace(/\/$/, '').endsWith(FRAMELEAF_MOBILE_REDIRECT_PATH)) {
+    // The override already is this server's Frameleaf forwarder (the documented setup).
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  }
   if (!url || !LEGACY_MOBILE_REDIRECT_PATH.test(url.pathname)) {
     throw new BadRequestException(
       "Frameleaf app sign-in needs the mobile redirect override to be this server's " +
-        '/api/oauth/mobile-redirect address, with /api/oauth/frameleaf-mobile-redirect also registered ' +
-        'as a redirect URI with the identity provider',
+        '/api/oauth/frameleaf-mobile-redirect address, registered as a redirect URI with the identity provider',
     );
   }
   url.pathname = url.pathname.replace(LEGACY_MOBILE_REDIRECT_PATH, () => FRAMELEAF_MOBILE_REDIRECT_PATH);
