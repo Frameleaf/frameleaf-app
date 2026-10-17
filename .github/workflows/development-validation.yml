@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   development:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/FL-333-pg19') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:

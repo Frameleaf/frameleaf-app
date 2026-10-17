@@ -10,7 +10,6 @@ name: Test
   pull_request:
     branches:
       - main
-      - master/frameleaf-implementation
   push:
     branches:
       - main
@@ -401,7 +400,7 @@ jobs:
           build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
-          # The integration branch's registry cache (e2e-build-cache.yml). The Actions cache is not
+          # main's registry cache (e2e-build-cache.yml). The Actions cache is not
           # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
           cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}
@@ -485,7 +484,7 @@ jobs:
           build-args: NODE_IMAGE=${{ env.FRAMELEAF_CI_NODE_IMAGE }}
           load: true
           tags: frameleaf-medium:${{ github.sha }}
-          # The integration branch's registry cache (e2e-build-cache.yml). The Actions cache is not
+          # main's registry cache (e2e-build-cache.yml). The Actions cache is not
           # used: every pull request wrote its own multi-gigabyte copy and evicted the rest.
           cache-from: type=registry,ref=ghcr.io/frameleaf/frameleaf-server-build-cache:ci-linux-amd64
           secrets: mise_github_token=${{ github.token }}

@@ -3,8 +3,8 @@
 # The end-to-end and medium jobs in test.yml build server/Dockerfile on every pull request. Without a
 # cache that matches the target branch each of them compiles the image's media libraries from
 # source, about twenty minutes per job. This workflow builds the same image, with the same Compose
-# build definition the end-to-end jobs use, on every push to main or master/frameleaf-implementation
-# and writes the build cache under ci-<platform> tags. Pull request runs only read it.
+# build definition the end-to-end jobs use, on every push to main and
+# writes the build cache under ci-<platform> tags. Pull request runs only read it.
 #
 # It never runs pull request code, pushes no image, and never writes the release pipeline's cache
 # tags (linux-<arch>-cpu-prod, written by Deploy on main).
@@ -12,7 +12,7 @@ name: End-to-End Build Cache
 
 on:
   push:
-    branches: [main, master/frameleaf-implementation]
+    branches: [main]
 
 # A running export always finishes; a newer push replaces any queued run.
 concurrency:
@@ -24,7 +24,7 @@ permissions: {}
 jobs:
   publish:
     name: Write the ${{ matrix.platform }} build cache
-    if: github.repository == 'Frameleaf/frameleaf-app' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master/frameleaf-implementation') && github.event_name == 'push'
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     permissions:
