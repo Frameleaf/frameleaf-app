@@ -56,7 +56,14 @@ const fakeSelection = (accounts: number) => {
       reports.set(runId, { ...reports.get(runId)!, ...patch });
       return Promise.resolve();
     }),
-    listDueCoverageReports: vi.fn(() => Promise.resolve(reports.values().toArray().filter((r) => r.status === 'pending'))),
+    listDueCoverageReports: vi.fn(() =>
+      Promise.resolve(
+        reports
+          .values()
+          .filter((r) => r.status === 'pending')
+          .toArray(),
+      ),
+    ),
     getLatestCoverageReport: vi.fn(() => Promise.resolve(reports.values().toArray().at(-1))),
   };
   return { repository, reports };

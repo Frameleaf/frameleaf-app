@@ -256,7 +256,7 @@
     return date.toISOString().slice(0, 10);
   };
   const period = $derived.by((): Period => {
-    const first = selection?.dateRanges[0];
+    const first = selection?.dateRanges?.[0];
     if (!first) {
       return 'none';
     }
@@ -266,7 +266,7 @@
     return first.months === 60 ? '5y' : '12m';
   });
   const between = $derived(
-    selection?.dateRanges.find((range) => range.kind === CloudBackupDateRangeKind.Between) ?? null,
+    selection?.dateRanges?.find((range) => range.kind === CloudBackupDateRangeKind.Between) ?? null,
   );
 
   const setPeriod = (value: string) => {
@@ -350,7 +350,7 @@
       <Row label={$t('frameleaf_backup_keeps_favorites')} help={$t('frameleaf_backup_keeps_favorites_help')}>
         <Switch
           label={$t('frameleaf_backup_keeps_favorites_switch')}
-          checked={selection.favorites}
+          checked={selection.favorites ?? false}
           held={saving}
           onChange={(favorites) => void save({ favorites })}
         />
