@@ -64,6 +64,7 @@ import {
   unwrapBackupRecoveryKit,
   writeBackupHistory,
 } from 'src/utils/cloud-backup-recovery.js';
+import { backupUserFingerprint } from 'src/utils/cloud-backup-selection.js';
 import { backupKeyFile, bucketRef, emptyRunResult, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { readConfig } from 'src/utils/config.js';
 import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
@@ -2540,6 +2541,70 @@ describe(CloudBackupService.name, () => {
       expect(JSON.stringify(mocks.logger.log.mock.calls)).not.toContain(secret);
     });
 
+    describe('licence coverage (FL-362)', () => {
+      const ownerTwo = 'owner-2';
+      const withOwner = (id: string, sha: string, ownerId: string) => ({ ...asset(id, sha), ownerId });
+      const uploadedHashes = () =>
+        uploadedKeys()
+          .filter((objectKey) => objectKey.startsWith('o/'))
+          .map((objectKey) => objectKey.slice(2));
+      const recordedOwners = () =>
+        index.upsertEntries.mock.calls.flatMap(([, entries]) =>
+          (entries as CloudBackupEntry[]).map(({ ownerId, role }) => `${role}:${ownerId}`),
+        );
+
+      beforeEach(() => {
+        mocks.user.getList.mockResolvedValue([{ id: 'owner-1' }, { id: ownerTwo }] as never);
+        index.listAssets
+          .mockResolvedValueOnce([withOwner('asset-1', SHA_A, 'owner-1'), withOwner('asset-2', SHA_B, ownerTwo)])
+          .mockResolvedValueOnce([]);
+        index.listProfileImages.mockResolvedValue([
+          { userId: 'owner-1', path: '/data/profile/owner-1.jpg' },
+          { userId: ownerTwo, path: '/data/profile/owner-2.jpg' },
+        ]);
+      });
+
+      it('uploads only the accounts an Individual licence covers', async () => {
+        cloudBackup.rotate.mockResolvedValue({
+          ...rotated,
+          coverage: { scope: 'users', userFingerprints: [backupUserFingerprint('instance-1', 'owner-1')] },
+        });
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(operations.complete).toHaveBeenCalled();
+        expect(uploadedHashes()).toContain(SHA_A);
+        expect(uploadedHashes()).not.toContain(SHA_B);
+        expect(recordedOwners()).toEqual(expect.arrayContaining(['original:owner-1', 'profile:owner-1']));
+        expect(recordedOwners()).not.toContain(`original:${ownerTwo}`);
+        expect(recordedOwners()).not.toContain(`profile:${ownerTwo}`);
+        // the database copy is the whole library, whoever the licence covers
+        expect(uploadedKeys()).toContain(dumpKey);
+      });
+
+      it('uploads no account when the licence covers nobody, and still copies the database', async () => {
+        cloudBackup.rotate.mockResolvedValue({ ...rotated, coverage: { scope: 'none' } });
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(uploadedHashes()).toEqual([]);
+        expect(recordedOwners()).toEqual([]);
+        expect(uploadedKeys()).toContain(dumpKey);
+      });
+
+      it('uploads every account under a Server licence', async () => {
+        cloudBackup.rotate.mockResolvedValue({ ...rotated, coverage: { scope: 'all' } });
+
+        await sut.run(managedOperation(), 'claim-1');
+
+        expect(uploadedHashes()).toEqual(expect.arrayContaining([SHA_A, SHA_B]));
+        expect(recordedOwners()).toEqual(
+          expect.arrayContaining(['original:owner-1', `original:${ownerTwo}`, `profile:${ownerTwo}`]),
+        );
+        expect(mocks.user.getList).not.toHaveBeenCalled();
+      });
+    });
+
     it('retains the same transfer operation while Cloud renewal is temporarily unavailable', async () => {
       store.uploadFile.mockRejectedValueOnce(new ManagedBackupAuthorizationError(undefined, 120_000));
       await sut.run(managedOperation(), 'claim-1');
@@ -4044,6 +4109,7 @@ describe(CloudBackupService.name, () => {
         bucketKey: key,
         clientKeys: structuredClone(fixture.file.client),
         uploadedNow: new Set<string>(),
+        eligibleOwners: null,
         progress: {
           result: {
             ...emptyRunResult(),

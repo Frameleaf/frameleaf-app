@@ -163,6 +163,7 @@ import {
   writeBackupHistory,
 } from 'src/utils/cloud-backup-recovery.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
+import { type BackupLicenceScope, backupUserFingerprint, isLicenceEligible } from 'src/utils/cloud-backup-selection.js';
 import {
   type BackupTransferJournal,
   backupTransferSchema,
@@ -1683,6 +1684,7 @@ export class CloudBackupService {
       progress,
       uploadedNow: new Set(),
       clientKeys: opened.clientKeys,
+      eligibleOwners: await this.eligibleOwners(opened.licence),
     };
 
     const running = await this.operations.reportProgress(id, claimToken, {
@@ -1789,12 +1791,15 @@ export class CloudBackupService {
     let connection: CloudBackupConnection;
     let readOnly = false;
     let current = metadata;
+    // FL-362: who the licence covers, from the grant rotated for this operation; your own bucket has no gate
+    let licence: BackupLicenceScope = { scope: 'own-bucket' };
     if (metadata.target === 'managed') {
       const opened = await this.openManaged(metadata, operation, claimToken);
       if (!opened) {
         return null;
       }
       connection = opened.connection;
+      licence = opened.coverage;
       readOnly = opened.managed.readOnly;
       // FL-301: the grant just issued decides the read-only state and its wording, not the one last saved
       current = { ...metadata, managed: opened.managed };
@@ -1825,7 +1830,16 @@ export class CloudBackupService {
     }
     connection.recoveryKeys = clientKeys?.keys;
     await this.attachClientHistory(connection, metadata, importedHistory);
-    return { bucketRef: metadata.bucketRef, metadata: current, settings, connection, bucketKey, readOnly, clientKeys };
+    return {
+      bucketRef: metadata.bucketRef,
+      metadata: current,
+      settings,
+      connection,
+      bucketKey,
+      readOnly,
+      clientKeys,
+      licence,
+    };
   }
 
   /** Your own bucket, as the settings name it; it must still be the bucket this server claimed. */
@@ -1864,7 +1878,11 @@ export class CloudBackupService {
     metadata: FrameleafCloudBackup,
     operation: MediaOperation,
     claimToken: string,
-  ): Promise<{ connection: CloudBackupConnection; managed: FrameleafCloudBackupManaged } | null> {
+  ): Promise<{
+    connection: CloudBackupConnection;
+    managed: FrameleafCloudBackupManaged;
+    coverage: BackupGrantResponse['coverage'];
+  } | null> {
     let grant: BackupGrantResponse;
     try {
       grant = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () =>
@@ -1920,7 +1938,7 @@ export class CloudBackupService {
       throw new Error(
         `Frameleaf-managed storage is read-only for this server${readOnlyReason({ ...metadata, managed })}, so backups are paused. Your library is untouched and restores keep working.`,
       );
-    return { connection, managed };
+    return { connection, managed, coverage: grant.coverage };
   }
 
   private backupOperation(operation: MediaOperation): BackupOperation {
@@ -2251,7 +2269,8 @@ export class CloudBackupService {
 
     await this.backUpFiles(
       run,
-      page.flatMap((asset) => this.filesOf(asset)),
+      // FL-362: an account the licence does not cover keeps its library here; none of it is uploaded
+      page.filter((asset) => this.mayUpload(run, asset.ownerId)).flatMap((asset) => this.filesOf(asset)),
     );
     run.progress.result = {
       ...run.progress.result,
@@ -2260,6 +2279,32 @@ export class CloudBackupService {
       total: Math.max(run.progress.result.total ?? 0, run.progress.result.assets + page.length),
     };
     return this.checkpoint(run);
+  }
+
+  /**
+   * FL-362: the accounts a run may upload for, from the licence coverage of the grant rotated for it. A
+   * Server licence (or your own bucket) covers everyone; Individual licences cover the accounts they are
+   * bound to (`fingerprint.user`); none covers nobody. Null: every account.
+   */
+  private async eligibleOwners(licence: BackupLicenceScope): Promise<Set<string> | null> {
+    if (licence.scope === 'all' || licence.scope === 'own-bucket') {
+      return null;
+    }
+    if (licence.scope === 'none') {
+      return new Set();
+    }
+    const identity = await loadInstanceIdentity(this.gatewayDeps());
+    const users = await this.userRepository.getList({ withDeleted: true });
+    return new Set(
+      users
+        .map(({ id }) => id)
+        .filter((id) => isLicenceEligible(licence, backupUserFingerprint(identity.instanceId, id))),
+    );
+  }
+
+  /** FL-362: whether this run uploads an account's files. */
+  private mayUpload(run: Run, ownerId: string | null) {
+    return !run.eligibleOwners || (!!ownerId && run.eligibleOwners.has(ownerId));
   }
 
   private filesOf(asset: CloudBackupAsset): FileToBackUp[] {
@@ -2292,14 +2337,16 @@ export class CloudBackupService {
     const profiles = await this.index.listProfileImages();
     await this.backUpFiles(
       run,
-      profiles.map(({ userId, path }) => ({
-        fileKey: `profile:${userId}`,
-        assetId: null,
-        ownerId: userId,
-        role: 'profile',
-        path,
-        recorded: null,
-      })),
+      profiles
+        .filter(({ userId }) => this.mayUpload(run, userId))
+        .map(({ userId, path }) => ({
+          fileKey: `profile:${userId}`,
+          assetId: null,
+          ownerId: userId,
+          role: 'profile',
+          path,
+          recorded: null,
+        })),
     );
     run.progress.result = { ...run.progress.result, phase: 'manifest' };
     return this.checkpoint(run);
@@ -4794,6 +4841,8 @@ type OpenedBucket = CloudBackupBucket & {
   metadata: FrameleafCloudBackup;
   settings: SystemConfig['frameleafCloud']['cloudBackup'];
   readOnly: boolean;
+  /** FL-362: the accounts the licence lets this operation back up. */
+  licence: BackupLicenceScope;
 };
 
 /** FL-164: what a restore's Activity row counts: files, and progress by bytes. */
@@ -4872,4 +4921,6 @@ type Run = {
   progress: { result: CloudBackupRunResult };
   /** Hashes this claim uploaded, so a second file with the same content in this run is never uploaded. */
   uploadedNow: Set<string>;
+  /** FL-362: the accounts whose originals and profile images this run uploads; null: every account. */
+  eligibleOwners: Set<string> | null;
 };
