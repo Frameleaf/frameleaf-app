@@ -478,7 +478,7 @@ export class EdgeStateService {
       ...base,
       status: 'starting',
       reason: desired.buddyOnly
-        ? 'Buddy Backup transport only. Ordinary remote access is off.'
+        ? 'Remote access is off. Only Buddy Backup reaches this server from outside your home network.'
         : desired.noRelay
           ? RELAY_NEEDS_PLAN
           : null,
@@ -683,7 +683,11 @@ export class EdgeStateService {
     ) {
       await this.stopServing();
       await this.writeState(
-        { ...state, reason: 'Buddy recovery needs an existing remote enrollment and edge secret.' },
+        {
+          ...state,
+          reason:
+            'Buddy Backup recovery needs this server to have had remote access set up before, with the same Frameleaf Cloud link.',
+        },
         now,
       );
       return;

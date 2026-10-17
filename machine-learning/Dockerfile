@@ -52,6 +52,8 @@ RUN node studio/tools/engine.mjs prepare && \
     node studio/tools/bundled-worker-package.mjs /opt/frameleaf-studio
 # The title families the server's render font catalogue resolves, installed as system fonts.
 COPY --from=frameleaf server/resources/studio-fonts /opt/frameleaf-studio/fonts/
+# Their SIL Open Font License travels with them; each family's copyright is in the notices below.
+COPY --from=frameleaf licenses/texts/ofl-1.1.txt /opt/frameleaf-studio/fonts/OFL.txt
 
 FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
 
@@ -163,10 +165,13 @@ RUN sh /tmp/install-studio-runtime.sh && rm /tmp/install-studio-runtime.sh
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 COPY --from=studio-worker /opt/frameleaf-studio /opt/frameleaf-studio
 RUN mkdir -p /usr/share/fonts/truetype/frameleaf-studio && \
-    mv /opt/frameleaf-studio/fonts/*.ttf /usr/share/fonts/truetype/frameleaf-studio/ && \
+    mv /opt/frameleaf-studio/fonts/*.ttf /opt/frameleaf-studio/fonts/OFL.txt /usr/share/fonts/truetype/frameleaf-studio/ && \
     rmdir /opt/frameleaf-studio/fonts && \
     fc-cache -f > /dev/null && \
     node --version
+# Third-party notices, as the server image ships them (FL-86): every acknowledgement with its
+# licence text, the Studio fonts' copyrights among them.
+COPY --from=frameleaf licenses /licenses/third-party/
 
 WORKDIR /usr/src
 ENV TRANSFORMERS_CACHE=/cache \

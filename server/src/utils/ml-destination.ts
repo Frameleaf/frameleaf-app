@@ -623,13 +623,13 @@ const evaluateCloudAdmission = (
   if (holdUsd !== null && holdUsd !== undefined && holdUsd > available) {
     return refuse(
       MlAdmissionRefusal.WalletInsufficient,
-      `${destination.name}: this job needs ${holdUsd.toFixed(2)} USD held and the AI Wallet has ${available.toFixed(2)} USD available`,
+      `${destination.name}: this job needs $${holdUsd.toFixed(2)} held and the AI Wallet has $${available.toFixed(2)} available`,
     );
   }
   if (facts.dailyCapUsd !== null && facts.spentTodayUsd >= facts.dailyCapUsd) {
     return refuse(
       MlAdmissionRefusal.BudgetExceeded,
-      `${destination.name}: today's AI Wallet limit of ${facts.dailyCapUsd.toFixed(2)} USD is reached`,
+      `${destination.name}: today's AI Wallet limit of $${facts.dailyCapUsd.toFixed(2)} is reached`,
     );
   }
   if (!probe.workloads.includes(workload)) {
@@ -733,7 +733,7 @@ export const evaluateAdmission = ({
   if (!(isCloud && createdCloudJob) && destination.budgetLimitUsd !== null && spentUsd >= destination.budgetLimitUsd) {
     return refuse(
       MlAdmissionRefusal.BudgetExceeded,
-      `${destination.name} has spent ${spentUsd.toFixed(2)} USD of its ${destination.budgetLimitUsd.toFixed(2)} USD limit`,
+      `${destination.name} has spent $${spentUsd.toFixed(2)} of its $${destination.budgetLimitUsd.toFixed(2)} limit`,
     );
   }
   if (isCloud) {
