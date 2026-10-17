@@ -43,6 +43,7 @@ import {
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
 import { remoteAccessPublication } from 'src/utils/public-url.js';
+import { systemTimeZone } from 'src/utils/server-time-zone.js';
 
 @Injectable()
 export class ServerService extends BaseService {
@@ -158,6 +159,7 @@ export class ServerService extends BaseService {
       // the server only knows <version>, so link the release search for it.
       versionUrl: `https://github.com/Frameleaf/frameleaf-app/releases?q=frameleaf-${version}&expanded=true`,
       licensed,
+      systemTimeZone: systemTimeZone(),
       ...buildMetadata,
       ...buildVersions,
     };
@@ -353,6 +355,7 @@ export class ServerService extends BaseService {
 
     return {
       loginPageMessage: config.server.loginPageMessage,
+      loginPageMessageFormat: config.server.loginPageMessageFormat,
       serverName: config.server.name,
       trashDays: config.trash.days,
       userDeleteDelay: config.user.deleteDelay,

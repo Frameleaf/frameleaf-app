@@ -17,8 +17,11 @@ export type WordingInsert = {
   sample: Translations;
 };
 
+/** The settings that hold an email's wording (FL-426 put other email settings beside them). */
+export type WordingKey = Extract<keyof AdminConfigTemplateEmailsDto, `${string}Template`>;
+
 export type Wording = {
-  key: keyof AdminConfigTemplateEmailsDto;
+  key: WordingKey;
   name: Translations;
   when: Translations;
   /** The wording Frameleaf sends when none is set, in the same bracketed words. */
@@ -40,6 +43,11 @@ const ALBUM_LINK: WordingInsert = {
   code: '{baseUrl}/albums/{albumId}',
   label: 'frameleaf_notify_wording_insert_album_link',
   sample: 'frameleaf_notify_wording_sample_album_link',
+};
+const SHARER: WordingInsert = {
+  code: '{senderName}',
+  label: 'frameleaf_notify_wording_insert_sharer',
+  sample: 'frameleaf_notify_wording_sample_sharer',
 };
 
 export const WORDINGS: readonly Wording[] = Object.freeze([
@@ -72,16 +80,7 @@ export const WORDINGS: readonly Wording[] = Object.freeze([
     name: 'frameleaf_notify_wording_invite',
     when: 'frameleaf_notify_wording_invite_when',
     standard: 'frameleaf_notify_wording_invite_standard',
-    inserts: [
-      PERSON,
-      {
-        code: '{senderName}',
-        label: 'frameleaf_notify_wording_insert_sharer',
-        sample: 'frameleaf_notify_wording_sample_sharer',
-      },
-      ALBUM,
-      ALBUM_LINK,
-    ],
+    inserts: [PERSON, SHARER, ALBUM, ALBUM_LINK],
   },
   {
     key: 'albumUpdateTemplate',
@@ -92,6 +91,13 @@ export const WORDINGS: readonly Wording[] = Object.freeze([
   },
 ]);
 
+/**
+ * FL-426: "First line of an invitation" (`templates.email.invitationFirstLine`), one line of plain
+ * text in place of the standard greeting of an album or items shared with someone. It takes the same
+ * bracketed names as the invitation's wording: the person's name and who shared it.
+ */
+export const FIRST_LINE: Pick<Wording, 'inserts'> = Object.freeze({ inserts: [PERSON, SHARER] });
+
 type Translate = (key: Translations) => string;
 
 /** Longer codes first, so the album link is matched before the server address inside it. */
@@ -100,8 +106,17 @@ const byLongestCode = (inserts: readonly WordingInsert[]) => [...inserts].sort((
 /** HTML other than line breaks: such a template is shown and kept exactly as written. */
 const hasMarkup = (text: string) => /<(?!br\s*\/?>)[a-z!/]/i.test(text);
 
+/**
+ * The standard wording with an invitation's own first line in place of its greeting (FL-426), as
+ * the server sends it. Only the album invitation has such a line; the other emails keep theirs.
+ */
+export const standardWithFirstLine = (standard: string, wording: Wording, firstLine: string): string =>
+  wording.key === 'albumInviteTemplate' && firstLine.trim()
+    ? [firstLine.trim(), ...standard.split('\n').slice(1)].join('\n')
+    : standard;
+
 /** A stored template in plain words: codes as bracketed names, line breaks as new lines. */
-export const toWords = (template: string, wording: Wording, t: Translate): string => {
+export const toWords = (template: string, wording: Pick<Wording, 'inserts'>, t: Translate): string => {
   let text = hasMarkup(template) ? template : template.replaceAll(/<br\s*\/?>\n?/gi, '\n');
   for (const insert of byLongestCode(wording.inserts)) {
     // A replacer function: a translated name is inserted as written, never read as a `$&` pattern.
@@ -111,7 +126,7 @@ export const toWords = (template: string, wording: Wording, t: Translate): strin
 };
 
 /** Plain words back as the template the server renders: names as codes, new lines as line breaks. */
-export const toTemplate = (words: string, wording: Wording, t: Translate): string => {
+export const toTemplate = (words: string, wording: Pick<Wording, 'inserts'>, t: Translate): string => {
   let text = words;
   for (const insert of wording.inserts) {
     text = text.replaceAll(`[${t(insert.label)}]`, () => insert.code);
@@ -120,7 +135,7 @@ export const toTemplate = (words: string, wording: Wording, t: Translate): strin
 };
 
 /** The words with each bracketed name replaced by its sample, for "Preview with sample names". */
-export const withSamples = (words: string, wording: Wording, t: Translate): string => {
+export const withSamples = (words: string, wording: Pick<Wording, 'inserts'>, t: Translate): string => {
   let text = words;
   for (const insert of wording.inserts) {
     text = text.replaceAll(`[${t(insert.label)}]`, () => t(insert.sample));

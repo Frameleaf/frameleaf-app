@@ -23,6 +23,8 @@ describe(CloudBackupAdminController.name, () => {
     startRestore: vi.fn(),
     storeEscrow: vi.fn(),
     removeEscrow: vi.fn(),
+    getCoverage: vi.fn(),
+    listManifestExclusions: vi.fn(),
   };
   const runId = '0192a4c1-5e2b-7c91-9a4d-2f6b1e0c8d55';
 
@@ -57,6 +59,8 @@ describe(CloudBackupAdminController.name, () => {
       ['post', '/admin/cloud/backup/restore'],
       ['put', '/admin/cloud/backup/escrow'],
       ['delete', '/admin/cloud/backup/escrow'],
+      ['get', '/admin/cloud/backup/coverage'],
+      ['post', '/admin/cloud/backup/manifests/exclusions'],
     ] as const) {
       await request(ctx.getHttpServer())[method](path);
       expect(ctx.authenticate).toHaveBeenCalled();
@@ -87,6 +91,22 @@ describe(CloudBackupAdminController.name, () => {
       .send({ ...body, key: '' });
     expect(missing.status).toBe(400);
     expect(service.setup).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts what a kept backup left out by its manifest key only (FL-362)', async () => {
+    service.listManifestExclusions.mockResolvedValue({ totals: {} });
+    const key = 'm/20261016T120000Z.json.gz';
+
+    const { status } = await request(ctx.getHttpServer())
+      .post('/admin/cloud/backup/manifests/exclusions')
+      .send({ manifestKey: key });
+    expect(status).toBe(200);
+    expect(service.listManifestExclusions).toHaveBeenCalledWith({ manifestKey: key });
+
+    const invalid = await request(ctx.getHttpServer())
+      .post('/admin/cloud/backup/manifests/exclusions')
+      .send({ manifestKey: '../etc/passwd' });
+    expect(invalid.status).toBe(400);
   });
 
   it('unlocks with a key and refuses an empty one', async () => {

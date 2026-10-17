@@ -44,6 +44,7 @@ describe('/server', () => {
         libvips: expect.any(String),
         exiftool: expect.any(String),
         licensed: false,
+        systemTimeZone: expect.any(String),
       });
       if ('libraw' in body) {
         expect(body.libraw).toEqual(expect.any(String));
@@ -194,6 +195,7 @@ describe('/server', () => {
       const { defaultImageDescriptionRawPromptTemplate, ...rest } = body;
       expect(rest).toEqual({
         loginPageMessage: '',
+        loginPageMessageFormat: 'plain',
         serverName: '',
         oauthButtonText: 'Login with OAuth',
         oauthAccountManagementUrl: '',

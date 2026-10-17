@@ -433,6 +433,7 @@ test.describe('Shared Links', () => {
         await page.goto(`${gate()}?continue=%2Fadmin%2Fusers&redirect=%2Fphotos&returnTo=%2F%2Fexample.com`);
         await unlock(page);
 
+        await page.waitForURL((url) => url.pathname === gate() && !url.search);
         await page.getByRole('heading', { name: 'Test Album' }).waitFor();
         expect(new URL(page.url()).pathname).toBe(gate());
         // Still the public frame, with no private navigation.

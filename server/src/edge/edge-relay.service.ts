@@ -48,7 +48,7 @@ import {
   relayTokenResponseSchema,
   relayVisitorNameAllowed,
 } from 'src/utils/frameleaf-relay.js';
-import { TEARDOWN_MS, remoteEndpoints } from 'src/utils/frameleaf-remote-access.js';
+import { RELAY_NEEDS_PLAN, TEARDOWN_MS, remoteEndpoints } from 'src/utils/frameleaf-remote-access.js';
 
 /** Discovery and a DPoP-bound instance token, fetched only when a call needs the cloud. */
 export type EdgeCloudSession = { document: FrameleafDiscoveryDocument; token: FrameleafInstanceToken };
@@ -72,6 +72,11 @@ type TunnelEnd = { reason: string; goaway: string | null };
 
 /** A revoked or suspended server waits this long before it asks again, unless it is linked again first. */
 const REVOKED_RETRY_MS = 60 * 60 * 1000;
+/**
+ * FL-437: Frameleaf Cloud refused the relay because the account has no plan (`entitlement-missing`). The
+ * direct name keeps working; the relay is asked again after this long, or at once when a plan arrives.
+ */
+const PLAN_RETRY_MS = 10 * 60 * 1000;
 /** An in-band refresh the relay refused is tried again after this long (it keeps the tunnel until `exp`). */
 const REFRESH_RETRY_MS = 60 * 1000;
 /** The relay must answer an in-band AUTH within this long. */
@@ -114,6 +119,8 @@ export class EdgeRelayService {
   private attempt = 0;
   private reselect = true;
   private revoked: { linkKey: string; until: number } | null = null;
+  /** FL-437: Frameleaf Cloud refused the relay for want of a plan; asked again after `until`. */
+  private planMissing: { linkKey: string; until: number } | null = null;
   private relayStatus: FrameleafRemoteAccess['relay'] = { connected: false };
   private bytesBefore = { in: 0, out: 0 };
   private disconnectedSince: number | null = null;
@@ -171,6 +178,9 @@ export class EdgeRelayService {
     if (this.revoked && this.revoked.linkKey !== target.linkKey) {
       this.revoked = null;
     }
+    if (this.planMissing && this.planMissing.linkKey !== target.linkKey) {
+      this.planMissing = null;
+    }
     this.disconnectedSince ??= now;
     const abort = new AbortController();
     this.abort = abort;
@@ -206,6 +216,7 @@ export class EdgeRelayService {
     this.attempt = 0;
     this.disconnectedSince = null;
     this.revoked = null;
+    this.planMissing = null;
     this.relayStatus = { ...this.relayStatus, connected: false };
   }
 
@@ -218,9 +229,13 @@ export class EdgeRelayService {
       connected,
       bytesIn: this.bytesBefore.in + (connected && socket ? socket.bytesRead : 0),
       bytesOut: this.bytesBefore.out + (connected && socket ? socket.bytesWritten : 0),
+      // without a plan there is no relay to miss: no "relay disconnected" notice
       disconnectedSince:
-        connected || this.disconnectedSince === null ? null : new Date(this.disconnectedSince).toISOString(),
+        connected || this.disconnectedSince === null || this.planMissing
+          ? null
+          : new Date(this.disconnectedSince).toISOString(),
       revoked: !!this.revoked,
+      ...(!connected && this.planMissing && { needsPlan: true }),
     };
   }
 
@@ -234,10 +249,18 @@ export class EdgeRelayService {
         continue;
       }
       this.revoked = null;
+      if (this.planMissing && this.planMissing.linkKey === target.linkKey && this.planMissing.until > Date.now()) {
+        await this.wait(this.planMissing.until - Date.now(), signal);
+        continue;
+      }
       let end: TunnelEnd | null = null;
       try {
         if (this.reselect && !target.recovery) {
           await this.select(target).catch((error: unknown) => {
+            if (cloudErrorCode(error) === 'entitlement-missing') {
+              // FL-437: no plan, no relay: the token is not asked for either
+              throw error;
+            }
             // the enrolment's relay stays in use
             this.logger.warn(`No other relay could be selected: ${message(error)}`);
           });
@@ -272,6 +295,10 @@ export class EdgeRelayService {
         : error instanceof FrameleafCloudError
           ? cloudErrorCode(error)
           : null;
+    if (code === 'entitlement-missing' && !target.recovery) {
+      this.withoutPlan(target);
+      return;
+    }
     this.note(message(error));
     if (
       (target.recovery && error instanceof FrameleafCloudError && [401, 403, 404, 409].includes(error.status ?? 0)) ||
@@ -301,6 +328,26 @@ export class EdgeRelayService {
     } else if (end.goaway === TUNNEL_DRAINING) {
       this.reselect = true;
     }
+  }
+
+  /**
+   * FL-437 (FC-147): a licensed server without a plan has its direct name and certificate but no relay.
+   * That is not a failure: logged once, no relay-down notice, the selection is not counted against
+   * the relay, and the relay is asked again after a while in case a plan was bought meanwhile.
+   */
+  private withoutPlan(target: EdgeRelayTarget) {
+    if (!this.planMissing) {
+      this.logger.log('Frameleaf Cloud has no relay for this server without a plan; it is reached directly');
+    }
+    this.planMissing = { linkKey: target.linkKey, until: Date.now() + PLAN_RETRY_MS };
+    this.reselect = true;
+    this.failures = 0;
+    this.relayStatus = {
+      ...this.relayStatus,
+      connected: false,
+      lastError: RELAY_NEEDS_PLAN,
+      lastErrorAt: new Date().toISOString(),
+    };
   }
 
   private stopUntilLinked(target: EdgeRelayTarget) {
@@ -661,6 +708,7 @@ export class EdgeRelayService {
         host: first.relay.host,
         connectedAt: new Date().toISOString(),
       };
+      this.planMissing = null;
       this.disconnectedSince = null;
       this.logger.log(`Connected to the Frameleaf relay ${first.relay.id}`);
       // bytes the relay sent right after READY were put back on the socket; the session reads them first

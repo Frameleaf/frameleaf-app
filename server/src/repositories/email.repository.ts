@@ -82,6 +82,13 @@ interface BaseEmailProps {
    */
   baseUrl?: string;
   customTemplate?: string;
+  /** FL-426: the Frameleaf name and logo at the top (`templates.email.showBranding`); on unless false. */
+  showBranding?: boolean;
+}
+
+/** FL-426: an invitation's own first line (`templates.email.invitationFirstLine`); empty keeps "Hey {name}!". */
+interface InvitationEmailProps {
+  firstLine?: string;
 }
 
 export interface TestEmailProps extends BaseEmailProps {
@@ -94,7 +101,7 @@ export interface WelcomeEmailProps extends BaseEmailProps {
   password?: string;
 }
 
-export interface AlbumInviteEmailProps extends BaseEmailProps {
+export interface AlbumInviteEmailProps extends BaseEmailProps, InvitationEmailProps {
   albumName: string;
   albumId: string;
   senderName: string;
@@ -103,7 +110,7 @@ export interface AlbumInviteEmailProps extends BaseEmailProps {
 }
 
 /** FL-83 (AL-30b): items shared with a person; `link` opens Sharing › Shared with you. */
-export interface ItemShareEmailProps extends BaseEmailProps {
+export interface ItemShareEmailProps extends BaseEmailProps, InvitationEmailProps {
   senderName: string;
   recipientName: string;
   count: number;

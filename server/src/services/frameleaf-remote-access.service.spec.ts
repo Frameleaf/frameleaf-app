@@ -109,7 +109,7 @@ describe(FrameleafRemoteAccessService.name, () => {
     it('says why remote access cannot be turned on, as the prototype does', async () => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD']) });
       await expect(sut.getStatus()).resolves.toMatchObject({
-        unavailableReason: 'Remote access is included with a Frameleaf Cloud plan.',
+        unavailableReason: 'Remote access needs a Server licence or a Frameleaf Cloud plan.',
         enabled: false,
         status: 'off',
       });
@@ -135,6 +135,69 @@ describe(FrameleafRemoteAccessService.name, () => {
         edgeState({ updatedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString() }),
       );
       await expect(sut.getStatus()).resolves.toMatchObject({ status: 'unknown', directListening: false });
+    });
+  });
+
+  describe('a Server licence without a plan (FL-437)', () => {
+    const WAN = 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443';
+    const serverLicence = (): FrameleafLicense => ({ ...license(['SUPPORTER_SERVER']), kind: 'server', source: 'key' });
+    const NO_PLAN = 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.';
+
+    beforeEach(() => {
+      metadata.set(SystemMetadataKey.FrameleafLicense, { key: serverLicence(), plan: null });
+      metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { remoteAccess: { enabled: true } } });
+      metadata.set(
+        SystemMetadataKey.FrameleafRemoteAccess,
+        edgeState({
+          reason: NO_PLAN,
+          relay: { connected: false, needsPlan: true },
+          direct: {
+            listening: true,
+            port: 2443,
+            cgnatSuspected: false,
+            wan: {
+              key: '203.0.113.7:2443',
+              uri: WAN,
+              verified: true,
+              reason: null,
+              checkedAt: new Date().toISOString(),
+            },
+          },
+        }),
+      );
+    });
+
+    it('lets remote access be turned on and publishes the direct address, never the relay name', async () => {
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        unavailableReason: null,
+        status: 'ready',
+        reason: NO_PLAN,
+        relayNeedsPlan: true,
+        publicUrl: WAN,
+        frameleafAddress: WAN,
+        relayConnected: false,
+      });
+      await sut.update(authStub.admin, { enabled: false });
+      await expect(sut.update(authStub.admin, { enabled: true })).resolves.toMatchObject({ enabled: true });
+    });
+
+    it('refuses the custom hostname and the relay meter, which need the relay, without asking Frameleaf Cloud', async () => {
+      await expect(sut.setCustomHostname(authStub.admin, { hostname: 'photos.example.com' })).rejects.toThrow(NO_PLAN);
+      await expect(sut.getUsage(authStub.admin)).rejects.toThrow(NO_PLAN);
+      expect(calls).toEqual([]);
+    });
+
+    it('reports a relay Frameleaf Cloud refused for want of a plan, even with a plan certificate here', async () => {
+      metadata.set(SystemMetadataKey.FrameleafLicense, {
+        key: serverLicence(),
+        plan: license(['CLOUD', 'REMOTE_ACCESS']),
+      });
+      await expect(sut.getStatus()).resolves.toMatchObject({ relayNeedsPlan: true, frameleafAddress: WAN });
+      metadata.set(SystemMetadataKey.FrameleafRemoteAccess, edgeState());
+      await expect(sut.getStatus()).resolves.toMatchObject({
+        relayNeedsPlan: false,
+        frameleafAddress: 'https://r.u225vlzhsdlhwh4l.frameleaf.net',
+      });
     });
   });
 
@@ -202,7 +265,7 @@ describe(FrameleafRemoteAccessService.name, () => {
     it('turns remote access on only on a linked, entitled server, and keeps the link in step', async () => {
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD']) });
       await expect(sut.update(authStub.admin, { enabled: true })).rejects.toThrow(
-        'Remote access is included with a Frameleaf Cloud plan.',
+        'Remote access needs a Server licence or a Frameleaf Cloud plan.',
       );
       metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD', 'REMOTE_ACCESS']) });
 

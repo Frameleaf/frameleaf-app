@@ -49,6 +49,7 @@ import {
   VideoContainerSchema,
 } from 'src/enum.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { isServerTimeZone } from 'src/utils/server-time-zone.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -77,6 +78,26 @@ const cronExpressionSchema = z
 
 const emptyOrUrl = (error: string) =>
   z.string().refine((url) => url.length === 0 || z.url().safeParse(url).success, { error });
+
+/**
+ * FL-426: how the sign-in page shows the welcome message (`server.loginPageMessage`). Kept beside the
+ * setting rather than in enum.ts, whose digest the schema catalog records: it names no database type.
+ */
+export enum LoginPageMessageFormat {
+  /** Shown exactly as typed. */
+  Plain = 'plain',
+  /** Web formatting (HTML): links, bold and lists, cleaned of scripts, event handlers and remote embeds. */
+  Html = 'html',
+}
+
+/**
+ * FL-426: one schema for the setting and the server config the apps read, so both name the same enum.
+ * Its visibility (everyone: the sign-in page needs it before anyone signs in) is set on the setting.
+ */
+export const LoginPageMessageFormatSchema = z
+  .enum(LoginPageMessageFormat)
+  .describe('How the welcome message is shown: as typed (plain) or as cleaned web formatting (html)')
+  .meta({ id: 'LoginPageMessageFormat' });
 
 const AdminConfigIntegrityJobSchema = z
   .object({
@@ -1202,6 +1223,22 @@ const AdminConfigSchemaWithVisibility = z
             welcomeTemplate: z.string().describe('Welcome template'),
             albumInviteTemplate: z.string().describe('Album invite template'),
             albumUpdateTemplate: z.string().describe('Album update template'),
+            // FL-426: "First line of an invitation" and "Show the Frameleaf name and logo"
+            // (settings-v2/server/notifications.jsx, The emails themselves). Defaulted, so a stored
+            // configuration, a config file or an older client that does not name them keeps the
+            // standard greeting and the branding.
+            invitationFirstLine: z
+              .string()
+              .trim()
+              .max(200)
+              .default('')
+              .describe(
+                'First line of an invitation email (an album or items shared with someone), shown as plain text in place of the standard greeting. {recipientName} and {senderName} are replaced; empty keeps the standard greeting. An album invitation with its own albumInviteTemplate is sent as that template says.',
+              ),
+            showBranding: z
+              .boolean()
+              .default(true)
+              .describe('Show the Frameleaf name and logo at the top of every email'),
           })
           .meta({ id: 'AdminConfigTemplateEmailsDto' }),
       })
@@ -1219,6 +1256,22 @@ const AdminConfigSchemaWithVisibility = z
           .describe('External domain')
           .meta({ visibility: User }),
         loginPageMessage: z.string().describe('Login page message').meta({ visibility: Public }),
+        // FL-426: plain text unless web formatting is chosen; formatted text is cleaned where it is shown.
+        // Defaulted (like timeZone), so a stored configuration or an older client that does not name it
+        // keeps a plain message and the computer's own time zone.
+        loginPageMessageFormat: LoginPageMessageFormatSchema.default(LoginPageMessageFormat.Plain).meta({
+          visibility: Public,
+        }),
+        // FL-426: the zone schedules and the server's calendar day follow; empty is the computer's own.
+        timeZone: z
+          .string()
+          .trim()
+          .refine(isServerTimeZone, 'Time zone must be empty or a time zone name such as America/Edmonton')
+          .default('')
+          .describe(
+            "Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on",
+          )
+          .meta({ visibility: Admin }),
         publicUsers: configBool.describe('Public users').meta({ visibility: User }),
         // FL-229 (NAPI-005, owner decision 2026-09-30): on by default on a fresh install. An app on
         // the same network finds this server without a second login (the welcome screen's "Use Home
@@ -1718,6 +1771,8 @@ export const defaults = Object.freeze<SystemConfig>({
     name: '',
     externalDomain: '',
     loginPageMessage: '',
+    loginPageMessageFormat: LoginPageMessageFormat.Plain,
+    timeZone: '',
     publicUsers: true,
     lanDiscovery: true,
   },
@@ -1742,6 +1797,8 @@ export const defaults = Object.freeze<SystemConfig>({
       welcomeTemplate: '',
       albumInviteTemplate: '',
       albumUpdateTemplate: '',
+      invitationFirstLine: '',
+      showBranding: true,
     },
   },
   user: {

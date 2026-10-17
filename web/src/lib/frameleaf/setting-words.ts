@@ -48,6 +48,14 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // Server & updates › Server name & welcome
   'server.name': { label: 'frameleaf_server_identity_name' },
   'server.loginPageMessage': { label: 'frameleaf_server_identity_welcome' },
+  'server.loginPageMessageFormat': {
+    label: 'frameleaf_server_identity_format',
+    values: { plain: 'frameleaf_server_identity_format_plain', html: 'frameleaf_server_identity_format_html' },
+  },
+  'server.timeZone': {
+    label: 'frameleaf_server_identity_zone',
+    values: ($t, value) => (value === '' ? $t('frameleaf_server_identity_zone_computer') : undefined),
+  },
   'server.lanDiscovery': { label: 'frameleaf_server_identity_lan' },
   // Server & updates › Updates
   'newVersionCheck.enabled': { label: 'frameleaf_server_updates_look' },
@@ -97,6 +105,11 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'templates.email.welcomeTemplate': { label: 'frameleaf_notify_wording_welcome' },
   'templates.email.albumInviteTemplate': { label: 'frameleaf_notify_wording_invite' },
   'templates.email.albumUpdateTemplate': { label: 'frameleaf_notify_wording_update' },
+  'templates.email.invitationFirstLine': {
+    label: 'frameleaf_notify_first_line',
+    values: ($t, value) => (value === '' ? $t('frameleaf_notify_wording_standard') : undefined),
+  },
+  'templates.email.showBranding': { label: 'frameleaf_notify_branding' },
   // FL-422: Editing & playback › Edited masters and AI restoration
   'editing.trimMode': {
     label: 'frameleaf_editing_masters_trim',
@@ -209,7 +222,8 @@ export const settingValue = ($t: MessageFormatter, kind: SettingKind, path: stri
     return value ? $t('frameleaf_words_secret_saved') : $t('frameleaf_words_not_set');
   }
   const words = wordsFor(kind, path);
-  if (words?.values && value !== null && value !== undefined && value !== '') {
+  // An empty value reads "Empty" unless the setting has words for it ("Same as this computer").
+  if (words?.values && value !== null && value !== undefined) {
     const said =
       typeof words.values === 'function'
         ? words.values($t, value)

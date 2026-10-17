@@ -77,7 +77,15 @@ const config = (transport: Partial<Transport> = {}, enabled = false) =>
         },
       },
     },
-    templates: { email: { welcomeTemplate: '', albumInviteTemplate: '', albumUpdateTemplate: '' } },
+    templates: {
+      email: {
+        welcomeTemplate: '',
+        albumInviteTemplate: '',
+        albumUpdateTemplate: '',
+        invitationFirstLine: '',
+        showBranding: true,
+      },
+    },
   }) as unknown as AdminConfigDto;
 
 const connected = (overrides: Partial<MailConnectionDto> = {}): MailConnectionDto => ({
@@ -512,6 +520,52 @@ describe('Email delivery: signing in with Google or Microsoft (FL-379)', () => {
       expect(
         screen.getByText('Welcome email: your wording is ready. Save your changes to keep it.'),
       ).toBeInTheDocument();
+    });
+
+    it('sets the first line of an invitation in plain words, and the preview opens with it (FL-426)', async () => {
+      const { store } = open(config({ host: 'mail.example.com' }, true), answer());
+      const field = await screen.findByRole('textbox', { name: 'First line of an invitation', hidden: true });
+      expect(field).toHaveValue('');
+      expect(field).toHaveAttribute('placeholder', 'Hey [Person’s name]!');
+
+      await fireEvent.input(field, { target: { value: 'Hi [Person’s name], [Who shared it] has photos for you' } });
+      expect(store.draft.templates.email.invitationFirstLine).toBe(
+        'Hi {recipientName}, {senderName} has photos for you',
+      );
+      expect(field).toHaveValue('Hi [Person’s name], [Who shared it] has photos for you');
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Edit the wording of the Album invitation email', hidden: true }),
+      );
+      const dialog = await screen.findByRole('dialog', { name: 'Album invitation email' });
+      const letter = within(dialog).getByRole('group', { name: 'Preview with sample names' });
+      expect(letter).toHaveTextContent('Hi Morgan, Taylor has photos for you');
+      expect(letter).not.toHaveTextContent('Hey Morgan!');
+      expect(within(letter).getByRole('img', { name: 'Frameleaf' })).toBeInTheDocument();
+    });
+
+    it('says an own invitation wording is sent as written, beside the first line (FL-426)', async () => {
+      const saved = config({ host: 'mail.example.com' }, true);
+      saved.templates.email.albumInviteTemplate = 'Dear {recipientName}';
+      open(saved, answer());
+      expect(await screen.findByText(/sent as written/)).toBeInTheDocument();
+    });
+
+    it('leaves the Frameleaf name and logo off the emails, and off the preview (FL-426)', async () => {
+      const { store } = open(config({ host: 'mail.example.com' }, true), answer());
+      const toggle = await screen.findByRole('switch', { name: 'Show the Frameleaf name and logo', hidden: true });
+      expect(toggle).toHaveAttribute('aria-checked', 'true');
+      await fireEvent.click(toggle);
+      expect(store.draft.templates.email.showBranding).toBe(false);
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Edit the wording of the Album update email', hidden: true }),
+      );
+      const dialog = await screen.findByRole('dialog', { name: 'Album update email' });
+      const letter = within(dialog).getByRole('group', { name: 'Preview with sample names' });
+      expect(within(letter).queryByRole('img', { name: 'Frameleaf' })).not.toBeInTheDocument();
+      // the standard greeting stays on emails that are not invitations
+      expect(letter).toHaveTextContent('Hey Morgan!');
     });
   });
 

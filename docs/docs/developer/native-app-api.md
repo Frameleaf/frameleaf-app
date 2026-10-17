@@ -25,7 +25,10 @@ server only on its home network, for browsing and for backup.
   worker reports none (remote access off or not enrolled), the server publishes its plain-HTTP LAN fallback, the same
   candidate `getServerConnections` returns. The admin's LAN discovery switch (`server.lanDiscovery`) turns this off
   together with the DNS-SD broadcast. Relay, WAN, IPv6 and custom-hostname candidates come only from the edge worker,
-  which enrols only when remote access (entitlement checked) or Buddy backup needs it.
+  which enrols only when remote access (entitlement checked) or Buddy backup needs it. Since FL-437 (FC-147) a
+  server with a Server licence and no plan also enrols: it gets its direct names (`wan`, `ipv6`, `local`) and their
+  certificate, but no relay or custom hostname. Its direct names still reach the apps only through Cloud's filter
+  below, which keeps them home-only without a plan.
 - **Cloud:** the resources API (`GET /v1/instances`, `GET /v1/instances/:id/connections`) is the authority on which
   remote-access candidates an account sees, because a self-hosted server is not trusted to enforce a plan. See the
   instance contract in frameleaf-cloud (`docs/instance-contract.md`, Connections). Since

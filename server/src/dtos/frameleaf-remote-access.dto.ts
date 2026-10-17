@@ -103,7 +103,12 @@ const RemoteAccessStatusResponseSchema = z
     status: RemoteAccessStateSchema,
     reason: z.string().nullable().describe('Why it is off, idle or failing, in plain words'),
     publicUrl: z.string().nullable().describe('The address this server publishes'),
-    frameleafAddress: z.string().nullable().describe('https://r.<label>.<direct domain>, once enrolled'),
+    frameleafAddress: z
+      .string()
+      .nullable()
+      .describe(
+        'https://r.<label>.<direct domain> once enrolled; without a plan, the direct address Frameleaf Cloud reached',
+      ),
     certificateName: z.string().nullable().describe('The wildcard name the certificate covers'),
     certificateExpiresAt: z.string().nullable(),
     certificateError: z.string().nullable().describe('The last issuance or renewal problem'),
@@ -118,6 +123,10 @@ const RemoteAccessStatusResponseSchema = z
     relayRevoked: z
       .boolean()
       .describe('Frameleaf Cloud stopped the relay for this server; it is tried again once relinked'),
+    relayNeedsPlan: z
+      .boolean()
+      .optional()
+      .describe('No relay without a Frameleaf Cloud plan: this server is reached through its direct address only'),
     directListening: z.boolean(),
     cgnatSuspected: z.boolean(),
     mappingMethod: RemoteMappingMethodSchema.nullable().describe(

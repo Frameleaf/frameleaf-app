@@ -217,11 +217,11 @@ describe('RemoteAccessSection (FL-165)', () => {
   it('explains why remote access cannot be turned on and keeps the switch off', async () => {
     sdkMock.getCloudStatus.mockResolvedValue(linked());
     sdkMock.getRemoteAccess.mockResolvedValue(
-      remote({ unavailableReason: 'Remote access is included with a Frameleaf Cloud plan.' }),
+      remote({ unavailableReason: 'Remote access needs a Server licence or a Frameleaf Cloud plan.' }),
     );
     render(RemoteAccessSection);
 
-    const reason = 'Remote access is included with a Frameleaf Cloud plan.';
+    const reason = 'Remote access needs a Server licence or a Frameleaf Cloud plan.';
     // As in the prototype, the reason is both the page's gate banner and the switch's own explanation.
     const gate = await screen.findByRole('status', { name: '' });
     expect(gate).toHaveTextContent(reason);
@@ -255,6 +255,52 @@ describe('RemoteAccessSection (FL-165)', () => {
     expect(screen.getAllByText(RELAY).length).toBeGreaterThan(0);
     expect(screen.getByText('*.u225vlzhsdlhwh4l.frameleaf.net')).toBeInTheDocument();
     expect(screen.getByText('This server only; the private key never leaves it')).toBeInTheDocument();
+  });
+
+  it('serves the direct address with a Server licence and no plan: no relay, no custom domain (FL-437)', async () => {
+    const wan = 'https://203-0-113-7.u225vlzhsdlhwh4l.frameleaf.net:2443';
+    sdkMock.getRemoteAccess.mockResolvedValue(
+      remote({
+        enabled: true,
+        status: RemoteAccessState.Ready,
+        reason: 'The relay comes with a Frameleaf Cloud plan. Without one, this server is reached directly.',
+        relayNeedsPlan: true,
+        mode: RemoteAccessMode.Relay,
+        publicUrl: wan,
+        frameleafAddress: wan,
+        wanAddress: wan,
+        wanVerified: true,
+        directListening: true,
+        certificateName: '*.u225vlzhsdlhwh4l.frameleaf.net',
+      }),
+    );
+    render(RemoteAccessSection);
+
+    // no gate: remote access itself is available with the licence
+    const toggle = await screen.findByRole('switch', { name: 'Allow remote access' });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).toBeChecked();
+    expect(screen.queryByText('Remote access is not available yet')).not.toBeInTheDocument();
+
+    // the relay says it needs a plan, quietly, with the way to one
+    expect(screen.getByText('Needs a plan')).toBeInTheDocument();
+    expect(
+      screen.getByText(/The relay comes with a Frameleaf Cloud plan, and so do the Frameleaf apps/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
+    expect(sdkMock.getRemoteAccessUsage).not.toHaveBeenCalled();
+
+    // direct is the only way in, whatever the stored mode says
+    const mode = screen.getByRole('combobox', { name: /Connection/ });
+    expect(mode).toHaveValue(RemoteAccessMode.RelayAndDirect);
+    expect(mode).toBeDisabled();
+    expect(screen.getByText(/this server is reached only through its direct address/)).toBeInTheDocument();
+
+    // the direct address is the published one; a custom domain needs the relay
+    expect(screen.getAllByText(wan).length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText('photos.example.com')).toBeDisabled();
+    expect(screen.getByText(/A custom domain reaches this server through the relay/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check DNS/ })).toBeDisabled();
   });
 
   it('checks a custom hostname as the prototype does: records first, then DNS, pending to verified', async () => {

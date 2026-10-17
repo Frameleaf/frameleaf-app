@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { v7 } from 'uuid';
 import { SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -93,8 +94,19 @@ it('does not replace a newer ordinary delta acknowledgement with the bootstrap f
 it('retains oldest update first compatibility for AssetsV2', async () => {
   const ctx = new SyncTestContext(db);
   const { auth } = await ctx.newSyncAuthUser();
-  const { asset: older } = await ctx.newAsset({ ownerId: auth.user.id, localDateTime: '2020-01-01T00:00:00Z' });
-  const { asset: newer } = await ctx.newAsset({ ownerId: auth.user.id, localDateTime: '2026-01-01T00:00:00Z' });
+  // AssetsV2 streams in updateId order. The column default is a millisecond-precision UUIDv7 with random low
+  // bits, so two inserts in the same millisecond have no stable order; pin the update order explicitly.
+  const now = Date.now();
+  const { asset: older } = await ctx.newAsset({
+    ownerId: auth.user.id,
+    localDateTime: '2020-01-01T00:00:00Z',
+    updateId: v7({ msecs: now - 2000 }),
+  });
+  const { asset: newer } = await ctx.newAsset({
+    ownerId: auth.user.id,
+    localDateTime: '2026-01-01T00:00:00Z',
+    updateId: v7({ msecs: now - 1000 }),
+  });
   const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2]);
   expect(response.filter((item) => item.type === SyncEntityType.AssetV2).map((item) => item.data.id)).toEqual([
     older.id,

@@ -947,14 +947,26 @@ export class CloudBackupIndexRepository {
   async deleteEntries(manifestId: string): Promise<void> {
     await this.db.deleteFrom('cloud_backup_manifest_entry').where('manifestId', '=', manifestId).execute();
   }
-  /** How many assets a run backs up. */
-  @GenerateSql()
-  async countAssets(): Promise<number> {
+  /** How many assets a run backs up: with a run's inventory (FL-362), the ones it keeps. */
+  @GenerateSql({ name: 'everything', params: [] }, { name: 'with decision', params: [DummyValue.UUID] })
+  async countAssets(decisionRunId?: string): Promise<number> {
     const row = await this.db
       .selectFrom('asset')
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
       .where('isExternal', '=', false)
+      .$if(!!decisionRunId, (qb) =>
+        qb.where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('cloud_backup_decision_asset as decision')
+              .select('decision.assetId')
+              .whereRef('decision.assetId', '=', 'asset.id')
+              .where('decision.runId', '=', decisionRunId!)
+              .where('decision.reason', '=', 'included'),
+          ),
+        ),
+      )
       .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
@@ -979,6 +991,8 @@ export class CloudBackupIndexRepository {
     includeThumbs: boolean;
     includeEncodedVideo: boolean;
     includeExternal?: boolean;
+    /** FL-362: only the assets this Cloud Backup run's inventory keeps. */
+    decisionRunId?: string;
   }): Promise<CloudBackupAsset[]> {
     const assets = await this.db
       .selectFrom('asset')
@@ -986,6 +1000,18 @@ export class CloudBackupIndexRepository {
       .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
       .$if(!options.includeExternal, (query) => query.where('isExternal', '=', false))
       .$if(options.afterId !== null, (qb) => qb.where('id', '>', options.afterId!))
+      .$if(!!options.decisionRunId, (qb) =>
+        qb.where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('cloud_backup_decision_asset as decision')
+              .select('decision.assetId')
+              .whereRef('decision.assetId', '=', 'asset.id')
+              .where('decision.runId', '=', options.decisionRunId!)
+              .where('decision.reason', '=', 'included'),
+          ),
+        ),
+      )
       .orderBy('id')
       .limit(options.limit)
       .execute();

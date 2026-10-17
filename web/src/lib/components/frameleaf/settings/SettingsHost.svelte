@@ -362,6 +362,8 @@
     'repair',
     // ACCOUNT-P6: the Google Photos import page draws its own kit cards (status, steps, imports).
     'takeout',
+    // FL-362: "What Cloud Backup keeps" is a kit Section of its own.
+    'cloud-backup-choice',
   ];
   /** Pages opened from another page of their area, and that page (`settings-v2/care/duplicates.jsx`). */
   const PARENT_PAGES: Readonly<Record<string, string>> = { deduplication: 'duplicates' };

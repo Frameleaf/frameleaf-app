@@ -2,6 +2,7 @@ import { toPlainText } from '@react-email/render';
 import * as React from 'react';
 import { Img, Link, Section, Text } from 'react-email';
 import { ImmichButton } from 'src/emails/components/button.component.js';
+import { invitationFirstLine } from 'src/emails/components/first-line.js';
 import ImmichLayout from 'src/emails/components/immich.layout.js';
 import { NO_LINK_ALBUM } from 'src/emails/components/no-link.js';
 import { AlbumInviteEmailProps } from 'src/repositories/email.repository.js';
@@ -15,6 +16,8 @@ export const AlbumInviteEmail = ({
   albumId,
   cid,
   customTemplate,
+  showBranding,
+  firstLine,
 }: AlbumInviteEmailProps) => {
   const variables = {
     albumName,
@@ -23,13 +26,19 @@ export const AlbumInviteEmail = ({
     albumId,
     baseUrl: baseUrl ?? '',
   };
+  // FL-426: an album invitation with its own wording is sent as written, its own first line included
+  const greeting = invitationFirstLine(firstLine, { recipientName, senderName });
 
   const emailContent = customTemplate ? (
     replaceTemplateTags(customTemplate, variables)
   ) : (
     <>
       <Text className="m-0">
-        Hey <strong>{recipientName}</strong>!
+        {greeting ?? (
+          <>
+            Hey <strong>{recipientName}</strong>!
+          </>
+        )}
       </Text>
 
       <Text>
@@ -41,6 +50,7 @@ export const AlbumInviteEmail = ({
   return (
     <ImmichLayout
       baseUrl={baseUrl}
+      showBranding={showBranding}
       preview={customTemplate ? toPlainText(emailContent.toString()) : 'You have been added to a shared album.'}
     >
       {customTemplate && (

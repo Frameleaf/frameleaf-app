@@ -19,6 +19,7 @@ import {
   projectCloudDescriptionCost,
   queueCloudDescriptions,
   serverDay,
+  serverDayStart,
 } from 'src/utils/cloud-description-batch.js';
 import {
   CloudCatalogEntry,
@@ -162,6 +163,15 @@ describe('cloud description batches (FL-163)', () => {
       expect(serverDay(now)).toBe('2026-09-26');
       expect(nextServerDay(now)).toEqual(new Date(2026, 8, 27, 0, 0, 0, 0));
       expect(serverDay(nextServerDay(now))).toBe('2026-09-27');
+    });
+
+    it('counts by the calendar day of the time zone chosen for the server (FL-426)', () => {
+      // 05:30 UTC on 27 September is still 26 September in Edmonton (UTC−06:00)
+      const now = new Date('2026-09-27T05:30:00Z');
+      expect(serverDay(now, 'America/Edmonton')).toBe('2026-09-26');
+      expect(serverDayStart(now, 'America/Edmonton')).toEqual(new Date('2026-09-26T06:00:00Z'));
+      expect(nextServerDay(now, 'America/Edmonton')).toEqual(new Date('2026-09-27T06:00:00Z'));
+      expect(serverDay(now, 'Asia/Tokyo')).toBe('2026-09-27');
     });
   });
 

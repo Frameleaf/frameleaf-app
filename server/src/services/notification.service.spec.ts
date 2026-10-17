@@ -643,6 +643,23 @@ describe(NotificationService.name, () => {
       });
     });
 
+    it("opens the email with the server's first line of an invitation and its logo choice (FL-426)", async () => {
+      withPrefs(true);
+      mocks.systemMetadata.get.mockResolvedValue({
+        templates: { email: { invitationFirstLine: 'Hi {recipientName}!', showBranding: false } },
+      });
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+      await sut.onItemShare({ ...event, count: 1 });
+
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ firstLine: 'Hi {recipientName}!', showBranding: false }),
+        }),
+      );
+    });
+
     it('does nothing for a recipient who is gone', async () => {
       mocks.user.get.mockResolvedValue(void 0);
       await sut.onItemShare(event);

@@ -389,6 +389,19 @@ const CloudBackupActiveRunSchema = z
   })
   .meta({ id: 'CloudBackupActiveRunDto' });
 
+/** FL-362: whether the newest run's numeric coverage reached Frameleaf Cloud. Numbers only, never choices. */
+const CloudBackupCoverageStatusSchema = z
+  .object({
+    state: z
+      .enum(['published', 'pending', 'not-reported', 'local'])
+      .describe('local: your own bucket, kept on this server; not-reported: refused or expired')
+      .meta({ id: 'CloudBackupCoverageState' }),
+    runId: z.string(),
+    inventoryAt: z.string(),
+    attempts: z.int(),
+  })
+  .meta({ id: 'CloudBackupCoverageStatusDto' });
+
 const CloudBackupStatusSchema = z
   .object({
     configured: z.boolean().describe('A bucket is claimed and cloud backup is on'),
@@ -405,6 +418,7 @@ const CloudBackupStatusSchema = z
     keyFingerprint: z.string().nullable(),
     keyLoaded: z.boolean().describe('The key is available to this server; false in own-memory mode until unlocked'),
     lastRun: CloudBackupLastRunSchema.nullable(),
+    coverage: CloudBackupCoverageStatusSchema.nullable().describe("The newest run's coverage report (FL-362)"),
     lastSuccessAt: z.string().nullable(),
     lastManifestKey: z.string().nullable(),
     usage: z
