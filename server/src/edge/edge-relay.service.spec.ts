@@ -495,7 +495,10 @@ describe(EdgeRelayService.name, () => {
     const noPlan = () =>
       new FrameleafCloudError('other' as never, 403, 'no plan', { code: 'entitlement-missing' } as never);
     let refuse = true;
-    const answer = (cloud.requestJson as ReturnType<typeof vi.fn>).getMockImplementation()!;
+    const answer = (cloud.requestJson as ReturnType<typeof vi.fn>).getMockImplementation() as (
+      schema: unknown,
+      request: unknown,
+    ) => unknown;
     (cloud.requestJson as ReturnType<typeof vi.fn>).mockImplementation((schema: any, request: any) => {
       if (refuse && request.url === `${API}/v1/remote/relays/candidates`) {
         calls.push({ url: request.url, body: request.body });
