@@ -829,7 +829,9 @@ export class RestorationWorkerService {
       if (!recorded) {
         throw new RestorationInterrupted();
       }
-      await this.operationRepository.invalidateCheckpointsFrom(operation.id, plan.sequence + 1);
+      if (!(await this.operationRepository.invalidateCheckpointsFrom(operation.id, claimToken, plan.sequence + 1))) {
+        throw new RestorationInterrupted();
+      }
 
       const chunkIn = this.scratch(ctx, path.join(workDir, `chunk-${plan.sequence}-in-${operation.id}.mp4`));
       await this.mediaRepository.transcode(source.originalPath, chunkIn, {
