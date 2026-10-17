@@ -215,15 +215,16 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 | Field        | Value                                                                                          |
 | ------------ | ---------------------------------------------------------------------------------------------- |
 | Service type | `_frameleaf._tcp`                                                                              |
-| Port         | the server's HTTP port (`FRAMELEAF_PORT`, 2283 by default)                                     |
+| Port         | the server's HTTP port (`FRAMELEAF_PORT`, 2283 by default), or `FRAMELEAF_LOCAL_URL`'s port    |
 | Service name | the server's display name, or `Frameleaf server` when none is set                              |
 | TXT `id`     | the Frameleaf Cloud instance id while the server is linked, otherwise a stable local server id |
 | TXT `name`   | the same display name                                                                          |
+| TXT `scheme` | `http`, or `https` when `FRAMELEAF_LOCAL_URL` names this address with `https://`               |
 | TXT `setup`  | `needed` while the server has no administrator, otherwise `complete`                           |
 | TXT `linked` | `true` while the server is linked to Frameleaf Cloud, otherwise `false`                        |
 | TXT `cloud`  | `available` when `FRAMELEAF_CLOUD_URL` is set (the server can link), otherwise `unavailable`   |
 
-`id` and `name` are the same identity that the unauthenticated `GET /api/server/ping` returns, so an app can confirm it reached the server it expects on every route. `setup`, `linked` and `cloud` are also in the ping response, so the Frameleaf app can offer to set up a new server it finds. Neither carries anything about users or content. The record is published again when that state changes.
+`id` and `name` are the same identity that the unauthenticated `GET /api/server/ping` returns, so an app can confirm it reached the server it expects on every route. `setup`, `linked` and `cloud` are also in the ping response, so the Frameleaf app can offer to set up a new server it finds. Neither carries anything about users or content. Connect with `scheme`, the advertised address and the SRV port; the server itself only listens on plain HTTP. The record is published again when that state changes.
 
 ## Setting up a new server
 
