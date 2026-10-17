@@ -178,7 +178,7 @@ export class TimelineManager extends VirtualScrollManager {
         },
         AssetUpdate: (asset: AssetResponseDto) => {
           const timelineAsset = toTimelineAsset(asset);
-          if (this.#options.albumId || this.#options.personId) {
+          if (this.#options.albumId || this.#options.personId || this.#narrowedByServer) {
             this.#updateAssets([timelineAsset]);
           } else {
             this.upsertAssets([timelineAsset]);
@@ -923,6 +923,15 @@ export class TimelineManager extends VirtualScrollManager {
     return !revealed && !this.#isLockedRuleMatch(asset) && isMismatched(this.#options.visibility, asset.visibility);
   }
 
+  /**
+   * FL-425: the view is narrowed by a search filter or an enrichment state. Only the server can tell
+   * whether an item matches (a camera, a place, several people), so a changed item is updated where it
+   * is shown but never added from a live event.
+   */
+  get #narrowedByServer() {
+    return !!this.#options.filter || !!this.#options.imageEnrichment;
+  }
+
   #isLockedRuleMatch(asset: TimelineAsset) {
     return (
       this.#options.visibility === AssetVisibility.Locked &&
@@ -952,8 +961,15 @@ export class TimelineManager extends VirtualScrollManager {
       return false;
     }
     // Only the server knows an album's, a person's or Best Photos' members (LIB-P3: a new upload has
-    // no quality score yet); the next load brings them in.
-    if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId || this.#options.bestPhotos) {
+    // no quality score yet), and what the Filters panel's search filter matches (FL-425); the next
+    // load brings them in.
+    if (
+      this.#options.albumId ||
+      this.#options.personId ||
+      this.#options.timelineAlbumId ||
+      this.#options.bestPhotos ||
+      this.#narrowedByServer
+    ) {
       return false;
     }
     if (this.#options.userId && asset.ownerId !== this.#options.userId) {

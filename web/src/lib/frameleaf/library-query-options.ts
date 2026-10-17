@@ -1,23 +1,25 @@
-import { AssetTypeEnum, AssetVisibility, type IdsFilter } from '@frameleaf/sdk';
+import { AssetTypeEnum, AssetVisibility, type IdsFilter, type SearchFilter } from '@frameleaf/sdk';
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
-import { activeFilterFields, discoveryUrl } from '$lib/components/discovery/query';
+import { activeFilterFields, discoveryUrl, ENRICHMENT_FIELD, toServerFilter } from '$lib/components/discovery/query';
 import { createLibrarySession, writeLibraryView } from '$lib/frameleaf/library-session';
 import type { TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
 import { Route } from '$lib/route';
 
 /**
- * The part of a library session's query the timeline itself can apply (FL-30, review M3).
+ * The part of a library session's query the timeline itself applies (FL-30, review M3, FL-425).
  *
- * A library page's session can carry a query: "View in library" from Tags or Folders writes one into
- * the link, and a session restored on this device may hold one. The time buckets filter by one tag,
- * one person, one pet, one album, media type and favourites, so those conditions narrow the grid
- * itself; the results toolbar's count, the empty state and Slideshow then describe what the grid
- * shows. A condition the buckets cannot express is reported in `unapplied` and left to the search
- * results page, where the whole query applies.
+ * A library page's session can carry a query: the docked Filters panel edits it, "View in library"
+ * from Tags or Folders writes one into the link, and a session restored on this device may hold one.
+ * One tag, one person, one pet, one album, media type and favourites become the time buckets' own
+ * options, as before; every other condition (dates, places, cameras, rating, several people, an
+ * enrichment state, either-or branches) travels in the buckets' `filter`, which the server applies as
+ * search does. The results toolbar's count, the empty state and Slideshow then describe what the grid
+ * shows. Only free text, which no timeline can run, is reported in `unapplied` and left to the search
+ * results page.
  */
 export type TimelineQueryOptions = {
   options: TimelineManagerOptions;
-  /** Active filter fields the grid does not apply, plus `text` for a search the buckets cannot run. */
+  /** `text` for a search the buckets cannot run; every filter field applies. */
   unapplied: string[];
 };
 
@@ -43,7 +45,13 @@ export const timelineQueryOptions = (
     unapplied.push('text');
   }
   const filter = query.filter ?? {};
+  /** FL-425: the conditions no bucket option names, applied by the server as search applies them. */
+  const rest: Record<string, unknown> = {};
   for (const field of activeFilterFields(query)) {
+    if (field === ENRICHMENT_FIELD) {
+      options.imageEnrichment = query.imageEnrichment;
+      continue;
+    }
     switch (field) {
       case 'type': {
         const eq = filter.type?.eq;
@@ -98,7 +106,11 @@ export const timelineQueryOptions = (
         break;
       }
     }
-    unapplied.push(field);
+    rest[field] = filter[field as keyof SearchFilter];
+  }
+  if (Object.keys(rest).length > 0) {
+    // as search takes it: the panel's calendar days become the datetime bounds they mean
+    options.filter = JSON.stringify(toServerFilter(rest as SearchFilter));
   }
   return { options, unapplied };
 };
@@ -128,11 +140,11 @@ const PRESENTATION_OPTIONS = new Set([
 /**
  * The search query that shows what a library page shows, narrowed by `query` as well (LIB-P1).
  *
- * The docked Filters panel narrows the page's own photos while the time buckets can apply the
- * condition; beyond that the search results apply the whole query, so the page's own scope (an
- * album, a person, a tag, Favorites, Archive) is carried into it and nothing it was narrowed by is
- * lost. Null when the page is narrowed by something a search cannot carry (a partner's library, a
- * map area, Locked, suppressed content, a shared link): the panel then keeps the condition off.
+ * The docked Filters panel narrows the page's own photos in place (FL-425); its live counts and its
+ * "Save search" are for this search, so the page's own scope (an album, a person, a tag, Favorites,
+ * Archive) is carried into it and nothing it was narrowed by is lost. Null when the page is narrowed
+ * by something a search cannot carry (a map area, Locked, suppressed content, Best Photos): the
+ * counts are then the session query's own.
  */
 export const searchQueryForTimeline = (query: DiscoveryQuery, base: TimelineManagerOptions): DiscoveryQuery | null => {
   const result = structuredClone(query);
@@ -189,9 +201,9 @@ export const PHOTOS_TIMELINE_OPTIONS: TimelineManagerOptions = {
 };
 
 /**
- * Where "View in library" goes for a query (review M3): the Photos page when the time buckets can
- * apply every condition, so its chips are exactly what narrows the grid; otherwise the search
- * results page, which applies the whole query (a folder path, search text, several tags).
+ * Where "View in library" goes for a query (review M3): the Photos page, whose time buckets apply
+ * every filter condition (FL-425), so its chips are exactly what narrows the grid; the search results
+ * page for search text, which no timeline can run.
  */
 export const viewInLibraryHref = (query: DiscoveryQuery, origin = 'http://localhost'): string => {
   if (timelineQueryOptions(query, PHOTOS_TIMELINE_OPTIONS).unapplied.length > 0) {
