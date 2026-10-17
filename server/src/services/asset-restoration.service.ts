@@ -9,6 +9,7 @@ import {
   AssetRestorationFileKind,
   AssetRestorationListResponseDto,
   AssetRestorationMode,
+  AssetRestorationModelDto,
   AssetRestorationOptionsDto,
   AssetRestorationOptionsQueryDto,
   AssetRestorationRegion,
@@ -59,6 +60,7 @@ import {
   restorationRoleConflict,
   selectMlDestination,
   storedAdmission,
+  storedRestorationModels,
 } from 'src/utils/ml-destination.js';
 import {
   INTERPOLATION_PREVIEW_SECONDS,
@@ -125,6 +127,42 @@ export const parseDurationSeconds = (value: unknown): number | null => {
 const asRegion = (value: unknown): AssetRestorationRegion => {
   const parsed = AssetRestorationRegionSchema.safeParse(value);
   return parsed.success ? parsed.data : DEFAULT_RESTORATION_REGION;
+};
+
+const isSmoothMode = (mode: AssetRestorationMode) => mode === AssetRestorationMode.SmoothMotion;
+
+/**
+ * FL-423: the models a home destination offers for this kind of work, as it reported them at its last
+ * check: its Faithful and Creative models for a restoration, its Smooth motion models for Smooth motion.
+ * Frameleaf Cloud offers none here; its model is chosen with its estimate.
+ */
+const offeredModels = (row: MlDestinationRow, mode: AssetRestorationMode): AssetRestorationModelDto[] =>
+  isCloudDestination(row.kind)
+    ? []
+    : storedRestorationModels(row.lastProbeHardware)
+        .filter((model) => isSmoothMode(model.mode) === isSmoothMode(mode))
+        .map(({ id, name, family, mode, available }) => ({ id, name, family, mode, available }));
+
+/**
+ * FL-423: a chosen model must be one the destination reported it can run for the requested mode. It is
+ * refused, never swapped for another. A destination that reported no models leaves the check to the
+ * worker, which runs the named model exactly or refuses.
+ */
+const refuseUnofferedModel = (destination: MlDestinationRow, dto: AssetRestorationRequestDto) => {
+  if (!dto.model) {
+    return;
+  }
+  const offered = storedRestorationModels(destination.lastProbeHardware);
+  if (offered.length === 0) {
+    return;
+  }
+  const model = offered.find((candidate) => candidate.id === dto.model);
+  if (!model || model.mode !== dto.mode) {
+    throw new BadRequestException(`${destination.name} has no ${dto.model} model for this; choose another model`);
+  }
+  if (!model.available) {
+    throw new BadRequestException(`${destination.name} can’t use ${model.name} right now; choose another model`);
+  }
 };
 
 const asEstimate = (value: unknown): AssetRestorationEstimateDto | null => {
@@ -265,6 +303,7 @@ export class AssetRestorationService {
           ESTIMATE_WINDOW_DAYS,
         ),
         gpu: row.lastProbeHardware?.gpus?.[0] ?? null,
+        models: offeredModels(row, mode),
       });
     }
 
@@ -406,6 +445,7 @@ export class AssetRestorationService {
     // Consent, allow-list, budget, health and the worker's role are all decided here, before a row exists.
     await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview);
     const destination = await this.requireDestination(dto.destinationId);
+    refuseUnofferedModel(destination, dto);
     const output = cappedOutputSize(source.width, source.height, smooth ? 1 : dto.upscale);
     const sample = await this.mlDestinationRepository.getThroughput(
       destination.id,
@@ -452,7 +492,7 @@ export class AssetRestorationService {
               retryOfId: null,
               projectId: null,
               revisionId: restoration.id,
-              snapshot: this.snapshotOf(restoration, source, 'preview', output),
+              snapshot: this.snapshotOf(restoration, source, 'preview', output, dto.model),
               settings: this.settingsOf(restoration, destination.name, true),
               estimate:
                 estimate.previewSeconds === null
@@ -892,6 +932,8 @@ export class AssetRestorationService {
     source: RestorationSource,
     stage: RestorationSnapshot['stage'],
     output: { width: number; height: number },
+    /** FL-423: the model the person chose for a preview; a full render is bound to the reviewed one. */
+    modelId?: string,
   ): RestorationSnapshot {
     const smooth = restoration.mode === AssetRestorationMode.SmoothMotion;
     return {
@@ -917,6 +959,7 @@ export class AssetRestorationService {
       // FL-115: the full render is bound to the model the reviewed preview ran.
       ...(stage === 'full' &&
         restoration.modelName && { model: { name: restoration.modelName, version: restoration.modelVersion } }),
+      ...(stage === 'preview' && modelId && { modelId }),
     };
   }
 

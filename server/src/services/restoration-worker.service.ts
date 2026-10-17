@@ -1228,6 +1228,9 @@ export class RestorationWorkerService {
   ) {
     return {
       mode: ctx.snapshot.mode,
+      // FL-423: the model the person chose for the preview; a full render names the model its reviewed
+      // preview ran, so the worker runs exactly that one or refuses (never another)
+      modelId: ctx.snapshot.modelId ?? ctx.snapshot.model?.name ?? null,
       upscale: ctx.snapshot.upscale,
       keepGrain: ctx.snapshot.keepGrain,
       // FL-162 Smooth motion: frames per source frame, and whether the chunk carries the next one's first frame

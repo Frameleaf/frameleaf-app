@@ -127,7 +127,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     assert(process.env.TRUENAS_LIBRARY, 'Mandatory hosted TrueNAS rendering requires TRUENAS_LIBRARY');
   }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-nas-'));
-  const tag = 'frameleaf-v3.1.0-1';
+  const tag = 'frameleaf-v1.0.0';
   const sha = 'a'.repeat(40);
   const database = 'ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7';
   const bundle = path.join(root, 'bundle');

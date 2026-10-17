@@ -448,6 +448,11 @@ export const RestorationSnapshotSchema = z.object({
    * and on jobs queued before the binding existed.
    */
   model: z.object({ name: z.string().min(1), version: z.string().nullable() }).optional(),
+  /**
+   * FL-423: the model the person chose for the preview, by the worker's model id. Absent: the worker's
+   * own model for the mode. A full render is bound to `model` instead.
+   */
+  modelId: z.string().min(1).max(64).optional(),
   /** Smooth motion (FL-162): frames per source frame; the upscale is then 1 and the size is kept. */
   interpolationFactor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional(),
 });
@@ -628,6 +633,8 @@ export type RestorationInferenceInput =
 
 export type RestorationInferenceOptions = {
   mode: AssetRestorationMode;
+  /** FL-423: the worker's model to run, exactly; null or absent, the worker's own model for the mode. */
+  modelId?: string | null;
   upscale: 1 | 2 | 4;
   keepGrain: boolean;
   /** Smooth motion (FL-162): frames per source frame. Absent for a restoration. */

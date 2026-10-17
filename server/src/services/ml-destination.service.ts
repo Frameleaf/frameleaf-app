@@ -44,6 +44,7 @@ import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-poli
 import { mapMlDestination, mlDestinationHealthOf } from 'src/utils/ml-destination-dto.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
+  MlProbeRestorationModel,
   accelerationOf,
   hardwareFromProbe,
   hasRequiredConsent,
@@ -54,6 +55,7 @@ import {
   mlWorkerRoleOf,
   readCloudModelChoices,
   resolveEndpoint,
+  restorationModelsFromReport,
   restorationRoleConflict,
   sameEndpointUrl,
   storedAdmission,
@@ -499,6 +501,8 @@ export class MlDestinationService extends BaseService {
     // Only metadata travels, so a cloud destination needs no consent for this (FL-114). Frameleaf
     // Cloud reports its models through its catalogue instead.
     let gpus: Array<{ name: string; memoryTotalBytes: number }> = [];
+    // FL-423: and the models it can restore with, which the editor offers on its model slider
+    let restorationModels: MlProbeRestorationModel[] = [];
     if (
       !endpoint.cloud &&
       probe.reachable &&
@@ -507,6 +511,7 @@ export class MlDestinationService extends BaseService {
       try {
         const report = await this.machineLearningRepository.getRestorationModels(endpoint);
         gpus = report.gpus.map((gpu) => ({ name: gpu.name, memoryTotalBytes: gpu.memoryTotalBytes }));
+        restorationModels = restorationModelsFromReport(report.models);
       } catch (error) {
         this.logger.debug(`Could not read restoration GPUs from ${row.name}: ${error}`);
       }
@@ -518,7 +523,7 @@ export class MlDestinationService extends BaseService {
         summary,
         workloads: servedWorkloads,
         probedAt: probe.probedAt,
-        hardware: hardwareFromProbe(probe, gpus),
+        hardware: hardwareFromProbe(probe, gpus, restorationModels),
         latencyMs: probe.reachable ? probe.latencyMs : null,
         ...(probe.cloud !== undefined && { cloud: probe.cloud }),
       },

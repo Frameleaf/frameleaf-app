@@ -1201,6 +1201,8 @@ export class MachineLearningRepository implements RestorationInference {
       protocol: RESTORATION_PROTOCOL,
       requestId: `${options.jobId}:${basename(outputPath)}`.slice(0, 200),
       mode: options.mode,
+      // FL-423: the chosen model, which the worker runs exactly or refuses; left out, the worker chooses
+      ...(options.modelId && { modelId: options.modelId }),
       kind: input.kind,
       scale: options.upscale,
       maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),

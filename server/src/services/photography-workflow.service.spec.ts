@@ -154,6 +154,23 @@ async function setup(brand?: unknown) {
         return { row: structuredClone(row), result };
       },
     ),
+    // like the repository (FL-423): writes the workflow and keeps the owner's revision
+    mutateKeepingRevision: vi.fn(
+      async (
+        id: string,
+        ownerId: string,
+        albumId: string,
+        expected: string | null | undefined,
+        initial: WorkflowRow['value'],
+        change: (v: WorkflowRow['value']) => unknown,
+      ) => {
+        if (expected !== undefined && (row?.revision ?? null) !== expected) throw new ConflictException();
+        const value = structuredClone(row?.value ?? initial);
+        const result = await change(value);
+        row = { id, ownerId, albumId, revision: row?.revision ?? randomUUID(), value };
+        return { row: structuredClone(row), result };
+      },
+    ),
   };
   const workspace = {
     get: vi.fn(() => Promise.resolve({ value: { shoots: [{ id: shootId, albumId, name: 'Portrait' }], brand } })),
@@ -638,8 +655,9 @@ describe('photography workflow integration boundaries', () => {
     await s.service.accept(s.shootId, client.session, s.row().value.orders[0].id, {
       expectedRevision: s.row().revision,
     });
-    const mutate = s.repository.mutate.getMockImplementation()!;
-    s.repository.mutate.mockImplementation((...args) =>
+    // the render's writes keep the owner's revision (FL-423), so its commit fails there
+    const mutate = s.repository.mutateKeepingRevision.getMockImplementation()!;
+    s.repository.mutateKeepingRevision.mockImplementation((...args) =>
       mutate(args[0], args[1], args[2], args[3], args[4], async (value: WorkflowRow['value']) => {
         const result = await args[5](value);
         if (value.publication?.status === 'ready') throw new ConflictException('Commit failed');
@@ -1505,5 +1523,88 @@ describe('photography gallery hero, studio summary and client preview', () => {
     expect((await s.service.gallery(s.shootId, client.session)).preview).toBe(false);
     await s.service.preview(s.auth, s.shootId, {});
     expect(s.row().value.sessions.filter((session) => session.preview)).toHaveLength(1);
+  });
+  it("keeps the owner's revision when a client signs in, so the owner's next save is not stale (FL-423)", async () => {
+    const s = await setup();
+    const invited = await s.service.createRecipient(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      name: 'Client',
+      password: 'correct-password',
+      expiresAt: null,
+      canProof: true,
+      canDownload: true,
+      captureIds: null,
+    });
+    // what the owner's editor holds after its last save
+    const held = invited.workflow.revision;
+    expect(held).toBe(s.row().revision);
+
+    const session = await s.service.session(s.shootId, {
+      token: invited.invitation.token,
+      password: 'correct-password',
+    });
+    await s.service.session(s.shootId, { token: invited.invitation.token, password: 'correct-password' });
+    expect(s.row().value.sessions).toHaveLength(2);
+    expect(s.row().revision).toBe(held);
+    expect(s.repository.mutate).toHaveBeenCalledTimes(2);
+
+    const saved = await s.service.config(s.auth, s.shootId, {
+      expectedRevision: held,
+      config: { ...s.row().value.config, title: 'Saved after the client signed in' },
+    });
+    expect(saved.config.title).toBe('Saved after the client signed in');
+    // a real owner edit still moves the revision, and an edit made against the old one is refused
+    expect(saved.revision).not.toBe(held);
+    await expect(
+      s.service.config(s.auth, s.shootId, { expectedRevision: held, config: s.row().value.config }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect((await s.service.gallery(s.shootId, session.session)).revision).toBe(saved.revision);
+  });
+  it("keeps the owner's revision through a client's choices, quote, downloads and the work they start (FL-423)", async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    const round = await s.selected(client.session);
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    const quoted = await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: round.id,
+      recipientId: client.recipientId,
+      pricing: 'package',
+    });
+    const held = quoted.revision;
+    const ownerEdits = s.repository.mutate.mock.calls.length;
+
+    // the client accepts the quote, the finals render, and the client downloads them
+    await s.service.accept(s.shootId, client.session, s.row().value.orders[0].id, { expectedRevision: held });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.service.file(s.shootId, client.session, s.captureId, 'download');
+    await s.service.recordDelivery(s.shootId, client.session, s.captureId);
+    await s.service.zip(s.shootId, client.session, { captureIds: [s.captureId] });
+    await s.service.choices(s.shootId, client.session, {
+      expectedRevision: held,
+      captureIds: [s.captureId],
+      notes: [{ captureId: s.captureId, text: 'Warmer, please' }],
+    });
+    expect(s.row().value.orders[0].status).not.toBe('quoted');
+    expect(s.row().value.receipts.some((receipt) => receipt.action === 'delivered')).toBe(true);
+    expect(s.row().value.zips).toHaveLength(1);
+    expect(s.row().revision).toBe(held);
+    expect(s.repository.mutate).toHaveBeenCalledTimes(ownerEdits);
+
+    // the owner saves against what they last saw; afterwards the client's old revision is refused
+    const saved = await s.service.config(s.auth, s.shootId, {
+      expectedRevision: held,
+      config: { ...s.row().value.config, title: 'Owner edit' },
+    });
+    expect(saved.revision).not.toBe(held);
+    await expect(
+      s.service.choices(s.shootId, client.session, { expectedRevision: held, captureIds: [], notes: [] }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

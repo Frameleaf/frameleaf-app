@@ -9,15 +9,27 @@ import {
   releaseFeedChannel,
   rolloutBucket,
 } from 'src/utils/frameleaf-release.js';
-import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { cloudContractFixture as legacyCloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+
+// Adapt the retained legacy contract to the independent release epoch without rewriting its source fixture.
+const independentFeedFixture = (name: string): FrameleafFeedRelease => {
+  const original = legacyCloudContractFixture<FrameleafFeedRelease>(name);
+  return {
+    ...original,
+    tag: `frameleaf-v${original.version}`,
+    ...(original.fallback
+      ? { fallback: { ...original.fallback, tag: `frameleaf-v${original.fallback.version}` } }
+      : {}),
+  };
+};
 
 // Frameleaf Cloud release feed response (FC-70, `GET /v1/releases/latest`), in this app's own tag format; the
 // cloud's published answers are read from `releases/` below.
 const feedRelease: FrameleafFeedRelease = {
   version: '3.2.1',
-  tag: 'frameleaf-v3.2.1-4',
+  tag: 'frameleaf-v3.2.1',
   publishedAt: '2026-09-25T12:00:00Z',
-  url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1-4',
+  url: 'https://github.com/Frameleaf/frameleaf-app/releases/tag/frameleaf-v3.2.1',
   notesUrl: 'https://help.frameleaf.app/releases/3.2.1',
   minimumSupported: null,
 };
@@ -30,9 +42,18 @@ describe('releaseFeedChannel', () => {
 });
 
 describe('parseFrameleafFeedRelease', () => {
-  it('reads the release feed answers the cloud publishes', () => {
-    const stable = cloudContractFixture<FrameleafFeedRelease>('releases/latest-stable.json');
-    const beta = cloudContractFixture<FrameleafFeedRelease>('releases/latest-beta.json');
+  it('rejects legacy cloud rebuild tags and mismatched version/tag pairs', () => {
+    expect(
+      parseFrameleafFeedRelease(legacyCloudContractFixture('releases/latest-stable.json'), ReleaseChannel.Stable),
+    ).toBeUndefined();
+    expect(
+      parseFrameleafFeedRelease({ ...feedRelease, tag: 'frameleaf-v1.0.0' }, ReleaseChannel.Stable),
+    ).toBeUndefined();
+  });
+
+  it('reads the independent epoch feed contract', () => {
+    const stable = independentFeedFixture('releases/latest-stable.json');
+    const beta = independentFeedFixture('releases/latest-beta.json');
     // FC-70 staged rollout (frameleaf-cloud#83): stable is offered to 25% of servers, with a fallback.
     expect(parseFrameleafFeedRelease(stable, ReleaseChannel.Stable)).toEqual({
       version: '3.2.1',
@@ -49,13 +70,13 @@ describe('parseFrameleafFeedRelease', () => {
       fallback: null,
     });
     expect(parseFrameleafFeedRelease(beta, ReleaseChannel.Stable)).toBeUndefined();
-    expect(parseFrameleafReleaseTag(stable.tag)).toEqual({ version: stable.version, sequence: 4 });
-    expect(parseFrameleafReleaseTag(beta.tag)).toEqual({ version: beta.version, sequence: 2 });
+    expect(parseFrameleafReleaseTag(stable.tag)).toEqual({ version: stable.version });
+    expect(parseFrameleafReleaseTag(beta.tag)).toEqual({ version: beta.version });
   });
 
   it('offers the published stable release to servers inside its 25% rollout and its fallback to the rest', () => {
     const stable = parseFrameleafFeedRelease(
-      cloudContractFixture('releases/latest-stable.json'),
+      independentFeedFixture('releases/latest-stable.json'),
       ReleaseChannel.Stable,
     )!;
     const seeds = Array.from({ length: 400 }, (_, i) => `seed-${i}`);
@@ -74,7 +95,7 @@ describe('parseFrameleafFeedRelease', () => {
     expect(inside.length).toBeGreaterThan(60);
     expect(inside.length).toBeLessThan(140);
     const beta = parseFrameleafFeedRelease(
-      cloudContractFixture('releases/latest-beta.json'),
+      independentFeedFixture('releases/latest-beta.json'),
       ReleaseChannel.ReleaseCandidate,
     )!;
     expect(seeds.every((seed) => isReleaseOffered(beta, seed, beta.version))).toBe(true);
@@ -97,12 +118,15 @@ describe('parseFrameleafFeedRelease', () => {
       expect.objectContaining({ version: '3.2.1' }),
     );
     expect(
-      parseFrameleafFeedRelease({ ...feedRelease, version: '3.3.0-rc.1+sha.abc' }, ReleaseChannel.ReleaseCandidate),
+      parseFrameleafFeedRelease(
+        { ...feedRelease, version: '3.3.0-rc.1+sha.abc', tag: 'frameleaf-v3.3.0-rc.1' },
+        ReleaseChannel.ReleaseCandidate,
+      ),
     ).toEqual(expect.objectContaining({ version: '3.3.0-rc.1' }));
   });
 
   it('accepts a prerelease only on the beta channel', () => {
-    const candidate = { ...feedRelease, version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1-2' };
+    const candidate = { ...feedRelease, version: '3.3.0-rc.1', tag: 'frameleaf-v3.3.0-rc.1' };
     expect(parseFrameleafFeedRelease(candidate, ReleaseChannel.ReleaseCandidate)?.version).toBe('3.3.0-rc.1');
     expect(parseFrameleafFeedRelease(candidate, ReleaseChannel.Stable)).toBeUndefined();
   });
@@ -123,20 +147,21 @@ describe('parseFrameleafFeedRelease', () => {
 
 describe('parseFrameleafReleaseTag', () => {
   it.each([
-    ['frameleaf-v3.2.0-1', { version: '3.2.0', sequence: 1 }],
-    ['frameleaf-v3.2.0-12', { version: '3.2.0', sequence: 12 }],
-    ['frameleaf-v3.3.0-rc.1-2', { version: '3.3.0-rc.1', sequence: 2 }],
-    ['frameleaf-v10.0.0-beta-7', { version: '10.0.0-beta', sequence: 7 }],
+    ['frameleaf-v1.0.0', { version: '1.0.0' }],
+    ['frameleaf-v3.2.0', { version: '3.2.0' }],
+    ['frameleaf-v3.3.0-rc.1', { version: '3.3.0-rc.1' }],
+    ['frameleaf-v10.0.0-beta.7', { version: '10.0.0-beta.7' }],
   ])('parses %s', (tag, expected) => {
     expect(parseFrameleafReleaseTag(tag)).toEqual(expected);
   });
 
   it.each([
     'v3.2.0',
-    'frameleaf-v3.2.0',
+    'frameleaf-v3.2.0-15',
     'frameleaf-3.2.0-1',
     'frameleaf-v3.2-1',
     'frameleaf-v3.2.0-x',
+    'frameleaf-v3.3.0-rc.1-2',
     'immich-v3.2.0-1',
   ])('rejects %s', (tag) => {
     expect(parseFrameleafReleaseTag(tag)).toBeUndefined();
@@ -146,17 +171,23 @@ describe('parseFrameleafReleaseTag', () => {
 describe('newestFrameleafRelease', () => {
   const release = (tag_name: string, extra = {}) => ({ tag_name, published_at: null, ...extra });
 
-  it('picks the highest version, then the highest rebuild sequence', () => {
-    const releases = [release('frameleaf-v3.1.0-9'), release('frameleaf-v3.2.0-1'), release('frameleaf-v3.2.0-3')];
-    expect(newestFrameleafRelease(releases, false)?.release.tag_name).toBe('frameleaf-v3.2.0-3');
+  it('picks the highest independent semantic version', () => {
+    const releases = [release('frameleaf-v3.1.0'), release('frameleaf-v3.2.0'), release('frameleaf-v3.2.0')];
+    expect(newestFrameleafRelease(releases, false)?.release.tag_name).toBe('frameleaf-v3.2.0');
+  });
+
+  it('offers Frameleaf 1.0.0 instead of a numerically higher legacy rebuild', () => {
+    const releases = [release('frameleaf-v3.2.0-15'), release('frameleaf-v1.0.0')];
+    expect(newestFrameleafRelease(releases, false)?.tag.version).toBe('1.0.0');
+    expect(newestFrameleafRelease([releases[0]], false)).toBeUndefined();
   });
 
   it('skips drafts, foreign tags and, unless asked, prereleases', () => {
     const releases = [
-      release('frameleaf-v3.2.0-1'),
-      release('frameleaf-v4.0.0-1', { draft: true }),
+      release('frameleaf-v3.2.0'),
+      release('frameleaf-v4.0.0', { draft: true }),
       release('v9.0.0'),
-      release('frameleaf-v3.3.0-rc.1-1', { prerelease: true }),
+      release('frameleaf-v3.3.0-rc.1', { prerelease: true }),
     ];
     expect(newestFrameleafRelease(releases, false)?.tag.version).toBe('3.2.0');
     expect(newestFrameleafRelease(releases, true)?.tag.version).toBe('3.3.0-rc.1');
@@ -216,7 +247,7 @@ describe('kill switch and staged rollout (FL-142)', () => {
   });
 
   describe('fallback (the newest earlier fully rolled-out release)', () => {
-    const fallback = { ...feedRelease, version: '3.2.0', tag: 'frameleaf-v3.2.0-2', rolloutPercent: 100 };
+    const fallback = { ...feedRelease, version: '3.2.0', tag: 'frameleaf-v3.2.0', rolloutPercent: 100 };
 
     it('reads a valid fallback with the same rules as the release', () => {
       expect(

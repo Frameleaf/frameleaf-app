@@ -706,6 +706,66 @@ describe(MlDestinationService.name, () => {
       );
     });
 
+    it('keeps the restoration models the worker reported, for the editor to offer (FL-423)', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
+      mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.restoration);
+      const model = {
+        id: 'realbasicvsr-x4',
+        family: 'realbasicvsr',
+        mode: AssetRestorationMode.Faithful,
+        displayName: 'RealBasicVSR x4',
+        revision: 'r',
+        fingerprint: 'a'.repeat(64),
+        state: RestorationModelState.Available,
+        reasons: [],
+        nativeScale: 4,
+        maxInputLongEdge: 1280,
+        maxFrames: 300,
+        dynamicRanges: [],
+        measured: [],
+        qualificationId: 'q-1',
+      };
+      mocks.machineLearning.getRestorationModels.mockResolvedValue({
+        protocol: RESTORATION_PROTOCOL,
+        workloads: [MlWorkload.RestorationFaithful],
+        models: [
+          model,
+          {
+            ...model,
+            id: 'seedvr2-3b',
+            family: 'seedvr2',
+            mode: AssetRestorationMode.Creative,
+            displayName: 'SeedVR2 3B',
+            state: RestorationModelState.InsufficientVram,
+          },
+        ],
+        gpus: [{ name: 'NVIDIA RTX 4070 Ti SUPER', memoryTotalBytes: 17_171_480_576, driverVersion: '550.54.14' }],
+        configurationProblems: [],
+        checkedAt: '2026-09-22T12:00:00.000Z',
+      });
+
+      await sut.probe(mlDestinationStub.lan.id);
+
+      expect(mocks.mlDestination.recordProbe).toHaveBeenCalledWith(
+        mlDestinationStub.lan.id,
+        expect.objectContaining({
+          hardware: expect.objectContaining({
+            restorationModels: [
+              {
+                id: 'realbasicvsr-x4',
+                family: 'realbasicvsr',
+                mode: 'faithful',
+                name: 'RealBasicVSR x4',
+                available: true,
+              },
+              { id: 'seedvr2-3b', family: 'seedvr2', mode: 'creative', name: 'SeedVR2 3B', available: false },
+            ],
+          }),
+        }),
+        mlDestinationStub.lan,
+      );
+    });
+
     it('asks only restoration workers for GPUs', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
       mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);

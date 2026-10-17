@@ -1,0 +1,76 @@
+name: NAS packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      manager-tag:
+        description: Published signed Manager component tag
+        required: true
+        type: string
+      application-tag:
+        description: Optional published application tag for manual Server/ML catalog packages
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: frameleaf-nas-packages
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      MANAGER_TAG: ${{ inputs['manager-tag'] }}
+      APPLICATION_TAG: ${{ inputs['application-tag'] }}
+      NODE_PATH: ${{ github.workspace }}/manager/node_modules
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --prefix manager --ignore-scripts
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Authenticate and build Manager installers
+        run: |
+          set -euo pipefail
+          [[ "$MANAGER_TAG" =~ ^manager-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir -p "$RUNNER_TEMP/manager-release"
+          gh release download "$MANAGER_TAG" --repo "$GITHUB_REPOSITORY" --pattern manager-manifest.json --dir "$RUNNER_TEMP/manager-release"
+          jq -e --arg tag "$MANAGER_TAG" '.tag == $tag' "$RUNNER_TEMP/manager-release/manager-manifest.json" > /dev/null
+          node packaging/nas/build-manager.cjs "$RUNNER_TEMP/manager-release/manager-manifest.json" "$RUNNER_TEMP/nas/manager"
+          cp cosign.pub "$RUNNER_TEMP/nas/manager/"
+      - name: Authenticate and build optional application catalog
+        if: inputs['application-tag'] != ''
+        run: |
+          set -euo pipefail
+          [[ "$APPLICATION_TAG" =~ ^frameleaf-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?$ ]]
+          gh release view "$APPLICATION_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft or .isPrerelease then error("A published stable application release is required") else empty end'
+          mkdir -p "$RUNNER_TEMP/application-release"
+          gh release download "$APPLICATION_TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/application-release"
+          node packaging/nas/build.cjs "$RUNNER_TEMP/application-release" "$APPLICATION_TAG" "$RUNNER_TEMP/nas/application"
+          cp cosign.pub "$RUNNER_TEMP/nas/application/"
+      - name: Include submission instructions and package checksums
+        run: |
+          set -euo pipefail
+          cp packaging/nas/SUBMISSION.md "$RUNNER_TEMP/nas/"
+          cd "$RUNNER_TEMP/nas"
+          find . -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/NAS-SHA256SUMS"
+          mv "$RUNNER_TEMP/NAS-SHA256SUMS" SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: frameleaf-nas-packages
+          path: ${{ runner.temp }}/nas/
+          if-no-files-found: error
+          retention-days: 30

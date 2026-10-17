@@ -17,7 +17,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
+import { collectFilterIds, requirePetFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -172,6 +172,24 @@ export class TimelineService extends BaseService {
 
     if (dto.tagId) {
       await this.requireAccess({ auth, permission: Permission.TagRead, ids: [dto.tagId] });
+    }
+
+    // FL-425: the Filters panel's search filter narrows a signed-in viewer's timeline. A shared link
+    // never carries one: a camera, place, rating or enrichment condition would reveal what a link that
+    // hides EXIF withholds, and no shared page offers the panel.
+    if (dto.filter || dto.imageEnrichment) {
+      if (auth.sharedLink) {
+        throw new BadRequestException('filter and imageEnrichment are not available through a shared link');
+      }
+      // the same access the single albumId and tagId above need, as search checks the albums it names
+      const albumIds = collectFilterIds(dto.filter ?? {}, 'albumIds');
+      if (albumIds.length > 0) {
+        await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: albumIds });
+      }
+      const tagIds = collectFilterIds(dto.filter ?? {}, 'tagIds');
+      if (tagIds.length > 0) {
+        await this.requireAccess({ auth, permission: Permission.TagRead, ids: tagIds });
+      }
     }
 
     // FL-58: a pet is its owner's alone; the bucket SQL also only matches the caller's own pets

@@ -452,30 +452,26 @@ async function requireTestQualification(sha, request = github, expected) {
 function chooseTag(version, releases, refs, sha) {
   assert(SHA.test(sha), "Invalid source SHA");
   assert(
-    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version),
+    /^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/.test(version),
     "Unsupported base version",
   );
-  const prefix = `frameleaf-v${version}-`;
-  const pattern = new RegExp(
-    `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)$`,
-  );
-  const existing = releases.filter(
-    (r) => pattern.test(r.tag_name) && r.target_commitish === sha,
-  );
+  const tag = `frameleaf-v${version}`;
+  assert(!/-[0-9]+$/.test(version), "Use a named prerelease such as rc.1");
+  const existing = releases.filter((release) => release.tag_name === tag);
+  assert(existing.length <= 1, "Multiple releases for the same version");
+  if (existing.length) {
+    assert.equal(
+      existing[0].target_commitish,
+      sha,
+      "Version already reserved; bump the Frameleaf version",
+    );
+    return tag;
+  }
   assert(
-    existing.length <= 1,
-    "Multiple release records for the same source revision",
+    !refs.some((ref) => ref.ref === `refs/tags/${tag}`),
+    "Version tag already exists; bump the Frameleaf version",
   );
-  if (existing.length) return existing[0].tag_name;
-  const numbers = [
-    ...releases.map((r) => r.tag_name),
-    ...refs.map((r) => r.ref.replace(/^refs\/tags\//, "")),
-  ]
-    .map((tag) => pattern.exec(tag)?.[1])
-    .filter(Boolean)
-    .map(Number);
-  assert(numbers.every(Number.isSafeInteger), "Invalid release sequence");
-  return prefix + (Math.max(0, ...numbers) + 1);
+  return tag;
 }
 
 async function checkedResponse(response, limit = 16 * 1024 * 1024) {
@@ -680,7 +676,7 @@ async function releaseEvidence(tag = "latest") {
     "Reuse requires a published stable release",
   );
   assert(
-    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(record.tag_name),
+    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(record.tag_name),
     "Invalid reuse release tag",
   );
   const asset = record.assets?.find((a) => a.name === "release-manifest.json");
@@ -1241,7 +1237,7 @@ async function releaseFlags(
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   const tag = env.RELEASE_TAG;
   assert(
-    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(tag || ""),
+    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag || ""),
     "Invalid release tag",
   );
   const record = await github(`releases/tags/${encodeURIComponent(tag)}`);
@@ -1343,7 +1339,7 @@ async function createBundle(
   dependencies = new Map(),
 ) {
   assert(
-    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(tag),
+    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag),
     "Invalid release tag",
   );
   await fs.mkdir(directory, { recursive: true });

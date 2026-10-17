@@ -32,7 +32,7 @@ on:
         type: string
         default: '100'
       release-tag:
-        description: 'rollout/withdraw: the frameleaf-v<version>-<n> release to change'
+        description: 'rollout/withdraw: the frameleaf-v<version> release to change'
         type: string
         default: ''
       restore-tag:
