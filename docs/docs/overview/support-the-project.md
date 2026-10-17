@@ -20,7 +20,7 @@ If you are a programmer or developer, take a look at the [technology stack](/dev
 
 Frameleaf is made by a small team and funded by the people who use it. You can support Frameleaf with a supporter key for one account or for your whole server.
 
-If you already have a key, activate it in the web app under **Account settings → Supporter status**. Details on getting a key will be published in the [Frameleaf repository][github-repo].
+Get a key from **Support Frameleaf** in the account menu. A **Server** key covers everyone on your server, an **Individual** key your own account. If you already have a key, activate it under **Settings → Your preferences → Support Frameleaf**.
 
 [github-issue]: https://github.com/Frameleaf/frameleaf-app/issues/new/choose
 [github-repo]: https://github.com/Frameleaf/frameleaf-app

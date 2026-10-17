@@ -8,9 +8,7 @@ Frameleaf supports the option to send notifications via Email for the following 
 
 ## SMTP settings
 
-You can access the settings panel from the web at `Administration -> Settings -> Notification settings`.
-
-Under Email, enter the required details to connect with an SMTP server.
+Open **Settings → Notifications → Email delivery** on the web and enter the details of your SMTP server.
 
 You can use [this guide](/guides/smtp-gmail) to use Gmail's SMTP server.
 
@@ -20,24 +18,26 @@ You can use [this guide](/guides/smtp-microsoft365) to use Microsoft's SMTP serv
 
 Emails link back to your server (the album, or the sign-in page for a new account) using the first address the server knows:
 
-1. The external domain in `Administration -> Settings -> Server`.
-2. The public server URL, if one is configured.
+1. The **Public server URL** set in **Settings → Frameleaf Cloud → Remote access** (`server.externalDomain` in a config file). It needs no cloud link or plan.
+2. For a server linked to Frameleaf Cloud, the HTTPS address Frameleaf Cloud published for it.
 
-When the server has neither, emails are sent without a link and ask the recipient to open Frameleaf on their server instead. Set an external domain if you want links in emails. Without either address, a `{baseUrl}` tag in a custom template is left out, so links built from it become relative and don't work in email; set an external domain before using it.
+When the server has neither, emails are sent without a link and ask the recipient to open Frameleaf on their server instead. Set a Public server URL if you want links in emails. Without either address, a link inserted into custom wording (`{baseUrl}` in a config file template) is left out, so links built from it become relative and don't work in email; set a Public server URL before using it.
 
 ## User's notifications settings
 
-Users can manage their email notification settings from their account settings page on the web. They can choose to turn email notifications on or off for the following events:
+Each person manages their own emails in **Settings → Notifications → Emails you receive** on the web:
 
-- **Enable**: turns all email notifications on or off.
-- **Album added**: an email when they are added to a shared album.
-- **Album updated**: an email when a shared album has new assets.
+- **Send me emails**: turns all of their email notifications on or off.
+- **When someone shares with you**: an email when albums and photos are shared with them.
+- **Album updates**: an email when an album shared with them gets new photos.
 
-Select **Save** after changing these options.
+Save the changes after changing these options.
 
 ## Notification templates
 
-You can override the default notification text with custom templates in HTML format. You can use tags to show dynamic tags in your templates. An empty template uses the default email. Each template has a **Preview** button.
+In **Settings → Notifications → Email delivery**, **The emails themselves** lets you change the wording of the **Welcome email**, the **Album invitation email** and the **Album update email**. Write the text and use **Insert** to add the person's name, the album name, a link and so on; **Preview with sample names** shows the result. Leaving it empty uses the standard wording.
+
+In a [config file](/install/config-file) the same emails are the HTML templates under `templates.email`, where inserted items are written as tags:
 
 | Template               | Available tags                                                             |
 | ---------------------- | -------------------------------------------------------------------------- |

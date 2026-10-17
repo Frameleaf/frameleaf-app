@@ -189,10 +189,10 @@ Edit `.env` first if you want your photos (`UPLOAD_LOCATION`) or database (`DB_D
 Self-hosting is free. [Frameleaf Cloud](https://frameleaf.app/docs/cloud/overview/) adds:
 
 - 🌐 [Remote access](https://frameleaf.app/docs/cloud/remote-access/) — encrypted access from anywhere, for the apps and Apple TV
-- ☁️ [Cloud backup](https://frameleaf.app/docs/cloud/cloud-backup/) — off-site backup, plus [buddy backup](https://frameleaf.app/docs/cloud/buddy-backup/) to a friend's server
+- ☁️ [Cloud backup](https://frameleaf.app/docs/cloud/cloud-backup/) — off-site backup
 - ⚡ [Cloud GPU](https://frameleaf.app/docs/cloud/cloud-gpu/) — run heavy AI jobs without local hardware
 
-See [frameleaf.app](https://frameleaf.app/pricing/) for current pricing.
+A Server licence on its own gives your server a Frameleaf direct address for remote access, and lets it trade backups with a friend's licensed server through [Buddy backup](https://frameleaf.app/docs/cloud/buddy-backup/) over a direct connection; Frameleaf Cloud adds the relay when a direct connection isn't possible. See [frameleaf.app](https://frameleaf.app/pricing/) for current pricing.
 
 ## Docs and help
 

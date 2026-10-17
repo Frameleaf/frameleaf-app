@@ -1,8 +1,8 @@
 # Image Enrichment
 
-Image enrichment adds optional machine learning jobs that can generate searchable descriptions and tags for image assets, detect NSFW images, or do both. These jobs are disabled by default and can be enabled independently in `Administration > Settings > Machine Learning Settings`.
+Image enrichment adds optional machine learning jobs that can generate searchable descriptions and tags for image assets, detect NSFW images, or do both. Descriptions and tags are on by default and NSFW detection is off; each can be turned on or off independently in **Settings → Search & intelligence**: **Write captions for photos** on **Descriptions & tags**, and **Suggest photos to lock** on **Locked-content detection**.
 
-Image enrichment processes image assets only. It skips deleted and hidden assets, processes locked ones like any other (background work always reaches them), and it does not change album membership. A detection locks an asset only while `Hide detected NSFW assets` is enabled; see [Locked](./locked.md).
+Image enrichment processes image assets only. It skips deleted and hidden assets, processes locked ones like any other (background work always reaches them), and it does not change album membership. A detection locks an asset only while **Hide flagged photos until unlocked** is enabled; see [Locked](./locked.md).
 
 To try a model or prompt on a few samples before it reaches the library, and to run chosen stages on chosen items as a background plan, see [Sample-first enrichment and plans](./descriptions-and-smart-albums.md#sample-first-enrichment-and-plans). Videos are described from their reusable moment frames; see [Video moments](./descriptions-and-smart-albums.md#video-moments).
 
@@ -10,44 +10,44 @@ To try a model or prompt on a few samples before it reaches the library, and to 
 
 For an existing library, enable and backfill one task at a time:
 
-1. Enable `Detect NSFW images` first and run `Administration > Jobs > NSFW Detection > All`.
+1. Enable **Suggest photos to lock** first and run the **Locked-content detection** queue for all items from **Settings → Computers & background work → Background work**.
 2. Review the generated `nsfw` tags and tune the threshold if needed.
-3. Enable `Generate AI descriptions and tags` and run `Administration > Jobs > Image descriptions and tags > All`.
-4. Enable `Hide detected NSFW assets` only after the classifier results look acceptable for your library.
+3. Enable **Write captions for photos** and run the **Descriptions & tags** queue for all items from **Settings → Computers & background work → Background work**.
+4. Enable **Hide flagged photos until unlocked** only after the classifier results look acceptable for your library.
 
 New uploads are queued automatically after thumbnail generation when the relevant setting is enabled.
 
 ## Review and Repair
 
-Admins can review enrichment results from the asset detail panel. The `Image enrichment` section shows the stored model status, model name, NSFW score, labels, review state, and last error when a task fails.
+Admins can review enrichment results from the asset detail panel. The **AI enrichment** section shows the stored model status, model name, NSFW score, labels, review state, and last error when a task fails.
 
 Available single-asset repair actions are:
 
-- Rerun image descriptions and tags.
-- Rerun NSFW detection.
-- Accept the current NSFW classifier result.
-- Mark an asset as safe or NSFW using a private review override.
-- Clear the generated `AI description:` block without removing user-written description text.
-- Clear generated tags from the asset without deleting the tag definitions.
+- **Rewrite with AI**: rerun image descriptions and tags.
+- **Check again with AI**: rerun NSFW detection.
+- **Accept** the current NSFW classifier result.
+- **Mark safe** or **Mark sensitive** using a private review override.
+- **Clear description**: clear the generated `AI description:` block without removing user-written description text.
+- **Clear tags**: clear generated tags from the asset without deleting the tag definitions.
 
 Review overrides are stored in private enrichment metadata and become the effective NSFW source of truth for hiding. Generated tags remain visible search metadata only.
 
-Admins can also use the search filter modal to find enrichment review sets, including NSFW assets, assets needing NSFW review, reviewed or overridden NSFW assets, failed enrichment jobs, and image assets missing description or NSFW results. If `Hide detected NSFW assets` is enabled, unlock the locked folder PIN session before searching hidden NSFW review sets.
+Admins can also use the search filter modal to find enrichment review sets, including NSFW assets, assets needing NSFW review, reviewed or overridden NSFW assets, failed enrichment jobs, and image assets missing description or NSFW results. If **Hide flagged photos until unlocked** is enabled, unlock the locked folder PIN session before searching hidden NSFW review sets.
 
 ## QA Checklist
 
 Use this checklist when validating image enrichment against a real library or local ML service:
 
-1. Enable `Generate AI descriptions and tags` only, upload a new image, and confirm an `ImageDescription` job is queued after thumbnail generation.
-2. Enable `Detect NSFW images` only, upload a new image, and confirm an `NsfwDetection` job is queued after thumbnail generation.
+1. Enable **Write captions for photos** only, upload a new image, and confirm an `ImageDescription` job is queued after thumbnail generation.
+2. Enable **Suggest photos to lock** only, upload a new image, and confirm an `NsfwDetection` job is queued after thumbnail generation.
 3. Enable both settings, upload a new image, and confirm only `ImageDescription` is queued directly after thumbnail generation. The description job runs NSFW detection first and passes that result to the description model.
-4. Run `NSFW Detection > All` and `Image descriptions and tags > All` from `Administration > Jobs`, then confirm video, hidden, deleted, and already-successful images are skipped unless the run is forced.
+4. Run the **Locked-content detection** and **Descriptions & tags** queues for all items from **Settings → Computers & background work → Background work**, then confirm video, hidden, deleted, and already-successful images are skipped unless the run is forced.
 5. Open an enriched image's detail panel and verify the private status, model name, labels, score, review state, and errors are visible to admins.
 6. Use the search filter modal to review `NSFW`, `NSFW review`, `NSFW reviewed`, `NSFW overridden`, failed, and missing-result states.
 7. Confirm generated descriptions append only one `AI description:` block and never remove user-written text.
 8. Confirm generated tags are lowercase, deduplicated, searchable, and removable through the repair action without deleting tag definitions.
 9. For NSFW assets, confirm the private effective NSFW flag drives hiding behavior while tags remain visible metadata only.
-10. With `Hide detected NSFW assets` enabled, confirm non-elevated sync streams exclude private NSFW assets, album asset relations, person face thumbnails, partner assets, stacks, and generic asset metadata.
+10. With **Hide flagged photos until unlocked** enabled, confirm non-elevated sync streams exclude private NSFW assets, album asset relations, person face thumbnails, partner assets, stacks, and generic asset metadata.
 11. Unlock the locked-folder PIN session and confirm the same assets and album memberships are returned again without changing album membership.
 12. Confirm people views hide people who only appear in private NSFW assets, person statistics count only visible non-NSFW assets, and person thumbnails are not served when the feature face comes from a private NSFW asset.
 13. Confirm derived views such as duplicate groups, memories, stacks, and album activity do not expose hidden NSFW asset IDs, counts, thumbnails, or grouped assets.
@@ -61,7 +61,7 @@ When description and tag generation is enabled, Frameleaf sends the asset previe
 - Tags are plain searchable tags, deduplicated against existing tags.
 - Sidecar write jobs are queued after visible description or tag changes.
 
-The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. In this branch, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and local fallback behavior.
+The default description model setting is `Qwen/Qwen2.5-VL-3B-Instruct`. On the OpenVINO path, that model is mapped internally to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model. The lower-resource fallback setting is `microsoft/Florence-2-base-ft`. See [Hardware and Model Notes](#hardware-and-model-notes) below for the full curated model dropdown, VRAM estimates per model, and local fallback behavior.
 
 ## NSFW Detection
 
@@ -71,7 +71,7 @@ The default NSFW model is `onnx-community/nsfw_image_detection-ONNX`, with a def
 
 The private NSFW flag is the source of truth for privacy features. Tags are searchable metadata, not a security boundary.
 
-When `Hide detected NSFW assets` is enabled, a detection locks the asset (see [Locked](./locked.md)): it is hidden from library views such as the timeline, search results, albums, album thumbnails and counts, maps, shared-link payloads, downloads, and direct asset access unless the current session has been unlocked with the PIN, and it is listed in Locked.
+When **Hide flagged photos until unlocked** is enabled, a detection locks the asset (see [Locked](./locked.md)): it is hidden from library views such as the timeline, search results, albums, album thumbnails and counts, maps, shared-link payloads, downloads, and direct asset access unless the current session has been unlocked with the PIN, and it is listed in Locked.
 
 Sync streams apply the same private NSFW filter to asset payloads, album asset payloads, album-to-asset relations, exif, edit, face, memory, partner, and stack payloads, album thumbnails, person face thumbnails, and generic asset metadata. Private `ml-enrichment` metadata is never exposed through generic asset metadata sync.
 
@@ -87,7 +87,7 @@ Locked-folder behavior is session based. Unlocking the locked folder elevates th
 
 If both settings are enabled, Frameleaf runs NSFW detection first and passes the result into the description and tag prompt. This allows the generated description and tags to remain factual while including visible NSFW reasons when they are supported.
 
-To process existing libraries, go to `Administration > Jobs` and run the `All` action for the specific enrichment task you want to backfill. Use `NSFW Detection` first if you want classifier results available before description/tag generation, then run `Image descriptions and tags`. The legacy `Image Enrichment` queue command still queues every enabled enrichment task for API compatibility, but the admin Jobs page exposes the two backfills separately.
+To process existing libraries, go to **Settings → Computers & background work → Background work** and run the specific enrichment queue you want to backfill for all items. Use **Locked-content detection** first if you want classifier results available before description/tag generation, then run **Descriptions & tags**. The **Enrichment coordinator** queue still queues every enabled enrichment task for API compatibility, but Background work exposes the two backfills separately.
 
 Backfills skip images that already have a successful result for the selected task unless the job is forced. A forced run recalculates the selected task, but visible descriptions and tags are still protected by stored applied hashes so generated metadata is not appended repeatedly.
 
@@ -107,12 +107,12 @@ Descriptions and tags are applied after the private model result is stored:
 
 NSFW detection is an ONNX Runtime task. It can use CUDA in the CUDA machine-learning image and OpenVINO in the OpenVINO machine-learning image.
 
-Description and tag generation has two hardware profiles in the admin machine-learning settings:
+Description and tag generation has two hardware profiles (**Kind of graphics card** under **Advanced: caption model and hardware** on Descriptions & tags):
 
 - `Intel iGPU (OpenVINO)` uses OpenVINO GenAI and maps the admin-facing `Qwen/Qwen2.5-VL-3B-Instruct` setting to the OpenVINO-converted `llmware/qwen2.5-vl-3b-ov` model.
 - `NVIDIA GPU (CUDA)` uses Transformers/PyTorch with the CUDA machine-learning image.
 
-The admin UI provides a **curated dropdown** of image-description models. Each entry lists an estimated VRAM footprint so you can match it to your hardware. The dropdown also offers a **Custom…** sentinel that reveals a free-text input for any Hugging Face model ID (use with caution — only the families listed below are loadable).
+The **Caption model** setting provides a **curated dropdown** of image-description models. Each entry lists an estimated VRAM footprint so you can match it to your hardware. The dropdown also offers **Another model, by its Hugging Face name…**, which reveals a free-text input for any Hugging Face model ID (use with caution — only the families listed below are loadable).
 
 | Model (admin dropdown label)       | VRAM (FP16) | Recommended hardware                           | Notes                                                                                                           |
 | ---------------------------------- | ----------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -126,15 +126,15 @@ The admin UI provides a **curated dropdown** of image-description models. Each e
 | Florence-2-base-ft _(fallback)_    | ~1 GB       | Any CUDA box (local fallback only)             | Caption-only; not a chat-style VLM. Used only as fallback for local URLs — see "Fallback model behavior" below. |
 | Florence-2-large-ft _(fallback)_   | ~3 GB       | Any CUDA box (local fallback only)             | Same caveat as base-ft.                                                                                         |
 
-Only the **Qwen2.5-VL**, **Qwen3-VL**, **Phi-3/3.5-vision**, and **Florence-2** families are loadable on the CUDA path. Other Hugging Face model IDs pasted into the **Custom…** field will fail at load time with `Failed to load model 'X'` in the worker logs.
+Only the **Qwen2.5-VL**, **Qwen3-VL**, **Phi-3/3.5-vision**, and **Florence-2** families are loadable on the CUDA path. Other Hugging Face model IDs pasted into that field will fail at load time with `Failed to load model 'X'` in the worker logs.
 
 On OpenVINO, the 3B/7B Qwen entries resolve transparently to pre-quantized int4 builds (`llmware/qwen2.5-vl-Nb-ov`). The 32B, 72B, and Qwen3-VL 30B-A3B entries are CUDA only — there is no OpenVINO alias.
 
-The same description models, with Florence-2 base and large, are the white and green stops of the descriptions slider in **Where each job runs**. The slider colours each one by the last Hardware & GPU check and changes the same description model setting, saved with the settings bar. A model the machine-learning container doesn't have yet downloads the first time a job uses it. See [Hardware acceleration → Model licences](/features/ml-hardware-acceleration#model-licences).
+The same description models, with Florence-2 base and large, are the white and green stops of the descriptions slider in **Where each job runs**. The slider (**Settings → Computers & background work → Where work runs**) colours each one by the last graphics card check and changes the same description model setting, saved with the settings bar. A model the machine-learning container doesn't have yet downloads the first time a job uses it. See [Hardware acceleration → Model licences](/features/ml-hardware-acceleration#model-licences).
 
 ### Fallback model behavior
 
-The dropdown also exposes a **fallback model** field. Florence-2 is the typical choice for local CUDA setups, since it's small enough to fit alongside other models on the same GPU.
+Descriptions & tags also has a **Backup model** setting (the fallback model). Florence-2 is the typical choice for local CUDA setups, since it's small enough to fit alongside other models on the same GPU.
 
 For local URLs, if the primary model fails (HTTP 5xx), Frameleaf retries the same request with the fallback model name. Local Florence-2 then takes the call.
 

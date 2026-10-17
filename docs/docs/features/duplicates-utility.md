@@ -1,6 +1,6 @@
 # Duplicates Utility
 
-Frameleaf comes with a duplicates utility to help you detect assets that look visually similar. The duplicate detection feature relies on machine learning and is enabled by default. For more information about when the duplicate detection job runs, see [Jobs and Workers](/administration/jobs-workers). Once an asset has been processed and added to a duplicate group, it becomes available to review in the "Review duplicates" utility, which can be found under **Utilities > Review duplicates** in the web app.
+Frameleaf comes with a duplicates utility to help you detect assets that look visually similar. The duplicate detection feature relies on machine learning and is enabled by default. For more information about when the duplicate detection job runs, see [Jobs and Workers](/administration/jobs-workers). Once an asset has been processed and added to a duplicate group, it becomes available to review in **Duplicate review**: open **Library Care** at the bottom of the sidebar, or **Settings → Utilities**, and choose **Duplicate review**.
 
 ## Reviewing duplicates
 
@@ -8,10 +8,13 @@ The review duplicates page allows the user to individually select which assets s
 
 ### Automatic preselection
 
-When using "Deduplicate All" or viewing suggestions, Frameleaf automatically preselects which assets to keep based on:
+When viewing suggestions or using **Keep suggested**, Frameleaf preselects which asset to keep based on:
 
-1. **Image size in bytes** — larger files are preferred as they typically have higher quality.
-2. **Count of EXIF data** — assets with more metadata are preferred.
+1. **File format** — RAW files are preferred, then HEIC/HEIF, then other formats.
+2. **Image size in bytes** — within the same format, larger files are preferred as they typically have higher quality.
+3. **Count of EXIF data** — assets with more metadata are preferred.
+
+Bursts get no suggested keeper; you choose which shots to keep.
 
 ### Synchronizing metadata
 

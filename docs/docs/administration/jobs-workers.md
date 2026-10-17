@@ -74,13 +74,13 @@ services:
 
 ## Machine-learning and restoration workers
 
-Machine learning runs outside the server container, on the destinations listed under Administration > Processing destinations. Library analysis and restoration use separate workers, and restorations never take a job queue's concurrency slot. See [Workers and endpoints](/administration/workers-and-endpoints).
+Machine learning runs outside the server container, on the computers listed under **Settings → Computers & background work → Computers**, with **Where work runs** choosing which one does each kind of work. Library analysis and restoration use separate workers, and restorations never take a job queue's concurrency slot. See [Workers and endpoints](/administration/workers-and-endpoints).
 
 ## Jobs
 
-When a new asset is uploaded it kicks off a series of jobs, which include metadata extraction, thumbnail generation, machine learning tasks, image enrichment, and storage template migration, if enabled. To view the status of a job navigate to the Administration -> Jobs page.
+When a new asset is uploaded it kicks off a series of jobs, which include metadata extraction, thumbnail generation, machine learning tasks, image enrichment, and storage template migration, if enabled. To view the status of a job, open **Settings → Computers & background work → Background work**.
 
-Additionally, some jobs (such as memories generation) run on a schedule, which is every night at midnight by default. To change when they run or enable/disable a job navigate to System Settings -> Nightly Tasks Settings. That section has:
+Additionally, some jobs (such as memories generation) run on a schedule, which is every night at midnight by default. To change when they run or turn a task on or off, open **Settings → Computers & background work → Overnight schedule**. That page has:
 
 - **Start time**: when the server starts running the nightly tasks (default `00:00`).
 - **Database cleanup tasks**: clean up old, expired data from the database.
@@ -90,7 +90,7 @@ Additionally, some jobs (such as memories generation) run on a schedule, which i
 - **Sync quota usage**: update user storage quota, based on current usage.
 
 :::note
-Some jobs ([External Libraries](/features/libraries) scanning, Database Dump) are configured in their own sections in System Settings.
+Some scheduled work is set on its own page: [external library](/features/libraries) scanning in **Settings → Libraries → Folder scanning**, and database backups in **Settings → Import & protection → Backup schedule**.
 :::
 
 ## Job processing order
@@ -113,7 +113,7 @@ graph TD
 
 ## Image Enrichment Jobs
 
-Image enrichment has separate backfill queues for `NSFW Detection` and `Image descriptions and tags`. Each queue can be run independently from `Administration > Jobs`, so you can classify NSFW images first, review the results, and then backfill generated descriptions and tags without toggling settings.
+Image enrichment has separate backfill queues for `NSFW Detection` and `Image descriptions and tags`. Each queue can be run independently from **Settings → Computers & background work → Background work**, so you can classify NSFW images first, review the results, and then backfill generated descriptions and tags without toggling settings.
 
 When both image descriptions and NSFW detection are enabled, newly uploaded images queue a description job after thumbnail generation. That job runs NSFW detection first when no stored NSFW result exists, then passes the result to the description model. If only NSFW detection is enabled, uploads queue the NSFW job directly.
 

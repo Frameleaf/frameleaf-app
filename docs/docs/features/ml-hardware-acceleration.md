@@ -52,15 +52,15 @@ Some models have licences that limit commercial use. On your own server they run
 | `nllb-clip` search models (base and large, every variant)      | CC-BY-NC-4.0                                    |
 | MusicGen-small (`Xenova/musicgen-small`)                       | CC-BY-NC-4.0                                    |
 
-Choose models for each kind of work in **Where each job runs**. Each kind of work has one slider, from lighter to heavier models:
+Choose models for each kind of work in **Where each job runs** (**Settings → Computers & background work → Where work runs**). Each kind of work has one slider, from lighter to heavier models:
 
-- **White** stops run on this server's processor and **green** stops fit its GPU, as the last Hardware & GPU check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
+- **White** stops run on this server's processor and **green** stops fit its GPU, as the last graphics card check found it. Without a check every stop is white; run the check to see which fit. A model that needs more GPU memory than you have, or CUDA on a GPU that does not use it, is crossed out with the reason.
 
-Choosing a white or green stop changes the description model setting, saved with the settings bar like the Machine learning settings. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback model and any model typed as a custom name stay in the Machine learning settings. Restoration workers bring their own models. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`).
+Choosing a white or green stop changes the description model setting, saved with the settings bar like any other setting. The machine-learning container downloads a model it doesn't have yet the first time a job uses it, which can take several minutes. The fallback (**Backup model**) and any model typed by its Hugging Face name stay in **Settings → Search & intelligence → Descriptions & tags**, under **Advanced: caption model and hardware**. Restoration workers bring their own models. Smooth motion runs RIFE on a restoration worker on this server or your network when an administrator has added one with a qualified RIFE model (see `machine-learning/video-restoration/README.md`).
 
-## Hardware & GPU check
+## Graphics card check
 
-**Settings → Compute & jobs → Hardware & GPU** checks each part of Frameleaf on its own, because each needs its own access to the GPU. For the server container (video and Studio export) and the machine-learning container (AI features) it reports three separate facts:
+**Settings → Computers & background work → Graphics card check** checks each part of Frameleaf on its own, because each needs its own access to the GPU. For the server container (video and Studio export) and the machine-learning container (AI features) it reports three separate facts:
 
 - **GPU on the host**: the host's PCI list, read from inside the container, shows a GPU. Under WSL2 or Docker Desktop the host's GPUs are hidden, so this shows **Not reported** unless the container sees one.
 - **Visible to the container**: an NVIDIA device, a `/dev/dri` render node, `/dev/kfd` or `/dev/dxg` was passed in.

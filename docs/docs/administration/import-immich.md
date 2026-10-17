@@ -45,14 +45,15 @@ A configuration file identifies the immutable source version, operator source ID
 The current admin CLI exposes:
 
 ```sh
-immich-admin import-immich preflight --config /path/config.json
-immich-admin import-immich run --config /path/config.json
-immich-admin import-immich status
-immich-admin import-immich resume --config /path/config.json
-immich-admin import-immich verify --config /path/config.json
+frameleaf-admin import-immich preflight --config /path/config.json
+frameleaf-admin import-immich run --config /path/config.json
+frameleaf-admin import-immich status
+frameleaf-admin import-immich resume --config /path/config.json
+frameleaf-admin import-immich verify --config /path/config.json
+frameleaf-admin import-immich abandon --config /path/config.json
 ```
 
-The command name is an existing admin CLI compatibility alias. Import-changing commands must run with the same destination URL, read-only source URL and configuration. `status` reads the destination journal without source access. `run` refuses an existing journal; `resume` requires the exact original source identity and configuration. Batch rows and checkpoints commit in the same transaction, so interruption does not justify clearing the journal or overwriting destination rows.
+`immich-admin` remains a deprecated alias of `frameleaf-admin`. Import-changing commands must run with the same destination URL, read-only source URL and configuration. `status` reads the destination journal without source access. `run` refuses an existing journal; `resume` requires the exact original source identity and configuration. Batch rows and checkpoints commit in the same transaction, so interruption does not justify clearing the journal or overwriting destination rows.
 
 The importer preserves source IDs, ownership, password/PIN hashes, locked/hidden and soft-deleted state, albums and roles, partners, shared links, tags, memories, edits and media relationships. It does not copy source migration history, extension indexes, sessions, API keys, server configuration, plugin credentials, temporary streams or job queues. Workflow/plugin definitions, audit/sync history and notifications are outside this content import.
 

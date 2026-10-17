@@ -26,14 +26,6 @@ View a single photo, press the three dots in the top-right to show context menu,
 
 ## Mobile App
 
-### What is the difference between the cloud icons on the mobile app?
-
-| Icon                               | Description                                                                                                                                      |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ![cloud](/img/cloud.svg)           | Asset is only available on the server and was uploaded from some other device (like the web client) or was deleted from this device after upload |
-| ![cloud-cross](/img/cloud-off.svg) | Asset is only available locally and has not yet been backed up                                                                                   |
-| ![cloud-done](/img/cloud-done.svg) | Asset was uploaded from this device and is now backed up to the server; the original file is still on the device                                 |
-
 ### I cannot log into the application after an update. What can I do?
 
 Verify that the mobile app and server are both running the same version (major and minor).
@@ -63,15 +55,14 @@ On iOS (iPhone and iPad), the operating system determines if a particular app ca
 ### Why are features in the mobile app not working with a self-signed certificate, Basic Auth, custom headers, or mutual TLS?
 
 These network features are experimental. They often do not work with video playback, asset upload or download, and other features.
-Many of these limitations are known issues in the upstream project.
 Instead of these experimental features, we recommend using the URL switching feature, a VPN, or a [free trusted SSL certificate](https://letsencrypt.org/) for your domain.
 
 We are not actively developing these features and will not be able to provide support, but welcome contributions to improve them.
 Please discuss any large PRs with our dev team to ensure your time is not wasted.
 
-### Why isn't the mobile app updated yet?
+### Where do I get the mobile app?
 
-Frameleaf mobile apps are coming; for now use the web app.
+Install [Frameleaf from the App Store](https://apps.apple.com/us/app/frameleaf/id6821111014) on iPhone or iPad, or [Frameleaf from Google Play](https://play.google.com/store/apps/details?id=app.frameleaf.android) on Android. Keep the app up to date along with your server.
 
 ---
 
@@ -86,7 +77,7 @@ However, Frameleaf will delete original files that have been trashed when the tr
 ### Why do my file names appear as a random string in the file manager?
 
 When Storage Template is off (default) Frameleaf saves the file names in a random string (also known as random UUIDs) to prevent duplicate file names.
-To retrieve the original file names, you must enable the Storage Template and then run the STORAGE TEMPLATE MIGRATION job.
+To retrieve the original file names, you must enable the Storage Template and then run the **Storage organization** job under **Settings → Computers & background work → Background work**.
 It is recommended to read about [Storage Template](/administration/storage-template) before activation.
 
 ### Can I add my existing photo library?
@@ -95,7 +86,7 @@ Yes, with an [External Library](/features/libraries.md).
 
 ### What happens to existing files after I choose a new [Storage Template](/administration/storage-template.mdx)?
 
-Template changes will only apply to _new_ assets. To retroactively apply the template to previously uploaded assets, run the Storage Migration Job, available on the [Jobs](/administration/jobs-workers/#jobs) page.
+Template changes will only apply to _new_ assets. To retroactively apply the template to previously uploaded assets, run the **Storage organization** job (see [Jobs](/administration/jobs-workers/#jobs)) under **Settings → Computers & background work → Background work**.
 
 ### Why are only photos and not videos being uploaded to Frameleaf?
 
@@ -159,12 +150,12 @@ Frameleaf always keeps your original files. Alongside that, it generates a trans
 
 ### How can I delete transcoded videos without deleting the original?
 
-The transcoded version of an asset can be deleted by setting a transcode policy that makes it unnecessary and then running a transcoding job for that asset. This can be done on a per-asset basis by starting a transcoding job for a single asset with the _Refresh encoded videos_ button in the asset viewer options or for all assets by running transcoding jobs for all assets from the administration page.
+The transcoded version of an asset can be deleted by choosing a rule that makes it unnecessary and then remaking the playback copy for that asset. This can be done for a single asset with **Refresh encoded video** in the asset viewer's menu, or for all assets with **Remake every playback copy**.
 
-To update the transcode policy, navigate to Administration > Video Transcoding Settings > Transcoding Policy and select a policy from the drop-down. This policy will determine whether an existing transcode will be deleted or overwritten in the transcoding job. If a video should be transcoded according to this policy, an existing transcode is overwritten. If not, then it is deleted.
+To change the rule, open **Settings → Editing & playback → Video playback copies** and choose **Which videos get a copy**. When a copy is remade, a video that still needs a copy under the new rule gets its copy overwritten; otherwise the existing copy is deleted.
 
 :::note
-For example, say you have existing transcodes with the policy "Videos higher than normal resolution or not in the desired format" and switch to a narrower policy: "Videos not in the desired format." If an asset was only transcoded due to its resolution, running a transcoding job for it will delete the existing transcode. This is because resolution is no longer part of the transcode policy and the transcode is unnecessary. Likewise, if you set the policy to "Don't transcode any videos" and run transcoding jobs for all assets, this will delete all existing transcodes as they are unnecessary.
+For example, if you narrow the rule so that videos are no longer copied because of their resolution, remaking the copy of a video that was only copied for its resolution deletes that copy. Turning playback copies off and remaking every copy deletes all existing copies.
 :::
 
 ### Is it possible to compress images during backup?
@@ -255,7 +246,7 @@ See [How Facial Recognition Works](/features/facial-recognition#how-facial-recog
 Disabling machine learning will result in a poor experience for searching and the 'Explore' page, as these are reliant on it to work as intended.
 :::
 
-Machine learning can be disabled under Administration > Settings > Machine Learning Settings, either entirely or by model type. For instance, you can choose to disable smart search with CLIP, but keep facial recognition enabled. This means that the machine learning service will only process the enabled jobs.
+Machine learning can be disabled under **Settings → Search & intelligence**, either entirely with the **Search and recognition** switch or per feature. For instance, you can turn off **Visual search** but keep **Faces & identity** on. This means that the machine learning service will only process the enabled jobs.
 
 However, disabling all jobs will not disable the machine learning service itself. To prevent it from starting up at all in this case, you can comment out the `frameleaf-machine-learning` section of the docker-compose.yml.
 
@@ -285,7 +276,7 @@ You can use [Smart Search](/features/searching.md) for this to some extent. For 
 
 ### I'm getting a lot of "faces" that aren't faces, what can I do?
 
-You can increase the MIN DETECTION SCORE to 0.8 to help prevent bad thumbnails. Setting the score too high (above 0.9) might filter out too many real faces depending on the library used. If you just want to hide specific faces, you can adjust the 'MIN FACES DETECTED' setting in the administration panel  
+In **Settings → Search & intelligence → Faces & identity**, under **Advanced: face model and numbers**, you can increase **Face clarity needed** to 0.8 to help prevent bad thumbnails. Setting it too high (above 0.9) might filter out too many real faces depending on the library used. If you just want to hide specific faces, you can raise **Photos needed before someone appears**
 to increase the bar for what the algorithm considers a "core face" for that person, reducing the chance of bad thumbnails being chosen.
 
 ### The immich_model-cache volume takes up a lot of space, what could be the problem?
@@ -316,10 +307,10 @@ Frameleaf optionally uses transcoding and machine learning for several features.
 
 The initial backup is the most intensive due to the number of jobs running. The most CPU-intensive ones are transcoding and machine learning jobs (Smart Search, Face Detection), and to a lesser extent thumbnail generation. Here are some ways to lower their CPU usage:
 
-- Lower the job concurrency for these jobs to 1.
-- Under Settings > Transcoding Settings > Threads, set the number of threads to a low number like 1 or 2.
-- Under Settings > Machine Learning Settings > Facial Recognition > Model Name, you can change the facial recognition model to `buffalo_s` instead of `buffalo_l`. The former is a smaller and faster model, albeit not as good.
-  - For facial recognition on new images to work properly, You must re-run the Face Detection job for all images after this.
+- Lower the concurrency for these jobs to 1 under **Settings → Computers & background work → Background work**.
+- Under **Settings → Editing & playback → Video playback copies**, set **Processor cores for video** to a low number like 1 or 2.
+- Under **Settings → Search & intelligence → Faces & identity → Advanced: face model and numbers**, you can change the **Face model** to `buffalo_s` instead of `buffalo_l`. The former is a smaller and faster model, albeit not as good.
+  - For facial recognition on new images to work properly, you must re-run the Face detection job for all images after this.
 - At the container level, you can [set resource constraints](/FAQ#can-i-limit-cpu-and-ram-usage) to lower usage further.
   - It's recommended to only apply these constraints _after_ taking some of the measures here for best performance.
 - If these changes are not enough, see [above](/FAQ#how-can-i-disable-machine-learning) for instructions on how to disable machine learning.
@@ -352,7 +343,7 @@ Note that memory constraints work by terminating the container, so this can intr
 This advice improves throughput, not latency. This is to say that it will make Smart Search jobs process more quickly, but it won't make searching faster.
 :::
 
-You can increase throughput by increasing the job concurrency for machine learning jobs (Smart Search, Face Detection). With higher concurrency, the host will work on more assets in parallel. You can do this by navigating to Administration > Settings > Job Settings and increasing concurrency as needed.
+You can increase throughput by increasing the job concurrency for machine learning jobs (Smart Search, Face Detection). With higher concurrency, the host will work on more assets in parallel. You can do this under **Settings → Computers & background work → Background work** by increasing **Concurrency** as needed.
 
 :::danger
 On a normal machine, 2 or 3 concurrent jobs can probably max the CPU. Storage speed and latency can quickly become the limiting factor beyond this, particularly when using HDDs.
@@ -451,7 +442,7 @@ NTFS and ex/FAT/32 filesystems are not supported. See [here](/install/requiremen
 
 ### How can I verify the integrity of my database?
 
-Database checksums are enabled by default for new installations since v1.104.0. You can check if they are enabled by running the following command.
+Database checksums are enabled by default for new installations. You can check if they are enabled by running the following command.
 A result of `on` means that checksums are enabled.
 
 <details>
@@ -477,7 +468,7 @@ docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAM
   datname  | checksum_failures | checksum_last_failure
 -----------+-------------------+-----------------------
  postgres  |                 0 |
- immich    |                 0 |
+ frameleaf |                 0 |
  template1 |                 0 |
  template0 |                 0 |
 (4 rows)

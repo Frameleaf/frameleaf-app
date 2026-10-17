@@ -28,7 +28,7 @@ For installations that previously enabled verbose request logging, assess histor
 
 ## Database backups
 
-Frameleaf's database backup runtime uses PostgreSQL 19 `pg_dump` to write plain SQL compressed with gzip. Backup filenames begin with `frameleaf-db-backup`. Configure and inspect scheduled backups under **Administration > Settings > Backup** and keep the matching files from your backup storage with your media recovery point.
+Frameleaf's database backup runtime uses PostgreSQL 19 `pg_dump` to write plain SQL compressed with gzip. Backup filenames begin with `frameleaf-db-backup`. Set when they run under **Settings → Backup → Schedule**, find saved database backups under **Settings → Backup → On this server**, and keep the matching files from your backup storage with your media recovery point.
 
 For an operator-managed backup, use a PostgreSQL 19 client, the configured database user and the database named in `DB_URL` or `DB_DATABASE_NAME`. With the release Compose service names and defaults:
 
