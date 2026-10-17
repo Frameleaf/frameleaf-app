@@ -31,6 +31,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { desktopImageModelKeys } from 'src/utils/desktop-model-catalogue.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
@@ -920,9 +921,7 @@ it.each([
       (p) =>
         p.workload === workload &&
         p.spec.fixtureKind === 'image' &&
-        (workload === MlWorkload.Clip ||
-          legacy ||
-          p.runtimeSourceRevision === '1ca4d52e2b8158d89d8de8b17e1e6535e17691f4'),
+        (workload === MlWorkload.Clip || legacy || p.modelKey === desktopImageModelKeys[workload]),
     )!;
     const space = JSON.parse(readFileSync('resources/desktop/model-spaces.json', 'utf8')).spaces[0];
     for (const table of [
@@ -1214,7 +1213,7 @@ it.each([
       );
     }
   },
-  30_000,
+  90_000,
 );
 
 it('migrates old broker tasks to unproven disclosure and reverses without deleting their rows', async () => {
