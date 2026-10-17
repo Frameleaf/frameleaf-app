@@ -583,7 +583,7 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-micro);
     font-weight: 400;
-    padding-left: var(--fl-space-2);
+    padding-inline-start: var(--fl-space-2);
   }
   .raw-alert {
     font-size: var(--fl-font-small);
@@ -605,7 +605,7 @@
     display: flex;
     gap: var(--fl-space-3);
     align-items: center;
-    text-align: left;
+    text-align: start;
     border: 1px solid transparent;
     border-radius: var(--fl-radius-card);
     background: transparent;
@@ -816,7 +816,7 @@
     border-collapse: collapse;
     font-size: var(--fl-font-small);
     margin: 22px 0;
-    text-align: left;
+    text-align: start;
   }
   .raw-formats td,
   .raw-formats th {
