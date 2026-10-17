@@ -22,7 +22,8 @@ import { BaseService } from 'src/services/base.service.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 // can't use gt because it's broken for release candidates https://github.com/npm/node-semver/issues/483
-const isNewer = (channel: ReleaseChannel, releaseVersion: string) =>
+// FL-421: shared with "What needs your attention", so both say the same about a new version.
+export const isNewerRelease = (channel: ReleaseChannel, releaseVersion: string) =>
   intersects(`>${serverVersion}`, releaseVersion, { includePrerelease: channel === ReleaseChannel.ReleaseCandidate });
 
 const asNotification = (
@@ -30,7 +31,7 @@ const asNotification = (
   { checkedAt, releaseVersion }: VersionCheckMetadata,
 ): ReleaseEventV1 => {
   return {
-    isAvailable: isNewer(channel, releaseVersion),
+    isAvailable: isNewerRelease(channel, releaseVersion),
     checkedAt,
     serverVersion: ServerVersionResponseDto.fromSemVer(serverVersion),
     releaseVersion: ServerVersionResponseDto.fromSemVer(new SemVer(releaseVersion)),
@@ -203,7 +204,7 @@ export class VersionService extends BaseService {
 
     await this.systemMetadataRepository.set(SystemMetadataKey.VersionCheckState, metadata);
 
-    if (isNewer(channel, releaseVersion)) {
+    if (isNewerRelease(channel, releaseVersion)) {
       this.logger.log(`Found ${releaseVersion}, released at ${new Date(publishedAt).toLocaleString()}`);
       this.websocketRepository.clientBroadcast('on_new_release', asNotification(channel, metadata));
     }

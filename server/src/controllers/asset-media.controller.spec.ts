@@ -250,6 +250,41 @@ describe(AssetMediaController.name, () => {
         }
       });
 
+      // FL-436: an older SDR still asked for at fullsize is sent to its original. The text/plain body is
+      // Express's redirect note on a 302, never a 200, so a client must follow it (or read Location).
+      it.each([
+        ['original', 'original?'],
+        ['preview', 'size=preview'],
+      ] as const)(
+        'redirects a fullsize request served by the %s with a 302, not a 200',
+        async (targetSize, location) => {
+          service.viewThumbnail.mockResolvedValue({ targetSize } as never);
+
+          const response = await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/thumbnail?size=fullsize`);
+
+          expect(response.status).toBe(302);
+          expect(response.headers.location).toContain(location);
+        },
+      );
+
+      it('sends a served fullsize file with its image content type (FL-436)', async () => {
+        const folder = await mkdtemp(join(tmpdir(), 'frameleaf-fullsize-type-'));
+        try {
+          const path = join(folder, 'fullsize.webp');
+          await writeFile(path, Buffer.from('fullsize fixture'));
+          service.viewThumbnail.mockResolvedValue(
+            new FileDownloadResponse({ path, contentType: 'image/webp', cacheControl: CacheControl.PrivateWithCache }),
+          );
+
+          const response = await request(ctx.getHttpServer()).get(`/assets/${factory.uuid()}/thumbnail?size=fullsize`);
+
+          expect(response.status).toBe(200);
+          expect(response.headers['content-type']).toMatch(/^image\/webp/);
+        } finally {
+          await rm(folder, { recursive: true, force: true });
+        }
+      });
+
       it('serves the ordinary edited face preview even when a restoration is selected', async () => {
         const id = factory.uuid();
         service.viewThumbnail.mockResolvedValue({ targetSize: 'original' });

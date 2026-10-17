@@ -239,7 +239,8 @@ export class PersonController {
   }
 
   @Get(':id/thumbnail')
-  @FileResponse()
+  // FL-436: person thumbnails are always written as JPEG
+  @FileResponse('image/jpeg')
   @Authenticated({ permission: Permission.PersonRead })
   // FL-161: shown by the dozen on the people pages; counted against the higher media ceiling
   @RemoteMediaCeiling()

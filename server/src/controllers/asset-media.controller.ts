@@ -170,7 +170,8 @@ export class AssetMediaController {
   }
 
   @Get(':id/thumbnail')
-  @FileResponse()
+  // FL-436: generated sizes are JPEG or WebP; a selected restoration or kept older file can be any image type
+  @FileResponse('image/jpeg', 'image/webp', 'image/*')
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
   // FL-161: a timeline asks for these by the hundred; they count against the higher media ceiling
   @RemoteMediaCeiling()

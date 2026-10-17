@@ -289,6 +289,53 @@
         "x-immich-state": "Stable"
       }
     },
+    "/admin/attention": {
+      "get": {
+        "description": "What needs an administrator on this server now: the drive the library is on filling up, a missed backup, background work that stopped, or a new version. Worked out from the server’s own records on every read.",
+        "operationId": "getAttention",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what needs attention",
+        "tags": [
+          "Attention (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/auth/unlink-all": {
       "post": {
         "description": "Unlinks all OAuth accounts associated with user accounts in the system.",
@@ -14545,6 +14592,18 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": ""
@@ -15763,6 +15822,24 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -19603,6 +19680,12 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -29331,6 +29414,12 @@
           "200": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -41271,6 +41360,18 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": ""
@@ -52258,6 +52359,24 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": ""
@@ -53054,6 +53173,10 @@
     {
       "name": "Asset files",
       "description": "An asset file is a file associated with an asset, including edited versions, thumbnails, etc."
+    },
+    {
+      "name": "Attention (admin)",
+      "description": "What needs an administrator on this server: a drive filling up, a missed backup, background work that stopped or a new version."
     },
     {
       "name": "Authentication",
@@ -63943,6 +64066,289 @@
         ],
         "type": "object"
       },
+      "AttentionBackupDto": {
+        "properties": {
+          "days": {
+            "description": "Whole days since it last finished, when it is behind",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "lastSuccessAt": {
+            "description": "When this place last finished a backup",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "place": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttentionBackupPlace"
+              }
+            ],
+            "description": "The place the finding is about; null when there is none",
+            "nullable": true
+          }
+        },
+        "required": [
+          "days",
+          "lastSuccessAt",
+          "place"
+        ],
+        "type": "object"
+      },
+      "AttentionBackupPlace": {
+        "description": "Where a backup is kept; local is the copy of the library data on this server",
+        "enum": [
+          "cloud",
+          "buddy",
+          "local"
+        ],
+        "type": "string"
+      },
+      "AttentionCheckDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AttentionKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AttentionCheckState"
+          }
+        },
+        "required": [
+          "kind",
+          "state"
+        ],
+        "type": "object"
+      },
+      "AttentionCheckState": {
+        "description": "How a check came out",
+        "enum": [
+          "ok",
+          "attention",
+          "off",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AttentionItemDto": {
+        "properties": {
+          "backup": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttentionBackupDto"
+              }
+            ],
+            "description": "The place, for a backup item",
+            "nullable": true
+          },
+          "id": {
+            "description": "Stable for the same finding across reads, for example backup:cloud",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttentionKind"
+          },
+          "level": {
+            "$ref": "#/components/schemas/AttentionLevel"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/AttentionReason"
+          },
+          "since": {
+            "description": "When it started, when the server knows",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "storage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttentionStorageDto"
+              }
+            ],
+            "description": "The drive, for a storage item",
+            "nullable": true
+          },
+          "version": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttentionVersionDto"
+              }
+            ],
+            "description": "The versions, for a version item",
+            "nullable": true
+          },
+          "work": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AttentionWorkDto"
+              }
+            ],
+            "description": "The kinds of work, for a work item",
+            "nullable": true
+          }
+        },
+        "required": [
+          "backup",
+          "id",
+          "kind",
+          "level",
+          "reason",
+          "since",
+          "storage",
+          "version",
+          "work"
+        ],
+        "type": "object"
+      },
+      "AttentionKind": {
+        "description": "What an attention item is about",
+        "enum": [
+          "backup",
+          "storage",
+          "work",
+          "version"
+        ],
+        "type": "string"
+      },
+      "AttentionLevel": {
+        "description": "How soon it needs the administrator: now, or when they can",
+        "enum": [
+          "now",
+          "soon"
+        ],
+        "type": "string"
+      },
+      "AttentionReason": {
+        "description": "What was found, one value per kind of finding",
+        "enum": [
+          "not-backed-up",
+          "backup-failed",
+          "backup-behind",
+          "nearly-full",
+          "out-of-space",
+          "work-failed",
+          "work-paused",
+          "new-version"
+        ],
+        "type": "string"
+      },
+      "AttentionResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When the checks were made",
+            "format": "date-time",
+            "type": "string"
+          },
+          "checks": {
+            "description": "How each kind of check came out, in a fixed order",
+            "items": {
+              "$ref": "#/components/schemas/AttentionCheckDto"
+            },
+            "type": "array"
+          },
+          "items": {
+            "description": "What needs attention, the most urgent first",
+            "items": {
+              "$ref": "#/components/schemas/AttentionItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "checks",
+          "items"
+        ],
+        "type": "object"
+      },
+      "AttentionStorageDto": {
+        "properties": {
+          "availableBytes": {
+            "description": "Space left on the drive the library is on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "description": "Size of that drive",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "usedPercent": {
+            "description": "How full the drive is",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "availableBytes",
+          "totalBytes",
+          "usedPercent"
+        ],
+        "type": "object"
+      },
+      "AttentionVersionDto": {
+        "properties": {
+          "available": {
+            "description": "The newest version offered",
+            "type": "string"
+          },
+          "current": {
+            "description": "The version this server runs",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "current"
+        ],
+        "type": "object"
+      },
+      "AttentionWorkDto": {
+        "properties": {
+          "count": {
+            "description": "Items that failed, or that wait behind a pause, across these kinds of work",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "queues": {
+            "description": "Each kind of work involved, most items first",
+            "items": {
+              "$ref": "#/components/schemas/AttentionWorkQueueDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "queues"
+        ],
+        "type": "object"
+      },
+      "AttentionWorkQueueDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/components/schemas/QueueName"
+          }
+        },
+        "required": [
+          "count",
+          "name"
+        ],
+        "type": "object"
+      },
       "AudioCodec": {
         "description": "Target audio codec",
         "enum": [
@@ -65717,6 +66123,9 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
+          },
+          "canConfirm": {
+            "type": "boolean"
           },
           "capacityUpdatedAt": {
             "nullable": true,
